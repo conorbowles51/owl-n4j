@@ -15,6 +15,11 @@ const EvidenceExplorer = lazy(() =>
     default: m.EvidenceExplorer,
   }))
 )
+const TextWorkbenchPage = lazy(() =>
+  import("@/features/evidence/components/TextWorkbenchPage").then((m) => ({
+    default: m.TextWorkbenchPage,
+  }))
+)
 const GraphPage = lazy(() =>
   import("@/features/graph/components/GraphPage").then((m) => ({
     default: m.GraphPage,
@@ -240,6 +245,7 @@ export function AppRoutes() {
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
             <Route path="evidence" element={<LazyPage><EvidenceExplorer /></LazyPage>} />
+            <Route path="evidence/:fileId/text" element={<LazyPage><TextWorkbenchPage /></LazyPage>} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
             <Route path="agent" element={<LazyPage><AgentPage /></LazyPage>} />
             <Route path="workspace" element={<LazyPage><WorkspacePage /></LazyPage>} />

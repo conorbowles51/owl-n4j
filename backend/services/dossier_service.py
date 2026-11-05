@@ -622,6 +622,8 @@ def replace_links(db: Session, *, dossier_id: uuid.UUID, user: User, links: list
         if current is not None:
             kept += 1
             current.relationship_type = _text(raw.get("relationship_type"))
+            if target_type == "evidence_passage":  # a kept quote keeps what was taken, and its reader's label
+                continue
             current.label = _text(raw.get("label"))
             anchor = dict(raw.get("source_anchor") or {})
             if "mapping_versions" in (current.source_anchor or {}):
@@ -636,6 +638,8 @@ def replace_links(db: Session, *, dossier_id: uuid.UUID, user: User, links: list
             label=_text(raw.get("label")) or (phone.label if phone else None), source_anchor=_link_anchor(phone, raw),
             created_by_user_id=user.id,
         )
+        if target_type == "evidence_passage":
+            row.label, row.source_anchor = _passage(db, dossier.case_id, target_id)
         db.add(row)
         if phone is not None and target_type == "phone_selection":
             collection_index.write_members(
@@ -691,6 +695,8 @@ def add_links(
             label=_text(raw.get("label")) or (phone.label if phone else None), source_anchor=_link_anchor(phone, raw),
             created_by_user_id=user.id,
         )
+        if target_type == "evidence_passage":
+            row.label, row.source_anchor = _passage(db, dossier.case_id, target_id)
         db.add(row)
         new_rows.append(row)
         if phone is not None and target_type == "phone_selection":
@@ -874,6 +880,12 @@ def _validate_target(
     return None
 
 
+def _passage(db: Session, case_id: uuid.UUID, target_id: str) -> tuple[str, dict[str, Any]]:
+    """(label, anchor) of a quote, written from the stored text with its reader's label; a refusal is a ValueError."""
+    from services.evidence_page_text import passage_anchor
+    return passage_anchor(db, case_id, target_id)
+
+
 def _link_anchor(phone: link_types.PhoneTarget | None, raw: dict[str, Any]) -> dict[str, Any]:
     anchor = dict(raw.get("source_anchor") or {})
     return link_types.phone_anchor(phone, anchor) if phone is not None else anchor
@@ -905,10 +917,12 @@ def create_assessment(
         if target_type not in LINK_TARGET_TYPES or not target_id:
             raise ValueError("Invalid assessment supporting link")
         phone = _validate_target(db, dossier.case_id, target_type, target_id)
+        label, anchor = _text(raw.get("label")) or (phone.label if phone else None), _link_anchor(phone, raw)
+        if target_type == "evidence_passage":
+            label, anchor = _passage(db, dossier.case_id, target_id)
         db.add(DossierAssessmentLink(
             assessment_id=assessment.id, case_id=dossier.case_id, target_type=target_type,
-            target_id=target_id, label=_text(raw.get("label")) or (phone.label if phone else None),
-            source_anchor=_link_anchor(phone, raw),
+            target_id=target_id, label=label, source_anchor=anchor,
         ))
     if commit:
         db.commit()

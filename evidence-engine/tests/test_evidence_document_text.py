@@ -95,3 +95,18 @@ async def test_reextraction_upserts_the_same_evidence_row_with_new_content() -> 
     assert "processing_manifest = excluded.processing_manifest" in str(compiled)
     assert compiled.params["evidence_file_id"] == evidence_id
     assert db.commit.await_count == 2
+
+
+def test_an_image_or_recording_records_what_read_it() -> None:
+    image = build_canonical_document_text(ExtractedDocument(text="A receipt", metadata={
+        "file_type": "image", "image_provider": "openai_vision", "image_model": "gpt-4o"}))
+    assert image.source_locations[0]["reader_provider"] == "openai_vision"
+    assert image.source_locations[0]["reader_model"] == "gpt-4o"
+    ocr = build_canonical_document_text(ExtractedDocument(text="A receipt", metadata={
+        "file_type": "image", "image_provider": "tesseract"}))
+    assert ocr.source_locations[0]["reader_provider"] == "tesseract"
+    assert "reader_model" not in ocr.source_locations[0]
+    audio = build_canonical_document_text(ExtractedDocument(text="Hello", metadata={
+        "file_type": "audio", "transcription_model": "gpt-4o-transcribe-diarize"}))
+    assert audio.source_locations[0]["reader_model"] == "gpt-4o-transcribe-diarize"
+    assert "reader_provider" not in audio.source_locations[0]

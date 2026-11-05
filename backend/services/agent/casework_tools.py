@@ -101,6 +101,11 @@ def cite_link(db, conn, case_id, target_type: str, target_id: str, anchor: dict 
         elif target_type == "phone_extraction":
             cite["phone"] = target.label
         return cite
+    if target_type == "evidence_passage":
+        page = anchor.get("page")
+        return {"doc": "doc://%s%s" % (anchor.get("evidence_file_id"), "/%s" % page if page else ""),
+                "file": anchor.get("document_name"), "quote": anchor.get("quote"),
+                "read_by": (anchor.get("reader") or {}).get("words")}
     if target_type == "evidence":
         name = conn.execute(text("SELECT original_filename FROM evidence_files WHERE id::text = :i AND case_id = :c "
                                  "AND deleted_at IS NULL"),

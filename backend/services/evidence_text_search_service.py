@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceFolder
+from services.evidence_page_text import reader_of
 
 logger = logging.getLogger(__name__)
 PREVIEW_MATCH_LIMIT = 3
@@ -107,6 +108,7 @@ def _hit(
         "highlight_end": highlight_end,
         "page_number": location.get("page_number") if location else None,
         "location_label": location.get("label") if location else None,
+        "reader": reader_of(location)["words"] if location else None,
         # a phone thread document's line names its record, so the hit opens the record (02 section 9.7)
         "location_kind": location.get("kind") if location else None,
         "record_uid": location.get("record_uid") if location else None,

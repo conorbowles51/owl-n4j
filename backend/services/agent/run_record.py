@@ -47,7 +47,7 @@ CATEGORY_BY_TOOL = {
     "search_graph_entities": "graph", "inspect_graph_schema": "graph", "get_entity_details": "graph",
     "get_entity_neighborhood": "graph", "find_paths_between_entities": "graph", "run_readonly_cypher": "graph",
     "get_case_overview": "graph", "get_timeline_events": "timeline", "get_map_locations": "map",
-    "search_documents": "documents",
+    "search_documents": "documents", "search_exact_words": "documents",
     "get_financial_transactions": "ledger", "analyze_financial_transactions": "ledger",
     "get_financial_coverage": "ledger",
     "get_casework": "casework", "get_dossier": "casework",

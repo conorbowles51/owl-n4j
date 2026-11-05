@@ -61,6 +61,7 @@ import type {
   TranscriptSpeakerSettings,
 } from "@/types/evidence.types"
 import { toast } from "sonner"
+import { textWorkbenchHref } from "../lib/text-workbench-link"
 import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
 import { TextSearchPanel } from "./TextSearchPanel"
 import {
@@ -577,6 +578,9 @@ function DetailsPanelContent({
             >
               <Eye className="size-3.5" />
               Open File
+            </Button>
+            <Button asChild variant="outline" size="sm" title="The original beside its extracted text">
+              <a href={textWorkbenchHref(caseId, file.id)} target="_blank" rel="noopener">Text</a>
             </Button>
             <Button variant="ghost" size="icon-sm" title="Download" onClick={handleDownload}>
               <Download className="size-3.5" />

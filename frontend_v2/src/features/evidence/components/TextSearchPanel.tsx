@@ -23,6 +23,7 @@ import type {
 import { evidenceAPI } from "../api"
 import { useEvidenceStore } from "../evidence.store"
 import { useEvidenceTextSearch } from "../hooks/use-text-search"
+import { textWorkbenchHref } from "../lib/text-workbench-link"
 import { SourceAmountPanel } from "@/features/financial/components/SourceAmountPanel"
 
 interface ViewerTarget {
@@ -67,11 +68,15 @@ function DocumentTypeIcon({ filename }: { filename: string }) {
 function HitButton({
   hit,
   onOpen,
+  workbench,
 }: {
   hit: EvidenceTextSearchHit
   onOpen: () => void
+  /** The hit in the workbench, beside its original. */
+  workbench: string
 }) {
   return (
+    <div>
     <button
       type="button"
       onClick={onOpen}
@@ -86,6 +91,15 @@ function HitButton({
         </span>
       )}
     </button>
+    <a
+      href={workbench}
+      target="_blank"
+      rel="noopener"
+      className="ml-2.5 text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+    >
+      Open beside its text
+    </a>
+    </div>
   )
 }
 
@@ -178,6 +192,7 @@ function DocumentResultCard({
               key={hit.id}
               hit={hit}
               onOpen={() => onOpen(document, hit)}
+              workbench={textWorkbenchHref(caseId, document.evidence_id, { page: hit.page_number, q: query })}
             />
           ))
         )}

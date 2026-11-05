@@ -22,7 +22,7 @@ MAX_REPORT_ENTRIES = 2000
 _SIGNIFICANCE_RANK = {"high": 0, "medium": 1, "low": 2, None: 3}
 _RELATIONSHIP_WORDS = {"supports": "Supports", "contradicts": "Contradicts", "context": "Context", "unclassified": "Linked"}
 _TARGET_WORDS = {
-    "evidence": "Evidence file", "graph_entity": "Entity", "dossier": "Dossier", "entry": "Casework",
+    "evidence": "Evidence file", "evidence_passage": "Quote", "graph_entity": "Entity", "dossier": "Dossier", "entry": "Casework",
     "task": "Task", "deadline": "Deadline", "timeline_event": "Timeline event", "agent_artifact": "Agent output",
 }
 
@@ -100,6 +100,16 @@ def _sort(section: str, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(entries, key=lambda e: str(e.get("updated_at") or ""), reverse=True)
 
 
+def _link_words(link: dict[str, Any]) -> str:
+    """A quote prints whole, with its page and what read it; other links print their label."""
+    anchor = link.get("source_anchor") or {}
+    if link.get("target_type") == "evidence_passage" and anchor.get("quote"):
+        reader = (anchor.get("reader") or {}).get("words")
+        place = ", ".join(str(value) for value in (anchor.get("document_name"), anchor.get("page_label")) if value)
+        return "“%s”, %s%s" % (anchor["quote"], place, " · %s" % reader if reader else "")
+    return str(link.get("target_label") or link.get("target_id") or "")
+
+
 def _entry_html(entry: dict[str, Any]) -> str:
     facts = []
     if entry.get("lifecycle_state"):
@@ -120,7 +130,7 @@ def _entry_html(entry: dict[str, Any]) -> str:
         "<li><strong>{}</strong> · {}: {}</li>".format(
             html.escape(_RELATIONSHIP_WORDS.get(link.get("relationship"), "Linked")),
             html.escape(_TARGET_WORDS.get(link.get("target_type"), str(link.get("target_type") or "Item"))),
-            html.escape(str(link.get("target_label") or link.get("target_id") or "")),
+            html.escape(_link_words(link)),
         )
         for link in links
     )

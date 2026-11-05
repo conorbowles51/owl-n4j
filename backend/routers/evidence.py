@@ -35,6 +35,14 @@ from services.evidence_processing_service import process_db_files
 from services.neo4j_service import neo4j_service
 from services.cypher_generator import generate_cypher_from_graph
 from services.evidence_db_storage import EvidenceDBStorage
+from services.evidence_page_text import (
+    MAX_PAGE_LIMIT,
+    document_pages,
+    kept_passage_anchor,
+    locate_passage,
+    page_at,
+    page_positions,
+)
 from services.evidence_text_search_service import search_case_text, search_document_text
 from services import evidence_engine_client
 from services.response_encoding import plain_or_encoded
@@ -954,6 +962,66 @@ def document_text_matches(
     )
     response.headers["Cache-Control"] = "no-store"
     return result
+
+
+@router.get("/{evidence_id}/text-pages")
+def document_text_pages(
+    evidence_id: str,
+    page_offset: int = Query(0, ge=0),
+    page_limit: int = Query(5, ge=1, le=MAX_PAGE_LIMIT),
+    db: Session = Depends(get_db),
+):
+    """A document's extracted text by page, with what read each page and the document's page count. Text that is
+    absent says why (lx-textbench)."""
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    path = _resolve_stored_path(record.stored_path)
+    return document_pages(db, record, path=path if path and path.exists() else None,
+                          page_offset=page_offset, page_limit=page_limit)
+
+
+@router.get("/{evidence_id}/text-page-at")
+def document_text_page_at(
+    evidence_id: str,
+    character: int = Query(..., ge=0),
+    db: Session = Depends(get_db),
+):
+    """The workbench page holding a character of the stored text: a hit in a file with no pages of its own."""
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    return {"page_number": page_at(db, record, character)}
+
+
+@router.get("/{evidence_id}/page/{page_number}/text-positions")
+def document_page_text_positions(
+    evidence_id: str,
+    page_number: int = PathParam(ge=1),
+    q: str = Query(..., min_length=2, max_length=512),
+    db: Session = Depends(get_db),
+):
+    """Where words sit on a page image, as fractions of the image. A page without a text layer has no positions."""
+    file_path, _ = _page_image_source(db, evidence_id)
+    if _load_pymupdf() is None:
+        return {"available": False, "rects": []}
+    return page_positions(file_path, page_number, q)
+
+
+@router.get("/{evidence_id}/passage")
+def document_passage(
+    evidence_id: str,
+    target_id: str = Query(..., max_length=512),
+    db: Session = Depends(get_db),
+):
+    """A kept quote of this document, by its link target: where it is now, and whether the document was read again."""
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    anchor = kept_passage_anchor(db, record, target_id)
+    if anchor is None:
+        raise HTTPException(status_code=404, detail="That quote is not kept in this case")
+    return locate_passage(db, record, anchor)
 
 
 @router.put("/{evidence_id}/transcript-speakers")

@@ -120,14 +120,19 @@ def build_canonical_document_text(doc: ExtractedDocument) -> CanonicalDocumentTe
                 "video": "Transcript",
                 "image": "OCR text",
             }
-            locations.append(
-                {
-                    "kind": file_type,
-                    "label": label_by_type.get(file_type, "Document text"),
-                    "start_char": 0,
-                    "end_char": len(content),
-                }
-            )
+            location = {
+                "kind": file_type,
+                "label": label_by_type.get(file_type, "Document text"),
+                "start_char": 0,
+                "end_char": len(content),
+            }
+            # what read it, so the text is shown with its reader (a model's reading stays labelled as one)
+            reader = {
+                "reader_provider": doc.metadata.get("image_provider"),
+                "reader_model": doc.metadata.get("image_model") or doc.metadata.get("transcription_model"),
+            }
+            location.update({key: value for key, value in reader.items() if value})
+            locations.append(location)
 
         if file_type == 'audio':
             for turn in doc.metadata.get('transcript_turns') or []:

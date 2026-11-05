@@ -198,6 +198,35 @@ def word_search_documents(
     }
 
 
+def exact_words_documents(db, *, case_id: str | UUID, query: str, limit: int, offset: int = 0,
+                          snippet_context: int = 300, max_matches_per_document: int = 3) -> dict[str, Any]:
+    """The case's documents holding exactly these words (one literal phrase, any case), most occurrences first, paged
+    by document with true totals. Counted in the database, so only the returned documents' text is read."""
+    from services.evidence_text_search_service import matching_documents, search_case_text
+    case_uuid = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
+    ranked = sorted(matching_documents(db, case_id=case_uuid, query=query),
+                    key=lambda row: (-row[2], str(row[1]).lower(), str(row[0])))
+    page = ranked[offset:offset + limit]
+    wanted = [row[0] for row in page]
+    found = search_case_text(db, case_id=case_uuid, query=query, document_limit=max(1, len(wanted)), document_offset=0,
+                             snippet_context=snippet_context, evidence_ids=wanted)
+    by_id = {doc["evidence_id"]: doc for doc in found["documents"]}
+    documents = []
+    for evidence_id, _, _ in page:
+        doc = by_id.get(str(evidence_id))
+        if doc is not None:
+            documents.append({"evidence_file_id": doc["evidence_id"], "filename": doc["document_name"],
+                              "folder_path": doc["folder_path"], "total_matches": doc["total_matches"],
+                              "matches_shown": min(len(doc["matches"]), max_matches_per_document),
+                              "matches_truncated": doc["total_matches"] > max_matches_per_document,
+                              "matches": doc["matches"][:max_matches_per_document]})
+    return {"query": query, "case_documents": int(found["case_documents"]),
+            "searchable_documents": int(found["searchable_documents"]), "total_documents": len(ranked),
+            "total_matches": sum(int(row[2]) for row in ranked), "returned_documents": len(documents),
+            "offset": offset, "next_offset": offset + len(page) if offset + len(page) < len(ranked) else None,
+            "documents": documents}
+
+
 def word_hit_chunks(found: dict[str, Any]) -> list[dict[str, Any]]:
     """Word-search hits shaped as retrieval chunks (chat context and sources), marked as word matches."""
     chunks = []

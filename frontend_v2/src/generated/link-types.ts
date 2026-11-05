@@ -36,6 +36,7 @@ export const WORKSPACE_LINK_TYPES = [
   "financial_account",
   "financial_party",
   "financial_transaction",
+  "evidence_passage",
 ] as const
 export type WorkspaceLinkType = (typeof WORKSPACE_LINK_TYPES)[number]
 
@@ -59,6 +60,7 @@ export const DOSSIER_LINK_TYPES = [
   "financial_account",
   "financial_party",
   "financial_transaction",
+  "evidence_passage",
 ] as const
 export type DossierLinkType = (typeof DOSSIER_LINK_TYPES)[number]
 
@@ -77,6 +79,7 @@ export const NOTEBOOK_LINK_TYPES = [
   "phone_selection",
   "phone_view",
   "statement_check",
+  "evidence_passage",
 ] as const
 export type NotebookLinkType = (typeof NOTEBOOK_LINK_TYPES)[number]
 

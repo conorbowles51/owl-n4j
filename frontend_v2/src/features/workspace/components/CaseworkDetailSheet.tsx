@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
 import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
+import { passageHref, passageReaderWords } from "@/features/evidence/lib/text-workbench-link"
 import { LinkStateNote } from "@/features/phones/LinkStateNote"
 import { useLinkChoice, useLinkStates } from "@/features/phones/link-states"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
@@ -179,6 +180,13 @@ export function CaseworkDetailSheet({
       )
       const href = link ? phoneLinkHref(caseId, link) : null
       if (href) navigate(href)
+      return
+    }
+    if (targetType === "evidence_passage") {
+      const link = entry?.links.find(
+        (item) => item.target_type === targetType && item.target_id === targetId
+      )
+      navigate(passageHref(caseId, targetId, link?.source_anchor))
       return
     }
     if (targetType === "evidence") {
@@ -510,6 +518,7 @@ export function CaseworkDetailSheet({
                               !(
                                 [
                                   "evidence",
+                                  "evidence_passage",
                                   "graph_entity",
                                   "entry",
                                   "dossier",
@@ -525,7 +534,7 @@ export function CaseworkDetailSheet({
                           >
                             {isPhoneLinkType(link.target_type) ? (
                               <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                            ) : link.target_type === "evidence" ? (
+                            ) : link.target_type === "evidence" || link.target_type === "evidence_passage" ? (
                               <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                             ) : isFinancialLinkType(link.target_type) ? (
                               <Landmark className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -545,6 +554,11 @@ export function CaseworkDetailSheet({
                                 {anchor && (
                                   <span className="text-[10px] text-muted-foreground">
                                     {anchor}
+                                  </span>
+                                )}
+                                {link.target_type === "evidence_passage" && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {passageReaderWords(link.source_anchor)}
                                   </span>
                                 )}
                                 {isPhoneLinkType(link.target_type) && (

@@ -553,6 +553,7 @@ def _sanitize_link(
     case_id: UUID,
     link: dict[str, Any],
     validate_target: bool = True,
+    held_passages: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     target_type = _clean_optional_text(link.get("target_type"), max_length=32)
     target_id = _clean_optional_text(link.get("target_id"), max_length=512)
@@ -593,6 +594,16 @@ def _sanitize_link(
         target_id = target_id.lower()
         source_anchor = financial_anchor(target_type, target_id, source_anchor)
         if not _clean_optional_text(link.get("target_label"), max_length=512):
+            link = {**link, "target_label": label}
+    elif target_type == "evidence_passage":
+        # A new quote is written here from the stored text, with its reader's label; what the client sent is not kept.
+        # A quote already held keeps what was taken, whatever the document holds now (the sync below keeps it).
+        if target_id not in held_passages:
+            from services.evidence_page_text import PassageError, passage_anchor
+            try:
+                label, source_anchor = passage_anchor(db, case_id, target_id)
+            except PassageError as exc:
+                raise WorkspaceEntryValidationError(str(exc)) from exc
             link = {**link, "target_label": label}
     elif validate_target:
         _validate_link_target(
@@ -653,8 +664,9 @@ def _replace_links(
 ) -> None:
     sanitized: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    held_passages = frozenset(old.target_id for old in entry.links if old.target_type == "evidence_passage")
     for link in links:
-        data = _sanitize_link(db, case_id=entry.case_id, link=link)
+        data = _sanitize_link(db, case_id=entry.case_id, link=link, held_passages=held_passages)
         key = (data["target_type"], data["target_id"])
         if key in seen:
             continue
@@ -679,13 +691,15 @@ def _replace_links(
         if current is None:
             _append_link(db, entry, user, data, prepared=True)
             continue
-        current.target_label = data["target_label"]
         current.relationship_type = data["relationship"]
+        current.link_metadata = data["metadata"]
+        if current.target_type == "evidence_passage":
+            continue
+        current.target_label = data["target_label"]
         anchor = dict(data["source_anchor"] or {})
         if "mapping_versions" in (current.source_anchor or {}):
             anchor["mapping_versions"] = current.source_anchor["mapping_versions"]
         current.source_anchor = anchor
-        current.link_metadata = data["metadata"]
 
 
 def _load_entry(
@@ -1421,6 +1435,8 @@ def convert_theory_to_finding(
 
             copied["phone_members"] = collection_index.members_of(db, link_id=link.id)
             _append_link(db, finding, current_user, copied, prepared=True)
+        elif link.target_type == "evidence_passage":  # a kept quote stays as taken, even if the document was read again
+            _append_link(db, finding, current_user, copied, prepared=True)
         else:
             _append_link(db, finding, current_user, copied)
     _record_revision(db, finding, current_user)
@@ -1661,7 +1677,7 @@ def update_entry_link(
         raise WorkspaceEntryValidationError("source_anchor must be an object")
     before = _link_to_dict(link)
     link.relationship_type = normalized_relationship
-    if source_anchor is not None:
+    if source_anchor is not None and link.target_type != "evidence_passage":  # a kept quote keeps what was taken
         link.source_anchor = source_anchor
     entry.version += 1
     entry.updated_by_user_id = current_user.id

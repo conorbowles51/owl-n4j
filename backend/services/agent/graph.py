@@ -105,6 +105,7 @@ _INTERNAL_TOOL_MARKERS = (
     "get_entity_neighborhood",
     "find_paths_between_entities",
     "search_documents",
+    "search_exact_words",
     "get_financial_transactions",
     "analyze_financial_transactions",
     "get_financial_coverage",
@@ -336,6 +337,10 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
         query = _arg_text(safe_args, "query")
         title = f"Searched documents for {_quoted(query)}" if query else "Searched documents"
         detail = "I'm looking for source text and citations that support the answer."
+    elif safe_name == "search_exact_words":
+        words = _arg_text(safe_args, "words")
+        title = f"Searched every document for the exact words {_quoted(words)}" if words else "Searched for exact words"
+        detail = "I'm looking for the exact words in each document's stored text, with the page of each hit."
     elif safe_name == "run_readonly_cypher":
         title = "Queried graph data"
         detail = "I'm running a safe read-only Cypher query scoped to this case."

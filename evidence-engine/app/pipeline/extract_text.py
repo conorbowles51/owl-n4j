@@ -923,6 +923,7 @@ async def _extract_image(file_path: str, file_name: str) -> ExtractedDocument:
     if provider == "openai":
         text = await _describe_image_vision(file_path, file_name)
         metadata["image_provider"] = "openai_vision"
+        metadata["image_model"] = settings.openai_vision_model
     elif provider == "tesseract":
         text = await asyncio.to_thread(_extract_text_tesseract, file_path)
         metadata["image_provider"] = "tesseract"

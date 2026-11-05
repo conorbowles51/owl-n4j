@@ -531,6 +531,31 @@ def of_container(conn, case_id, container, container_id, viewer_id) -> dict:
         replaced.update(replaced_links.replacements(conn, case_id, uids[i:i + replaced_links.MAX_RECORDS]))
     for link in links:
         out[link.id]["replaced"] = replaced.get(str(link.target_id).lower())
+    out.update(_passage_states(conn, case_id, container, container_id))
+    return out
+
+
+def _passage_states(conn, case_id, container, container_id) -> dict:
+    """A kept quote of a document that has been read again says so, in the same note (lx-textbench item D)."""
+    from services.evidence_page_text import passage_state
+    table, column = (("workspace_entry_links", "entry_id") if container == "entry" else ("dossier_links", "dossier_id"))
+    rows = conn.execute(text(
+        f"SELECT l.id, l.target_id, l.source_anchor, u.name, t.content_sha256, t.extracted_at FROM {table} l "
+        "LEFT JOIN users u ON u.id = l.created_by_user_id "
+        "LEFT JOIN evidence_document_texts t ON t.evidence_file_id = CAST(l.source_anchor ->> 'evidence_file_id' AS uuid) "
+        f"WHERE l.case_id = :c AND l.{column} = :i AND l.target_type = 'evidence_passage'"),
+        {"c": case_id, "i": container_id}).all()
+    out = {}
+    for row in rows:
+        words = passage_state(_anchor(row.source_anchor), row.content_sha256, row.extracted_at)
+        out[str(row.id)] = {
+            "link_id": str(row.id), "link_kind": container, "target_type": "evidence_passage",
+            "target_id": row.target_id, "states": [], "records": 0,
+            "corrected": {"count": 0, "records": 0, "items": [], "clipped": False},
+            "reading_changed": {"count": 0, "records": 0, "items": [], "clipped": False},
+            "set_aside": None, "reread": {"at": None, "words": words} if words else None, "replaced": None,
+            "added_by": row.name, "through_seq": 0, "needs_choice": False, "can_choose": False, "can_remove": True,
+            "kept": None}
     return out
 
 

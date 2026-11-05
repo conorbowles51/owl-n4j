@@ -220,6 +220,8 @@ export interface EvidenceTextSearchHit {
   highlight_end: number
   page_number: number | null
   location_label: string | null
+  /** What read the text of this hit, when its place records it. */
+  reader?: string | null
   /** "phone_record" on a line of a phone conversation, which names its record (02 section 9.7) */
   location_kind?: string | null
   record_uid?: string | null

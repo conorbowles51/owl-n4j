@@ -23,6 +23,7 @@ import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
 import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
+import { passageHref } from "@/features/evidence/lib/text-workbench-link"
 import { LinkStateNote } from "@/features/phones/LinkStateNote"
 import { useLinkChoice, useLinkStates } from "@/features/phones/link-states"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
@@ -586,6 +587,7 @@ export function DossierDetailSheet({
             ? link.source_anchor.start_seconds
             : undefined,
       })
+    else if (link.target_type === "evidence_passage") navigate(passageHref(caseId, link.target_id, link.source_anchor))
     else if (isPhoneLinkType(link.target_type)) {
       const href = phoneLinkHref(caseId, link)
       if (href) navigate(href)
@@ -973,7 +975,18 @@ export function DossierDetailSheet({
                           className="flex items-center gap-3 p-3"
                         >
                           <Badge variant="outline">{link.target_type}</Badge>
-                          {["evidence", "entry", "dossier"].includes(
+                          {link.target_type === "evidence_passage" ? (
+                            <span className="min-w-0 flex-1 break-all text-xs">
+                              <button
+                                type="button"
+                                className="min-h-10 text-left font-medium underline underline-offset-2 hover:text-amber-600"
+                                onClick={() => openLinkedItem(link)}
+                              >
+                                {link.label || "Open quote"}
+                              </button>
+                              <LinkStateNote caseId={caseId} state={linkStates[link.id]} />
+                            </span>
+                          ) : ["evidence", "entry", "dossier"].includes(
                             link.target_type
                           ) ? (
                             <button

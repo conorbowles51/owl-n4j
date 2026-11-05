@@ -174,6 +174,12 @@ class SearchDocumentsArgs(BaseModel):
     offset: int = Field(0, ge=0, description="Next page of documents (the result's next_offset).")
 
 
+class SearchExactWordsArgs(BaseModel):
+    words: str = Field(..., min_length=2, max_length=256, description="The exact words, as they would be printed.")
+    limit: int = Field(8, ge=1, le=20)
+    offset: int = Field(0, ge=0, description="Next page of documents (the result's next_offset).")
+
+
 class ReadonlyCypherArgs(BaseModel):
     query: str = Field(..., min_length=1, description="Read-only Cypher. Must include $case_id.")
     params: dict[str, Any] = Field(default_factory=dict)
@@ -2012,6 +2018,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                     "cite": (doc_href(doc["evidence_file_id"], match.get("page_number"))
                              if doc.get("evidence_file_id") else None),
                     "location": match.get("location_label"), "folder_path": doc.get("folder_path"),
+                    "read_by": match.get("reader"),
                     "match": "word (literal), not a meaning match", "matched": match.get("term"),
                     "snippet": sanitize_text(match.get("snippet")),
                     "document_word_hits": doc["total_matches"],
@@ -2045,6 +2052,45 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             "" if found["next_offset"] is None else " (next page: offset %d)" % found["next_offset"],
             " ".join(extra)) + " Word hits are literal matches, not meaning matches."
         return context.result("search_documents", data, summary=" ".join(summary.split()))
+
+    def search_exact_words(words: str, limit: int = 8, offset: int = 0) -> dict[str, Any]:
+        """Exact words across the case's stored text: a citation and a reader per hit, with true totals."""
+        if context.significant_scope:
+            return scope_error("search_exact_words", "Case-wide word search")
+        from services import meaning_search
+        from services.case_citations import doc_href
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                found = meaning_search.exact_words_documents(db, case_id=context.case_id, query=words.strip(),
+                                                             limit=limit, offset=offset)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Exact word search failed for case %s", context.case_id)
+            message = "The word search could not run (%s). No document was searched." % type(exc).__name__
+            return context.result("search_exact_words", {"available": False, "reason": message, "results": []},
+                                  summary=message, status="error", error=message)
+        results = [{key: value for key, value in {
+            "evidence_file_id": doc["evidence_file_id"], "filename": doc["filename"],
+            "folder_path": doc["folder_path"], "page": match.get("page_number"),
+            "location": match.get("location_label"), "record_uid": match.get("record_uid"),
+            "cite": doc_href(doc["evidence_file_id"], match.get("page_number")),
+            "read_by": match.get("reader"), "snippet": sanitize_text(match.get("snippet")),
+            "document_hits": doc["total_matches"],
+        }.items() if value is not None} for doc in found["documents"] for match in doc["matches"]]
+        without_text = max(0, found["case_documents"] - found["searchable_documents"])
+        notes = ["Exact words only: another spelling or an OCR misreading of them is not found."]
+        if without_text:
+            notes.append("%d document(s) have no stored text and were not searched." % without_text)
+        shown = sum(doc["matches_shown"] for doc in found["documents"])
+        summary = "%d occurrence(s) in %d document(s); %d hit(s) returned%s. %s" % (
+            found["total_matches"], found["total_documents"], shown,
+            "" if found["next_offset"] is None else " (next page: offset %d)" % found["next_offset"], " ".join(notes))
+        return context.result("search_exact_words", {
+            "available": True, "search": "exact_words", "words": found["query"],
+            "total_occurrences": found["total_matches"], "total_documents": found["total_documents"],
+            "returned_documents": found["returned_documents"], "offset": found["offset"],
+            "next_offset": found["next_offset"], "case_documents": found["case_documents"],
+            "searchable_documents": found["searchable_documents"], "documents_without_text": without_text,
+            "results": results, "note": " ".join(notes)}, summary=summary)
 
     def run_cypher(query: str, params: dict[str, Any] | None = None, limit: int = 50) -> dict[str, Any]:
         if context.significant_scope:
@@ -2869,6 +2915,16 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                          "are literal matches, never meaning matches; say so when you use them). Paged: pass "
                          "next_offset for more."),
             args_schema=SearchDocumentsArgs,
+        ),
+        wrap(
+            search_exact_words,
+            name="search_exact_words",
+            description=("Find exact words across every document's stored text: a name, an account number, a phrase. "
+                         "Use it when the words themselves matter; use search_documents for meaning. Each hit has its "
+                         "cite (doc://file/page: copy it), its page and read_by (what read that text; say so when it "
+                         "was OCR or a model). A hit is a literal match, not proof of meaning. Totals are the whole "
+                         "case; paged by document: pass next_offset for more."),
+            args_schema=SearchExactWordsArgs,
         ),
         wrap(
             run_cypher,

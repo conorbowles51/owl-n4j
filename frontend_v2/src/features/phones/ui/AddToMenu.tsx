@@ -64,6 +64,8 @@ export function AddToMenu({
   disabledReason,
   keys = true,
   noDossierWhy,
+  kinds,
+  description = "Each keeps a link back to its record. Nothing is copied out of the phone.",
 }: {
   caseId: string
   /** What is selected, as links (a selection over 500 arrives as one phone_selection link, 07 6.1). */
@@ -81,6 +83,10 @@ export function AddToMenu({
   keys?: boolean
   /** Why this item does not go straight into a dossier (07 6.1): shown in place of the list of dossiers. */
   noDossierWhy?: string
+  /** The places offered, when they are not all of them. */
+  kinds?: TargetKind[]
+  /** The line under the dialog's title. */
+  description?: string
 }) {
   const [open, setOpen] = useState(false)
   const [kind, setKind] = useState<TargetKind | null>(null)
@@ -91,6 +97,7 @@ export function AddToMenu({
   const [reply, setReply] = useState<{ text: string; target: CollectTarget; result: CollectResult } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const count = links.length
+  const offered = kinds ? KIND_KEYS.filter((k) => kinds.includes(k.kind)) : KIND_KEYS
   const ordered = useMemo(() => (kind ? orderTargets(targets, kind) : []), [targets, kind])
 
   const start = (k: TargetKind, byKey: boolean) => {
@@ -162,7 +169,7 @@ export function AddToMenu({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add {count.toLocaleString("en-US")} {countNoun(count, noun)} to…</DialogTitle>
-            <DialogDescription>Each keeps a link back to its record. Nothing is copied out of the phone.</DialogDescription>
+            <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
           {confirmBig && (
             <div role="alert" className="rounded border border-status-review p-2 text-sm">
@@ -175,7 +182,7 @@ export function AddToMenu({
             </div>
           )}
           <div role="group" aria-label="Where to add" className="flex flex-wrap gap-1">
-            {KIND_KEYS.map((k) => (
+            {offered.map((k) => (
               <Button key={k.kind} size="sm" variant={kind === k.kind ? "secondary" : "outline"} aria-pressed={kind === k.kind} onClick={() => setKind(k.kind)}>
                 {k.words} <kbd className="ml-1 text-xs text-muted-foreground">{k.key}</kbd>
               </Button>

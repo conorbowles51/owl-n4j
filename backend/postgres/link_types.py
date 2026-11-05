@@ -51,11 +51,15 @@ FINANCIAL_TYPES: tuple[str, ...] = (
     "financial_transaction",
 )
 
+# A quote: one range of a document's stored text (services/evidence_page_text). A type of its own because a container
+# holds a target once, and a finding may hold several quotes of one document. The server writes its anchor.
+EVIDENCE_TEXT_TYPES: tuple[str, ...] = ("evidence_passage",)
+
 # Old Notebook names that the Notebook still accepts and maps onto the canonical names.
 NOTEBOOK_ALIASES: dict[str, str] = {"entity": "graph_entity", "document": "evidence"}
 
 # Per container, in display order. 07 section 6.1 decides which phone types each container takes.
-WORKSPACE_TYPES: tuple[str, ...] = CORE_TYPES + PHONE_TYPES + FINANCIAL_TYPES
+WORKSPACE_TYPES: tuple[str, ...] = CORE_TYPES + PHONE_TYPES + FINANCIAL_TYPES + EVIDENCE_TEXT_TYPES
 DOSSIER_TYPES: tuple[str, ...] = (
     "entry",
     "task",
@@ -65,14 +69,14 @@ DOSSIER_TYPES: tuple[str, ...] = (
     "agent_artifact",
     "graph_entity",
     "dossier",
-) + tuple(value for value in PHONE_TYPES if value != "phone_view") + FINANCIAL_TYPES
+) + tuple(value for value in PHONE_TYPES if value != "phone_view") + FINANCIAL_TYPES + EVIDENCE_TEXT_TYPES
 NOTEBOOK_TYPES: tuple[str, ...] = (
     "entity",
     "evidence",
     "document",
     "timeline_event",
     "agent_artifact",
-) + PHONE_TYPES
+) + PHONE_TYPES + EVIDENCE_TEXT_TYPES
 TASK_TYPES: tuple[str, ...] = ("dossier", "entry", "evidence") + PHONE_TYPES
 INTERVIEW_EVIDENCE_TYPES: tuple[str, ...] = (
     "evidence",
