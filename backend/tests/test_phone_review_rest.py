@@ -383,7 +383,8 @@ def mine_split(api):  # noqa: F811
     with api["engine"].connect() as c:
         rows = c.execute(text(
             "SELECT t.id::text, t.assignee_user_id::text AS who, l.target_id FROM case_task_links l JOIN case_tasks t "
-            "ON t.id = l.task_id WHERE l.case_id = :c AND l.source_anchor ? 'review_split'"), {"c": api["case"]}).fetchall()
+            "ON t.id = l.task_id WHERE l.case_id = :c AND l.source_anchor ? 'review_split' "
+            "ORDER BY t.created_at, l.created_at, l.id"), {"c": api["case"]}).fetchall()  # as _task_links reads them
     bea = [x for x in rows if x.who == api["bea"]]
     return bea[0][0], [x.target_id for x in bea], [x.target_id for x in rows if x.who == api["owner"]]
 

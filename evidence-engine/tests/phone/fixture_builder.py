@@ -114,6 +114,9 @@ class PhoneSpec:
     # Location records of Type Harvested (Apple's cached positions of networks and towers the phone heard, 04 decision
     # 53), with a bare Precision and no GPS accuracy, as on P04. 0 leaves every fixture as before.
     harvested: int = 0
+    # Emails shaped as Phone reference 1: Inbox folder, no mark on the From party, the To party marked as the owner
+    # (04 decision 54). 0 leaves every fixture as before.
+    owner_mails: int = 0
     report_name: str = "Report.xml"
 
 
@@ -527,6 +530,21 @@ class PhoneBuild:
             out.append(loc.xml())
         return out
 
+    def owner_mail(self) -> list[str]:
+        out = []
+        people = list(self.people.values())
+        for i in range(self.spec.owner_mails):
+            mail = Model(self, "Email", False)
+            mail.f("Source", "String", "Emails").f("Folder", "String", "Inbox, Updates")
+            mail.f("Subject", "String", f"Synthetic mail {i + 1}")
+            mail.t("TimeStamp", self.instant())
+            sender = Model(self, "Party", True)
+            sender.f("Identifier", "String", f"sender{i + 1}@example.test").f("Role", "PartyRole", "From")
+            mail.nest("modelField", "From", [sender])
+            mail.nest("multiModelField", "To", [self.owner_party("To", "Emails")])
+            out.append(mail.xml())
+        return out
+
     def generic(self, mtype: str) -> list[str]:
         """Other record types at catalogue scale, fields and value kinds from the catalogue."""
         out = []
@@ -572,6 +590,7 @@ class PhoneBuild:
         for mtype in self.cat["model_types"]:
             if mtype not in NESTED_ONLY and mtype not in BUILT:
                 model_types[mtype] = self.generic(mtype)
+        model_types.setdefault("Email", []).extend(self.owner_mail())
         # the report id is drawn here, before any bank alert, so a phone with alerts keeps the id it had without them
         project_id = self.ids.guid()
         if self.alert_rows:
@@ -1006,6 +1025,7 @@ def main(argv=None) -> int:
     ap.add_argument("--like", default="P06")
     ap.add_argument("--label", default="S1")
     ap.add_argument("--harvested", type=int, default=0, help="Location records of Type Harvested (phone shape only)")
+    ap.add_argument("--owner-mails", type=int, default=0, help="Inbox emails with the owner marked on To (phone shape only)")
     ap.add_argument("--typed", action="append", default=[],
                     help="MODEL_TYPE:FIELD:TEXT, an extra invented typed or searched value (phone shape only)")
     a = ap.parse_args(argv)
@@ -1022,7 +1042,7 @@ def main(argv=None) -> int:
         people = invent_people(40, seed=31)
         case = CaseSpec(f"Synthetic {a.like} at scale {a.scale}", people,
                         [PhoneSpec(a.label, like=a.like, scale=a.scale, contacts=[p.key for p in people[1:]], seed=301,
-                                   harvested=a.harvested, typed_values=tuple(tuple(t.split(":", 2)) for t in a.typed))])
+                                   harvested=a.harvested, owner_mails=a.owner_mails, typed_values=tuple(tuple(t.split(":", 2)) for t in a.typed))])
     m = build_case(case, a.out)
     print(json.dumps({"case": m["case"], "phones": [{"label": p["label"], "top_level_total": p["top_level_total"],
                                                       "messages": p["facts"].get("messages", 0)} for p in m["phones"]],
