@@ -23,7 +23,7 @@ export interface LinkStateList {
 
 export interface LinkState {
   link_id: string
-  link_kind: "entry" | "dossier" | "assessment"
+  link_kind: "entry" | "dossier" | "assessment" | "interview"
   target_type: string
   target_id: string
   states: ("corrected" | "reading_changed" | "set_aside")[]

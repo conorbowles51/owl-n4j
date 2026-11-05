@@ -3109,7 +3109,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             name="get_casework",
             description=("Read this case's notes, findings and theories, newest first, each with its links. Phone "
                 "links come back with their citation: a message or call as its rec:// link with the record in full, "
-                "a conversation, selection, phone or analysis with what it holds. Cite those links in the answer."),
+                "a conversation, selection, phone or analysis with what it holds. Cite those links in the answer. A link "
+                "with link_state collected something that was corrected or read differently since: say so when "
+                "citing it."),
             args_schema=CaseworkArgs,
         ),
         StructuredTool.from_function(
@@ -3117,7 +3119,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             name="get_dossier",
             description=("Read one dossier of this case (by id or name): summary, contacts, links, assessments with "
                 "how each was made, and interview evidence, every link with its citation (rec:// for phone records, "
-                "doc:// for files). Says 'Not in this case' when no dossier in this case matches."),
+                "doc:// for files). A link with link_state collected something that was corrected or read differently "
+                "since: say so when citing it. Says 'Not in this case' when no dossier in this case matches."),
             args_schema=DossierArgs,
         ),
     ] + _proposal_tools(context) + _cross_case_tools(context) + _match_tools(context)

@@ -36,7 +36,8 @@ from services.phone.sensitive import MASK
 
 # the most values one link lists on screen; the counts are always the true totals and a clipped list says so
 LIST_MAX = 50
-COLLECTING_TYPES = ("phone_record", "phone_selection", "phone_thread")
+READER_WORDS = 10  # the most lines one link gives the agent; ``clipped`` says when there are more
+COLLECTING_TYPES = ("phone_record", "phone_selection", "phone_thread", "phone_analysis")
 FIELD_WORDS = {"sender": "Sender was", "recipients": "Recipients were", "direction": "Direction was", "time": "Time was"}
 SET_ASIDE = "Set aside as a duplicate: this is a copy of an event the lists show once, as another record."
 OWNER_WORDS = "the phone's owner"
@@ -44,6 +45,11 @@ NOT_RECORDED = "not recorded"
 # Decisions that re-read a phone and can change a reading; a value correction is the corrected state instead.
 CAUSES = ("correct_phone_reading", "set_phone_clock_offset", "set_phone_device_zone", "set_phone_default_region",
           "apply_phone_zone_to_offsetless")
+
+
+# Removed through what holds them, not from the link: an assessment's supporting link, an interview's evidence.
+NOT_REMOVED_HERE = {"assessment": "A link that supports an assessment is removed by removing that assessment.",
+                    "interview": "An interview's evidence is removed by editing the interview."}
 
 
 class LinkStateError(ValueError):
@@ -64,7 +70,7 @@ class Missing(LinkStateError):
 
 @dataclass
 class Link:
-    kind: str  # entry, dossier or assessment
+    kind: str  # entry, dossier, assessment or interview
     id: str
     container_id: str
     target_type: str
@@ -88,20 +94,26 @@ def _time(at) -> str | None:
 # ---- recording what a new reading changed ----------------------------------------------------------------------
 
 def _linked_records(conn, case_id, extraction_id, generation) -> list:
-    """The records of this phone some finding, note, theory, dossier or assessment collects, directly, inside a
-    selection or inside a conversation."""
-    ids, threads = set(), set()
+    """The records of this phone some finding, note, theory, dossier, assessment or interview collects, directly,
+    inside a selection, inside a kept result or inside a conversation."""
+    ids, threads, kept = set(), set(), set()
     for kind, target in conn.execute(text(
             "SELECT target_type, target_id FROM workspace_entry_links WHERE case_id = :c AND target_type = ANY(:t) "
             "UNION SELECT target_type, target_id FROM dossier_links WHERE case_id = :c AND target_type = ANY(:t) "
             "UNION SELECT target_type, target_id FROM dossier_assessment_links WHERE case_id = :c AND "
+            "target_type = ANY(:t) "
+            "UNION SELECT target_type, target_id FROM dossier_interview_evidence_links WHERE case_id = :c AND "
             "target_type = ANY(:t)"), {"c": case_id, "t": list(COLLECTING_TYPES)}):
         if kind == "phone_record":
             ids.add(str(target).lower())
         elif kind == "phone_thread":
             threads.add(target)
+        elif kind == "phone_analysis":
+            kept.add(target)
     ids.update(str(r).lower() for r in conn.execute(text(
         "SELECT DISTINCT record_id FROM collection_memberships WHERE case_id = :c"), {"c": case_id}).scalars())
+    for snapshot in _kept(conn, case_id, kept).values():
+        ids.update(str(r).lower() for r in snapshot.get("record_ids") or [])
     if threads:
         ids.update(str(r) for r in conn.execute(text(
             "SELECT DISTINCT record_uid FROM phone_comm_events WHERE extraction_id = :e AND generation = :g AND "
@@ -111,6 +123,15 @@ def _linked_records(conn, case_id, extraction_id, generation) -> list:
     return [str(r) for r in conn.execute(text(
         "SELECT record_uid FROM phone_record_summaries WHERE extraction_id = :e AND generation = :g AND "
         "record_uid::text = ANY(:u)"), {"e": extraction_id, "g": generation, "u": sorted(ids)}).scalars()]
+
+
+def _kept(conn, case_id, snapshot_ids) -> dict:
+    """``{snapshot id: snapshot}`` of kept results, as frozen."""
+    if not snapshot_ids:
+        return {}
+    return {r.id: r.snapshot or {} for r in conn.execute(text(
+        "SELECT id, snapshot FROM pol_analysis_snapshot WHERE case_id = :c AND id = ANY(:i)"),
+        {"c": str(case_id), "i": sorted(snapshot_ids)})}
 
 
 def _person(row) -> str:
@@ -233,6 +254,13 @@ def dossier_links(conn, case_id, dossier_id) -> list:
                 "a.id = l.assessment_id LEFT JOIN users u ON u.id = a.author_user_id WHERE l.case_id = :c AND "
                 "a.dossier_id = :i AND l.target_type = ANY(:t) ORDER BY l.created_at, l.id"),
                 {"c": case_id, "i": dossier_id, "t": list(COLLECTING_TYPES)})]
+    out += [Link("interview", str(r.id), str(dossier_id), r.target_type, r.target_id, _anchor(r.source_anchor),
+                 r.created_at, str(r.created_by_user_id) if r.created_by_user_id else None, r.name, None)
+            for r in conn.execute(text(
+                "SELECT l.*, i.created_by_user_id, u.name FROM dossier_interview_evidence_links l JOIN "
+                "dossier_interviews i ON i.id = l.interview_id LEFT JOIN users u ON u.id = i.created_by_user_id WHERE "
+                "l.case_id = :c AND i.dossier_id = :i AND l.target_type = ANY(:t) ORDER BY l.created_at, l.id"),
+                {"c": case_id, "i": dossier_id, "t": list(COLLECTING_TYPES)})]
     return out
 
 
@@ -256,6 +284,13 @@ def links_added_by(conn, case_id, user_id) -> list:
                 "SELECT l.*, a.dossier_id FROM dossier_assessment_links l JOIN dossier_assessments a ON a.id = "
                 "l.assessment_id WHERE l.case_id = :c AND a.author_user_id = :u AND l.target_type = ANY(:t)"),
                 {"c": case_id, "u": user_id, "t": list(COLLECTING_TYPES)})]
+    out += [Link("interview", str(r.id), str(r.dossier_id), r.target_type, r.target_id, _anchor(r.source_anchor),
+                 r.created_at, str(user_id), None, None)
+            for r in conn.execute(text(
+                "SELECT l.*, i.dossier_id FROM dossier_interview_evidence_links l JOIN dossier_interviews i ON i.id = "
+                "l.interview_id JOIN case_profiles p ON p.id = i.dossier_id WHERE l.case_id = :c AND "
+                "i.created_by_user_id = :u AND l.target_type = ANY(:t) AND p.archived_at IS NULL"),
+                {"c": case_id, "u": user_id, "t": list(COLLECTING_TYPES)})]
     return out
 
 
@@ -264,6 +299,7 @@ def _expand(conn, case_id, links) -> None:
     selections = {str(l.target_id) for l in links if l.target_type == "phone_selection"}
     threads = {l.target_id for l in links if l.target_type == "phone_thread"}
     members, in_thread = {}, defaultdict(list)
+    kept = _kept(conn, case_id, {l.target_id for l in links if l.target_type == "phone_analysis"})
     if selections:
         for sid, uids in conn.execute(text(
                 "SELECT id::text, record_uids FROM phone_selections WHERE case_id = :c AND id::text = ANY(:s)"),
@@ -280,14 +316,21 @@ def _expand(conn, case_id, links) -> None:
             link.records = [str(link.target_id).lower()]
         elif link.target_type == "phone_selection":
             link.records = members.get(str(link.target_id), [])
+        elif link.target_type == "phone_analysis":
+            # a kept result holds its records and the readings it was frozen on; the link itself holds neither
+            snapshot = kept.get(link.target_id) or {}
+            link.records = [str(u).lower() for u in snapshot.get("record_ids") or []]
+            link.anchor = {**link.anchor, "mapping_versions": snapshot.get("mapping_versions") or {}}
         else:
             link.records = in_thread.get(link.target_id, [])
 
 
 def _collected_generations(link) -> Any:
-    """``{extraction_id: generation}`` for a selection's stored version set, or the one generation of a record or
-    conversation link, or None when the link holds none."""
+    """``{extraction_id: generation}`` for a selection's or kept result's stored version set, or the one generation of
+    a record or conversation link, or None when the link holds none."""
     versions = link.anchor.get("mapping_versions") or {}
+    if isinstance(versions.get("extractions"), dict):
+        return {str(e): (held or {}).get("generation") for e, held in versions["extractions"].items()} or None
     if isinstance(versions.get("phones"), list):
         return {str(p.get("extraction_id")): p.get("generation") for p in versions["phones"]
                 if isinstance(p, dict) and p.get("extraction_id")} or None
@@ -454,7 +497,7 @@ def _state_of(link, bulk, viewer_id) -> dict:
             "set_aside": aside, "reread": reread, "added_by": link.adder, "through_seq": through,
             "needs_choice": needs_choice,
             "can_choose": needs_choice and (link.adder_id is None or str(link.adder_id) == str(viewer_id)),
-            "can_remove": link.kind != "assessment",
+            "can_remove": link.kind not in NOT_REMOVED_HERE,
             "kept": {"by": last_keep.chosen_by, "at": last_keep.chosen_at.isoformat(),
                      "words": "Kept by %s on %s." % (last_keep.chosen_by, _day(last_keep.chosen_at))}
             if last_keep and reading else None}
@@ -491,6 +534,32 @@ def of_container(conn, case_id, container, container_id, viewer_id) -> dict:
     return out
 
 
+def for_reader(state) -> dict | None:
+    """A link's state in words, for a reader of the casework who does not see the screen (the agent): None for a link
+    with nothing to say. The counts are the true totals; ``clipped`` says when the words stop short of them."""
+    words = ["Corrected since collected. " + i["words"] for i in state["corrected"]["items"]]
+    words += ["Reading changed since collected. " + i["words"] for i in state["reading_changed"]["items"]]
+    if state["set_aside"]:
+        words.append(state["set_aside"]["words"])
+    if state["reread"]:
+        words.append(state["reread"]["words"])
+    if state["kept"]:
+        words.append(state["kept"]["words"])
+    if not words:
+        return None
+    return {"states": state["states"] + (["read_again"] if state["reread"] else []),
+            "records_corrected": state["corrected"]["records"], "records_read_differently":
+            state["reading_changed"]["records"],
+            "words": words[:READER_WORDS], "clipped": len(words) > READER_WORDS or state["corrected"]["clipped"]
+            or state["reading_changed"]["clipped"]}
+
+
+def for_readers(conn, case_id, links) -> dict:
+    """``{link_id: for_reader state}`` of the links that have something to say."""
+    found = states(conn, case_id, links)
+    return {k: v for k, v in ((i, for_reader(s)) for i, s in found.items()) if v}
+
+
 # ---- the person who added a link -----------------------------------------------------------------------------------
 
 def outstanding(conn, case_id, user_id) -> dict | None:
@@ -519,7 +588,11 @@ def _link(conn, case_id, kind, link_id):
                          ":c AND l.id = :i"),
              "assessment": ("SELECT l.id, a.dossier_id AS container, l.target_type, l.target_id, l.source_anchor, "
                             "l.created_at, a.author_user_id AS adder, l.label FROM dossier_assessment_links l JOIN "
-                            "dossier_assessments a ON a.id = l.assessment_id WHERE l.case_id = :c AND l.id = :i")}
+                            "dossier_assessments a ON a.id = l.assessment_id WHERE l.case_id = :c AND l.id = :i"),
+             "interview": ("SELECT l.id, i.dossier_id AS container, l.target_type, l.target_id, l.source_anchor, "
+                           "l.created_at, i.created_by_user_id AS adder, NULL AS label FROM "
+                           "dossier_interview_evidence_links l JOIN dossier_interviews i ON i.id = l.interview_id "
+                           "WHERE l.case_id = :c AND l.id = :i")}
     if kind not in links:
         raise LinkStateError("That is not a kind of link.")
     r = conn.execute(text(links[kind]), {"c": case_id, "i": link_id}).first()
@@ -546,7 +619,7 @@ def choose(db, *, case_id, link_kind, link_id, choice, through_seq, user, expect
     if not state["can_choose"]:
         raise NotYours("Keep or Remove is offered to the person who added this link.")
     if choice == "remove" and not state["can_remove"]:
-        raise LinkStateError("A link that supports an assessment is removed by removing that assessment.")
+        raise LinkStateError(NOT_REMOVED_HERE[link.kind])
     rid = uuid.uuid4()
     conn.execute(text(
         "INSERT INTO phone_link_choices (id, case_id, link_kind, link_id, container_id, target_type, target_id, choice, "

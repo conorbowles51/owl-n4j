@@ -385,3 +385,124 @@ def test_an_rsmf_export_prints_every_note_because_its_rows_hold_the_originals_on
     monkeypatch.setattr(jobs, "_rsmf", capture)
     jobs.draw(engine, out["export_id"])
     assert any(line.startswith("Record %s: Corrected since collected." % uid) for line in seen["contains"])
+
+
+def _dossier(c, case, user):
+    did = uuid.uuid4()
+    c.execute(text("INSERT INTO case_profiles (id, case_id, profile_type, display_name, contacts, linkage_state, status, "
+                   "needs_link_review, graph_entity_deleted) VALUES (:i, :c, 'person', 'Synthetic dossier', '[]', "
+                   "'unlinked', 'active', false, false)"), {"i": did, "c": case})
+    return did
+
+
+def _interview_link(c, case, dossier, user, target_type, target_id):
+    interview, lid = uuid.uuid4(), uuid.uuid4()
+    c.execute(text("INSERT INTO dossier_interviews (id, dossier_id, case_id, participants, status, created_by_user_id) "
+                   "VALUES (:i, :d, :c, '[]', 'draft', :u)"), {"i": interview, "d": dossier, "c": case, "u": user})
+    resolvers.register()
+    target = link_types.resolve_phone_target(c, case, target_type, str(target_id))
+    c.execute(text("INSERT INTO dossier_interview_evidence_links (id, interview_id, case_id, target_type, target_id, "
+                   "source_anchor) VALUES (:i, :v, :c, :t, :ti, CAST(:a AS jsonb))"),
+              {"i": lid, "v": interview, "c": case, "t": target_type, "ti": str(target_id),
+               "a": json.dumps(link_types.phone_anchor(target, None))})
+    return str(lid)
+
+
+def _kept_link(c, case, entry, user, ext, uids):
+    """A kept result linked as the keep path stores it: the records and the readings live in the snapshot only."""
+    from services.pattern_of_life import snapshots
+    snap = {"kind": "analysis_result", "record_ids": [str(u) for u in uids],
+            "mapping_versions": snapshots.mapping_versions(c, str(case), [str(ext)]),
+            "window": {"start": None, "end": None}, "summary_counts": {"records": len(uids)}}
+    sid, lid = "pa_%s" % uuid.uuid4().hex, uuid.uuid4()
+    c.execute(text("INSERT INTO pol_analysis_snapshot (id, case_id, kind, label, snapshot, record_count) VALUES (:i, :c, "
+                   "'analysis_result', 'Kept', CAST(:s AS jsonb), :n)"),
+              {"i": sid, "c": str(case), "s": json.dumps(snap, default=str), "n": len(uids)})
+    c.execute(text(
+        "INSERT INTO workspace_entry_links (id, entry_id, case_id, target_type, target_id, target_label, relationship, "
+        "source_anchor, metadata, created_by_user_id) VALUES (:i, :e, :c, 'phone_analysis', :ti, 'Kept', 'supports', "
+        "'{}', '{}', :u)"), {"i": lid, "e": entry, "c": case, "ti": sid, "u": user})
+    return str(lid)
+
+
+@needs_template
+def test_a_kept_result_is_flagged_for_the_records_its_snapshot_holds_with_the_true_count(review):
+    with fresh_engine() as engine:
+        case, ext, actor = _setup(engine)
+        with engine.begin() as c:
+            calls, user = _calls(c, ext), actor.user_id
+            entry = _entry(c, case, user)
+            lid = _kept_link(c, case, entry, user, ext, calls[:2])
+        _correct_sender(engine, case, ext, actor)
+        with engine.connect() as c:
+            # the change is noted only because the kept result's records count as collected
+            assert c.execute(text("SELECT count(DISTINCT record_uid) FROM phone_reading_changes")).scalar() == 2
+            state = S.of_container(c, case, "entry", entry, user)[lid]
+            assert "reading_changed" in state["states"] and state["needs_choice"] and state["can_remove"]
+            assert (state["records"], state["reading_changed"]["records"]) == (2, 2)
+
+
+@needs_template
+def test_a_kept_after_the_change_is_not_flagged(review):
+    with fresh_engine() as engine:
+        case, ext, actor = _setup(engine)
+        with engine.begin() as c:
+            calls, user = _calls(c, ext), actor.user_id
+            entry = _entry(c, case, user)
+            _kept_link(c, case, entry, user, ext, calls[:2])
+        _correct_sender(engine, case, ext, actor)
+        with engine.begin() as c:
+            later = _kept_link(c, case, entry, user, ext, calls[:2])
+        with engine.connect() as c:
+            assert S.of_container(c, case, "entry", entry, user)[later]["states"] == []
+
+
+@needs_template
+def test_an_interview_evidence_link_shows_its_state_and_is_removed_by_editing_the_interview(review):
+    with fresh_engine() as engine:
+        case, ext, actor = _setup(engine)
+        with engine.begin() as c:
+            calls, user = _calls(c, ext), actor.user_id
+            dossier = _dossier(c, case, user)
+            lid = _interview_link(c, case, dossier, user, "phone_record", calls[0])
+        _correct_sender(engine, case, ext, actor)
+        with engine.connect() as c:
+            state = S.of_container(c, case, "dossier", dossier, user)[lid]
+            assert state["link_kind"] == "interview" and "reading_changed" in state["states"]
+            assert state["needs_choice"] and state["can_choose"] and not state["can_remove"]
+            assert S.outstanding(c, case, user)["links"] == 1
+        with Session(engine) as db:
+            with pytest.raises(S.LinkStateError, match="editing the interview"):
+                S.choose(db, case_id=case, link_kind="interview", link_id=lid, choice="remove",
+                         through_seq=state["through_seq"], user=Who(user))
+        with Session(engine) as db:
+            assert S.choose(db, case_id=case, link_kind="interview", link_id=lid, choice="keep",
+                            through_seq=state["through_seq"], user=Who(user))["choice"] == "keep"
+
+
+@needs_template
+def test_the_agent_reads_a_link_state_on_casework_and_a_dossier_with_the_note_to_say_so(review):
+    from services.agent import casework_tools
+    with fresh_engine() as engine:
+        case, ext, actor = _setup(engine)
+        with engine.begin() as c:
+            calls, user = _calls(c, ext), actor.user_id
+            entry = _entry(c, case, user)
+            flagged = _link(c, case, entry, user, "phone_record", calls[0])
+            dossier = _dossier(c, case, user)
+            on_interview = _interview_link(c, case, dossier, user, "phone_record", calls[1])
+        _correct_sender(engine, case, ext, actor)
+        with engine.begin() as c:
+            unchanged = _link(c, case, entry, user, "phone_record", calls[1])  # collected after the change
+        with Session(engine) as db:
+            out = casework_tools.casework(db, case)
+            links = {l["id"]: l for l in out["items"][0]["links"]}
+            state = links[flagged]["link_state"]
+            assert state["states"] == ["reading_changed"] and state["records_read_differently"] == 1
+            assert state["words"][0].startswith("Reading changed since collected. Sender was +12025550100, now not ")
+            assert "link_state" not in links[unchanged]
+            assert out["link_states"].startswith("Links with link_state here: 1.")
+            read = casework_tools.dossier(db, case, str(dossier))
+            evidence = read["items"][0]["interviews"][0]["evidence"][0]
+            assert evidence["id"] == on_interview and evidence["link_state"]["states"] == ["reading_changed"]
+            assert read["link_states"]

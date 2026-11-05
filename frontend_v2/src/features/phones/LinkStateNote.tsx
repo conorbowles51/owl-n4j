@@ -55,7 +55,7 @@ export function LinkStateNote({ caseId, state, onChoose, busy }: {
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void choose("keep")}>Keep</Button>
           {state.can_remove
             ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void choose("remove")}>Remove</Button>
-            : <span>To remove it, remove this assessment.</span>}
+            : <span>{state.link_kind === "interview" ? "To remove it, edit this interview." : "To remove it, remove this assessment."}</span>}
         </span>
       )}
       {error && <p role="alert" className="text-destructive">{error}</p>}

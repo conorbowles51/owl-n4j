@@ -5,7 +5,9 @@ Schemas ``loupe.agent.casework/1`` and ``loupe.agent.dossier/1``. Every link com
 record as ``rec://<record id>`` with the record read in full (Neil, 2026-11-01: "the agent should have full
 visibility of the phones"; sensitive values stay masked as on screen), a phone thread, file, identity, phone,
 analysis or selection by its own key with what it holds, and evidence as ``doc://<file name>``. A link whose target
-is no longer in the case is returned with ``state`` and never dropped.
+is no longer in the case is returned with ``state`` and never dropped. A phone link whose record was corrected, read
+differently or set aside since it was collected carries ``link_state`` in words (07 section 6.3), so an answer that
+cites it can say so.
 
 Case scope: the case id is the run's; a dossier or entry of another case is "Not in this case.", the same words
 whether or not it exists elsewhere.
@@ -19,6 +21,8 @@ from urllib.parse import quote
 from sqlalchemy import or_, select, text
 
 NOT_IN_CASE = "Not in this case."
+LINK_STATE_NOTE = ("Links with link_state here: %d. What they collected changed after they were made. Say so whenever "
+                   "you cite one, in the words of link_state.")
 RECORD_TEXT_LIMIT = 4000
 SELECTION_RECS = 25
 
@@ -109,10 +113,25 @@ def cite_link(db, conn, case_id, target_type: str, target_id: str, anchor: dict 
 
 
 def _link_out(db, conn, case_id, link, *, label_attr: str) -> dict[str, Any]:
-    return {"target_type": link.target_type, "target_id": link.target_id,
+    return {"id": str(link.id), "target_type": link.target_type, "target_id": link.target_id,
             "label": getattr(link, label_attr, None),
             "relationship": getattr(link, "relationship_type", None),
             "citation": cite_link(db, conn, case_id, link.target_type, link.target_id, link.source_anchor)}
+
+
+def _with_link_states(links: list[dict], found: dict) -> int:
+    """Put each link's state on it; returns how many have one."""
+    marked = 0
+    for link in links:
+        state = found.get(str(link.get("id")))
+        if state:
+            link["link_state"] = state
+            marked += 1
+    return marked
+
+
+def _link_state_note(marked: int) -> str | None:
+    return LINK_STATE_NOTE % marked if marked else None
 
 
 def _phone_link_count(links: list[dict]) -> int:
@@ -122,6 +141,7 @@ def _phone_link_count(links: list[dict]) -> int:
 def casework(db, case_id, *, kinds=(), search=None, offset=0, limit=20) -> dict[str, Any]:
     """Notes, findings and theories, newest first, each with its links cited."""
     from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+    from services.phone import link_states
     conn = db.connection()
     cond = [WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None)]
     if kinds:
@@ -145,13 +165,16 @@ def casework(db, case_id, *, kinds=(), search=None, offset=0, limit=20) -> dict[
                       "review_state": e.review_state, "author": e.author_name or e.author_email,
                       "updated_at": e.updated_at.isoformat() if e.updated_at else None,
                       "links": out_links, "phone_links": _phone_link_count(out_links)})
+    collecting = [l for e in entries for l in link_states.entry_links(conn, case_id, e.id)]
+    found = link_states.for_readers(conn, case_id, collecting)
+    marked = sum(_with_link_states(i["links"], found) for i in items)
     nxt = offset + len(items) if offset + len(items) < total else None
     return {"schema": _schema("casework"), "case_id": str(case_id), "available": True, "total_matching": total,
             "returned": len(items), "has_more": nxt is not None, "next_offset": nxt, "items": items,
             "coverage": "Read %d of %d casework entries%s." % (
                 len(items), total, " (%s)" % ", ".join(kinds) if kinds else ""),
             "limitation": ("Only %d of %d are in this result; read on with offset %d." % (len(items), total, nxt))
-            if nxt is not None else None}
+            if nxt is not None else None, "link_states": _link_state_note(marked)}
 
 
 def _find_dossier(db, case_id, ref: str):
@@ -172,6 +195,7 @@ def _find_dossier(db, case_id, ref: str):
 def dossier(db, case_id, dossier: str) -> dict[str, Any]:
     """One dossier with its links, assessments (with how each was made) and interviews' evidence, links cited."""
     from services import dossier_service as D
+    from services.phone import link_states
     conn = db.connection()
     ref = dossier
     found = _find_dossier(db, case_id, ref)
@@ -218,10 +242,13 @@ def dossier(db, case_id, dossier: str) -> dict[str, Any]:
             tt, tid = e.get("target_type") or ("evidence" if e.get("evidence_file_id") else None), \
                 e.get("target_id") or e.get("evidence_file_id")
             if tt and tid:
-                ev.append({"target_type": tt, "target_id": tid,
+                ev.append({"id": e.get("id"), "target_type": tt, "target_id": tid,
                            "citation": cite_link(db, conn, case_id, tt, str(tid), e.get("source_anchor"))})
         interviews.append({"id": i.get("id"), "date": i.get("date_value"), "participants": i.get("participants"),
                            "status": i.get("status"), "evidence": ev})
+    found = link_states.for_readers(conn, case_id, link_states.dossier_links(conn, case_id, d.id))
+    marked = (_with_link_states(links, found) + sum(_with_link_states(a["supporting_links"], found) for a in assessments)
+              + sum(_with_link_states(i["evidence"], found) for i in interviews))
     item = {"id": data["id"], "name": data["display_name"], "type": data["dossier_type"], "summary": data["summary"],
             "status": data["status"], "importance": data["importance"], "contacts": data["contacts"],
             "graph_entity": data["canonical_entity_key"], "links": links, "assessments": assessments,
@@ -232,4 +259,4 @@ def dossier(db, case_id, dossier: str) -> dict[str, Any]:
             "items": [item],
             "coverage": "The whole dossier: %d links (%d to phone material), %d assessments, %d interviews." % (
                 len(links), item["phone_links"], len(assessments), len(interviews)),
-            "limitation": None}
+            "limitation": None, "link_states": _link_state_note(marked)}
