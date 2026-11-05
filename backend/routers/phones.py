@@ -1959,7 +1959,8 @@ def get_settings(case_id: UUID = Query(...), db: Session = Depends(get_db), user
     return {"case_id": str(case_id), "time_zone": row.time_zone if row else None, "effective": zone,
             "updated_at": time_display.iso(row.updated_at) if row else None, "updated_by": row.name if row else None,
             "media_blur": media_blur_default(db.connection(), case_id),
-            "own_media_blur": _own_blur(db.connection(), case_id, user)}
+            "own_media_blur": _own_blur(db.connection(), case_id, user),
+            **phone_setup.case_state(db.connection(), case_id)}
 
 
 def media_blur_default(conn, case_id) -> dict:
@@ -2025,6 +2026,39 @@ def put_settings(body: DisplaySettings, db: Session = Depends(get_db), user: Use
                            details={"case_id": str(body.case_id), "changes": {"time_zone": {"from": old,
                                                                                             "to": body.time_zone}}},
                            user=user.email, success=True, db=db)
+    db.commit()
+    return get_settings(case_id=body.case_id, db=db, user=user)
+
+
+class CaseSetting(BaseModel):
+    """A value, or null to clear it; the reason is required either way."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    value: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.put("/settings/default-region")
+def put_case_region(body: CaseSetting, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The case default region (02 section 8.3): phones with no country of their own are read again."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        phone_setup.set_case_region(db, case_id=body.case_id, region=body.value, reason=body.reason, actor=_actor(user))
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+    db.commit()
+    return get_settings(case_id=body.case_id, db=db, user=user)
+
+
+@router.put("/settings/tower-reference")
+def put_tower_reference(body: CaseSetting, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """Administrators: the tower reference this case uses (04 section 6.4). The case's phones are read again."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        phone_setup.set_case_tower_reference(db, case_id=body.case_id, dataset_id=body.value, reason=body.reason,
+                                             actor=_actor(user))
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
     db.commit()
     return get_settings(case_id=body.case_id, db=db, user=user)
 

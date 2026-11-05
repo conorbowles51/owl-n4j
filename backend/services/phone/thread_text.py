@@ -20,6 +20,8 @@ from datetime import timezone
 
 from sqlalchemy import text
 
+from services.phone.time_display import ZONE_DECIDED
+
 GENERATOR_VERSION = "phone-thread-text/3"  # 2: each attachment cites its own record; 3: and its file when known
 SOURCE_TYPE = "phone_text"
 MAX_MESSAGES = 5000
@@ -58,7 +60,13 @@ def _party_words(p, phone_label, phone_names, owner_display):
     return name or number or "Unknown"
 
 
-def _line(ev, parties, attachments, phone_label, phone_names, owner_display, zone):
+def _when(ev, zone, decided, seconds=True) -> str:
+    """The event's time in words; a time placed by a zone decision says so (02 section 4.1 rule 2)."""
+    words = when_words(ev["sort_instant"], zone, seconds=seconds)
+    return "%s (%s)" % (words, ZONE_DECIDED) if str(ev["record_uid"]) in decided else words
+
+
+def _line(ev, parties, attachments, phone_label, phone_names, owner_display, zone, decided=frozenset()):
     froms = [p for p in parties if p["role"] in FROM_ROLES]
     tos = [p for p in parties if p["role"] in TO_ROLES]
     words = lambda ps: ", ".join(_party_words(p, phone_label, phone_names, owner_display) for p in ps)  # noqa: E731
@@ -74,7 +82,7 @@ def _line(ev, parties, attachments, phone_label, phone_names, owner_display, zon
     if ev["subject"] and ev["kind"] == "email":
         body = "Subject: %s%s" % (ev["subject"], ("\n" + body) if body else "")
     body = body.replace("\r\n", "\n").replace("\n", "\n  ")
-    head = "%s | %s | %s | %s | %s" % (when_words(ev["sort_instant"], zone), phone_label, ev["app"] or
+    head = "%s | %s | %s | %s | %s" % (_when(ev, zone, decided), phone_label, ev["app"] or
                                        KIND_WORDS.get(ev["kind"], ev["kind"] or "record").capitalize(), who, body)
     line, spans = head, []
     for uid, title in attachments:  # each attachment is its own record and gets its own citation span
@@ -138,6 +146,9 @@ def build_extraction(conn, extraction_id) -> dict:
             "ORDER BY thread_key, sort_instant NULLS LAST, record_uid"), {"e": extraction_id}):
         events[r.thread_key].append(dict(r._mapping))
 
+    from services.phone import phone_setup
+    decided = {uid for uid, _ in phone_setup.zone_decided_times(
+        conn, case_id, [ev["record_uid"] for evs in events.values() for ev in evs])}
     wanted, stats = set(), defaultdict(int)
     for tk, evs in events.items():
         t = threads.get(tk)
@@ -148,7 +159,7 @@ def build_extraction(conn, extraction_id) -> dict:
         parts = [[]]
         for ev in evs:
             line, spans = _line(ev, parties.get(ev["event_uid"], []), attachments.get(ev["record_uid"], []),
-                                label, phone_names, owner_display, zone)
+                                label, phone_names, owner_display, zone, decided)
             if parts[-1] and (len(parts[-1]) >= MAX_MESSAGES or sum(len(x[1]) + 1 for x in parts[-1]) + len(line)
                               > MAX_CHARS):
                 parts.append([])
@@ -157,7 +168,7 @@ def build_extraction(conn, extraction_id) -> dict:
             content, locs, pos = [], [], 0
             for ev, line, spans in part:
                 said = "%s %s %s, %s" % (label, app, KIND_WORDS.get(ev["kind"], "record"),
-                                         when_words(ev["sort_instant"], zone, seconds=False))
+                                         _when(ev, zone, decided, seconds=False))
                 instant = (ev["sort_instant"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
                            if ev["sort_instant"] else None)
                 locs.append({"kind": "phone_record", "label": said,
@@ -180,8 +191,8 @@ def build_extraction(conn, extraction_id) -> dict:
             first, last = part[0][0], part[-1][0]
             span = "" if len(parts) == 1 else ", messages %d to %d, %s to %s" % (
                 sum(len(p) for p in parts[:i - 1]) + 1, sum(len(p) for p in parts[:i]),
-                when_words(first["sort_instant"], zone, seconds=False),
-                when_words(last["sort_instant"], zone, seconds=False))
+                _when(first, zone, decided, seconds=False),
+                _when(last, zone, decided, seconds=False))
             name = "%s · %s · %s (part %d of %d%s)" % (label, app, title, i, len(parts), span)
             fid = uuid.uuid5(NS, "%s|%s|%d" % (extraction_id, tk, i))
             wanted.add(fid)

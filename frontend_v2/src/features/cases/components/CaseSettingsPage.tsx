@@ -367,7 +367,7 @@ export function CaseSettingsPage() {
         <AddressLookupSetting caseData={caseData} />
         {canSeeCosts && <CaseCostsSection caseId={caseData.id} caseTitle={caseData.title} />}
         <MediaBlurSetting caseId={caseData.id} />
-        <CasePhonesSection caseId={caseData.id} isSuperAdmin={role === "super_admin"} />
+        <CasePhonesSection caseId={caseData.id} isSuperAdmin={role === "super_admin"} isAdmin={role === "admin" || role === "super_admin"} />
       </div>
     </div>
   )

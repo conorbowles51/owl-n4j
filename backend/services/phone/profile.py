@@ -180,14 +180,20 @@ def profile(conn, case_id, extraction_id) -> dict:
                        {"e": ext}).scalar()
 
     # ---- data periods and the verdict --------------------------------------------------------------------------
-    periods = []
+    periods, spans = [], []
     for name, view, col, cond in SIGNALS:
         r = conn.execute(text("SELECT count(*) AS n, count(%s) AS dated, min(%s) AS f, max(%s) AS l FROM %s WHERE "
                               "extraction_id::text = :e AND %s" % (col, col, col, view, cond)), {"e": ext}).one()
         periods.append({"signal": name, "records": int(r.n), "dated": int(r.dated), "first_instant": T.iso(r.f),
                         "last_instant": T.iso(r.l),
-                        "first_words": T.format_full(r.f, zname) if r.f else None,
-                        "last_words": T.format_full(r.l, zname) if r.l else None})
+                        "first_words": None, "last_words": None})
+        spans.append((r.f, r.l))
+    from services.phone import phone_setup
+    decided = phone_setup.zone_decided_instants(conn, case_id, [at for span in spans for at in span])
+    for period, (first, last) in zip(periods, spans):
+        for key, at in (("first_words", first), ("last_words", last)):
+            if at:
+                period[key] = T.format_decided(at, zname, T.ZONE_BASES[0] if at in decided else None)
     span = conn.execute(text("SELECT min(first_instant), max(first_instant) FROM phone_record_summaries WHERE "
                              "extraction_id::text = :e AND generation = :g AND has_time"), {"e": ext, "g": gen}).one()
     from services.phone.filters import StreamFilter

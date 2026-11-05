@@ -2,6 +2,7 @@
 for times with no offset as decisions, read back through the production re-read. Synthetic phones only."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
 import pytest
@@ -180,6 +181,9 @@ def test_a_zone_applied_to_a_time_with_no_offset_keeps_the_report_and_is_labelle
                         {"w": WALL, "e": ext}).scalar()
         assert (str(uid), "TimeStamp") in phone_setup.zone_decided_times(c, case, [uid])
         assert phone_setup.zone_decided_files(c, case, ["00000000-0000-0000-0000-000000000001"]) == set()  # the query runs
+        # a summary's first or last time says so too (02 section 4.1 rule 2), and an instant nobody decided does not
+        other = datetime(2001, 1, 1, tzinfo=timezone.utc)
+        assert phone_setup.zone_decided_instants(c, case, [r.instant, other, None]) == {r.instant}
     with Session(engine) as db:  # a clock offset moves it too, and both show in the basis
         corrections.set_clock_offset(db, case_id=case, extraction_id=ext, offset_seconds=60, reason="fast", actor=actor)
         db.commit()
@@ -216,3 +220,84 @@ def test_clock_offset_preview_counts_the_times_the_decision_moves(phone):
 def test_region_names_read_in_words():
     assert numbers.region_name("MX") == "Mexico" and numbers.region_name("US") == "United States"
     assert "MX" in numbers.regions() and "ZZ" not in numbers.regions()
+
+
+def test_a_time_placed_by_a_zone_decision_says_so_in_a_document_and_in_the_spread():
+    from zoneinfo import ZoneInfo
+
+    from services.phone import media_spread, thread_text
+    from services.phone.time_display import ZONE_DECIDED
+    at = datetime(2023, 3, 14, 19, 7, 12, tzinfo=timezone.utc)
+    ev = {"sort_instant": at, "record_uid": "r1"}
+    zone = ZoneInfo("America/New_York")
+    assert thread_text._when(ev, zone, {"r1"}) == "Tue, Mar 14, 2023, 3:07:12 PM EDT (%s)" % ZONE_DECIDED
+    assert ZONE_DECIDED not in thread_text._when(ev, zone, set())
+    assert ZONE_DECIDED not in thread_text._when({**ev, "sort_instant": None}, zone, set())
+    assert ZONE_DECIDED in media_spread._time("exif_capture", "f", at, "America/New_York", basis="zone_and_clock")["full"]
+    assert ZONE_DECIDED not in media_spread._time("exif_capture", "f", at, "America/New_York")["full"]
+    assert ZONE_DECIDED in media_spread._message_full({"instant": at, "zone_decided": True}, "America/New_York")
+
+
+@needs_template
+def test_a_case_default_region_re_reads_only_phones_with_no_country_of_their_own(phone):
+    from services.phone import readings
+    engine, case, ext, actor = phone
+    with engine.connect() as c:
+        before = readings.decision_revision(c, ext)
+    with Session(engine) as db:
+        phone_setup.set_case_region(db, case_id=case, region="ie", reason="Irish phones", actor=actor)
+        db.commit()
+    with engine.connect() as c:
+        assert readings.decision_revision(c, ext) != before
+        assert phone_setup.case_state(c, case)["default_region"]["region"] == "IE"
+        assert phone_setup.region_state(c, ext)["basis"] == "case_setting"
+    assert sweep.interpret_one(engine, ext)["status"] == "done"
+    with engine.connect() as c:
+        read = c.execute(text("SELECT decision_revision FROM phone_interpretation_state WHERE extraction_id = :e"),
+                         {"e": ext}).scalar()
+        assert read == readings.decision_revision(c, ext)  # read once, then nothing is pending
+    with Session(engine) as db:
+        with pytest.raises(corrections.CorrectionError, match="already"):
+            phone_setup.set_case_region(db, case_id=case, region="IE", reason="again", actor=actor)
+        with pytest.raises(corrections.CorrectionError, match="reason"):
+            phone_setup.set_case_region(db, case_id=case, region="GB", reason=" ", actor=actor)
+        with pytest.raises(corrections.CorrectionError, match="list"):
+            phone_setup.set_case_region(db, case_id=case, region="ZZ", reason="x", actor=actor)
+    with Session(engine) as db:
+        corrections.set_default_region(db, case_id=case, extraction_id=ext, region="GB", reason="own", actor=actor)
+        db.commit()
+    with engine.connect() as c:
+        own = readings.decision_revision(c, ext)
+    with Session(engine) as db:
+        phone_setup.set_case_region(db, case_id=case, region="FR", reason="changed", actor=actor)
+        db.commit()
+    with engine.connect() as c:
+        assert readings.decision_revision(c, ext) == own  # its own decision decides: not read again
+
+
+@needs_template
+def test_a_case_tower_reference_is_chosen_with_a_reason_and_reads_the_phones_again(phone):
+    from services.phone import readings
+    engine, case, ext, actor = phone
+    dataset = uuid.uuid4()
+    with engine.begin() as c:
+        before = readings.decision_revision(c, ext)
+        c.execute(text("INSERT INTO pol_reference_dataset (id, kind, name, licence, attribution, file_sha256, row_count, "
+                       "duplicate_rows, rejected_rows, imported_by_name, imported_by_email, retrieved_on) VALUES (:i, 'cell', 'Synthetic "
+                       "towers', 'x', 'x', :h, 0, 0, 0, 'x', 'x@x.test', '2026-01-01')"), {"i": dataset, "h": "0" * 64})
+    with Session(engine) as db:
+        with pytest.raises(corrections.CorrectionError, match="not on this server"):
+            phone_setup.set_case_tower_reference(db, case_id=case, dataset_id=str(uuid.uuid4()), reason="x", actor=actor)
+    with Session(engine) as db:
+        phone_setup.set_case_tower_reference(db, case_id=case, dataset_id=str(dataset), reason="licensed", actor=actor)
+        db.commit()
+    with engine.connect() as c:
+        assert readings.decision_revision(c, ext) != before
+        state = phone_setup.case_state(c, case)["cell_reference"]
+        assert state["in_use"]["name"] == "Synthetic towers" and len(state["datasets"]) == 1
+    with Session(engine) as db:
+        phone_setup.set_case_tower_reference(db, case_id=case, dataset_id=None, reason="stop", actor=actor)
+        db.commit()
+    with engine.connect() as c:
+        assert readings.decision_revision(c, ext) == before and \
+            phone_setup.case_state(c, case)["cell_reference"]["in_use"] is None

@@ -736,6 +736,8 @@ def thread_list(conn, f: StreamFilter, *, sort: str = "recent") -> dict:
     ctx.load(keys)
     marks = review_marks.marks(conn, f.case_id)
     items = []
+    from services.phone import phone_setup
+    decided = phone_setup.zone_decided_instants(conn, f.case_id, [r.last_i for r in rows])
     for r in rows:
         ext = str(r.extraction_id)
         loose = r.tk.startswith(NO_THREAD_PREFIX)
@@ -755,7 +757,8 @@ def thread_list(conn, f: StreamFilter, *, sort: str = "recent") -> dict:
                       "thread_kind": t.thread_kind if t else ("none" if loose else None), "title": title,
                       "participants": labels, "participant_count": len(members),
                       "first_instant": T.iso(r.first_i), "last_instant": T.iso(r.last_i),
-                      "last_full": T.format_full(r.last_i, zone["name"]) if r.last_i else T.NO_TIME,
+                      "last_full": T.format_decided(r.last_i, zone["name"], T.ZONE_BASES[0] if r.last_i in decided else None)
+                      if r.last_i else T.NO_TIME,
                       "event_count": int(r.n), "event_count_total": total, "deleted_count": int(r.deleted),
                       "has_unreadable": int(r.unreadable) > 0,
                       "review": review_marks.review_words(mark, total) if mark else None})

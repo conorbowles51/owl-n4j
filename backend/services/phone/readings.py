@@ -592,6 +592,20 @@ def reading_decisions(conn, extraction_id) -> dict:
     return out
 
 
+def _case_settings(conn, extraction_id) -> list:
+    """The case settings this phone is read under (07:656). The default region counts only for a phone with no region
+    decision of its own; a case with neither setting adds nothing, so no phone is read again for it."""
+    r = conn.execute(text(
+        "SELECT c.phone_default_region AS region, d.dataset_id FROM phone_extractions e JOIN cases c ON c.id = e.case_id "
+        "LEFT JOIN pol_case_cell_dataset d ON d.case_id = c.id WHERE e.id = :e"), {"e": extraction_id}).first()
+    if r is None:
+        return []
+    out = ["cell:%s" % r.dataset_id] if r.dataset_id else []
+    if r.region and not region_decision(conn, extraction_id):
+        out.append("case_region:%s" % r.region)
+    return out
+
+
 def decision_revision(conn, extraction_id):
     from services.phone import corrections
     ids = [str(r[0]) for r in conn.execute(text(
@@ -599,6 +613,7 @@ def decision_revision(conn, extraction_id):
         "decision = ANY(CAST(:d AS text[])) ORDER BY subject_sequence"),
         {"e": extraction_id, "d": list(DERIVING_DECISIONS)})]
     ids += corrections.record_decision_ids(conn, extraction_id)  # a value correction re-derives its phone (10.3)
+    ids += _case_settings(conn, extraction_id)
     return hashlib.sha256("|".join(ids).encode()).hexdigest()[:32] if ids else None
 
 

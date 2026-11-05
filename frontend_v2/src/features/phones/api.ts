@@ -202,6 +202,12 @@ export interface PhoneSettings {
   media_blur?: MediaBlurDefault
   /** This person's own choice, which outranks the case default; null when they made none. */
   own_media_blur?: boolean | null
+  /** Case settings, Phones (07:656). */
+  default_region?: { region: string | null; name: string | null; words: string; regions: { code: string; name: string }[] }
+  cell_reference?: {
+    in_use: { id: string; name: string; chosen_by: string; retrieved_on: string | null; chosen_at: string | null } | null
+    datasets: { id: string; name: string; retrieved_on: string | null }[]
+  }
 }
 
 export async function getSettings(caseId: string) {
@@ -274,6 +280,16 @@ export async function getSignificantSummary(caseId: string) {
 
 export async function putSettings(caseId: string, timeZone: string) {
   return fetchAPI(`/api/phones/settings`, { method: "PUT", body: { case_id: caseId, time_zone: timeZone } })
+}
+
+/** The case default country, or null to clear it. Phones with no country of their own are read again. */
+export async function putCaseRegion(caseId: string, value: string | null, reason: string) {
+  return fetchAPI<PhoneSettings>(`/api/phones/settings/default-region`, { method: "PUT", body: { case_id: caseId, value, reason } })
+}
+
+/** Administrators: the tower reference this case uses, or null for none. The case's phones are read again. */
+export async function putTowerReference(caseId: string, value: string | null, reason: string) {
+  return fetchAPI<PhoneSettings>(`/api/phones/settings/tower-reference`, { method: "PUT", body: { case_id: caseId, value, reason } })
 }
 
 export type ThreadSort = "recent" | "first" | "volume" | "unreviewed" | "name"

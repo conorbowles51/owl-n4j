@@ -276,7 +276,8 @@ def _messages(conn, case_id, uids) -> dict:
     seen = set()
     for r in conn.execute(text(
             "SELECT l.file_uid, l.extraction_id, coalesce(s.root_record_uid, l.record_uid) AS message_uid, ev.kind, "
-            "ev.direction, ev.sort_instant, ev.app, ev.deleted_state AS ev_deleted, s.deleted_state AS rec_deleted "
+            "ev.direction, ev.sort_instant, ev.time_field, ev.app, ev.deleted_state AS ev_deleted, "
+            "s.deleted_state AS rec_deleted "
             "FROM pv_attachment_link l "
             "JOIN phone_record_summaries s ON s.record_uid = l.record_uid "
             "JOIN phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation "
@@ -293,7 +294,12 @@ def _messages(conn, case_id, uids) -> dict:
         out[str(r.file_uid)].append({
             "message_record_uid": str(r.message_uid), "extraction_id": str(r.extraction_id), "kind": r.kind,
             "direction": r.direction if r.kind else None, "instant": r.sort_instant, "app": r.app,
-            "deleted": bool(deleted) and deleted != "Intact", "deleted_state": deleted})
+            "deleted": bool(deleted) and deleted != "Intact", "deleted_state": deleted, "time_field": r.time_field})
+    from services.phone import phone_setup
+    decided = phone_setup.zone_decided_times(conn, case_id, [m["message_record_uid"] for ms in out.values() for m in ms])
+    for ms in out.values():
+        for m in ms:
+            m["zone_decided"] = (m["message_record_uid"], m["time_field"]) in decided
     return out
 
 
@@ -350,9 +356,13 @@ def _times(conn, case_id, copies) -> dict:
     return out
 
 
-def _time(source, field, instant, zone, wall=None) -> dict:
+def _message_full(m, zone) -> str:
+    return T.format_decided(m["instant"], zone, T.ZONE_BASES[0] if m["zone_decided"] else None)
+
+
+def _time(source, field, instant, zone, wall=None, basis=None) -> dict:
     return {"source": source, "source_words": SOURCE_WORDS[source], "field": field, "instant": T.iso(instant),
-            "full": T.format_full(instant, zone) if instant is not None else T.format_wall(wall),
+            "full": T.format_decided(instant, zone, basis) if instant is not None else T.format_wall(wall),
             "has_offset": instant is not None}
 
 
@@ -519,7 +529,8 @@ def _group(g, copies, messages, times, lines, labels, zone, case_phones, clocks=
         tlist = []
         for m in msgs:
             if m["instant"] is not None:
-                tlist.append(_time("message_time", "message", m["instant"], zone))
+                tlist.append(_time("message_time", "message", m["instant"], zone,
+                                   basis=T.ZONE_BASES[0] if m["zone_decided"] else None))
         for src in ("file_modified", "exif_capture"):
             for t in times[uid][src] if uid in times else ():
                 tlist.append(_time(src, t["field"], t["instant"], zone, t["wall"]))
@@ -552,7 +563,7 @@ def _group(g, copies, messages, times, lines, labels, zone, case_phones, clocks=
                           "role": {"outgoing": "sent", "incoming": "received"}.get(m["direction"],
                                                                                     "direction_unknown"),
                           "instant": T.iso(m["instant"]),
-                          "full": T.format_full(m["instant"], zone) if m["instant"] is not None else T.NO_TIME,
+                          "full": _message_full(m, zone) if m["instant"] is not None else T.NO_TIME,
                           "app": m["app"], "deleted": m["deleted"],
                           "line": lines.get(m["message_record_uid"])} for m in msgs],
             "note": note, "camera": c["camera"], "in_camera_folder": bool(c["by_camera_path"]),
@@ -767,7 +778,7 @@ def perceptual(conn, case_id, strength=None, offset=0, limit=50) -> dict:
             c["messages"] = [{"message_record_uid": m["message_record_uid"],
                               "role": {"outgoing": "sent", "incoming": "received"}.get(m["direction"],
                                                                                         "direction_unknown"),
-                              "full": T.format_full(m["instant"], zone) if m["instant"] is not None else T.NO_TIME,
+                              "full": _message_full(m, zone) if m["instant"] is not None else T.NO_TIME,
                               "app": m["app"], "deleted": m["deleted"]} for m in ms[:5]]
             c["messages_total"] = len(ms)
         it["label"] = "Lead for enquiry"

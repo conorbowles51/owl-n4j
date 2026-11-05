@@ -4,7 +4,8 @@ import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CasePhonesSection } from "./CasePhonesSection"
 
-const api = vi.hoisted(() => ({ getPhones: vi.fn(), getExternalProcessing: vi.fn(), setExternalProcessing: vi.fn() }))
+const api = vi.hoisted(() => ({ getPhones: vi.fn(), getExternalProcessing: vi.fn(), setExternalProcessing: vi.fn(), getSettings: vi.fn(),
+  putSettings: vi.fn(), putCaseRegion: vi.fn(), putTowerReference: vi.fn() }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 
 const show = (isSuperAdmin: boolean) =>
@@ -21,6 +22,42 @@ describe("Case settings, Phones (07 section 5)", () => {
     vi.clearAllMocks()
     api.getPhones.mockResolvedValue({ phones: [{ extraction_id: "e1", label: "C3" }] })
     api.getExternalProcessing.mockResolvedValue({ external_processing: false, decided_by: null, decided_at: null, reason: null })
+    api.getSettings.mockResolvedValue({ case_id: "c", time_zone: null, effective: { name: "UTC", basis: "default", note: null }, updated_at: null, updated_by: null,
+      default_region: { region: null, name: null, words: "Numbers written without + are read as US, assumed.", regions: [{ code: "IE", name: "Ireland" }, { code: "US", name: "United States" }] },
+      cell_reference: { in_use: null, datasets: [{ id: "d1", name: "Synthetic towers", retrieved_on: "2026-01-01" }] } })
+  })
+
+  it("sets the case default country with a reason and says the phones are read again", async () => {
+    api.putCaseRegion.mockResolvedValue({})
+    show(false)
+    expect(await screen.findByText(/Changing it reads those phones again/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Case default country"), { target: { value: "IE" } })
+    const save = screen.getByRole("button", { name: "Save and read again" })
+    expect(save).toBeDisabled()
+    fireEvent.change(screen.getByLabelText("Reason, in your own words"), { target: { value: "Irish phones" } })
+    fireEvent.click(save)
+    await waitFor(() => expect(api.putCaseRegion).toHaveBeenCalledWith("c", "IE", "Irish phones"))
+  })
+
+  it("saves the case time zone", async () => {
+    api.putSettings.mockResolvedValue({})
+    show(false)
+    fireEvent.change(await screen.findByLabelText("Case time zone"), { target: { value: "America/New_York" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save time zone" }))
+    await waitFor(() => expect(api.putSettings).toHaveBeenCalledWith("c", "America/New_York"))
+  })
+
+  it("offers the tower reference to an administrator only", async () => {
+    const first = show(false)
+    expect(await screen.findByText(/Only an administrator can change this/)).toBeInTheDocument()
+    expect(screen.queryByLabelText("Tower reference for this case")).toBeNull()
+    first.unmount()
+    api.putTowerReference.mockResolvedValue({})
+    show(true)
+    fireEvent.change(await screen.findByLabelText("Tower reference for this case"), { target: { value: "d1" } })
+    fireEvent.change(screen.getByLabelText("Reason, in your own words"), { target: { value: "Licensed copy" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save and read again" }))
+    await waitFor(() => expect(api.putTowerReference).toHaveBeenCalledWith("c", "d1", "Licensed copy"))
   })
 
   it("is absent in a case with no phone", async () => {

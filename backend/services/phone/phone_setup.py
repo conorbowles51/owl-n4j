@@ -55,6 +55,82 @@ def region_state(conn, extraction_id) -> dict:
                                                                                  if r and basis == "decided" else None)}
 
 
+def case_state(conn, case_id) -> dict:
+    """The Phones section of Case settings (07:656): the case default region and the tower reference in use."""
+    region = conn.execute(text("SELECT phone_default_region FROM cases WHERE id = :c"), {"c": case_id}).scalar()
+    phones = conn.execute(text("SELECT id FROM phone_extractions WHERE case_id = :c AND standing = 'active'"),
+                          {"c": case_id}).scalars().all()
+    own = sum(1 for e in phones if corrections.decided_setting(conn, e, "set_phone_default_region", "default_region"))
+    in_use = conn.execute(text(
+        "SELECT r.id, r.name, r.retrieved_on, c.chosen_by, c.chosen_at FROM pol_case_cell_dataset c JOIN "
+        "pol_reference_dataset r ON r.id = c.dataset_id WHERE c.case_id = :c"), {"c": case_id}).first()
+    return {"default_region": {"region": region, "name": numbers.region_name(region) if region else None,
+                               "words": ("Numbers written without + are read as %s on %d of %d phones here; %d have a "
+                                         "country of their own." % (numbers.region_name(region), len(phones) - own,
+                                                                    len(phones), own)) if region else
+                               "Numbers written without + are read as US, assumed, unless a phone has its own country.",
+                               "regions": numbers.region_list()},
+            "cell_reference": {"in_use": {"id": str(in_use.id), "name": in_use.name, "chosen_by": in_use.chosen_by,
+                                          "retrieved_on": str(in_use.retrieved_on) if in_use.retrieved_on else None,
+                                          "chosen_at": T.iso(in_use.chosen_at)} if in_use else None,
+                               "datasets": [{"id": str(r.id), "name": r.name,
+                                             "retrieved_on": str(r.retrieved_on) if r.retrieved_on else None}
+                                            for r in conn.execute(text(
+                                                "SELECT id, name, retrieved_on FROM pol_reference_dataset ORDER BY "
+                                                "retrieved_on DESC NULLS LAST, name"))]}}
+
+
+def set_case_region(db, *, case_id, region, reason, actor) -> dict:
+    """The case default region (02 section 8.3 step 2). The setting is the only write; each phone with no region of its
+    own is read again by the sweep through the production pass, because the setting is part of its decision revision.
+    None clears it."""
+    from services import manual_changes
+    if not reason or not reason.strip():
+        raise corrections.CorrectionError("Setting the country needs a reason in your own words.")
+    if region is not None:
+        region = region.strip().upper()
+        if region not in numbers.regions():
+            raise corrections.CorrectionError("Choose a country from the list.")
+    conn = db.connection()
+    was = conn.execute(text("SELECT phone_default_region FROM cases WHERE id = :c"), {"c": case_id}).scalar()
+    if was == region:
+        raise corrections.CorrectionError("That is already the value in effect.")
+    conn.execute(text("UPDATE cases SET phone_default_region = :r WHERE id = :c"), {"r": region, "c": case_id})
+    manual_changes.record_change(db, "phone_default_region", case_id, {"type": "case", "id": str(case_id)},
+                                 {"default_region": was}, {"default_region": region}, actor, reason.strip(),
+                                 link="/cases/%s/settings#phones" % case_id,
+                                 pattern_key=manual_changes.make_pattern_key("phone_default_region"))
+    return {"default_region": region, "before": was}
+
+
+def set_case_tower_reference(db, *, case_id, dataset_id, reason, actor) -> dict:
+    """The tower reference a case uses (04 section 6.4), chosen by an administrator. Its phones are read again, which
+    places their towers; results saved on another dataset already say they are stale. None stops using one."""
+    from services import manual_changes
+    if not reason or not reason.strip():
+        raise corrections.CorrectionError("Choosing a tower reference needs a reason in your own words.")
+    conn = db.connection()
+    if dataset_id is not None and not conn.execute(text("SELECT 1 FROM pol_reference_dataset WHERE id = :d"),
+                                                   {"d": dataset_id}).first():
+        raise corrections.CorrectionError("That tower reference is not on this server.")
+    was = conn.execute(text("SELECT dataset_id FROM pol_case_cell_dataset WHERE case_id = :c"), {"c": case_id}).scalar()
+    if (str(was) if was else None) == (str(dataset_id) if dataset_id else None):
+        raise corrections.CorrectionError("That is already the value in effect.")
+    if dataset_id is None:
+        conn.execute(text("DELETE FROM pol_case_cell_dataset WHERE case_id = :c"), {"c": case_id})
+    else:
+        conn.execute(text(
+            "INSERT INTO pol_case_cell_dataset (case_id, dataset_id, chosen_by) VALUES (:c, :d, :b) ON CONFLICT (case_id) "
+            "DO UPDATE SET dataset_id = EXCLUDED.dataset_id, chosen_by = EXCLUDED.chosen_by, chosen_at = now()"),
+            {"c": case_id, "d": dataset_id, "b": actor.name})
+    manual_changes.record_change(db, "phone_tower_reference", case_id, {"type": "case", "id": str(case_id)},
+                                 {"dataset": str(was) if was else None},
+                                 {"dataset": str(dataset_id) if dataset_id else None}, actor, reason.strip(),
+                                 link="/cases/%s/settings#phones" % case_id,
+                                 pattern_key=manual_changes.make_pattern_key("phone_tower_reference"))
+    return {"dataset_id": str(dataset_id) if dataset_id else None, "before": str(was) if was else None}
+
+
 def _zone_words(zone):
     return T.zone_name(zone) if zone and T.valid_zone(zone) else zone
 
@@ -209,6 +285,18 @@ def zone_decided_files(conn, case_id, file_uids) -> set:
         "s.generation JOIN phone_time_values t ON t.record_uid = ev.record_uid AND t.generation = ev.generation AND "
         "t.field_name = ev.time_field WHERE l.case_id = :c AND l.file_uid = ANY(CAST(:u AS uuid[])) AND t.instant_basis "
         "= ANY(CAST(:b AS text[]))"), {"c": case_id, "u": uids, "b": list(T.ZONE_BASES)})}
+
+
+def zone_decided_instants(conn, case_id, instants) -> set:
+    """The given instants that are the time of a value placed by a zone decision, for a summary that shows a first or
+    last time without naming a record. No such decision in the case: no read of the time table."""
+    wanted = sorted({i for i in instants if i is not None})
+    if not wanted or not _has_zone_decision(conn, case_id):
+        return set()
+    return {r[0] for r in conn.execute(text(
+        "SELECT DISTINCT t.effective_instant FROM phone_time_values t JOIN phone_interpretation_state s ON s.extraction_id = "
+        "t.extraction_id AND s.generation = t.generation WHERE t.case_id = :c AND t.effective_instant = ANY(:i) AND t.instant_basis "
+        "= ANY(CAST(:b AS text[]))"), {"c": case_id, "i": wanted, "b": list(T.ZONE_BASES)})}
 
 
 def zone_decided_times(conn, case_id, record_uids) -> set:
