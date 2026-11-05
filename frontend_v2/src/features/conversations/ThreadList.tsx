@@ -24,6 +24,8 @@ export const ThreadList = memo(function ThreadList({ threads, total, open, multi
   onPick: (threadKey: string) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
+  // TanStack Virtual returns functions the React Compiler cannot memoise; it skips this component, as it must.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: threads.length,
     getScrollElement: () => scroller.current,
