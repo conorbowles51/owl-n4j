@@ -157,8 +157,15 @@ AI_CREDENTIAL_ENCRYPTION_KEY = os.getenv(
     "AI_CREDENTIAL_ENCRYPTION_KEY",
     "loupe-development-ai-credentials-change-me",
 )
+# The two defaults above are for development and test only: a server with LOUPE_ENV=production refuses them
+# (secret_check, called at the end of this file).
+# Still read, never written with, while stored credentials move to a new key (deploy/rotate-secrets.sh).
+AI_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS = os.getenv("AI_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS", "")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours default
+# On only when the site is served over HTTPS: sets the Secure cookie flag and HSTS. On a plain http address a Secure
+# cookie is never sent back, so every sign-in would fail.
+LOUPE_HTTPS = os.getenv("LOUPE_HTTPS", "").strip().lower() in {"1", "true", "yes", "on"}
 
 # Evidence Engine Configuration
 EVIDENCE_ENGINE_URL = os.getenv("EVIDENCE_ENGINE_URL", "http://localhost:8003")
@@ -205,3 +212,8 @@ PLATFORM_UPDATE_REPO_DIR = (
 # intended; an undo window needs his own decision): a delete is immediate, through the delete code used before.
 # Switching it off again later: restore or wait out what is in Deleted items first (with it off they show again).
 DELETED_ITEMS_ENABLED = os.getenv("DELETED_ITEMS_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+
+
+from secret_check import refuse_unsafe_start  # noqa: E402
+
+refuse_unsafe_start(os.environ)

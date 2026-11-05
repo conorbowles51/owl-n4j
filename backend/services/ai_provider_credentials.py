@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Mapping
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from sqlalchemy.orm import Session
 
 from config import (
     AI_CREDENTIAL_ENCRYPTION_KEY,
+    AI_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS,
     ANTHROPIC_API_KEY,
     DEEPSEEK_API_KEY,
     GEMINI_API_KEY,
@@ -56,9 +57,12 @@ class AIProviderCredentialStore:
         self,
         *,
         encryption_key: str,
+        previous_encryption_key: str = "",
         environment_keys: Mapping[str, str | None] | None = None,
     ) -> None:
-        self._cipher = Fernet(_fernet_key(encryption_key))
+        # Writes use the first key; a value still under the previous key stays readable until rekey_stored moves it.
+        keys = [encryption_key] + ([previous_encryption_key] if previous_encryption_key else [])
+        self._cipher = MultiFernet([Fernet(_fernet_key(key)) for key in keys])
         self._environment_keys = {
             provider: (value or "").strip()
             for provider, value in (environment_keys or {}).items()
@@ -82,6 +86,24 @@ class AIProviderCredentialStore:
             raise CredentialDecryptionError(
                 "The stored AI credential cannot be decrypted with the configured master key"
             ) from exc
+
+    def rekey_stored(self, db: Session, *, apply: bool) -> list[str]:
+        """Every stored credential, read and (with ``apply``) rewritten under the current key, in one transaction.
+
+        Returns the providers. Raises CredentialDecryptionError, changing nothing, if any one cannot be read.
+        """
+        records = (
+            db.query(AIProviderCredential)
+            .filter(AIProviderCredential.encrypted_api_key.isnot(None))
+            .order_by(AIProviderCredential.provider)
+            .all()
+        )
+        rewritten = [(record, self._encrypt(self._decrypt(record.encrypted_api_key))) for record in records]
+        if apply:
+            for record, value in rewritten:
+                record.encrypted_api_key = value
+            db.commit()
+        return [record.provider for record, _ in rewritten]
 
     def get_api_key(self, db: Session, provider: str) -> str | None:
         normalized = self._provider(provider)
@@ -229,6 +251,7 @@ class AIProviderCredentialStore:
 
 credential_store = AIProviderCredentialStore(
     encryption_key=AI_CREDENTIAL_ENCRYPTION_KEY,
+    previous_encryption_key=AI_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS,
     environment_keys={
         "openai": OPENAI_API_KEY,
         "anthropic": ANTHROPIC_API_KEY,

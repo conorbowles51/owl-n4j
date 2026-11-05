@@ -5,7 +5,7 @@ Provides endpoints for checking setup status and creating the initial admin user
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from postgres.models.enums import GlobalRole
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import hash_password
+from services import password_rule
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
 
@@ -25,13 +26,6 @@ class InitialUserRequest(BaseModel):
     email: EmailStr
     name: str
     password: str
-
-    @field_validator("password")
-    @classmethod
-    def password_min_length(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return v
 
 
 class InitialUserResponse(BaseModel):
@@ -82,6 +76,8 @@ def create_initial_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
+
+    password_rule.require_acceptable(user_data.password, email=user_data.email, name=user_data.name)
 
     # Create the super_admin user
     new_user = User(

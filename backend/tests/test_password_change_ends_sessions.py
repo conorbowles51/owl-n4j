@@ -68,15 +68,15 @@ def test_changing_the_password_stamps_the_user_and_hands_this_sign_in_a_new_toke
     from routers import users
     monkeypatch.setattr(users, "verify_password", lambda plain, hashed: plain == "old-secret")
     monkeypatch.setattr(users, "hash_password", lambda plain: "hashed:" + plain)
-    person = SimpleNamespace(email="a@example.org", password_hash="x", password_changed_at=None)
+    person = SimpleNamespace(email="a@example.org", name="A", password_hash="x", password_changed_at=None)
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = person
     before = _token(datetime.now(timezone.utc) - timedelta(minutes=10))
     response = Response()
-    out = auth.change_password(auth.ChangePasswordRequest(current_password="old-secret", new_password="new-secret"),
+    out = auth.change_password(auth.ChangePasswordRequest(current_password="old-secret", new_password="a-long-new-phrase-9"),
                                response, user={"username": "a@example.org"}, db=db)
     db.commit.assert_called_once()
-    assert person.password_hash == "hashed:new-secret"
+    assert person.password_hash == "hashed:a-long-new-phrase-9"
     assert person.password_changed_at is not None
     stamps.changed["a@example.org"] = person.password_changed_at.timestamp()
     with pytest.raises(HTTPException):
@@ -103,11 +103,11 @@ def test_the_cache_is_forgotten_only_after_the_change_is_committed(stamps, monke
     from routers import users
     monkeypatch.setattr(users, "verify_password", lambda plain, hashed: True)
     monkeypatch.setattr(users, "hash_password", lambda plain: "h")
-    person = SimpleNamespace(email="a@example.org", password_hash="x", password_changed_at=None)
+    person = SimpleNamespace(email="a@example.org", name="A", password_hash="x", password_changed_at=None)
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = person
     # A request between the stamp and the commit cached the old (empty) value.
     db.commit.side_effect = lambda: password_sessions._cache.__setitem__("a@example.org", (1e18, None))
-    auth.change_password(auth.ChangePasswordRequest(current_password="a", new_password="new-secret"),
+    auth.change_password(auth.ChangePasswordRequest(current_password="a", new_password="a-long-new-phrase-9"),
                          Response(), user={"username": "a@example.org"}, db=db)
     assert "a@example.org" not in password_sessions._cache

@@ -79,6 +79,8 @@ from services import process_shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
+    from services.startup_secrets_warning import warn_when_not_enforced
+    warn_when_not_enforced()
     # Startup
     print("Starting Loupe API...")
     # The first SIGTERM/SIGINT marks the process as stopping and arms a
@@ -266,6 +268,9 @@ app.add_middleware(AcceptsUpdatingMiddleware)
 # How long every /api request takes, kept permanently (services.request_speed).
 from services.request_speed import RequestSpeedMiddleware
 app.add_middleware(RequestSpeedMiddleware)
+# HSTS, only on a site served over HTTPS (LOUPE_HTTPS).
+from services.https_headers import install as _strict_transport_on_https
+_strict_transport_on_https(app)
 # Source address, user agent and screen of every request, for the activity trail.
 from services.activity_trail import ActivityContextMiddleware
 app.add_middleware(ActivityContextMiddleware)

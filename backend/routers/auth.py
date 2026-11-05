@@ -11,12 +11,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
-from config import AUTH_TOKEN_EXPIRE_MINUTES
+from config import AUTH_TOKEN_EXPIRE_MINUTES, LOUPE_HTTPS
 from postgres.session import get_db
 from services.auth_service import auth_service
 from services import activity_trail
 from services import request_speed
-from services import password_sessions
+from services import login_limit, password_rule, password_sessions
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
@@ -29,6 +29,7 @@ def _set_access_cookie(response: Response, token: str) -> None:
         value=token,
         httponly=True,
         samesite="lax",
+        secure=LOUPE_HTTPS,
         max_age=_COOKIE_MAX_AGE,
     )
 
@@ -94,6 +95,14 @@ async def get_current_user(
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
     """Login endpoint - authenticates user and returns JWT token."""
     try:
+        # Before the password hash, so refused attempts cost the server almost nothing.
+        address = (activity_trail.current_context() or {}).get("address")
+        limited = login_limit.refusal(db, request.username, address)
+        if limited:
+            login_limit.record_refusal(db, request.username, address, limited)
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=limited.message,
+                                headers={"Retry-After": str(limited.wait_seconds)})
+
         # username field is actually the email
         user = auth_service["authenticate_from_db"](db, request.username, request.password)
         if not user:
@@ -174,9 +183,6 @@ def change_password(
     from postgres.models.user import User
     from routers.users import verify_password, hash_password
 
-    if len(request.new_password) < 6:
-        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
-
     email = user["username"]
     db_user = db.query(User).filter(User.email == email).first()
     if not db_user:
@@ -184,6 +190,8 @@ def change_password(
 
     if not verify_password(request.current_password, db_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    password_rule.require_acceptable(request.new_password, email=db_user.email, name=db_user.name)
 
     db_user.password_hash = hash_password(request.new_password)
     # Every other sign-in of this user ends; this one continues with a new token.

@@ -40,7 +40,9 @@ ORIGINS = {
 ACTIONS = {
     'login_success': 'Signed in',
     'login_failure': 'Sign-in failed',
+    'login_rate_limited': 'Sign-in refused: too many failed attempts',
     'logout': 'Signed out',
+    'ai_credentials_rekeyed': 'Moved stored AI credentials to a new key',
     'evidence_upload': 'Uploaded evidence',
     'financial_send': 'Added files to Financial',
     'financial_auto_add': 'Added to Financial automatically',

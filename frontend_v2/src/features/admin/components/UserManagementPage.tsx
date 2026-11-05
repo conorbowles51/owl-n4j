@@ -233,7 +233,7 @@ export function UserManagementPage() {
             />
             <Input
               type="password"
-              placeholder="Password"
+              placeholder="Password (at least 12 characters)"
               value={newUser.password}
               onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
             />

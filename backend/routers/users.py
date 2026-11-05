@@ -17,6 +17,7 @@ from postgres.models.enums import GlobalRole
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.auth import get_current_user
+from services import password_rule
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -149,6 +150,8 @@ def create_user(
                 detail="Admins can only create users with 'user' or 'guest' role",
             )
 
+    password_rule.require_acceptable(user_data.password, email=user_data.email, name=user_data.name)
+
     new_user = User(
         email=user_data.email,
         name=user_data.name,
@@ -257,6 +260,10 @@ def update_user(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Cannot demote or deactivate the last super_admin",
                 )
+
+    if user_data.password is not None:
+        password_rule.require_acceptable(user_data.password, email=target_user.email,
+                                         name=user_data.name or target_user.name)
 
     # Apply updates
     if user_data.name is not None:

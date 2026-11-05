@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     deepseek_api_key: str = ""
     ai_credential_encryption_key: str = "loupe-development-ai-credentials-change-me"
+    ai_credential_encryption_key_previous: str = ""
     openai_model: str = "gpt-5.6-terra"
     openai_extraction_model: str = "gpt-5.6-terra"
     openai_resolution_model: str = "gpt-5.6-terra"

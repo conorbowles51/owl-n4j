@@ -70,7 +70,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 onChange={(e) => setName(e.target.value)}
               />
               <Input
-                placeholder="Password"
+                placeholder="Password (at least 12 characters)"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

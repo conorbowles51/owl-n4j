@@ -35,3 +35,8 @@ export interface AuthState {
 export function isSuperAdminUser(user: Pick<User, "role" | "global_role"> | null | undefined) {
   return user?.role === "super_admin" || user?.global_role === "super_admin"
 }
+
+/** May open the admin screens: the two global roles the server's require_admin accepts. */
+export function isAdminUser(user: Pick<User, "role" | "global_role"> | null | undefined) {
+  return [user?.role, user?.global_role].some((role) => role === "admin" || role === "super_admin")
+}

@@ -11,7 +11,7 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from app.config import settings
 
@@ -81,10 +81,15 @@ async def load_ai_model_policy(db: AsyncSession) -> dict[str, dict[str, str]]:
             status = str(row.get("status") or "")
             api_key = None
             if encrypted and status != "disconnected":
-                digest = hashlib.sha256(
-                    settings.ai_credential_encryption_key.encode("utf-8")
-                ).digest()
-                cipher = Fernet(base64.urlsafe_b64encode(digest))
+                # The previous key stays readable while stored credentials move to a new one.
+                cipher = MultiFernet([
+                    Fernet(base64.urlsafe_b64encode(hashlib.sha256(key.encode("utf-8")).digest()))
+                    for key in (
+                        settings.ai_credential_encryption_key,
+                        settings.ai_credential_encryption_key_previous,
+                    )
+                    if key
+                ])
                 try:
                     api_key = cipher.decrypt(str(encrypted).encode("ascii")).decode("utf-8")
                 except (InvalidToken, UnicodeError) as exc:

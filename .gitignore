@@ -149,3 +149,5 @@ backups/
 
 # Layout-learning release lock (layout_learning.release)
 backend/services/financial/.learned_profiles.lock
+.env.before-secrets-*
+.env.new.*

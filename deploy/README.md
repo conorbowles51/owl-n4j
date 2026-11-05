@@ -35,7 +35,9 @@ Docker containers:
 
 ## First-Time Server Setup
 
-1. Copy `.env.example` to `.env` and fill in the real values.
+1. Copy `.env.example` to `.env` and fill in the real values. With `LOUPE_ENV=production` the backend refuses to start
+   on a missing or shipped secret, naming it. `bash deploy/rotate-secrets.sh --check`, then `--apply`, generates them
+   and moves the stored AI credentials to the new key. `LOUPE_HTTPS=true` only once the site is served over HTTPS.
 2. Run:
 
 ```bash

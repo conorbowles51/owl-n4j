@@ -68,6 +68,24 @@ async def test_job_runtime_loads_database_credential_snapshot(monkeypatch) -> No
     assert ai_model_policy.get_ai_runtime_snapshot()["credentials"]["anthropic"]["revision"] == 7
 
 
+@pytest.mark.asyncio
+async def test_a_credential_under_the_previous_key_stays_readable_during_a_key_change(monkeypatch) -> None:
+    monkeypatch.setattr(ai_model_policy.settings, "ai_credential_encryption_key", "new-master-key")
+    monkeypatch.setattr(ai_model_policy.settings, "ai_credential_encryption_key_previous", "old-master-key")
+    row = {
+        "provider": "anthropic",
+        "encrypted_api_key": _encrypt("old-master-key", "database-key"),
+        "revision": 7,
+        "source": "database",
+        "status": "connected",
+    }
+    db = _FakeDB({"ingestion_extraction": {"provider": "anthropic", "model_id": "claude-sonnet-5"}}, [row])
+
+    await ai_model_policy.load_ai_model_policy(db)
+
+    assert ai_model_policy.resolve_provider_api_key("anthropic") == "database-key"
+
+
 def test_deepseek_is_an_allowed_ingestion_provider() -> None:
     normalized = ai_model_policy._normalize(
         {

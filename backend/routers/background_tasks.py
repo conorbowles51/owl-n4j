@@ -7,9 +7,12 @@ API endpoints for managing and monitoring background tasks.
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from services.background_task_storage import background_task_storage, TaskStatus
+from postgres.session import get_db
 from routers.auth import get_current_user
+from routers.users import get_current_db_user, require_admin
 
 
 router = APIRouter(prefix="/api/background-tasks", tags=["background-tasks"])
@@ -50,6 +53,7 @@ def list_tasks(
     status: Optional[str] = None,
     limit: int = 100,
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     List background tasks, optionally filtered.
@@ -66,6 +70,9 @@ def list_tasks(
     # Default to current user's tasks if owner not specified. Some newer
     # workers record email while older ones recorded username, so merge both.
     owners = [owner] if owner is not None else sorted(_current_user_owners(user))
+    # Someone else's tasks are for administrators; get_task and delete_task already keep to the owner.
+    if owner is not None and owner not in _current_user_owners(user):
+        require_admin(get_current_db_user(user, db))
     seen = {}
     for task_owner in owners:
         tasks = background_task_storage.list_tasks(
