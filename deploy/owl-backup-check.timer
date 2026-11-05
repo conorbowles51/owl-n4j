@@ -1,0 +1,11 @@
+# Hourly, five minutes after the Postgres check; writes /mnt/owl-data/backups/status.tsv.
+[Unit]
+Description=Hourly health of every Loupe backup
+
+[Timer]
+OnCalendar=*-*-* *:50:00 UTC
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

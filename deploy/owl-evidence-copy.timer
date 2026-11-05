@@ -1,0 +1,11 @@
+# A long first run overlaps the next start; systemd skips a start while the service runs.
+[Unit]
+Description=Loupe verified evidence copy
+
+[Timer]
+OnCalendar=*-*-* 05:00:00 UTC
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

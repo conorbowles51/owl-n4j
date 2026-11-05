@@ -1,0 +1,11 @@
+# After the Neo4j dump; one backup at a time.
+[Unit]
+Description=Loupe daily vector store copy
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

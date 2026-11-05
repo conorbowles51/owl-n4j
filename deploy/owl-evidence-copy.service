@@ -1,0 +1,19 @@
+# Daily verified copy of the evidence files and backups to the second location. OFF until a destination is named:
+#   1. mount the disk or bucket, 2. put EVIDENCE_COPY_DEST=<directory> in /root/.config/loupe-backup/evidence-copy.env,
+#   3. cp this and the timer to /etc/systemd/system/, systemctl daemon-reload,
+#   4. systemctl enable --now owl-evidence-copy.timer
+# The same file is read by owl-backup-check.service and owl-restore-drill.service, which then include the copy.
+# Way back: systemctl disable --now owl-evidence-copy.timer (the copy stays where it is).
+[Unit]
+Description=Loupe verified copy of evidence files and backups to the second location
+ConditionPathExists=/root/.config/loupe-backup/evidence-copy.env
+
+[Service]
+Type=oneshot
+EnvironmentFile=/root/.config/loupe-backup/evidence-copy.env
+# Exit 3 is a run stopped by its budget or the free-space floor: the next one resumes. Read by backup-check.sh.
+SuccessExitStatus=3
+ExecStart=/usr/bin/python3 -I /home/conorbowles51/app-v3/owl-n4j/deploy/evidence_copy.py run --dest ${EVIDENCE_COPY_DEST} --budget-seconds 72000 --max-mb-s 40
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=21h

@@ -16,12 +16,22 @@ cat > "${fake}" <<'EOF'
 shift; [[ "$1" == "-i" ]] && shift; shift
 mode="$(cat "${FAKE_MODE}")"
 case "$*" in
+    *psql*)
+        [[ "${mode}" == nosession ]] && exit 1
+        # The snapshot session: answer the export, then one counts line and the end mark, then wait for the quit.
+        while IFS= read -r line; do
+            case "${line}" in
+                *pg_export_snapshot*) echo "00000003-0000002A-1" ;;
+                *"__end__"*) [[ "${mode}" == cutcounts ]] && exit 0; printf 'cases\t\t3\nz_rows\tabc\t7\n'; echo __end__ ;;
+                '\q') exit 0 ;;
+            esac
+        done ;;
     *pg_dump*)
         case "${mode}" in
             fail) echo "pg_dump: error: connection refused" >&2; exit 1 ;;
             garbage) echo "not a dump" ;;
             small) printf 'PGDMP\n' ;;
-            *) printf 'PGDMP\n'; head -c 4000 /dev/zero | tr '\0' 'x'; printf '\n' ;;
+            *) [[ "$*" == *"--snapshot="* ]] && echo "snapshot" >> "${FAKE_MODE}.seen"; printf 'PGDMP\n'; head -c 4000 /dev/zero | tr '\0' 'x'; printf '\n' ;;
         esac ;;
     *"pg_restore --list"*)
         if head -c 5 | grep -q PGDMP; then echo "1; 0 0 TABLE DATA public cases owl_us"; else exit 1; fi ;;
@@ -49,7 +59,21 @@ grep -q "no scheduled database dump" "${alerts}" || fail "no alert for missing d
 run "$(epoch '2026-11-04 01:30')" dump || fail "good dump failed"
 [[ -f "${dir}/owl_db-20261104-0130Z.dump" ]] || fail "dump not named by time"
 ls -A "${dir}" | grep -q partial && fail "partial left behind"
+[[ -s "${mode}.seen" ]] || fail "pg_dump did not read the session's snapshot"
+grep -q "z_rows.abc.7" "${dir}/owl_db-20261104-0130Z.counts.tsv" || fail "no counts file beside the dump"
+grep -q "app_commit=" "${dir}/owl_db-20261104-0130Z.meta" || fail "no meta file beside the dump"
 run "$(epoch '2026-11-04 12:00')" check || fail "fresh dump failed the check"
+
+# 2b. The snapshot session fails, or the counts are cut off: the dump is still written, no counts file, and an alert.
+for m in nosession cutcounts; do
+    echo "${m}" > "${mode}"; : > "${alerts}"
+    run "$(epoch '2026-11-04 02:00')" dump || fail "${m}: dump failed"
+    [[ -f "${dir}/owl_db-20261104-0200Z.dump" ]] || fail "${m}: no dump"
+    [[ ! -e "${dir}/owl_db-20261104-0200Z.counts.tsv" ]] || fail "${m}: counts file from a failed session"
+    grep -q "no counts file" "${alerts}" || fail "${m}: no alert"
+    rm -f "${dir}"/owl_db-20261104-0200Z.*
+done
+echo ok > "${mode}"
 
 # 3. 25 h later with no new dump: stale, alert.
 : > "${alerts}"

@@ -1,0 +1,11 @@
+# Needs the passphrase file: keys-bundle.sh init, once.
+[Unit]
+Description=Loupe daily keys bundle
+
+[Timer]
+OnCalendar=*-*-* 02:05:00 UTC
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

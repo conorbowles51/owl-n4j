@@ -15,6 +15,11 @@
 # never pruned, however old. Measured 2026-11-03: owl_db is 4.4 GB on disk and dumped to 1.22 GB in 253 s (20:32 UTC,
 # load 29-31), so 30-31 dumps are about 38 GB of the 352 GB free on /mnt/owl-data. Dumps are written mode 600.
 #
+# Beside each dump, owl_db-...Z.counts.tsv holds the rows per table and case read in the same database snapshot the
+# dump reads (pg_dump --snapshot), and owl_db-...Z.meta the application commit. deploy/restore-drill.sh checks a
+# restored dump against that file exactly; live has moved on by then. A run where the snapshot session fails still
+# writes the dump, with no counts file, and alerts.
+#
 # Install: deploy/owl-db-backup.service + .timer, deploy/owl-db-backup-check.service + .timer (see their headers).
 set -euo pipefail
 umask 077   # a dump holds every case; only root reads it
@@ -28,6 +33,8 @@ BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-25}"
 BACKUP_ALERT_CMD="${BACKUP_ALERT_CMD:-}"
 DOCKER="${DOCKER:-docker}"
 NOW_EPOCH="${NOW_EPOCH:-}"   # tests only: pretend "now" is this epoch second
+LIVE_CHECKOUT="${LIVE_CHECKOUT:-/home/conorbowles51/app-v3/owl-n4j}"
+COUNTS_SQL="$(dirname "${BASH_SOURCE[0]}")/pg-counts.sql"
 
 now() { if [[ -n "${NOW_EPOCH}" ]]; then echo "${NOW_EPOCH}"; else date -u +%s; fi; }
 log() { printf '%s db-backup: %s\n' "$(date -u +%FT%TZ)" "$*"; }
@@ -68,9 +75,41 @@ prune() {
         f="${all[i]}"
         if (( $(dump_epoch "$f") < cutoff )); then
             log "prune ${f} (older than ${BACKUP_KEEP_DAYS} days)"
-            rm -f -- "${BACKUP_DIR}/${f}"
+            rm -f -- "${BACKUP_DIR}/${f}" "${BACKUP_DIR}/${f%.dump}.counts.tsv" "${BACKUP_DIR}/${f%.dump}.meta"
         fi
     done
+}
+
+open_snapshot() {  # a read-only session whose snapshot pg_dump reads; SNAPSHOT is empty when that fails
+    SNAPSHOT=""
+    trap '' PIPE   # a session that dies must fail the write below, not end this script
+    coproc PG_SESSION { "${DOCKER}" exec -i "${PG_CONTAINER}" nice -n 15 psql -U "${PG_USER}" -d "${PG_DB}" -AtqX -F $'\t' 2>/dev/null; }
+    SESSION_IN="${PG_SESSION[1]:-}"; SESSION_OUT="${PG_SESSION[0]:-}"; SESSION_PID="${PG_SESSION_PID:-}"
+    [[ -n "${SESSION_IN}" && -n "${SESSION_OUT}" ]] || return 0
+    printf 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT pg_export_snapshot();\n' >&"${SESSION_IN}" 2>/dev/null || return 0
+    read -r -t 60 SNAPSHOT <&"${SESSION_OUT}" || SNAPSHOT=""
+}
+
+read_counts() {  # <file>: the counts in the dump's snapshot; 0 only when the whole list arrived
+    local line got=1
+    { cat "${COUNTS_SQL}"; printf "SELECT '__end__';\n"; } >&"${SESSION_IN}" 2>/dev/null || return 1
+    while IFS= read -r -t 1800 line <&"${SESSION_OUT}"; do
+        if [[ "${line}" == "__end__" ]]; then got=0; break; fi
+        printf '%s\n' "${line}"
+    done > "$1.raw"
+    (( got == 0 )) || { rm -f -- "$1.raw"; return 1; }
+    LC_ALL=C sort "$1.raw" > "$1"
+    rm -f -- "$1.raw"
+}
+
+close_snapshot() {
+    if [[ -n "${SESSION_IN:-}" ]]; then
+        printf 'ROLLBACK;\n\\q\n' >&"${SESSION_IN}" 2>/dev/null || true
+        eval "exec ${SESSION_IN}>&- ${SESSION_OUT}<&-" 2>/dev/null || true
+    fi
+    [[ -n "${SESSION_PID:-}" ]] && wait "${SESSION_PID}" 2>/dev/null || true
+    SESSION_IN=""; SESSION_OUT=""; SESSION_PID=""
+    return 0
 }
 
 do_dump() {
@@ -91,11 +130,19 @@ do_dump() {
     log "dump ${PG_DB} from ${PG_CONTAINER} -> ${name}"
     # pg_dump runs inside the container at nice 15; it reads a consistent snapshot and takes no locks that block
     # the app's reads or writes (only DDL waits on it).
-    if ! "${DOCKER}" exec "${PG_CONTAINER}" nice -n 15 pg_dump -U "${PG_USER}" -d "${PG_DB}" -Fc > "${partial}"; then
+    open_snapshot
+    [[ -n "${SNAPSHOT}" ]] || alert "no snapshot session for ${name}: the dump goes ahead with no counts file"
+    if ! "${DOCKER}" exec "${PG_CONTAINER}" nice -n 15 pg_dump -U "${PG_USER}" -d "${PG_DB}" -Fc ${SNAPSHOT:+"--snapshot=${SNAPSHOT}"} > "${partial}"; then
+        close_snapshot
         rm -f -- "${partial}"
         alert "pg_dump of ${PG_DB} failed; no new dump; newest is ${previous:-none}"
         return 1
     fi
+    local counts="${BACKUP_DIR}/.${name%.dump}.counts.partial"
+    if [[ -n "${SNAPSHOT}" ]]; then
+        read_counts "${counts}" || rm -f -- "${counts}"
+    fi
+    close_snapshot
     size="$(stat -c %s "${partial}")"
     if ! verify_dump "${partial}"; then
         rm -f -- "${partial}"
@@ -104,10 +151,18 @@ do_dump() {
     fi
     if (( prev_size > 0 && size * 2 < prev_size )); then
         mv -f -- "${partial}" "${BACKUP_DIR}/.${name}.suspect"
+        rm -f -- "${counts}"
         alert "new dump is ${size} bytes, under half of ${previous} (${prev_size}); kept as .${name}.suspect, not pruning"
         return 1
     fi
     mv -f -- "${partial}" "${BACKUP_DIR}/${name}"
+    if [[ -f "${counts}" ]]; then
+        mv -f -- "${counts}" "${BACKUP_DIR}/${name%.dump}.counts.tsv"
+    else
+        alert "dump ${name} has no counts file: the snapshot session failed; the drill cannot check it exactly"
+    fi
+    printf 'taken_utc=%s\napp_commit=%s\n' "$(date -u -d "@$(now)" +%FT%TZ)" \
+        "$(git -c safe.directory='*' -C "${LIVE_CHECKOUT}" rev-parse HEAD 2>/dev/null || echo unknown)" > "${BACKUP_DIR}/${name%.dump}.meta"
     log "wrote ${name} (${size} bytes, $(( $(date -u +%s) - started )) s)"
     prune
 }

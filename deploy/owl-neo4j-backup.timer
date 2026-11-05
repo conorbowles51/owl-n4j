@@ -1,0 +1,11 @@
+# After the 01:30 Postgres dump, in the same quiet hours. No outage: the live database is not stopped.
+[Unit]
+Description=Loupe daily Neo4j dump
+
+[Timer]
+OnCalendar=*-*-* 02:10:00 UTC
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

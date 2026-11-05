@@ -1,0 +1,19 @@
+# Loupe daily copy of the vector store off the boot disk
+# Install: cp deploy/owl-*-backup* deploy/owl-keys-bundle* deploy/owl-restore-drill* deploy/owl-backup-check* \
+#             deploy/owl-evidence-copy.service deploy/owl-evidence-copy.timer /etc/systemd/system/ && systemctl daemon-reload \
+#          && systemctl enable --now owl-neo4j-backup.timer owl-chroma-backup.timer owl-keys-bundle.timer \
+#             owl-restore-drill.timer owl-backup-check.timer
+# Way back: systemctl disable --now <the timer>; what has been written stays on disk.
+[Unit]
+Description=Loupe daily copy of the vector store off the boot disk
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=BACKUP_ALERT_CMD=/mnt/owl-data/fin-wt/headless/db-backup-alert.sh
+ExecStart=/bin/bash /home/conorbowles51/app-v3/owl-n4j/deploy/chroma-backup.sh dump
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=1h
