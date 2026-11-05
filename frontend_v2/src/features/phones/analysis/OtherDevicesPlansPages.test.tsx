@@ -83,6 +83,9 @@ describe("Plans and check-ins against location (AP-1, 05 13.8)", () => {
     const wall = plansWords({ ...base, id: "p4", kind: "no_place", strength: "faint",
       measures: { phone_label: "C1", source: "calendar", subject: "Lunch", start: "2024-01-20T03:51:51", reasons: { match: [], substantiation: [] } } })
     expect(wall.when).toBe("Sat, Jan 20, 2024, 3:51:51 AM, no offset in report")
+    const repeats = plansWords({ ...base, id: "p5", kind: "no_place", strength: "faint",
+      measures: { phone_label: "C1", source: "calendar", subject: "Lunch", occurrences: 3, repeat_rule: "Daily", last_occurrence: "2024-02-06T03:51:51.117000+00:00", reasons: { match: [], substantiation: [] } } })
+    expect(repeats.line).toContain("the last Tue, Feb 6, 2024, 3:51:51 AM UTC.")
   })
 
   it("words a repeating unplaced entry with its occurrences", () => {

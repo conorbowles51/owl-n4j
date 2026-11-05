@@ -28,7 +28,7 @@ export function plansWords(r: ApproachResult) {
     return { title: `${lvl}: note on ${m.phone_label}${m.title ? `, ${m.title}` : ""}`, line: reasonWords(m) }
   }
   const what = `${SOURCE[m.source as string] ?? "Item"} on ${m.phone_label}${m.subject ? `: ${m.subject}` : m.title ? `: ${m.title}` : ""}`
-  const occ = Number(m.occurrences ?? 0) > 1 ? ` Repeats ${m.repeat_rule ? String(m.repeat_rule).toLowerCase() : ""}: ${n(m.occurrences)} occurrences, the last ${m.last_occurrence}.` : ""
+  const occ = Number(m.occurrences ?? 0) > 1 ? ` Repeats ${m.repeat_rule ? String(m.repeat_rule).toLowerCase() : ""}: ${n(m.occurrences)} occurrences, the last ${whenWords(m.last_occurrence)}.` : ""
   const nth = Number(m.occurrence_count ?? 1) > 1 ? ` Occurrence ${n(m.occurrence_index)} of ${n(m.occurrence_count)}.` : ""
   const place = m.place_text ? ` Place as written: ${m.place_text}.` : ""
   return { title: `${lvl}: ${what}`, line: `${reasonWords(m)}${place}${occ}${nth}`, when: m.start ? whenWords(m.start) : undefined }
