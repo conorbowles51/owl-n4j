@@ -4,7 +4,7 @@ The workbench limits (500 transfer rows, 1,000 timeline rows, 200 patterns) boun
 not the analysis: Erica's 9,804 payments compare in 1.9 s of CPU and answer with 30.8 MB of JSON. Raising a limit is
 what made pages hang, so a scope above a limit runs here instead:
 
-* One short-lived child process per run (as view_warmup does), at background priority, one at a time on this host.
+* One short-lived child process per run (as view_warmup does), at background priority, one at a time (PDF reports in their own line) on this host.
   Its memory goes back to the system when it exits. It reads inside one read-only REPEATABLE READ snapshot.
 * The result is written to files under the view memo directory (they survive a restart) as one JSON line per item,
   with an index of byte offsets, so a page costs a seek and is independent of the size of the result. Nothing is
@@ -41,11 +41,16 @@ logger = logging.getLogger(__name__)
 KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'pdf')
 PAGE_LIMIT = 200
 HEARTBEAT_SECONDS = 5
-STALE_HEARTBEAT_SECONDS = 180  # a child at nice 15 on a loaded box can miss several beats
+STALE_HEARTBEAT_SECONDS = 180  # for a run whose child never recorded itself
+# A child at background priority on a busy box can go minutes without a beat while its one long step holds the
+# interpreter (seen at 3+ minutes in a PDF render at load 40-70), so a living child is only called hung well past that.
+HUNG_HEARTBEAT_SECONDS = 1800
 MAX_WAITING = 6
 KEEP_SECONDS = 14 * 24 * 3600
 KEEP_BYTES = 4 * 1024 ** 3
 LOCK_NAME = 'host.lock'
+# A PDF report takes hours on a large case; it waits only for another report, not a transfer comparison for it.
+PDF_LOCK_NAME = 'pdf.lock'
 STATE = 'state.json'
 RESULT = 'result'
 _ID = re.compile(r'^[a-f0-9]{32}$')
@@ -89,12 +94,13 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _alive(pid):
+def _alive(pid, identifier):
+    """This run's own child, not a later process that was given the same number."""
     try:
-        os.kill(int(pid), 0)
+        with open('/proc/%d/cmdline' % int(pid), 'rb') as handle:
+            return identifier.encode() in handle.read()
     except (OSError, TypeError, ValueError):
         return False
-    return True
 
 
 def view(state):
@@ -104,8 +110,9 @@ def view(state):
     if state['status'] in ('queued', 'running'):
         beat = state.get('heartbeat') or 0
         # No pid yet: the moment between recording the run and starting its child, under the start lock.
-        gone = state.get('pid') is not None and not _alive(state['pid'])
-        if gone or time.time() - beat > STALE_HEARTBEAT_SECONDS:
+        pid = state.get('pid')
+        silent = time.time() - beat
+        if silent > STALE_HEARTBEAT_SECONDS if pid is None else (not _alive(pid, state['id']) or silent > HUNG_HEARTBEAT_SECONDS):
             state = {**state, 'status': 'stopped',
                      'error': 'This run stopped before it finished, most likely because the server restarted. '
                               'Nothing partial was kept. Run it again.'}
@@ -662,7 +669,7 @@ def main(identifier, parent):
     threading.Thread(target=beat, name='whole-case-heartbeat', daemon=True).start()
     signal.signal(signal.SIGTERM, lambda *_: stop('The server restarted while this ran. Nothing partial was kept. Run it again.'))
     try:
-        with open(base / LOCK_NAME, 'a') as lock:
+        with open(base / (PDF_LOCK_NAME if state['kind'] == 'pdf' else LOCK_NAME), 'a') as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:

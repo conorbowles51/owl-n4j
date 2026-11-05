@@ -2,6 +2,8 @@
 import hashlib
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import time
 from datetime import timedelta
@@ -92,12 +94,24 @@ class Store(TestCase):
             W.read_page(self.case, identifier, 'rows')
 
     def test_a_run_whose_child_is_gone_says_it_stopped(self):
-        seen = W.view(dict(status='running', pid=2 ** 22 + 7, heartbeat=time.time()))
+        seen = W.view(dict(id='a' * 32, status='running', pid=2 ** 22 + 7, heartbeat=time.time()))
         self.assertEqual(seen['status'], 'stopped')
         self.assertIn('Nothing partial', seen['error'])
-        quiet = W.view(dict(status='running', pid=os.getpid(), heartbeat=time.time() - W.STALE_HEARTBEAT_SECONDS - 1))
-        self.assertEqual(quiet['status'], 'stopped')
-        self.assertEqual(W.view(dict(status='running', pid=os.getpid(), heartbeat=time.time()))['status'], 'running')
+        # The number was given to another process: this test's own, which is not the run's child.
+        self.assertEqual(W.view(dict(id='a' * 32, status='running', pid=os.getpid(), heartbeat=time.time()))['status'], 'stopped')
+        never = W.view(dict(id='a' * 32, status='queued', heartbeat=time.time() - W.STALE_HEARTBEAT_SECONDS - 1))
+        self.assertEqual(never['status'], 'stopped')
+
+    def test_a_slow_living_child_is_not_called_stopped(self):
+        identifier = 'b' * 32
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', identifier])
+        try:
+            state = dict(id=identifier, status='running', pid=child.pid)
+            self.assertEqual(W.view({**state, 'heartbeat': time.time() - W.STALE_HEARTBEAT_SECONDS - 1})['status'], 'running')
+            self.assertEqual(W.view({**state, 'heartbeat': time.time() - W.HUNG_HEARTBEAT_SECONDS - 1})['status'], 'stopped')
+        finally:
+            child.kill()
+            child.wait()
 
     def test_equal_items_store_equal_digests(self):
         rows = [(dict(b=2, a=n), None, None) for n in range(5)]
