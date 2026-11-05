@@ -8,7 +8,7 @@ that counts evidence can do the same. ``pv_time`` and every value stay as they w
 from alembic import op
 
 revision = "20261105_phone_type_list_idx"
-down_revision = "20261105_pv_identity_seen"
+down_revision = "20261105_conv_reader_settings"
 branch_labels = None
 depends_on = None
 
