@@ -22,26 +22,12 @@ SUMMARY_VIEWS = (('get_ledger_summary', 'summary'), ('get_working_ledger_summary
 FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
-PER_CASE = 25  # views warmed for each case
+PER_CASE = 29  # views warmed for each case
 GRAPH = {}  # the graph database's last commit as the tests set it (never a real graph database)
 
 
-@pytest.fixture
-def periods(tmp_path, monkeypatch):
-    admin = create_engine(URL)
-    schema = 'view_warmup_test_' + uuid.uuid4().hex
-    with admin.begin() as connection:
-        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    engine = create_engine(URL, connect_args={'options': f'-csearch_path={schema}'})
-    with engine.begin() as connection:
-        connection.execute(text('CREATE TABLE financial_statement_periods (id serial PRIMARY KEY, case_id uuid NOT NULL)'))
-    import postgres.session
-    monkeypatch.setattr(postgres.session, '_get_session_local', lambda: sessionmaker(bind=engine))
-    # The pass takes its write counts through _get_engine (view_warmup._counts_now): the same disposable schema, never
-    # whatever DATABASE_URL the environment holds (unset: no counts, so no pass was recorded).
-    monkeypatch.setattr(postgres.session, '_get_engine', lambda: engine)
-    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
-    calls = []
+def _stub_every_view(monkeypatch, calls):
+    """Every view the warm-up computes, recording its call instead: a view missing here runs for real in the tests."""
     import routers.financial_ledger
     monkeypatch.setattr(routers.financial_ledger, 'get_account_history', lambda **kw: calls.append(kw))
     monkeypatch.setattr(routers.financial_ledger, 'get_ledger_transactions', lambda **kw: calls.append(dict(kw, view='transactions')))
@@ -50,6 +36,8 @@ def periods(tmp_path, monkeypatch):
     monkeypatch.setattr(routers.financial_ledger, 'get_ledger_overview_panel_figures',
                         lambda **kw: calls.append(dict(kw, view='panel-figures')))
     monkeypatch.setattr(routers.financial_ledger, 'get_ledger_first_view', lambda **kw: calls.append(dict(kw, view='first-view')))
+    monkeypatch.setattr(routers.financial_ledger, 'get_ledger_trends_view', lambda **kw: calls.append(dict(kw, view='trends')))
+    monkeypatch.setattr(routers.financial_ledger, 'get_ledger_people_view', lambda **kw: calls.append(dict(kw, view='people')))
     import routers.financial_statement_import
     monkeypatch.setattr(routers.financial_statement_import, 'files', lambda **kw: calls.append(dict(kw, view='files')))
     import routers.evidence
@@ -76,6 +64,44 @@ def periods(tmp_path, monkeypatch):
     import routers.timeline
     monkeypatch.setattr(routers.graph, 'warm_graph_page', lambda **kw: calls.append(dict(kw, view='graph-page')))
     monkeypatch.setattr(routers.timeline, 'warm_timeline_page', lambda **kw: calls.append(dict(kw, view='timeline-page')))
+
+
+class _NoDatabaseSession:
+    """One case to warm and no database: for the checks that need no PostgreSQL."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_bind(self):
+        return type('Bind', (), dict(dialect=type('Dialect', (), dict(name='postgresql'))()))()
+
+    def execute(self, *args, **kwargs):
+        return [('case', 1)]
+
+
+@pytest.fixture
+def periods(tmp_path, monkeypatch):
+    admin = create_engine(URL)
+    schema = 'view_warmup_test_' + uuid.uuid4().hex
+    with admin.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_engine(URL, connect_args={'options': f'-csearch_path={schema}'})
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE financial_statement_periods (id serial PRIMARY KEY, case_id uuid NOT NULL)'))
+    import postgres.session
+    monkeypatch.setattr(postgres.session, '_get_session_local', lambda: sessionmaker(bind=engine))
+    # The pass takes its write counts through _get_engine (view_warmup._counts_now): the same disposable schema, never
+    # whatever DATABASE_URL the environment holds (unset: no counts, so no pass was recorded).
+    monkeypatch.setattr(postgres.session, '_get_engine', lambda: engine)
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    calls = []
+    _stub_every_view(monkeypatch, calls)
     GRAPH['now'] = ['FB:1']
     monkeypatch.setattr(view_warmup, '_graph_now', lambda: GRAPH['now'] and list(GRAPH['now']))
 
@@ -100,14 +126,14 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     view_warmup.warm_account_history()
     assert [(str(call['case_id']), call.get('view')) for call in calls] == [
         (str(large), None), (str(large), 'transactions'), (str(large), 'overview'), (str(large), 'panels'), (str(large), 'panel-figures'),
-        (str(large), 'first-view'), (str(large), 'files'), (str(large), 'evidence'), (str(large), 'register'),
-        (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'), (str(large), 'receipts'),
+        (str(large), 'first-view'), (str(large), 'trends'), (str(large), 'files'), (str(large), 'evidence'), (str(large), 'register'),
+        (str(large), 'parties'), (str(large), 'people'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'), (str(large), 'receipts'),
         (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
         (str(large), 'graph-transactions'), (str(large), 'graph-intelligence'),
         (str(large), 'graph-page'), (str(large), 'timeline-page'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'overview'), (str(small), 'panels'), (str(small), 'panel-figures'),
-        (str(small), 'first-view'), (str(small), 'files'), (str(small), 'evidence'), (str(small), 'register'),
-        (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'), (str(small), 'receipts'),
+        (str(small), 'first-view'), (str(small), 'trends'), (str(small), 'files'), (str(small), 'evidence'), (str(small), 'register'),
+        (str(small), 'parties'), (str(small), 'people'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'), (str(small), 'receipts'),
         (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
         (str(small), 'graph-transactions'), (str(small), 'graph-intelligence'),
         (str(small), 'graph-page'), (str(small), 'timeline-page'),
@@ -117,17 +143,17 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(small), 'working'), (str(small), 'graph'), (str(small), 'cpa'), (str(small), 'timeline'),
         (str(small), 'transfers'), (str(small), 'patterns')]
     # The batch list takes only the case, as a UUID (FastAPI's type for it): the same cached-view key.
-    assert {key: value for key, value in calls[14].items() if key != 'db'} == dict(case_id=large, view='batches')
+    assert {key: value for key, value in calls[16].items() if key != 'db'} == dict(case_id=large, view='batches')
     # The three account views take only the case: the same cached-view key as a first visit.
-    assert {key for key in calls[9] if key != 'db'} == {'case_id', 'view'}
-    assert calls[7]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
-    assert {key: value for key, value in calls[8].items() if key != 'db'} == dict(case_id=str(large), view='register')
+    assert {key for key in calls[10] if key != 'db'} == {'case_id', 'view'}
+    assert calls[8]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
+    assert {key: value for key, value in calls[9].items() if key != 'db'} == dict(case_id=str(large), view='register')
     # The graph records as a first visit asks for them (case as text, every filter unset): the same cached-view key.
-    assert {key: value for key, value in calls[17].items() if key != 'db'} == dict(
+    assert {key: value for key, value in calls[19].items() if key != 'db'} == dict(
         case_id=str(large), mode='transactions', types=None, start_date=None, end_date=None, categories=None,
         view='graph-transactions')
     # The Graph and Timeline pages' reads take only the case; each builds the route's own key (routers.graph/timeline).
-    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (19, 20)] == [
+    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (21, 22)] == [
         dict(case_id=large, view='graph-page'), dict(case_id=large, view='timeline-page')]
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)
@@ -150,6 +176,14 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     assert {key: value for key, value in calls[5].items() if key != 'db'} == dict(
         case_id=large, source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
         page=0, page_size=50, account_ids=None, account_holders=None, view='first-view')
+    # The Trends and People & businesses pages' answers as each opens: every group, period and category unset.
+    assert {key: value for key, value in calls[6].items() if key != 'db'} == dict(
+        case_id=large, source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+        group=None, earlier_start=None, earlier_end=None, later_start=None, later_end=None, account_ids=None,
+        account_holders=None, categories=None, view='trends')
+    assert {key: value for key, value in calls[11].items() if key != 'db'} == dict(
+        case_id=large, source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+        group=None, account_ids=None, account_holders=None, categories=None, view='people')
 
 
 @needs_pg
@@ -710,28 +744,25 @@ def test_the_warm_up_passes_every_route_parameter_with_the_value_fastapi_gives_a
         calls.append((name, {**expected, **page.get(name, {})}))
     seen = {}
 
-    class Session:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def get_bind(self):
-            return type('Bind', (), dict(dialect=type('Dialect', (), dict(name='postgresql'))()))()
-
-        def execute(self, *args, **kwargs):
-            return [('case', 1)]
     import postgres.session
-    monkeypatch.setattr(postgres.session, '_get_session_local', lambda: Session)
+    monkeypatch.setattr(postgres.session, '_get_session_local', lambda: _NoDatabaseSession)
     for name, _ in calls:
         monkeypatch.setattr(routes[name], name,
                             lambda _name=name, **kw: seen.setdefault(_name, {k: v for k, v in kw.items() if k not in ('db', 'case_id')}))
     view_warmup._warm_cases()
     assert seen == dict(calls)
+
+
+def test_the_stubs_and_the_count_cover_every_view_the_warm_up_computes(tmp_path, monkeypatch):
+    """Runs without PostgreSQL: the checks that do are opt-in, so a view added to the warm-up without a stub ran for
+    real in them and failed there unseen (29 views, 2 failed, on 5 Nov 2026 with the count at 25)."""
+    calls = []
+    _stub_every_view(monkeypatch, calls)
+    import postgres.session
+    monkeypatch.setattr(postgres.session, '_get_session_local', lambda: _NoDatabaseSession)
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    assert view_warmup._warm_cases() == (PER_CASE, 0)
+    assert len(calls) == PER_CASE
 
 
 def test_view_reuse_and_warm_up_lines_reach_the_service_journal():
