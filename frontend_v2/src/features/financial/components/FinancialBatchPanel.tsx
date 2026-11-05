@@ -2155,6 +2155,36 @@ export function BatchStatementReview({
                 }
               ),
             saved: onBack,
+            conflict: {
+              read: async () => {
+                const latest = await client.fetchQuery({
+                  ...batchItemQuery(caseId, batchId, itemId),
+                  staleTime: 0,
+                })
+                if (!latest?.review_request) return null
+                const shared = z
+                  .object({ saved_review: z.object({ saved_at: z.string(), saved_by: z.object({ name: z.string().nullish() }) }).nullable() })
+                  .parse(
+                    await fetchAPI(
+                      `/api/financial/statement-import/${latest.file_id}/saved-review?${new URLSearchParams({
+                        case_id: caseId,
+                        ...(latest.statement_id ? { statement_id: latest.statement_id } : {}),
+                      })}`
+                    )
+                  ).saved_review
+                return {
+                  review_revision: latest.review_revision ?? "",
+                  saved_at: shared?.saved_at,
+                  saved_by: shared?.saved_by,
+                  request: latest.review_request as Record<string, unknown>,
+                }
+              },
+              keepSaved: () =>
+                void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId] }),
+              reapply: (revision) => {
+                reviewRevision.current = revision
+              },
+            },
             nextProblem,
             previousProblem: () => nextProblem("previous"),
             draft: draft ?? undefined,

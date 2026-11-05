@@ -13,6 +13,12 @@ export const BatchReviewContext = createContext<{
   save: (request: unknown) => Promise<unknown>
   confirm?: (request: unknown) => Promise<unknown>
   saved: () => void
+  /** After a refused save: read the batch's saved review, drop this draft for it, or save over it. */
+  conflict?: {
+    read: () => Promise<import("./review-conflict").SavedReview | null>
+    keepSaved: () => void
+    reapply: (revision: string) => void
+  }
   nextProblem?: () => Promise<void>
   previousProblem?: () => Promise<void>
   beforeNavigate?: { current: (() => Promise<unknown>) | null }

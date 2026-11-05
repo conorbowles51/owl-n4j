@@ -13,6 +13,8 @@ import { useStatementCoverageReview } from "../hooks/use-statement-coverage-revi
 import { StatementCoverageReview } from "./StatementCoverageReview"
 import { useBatchReview } from "../lib/batch-review-context"
 import { PageReviewForm } from "./PageReviewForm"
+import { ReviewSaveConflict } from "./ReviewSaveConflict"
+import { isReviewConflict, type SavedReview } from "../lib/review-conflict"
 import { pagesReviewedOf, usePageReviews } from "../hooks/use-page-reviews"
 import {
   useStatementFiles,
@@ -389,6 +391,7 @@ function StatementReview({
   onReprocessed: (id: string) => void
 }) {
   const batchReview = useBatchReview()
+  const [reviewEpoch, setReviewEpoch] = useState(0)
   const [detailsRequest, setDetailsRequest] = useState(0)
   const savedDetails = useRef<HTMLDivElement>(null)
   const [checkingSavedCurrency, setCheckingSavedCurrency] = useState(false)
@@ -903,11 +906,12 @@ function StatementReview({
           </div>
         ) : (
           <EditableStatement
-            key={`${query.data.revision}:${batchReview?.draftRevision ?? "individual"}:${query.data.current_import?.revision ?? "unimported"}:${JSON.stringify(query.data.current_import?.details)}`}
+            key={`${query.data.revision}:${batchReview?.draftRevision ?? "individual"}:${query.data.current_import?.revision ?? "unimported"}:${JSON.stringify(query.data.current_import?.details)}:${reviewEpoch}`}
             data={query.data}
             caseId={caseId}
             fileId={fileId}
             onImported={onImported}
+            onReloadSaved={() => setReviewEpoch((value) => value + 1)}
           />
         )}
       </div>
@@ -1123,14 +1127,18 @@ function EditableStatement({
   caseId,
   fileId,
   onImported,
+  onReloadSaved,
 }: {
   data: Proposal
   caseId: string
   fileId: string
   onImported: (result?: StatementImportReceipt) => void
+  onReloadSaved: () => void
 }) {
   const batchReview = useBatchReview()
   const currentRequestSnapshot = useRef("")
+  // Set for one save when a person chooses to save over a review they have compared.
+  const savedOverRevision = useRef<string | null>(null)
   const [pendingSaveSnapshot, setPendingSaveSnapshot] = useState("")
   const [savedServerSnapshot, setSavedServerSnapshot] = useState("")
   const [savedRowSnapshots, setSavedRowSnapshots] = useState(() => {
@@ -1179,7 +1187,11 @@ function EditableStatement({
             `/api/financial/statement-import/${fileId}/progress?case_id=${caseId}`,
             {
               method: "PUT",
-              body: { request, expected_review_revision: progressRevision },
+              body: {
+                request,
+                expected_review_revision:
+                  savedOverRevision.current ?? progressRevision,
+              },
             }
           )
         )
@@ -1190,6 +1202,7 @@ function EditableStatement({
         throw Error(
           "The save response did not confirm this reading. Keep your edits and retry Save progress."
         )
+      savedOverRevision.current = null
       setProgressRevision(result.review_revision)
       client.setQueriesData<Proposal>(
         { queryKey: ["statement-import", caseId, fileId] },
@@ -1758,6 +1771,58 @@ function EditableStatement({
       .filter((r) => r.direction === direction && /^\d+$/.test(r.amount_minor))
       .reduce((n, r) => n + BigInt(r.amount_minor), 0n)
       .toString()
+  const readSavedReview = async (): Promise<SavedReview | null> => {
+    if (batchReview?.conflict) return batchReview.conflict.read()
+    const params = new URLSearchParams({ case_id: caseId })
+    if (data.statement_id) params.set("statement_id", data.statement_id)
+    return z
+      .object({
+        saved_review: z
+          .object({
+            review_revision: z.string(),
+            saved_at: z.string(),
+            saved_by: z.object({ name: z.string().nullish() }),
+            request: z.record(z.string(), z.unknown()),
+          })
+          .nullable(),
+      })
+      .parse(
+        await fetchAPI(
+          `/api/financial/statement-import/${fileId}/saved-review?${params}`
+        )
+      ).saved_review
+  }
+  const forgetBrowserDraft = () => {
+    if (!draftKey) return
+    try {
+      sessionStorage.removeItem(draftKey)
+    } catch {
+      // A browser that refuses storage has kept no draft to forget.
+    }
+  }
+  const keepSavedReview = (saved: SavedReview) => {
+    forgetBrowserDraft()
+    if (batchReview?.conflict) {
+      batchReview.conflict.keepSaved()
+      return
+    }
+    client.setQueriesData<Proposal>(
+      { queryKey: ["statement-import", caseId, fileId] },
+      (cached) =>
+        cached?.revision === data.revision
+          ? { ...cached, saved_review: saved as Proposal["saved_review"] }
+          : cached
+    )
+    void client.invalidateQueries({
+      queryKey: ["statement-import", caseId, fileId],
+    })
+    onReloadSaved()
+  }
+  const reapplyOverSaved = (saved: SavedReview) => {
+    batchReview?.conflict?.reapply(saved.review_revision)
+    savedOverRevision.current = saved.review_revision
+    saveBatchReview.mutate("progress")
+  }
   const importRequest = () => ({
     expected_revision: data.revision,
     statement_id: data.statement_id ?? null,
@@ -3125,12 +3190,24 @@ function EditableStatement({
                   : "There are newer edits in this review. Save progress again before leaving."}
               </p>
             )}
-            {saveBatchReview.isError && (
-              <p role="alert" className="w-full text-sm">
-                {saveBatchReview.error.message} Your edits remain in this
-                review.
-              </p>
-            )}
+            {saveBatchReview.isError &&
+              (isReviewConflict(saveBatchReview.error) ? (
+                <div className="w-full">
+                  <ReviewSaveConflict
+                    queryKey={["statement-saved-review", caseId, fileId, data.statement_id, saveBatchReview.submittedAt]}
+                    read={readSavedReview}
+                    local={importRequest()}
+                    busy={saveBatchReview.isPending}
+                    onKeepSaved={keepSavedReview}
+                    onReapply={reapplyOverSaved}
+                  />
+                </div>
+              ) : (
+                <p role="alert" className="w-full text-sm">
+                  {saveBatchReview.error.message} Your edits remain in this
+                  review.
+                </p>
+              ))}
           </div>
         )}
         <p className="text-sm">
@@ -4995,7 +5072,13 @@ function EditableStatement({
             </div>
           )}
       </fieldset>
-      {saveBatchReview.isError && (
+      {saveBatchReview.isError &&
+        // The comparison sits beside Save progress; without that control the refusal is stated here.
+        !(
+          isReviewConflict(saveBatchReview.error) &&
+          canEdit &&
+          (!data.current_import || replacePrevious)
+        ) && (
         <p role="alert">{saveBatchReview.error.message}</p>
       )}
       {confirm.isSuccess && (

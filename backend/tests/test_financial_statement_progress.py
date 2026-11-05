@@ -118,9 +118,13 @@ class StatementProgressTests(TestCase):
         reopened = self.f.preview()['saved_review']
         self.assertEqual(reopened['request']['rows'], saved['request']['rows'])
         self.assertEqual(reopened['saved_by']['name'], self.f.actor.name)
+        # The same values saved again (a retry after a lost response, a second tab) are the saved review.
+        retried = self.save(raw)
+        self.assertEqual(retried['review_revision'], saved['review_revision'])
+        self.assertEqual(retried['saved_at'], saved['saved_at'])
+        payment['date'] = '2023-03-18'
         with self.assertRaisesRegex(PdfMappingError, 'Another reviewer'):
             self.save(raw)
-        payment['date'] = '2023-03-18'
         newer = self.save(raw, saved['review_revision'])
         self.assertNotEqual(newer['review_revision'], saved['review_revision'])
         with self.f.SessionLocal() as db:

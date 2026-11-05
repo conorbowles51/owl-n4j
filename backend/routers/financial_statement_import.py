@@ -474,8 +474,11 @@ def check_import_coverage(evidence_file_id: UUID, body: StatementCoverageRequest
             currency=body.currency, statement_id=body.statement_id, _include_period_checks=False)
         if proposal['revision'] != body.expected_revision:
             raise PdfMappingError('The statement reading changed. Reopen it before comparing dates.', 409)
+        from services.financial.import_batches import initial_request
+        rows = ((proposal.get('saved_review') or {}).get('request') or initial_request(proposal)).get('rows')
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),
-                    **coverage_review(db, case_id=case_id, file_id=evidence_file_id, request={**body.model_dump(mode='json'),
+                    **coverage_review(db, case_id=case_id, file_id=evidence_file_id, repeated=True, request={
+                        **body.model_dump(mode='json'), 'rows': rows,
                         'holder': body.holder if body.holder is not None else proposal['metadata'].get('holder', ''),
                         'account_type': proposal['metadata'].get('account_type') or ''}))
     except PdfMappingError as exc:
@@ -659,6 +662,22 @@ def apply_row_assignment(evidence_file_id: UUID, body: RowAssignmentRequest, cas
         db.rollback()
         logger.exception('Statement rows could not be reassigned')
         raise HTTPException(status_code=500, detail='The move could not be confirmed. Reopen the statements to check the saved result before trying again.')
+
+
+@router.get('/{evidence_file_id}/saved-review')
+def saved_statement_review(evidence_file_id: UUID, case_id: UUID = Query(...), statement_id: str | None = Query(default=None),
+                           db: Session = Depends(get_db)):
+    """The review as saved now, for comparing against a person's unsaved values after a refused save."""
+    from sqlalchemy import select
+    from postgres.models.evidence import EvidenceFile
+    from services.financial.statement_progress import review_progress
+    file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id, EvidenceFile.case_id == case_id))
+    if file is None:
+        raise HTTPException(status_code=404, detail='Statement not found in this case.')
+    saved = review_progress(file, statement_id)
+    return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), saved_review=saved and dict(
+        review_revision=saved['review_revision'], saved_at=saved['saved_at'], saved_by=dict(name=saved['saved_by'].get('name')),
+        request=saved['request']))
 
 
 @router.get('/{evidence_file_id}/previous-reviews/{review_id}')

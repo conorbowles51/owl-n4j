@@ -41,6 +41,10 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
     previous = review_progress(file, request.statement_id)
     revision = previous['review_revision'] if previous else 'initial'
     if revision != expected_review_revision:
+        # The same values saved again, by a retry after a lost response or a second tab, are the saved review: a
+        # refusal here would read as a lost correction (register E29).
+        if previous and previous['review_revision'] == _digest(request.model_dump(mode='json')):
+            return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), **previous)
         raise PdfMappingError('Another reviewer saved this statement. Your changes have not overwritten theirs. Reopen the statement to compare the saved review.', 409)
     proposal = read_statement_import(session, case_id=case_id, evidence_file_id=evidence_file_id,
         currency=request.currency, statement_id=request.statement_id, _include_period_checks=False)
