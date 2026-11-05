@@ -4,7 +4,7 @@ gains ``interview``. No rows change.
 from alembic import op
 
 revision = "20261105_link_choice_interview"
-down_revision = "20261105_pv_identity_seen"
+down_revision = "20261105_phone_marks_collect_runs"
 branch_labels = None
 depends_on = None
 
