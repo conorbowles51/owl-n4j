@@ -729,6 +729,32 @@ def remove_link(db: Session, *, dossier_id: uuid.UUID, link_id: uuid.UUID, user:
     link = db.scalar(select(DossierLink).where(DossierLink.id == link_id, DossierLink.dossier_id == dossier.id))
     if link is None:
         raise DossierNotFound("Link not found")
+    _remove_link(db, dossier, link, user)
+    db.commit()
+    return {"dossier_id": str(dossier.id), "removed": 1}
+
+
+def remove_links(db: Session, *, dossier_id: uuid.UUID, link_ids: list[uuid.UUID], user: User) -> dict[str, Any]:
+    """Remove these links in one transaction: all of them, or none when any is no longer on the Dossier (07 J-12, the
+    Undo of Add to). Each is kept in the removed records and has its own event, as a single removal does. More than
+    LINKS_ADD_LIMIT in one request is refused, never cut."""
+    dossier = _write(db, dossier_id, user)
+    wanted = list(dict.fromkeys(link_ids))
+    if not wanted:
+        raise ValueError("At least one link is required")
+    if len(wanted) > LINKS_ADD_LIMIT:
+        raise ValueError(f"{len(wanted):,} links were sent; one request takes at most {LINKS_ADD_LIMIT:,}. "
+                         "Send them in parts; nothing was removed.")
+    links = db.scalars(select(DossierLink).where(DossierLink.dossier_id == dossier.id, DossierLink.id.in_(wanted))).all()
+    if len(links) != len(wanted):
+        raise DossierNotFound(f"{len(wanted) - len(links):,} of these links are no longer on this dossier; nothing was removed.")
+    for link in links:
+        _remove_link(db, dossier, link, user)
+    db.commit()
+    return {"dossier_id": str(dossier.id), "removed": len(links)}
+
+
+def _remove_link(db: Session, dossier, link, user: User) -> None:
     details = {"link_id": str(link.id), "target_type": link.target_type, "target_id": link.target_id}
     from postgres.models.collection_membership import CollectionMembership
     from services import removed_records
@@ -745,8 +771,6 @@ def remove_link(db: Session, *, dossier_id: uuid.UUID, link_id: uuid.UUID, user:
     dossier.updated_by_user_id = user.id
     db.flush()
     _record_link_event(db, "dossier_link_removed", dossier, user, details)
-    db.commit()
-    return {"dossier_id": str(dossier.id), "removed": 1}
 
 
 def add_evidence_links(

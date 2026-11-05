@@ -1697,6 +1697,51 @@ def update_entry_link(
     return get_entry(db, case_id=case_id, entry_id=entry_id)
 
 
+def remove_entry_links(
+    db: Session,
+    *,
+    case_id: UUID,
+    entry_id: UUID,
+    link_ids: list[UUID],
+    current_user: User,
+    expected_version: int,
+) -> dict[str, Any]:
+    """Remove these links as one change of the entry: all of them, or none when any is gone or the entry has moved on
+    (07 J-12, the Undo of Add to). One revision and one event, which holds every removed link. More than
+    ENTRY_LINKS_BATCH_LIMIT in one request is refused, never cut."""
+    wanted = list(dict.fromkeys(link_ids))
+    if not wanted:
+        raise WorkspaceEntryValidationError("At least one link is required")
+    if len(wanted) > ENTRY_LINKS_BATCH_LIMIT:
+        raise WorkspaceEntryValidationError(
+            f"{len(wanted):,} links were sent; one request takes at most {ENTRY_LINKS_BATCH_LIMIT:,}. "
+            "Send them in parts; nothing was removed."
+        )
+    entry = _load_entry(db, case_id=case_id, entry_id=entry_id)
+    if entry.version != expected_version:
+        raise WorkspaceEntryConflict(
+            f"Entry changed from version {expected_version} to {entry.version}"
+        )
+    held = {item.id: item for item in entry.links}
+    missing = [link_id for link_id in wanted if link_id not in held]
+    if missing:
+        raise WorkspaceEntryNotFound(
+            f"{len(missing):,} of these links are no longer on this entry; nothing was removed."
+        )
+    before = {"links": [_link_to_dict(held[link_id]) for link_id in wanted]}
+    for link_id in wanted:
+        db.delete(held[link_id])
+    entry.version += 1
+    entry.updated_by_user_id = current_user.id
+    entry.updated_by_email = current_user.email
+    entry.updated_by_name = current_user.name
+    db.flush()
+    _record_revision(db, entry, current_user)
+    _record_event(db, entry, "link_removed", current_user, before_state=before)
+    db.commit()
+    return {"entry_id": str(entry.id), "removed": len(wanted), "version": entry.version}
+
+
 def remove_entry_link(
     db: Session,
     *,

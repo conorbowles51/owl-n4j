@@ -138,3 +138,28 @@ def test_route_refuses_more_than_the_limit_with_413_and_adds_nothing(world):
         assert db.scalar(select(WorkspaceEntryLink.id)) is None
     added = client.post(url, json={"links": over[:2], "rationale": "Added from Conversations"})
     assert added.status_code == 200 and added.json()["added"] == 2, added.text
+
+
+def test_remove_many_links_is_one_change_all_or_nothing(world):
+    """07 J-12: the Undo of Add to."""
+    factory, user_id, case_id, entry_id = world
+    links = [{"target_type": "phone_record", "target_id": f"r{n}", "relationship": "supports"} for n in range(3)]
+    with factory() as db:
+        user = db.get(User, user_id)
+        added = service.batch_add_entry_links(db, case_id=case_id, entry_id=entry_id, current_user=user, links=links,
+                                              rationale="Added from Conversations")
+        ids = [uuid.UUID(i) for i in added["added_link_ids"]]
+        with pytest.raises(service.WorkspaceEntryNotFound, match="1 of these links.*nothing was removed"):
+            service.remove_entry_links(db, case_id=case_id, entry_id=entry_id, link_ids=ids + [uuid.uuid4()],
+                                       current_user=user, expected_version=added["version"])
+        with pytest.raises(service.WorkspaceEntryConflict):
+            service.remove_entry_links(db, case_id=case_id, entry_id=entry_id, link_ids=ids, current_user=user,
+                                       expected_version=added["version"] + 1)
+        db.rollback()
+        out = service.remove_entry_links(db, case_id=case_id, entry_id=entry_id, link_ids=ids[:2], current_user=user,
+                                         expected_version=added["version"])
+        assert (out["removed"], out["version"]) == (2, added["version"] + 1)
+        db.expire_all()
+        assert db.scalars(select(WorkspaceEntryLink.id)).all() == [ids[2]]
+        event = db.scalars(select(WorkspaceEntryEvent).where(WorkspaceEntryEvent.event_type == "link_removed")).one()
+        assert len(event.before_state["links"]) == 2

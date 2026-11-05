@@ -111,25 +111,27 @@ export const liveCollectClient: CollectClient = {
 }
 
 /**
- * Undo an add: remove exactly the links that add created; links that were already there stay. Returns how many
- * were removed. A failure part way states how many were removed before it.
+ * Undo an add: remove exactly the links that add created; links that were already there stay. Each part is one call,
+ * all of it or none, so an undo of hundreds does not depend on the page staying open. Returns how many were removed. A
+ * failure part way states how many were removed before it.
  */
 export async function undoCollect(caseId: string, target: CollectTarget, result: CollectResult, onProgress?: (removed: number, total: number) => void): Promise<number> {
   const ids = result.linkIds ?? []
   let version = result.version
   let removed = 0
-  for (const id of ids) {
+  for (let i = 0; i < ids.length; i += PART_SIZE) {
+    const part = ids.slice(i, i + PART_SIZE)
     try {
       if (target.kind === "dossier") {
-        await fetchAPI(`/api/dossiers/${target.id}/links/${id}`, { method: "DELETE" })
+        await fetchAPI(`/api/dossiers/${target.id}/links:remove`, { method: "POST", body: { link_ids: part } })
       } else {
-        const r = await fetchAPI<{ version: number }>(
-          `/api/workspace/${caseId}/entries/${target.id}/links/${id}?expected_version=${version ?? 1}`,
-          { method: "DELETE" },
-        )
+        const r = await fetchAPI<{ version: number }>(`/api/workspace/${caseId}/entries/${target.id}/links:remove`, {
+          method: "POST",
+          body: { link_ids: part, expected_version: version ?? 1 },
+        })
         version = r.version
       }
-      removed += 1
+      removed += part.length
       onProgress?.(removed, ids.length)
     } catch (e) {
       const why = e instanceof Error ? e.message : "the request failed"

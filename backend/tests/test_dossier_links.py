@@ -126,6 +126,25 @@ def test_remove_one_link_writes_an_event_and_leaves_the_rest(world):
             dossier_service.remove_link(db, dossier_id=dossier_id, link_id=link.id, user=user)
 
 
+def test_remove_many_links_is_one_call_all_or_nothing(world):
+    """07 J-12: the Undo of Add to."""
+    factory, owner, _, _, dossier_id, entries = world
+    with factory() as db:
+        user = db.get(User, owner)
+        out = dossier_service.add_links(db, dossier_id=dossier_id, user=user, links=_entry_links(entries))
+        ids = [uuid.UUID(i) for i in out["added_link_ids"]]
+        with pytest.raises(dossier_service.DossierNotFound, match="1 of these links.*nothing was removed"):
+            dossier_service.remove_links(db, dossier_id=dossier_id, link_ids=ids + [uuid.uuid4()], user=user)
+        db.rollback()
+        assert len(db.scalars(select(DossierLink.id)).all()) == len(ids)
+        assert dossier_service.remove_links(db, dossier_id=dossier_id, link_ids=ids + ids[:1], user=user)["removed"] == len(ids)
+        assert db.scalar(select(DossierLink.id)) is None
+        assert sorted(e["link_id"] for e in _events(db, "dossier_link_removed")) == sorted(str(i) for i in ids)
+        with pytest.raises(ValueError, match="Send them in parts; nothing was removed"):
+            dossier_service.remove_links(db, dossier_id=dossier_id, user=user,
+                                         link_ids=[uuid.uuid4() for _ in range(dossier_service.LINKS_ADD_LIMIT + 1)])
+
+
 def test_adder_and_time_survive_another_person_replacing_the_links(world):
     """CO-3."""
     factory, owner, other, _, dossier_id, entries = world

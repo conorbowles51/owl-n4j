@@ -16,7 +16,7 @@ from services.dossier_service import (
     DossierConflict, DossierNotFound, add_media, archive_dossier, create_assessment,
     create_dossier, create_interview, delete_assessment, delete_interview, delete_media,
     add_evidence_links, add_interview_evidence, get_dossier, link_dossier, list_dossiers,
-    remove_evidence_link, reorder_media, replace_links, add_links, remove_link,
+    remove_evidence_link, reorder_media, replace_links, add_links, remove_link, remove_links,
     update_dossier, update_interview, update_media, LINKS_ADD_LIMIT,
 )
 
@@ -86,6 +86,11 @@ class LinksAddRequest(BaseModel):
     # The service refuses more than dossier_service.LINKS_ADD_LIMIT with a stated message; nothing is cut.
     links: list[LinkIn] = Field(default_factory=list)
     origin: str | None = Field(default=None, max_length=128)
+
+
+class LinksRemoveRequest(BaseModel):
+    # The service refuses more than dossier_service.LINKS_ADD_LIMIT with a stated message; nothing is cut.
+    link_ids: list[UUID] = Field(default_factory=list)
 
 
 class EvidenceLinksRequest(BaseModel):
@@ -238,6 +243,13 @@ def post_links_add(dossier_id: UUID, request: LinksAddRequest, db: Session = Dep
     try:
         payload = _payload(request)
         return add_links(db, dossier_id=dossier_id, user=user, links=payload["links"], origin=payload.get("origin"))
+    except Exception as exc: _error(exc)
+
+
+@router.post("/{dossier_id}/links:remove")
+def post_links_remove(dossier_id: UUID, request: LinksRemoveRequest, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Remove these links in one call: all of them, or none (the Undo of Add to)."""
+    try: return remove_links(db, dossier_id=dossier_id, link_ids=request.link_ids, user=user)
     except Exception as exc: _error(exc)
 
 

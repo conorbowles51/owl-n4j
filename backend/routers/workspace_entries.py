@@ -33,6 +33,7 @@ from services.workspace_entry_service import (
     list_financial_payment_links,
     list_entry_authors,
     remove_entry_link,
+    remove_entry_links,
     restore_entry,
     search_attachment_options,
     soft_delete_entry,
@@ -214,6 +215,12 @@ class TheoryConversionRequest(EntryVersionRequest):
 class TheoryConversionResponse(BaseModel):
     theory: EntryResponse
     finding: EntryResponse
+
+
+class EntryLinksRemoveRequest(BaseModel):
+    # The service refuses more than ENTRY_LINKS_BATCH_LIMIT with a stated message; nothing is cut.
+    link_ids: list[UUID] = Field(default_factory=list)
+    expected_version: int = Field(ge=1)
 
 
 class EntryLinkBatchRequest(BaseModel):
@@ -719,6 +726,31 @@ def batch_case_entry_links(
             current_user=current_user,
             links=[link.model_dump() for link in request.links],
             rationale=request.rationale,
+            expected_version=request.expected_version,
+        )
+    except Exception as exc:
+        _raise_entry_error(db, exc)
+
+
+@router.post(
+    "/{case_id}/entries/{entry_id}/links:remove",
+    dependencies=[Depends(require_case_edit)],
+)
+def remove_case_entry_links(
+    case_id: UUID,
+    entry_id: UUID,
+    request: EntryLinksRemoveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Remove these links as one change: all of them, or none (the Undo of Add to)."""
+    try:
+        return remove_entry_links(
+            db,
+            case_id=case_id,
+            entry_id=entry_id,
+            link_ids=request.link_ids,
+            current_user=current_user,
             expected_version=request.expected_version,
         )
     except Exception as exc:

@@ -11,25 +11,23 @@ const note = { kind: "note" as const, id: "n1", label: "Synthetic note" }
 describe("Undo of Add to… (07 J-12; review of 03-3)", () => {
   afterEach(() => fetchAPI.mockReset())
 
-  it("says how many are removed so far: an undo of hundreds takes minutes", async () => {
-    fetchAPI.mockResolvedValue({ version: 2 })
-    const seen: string[] = []
-    await undoCollect("c1", dossier, { added: 2, skipped: 0, refused: 0, linkIds: ["l1", "l2"] }, (done, all) => seen.push(`${done}/${all}`))
-    expect(seen).toEqual(["1/2", "2/2"])
-  })
-
-  it("removes exactly the links the add created", async () => {
+  it("removes exactly the links the add created, in one call", async () => {
     fetchAPI.mockResolvedValue({})
-    expect(await undoCollect("c1", dossier, { added: 2, skipped: 5, refused: 0, linkIds: ["l1", "l2"] })).toBe(2)
-    expect(fetchAPI.mock.calls.map((c) => c[0])).toEqual(["/api/dossiers/d1/links/l1", "/api/dossiers/d1/links/l2"])
+    const seen: string[] = []
+    expect(await undoCollect("c1", dossier, { added: 2, skipped: 5, refused: 0, linkIds: ["l1", "l2"] }, (done, all) => seen.push(`${done}/${all}`))).toBe(2)
+    expect(fetchAPI.mock.calls).toEqual([["/api/dossiers/d1/links:remove", { method: "POST", body: { link_ids: ["l1", "l2"] } }]])
+    expect(seen).toEqual(["2/2"])
   })
 
-  it("names each entry version it expects, and says how many were removed when it stops", async () => {
+  it("sends what one call cannot take in parts, naming each entry version it expects, and says how many were removed when it stops", async () => {
     fetchAPI.mockResolvedValueOnce({ version: 8 }).mockRejectedValueOnce(new Error("This note was changed by someone else"))
-    await expect(undoCollect("c1", note, { added: 2, skipped: 0, refused: 0, linkIds: ["l1", "l2"], version: 7 })).rejects.toThrow(
-      "Undo stopped after removing 1 of 2: This note was changed by someone else",
+    const linkIds = Array.from({ length: 5001 }, (_, i) => `l${i}`)
+    await expect(undoCollect("c1", note, { added: 5001, skipped: 0, refused: 0, linkIds, version: 7 })).rejects.toThrow(
+      "Undo stopped after removing 5,000 of 5,001: This note was changed by someone else",
     )
-    expect(fetchAPI.mock.calls[0][0]).toContain("expected_version=7")
-    expect(fetchAPI.mock.calls[1][0]).toContain("expected_version=8")
+    expect(fetchAPI.mock.calls[0][0]).toBe("/api/workspace/c1/entries/n1/links:remove")
+    expect(fetchAPI.mock.calls[0][1].body.expected_version).toBe(7)
+    expect(fetchAPI.mock.calls[0][1].body.link_ids).toHaveLength(5000)
+    expect(fetchAPI.mock.calls[1][1].body).toEqual({ link_ids: ["l5000"], expected_version: 8 })
   })
 })
