@@ -133,6 +133,17 @@ describe("Conversations", () => {
     await waitFor(() => expect(seen.search).toBe("?thread=t1"))
   })
 
+  it("keeps both of two filters chosen before the page has drawn the first", async () => {
+    page("/cases/case-1/conversations?thread=t1")
+    await threadOptions()
+    act(() => {
+      fireEvent.change(screen.getByLabelText("Attachment"), { target: { value: "only" } })
+      fireEvent.click(screen.getByLabelText("Exact characters"))
+    })
+    await waitFor(() => expect(seen.search).toContain("exact=1"))
+    expect(seen.search).toContain("attachment=only")
+  })
+
   it("moves off an open thread a filter has emptied, and says when nothing matches", async () => {
     api.streamIndex.mockResolvedValue({ snapshot: "s", counts: { events: 3 }, no_time_count: 0, items: [], zone: { label: "UTC" } })
     page("/cases/case-1/conversations?thread=gone&apps=SyntheticApp")

@@ -17,7 +17,9 @@ const KINDS = [["message", "Messages"], ["call", "Calls"], ["email", "Emails"], 
 const DIRECTIONS = [["incoming", "Incoming"], ["outgoing", "Outgoing"], ["unknown", "Unknown"]] as const
 const TEXT_WAIT_MS = 500
 
-type SetView = (patch: Partial<ConversationView>, replace?: boolean) => void
+type SetView = (patch: Partial<ConversationView> | ((v: ConversationView) => Partial<ConversationView>), replace?: boolean) => void
+
+const toggled = (list: string[], value: string, on: boolean) => (on ? [...list.filter((x) => x !== value), value] : list.filter((x) => x !== value))
 
 function Pick({ label, count, children, onOpen }: { label: string; count: number; children: React.ReactNode; onOpen?: () => void }) {
   return (
@@ -35,12 +37,12 @@ function Pick({ label, count, children, onOpen }: { label: string; count: number
   )
 }
 
-function Checks({ options, chosen, onChange }: { options: readonly (readonly [string, string])[]; chosen: string[]; onChange: (next: string[]) => void }) {
+function Checks({ options, chosen, onChange }: { options: readonly (readonly [string, string])[]; chosen: string[]; onChange: (value: string, on: boolean) => void }) {
   return (
     <>
       {options.map(([value, words]) => (
         <label key={value} className="flex items-center gap-2">
-          <input type="checkbox" checked={chosen.includes(value)} onChange={(e) => onChange(e.target.checked ? [...chosen, value] : chosen.filter((x) => x !== value))} />
+          <input type="checkbox" checked={chosen.includes(value)} onChange={(e) => onChange(value, e.target.checked)} />
           <span className="min-w-0 flex-1 truncate">{words}</span>
         </label>
       ))}
@@ -93,7 +95,7 @@ export function ConversationFilters({ view, setView, listFilter, zoneWords, thre
 
   const [dateNote, setDateNote] = useState<string | null>(null)
   const setDay = (field: "from" | "to", day: string) => {
-    const next = { from: view.from, to: view.to, [field]: day || null }
+    const next = { from: view.from, to: view.to, [field]: day || null } // the dates shown beside the control
     if (next.from && next.to && next.from > next.to) {
       setDateNote("The start is after the end, so that date was not applied.")
       return
@@ -110,7 +112,7 @@ export function ConversationFilters({ view, setView, listFilter, zoneWords, thre
       <div className="flex flex-wrap items-center gap-1.5 text-sm">
         {phones && phones.length > 1 && (
           <Pick label="Phones" count={view.phones.length}>
-            <Checks options={phones.map((p) => [p.id, p.label] as const)} chosen={view.phones} onChange={(next) => setView({ phones: next })} />
+            <Checks options={phones.map((p) => [p.id, p.label] as const)} chosen={view.phones} onChange={(x, on) => setView((v) => ({ phones: toggled(v.phones, x, on) }))} />
           </Pick>
         )}
         <Pick label="Apps" count={view.apps.length} onOpen={() => setAppsOpen(true)}>
@@ -123,15 +125,15 @@ export function ConversationFilters({ view, setView, listFilter, zoneWords, thre
                 ...view.apps.filter((a) => !apps.data.items.some((i) => (i.app ?? NO_APP) === a)).map((a) => [a, `${a === NO_APP ? "App not recorded" : a} (0)`] as const),
               ]}
               chosen={view.apps}
-              onChange={(next) => setView({ apps: next })}
+              onChange={(x, on) => setView((v) => ({ apps: toggled(v.apps, x, on) }))}
             />
           )}
         </Pick>
         <Pick label="Kinds" count={view.kinds.length}>
-          <Checks options={KINDS} chosen={view.kinds} onChange={(next) => setView({ kinds: next })} />
+          <Checks options={KINDS} chosen={view.kinds} onChange={(x, on) => setView((v) => ({ kinds: toggled(v.kinds, x, on) }))} />
         </Pick>
         <Pick label="Direction" count={view.directions.length}>
-          <Checks options={DIRECTIONS} chosen={view.directions} onChange={(next) => setView({ directions: next })} />
+          <Checks options={DIRECTIONS} chosen={view.directions} onChange={(x, on) => setView((v) => ({ directions: toggled(v.directions, x, on) }))} />
         </Pick>
         <Pick label="State" count={stateCount}>
           <label className="flex items-center justify-between gap-2">

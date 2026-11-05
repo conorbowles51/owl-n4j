@@ -103,12 +103,19 @@ export function ConversationsPage() {
   const qc = useQueryClient()
   const fixedPhone = extraction ?? null
   const view = useMemo(() => viewFromSearch(location.search, fixedPhone), [location.search, fixedPhone])
+  // Each change builds on the last one asked for, not on the last render: under load a second filter chosen before the
+  // page has drawn the first would otherwise put the first back as it was.
+  const latestView = useRef(view)
+  useLayoutEffect(() => {
+    latestView.current = view
+  }, [view])
   const setView = useCallback(
-    (patch: Partial<ConversationView>, replace = false) => {
-      const next = { ...view, ...patch }
+    (patch: Partial<ConversationView> | ((v: ConversationView) => Partial<ConversationView>), replace = false) => {
+      const next = { ...latestView.current, ...(typeof patch === "function" ? patch(latestView.current) : patch) }
+      latestView.current = next
       navigate({ pathname: location.pathname, search: viewToSearch(next, fixedPhone) }, { replace })
     },
-    [view, navigate, location.pathname, fixedPhone],
+    [navigate, location.pathname, fixedPhone],
   )
 
   const caseQ = useCase(caseId)
