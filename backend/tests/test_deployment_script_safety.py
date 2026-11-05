@@ -646,7 +646,12 @@ def test_a_failed_health_check_goes_back_to_the_tree_that_ran(real_release):
 
 def test_the_first_release_on_trees_can_go_back_to_the_checkout(real_release):
     project, env = real_release
+    # The commit it goes back to has no switch file, as the commit before the trees has none.
+    conf = project / 'deploy/backend-tree.conf'
+    wanted = conf.read_text()
+    conf.unlink()
     _commit_version(project, 1, 'old_name')
+    conf.write_text(wanted)
     (project / 'deploy/logs/.last-good-commit').write_text(
         subprocess.run(['/usr/bin/git', 'rev-parse', 'HEAD'], cwd=project, capture_output=True, text=True).stdout)
     subprocess.run(['/usr/bin/git', 'checkout', '-q', '-b', 'writer'], cwd=project, check=True)
@@ -656,7 +661,21 @@ def test_the_first_release_on_trees_can_go_back_to_the_checkout(real_release):
     assert result.returncode == 1, result.stdout + result.stderr
     assert not (project.parent / 'loupe-backend/current').exists()
     assert not (project / 'units/owl-backend-v2.service.d/70-lx-releaseprep-tree.conf').exists()
-    assert _ask(env)['folder'] == str(project / 'backend')
+    after = _ask(env)
+    assert after['folder'] == str(project / 'backend')
+    assert (after['value'], after['zones'], after['child']) == (1, 1, '1')
+
+
+def test_a_tree_that_cannot_switch_leaves_the_old_backend_and_undoes_the_release(real_release):
+    project, env = real_release
+    _released_and_waiting_for_the_next(project, env)
+    (project.parent / 'loupe-backend/.current.tmp').mkdir()  # ln -sfn then links inside it and mv -T cannot replace
+    (project.parent / 'loupe-backend/.current.tmp/block').write_text('')
+    result, events = run_release(project, 'deploy.sh', extra_env=env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert 'systemctl stop --no-block owl-backend-v2' not in events
+    assert (project.parent / 'loupe-backend/current').resolve().name == 'blue'
+    assert _ask(env)['value'] == 1
 
 
 def test_a_backend_in_a_tree_keeps_its_data_paths(tmp_path):

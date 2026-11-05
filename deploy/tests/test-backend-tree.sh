@@ -82,6 +82,26 @@ backend_tree_rollback "${one}"
 check "rollback points current at blue" "$(backend_tree_current)" blue
 check "blue is at the rollback commit" "$(git -C "${BACKEND_TREES}/blue" rev-parse HEAD)" "${one}"
 
+# The rollback of the first release on trees: the checkout is back on a commit with no switch file.
+BACKEND_TREE_PREVIOUS=""; BACKEND_TREE_APPLIED=true
+backend_tree_apply_dropin_exists="$(backend_tree_dropin)"; : > "${backend_tree_apply_dropin_exists}"
+mv deploy/backend-tree.conf "${test_root}/conf"
+backend_tree_rollback "${one}"
+mv "${test_root}/conf" deploy/backend-tree.conf
+check "with no switch file the rollback still goes back" "$([ -e "${BACKEND_TREES}/current" ] && echo there || echo gone)" gone
+check "and removes the drop-in" "$([ -e "$(backend_tree_dropin)" ] && echo there || echo gone)" gone
+
+# As deploy-now.sh runs it: alone, with nothing set by a caller.
+mkdir -p "${test_root}/app/run/deploy" "${test_root}/app/run/.venv/bin"
+git clone -q "${PROJECT_DIR}" "${test_root}/app/run/repo"
+run_root="${test_root}/app/run/repo"
+mkdir -p "${run_root}/deploy/logs" "${run_root}/.venv/bin"
+cp "${source_dir}/backend-tree.sh" "${source_dir}/backend-tree.conf" "${source_dir}/frontend-release.sh" "${run_root}/deploy/"
+printf '#!/bin/bash\n' > "${run_root}/.venv/bin/python"; chmod +x "${run_root}/.venv/bin/python"
+printed="$(env -u PROJECT_DIR -u BACKEND_TREES bash "${run_root}/deploy/backend-tree.sh" stage "${two}" 2>&1 | tail -1)"
+check "run as a script it prints the staged folder" "${printed}" "${test_root}/app/run/loupe-backend/blue/backend"
+check "run as a script it staged the commit" "$(git -C "${test_root}/app/run/loupe-backend/blue" rev-parse HEAD)" "${two}"
+
 # The way back.
 echo checkout > deploy/backend-tree.conf
 backend_tree_apply

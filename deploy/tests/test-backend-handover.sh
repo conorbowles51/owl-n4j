@@ -46,6 +46,7 @@ source "${source_dir}/backend-stop.sh"
 # shellcheck source=deploy/backend-socket.sh
 source "${source_dir}/backend-socket.sh"
 # shellcheck source=deploy/backend-handover.sh
+source "${source_dir}/backend-tree.sh"
 source "${source_dir}/backend-handover.sh"
 cp "${source_dir}/backend_supervisor.py" "${test_root}/deploy/"
 dropin="${test_root}/units/owl-backend-v2.service.d/65-lx-restartwait-supervisor.conf"

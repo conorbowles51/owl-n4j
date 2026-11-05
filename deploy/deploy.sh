@@ -475,9 +475,12 @@ if [ "${STEP_BACKEND}" = run ]; then
         configure_backend_allocator
     fi
     check_ingestion_idle
-    backend_tree_apply || fail "The backend tree did not switch; the health check decides"
     BACKEND_RESTART_AT="$(date +%s)"
-    if [ "${BACKEND_REPLACE}" = handover ] && backend_handover_possible; then
+    if ! backend_tree_apply; then
+        # Restarting would bring the old code back up and the release would still report healthy.
+        HANDOVER_KEPT_OLD=true
+        fail "The backend tree did not switch; the old backend is still serving. The release will be undone."
+    elif [ "${BACKEND_REPLACE}" = handover ] && backend_handover_possible; then
         # The new backend starts beside the old one; the old one is stopped only once the new one is healthy and the
         # ingestion gate has passed again (deploy/backend-handover.sh).
         RELEASE_PLAN="${RELEASE_PLAN} replace=handover"

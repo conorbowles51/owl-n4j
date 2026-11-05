@@ -251,7 +251,7 @@ def test_each_generation_starts_in_the_tree_the_link_names_and_stays_there():
             (trees / '.next').symlink_to('green')
             (trees / '.next').replace(trees / 'current')
             rig.process.send_signal(signal.SIGUSR2)
-            rig.wait_for(lambda: rig.read()['handover'].get('phase') == 'ready')
+            rig.wait_for(lambda: (rig.read().get('handover') or {}).get('phase') == 'ready')
             assert os.readlink(f"/proc/{rig.read()['handover']['new_server_pid']}/cwd") == str(trees / 'green')
             assert os.readlink(f'/proc/{first}/cwd') == str(trees / 'blue')  # the link moved, the old backend did not
         finally:

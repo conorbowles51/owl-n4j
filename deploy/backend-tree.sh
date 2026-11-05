@@ -20,6 +20,11 @@
 # Callers provide PROJECT_DIR, RUN_AS, SYSTEMCTL, VENV_DIR; the unit file helpers are in deploy/backend-socket.sh.
 # Way back: "checkout" in deploy/backend-tree.conf; the next restart removes the drop-in.
 
+# Run as a script (deploy-now.sh), the project is the one this file is in.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+
 BACKEND_TREES="${BACKEND_TREES:-$(cd "${PROJECT_DIR}/.." && pwd)/loupe-backend}"
 BACKEND_TREE_DROPIN_NAME="70-lx-releaseprep-tree.conf"
 BACKEND_TREE_SHARED=".env data evidence-data backend/logs deploy/logs"
@@ -138,6 +143,7 @@ backend_tree_remove_dropin() {
     $SYSTEMCTL daemon-reload
 }
 
+# Fails when the new tree is not in place; the caller must then leave the running backend alone.
 # Right before the backend is replaced, stopped or not: with the port held a queued request can start the unit the
 # moment the old one stops, and that start must already find the new tree.
 backend_tree_apply() {
@@ -157,10 +163,11 @@ backend_tree_apply() {
 }
 
 # Back to what ran before this release: the tree it ran from, at <commit>, or the checkout when it ran from there. A
-# release that never reached backend_tree_apply changed nothing here.
+# release that never reached backend_tree_apply changed nothing here. What this run did decides, not the switch file:
+# the checkout has just gone back to a commit that may have none.
 backend_tree_rollback() {
     local commit="$1"
-    [ "$(backend_tree_wanted)" = trees ] && [ "${BACKEND_TREE_APPLIED}" = true ] || return 0
+    [ "${BACKEND_TREE_APPLIED}" = true ] || return 0
     BACKEND_TREE_APPLIED=false
     if [ -z "${BACKEND_TREE_PREVIOUS}" ]; then
         $RUN_AS rm -f "${BACKEND_TREES}/current"
@@ -177,7 +184,6 @@ backend_tree_rollback() {
 # the unit gets that code.
 backend_tree_settle() {
     local used
-    [ "$(backend_tree_wanted)" = trees ] || return 0
     used="$(backend_tree_in_use)"
     if [ -n "${used}" ] && [ "$(echo "${used}" | wc -l)" -eq 1 ] && [ "${used}" != "$(backend_tree_current)" ]; then
         backend_tree_point "${used}"
@@ -187,7 +193,6 @@ backend_tree_settle() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     # deploy-now.sh, as root, before the prepare: prints the backend folder the prepare runs from.
     set -euo pipefail
-    PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
     VENV_DIR="${PROJECT_DIR}/.venv"
     if [ "$(id -u)" -eq 0 ]; then RUN_AS="sudo -u $(stat -c '%U' "${PROJECT_DIR}") -H"; SYSTEMCTL=systemctl; else RUN_AS=""; SYSTEMCTL="sudo systemctl"; fi
     # shellcheck source=deploy/frontend-release.sh
