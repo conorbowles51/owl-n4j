@@ -34,6 +34,7 @@ describe("the relationship volume chart", () => {
     expect(fig.querySelectorAll("[data-week]").length).toBe(4)
     expect(fig.querySelectorAll("[data-changepoint='2023-01-16']").length).toBe(1)
     expect(within(fig).getByRole("list", { name: "Weeks where contact changed" })).toHaveTextContent(changeWords(V.changepoints[0]))
+    expect(changeWords({ direction: "rise", week_start: "2024-01-29", rate_before: 0, rate_after: 3.714 })).toContain("about 0 a week, then about 3.7 a week")
     expect(fig).toHaveTextContent("2 calls, messages and emails with no time are not on the chart.")
   })
 

@@ -103,6 +103,7 @@ describe("Timeline phone lens (03 section 9)", () => {
     expect(lane).toHaveTextContent("Readings are never added to any total.")
     expect(lane).toHaveTextContent("1 with no time is not drawn.")
     expect(await screen.findByText("6 phone entries")).toBeInTheDocument() // the phones' total is the same with readings on screen
+    expect(within(lane).getByRole("button", { name: /^\w{3} \d+, \d{4} · 2 p4 readings from the phone/ })).toBeInTheDocument()
     fireEvent.click(within(lane).getByRole("button", { name: /2 p4 readings from the phone/ }))
     const list = await screen.findByRole("region", { name: "Phone money readings" })
     expect(within(list).getByText("p4 · from the phone")).toBeInTheDocument()

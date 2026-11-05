@@ -96,7 +96,8 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
   const width = Math.max(1, new Date(end).getTime() - s)
   const basisWords: Record<string, string> = { case_setting: "case zone", phones_device_zone: "case zone, the phones' own", device_zone: "the phone's zone", chosen: "chosen" }
   const zoneLabel = zone === "UTC" ? "UTC" : `${zoneWords(start, zone)} (${basisWords[zoneBasis || "device_zone"] || "case zone"})`
-  const fmt = (t: string) => new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit" }).format(new Date(t))
+  const wide = new Date(end).getTime() - new Date(start).getTime() > 2 * 86400000
+  const fmt = (t: string) => new Intl.DateTimeFormat("en-US", wide ? { timeZone: zone, month: "short", day: "numeric", year: "numeric" } : { timeZone: zone, hour: "numeric", minute: "2-digit" }).format(new Date(t))
   return (
     <section aria-label="Lanes" data-lanes-component="shared" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2 text-sm">

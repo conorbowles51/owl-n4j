@@ -13,6 +13,8 @@
   2,000 file / 1 GB limit. `manifest.csv` has a line per file asked for, hashes from the zipped bytes, against each
   stored hash. Zips live in `EVIDENCE_DATA_ROOT/phone-exports/originals`, 7 days; the hourly sweep removes anything
   no live job owns. Add to… on the Media grid takes the chosen files.
+Lanes spanning more than two days name each mark and the span by date, not by a time of day. Rates in the volume chart's change words are given to one decimal.
+
 ## 4 November: wearable and affiliation_unknown flags from M9 and M5 (cb-polflags, 04 decision 22)
 
 - **Measured** on all 14 server reports, counts only: `measurements/m9-sensors.json` (`pol_m9_sensors.py`) and
