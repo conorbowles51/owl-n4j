@@ -22,7 +22,7 @@ it("no page or panel waits behind a bare spinner", () => {
 
 it("names in words what the admin, workspace and triage pages wait for", () => {
   expect(requestWords("/api/users")).toBe("users")
-  expect(requestWords("/api/admin/tasks")).toBe("background tasks")
+  expect(requestWords("/api/background-tasks?all_owners=true")).toBe("background tasks")
   expect(requestWords("/api/admin/ai-costs/summary?x=1")).toBe("AI costs")
   expect(requestWords("/api/workspace/c1/context")).toBe("the workspace")
   expect(requestWords("/api/triage/cases")).toBe("triage cases")

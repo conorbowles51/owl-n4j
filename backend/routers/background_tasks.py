@@ -52,6 +52,7 @@ def list_tasks(
     case_id: Optional[str] = None,
     status: Optional[str] = None,
     limit: int = 100,
+    all_owners: bool = False,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -63,10 +64,15 @@ def list_tasks(
         case_id: Filter by case_id
         status: Filter by status (pending, running, completed, failed, cancelled)
         limit: Max number of tasks to return
+        all_owners: Every person's tasks, administrators only (the Background Tasks admin screen)
 
     Returns:
         List of tasks
     """
+    if all_owners:
+        require_admin(get_current_db_user(user, db))
+        tasks = background_task_storage.list_tasks(case_id=case_id, status=status, limit=limit)
+        return TasksListResponse(tasks=[TaskResponse(**task) for task in tasks])
     # Default to current user's tasks if owner not specified. Some newer
     # workers record email while older ones recorded username, so merge both.
     owners = [owner] if owner is not None else sorted(_current_user_owners(user))

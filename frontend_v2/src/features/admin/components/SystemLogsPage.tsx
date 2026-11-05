@@ -14,42 +14,49 @@ import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import { cn } from "@/lib/cn"
 
+/** The server's row (routers/system_logs.py LogEntry). */
 interface LogEntry {
   timestamp: string
-  level: string
-  message: string
-  source?: string
+  type: string
+  origin: string
+  action: string
+  user?: string | null
+  success: boolean
+  error?: string | null
+}
+
+interface LogsResponse {
+  logs: LogEntry[]
+  total: number
+}
+
+/** Rows asked for; the server's own limit is 1,000. */
+export const LOGS_SHOWN = 500
+
+const words = (value: string) => value.replace(/_/g, " ")
+
+export function logMatches(log: LogEntry, search: string): boolean {
+  const needle = search.trim().toLowerCase()
+  if (!needle) return true
+  return [log.action, log.user, log.error, log.type, log.origin].some((v) => v?.toLowerCase().includes(needle))
 }
 
 export function SystemLogsPage() {
-  const [level, setLevel] = useState("all")
+  const [outcome, setOutcome] = useState("all")
   const [search, setSearch] = useState("")
 
-  const { data: logs = [], isLoading, refetch } = useQuery({
-    queryKey: ["admin", "logs", level],
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "logs", outcome],
     queryFn: () => {
-      const qs = new URLSearchParams()
-      if (level !== "all") qs.set("level", level)
-      return fetchAPI<LogEntry[]>(`/api/admin/logs?${qs}`)
+      const qs = new URLSearchParams({ limit: String(LOGS_SHOWN) })
+      if (outcome !== "all") qs.set("success_only", outcome === "succeeded" ? "true" : "false")
+      return fetchAPI<LogsResponse>(`/api/system-logs?${qs}`)
     },
     refetchInterval: 10000,
   })
-
-  const filtered = logs.filter(
-    (log) =>
-      log.message.toLowerCase().includes(search.toLowerCase()) ||
-      (log.source?.toLowerCase().includes(search.toLowerCase()) ?? false)
-  )
-
-  const levelColor = (lvl: string) => {
-    switch (lvl.toLowerCase()) {
-      case "error": return "text-red-500"
-      case "warning": return "text-status-warning"
-      case "info": return "text-blue-500"
-      case "debug": return "text-muted-foreground"
-      default: return "text-foreground"
-    }
-  }
+  const logs = data?.logs ?? []
+  const total = data?.total ?? 0
+  const filtered = logs.filter((log) => logMatches(log, search))
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -63,22 +70,26 @@ export function SystemLogsPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs"
         />
-        <Select value={level} onValueChange={setLevel}>
-          <SelectTrigger className="w-28">
+        <Select value={outcome} onValueChange={setOutcome}>
+          <SelectTrigger className="w-28" aria-label="Outcome">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All</SelectItem>
-            <SelectItem value="error">Error</SelectItem>
-            <SelectItem value="warning">Warning</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
-            <SelectItem value="debug">Debug</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="succeeded">Succeeded</SelectItem>
           </SelectContent>
         </Select>
         <Button variant="ghost" size="sm" onClick={() => refetch()}>
           <RefreshCw className="size-3.5" />
         </Button>
       </div>
+
+      {total > logs.length && (
+        <p className="border-b border-border px-4 py-1 text-xs text-muted-foreground">
+          Showing the newest {logs.length.toLocaleString()} of {total.toLocaleString()} entries; the filter reads only these.
+        </p>
+      )}
 
       <ScrollArea className="flex-1">
         <div className="p-2 font-mono text-xs">
@@ -88,20 +99,26 @@ export function SystemLogsPage() {
               className="flex gap-2 rounded px-2 py-0.5 hover:bg-muted/30"
             >
               <span className="shrink-0 text-muted-foreground">
-                {new Date(log.timestamp).toLocaleTimeString()}
+                {new Date(log.timestamp).toLocaleString()}
               </span>
-              <span className={cn("w-14 shrink-0 uppercase", levelColor(log.level))}>
-                {log.level}
+              <span className={cn("w-14 shrink-0", log.success ? "text-muted-foreground" : "text-red-500")}>
+                {log.success ? "ok" : "failed"}
               </span>
-              {log.source && (
-                <span className="shrink-0 text-muted-foreground">
-                  [{log.source}]
-                </span>
-              )}
-              <span className="break-all">{log.message}</span>
+              <span className="shrink-0 text-muted-foreground">
+                [{words(log.type)} · {log.origin}]
+              </span>
+              <span className="break-all">
+                {log.action}
+                {log.user && <span className="text-muted-foreground"> · {log.user}</span>}
+                {log.error && <span className="text-red-500"> · {log.error}</span>}
+              </span>
             </div>
           ))}
-          {filtered.length === 0 && (
+          {isError ? (
+            <p role="alert" className="py-8 text-center text-red-500">
+              System logs could not be read: {error?.message}
+            </p>
+          ) : filtered.length === 0 && (
             <p className="py-8 text-center text-muted-foreground">
               {isLoading ? "Loading logs..." : "No log entries"}
             </p>

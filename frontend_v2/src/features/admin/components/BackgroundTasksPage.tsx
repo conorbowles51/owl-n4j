@@ -1,37 +1,41 @@
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
-import { Activity, RefreshCw, XCircle } from "lucide-react"
+import { Activity, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { EmptyState } from "@/components/ui/empty-state"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 
+/** The server's row (routers/background_tasks.py TaskResponse). */
 interface BackgroundTask {
   id: string
-  type: string
+  task_type: string
+  task_name: string
+  owner?: string | null
   status: string
-  progress?: number
-  started_at: string
-  completed_at?: string
-  error?: string
-  metadata?: Record<string, unknown>
+  created_at: string
+  started_at?: string | null
+  progress: { total?: number; completed?: number; failed?: number }
+  error?: string | null
+}
+
+/** Rows asked for; the server keeps the newest this many. */
+export const TASKS_SHOWN = 200
+
+export function taskPercent(progress: BackgroundTask["progress"]): number | null {
+  if (!progress.total) return null
+  return Math.min(100, Math.floor(((progress.completed ?? 0) / progress.total) * 100))
 }
 
 export function BackgroundTasksPage() {
-  const queryClient = useQueryClient()
-
-  const { data: tasks = [], isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["admin", "tasks"],
-    queryFn: () => fetchAPI<BackgroundTask[]>("/api/admin/tasks"),
+    queryFn: () =>
+      fetchAPI<{ tasks: BackgroundTask[] }>(`/api/background-tasks?all_owners=true&limit=${TASKS_SHOWN}`),
     refetchInterval: 5000,
   })
-
-  const cancelMutation = useMutation({
-    mutationFn: (taskId: string) =>
-      fetchAPI<void>(`/api/admin/tasks/${taskId}/cancel`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "tasks"] }),
-  })
+  const tasks = data?.tasks ?? []
 
   const running = tasks.filter((t) => t.status === "running")
 
@@ -58,7 +62,11 @@ export function BackgroundTasksPage() {
       </div>
 
       <div className="flex-1 overflow-auto p-4">
-        {tasks.length === 0 ? (
+        {isError ? (
+          <p role="alert" className="py-8 text-center text-sm text-red-500">
+            Background tasks could not be read: {error?.message}
+          </p>
+        ) : tasks.length === 0 ? (
           <EmptyState
             icon={Activity}
             title="No background tasks"
@@ -66,13 +74,18 @@ export function BackgroundTasksPage() {
           />
         ) : (
           <div className="space-y-2">
-            {tasks.map((task) => (
+            {tasks.length >= TASKS_SHOWN && (
+              <p className="text-xs text-muted-foreground">Showing the newest {TASKS_SHOWN} tasks; older ones are not listed.</p>
+            )}
+            {tasks.map((task) => {
+              const percent = taskPercent(task.progress)
+              return (
               <div
                 key={task.id}
                 className="rounded-lg border border-border bg-card p-3 shadow-sm"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{task.type}</span>
+                  <span className="text-sm font-medium">{task.task_name || task.task_type}</span>
                   <Badge
                     variant={
                       task.status === "running"
@@ -87,28 +100,20 @@ export function BackgroundTasksPage() {
                     {task.status}
                   </Badge>
                   <div className="flex-1" />
+                  {task.owner && <span className="text-[10px] text-muted-foreground">{task.owner}</span>}
                   <span className="text-[10px] text-muted-foreground">
-                    {new Date(task.started_at).toLocaleTimeString()}
+                    {new Date(task.started_at ?? task.created_at).toLocaleString()}
                   </span>
-                  {task.status === "running" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => cancelMutation.mutate(task.id)}
-                    >
-                      <XCircle className="size-3.5" />
-                      Cancel
-                    </Button>
-                  )}
                 </div>
-                {task.progress !== undefined && task.status === "running" && (
-                  <Progress value={task.progress} className="mt-2" />
+                {percent !== null && task.status === "running" && (
+                  <Progress value={percent} className="mt-2" />
                 )}
                 {task.error && (
                   <p className="mt-1 text-xs text-red-500">{task.error}</p>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
