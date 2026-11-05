@@ -15,11 +15,18 @@ stamp() { date -u -d "@$(now)" +%Y%m%d-%H%M; }
 log() { printf '%s %s: %s\n' "$(date -u +%FT%TZ)" "${LOG_NAME:-backup}" "$*"; }
 
 alert() {
+    ALERTED=1
     log "ALERT: $1"
     if [[ -n "${BACKUP_ALERT_CMD}" ]]; then
         # The reason is passed as one argument, never through a shell.
         ${BACKUP_ALERT_CMD} "$1" || log "alert command failed"
     fi
+}
+
+# EXIT trap for a dump: a command that stops the script under set -e must not wait for the next freshness check to be
+# heard. Runs the script's cleanup, if it has one, and alerts when nothing else has for this failure.
+guard_exit() {
+    trap 'guard_rc=$?; trap - EXIT; declare -F cleanup >/dev/null && cleanup; if (( guard_rc != 0 )) && [[ -z "${ALERTED:-}" ]]; then alert "${LOG_NAME} stopped unexpectedly (exit ${guard_rc}); see its journal"; fi; exit "${guard_rc}"' EXIT
 }
 
 sets() {  # <prefix>: whole sets, oldest first (the name sorts by time)

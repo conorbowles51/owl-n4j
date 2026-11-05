@@ -15,6 +15,11 @@ tally() { python3 -I -c "import json,sys; print(json.load(open(sys.argv[1]))['ta
 # Every path's type, mode, size and times; access time on files too (reading a folder's list moves the folder's own).
 state() { find "${src}" -printf '%p %y %m %s %T@ %C@ %l\n' | sort; find "${src}" -type f -printf '%p %A@\n' | sort; }
 
+# An unmarked destination is refused and not created: a missing mount must not become a copy on the boot disk.
+if copy; then fail "unmarked destination accepted"; fi
+[[ ! -e "${dest}" ]] || fail "unmarked destination created"
+python3 -I "${tool}" init --dest "${dest}" >> "${log}" 2>&1
+
 before="$(state)"
 copy || fail "first run failed"
 [[ "$(state)" == "${before}" ]] || fail "the source changed: size, mode or a time"
@@ -64,4 +69,7 @@ if python3 -I "${tool}" verify --dest "${dest}" --sample 100 >> "${log}" 2>&1; t
 # A destination inside a source is refused.
 if python3 -I "${tool}" run --dest "${src}/copy" --source "ev=${src}" >> "${log}" 2>&1; then fail "destination inside the source accepted"; fi
 [[ ! -e "${src}/copy" ]] || fail "refused run still wrote into the source"
+
+# Every report keeps when the copy began and when a whole pass last finished; a stopped run does not reset them.
+python3 -I -c "import json,sys; r=json.load(open(sys.argv[1])); assert r['first_started'] and r['last_complete']" "${dest}/last-run.json" || fail "pass times not reported"
 echo "test-evidence-copy: all passed"

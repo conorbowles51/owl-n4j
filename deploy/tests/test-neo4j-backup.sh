@@ -98,7 +98,21 @@ grep -q 'checkpoint during the copy' "${test_root}/log" || fail "moved checkpoin
 grep -q 'copy_tries=2' "${dir}/neo4j-20261105-0212Z/meta.env" || fail "second try not recorded"
 reset; for i in 1 2 3 4 5 6 7 8; do echo "$(( i + 10 ))"; done > "${state}/checkpoints"
 if run "$(epoch '2026-11-05 02:13')" dump; then fail "accepted with a checkpoint in every try"; fi
-grep -q "no copy free of a checkpoint" "${alerts}" || fail "no alert when every try saw a checkpoint"
+grep -q "no whole copy free of a checkpoint" "${alerts}" || fail "no alert when every try saw a checkpoint"
+
+# 5b. Writes on the first tries, a checkpoint on the last: the torn copy must not be kept.
+reset; printf '"case-a", 10, 20\n"case-a", 11, 20\n"case-a", 12, 20\n"case-a", 13, 20\n"case-a", 14, 20\n"case-a", 15, 20\n' > "${state}/live"
+printf '1\n1\n7\n' > "${state}/checkpoints"; n="$(count)"
+if run "$(epoch '2026-11-05 02:17')" dump; then fail "a last try with a checkpoint was accepted"; fi
+[[ "$(count)" -eq "${n}" ]] || fail "torn copy became a set"
+
+# 5c. A command that stops the script is heard at once, not at the next freshness check.
+reset; mv "${store}/transactions/neo4j/checkpoint.0" "${store}/moved"
+find "${store}/transactions" -name 'checkpoint.*' -exec mv {} {}.gone \;
+if run "$(epoch '2026-11-05 02:18')" dump; then fail "unreadable checkpoint log accepted"; fi
+grep -q "stopped unexpectedly" "${alerts}" || fail "no alert when the script stopped: $(cat "${alerts}")"
+find "${store}/transactions" -name '*.gone' -exec sh -c 'mv "$0" "${0%.gone}"' {} \;
+mv "${store}/moved" "${store}/transactions/neo4j/checkpoint.0"
 
 # 6. Writes during every try: the set is still written, marked as counted from the recovered copy.
 reset; printf '"case-a", 10, 20\n"case-a", 11, 20\n"case-a", 12, 20\n"case-a", 13, 20\n"case-a", 14, 20\n"case-a", 15, 20\n' > "${state}/live"

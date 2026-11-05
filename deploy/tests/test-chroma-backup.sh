@@ -55,6 +55,24 @@ if PATH="${test_root}:${PATH}" run "$(epoch '2026-11-05 02:31')" dump; then fail
 [[ ! -d "${dir}/chroma-20261105-0231Z" ]] || fail "moving index became a set"
 grep -q 'kept changing' "${alerts}" || fail "no alert for a moving index"
 
+# An index saved during the database copy sends the run round again; an empty collection is still listed.
+python3 -I - "${vol}/chroma.sqlite3" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1]); db.execute("insert into collections values ('c3', 'empty')"); db.commit(); db.close()
+PY
+cat > "${test_root}/python-mover" <<EOF
+#!/usr/bin/env bash
+c="${test_root}/py.n"; n="\$(cat "\$c" 2>/dev/null || echo 0)"; echo \$(( n + 1 )) > "\$c"
+python3 "\$@"; rc=\$?
+[[ "\$n" == 0 ]] && echo more >> "${vol}/segment-1/data_level0.bin"
+exit \$rc
+EOF
+chmod +x "${test_root}/python-mover"
+PY="${test_root}/python-mover" run "$(epoch '2026-11-05 02:40')" dump || fail "second try after a database-copy change failed"
+grep -q 'during the database copy' "${test_root}/log" || fail "change during the database copy not noticed"
+grep -q 'copy_tries=2' "${dir}/chroma-20261105-0240Z/meta.env" || fail "second try not recorded"
+grep -q 'empty.0' "${dir}/chroma-20261105-0240Z/counts.tsv" || fail "empty collection not listed"
+
 # Default retention is 14 days.
 now2="$(epoch '2026-12-10 02:30')"
 old="chroma-$(date -u -d "@$(( now2 - 15 * 86400 ))" +%Y%m%d-%H%M)Z"; keep="chroma-$(date -u -d "@$(( now2 - 13 * 86400 ))" +%Y%m%d-%H%M)Z"

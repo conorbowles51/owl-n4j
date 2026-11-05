@@ -243,3 +243,9 @@ journalctl -u owl-frontend-v2 -f
 docker logs -f owl-v2-evidence-api
 docker logs -f owl-v2-evidence-worker
 ```
+
+## Backups
+
+`docs/backup-inventory.md` lists every store and its protection; `docs/backup-restore.md` holds the restore steps.
+`bash deploy/tests/test-<name>.sh` exercises `db-backup`, `neo4j-backup`, `chroma-backup`, `keys-bundle`,
+`evidence-copy` and `backup-check`. `deploy/restore-drill.sh run` restores the newest backups into scratch containers.

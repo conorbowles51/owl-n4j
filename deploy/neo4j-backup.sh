@@ -65,6 +65,7 @@ admin() {  # <data dir> <out dir> <neo4j-admin args...>
 }
 
 do_dump() {
+    guard_exit
     mkdir -p "${BACKUP_DIR}"
     exec 8>"${BACKUP_DIR}/.lock"
     flock -n 8 || { alert "a Neo4j backup is already running"; return 1; }
@@ -88,12 +89,12 @@ do_dump() {
     started="$(date -u +%s)"
     rm -rf -- "${BACKUP_DIR}"/.work-* "${BACKUP_DIR}"/.neo4j-*.partial
     work="${BACKUP_DIR}/.work-${name}"
-    trap cleanup EXIT
     local data="${work}/data" out="${BACKUP_DIR}/.${name}.partial"
     mkdir -p "${work}" "${out}"
     local copied=0
     while (( tries < COPY_TRIES )); do
         tries=$(( tries + 1 ))
+        copied=0   # only the copy this try made counts; an earlier one is gone
         local ck0 ck1
         before="$(counts_live)" || { alert "no Neo4j backup: live counts could not be read; newest is ${previous:-none}"; rm -rf -- "${out}"; return 1; }
         ck0="$(checkpoint_hash)"
@@ -107,7 +108,7 @@ do_dump() {
     done
     if (( ! copied )); then
         rm -rf -- "${out}"
-        alert "no Neo4j backup: no copy free of a checkpoint in ${COPY_TRIES} tries; newest is ${previous:-none}"
+        alert "no Neo4j backup: no whole copy free of a checkpoint in ${COPY_TRIES} tries; newest is ${previous:-none}"
         return 1
     fi
     log "store copied in $(( $(date -u +%s) - started )) s, ${tries} tries, stable=${stable}"

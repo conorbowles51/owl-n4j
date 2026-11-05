@@ -9,7 +9,8 @@
 # Neo4j: the newest dump is loaded into a scratch neo4j of the live image, started, and nodes and relationships per
 #   case must equal the set's counts file; neo4j-admin's consistency check runs on the loaded store.
 # Chroma: the newest copy starts in a scratch chroma of the live image; records per collection must equal the set's
-#   counts file and a stored vector must find itself through the index.
+#   counts file, and a sample of stored vectors must find themselves through the restored index at least as often as
+#   through the live one.
 # Evidence: a random sample of files named by the RESTORED database is hashed at its live path (and in the copy, when
 #   EVIDENCE_COPY_DEST is set) against the hash the restored database holds.
 # Live is the reference when the backup was taken, not when the drill runs: the drift since then is printed beside
@@ -32,6 +33,7 @@ NEO4J_CONTAINER="${NEO4J_CONTAINER:-owl-v2-n4j}"
 CHROMA_CONTAINER="${CHROMA_CONTAINER:-owl-v2-chromadb}"
 CHROMA_LIVE_URL="${CHROMA_LIVE_URL:-http://127.0.0.1:8101}"
 SAMPLE="${SAMPLE:-300}"
+CHROMA_SAMPLE="${CHROMA_SAMPLE:-25}"
 EVIDENCE_COPY_DEST="${EVIDENCE_COPY_DEST:-}"
 DRILL_MAX_AGE_DAYS="${DRILL_MAX_AGE_DAYS:-8}"
 SCRATCH_PG=lxbf-drill-pg; SCRATCH_N4J=lxbf-drill-n4j; SCRATCH_CHROMA=lxbf-drill-chroma
@@ -99,7 +101,7 @@ drill_postgres() {
         { fail "postgres: scratch container did not start"; return; }
     local i
     for (( i = 0; i < 100; i++ )); do
-        "${DOCKER}" exec "${SCRATCH_PG}" pg_isready -q -U "${PG_USER}" -d "${PG_DB}" && break
+        "${DOCKER}" exec "${SCRATCH_PG}" pg_isready -q -h 127.0.0.1 -U "${PG_USER}" -d "${PG_DB}" && break
         sleep 3
     done
     if ! "${DOCKER}" exec -i "${SCRATCH_PG}" nice -n 15 pg_restore -U "${PG_USER}" -d "${PG_DB}" --no-owner --no-privileges \
@@ -241,30 +243,30 @@ drill_chroma() {
     (( ready )) || { fail "chroma: scratch server did not come up"; return; }
     note "chroma: up in $(elapsed "${t0}") s"
     local out
-    if out="$(python3 -I - "http://${ip}:8000" "${API}" "${dir}/counts.tsv" "${WORK}/chroma.restored.tsv" <<'PY'
-import json, sys, urllib.request
-base, api, expected, written = sys.argv[1:5]
-def call(path, body=None):
+    if out="$(python3 -I - "http://${ip}:8000" "${CHROMA_LIVE_URL}" "${API}" "${WORK}/chroma.restored.tsv" "${CHROMA_SAMPLE}" <<'PY'
+import json, random, sys, urllib.request
+restored, live, api, written, sample = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5])
+def call(base, path, body=None):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(f"{base}/{api}/{path}", data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as r:
         return json.load(r)
-rows = {}
-found = 0
-tried = 0
-for c in call("collections"):
-    rows[c["name"]] = call(f"collections/{c['id']}/count")
-    if not rows[c["name"]]:
-        continue
-    got = call(f"collections/{c['id']}/get", {"limit": 1, "include": ["embeddings"]})
-    if got["ids"]:
+rows, live_ids = {}, {c["name"]: c["id"] for c in call(live, "collections")}
+tried = found_restored = found_live = 0
+for c in call(restored, "collections"):
+    count = rows[c["name"]] = call(restored, f"collections/{c['id']}/count")
+    for offset in random.sample(range(count), min(sample, count)):
+        got = call(restored, f"collections/{c['id']}/get", {"limit": 1, "offset": offset, "include": ["embeddings"]})
+        if not got["ids"] or c["name"] not in live_ids:
+            continue
+        ask = {"query_embeddings": got["embeddings"], "n_results": 5, "include": []}
         tried += 1
-        hit = call(f"collections/{c['id']}/query", {"query_embeddings": got["embeddings"], "n_results": 3, "include": []})
-        found += got["ids"][0] in hit["ids"][0]
+        found_restored += got["ids"][0] in call(restored, f"collections/{c['id']}/query", ask)["ids"][0]
+        found_live += got["ids"][0] in call(live, f"collections/{live_ids[c['name']]}/query", ask)["ids"][0]
 with open(written, "w") as out:
     for name in sorted(rows):
         out.write(f"{name}\t{rows[name]}\n")
-print(f"{found} {tried}")
+print(f"{tried} {found_restored} {found_live}")
 PY
     )"; then
         if compare_exact <(LC_ALL=C sort "${dir}/counts.tsv") <(LC_ALL=C sort "${WORK}/chroma.restored.tsv") chroma; then
@@ -272,10 +274,13 @@ PY
         else
             fail "chroma: restored counts differ from the backup's"
         fi
-        if [[ "${out%% *}" == "${out##* }" && "${out%% *}" -gt 0 ]]; then
-            pass "chroma: a stored vector finds itself through the index in ${out##* } of ${out##* } collections"
+        local tried found_restored found_live
+        read -r tried found_restored found_live <<< "${out}"
+        # Live is the yardstick: an approximate index does not find every stored vector on live either.
+        if (( tried > 0 && found_restored >= found_live )); then
+            pass "chroma: the restored index finds ${found_restored} of ${tried} stored vectors, live finds ${found_live}"
         else
-            fail "chroma: stored vectors found themselves in only ${out%% *} of ${out##* } collections"
+            fail "chroma: the restored index finds ${found_restored} of ${tried} stored vectors, live finds ${found_live}"
         fi
     else
         fail "chroma: the restored server did not answer: ${out:-no output}"

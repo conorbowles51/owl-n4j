@@ -38,8 +38,8 @@ target.execute("PRAGMA synchronous=OFF")
 source.backup(target, pages=4096, sleep=0.02)
 source.close()
 rows = target.execute(
-    "SELECT c.name, count(*) FROM embeddings e JOIN segments s ON e.segment_id = s.id "
-    "JOIN collections c ON s.collection = c.id GROUP BY c.name ORDER BY c.name").fetchall()
+    "SELECT c.name, count(e.id) FROM collections c LEFT JOIN segments s ON s.collection = c.id "
+    "LEFT JOIN embeddings e ON e.segment_id = s.id GROUP BY c.name ORDER BY c.name").fetchall()
 with open(counts, "w") as out:
     for name, n in rows:
         out.write(f"{name}\t{n}\n")
@@ -47,6 +47,7 @@ PY
 }
 
 do_dump() {
+    guard_exit
     mkdir -p "${BACKUP_DIR}"
     exec 8>"${BACKUP_DIR}/.lock"
     flock -n 8 || { alert "a Chroma backup is already running"; return 1; }
@@ -67,17 +68,20 @@ do_dump() {
         s0="$(index_state)"
         tar -C "${CHROMA_DATA}" --exclude='./chroma.sqlite3*' -cf "${out}/hnsw.tar" . || { log "try ${tries}: tar failed"; continue; }
         s1="$(index_state)"
-        if [[ "${s0}" == "${s1}" ]]; then ok=1; break; fi
-        log "try ${tries}: an index changed during the copy; again"
+        if [[ "${s0}" != "${s1}" ]]; then log "try ${tries}: an index changed during the copy; again"; continue; fi
+        rm -f -- "${out}/chroma.sqlite3"
+        if ! copy_sqlite "${out}/chroma.sqlite3" "${out}/counts.tsv"; then
+            rm -rf -- "${out}"
+            alert "no Chroma backup: the SQLite copy failed; newest is ${previous:-none}"
+            return 1
+        fi
+        # An index saved after the tar, with its queue trimmed before the database copy, would leave vectors in neither.
+        if [[ "$(index_state)" == "${s0}" ]]; then ok=1; break; fi
+        log "try ${tries}: an index changed during the database copy; again"
     done
     if (( ! ok )); then
         rm -rf -- "${out}"
         alert "no Chroma backup: the indexes kept changing in ${COPY_TRIES} tries; newest is ${previous:-none}"
-        return 1
-    fi
-    if ! copy_sqlite "${out}/chroma.sqlite3" "${out}/counts.tsv"; then
-        rm -rf -- "${out}"
-        alert "no Chroma backup: the SQLite copy failed; newest is ${previous:-none}"
         return 1
     fi
     size="$(stat -c %s "${out}/chroma.sqlite3")"

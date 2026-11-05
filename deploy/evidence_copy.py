@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A verified, incremental, resumable copy of the evidence files and the backups to a second location.
 
+    evidence_copy.py init --dest DIR
     evidence_copy.py run --dest DIR [--source label=PATH ...] [--budget-seconds N] [--min-free-gb N] [--max-mb-s N]
     evidence_copy.py verify --dest DIR --sample N
     evidence_copy.py status --dest DIR
@@ -21,7 +22,9 @@ A file that disappears from the source stays in the copy and is counted as "gone
 at the next file: only a file in flight is read again. Exit 0 complete, 3 stopped early (budget or space), 1 a file
 failed its check.
 
-The destination is a directory: a mounted disk, or a mounted bucket. Run at nice 15, ionice idle (owl-evidence-copy
+The destination is a directory: a mounted disk, or a mounted bucket. `init` marks it once, on the mounted location; a run
+refuses a directory with no mark, so a mount that is missing after a reboot is an error and not a copy onto the boot
+disk. Run at nice 15, ionice idle (owl-evidence-copy
 service). The unit stays off until a destination is named.
 """
 import argparse
@@ -47,6 +50,7 @@ DEFAULT_SOURCES = [
 # Files the backup scripts are still writing or their locks; a whole set is renamed into place when it is finished.
 SKIP = [".*.partial", ".work-*", ".lock", ".*.suspect"]
 CHUNK = 1024 * 1024
+MARK = ".loupe-evidence-copy"
 
 
 def utcnow():
@@ -179,9 +183,15 @@ def run(args):
     for label, root in sources:
         if inside(dest, root) or inside(root, dest):
             sys.exit(f"--dest {dest} and source {label} ({root}) overlap")
-    os.makedirs(dest, exist_ok=True)
+    if not os.path.isfile(os.path.join(dest, MARK)):
+        sys.exit(f"{dest} is not a marked copy location (evidence_copy.py init); is it mounted?")
     db = open_state(dest)
     run_id = utcnow()
+    try:
+        with open(os.path.join(dest, "last-run.json")) as handle:
+            earlier = json.load(handle)
+    except OSError:
+        earlier = {}
     started = time.monotonic()
     throttle = Throttle(args.max_mb_s) if args.max_mb_s else None
     floor = args.min_free_gb * 1024 ** 3
@@ -262,6 +272,8 @@ def run(args):
     total_files, total_bytes = db.execute("SELECT count(*), coalesce(sum(size), 0) FROM files").fetchone()
     complete = not stopped and not errors and not tally["moving"]
     report = dict(
+        first_started=earlier.get("first_started", run_id),
+        last_complete=utcnow() if complete else earlier.get("last_complete", ""),
         started=run_id, finished=utcnow(), seconds=round(time.monotonic() - started), complete=complete,
         stopped=stopped, tally=tally, files_in_copy=total_files, bytes_in_copy=total_bytes,
         sources=dict(sources), errors=errors[:50], errors_total=len(errors),
@@ -274,6 +286,15 @@ def run(args):
     if tally["failed"] or errors:
         return 1
     return 3 if stopped else 0
+
+
+def init(args):
+    dest = os.path.realpath(args.dest)
+    os.makedirs(dest, exist_ok=True)
+    with open(os.path.join(dest, MARK), "w") as out:
+        out.write(f"Loupe evidence copy, marked {utcnow()}\n")
+    print(f"marked {dest}")
+    return 0
 
 
 def verify(args):
@@ -312,6 +333,9 @@ def main():
     two.add_argument("--dest", required=True)
     two.add_argument("--sample", type=int, default=200)
     two.set_defaults(handler=verify)
+    four = sub.add_parser("init")
+    four.add_argument("--dest", required=True)
+    four.set_defaults(handler=init)
     three = sub.add_parser("status")
     three.add_argument("--dest", required=True)
     three.set_defaults(handler=status)

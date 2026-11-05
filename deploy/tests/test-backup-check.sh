@@ -41,5 +41,14 @@ mk 2026-11-05T06:00:00Z 2
 if run EVIDENCE_COPY_DEST="${dest}"; then fail "errors passed"; fi
 mk 2026-11-05T06:00:00Z 0
 run EVIDENCE_COPY_DEST="${dest}" || fail "good copy failed"
+# Stopped by the space floor, or no whole pass for a week: FAILED though a run finished recently.
+printf '{"finished":"2026-11-05T06:00:00Z","tally":{"failed":0},"errors_total":0,"errors":[],"stopped":"space"}' > "${dest}/last-run.json"
+if run EVIDENCE_COPY_DEST="${dest}"; then fail "space stop passed"; fi
+grep -q 'free-space floor' "${status}" || fail "no space reason"
+printf '{"finished":"2026-11-05T06:00:00Z","tally":{"failed":0},"errors_total":0,"errors":[],"stopped":"budget","first_started":"2026-10-20T06:00:00Z","last_complete":"","files_in_copy":5,"bytes_in_copy":9,"complete":false}' > "${dest}/last-run.json"
+if run EVIDENCE_COPY_DEST="${dest}"; then fail "no whole pass in two weeks passed"; fi
+grep -q 'not finished a whole pass' "${status}" || fail "no behind reason"
+mk 2026-11-05T06:00:00Z 0
+run EVIDENCE_COPY_DEST="${dest}" || fail "good copy failed"
 [[ "$(state evidence-copy)" == ok ]] || fail "good copy not ok"
 echo "test-backup-check: all passed"

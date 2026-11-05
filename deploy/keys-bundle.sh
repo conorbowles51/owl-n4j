@@ -20,7 +20,8 @@ BACKUP_DIR="${BACKUP_DIR:-/mnt/owl-data/backups/keys}"
 . "$(dirname "${BASH_SOURCE[0]}")/backup-lib.sh"
 KEYS_PASSPHRASE_FILE="${KEYS_PASSPHRASE_FILE:-/root/.config/loupe-backup/passphrase}"
 GPG="${GPG:-gpg}"
-# One path or glob per line. A path that matches nothing is listed in files.tsv as "missing".
+# One path or glob per line. A path that matches nothing is listed in files.tsv as "missing"; the bundle is still
+# written, with what is there, and the run and the check both alert.
 KEYS_PATHS="${KEYS_PATHS:-${LIVE_CHECKOUT}/.env
 /home/conorbowles51/.ssh/deploy_key
 /home/conorbowles51/.ssh/config
@@ -46,6 +47,7 @@ do_init() {
 }
 
 do_dump() {
+    guard_exit
     mkdir -p "${BACKUP_DIR}"
     local previous name out list missing=0 entries p f
     previous="$(sets keys | tail -n 1)"
@@ -99,6 +101,10 @@ do_dump() {
     mv -f -- "${out}" "${BACKUP_DIR}/${name}"
     log "wrote ${name} (${entries} files, ${missing} listed paths absent)"
     prune_sets keys
+    if (( missing )); then
+        alert "keys bundle ${name} is short: $(awk -F'\t' '$2 == "missing" {print $1}' "${BACKUP_DIR}/${name}/files.tsv" | tr '\n' ' ')not found"
+        return 1
+    fi
 }
 
 read_back() { "${GPG}" "${gpg_args[@]}" --decrypt "$1" 2>/dev/null | tar -tf - 2>/dev/null | wc -l; }
@@ -107,6 +113,10 @@ do_check() {
     check_set_age keys "keys" || return 1
     if [[ ! -s "${KEYS_PASSPHRASE_FILE}" ]]; then
         alert "keys bundle ${NEWEST_SET}: the passphrase file is gone from this box"
+        return 1
+    fi
+    if grep -q '^missing=[1-9]' "${BACKUP_DIR}/${NEWEST_SET}/meta.env"; then
+        alert "newest keys bundle ${NEWEST_SET} is short: $(awk -F'\t' '$2 == "missing" {print $1}' "${BACKUP_DIR}/${NEWEST_SET}/files.tsv" | tr '\n' ' ')not found"
         return 1
     fi
     local n; n="$(read_back "${BACKUP_DIR}/${NEWEST_SET}/bundle.tar.gpg")" || n=0

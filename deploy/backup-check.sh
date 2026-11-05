@@ -50,6 +50,12 @@ if age >= limit:
     sys.exit(f"evidence copy last ran {age} h ago (limit {limit} h)")
 if run["tally"]["failed"] or run["errors_total"]:
     sys.exit(f"evidence copy: {run['errors_total']} errors in the last run; first: {(run['errors'] or ['?'])[0]}"[:200])
+if run.get("stopped") == "space":
+    sys.exit("evidence copy stopped: the free-space floor was reached, new files are not being copied")
+since = run.get("last_complete") or run.get("first_started") or run["finished"]
+behind = (now - calendar.timegm(time.strptime(since, "%Y-%m-%dT%H:%M:%SZ"))) // 3600
+if behind >= 168:
+    sys.exit(f"evidence copy has not finished a whole pass in {behind} h")
 print(f"{run['files_in_copy']} files, {run['bytes_in_copy']} bytes, last run {age} h ago, complete={run['complete']}")
 PY
     )"; then
