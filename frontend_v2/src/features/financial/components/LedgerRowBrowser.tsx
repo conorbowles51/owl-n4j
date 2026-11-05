@@ -58,6 +58,7 @@ import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { ExportSelectedPayments } from "./ExportSelectedPayments"
 import { PaymentComparison } from "./PaymentComparison"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
+import { AddPaymentsToFinding } from "./AddPaymentsToFinding"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SelectedPaymentsReview } from "./SelectedPaymentsReview"
 import {
@@ -209,6 +210,7 @@ export function LedgerRowBrowser({
   const tableStatementNames =
     useStatementNames(tableView && tableColumns.includes("statement") && exportContext ? exportContext.caseId : "none").data
   const [compare, setCompare] = useState(false)
+  const [addToFinding, setAddToFinding] = useState(false)
   const [finding, setFinding] = useState<"question" | "observation" | null>(
     null
   )
@@ -1644,6 +1646,14 @@ export function LedgerRowBrowser({
                       Create observation
                     </Button>
                   )}
+                  {canEdit && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setAddToFinding(true)}
+                    >
+                      Add to existing finding
+                    </Button>
+                  )}
                   <ExportSelectedPayments
                     caseId={exportContext.caseId}
                     ids={selection}
@@ -1669,6 +1679,13 @@ export function LedgerRowBrowser({
                     ids={selection}
                     initial={{ kind: finding }}
                     onClose={() => setFinding(null)}
+                  />
+                )}
+                {addToFinding && (
+                  <AddPaymentsToFinding
+                    caseId={exportContext.caseId}
+                    ids={selection}
+                    onClose={() => setAddToFinding(false)}
                   />
                 )}
                 <Disclosure className="text-sm" label="Selected amounts and saved selections">

@@ -201,6 +201,17 @@ export const caseworkAPI = {
       { method: "PATCH", body: input }
     ),
 
+  /** Appends payments to a saved finding; what it already cites stays exactly as saved. */
+  addFindingPayments: (
+    caseId: string,
+    entryId: string,
+    input: { expected_version: number; transaction_ids: string[] }
+  ) =>
+    fetchAPI<{ entry: CaseworkEntry; added: number; already_cited: number }>(
+      `${base(caseId)}/entries/${encodeURIComponent(entryId)}/financial-payments`,
+      { method: "POST", body: input }
+    ),
+
   changeLifecycle: (
     caseId: string,
     entryId: string,

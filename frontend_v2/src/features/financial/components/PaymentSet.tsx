@@ -8,6 +8,7 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import { InvestigationTransactionTable } from "./InvestigationTransactionTable"
 import { PaymentComparison } from "./PaymentComparison"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
+import { AddPaymentsToFinding } from "./AddPaymentsToFinding"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 
 /** Payments chosen in an investigation view, with comparison, sources and findings. */
@@ -35,6 +36,7 @@ export function PaymentSet({
   const [labelIds, setLabelIds] = useState<string[] | null>(null)
   const [comparison, setComparison] = useState(false)
   const [finding, setFinding] = useState(false)
+  const [addToFinding, setAddToFinding] = useState(false)
   const [requestedPage, setPage] = useFinancialDraft(
     caseId,
     `investigation-page:${title}`,
@@ -93,6 +95,15 @@ export function PaymentSet({
               {canEdit && (
                 <Button disabled={!ids.length} onClick={() => setFinding(true)}>
                   Create finding
+                </Button>
+              )}
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  disabled={!ids.length}
+                  onClick={() => setAddToFinding(true)}
+                >
+                  Add to existing finding
                 </Button>
               )}
               {selected.length > 0 && (
@@ -175,6 +186,13 @@ export function PaymentSet({
           ids={ids}
           title={title}
           onClose={() => setComparison(false)}
+        />
+      )}
+      {addToFinding && (
+        <AddPaymentsToFinding
+          caseId={caseId}
+          ids={ids}
+          onClose={() => setAddToFinding(false)}
         />
       )}
       {finding && (

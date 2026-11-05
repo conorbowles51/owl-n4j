@@ -21,6 +21,7 @@ from services.workspace_entry_service import (
     WorkspaceEntryNotFound,
     WorkspaceEntryValidationError,
     add_entry_link,
+    add_financial_payments,
     batch_add_entry_links,
     ENTRY_LINKS_BATCH_LIMIT,
     change_confidence,
@@ -228,6 +229,12 @@ class EntryLinkBatchRequest(BaseModel):
     links: list[EntryLinkInput] = Field(default_factory=list)
     rationale: str = Field(min_length=1, max_length=500)
     expected_version: int | None = Field(default=None, ge=1)
+
+
+class EntryPaymentsRequest(BaseModel):
+    # The service refuses more than ENTRY_LINKS_BATCH_LIMIT with a stated message; nothing is cut.
+    expected_version: int = Field(ge=1)
+    transaction_ids: list[str] = Field(default_factory=list)
 
 
 class EntryLinkCreateRequest(BaseModel):
@@ -752,6 +759,31 @@ def remove_case_entry_links(
             link_ids=request.link_ids,
             current_user=current_user,
             expected_version=request.expected_version,
+        )
+    except Exception as exc:
+        _raise_entry_error(db, exc)
+
+
+@router.post(
+    "/{case_id}/entries/{entry_id}/financial-payments",
+    dependencies=[Depends(require_case_edit)],
+)
+def add_case_entry_financial_payments(
+    case_id: UUID,
+    entry_id: UUID,
+    request: EntryPaymentsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Append chosen payments to a saved finding. What it already cites stays exactly as saved."""
+    try:
+        return add_financial_payments(
+            db,
+            case_id=case_id,
+            entry_id=entry_id,
+            current_user=current_user,
+            expected_version=request.expected_version,
+            transaction_ids=request.transaction_ids,
         )
     except Exception as exc:
         _raise_entry_error(db, exc)

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { ChevronDown, ChevronRight, Pencil, CalendarPlus } from "lucide-react"
+import { ChevronDown, ChevronRight, Pencil, CalendarPlus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import {
@@ -15,6 +15,7 @@ export function FinancialFindingCard({
   canEdit,
   onEdit,
   onTimeline,
+  onAddPayments,
   included,
   onInclude,
   selectionDisabled,
@@ -26,6 +27,7 @@ export function FinancialFindingCard({
   canEdit: boolean
   onEdit: () => void
   onTimeline: () => void
+  onAddPayments?: () => void
   included: boolean
   onInclude: (included: boolean) => void
   selectionDisabled: boolean
@@ -86,6 +88,16 @@ export function FinancialFindingCard({
             >
               <Pencil aria-hidden="true" /> Edit
             </Button>
+            {onAddPayments && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-9"
+                onClick={onAddPayments}
+              >
+                <Plus aria-hidden="true" /> Add selected payments
+              </Button>
+            )}
           </div>
         )}
         <div className="mt-auto space-y-2 pt-1">

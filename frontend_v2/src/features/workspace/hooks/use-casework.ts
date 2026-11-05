@@ -76,6 +76,17 @@ export function useUpdateCaseworkEntry(caseId: string) {
   })
 }
 
+export function useAddFindingPayments(caseId: string) {
+  const refresh = useRefreshCasework(caseId)
+  return useMutation({
+    mutationFn: ({ entryId, input }: {
+      entryId: string
+      input: { expected_version: number; transaction_ids: string[] }
+    }) => caseworkAPI.addFindingPayments(caseId, entryId, input),
+    onSuccess: refresh,
+  })
+}
+
 export function useDeleteCaseworkEntry(caseId: string) {
   const refresh = useRefreshCasework(caseId)
   return useMutation({

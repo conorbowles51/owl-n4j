@@ -1649,6 +1649,142 @@ def batch_add_entry_links(
     }
 
 
+FINDING_PAYMENT_SELECTION_SCHEMA = "loupe.financial.payment_selection/1"
+FINDING_PAYMENT_SOURCE_BATCH = 500
+
+
+def _cited_payment_ids(links: list[WorkspaceEntryLink]) -> set[str]:
+    cited: set[str] = set()
+    for link in links:
+        ids = (link.source_anchor or {}).get("financial_transaction_ids")
+        if isinstance(ids, list):
+            cited.update(value for value in ids if isinstance(value, str))
+    return cited
+
+
+def add_financial_payments(
+    db: Session,
+    *,
+    case_id: UUID,
+    entry_id: UUID,
+    current_user: User,
+    expected_version: int,
+    transaction_ids: list[str],
+) -> dict[str, Any]:
+    """Append payments a person chose to a saved financial finding, keeping every existing citation as saved.
+
+    The new payments are captured here, at their current values, from the same citation the ledger gives
+    (`ledger_sources`). What a finding already cites is never re-read: its ids, references and saved values stay
+    in place and in order, and a payment already cited is counted, not captured again. A payment that is no
+    longer current refuses the whole request; nothing is added. One `link_added` event records who, what and when.
+    """
+    from services.financial.ledger_source import LedgerSourceError, ledger_sources
+
+    wanted = list(dict.fromkeys(str(value).lower() for value in transaction_ids))
+    if not wanted:
+        raise WorkspaceEntryValidationError("Choose at least one payment to add")
+    if len(wanted) > ENTRY_LINKS_BATCH_LIMIT:
+        raise WorkspaceEntryValidationError(
+            f"{len(wanted):,} payments were sent; one request takes at most {ENTRY_LINKS_BATCH_LIMIT:,}. "
+            "Send them in parts; nothing was added."
+        )
+    # The row lock keeps two people's additions from each writing the same link from the same starting list.
+    db.execute(select(WorkspaceEntry.id).where(
+        WorkspaceEntry.id == entry_id, WorkspaceEntry.case_id == case_id).with_for_update())
+    entry = _load_entry(db, case_id=case_id, entry_id=entry_id)
+    if entry.version != expected_version:
+        raise WorkspaceEntryConflict(
+            f"Entry changed from version {expected_version} to {entry.version}"
+        )
+    tags = entry.tags or []
+    if "financial" not in tags or "financial-report" in tags:
+        raise WorkspaceEntryValidationError("Payments can only be added to a saved financial finding or observation")
+    cited = _cited_payment_ids(entry.links)
+    new_ids = [value for value in wanted if value not in cited]
+    sources: list[dict[str, Any]] = []
+    try:
+        for offset in range(0, len(new_ids), FINDING_PAYMENT_SOURCE_BATCH):
+            batch = [UUID(value) for value in new_ids[offset:offset + FINDING_PAYMENT_SOURCE_BATCH]]
+            sources += ledger_sources(db, case_id=case_id, transaction_ids=batch)["sources"]
+    except ValueError as exc:  # LedgerSourceError is a ValueError, and so is a malformed id
+        raise WorkspaceEntryValidationError(
+            str(exc) if isinstance(exc, LedgerSourceError) else "A selected payment reference is not valid"
+        ) from exc
+    for source in sources:
+        if source["ledger_status"] != "admitted" or source["superseded_by_id"] is not None:
+            raise WorkspaceEntryConflict(
+                f"{source['ref_id']} changed or is no longer included. Review your selected payments; nothing was added."
+            )
+    by_file: dict[str, list[dict[str, Any]]] = {}
+    for source in sources:
+        by_file.setdefault(source["evidence_file_id"], []).append(source)
+    links = {(link.target_type, link.target_id): link for link in entry.links}
+    link_ids: list[str] = []
+    for file_id, chosen in by_file.items():
+        ids = [source["transaction_id"] for source in chosen]
+        refs = [source["ref_id"] for source in chosen]
+        rows = [source["transaction"] for source in chosen]
+        link = links.get(("evidence", file_id))
+        schema = (link.link_metadata or {}).get("schema") if link is not None else None
+        if link is None:
+            link = _append_link(db, entry, current_user, {
+                "target_type": "evidence", "target_id": file_id, "target_label": chosen[0]["filename"],
+                "relationship": "context",
+                "source_anchor": {"financial_transaction_ids": ids, "financial_ref_ids": refs},
+                "metadata": {"schema": FINDING_PAYMENT_SELECTION_SCHEMA, "transactions": rows},
+            })
+        elif schema in (None, FINDING_PAYMENT_SELECTION_SCHEMA):
+            # New objects, so the JSON columns are written; the saved items are carried over untouched.
+            anchor, metadata = dict(link.source_anchor or {}), dict(link.link_metadata or {})
+            anchor["financial_transaction_ids"] = [*(anchor.get("financial_transaction_ids") or []), *ids]
+            anchor["financial_ref_ids"] = [*(anchor.get("financial_ref_ids") or []), *refs]
+            metadata["schema"] = FINDING_PAYMENT_SELECTION_SCHEMA
+            metadata["transactions"] = [*(metadata.get("transactions") or []), *rows]
+            link.source_anchor, link.link_metadata = anchor, metadata
+        else:
+            # This file's link is a saved analysis (a trace, a document review) with its own reading of its anchor,
+            # so the payments get their own links, one per payment, instead of changing what that analysis cites.
+            for source in chosen:
+                added = _append_link(db, entry, current_user, {
+                    "target_type": "financial_transaction", "target_id": source["transaction_id"],
+                    "relationship": "context",
+                    "source_anchor": {"financial_transaction_ids": [source["transaction_id"]],
+                                      "financial_ref_ids": [source["ref_id"]]},
+                    "metadata": {"schema": FINDING_PAYMENT_SELECTION_SCHEMA, "transactions": [source["transaction"]]},
+                })
+                link_ids.append(str(added.id))
+            continue
+        link_ids.append(str(link.id))
+    if sources:
+        entry.version += 1
+        entry.updated_by_user_id = current_user.id
+        entry.updated_by_email = current_user.email
+        entry.updated_by_name = current_user.name
+        db.flush()
+        _record_revision(db, entry, current_user)
+        _record_event(
+            db,
+            entry,
+            "link_added",
+            current_user,
+            after_state={
+                "added": len(sources),
+                "skipped": len(wanted) - len(sources),
+                "link_ids": link_ids,
+                "transaction_ids": [source["transaction_id"] for source in sources],
+                "ref_ids": [source["ref_id"] for source in sources],
+                "types": ["financial_transaction"],
+            },
+            rationale="Added selected payments to this finding",
+        )
+    db.commit()
+    return {
+        "entry": get_entry(db, case_id=case_id, entry_id=entry_id),
+        "added": len(sources),
+        "already_cited": len(wanted) - len(sources),
+    }
+
+
 def update_entry_link(
     db: Session,
     *,

@@ -4,6 +4,7 @@ import { FinancialFindingCard } from "./FinancialFindingCard"
 import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
+import { AddPaymentsToFinding } from "./AddPaymentsToFinding"
 import { findingDraft, findingKindLabel } from "../lib/investigator-finding"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialAccess } from "../hooks/use-financial-access"
@@ -61,6 +62,12 @@ export function FinancialFindings({
   const { canEdit } = useFinancialAccess()
   const [timeline, setTimeline] = useState<CaseworkEntry | null>(null)
   const [editing, setEditing] = useState<CaseworkEntry | "new" | null>(null)
+  const [addingTo, setAddingTo] = useState<CaseworkEntry | null>(null)
+  const [selectedPayments] = useFinancialDraft<string[]>(
+    caseId || "",
+    "selected-payments",
+    []
+  )
   const [error, setError] = useState("")
   const [source, setSource] = useState<string | null>(null)
   const query = useCaseworkEntries(caseId, {
@@ -222,6 +229,11 @@ export function FinancialFindings({
             canEdit={canEdit}
             onTimeline={() => setTimeline(entry)}
             onEdit={() => setEditing(entry)}
+            onAddPayments={
+              entry.tags.includes("financial-workspace")
+                ? () => setAddingTo(entry)
+                : undefined
+            }
             included={reportDraft.selected.some((note) => note.id === entry.id)}
             selectionDisabled={query.isPlaceholderData}
             onInclude={(included) =>
@@ -461,6 +473,15 @@ export function FinancialFindings({
           caseId={caseId}
           entry={editing === "new" ? undefined : editing}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {addingTo && (
+        <AddPaymentsToFinding
+          key={`${addingTo.id}:${addingTo.version}`}
+          caseId={caseId}
+          ids={selectedPayments}
+          entry={addingTo}
+          onClose={() => setAddingTo(null)}
         />
       )}
       {source && (
