@@ -70,7 +70,7 @@ export default function TextPlacePicker({ point, radiusM, suggestions, onPick, h
             <Layer id="tp-suggestions" type="circle" paint={{
               "circle-radius": 6, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#a16207", "circle-stroke-width": 2,
             }} />
-            <Layer id="tp-suggestions-name" type="symbol" layout={{ "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.2] }}
+            <Layer id="tp-suggestions-name" type="symbol" layout={{ "text-field": ["get", "name"], "text-font": ["Noto Sans Medium"], "text-size": 11, "text-offset": [0, 1.2] }}
               paint={{ "text-color": "#713f12", "text-halo-color": "#ffffff", "text-halo-width": 1 }} />
           </Source>
           <Source id="tp-area" type="geojson" data={area}>

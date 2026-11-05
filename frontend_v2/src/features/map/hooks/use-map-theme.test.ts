@@ -60,6 +60,25 @@ describe("the base map is held on this server", () => {
     }
   })
 
+  it("every label a screen adds to a map names a font held on the server", () => {
+    // a label with no text-font asks for maplibre's default font, which the server does not hold: a 404, then a rough local one
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) walk(path)
+        else if (path.endsWith(".tsx") && !path.includes(".test.")) files.push(path)
+      }
+    }
+    walk(join(process.cwd(), "src/features"))
+    const labels = files.flatMap((file) =>
+      readFileSync(file, "utf8").split('type="symbol"').slice(1).map((rest) => ({ file, layer: rest.split("/>")[0] })),
+    )
+    expect(labels.length).toBeGreaterThanOrEqual(3)
+    const held = /"text-font": \["Noto Sans (Regular|Medium|Italic)"\]/
+    expect(labels.filter(({ layer }) => !held.test(layer)).map(({ file }) => file)).toEqual([])
+  })
+
   it("no map screen's source names an outside map host", () => {
     const roots = ["src/features/map", "src/features/graph", "src/features/phones"]
     const files: string[] = []

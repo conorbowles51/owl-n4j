@@ -52,7 +52,7 @@ export function PlacesMap({ layers, height = 360 }: { layers: PlacesMapLayers; h
           <Source id="pm-places" type="geojson" data={layers.places ?? EMPTY}>
             <Layer id="pm-places-fill" type="fill" paint={{ "fill-color": "#7c3aed", "fill-opacity": 0.12 }} />
             <Layer id="pm-places-line" type="line" paint={{ "line-color": "#7c3aed", "line-width": 2 }} />
-            <Layer id="pm-places-name" type="symbol" layout={{ "text-field": ["get", "name"], "text-size": 12 }}
+            <Layer id="pm-places-name" type="symbol" layout={{ "text-field": ["get", "name"], "text-font": ["Noto Sans Medium"], "text-size": 12 }}
               paint={{ "text-color": "#4c1d95", "text-halo-color": "#ffffff", "text-halo-width": 1 }} />
           </Source>
           <Source id="pm-areas" type="geojson" data={layers.areas ?? EMPTY}>

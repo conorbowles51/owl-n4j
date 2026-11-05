@@ -55,5 +55,5 @@ confirms them, and the walk never confirms one.
 ## Effect on other checks
 
 The financial gate does not read this case: it holds no statements, so the ledger and review-queue lines stay as they are. Counts
-that do read it include this phone: Phones-only holds 6 active phones, 114 conversations and 1,979 messages and calls, and its
-message search reads `555` 1,430, `the` 1,009, `and` 145.
+that read Phones-only include this phone, and other jobs add phones there too, so read them from the case; only the `lantern`
+group is this seed's alone.

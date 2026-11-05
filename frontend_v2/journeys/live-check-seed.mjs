@@ -72,7 +72,7 @@ try {
     const list = page.getByRole("region", { name: "Routine places" })
     await list.waitFor()
     await list.getByText(/^Routine places \(\d/).waitFor()
-    await page.waitForTimeout(4000)
+    await page.waitForTimeout(25000) // the map paints late on a loaded box; 4 s gave a black pane
     console.log("ROUTINE", (await list.textContent())?.replace(/\s+/g, " ").slice(0, 420))
     await page.screenshot({ path: `${shots}/routine-place-list.png`, fullPage: true })
     await go(`/phone-patterns?view=check&subject=e:${phone}`)
