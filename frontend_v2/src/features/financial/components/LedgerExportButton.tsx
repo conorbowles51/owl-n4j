@@ -134,7 +134,8 @@ function ExportForm({
   const refusal = startError?.message ?? (run?.status === "failed" || run?.status === "stopped" ? run.error : undefined)
   const finished = run?.status === "completed" && run.summary ? run.summary : null
   // A PDF over one report's size is not a dead end: the numbered parts below replace the refusal.
-  const numberedPdf = includePdf && isPdfSizeRefusal(refusal)
+  // A table view has no numbered parts, so its refusal stays on the page.
+  const numberedPdf = !tableView && includePdf && isPdfSizeRefusal(refusal)
   const result = (
     <>
       {startError ? (

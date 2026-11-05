@@ -1636,8 +1636,8 @@ ZIP is a container of files. HTML is a report you open in a browser. JSON retain
 4. Select the PDF option if you need a paginated readable report.
 5. Select the originals option if the recipient needs the complete referenced source files.
 6. Select **Include wider case financial review history** if you need records beyond the selected ledger, including pending PDF readings and recorded case audit events.
-7. Select **Download ledger snapshot**.
-8. Wait for the download to finish. If source or integrity checks fail, investigate the stated issue rather than treating a partial download as complete.
+7. Select **Download ledger snapshot**. The export runs in the background and the page states each step. You can leave the page; it carries on and is here when you come back. Exports run one at a time on this server.
+8. When it is ready, select **Download the export**. If a check refuses or the run stops, the page says so in words and offers no file: investigate the stated issue. A run stopped by a server restart can be prepared again and continues from the audit events already packed.
 9. Open the ZIP from your browser's downloads list or your computer's Downloads folder. Extract the entire ZIP into one folder so related files stay together.
 10. Open `ledger-report.html`. If requested, open the included PDF too.
 11. Check the case, exporter, preparation time, marking, account/date scope, populations, totals and limitations.
@@ -1645,7 +1645,7 @@ ZIP is a container of files. HTML is a report you open in a browser. JSON retain
 
 For more than 200 readings, the HTML report uses a compact table containing every payment and its source reference. Full original readings and corrections remain in `ledger-snapshot.json` alongside it. Keep the extracted files together.
 
-The complete ledger record supports up to 64 MiB, and the whole export, including originals, supports up to 128 MiB. One PDF holds up to 2,000 captured readings; a larger scope is written in the background as numbered parts that together cover every reading, and the first page of each part says which payments it holds. If the complete record or the PDF is too large for one download, the page offers those parts. The originals option supports up to 100 files and 64 MiB. If a limit is exceeded, use a narrower documented scope or omit the optional PDF/originals as appropriate, then retain the needed separate captures. Do not describe several partial captures as one complete case export without checking their coverage.
+A whole-case export has no overall size limit. Each file in the ZIP has its own: the readable report and the support file 16 MiB, one audit events part 64 MiB of lines. With wider case history, every audit event of the case is in the numbered `audit-events-part-…jsonl.gz` files, each listed with its digest in `manifest.json`; the snapshot holds their count, head hash and names. An export shows the rows and audit events as they stood when it was read: **Read the rows again** makes a new one. One PDF holds up to 2,000 captured readings; a larger scope is written in the background as numbered parts that together cover every reading, and the first page of each part says which payments it holds. If the complete record or the PDF is too large for one download, the page offers those parts. The originals option supports up to 100 files and 64 MiB. If a limit is exceeded, use a narrower documented scope or omit the optional PDF/originals as appropriate, then retain the needed separate captures. Do not describe several partial captures as one complete case export without checking their coverage.
 
 Originals are complete files. They may contain pages outside the selected account or date range. Review that scope before sharing. When originals are included, Loupe checks their bytes against the saved hashes. When they are not included, a recorded source hash is not a fresh check of the original file.
 

@@ -220,6 +220,16 @@ it("a PDF over one report's size opens the numbered parts in place of the refusa
   expect(screen.queryByText(words)).toBeNull()
 })
 
+it("a PDF refused on a table view stays on the page, which has no numbered parts", async () => {
+  const words = "PDF reports support up to 2,000 captured readings."
+  const { calls } = server([{ ...running, status: "failed", error: words }])
+  mount({ search: "Office cost", currency: "GBP", direction: "debit", proof: "p3", sort: "amount-desc" })
+  fireEvent.click(screen.getByLabelText("Include a PDF in the table-view export"))
+  download("Download this table view")
+  expect(await screen.findByText(words)).toBeTruthy()
+  expect(calls.some((call) => call.body?.kind === "pdf")).toBe(false)
+})
+
 it("states the expert packet parts the server reported for this export, with its size", async () => {
   server([completed])
   mount()

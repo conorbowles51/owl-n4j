@@ -60,10 +60,6 @@ export function LedgerExportComparison({ caseId }: { caseId: string }) {
   }
   const compare = async () => {
     if (!before || !after || request.current) return
-    if ([before, after].some((file) => file.size > 128 * 1024 * 1024)) {
-      setError("Each export must be no larger than 128 MiB.")
-      return
-    }
     const controller = new AbortController()
     request.current = controller
     setBusy(true)
