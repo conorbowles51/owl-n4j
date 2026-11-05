@@ -199,7 +199,7 @@ function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentPr
       </div>
       {pending && item.order_reason && (
         <p className="text-xs text-muted-foreground" data-testid="proposal-order-reason">
-          Placed here because of earlier decisions. {item.order_reason}
+          Place in this order: {item.order_reason}
         </p>
       )}
       <ProposalBody item={item} />
