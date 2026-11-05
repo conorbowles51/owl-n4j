@@ -12,7 +12,7 @@ const arg = (name, fallback) => {
   return i > 0 ? process.argv[i + 1] : fallback
 }
 const shots = arg("shots")
-const only = arg("only", "a,b,c,d,e,f").split(",")
+const only = arg("only", "a,b,c,d,e,f,s").split(",")
 if (!shots) {
   console.error("usage: --shots <dir> [--only a,b,c,d,e,f]")
   process.exit(2)
@@ -51,6 +51,16 @@ const go = async (path) => {
   if ((await page.evaluate(() => window.isSecureContext)) !== false) throw new Error("isSecureContext was not false")
 }
 /** The total the Conversations page states, once ready. */
+/** Takes the walk's own dossier when a run made it, else makes it. */
+const typed = async (group, name) => {
+  await group.getByRole("combobox").waitFor({ timeout: 20000 })
+  await page.waitForTimeout(1500) // the list of dossiers of this type
+  const options = await group.getByRole("combobox").locator("option").allTextContents()
+  const mine = options.find((o) => o.startsWith(name))
+  if (mine) await group.getByRole("combobox").selectOption({ label: mine })
+  else await group.getByLabel("Name of the new dossier").fill(name)
+  await group.getByRole("button", { name: "Add", exact: true }).click()
+}
 const conversationsTotal = async () => {
   const c = page.getByText(/^[\d,]+ messages?\b/).first()
   await c.waitFor({ timeout: 45000 })
@@ -152,10 +162,15 @@ await part("c", "Scope bar, presets, memory", async () => {
   say(`  all ${all}; ${items.length} presets`)
   await shot("c1-presets")
   await page.getByRole("menuitem").first().click()
-  await page.waitForTimeout(1500)
+  await page.waitForFunction(() => /\b[1-9][\d,]* messages?\b/.test(document.body.innerText), null, { timeout: 30000 })
+  await page.waitForTimeout(3000)
   const one = await conversationsTotal()
   say(`  preset scope -> ${one} messages; url scope params ${new URL(page.url()).search.length > 1}`)
+  if (one === 0) throw new Error("a preset showed 0 messages")
   await shot("c2-scoped")
+  await page.getByRole("region", { name: "Scope" }).getByRole("button", { name: "Presets" }).click()
+  await page.getByRole("menuitem").nth(1).click()
+  await page.waitForTimeout(1500)
   await page.waitForTimeout(1200)
   // a new arrival within the session, by the app's own navigation
   await page.getByRole("link", { name: /^Map$/ }).first().click().catch(() => {})
@@ -170,9 +185,10 @@ await part("c", "Scope bar, presets, memory", async () => {
   say(`  recent header ${await page.getByText(/Your last \d+ scopes?/).count()}`)
   await shot("c4-recent")
   await page.keyboard.press("Escape")
-  for (const [path, name] of [["/map", "map"], ["/timeline", "timeline"], ["/media", "media"]]) {
-    await go(`${path}?people=${encodeURIComponent(registry?.items?.[0]?.identity_key ?? "x")}&mode=involving`)
-    await page.waitForTimeout(4000)
+  const firstPhone = (await api(`/api/phones?case_id=${caseId}`)).body?.phones?.[0]?.extraction_id
+  for (const [path, name] of [["/map", "map"], ["/timeline", "timeline"], [`/phones/${firstPhone}/records/media`, "media"]]) {
+    await go(`${path}?people=${encodeURIComponent(registry?.items?.[0]?.identity_key ?? "x")}&mode=involving&kinds=message`)
+    await page.waitForTimeout(6000)
     await shot(`c5-${name}`)
     say(`  ${name}: scope region ${await page.getByRole("region", { name: /scope/i }).count()}, stated not applied ${await page.getByText(/not applied|cannot apply|not apply/i).count()}`)
   }
@@ -229,32 +245,74 @@ await part("e", "Add to on Search and Phone summary, device dossier", async () =
   await shot("e4-undone")
   say(`  undo: ${(await page.getByText(/Removed [\d,]+ links?/).first().innerText()).slice(0, 80)}`)
 
-  const phones = (await api(`/api/phones/identities?case_id=${caseId}&limit=1`)).body?.phones ?? []
-  const pid = phones[0]?.extraction_id ?? phones[0]?.id
+  const pid = (await api(`/api/phones?case_id=${caseId}`)).body?.phones?.[0]?.extraction_id
   if (!pid) throw new Error("no phone in the registry reply")
   await page.goto(`${login.url}/cases/${caseId}/phones/${pid}`, { waitUntil: "domcontentloaded" })
   const row = page.getByLabel("Add this phone")
   await row.waitFor({ timeout: 45000 })
   await shot("e5-summary")
   await row.getByRole("button", { name: /Add to a device dossier/ }).click()
-  const name = `Live check device ${Date.now()}`
-  await page.getByLabel("Name of the new dossier").fill(name)
-  await page.getByRole("group", { name: "Add to a device dossier" }).getByRole("button", { name: "Add", exact: true }).click()
+  await typed(page.getByRole("group", { name: "Add to a device dossier" }), "Live check device")
   const done = row.getByRole("status").filter({ has: page.getByRole("button", { name: "Undo" }) }).first()
   await done.waitFor({ timeout: 30000 })
   await shot("e6-device-dossier")
+  say(`  device: ${(await done.innerText()).replace(/\s+/g, " ").slice(0, 120)}`)
   await done.getByRole("button", { name: "Undo" }).click()
-  await page.waitForTimeout(1500)
-  say("  device dossier made, phone linked, link undone; the empty dossier stays")
+  await done.waitFor({ state: "detached", timeout: 30000 })
+  say("  device link undone; the dossier stays and the next run reuses it")
 })
 
 await part("f", "Address dossier from a map point", async () => {
+  await page.evaluate(() => sessionStorage.clear())
   await go("/map")
-  const btn = page.getByRole("button", { name: /Add to an address dossier/ }).first()
-  await btn.waitFor({ timeout: 45000 }).catch(() => {})
-  const n = await btn.count()
-  say(`  address buttons visible on the map page: ${n}`)
-  await shot("f1-map")
+  await page.waitForTimeout(6000)
+  const pointsOpen = page.getByRole("button", { name: /Add to an address dossier/ }).nth(Number(arg("point", "1")))
+  await pointsOpen.waitFor({ timeout: 45000 })
+  await pointsOpen.scrollIntoViewIfNeeded()
+  await pointsOpen.click()
+  await typed(page.getByRole("group", { name: "Add to an address dossier" }).first(), "Live check address")
+  const done = page.getByRole("status").filter({ has: page.getByRole("button", { name: "Undo" }) }).first()
+  await done.waitFor({ timeout: 30000 })
+  say(`  address: ${(await done.innerText()).replace(/\s+/g, " ").slice(0, 120)}`)
+  await page.screenshot({ path: `${shots}/f1-address-dossier.png`, timeout: 60000 }).catch(() => say("  map screenshot timed out"))
+  await done.getByRole("button", { name: "Undo" }).click()
+  await done.waitFor({ state: "detached", timeout: 30000 })
+  say("  address link undone; the dossier stays and the next run reuses it")
+})
+
+await part("s", "Dossiers page speed", async () => {
+  const phoneCalls = []
+  const log = (r) => { if (/\/api\/phones\//.test(r.url())) phoneCalls.push(r.url().split("?")[0].replace(/.*\/api\/phones\//, "")) }
+  page.on("request", log)
+  const times = []
+  for (let i = 0; i < 5; i += 1) {
+    const t0 = Date.now()
+    await go("/dossiers")
+    await page.getByText(/\d+ dossiers?/i).first().waitFor({ timeout: 30000 })
+    times.push(Date.now() - t0)
+  }
+  page.off("request", log)
+  say(`  Dossiers list shown, ms: ${times.join(", ")}; phone calls on the page: ${phoneCalls.length} (${[...new Set(phoneCalls)].join(", ")})`)
+  const other = []
+  for (let i = 0; i < 5; i += 1) {
+    const t0 = Date.now()
+    await go("/reports")
+    await page.locator("main").getByText(/Reports?/).first().waitFor({ timeout: 30000 })
+    other.push(Date.now() - t0)
+  }
+  say(`  Reports page for comparison, ms: ${other.join(", ")}`)
+  const timed = async (path) => {
+    const out = []
+    for (let i = 0; i < 5; i += 1) out.push(await page.evaluate(async (p) => {
+      const t0 = performance.now()
+      await fetch(p, { credentials: "include", headers: { Authorization: `Bearer ${localStorage.getItem("authToken") ?? ""}` } })
+      return Math.round(performance.now() - t0)
+    }, path))
+    return out.join(", ")
+  }
+  if (linkedDossier) say(`  panel call, ms: ${await timed(`/api/phones/people/${linkedDossier.id}/phones?case_id=${caseId}`)}`)
+  say(`  registry call, ms: ${await timed(`/api/phones/identities?case_id=${caseId}&limit=50`)}`)
+  say(`  presets call, ms: ${await timed(`/api/phones/scope-presets?case_id=${caseId}`)}`)
 })
 
 say(`page errors ${pageErrors.length}${pageErrors.length ? `: ${[...new Set(pageErrors)].slice(0, 3).join(" | ")}` : ""}`)
