@@ -150,7 +150,8 @@ export function useStartedRun<Summary>(caseId: string, request: Record<string, u
         })
         localStorage.setItem(storageKey, run.id)
         setId(run.id)
-        query.refetch().catch(() => undefined)
+        // A new id starts its own read; only the same id has to be read again, and never the empty one.
+        if (run.id === id) query.refetch().catch(() => undefined)
       } catch (error) {
         setStartError(error instanceof Error ? error : new Error("The export could not start."))
       } finally {
@@ -158,7 +159,7 @@ export function useStartedRun<Summary>(caseId: string, request: Record<string, u
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [caseId, JSON.stringify(request), storageKey]
+    [caseId, id, JSON.stringify(request), storageKey]
   )
   return { run: id ? query.data : undefined, startError, starting, start }
 }

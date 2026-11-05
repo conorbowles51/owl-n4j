@@ -220,6 +220,14 @@ it("a PDF over one report's size opens the numbered parts in place of the refusa
   expect(screen.queryByText(words)).toBeNull()
 })
 
+it("never asks for a run before it has one", async () => {
+  const { calls } = server([completed])
+  mount()
+  download()
+  await screen.findByRole("link", { name: /Download the export/ })
+  expect(calls.filter((call) => call.url.includes("whole-case-runs/null"))).toEqual([])
+})
+
 it("a PDF refused on a table view stays on the page, which has no numbered parts", async () => {
   const words = "PDF reports support up to 2,000 captured readings."
   const { calls } = server([{ ...running, status: "failed", error: words }])

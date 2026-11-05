@@ -81,8 +81,9 @@ MAX_EXPORT_BYTES = 16 * 1024 * 1024
 # smaller report/scenario allowance. Keep those allowances independent.
 MAX_LEDGER_SNAPSHOT_BYTES = 64 * 1024 * 1024
 MAX_LEDGER_ARCHIVE_BYTES = 128 * 1024 * 1024
-# One member of a stored background export, and what its reader holds in memory; see LX-EXPORTRUN-STATUS for the sizes.
-MAX_REPORT_BYTES = MAX_EXPORT_BYTES
+# One member of a stored background export (its readable report, its support file): BNB2's 28,075 rows do not fit 16 MiB
+# of report. An archive of such members is read one at a time, and what its reader holds in memory has its own limit.
+MAX_REPORT_BYTES = 64 * 1024 * 1024
 MAX_RUN_ARCHIVE_HELD_BYTES = 1024 * 1024 * 1024
 
 
@@ -384,7 +385,8 @@ def ledger_export_archive(export, *, include_pdf=False, archive=None):
     member within its own limit and at most one audit member in memory, and the manifest is returned."""
     import io
     import zipfile
-    report = render_ledger_report(export.snapshot)
+    member_limit = MAX_EXPORT_BYTES if archive is None else MAX_REPORT_BYTES
+    report = render_ledger_report(export.snapshot, limit=member_limit)
     report_bytes = report.encode('utf-8')
     manifest = json.loads(export.manifest)
     manifest['report'] = dict(filename='ledger-report.html', sha256=hashlib.sha256(report_bytes).hexdigest(),
@@ -406,7 +408,7 @@ def ledger_export_archive(export, *, include_pdf=False, archive=None):
     packet = dict(completeness=built['completeness'], parts=built['packet_parts'], sentence=built['packet_sentence'])
     support = json.dumps(built,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     support_bytes = support.encode('utf-8')
-    if len(support_bytes)>MAX_EXPORT_BYTES:
+    if len(support_bytes)>member_limit:
         raise LedgerSummaryError('Expert support inventory exceeds the export limit; no partial export was produced.')
     manifest['expert_support'] = dict(filename='expert-support.json',sha256=hashlib.sha256(support_bytes).hexdigest(),
         byte_count=len(support_bytes),derived_from_sha256=export.snapshot.sha256,completeness=packet['completeness'],
@@ -447,8 +449,9 @@ def ledger_export_archive(export, *, include_pdf=False, archive=None):
     return archive_bytes
 
 
-def render_ledger_report(snapshot):
-    """Render only immutable captured content; never consult live data or execute evidence."""
+def render_ledger_report(snapshot, limit=None):
+    """Render only immutable captured content; never consult live data or execute evidence. ``limit``: the report's
+    bytes where it is one member of a stored export; one response's allowance otherwise."""
     from html import escape
 
     document = json.loads(snapshot.content)
@@ -892,6 +895,7 @@ def render_ledger_report(snapshot):
         'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +
         ' bytes. The manifest separately identifies the report bytes.</p></body></html>']
     result = ''.join(parts)
-    if len(result.encode('utf-8')) > MAX_EXPORT_BYTES:
-        raise LedgerSummaryError('Readable report exceeds 16 MiB; narrow the scope. No partial report was produced.')
+    limit = limit or MAX_EXPORT_BYTES
+    if len(result.encode('utf-8')) > limit:
+        raise LedgerSummaryError('Readable report exceeds %d MiB; narrow the scope. No partial report was produced.' % (limit // (1024 * 1024)))
     return result

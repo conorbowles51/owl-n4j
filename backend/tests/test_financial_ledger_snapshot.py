@@ -180,6 +180,21 @@ class LedgerSnapshotTests(_test_financial_ledger_summary.LedgerSummaryTests):
         with patch('services.financial.ledger_snapshot.MAX_EXPORT_BYTES', 1):
             with self.assertRaises(LedgerSummaryError): render_ledger_report(self.capture())
 
+    def test_a_report_past_one_response_is_one_member_of_a_stored_export(self):
+        """BNB2 packed its 262,753 events and was then refused at the end of the run by 16 MiB on the readable report."""
+        import io, zipfile
+        from services.financial.ledger_snapshot import LedgerExport, ledger_export_archive
+        self.add()
+        snapshot = self.capture()
+        with patch('services.financial.ledger_snapshot.MAX_EXPORT_BYTES', 1):
+            with self.assertRaisesRegex(LedgerSummaryError, 'Readable report exceeds'):
+                ledger_export_archive(LedgerExport(snapshot, '{}'))
+            stream = io.BytesIO()
+            with zipfile.ZipFile(stream, 'w') as archive:
+                ledger_export_archive(LedgerExport(snapshot, '{}'), archive=archive)
+        with zipfile.ZipFile(stream) as archive:
+            self.assertIn(b'ledger-snapshot.json', archive.read('ledger-report.html'))
+
     def test_report_money_uses_exact_currency_exponents_and_honest_fallback(self):
         from services.financial.ledger_snapshot import render_ledger_report, LedgerSnapshot
         self.add()
