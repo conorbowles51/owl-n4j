@@ -607,7 +607,7 @@ PHONE_PAGES = ('phones', 'phones/summary', 'phone-review', 'phone-patterns', 'ph
                'phones-prototype/summary', 'phones-prototype/conversations', 'phones-prototype/needs-a-decision')
 PHONE_RECORD_TYPES = ('messages', 'calls', 'contacts', 'locations', 'media', 'apps', 'web', 'notes', 'events',
                       'accounts', 'devices', 'other', 'conversations')
-ADMIN_ROUTES = ('ai-costs', 'users', 'profiles', 'logs', 'activity', 'speed', 'tasks', 'updates')
+ADMIN_ROUTES = ('ai-costs', 'users', 'profiles', 'logs', 'activity', 'speed', 'tasks', 'updates', 'phone-registry')
 APP_PAGES = (['cases', 'triage', 'admin', 'settings', 'settings/ai', 'login', 'other']
              + [f'case/{r}' for r in CASE_ROUTES] + [f'admin/{r}' for r in ADMIN_ROUTES]
              + [f'case/{r}' for r in PHONE_PAGES] + [f'case/phones/records/{t}' for t in PHONE_RECORD_TYPES])

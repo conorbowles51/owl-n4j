@@ -235,6 +235,14 @@ class PageViews(Captured):
         self.assertTrue(set(rs.CASE_ROUTES) <= live, set(rs.CASE_ROUTES) - live)
         self.assertEqual(live - set(rs.CASE_ROUTES) - set(rs.PHONE_PAGES), set())
 
+    def test_every_admin_route_is_timed_as_itself(self):
+        routes = (BACKEND.parent / 'frontend_v2/src/app/routes.tsx').read_text()
+        block = routes[routes.index('{/* Admin routes */}'):routes.index('path="/settings"')]
+        live = set(re.findall(r'path="([a-z-]+)" element=\{<LazyPage', block))
+        self.assertIn('phone-registry', live)
+        # A new admin page missing from the list would be reported as "other" and vanish from the speed page.
+        self.assertEqual(live - set(rs.ADMIN_ROUTES), set())
+
     def test_detail_is_checked_value_by_value(self):
         detail = dict(queue_max_ms=812.4, resources=31, resource_bytes=1234567, largest_route='/api/timeline',
                       largest_ms=5300.5, effective_type='4g', downlink_mbps=9.5, rtt_ms=50, heap_used_mb=410.2,

@@ -37,7 +37,7 @@ function phonePage(rest: string[]): string | null {
   return null
 }
 
-const ADMIN_ROUTES = new Set(["ai-costs", "users", "profiles", "logs", "activity", "speed", "tasks", "updates"])
+const ADMIN_ROUTES = new Set(["ai-costs", "users", "profiles", "logs", "activity", "speed", "tasks", "updates", "phone-registry"])
 
 /** The page name and case for a path (routes.tsx); the redirecting addresses are named after their target. */
 export function routePage(pathname: string): { page: string | null; caseId: string | null } {

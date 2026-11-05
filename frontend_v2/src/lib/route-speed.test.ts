@@ -15,6 +15,7 @@ describe("route page names", () => {
     expect(routePage("/cases")).toEqual({ page: "cases", caseId: null })
     expect(routePage("/admin")).toEqual({ page: "admin", caseId: null })
     expect(routePage("/admin/speed")).toEqual({ page: "admin/speed", caseId: null })
+    expect(routePage("/admin/phone-registry")).toEqual({ page: "admin/phone-registry", caseId: null })
     expect(routePage("/admin/usage")).toEqual({ page: "admin/ai-costs", caseId: null })
     expect(routePage("/settings/ai")).toEqual({ page: "settings/ai", caseId: null })
     expect(routePage("/login")).toEqual({ page: null, caseId: null })
