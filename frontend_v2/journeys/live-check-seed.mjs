@@ -20,7 +20,7 @@ try {
   const page = await context.newPage()
   page.setDefaultTimeout(120000)
   const failed = []
-  page.on("response", (r) => { if (r.status() >= 400 && r.url().includes("/api/")) failed.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`) })
+  page.on("response", (r) => { if (r.status() >= 400 && /\/(api|basemap)\//.test(r.url())) failed.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`) })
   const go = async (path) => {
     await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded" })
     if ((await page.evaluate(() => window.isSecureContext)) !== false) throw new Error("isSecureContext was not false")
