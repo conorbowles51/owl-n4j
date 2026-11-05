@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { JobLine } from "@/components/ui/job-tray"
 import { fetchAPI } from "@/lib/api-client"
 import { addInParts, PART_SIZE, type CollectClient } from "./collect.api"
 import { justFinished, trackBulkAdd, trayJob, type ServerJob } from "./job-list"
@@ -50,6 +51,11 @@ describe("tray lines", () => {
   })
   it("uses the readiness card's words for adding a phone", () => {
     expect(trayJob(job({ kind: "intake", stage: "detecting", counts: {} }), 0).progress.step).toBe("Finding the report documents")
+  })
+  it("says a cancelled job was cancelled, never done", () => {
+    render(<JobLine job={trayJob(job({ state: "cancelled", note: "Cancelled before it finished." }), 0)} now={0} />)
+    expect(screen.getByText("Cancelled before it finished.")).toBeInTheDocument()
+    expect(screen.queryByText(/^Done/)).not.toBeInTheDocument()
   })
   it("gives a finished job its notice once", () => {
     const done = job({ state: "done" })

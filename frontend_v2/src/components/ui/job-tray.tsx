@@ -16,7 +16,7 @@ export interface TrayJob {
   id: string
   /** What the job is, e.g. "Getting C3 ready" or "Export: messages between A and B". */
   title: string
-  state: "running" | "done" | "failed"
+  state: "running" | "done" | "failed" | "cancelled"
   progress: ProgressState
   /** Where the result or the job's card is. */
   href?: string
@@ -41,6 +41,8 @@ export function JobLine({ job, now }: { job: TrayJob; now: number }) {
       <span className="text-sm">
         {job.state === "done"
           ? `Done.${job.note ? ` ${job.note}` : ""}`
+          : job.state === "cancelled"
+            ? job.note ?? "Cancelled."
           : job.state === "failed"
             ? `${p.step} stopped.${job.error ? ` ${job.error}` : ""}${job.note ? ` ${job.note}` : ""}${p.failed ? ` Reference: ${p.failed.referenceId}.` : ""}`
             : `${p.step}${p.done !== undefined && p.total !== undefined ? `: ${p.done.toLocaleString("en-US")} of ${p.total.toLocaleString("en-US")}${p.unit ? ` ${p.unit}` : ""}` : ""}, ${timeLeft(p, now)}`}

@@ -52,6 +52,7 @@ function HeaderJobs({ caseId, onList }: { caseId: string; onList: (jobs: number)
     for (const j of justFinished(watching.current, list.items)) {
       const action = j.href ? { label: "Open", onClick: () => (j.href!.startsWith("/cases/") ? navigate(j.href!) : window.location.assign(j.href!)) } : undefined
       if (j.state === "failed") toast.error(`${j.title} stopped.`, { description: j.error ?? undefined, action })
+      else if (j.state === "cancelled") toast(`${j.title}: cancelled.`, { description: j.note ?? undefined, action })
       else toast.success(`${j.title}: done.`, { description: j.note ?? undefined, action })
     }
     watching.current = new Set(list.items.filter((j) => j.state === "running").map((j) => j.id))

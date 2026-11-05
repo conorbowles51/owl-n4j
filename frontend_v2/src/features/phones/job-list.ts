@@ -8,7 +8,7 @@ export interface ServerJob {
   id: string
   kind: string
   title: string
-  state: "running" | "done" | "failed"
+  state: "running" | "done" | "failed" | "cancelled"
   step: string
   done: number | null
   total: number | null

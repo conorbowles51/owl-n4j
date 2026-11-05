@@ -23,7 +23,7 @@ function Arrow({ count, reverse }: { count: number; reverse?: boolean }) {
 
 /** One person beside the anchor: each direction drawn and counted apart, from the pair edge Conversations matches. */
 function FlowRow({ caseId, anchor, anchorName, other, otherName, onDrill }: {
-  caseId: string; anchor: string; anchorName: string; other: string; otherName: string; onDrill: (key: string) => void
+  caseId: string; anchor: string; anchorName: string; other: string; otherName: string; onDrill: (key: string, name: string) => void
 }) {
   const win = useEdgeWindow((s) => s.window)
   const q = useQuery({
@@ -34,26 +34,27 @@ function FlowRow({ caseId, anchor, anchorName, other, otherName, onDrill }: {
     staleTime: 60_000,
   })
   const c = q.data?.edges[0]?.communication
-  const out = c ? flowWords(c.messages_ab, c.calls_ab, c.emails_ab) : null
-  const back = c ? flowWords(c.messages_ba, c.calls_ba, c.emails_ba) : null
+  // an answer with no edge means none in this window, not still counting
+  const out = q.data ? flowWords(c?.messages_ab ?? 0, c?.calls_ab ?? 0, c?.emails_ab ?? 0) : null
+  const back = q.data ? flowWords(c?.messages_ba ?? 0, c?.calls_ba ?? 0, c?.emails_ba ?? 0) : null
   return (
     <li className="grid grid-cols-[minmax(8rem,1fr)_auto_minmax(8rem,1fr)] items-center gap-x-2 border-t border-border/60 py-1">
-      <Button size="sm" variant="link" className="h-auto justify-start whitespace-normal p-0 text-left text-xs" aria-label={`Follow from ${otherName}`} onClick={() => onDrill(other)}>
+      <Button size="sm" variant="link" className="h-auto justify-start whitespace-normal p-0 text-left text-xs" aria-label={`Follow from ${otherName}`} onClick={() => onDrill(other, otherName)}>
         {otherName}
       </Button>
       {q.isError ? (
         <p role="alert" className="col-span-2">Could not count the messages with {otherName}.</p>
-      ) : !c ? (
+      ) : !out || !back ? (
         <p role="status" className="col-span-2 text-muted-foreground">Counting</p>
       ) : (
         <>
           <span className="flex flex-col">
-            <span className="flex items-center gap-1" aria-hidden="true"><Arrow count={out!.total} reverse /></span>
-            <span className="flex items-center gap-1" aria-hidden="true"><Arrow count={back!.total} /></span>
+            <span className="flex items-center gap-1" aria-hidden="true"><Arrow count={out.total} reverse /></span>
+            <span className="flex items-center gap-1" aria-hidden="true"><Arrow count={back.total} /></span>
           </span>
           <span className="flex flex-col">
-            <span>{anchorName} to {otherName}: {out!.words}</span>
-            <span>{otherName} to {anchorName}: {back!.words}</span>
+            <span>{anchorName} to {otherName}: {out.words}</span>
+            <span>{otherName} to {anchorName}: {back.words}</span>
             <Link className="underline" to={pairConversationsHref(caseId, anchor, other, win)}>Open these messages</Link>
           </span>
         </>
@@ -70,27 +71,30 @@ function FlowRow({ caseId, anchor, anchorName, other, otherName, onDrill }: {
 export function PhoneFlowView({ caseId, pairs }: { caseId: string; pairs: FlowPair[] }) {
   const anchors = useMemo(() => flowAnchors(pairs), [pairs])
   const names = useMemo(() => new Map(anchors.map((a) => [a.key, a.name])), [anchors])
-  const [trail, setTrail] = useState<string[]>([])
+  // the trail keeps each person's name: a drill can reach someone outside the pairs loaded on this page
+  const [trail, setTrail] = useState<{ key: string; name: string }[]>([])
   const [all, setAll] = useState(false)
-  const anchor = trail[trail.length - 1] ?? anchors[0]?.key
+  const anchor = trail[trail.length - 1]?.key ?? anchors[0]?.key
   const q = useQuery({ queryKey: ["graph-flow-partners", caseId, anchor], queryFn: () => getFlowPartners(caseId, anchor!), enabled: !!anchor, staleTime: 60_000 })
   const partners = q.data?.partners ?? []
   const shown = all ? partners : partners.slice(0, SHOWN)
-  const name = (key: string) => names.get(key) ?? key
-  const drill = (key: string) => { setTrail((t) => [...t, key]); setAll(false) }
+  const name = (key: string) => trail.find((t) => t.key === key)?.name ?? names.get(key) ?? key
+  const drill = (key: string, label: string) => { setTrail((t) => [...t, { key, name: label }]); setAll(false) }
+  const unlisted = trail.length > 0 && !names.has(anchor!)
   if (!anchor) return null
   return (
     <section aria-label="Flow view" className="mt-1 max-h-80 overflow-auto text-xs">
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1">Person at the centre
-          <select className="max-w-64 rounded border bg-background px-1" value={anchor} onChange={(e) => { setTrail([e.target.value]); setAll(false) }}>
+          <select className="max-w-64 rounded border bg-background px-1" value={anchor} onChange={(e) => { setTrail([{ key: e.target.value, name: name(e.target.value) }]); setAll(false) }}>
+            {unlisted && <option value={anchor}>{name(anchor!)}</option>}
             {anchors.map((a) => <option key={a.key} value={a.key}>{a.name} ({fmt(a.pairs)})</option>)}
           </select>
         </label>
         {trail.length > 1 && (
           <nav aria-label="Trail" className="flex flex-wrap items-center gap-1">
-            {trail.slice(0, -1).map((key, i) => (
-              <Button key={`${key}-${i}`} size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setTrail(trail.slice(0, i + 1))}>Back to {name(key)}</Button>
+            {trail.slice(0, -1).map((t, i) => (
+              <Button key={`${t.key}-${i}`} size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setTrail(trail.slice(0, i + 1))}>Back to {t.name}</Button>
             ))}
           </nav>
         )}

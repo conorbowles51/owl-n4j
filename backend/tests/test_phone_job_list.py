@@ -107,6 +107,18 @@ def test_a_source_that_cannot_be_read_is_named_not_dropped(world, monkeypatch):
     assert out["unavailable"] == ["exports"]
 
 
+def test_a_cancelled_job_says_cancelled_not_done(world):
+    engine, case, _, ext = world
+    with engine.begin() as c:
+        me = _person(c, "a@synthetic.invalid")
+        c.execute(text("INSERT INTO phone_analysis_runs (id, case_id, approach, approach_version, parameters, "
+                       "parameters_sha256, input_manifest, input_revision, status, requested_by, finished_at) VALUES (:i, "
+                       ":c, 'deletion_timeline', '1', '{}', :s, '{}', :s, 'cancelled', 'x', now())"),
+                  {"i": uuid.uuid4(), "c": case, "s": "0" * 64})
+    run = _ids(_read(engine, case, me))["approach"]
+    assert (run["state"], run["note"]) == ("cancelled", "Cancelled before it finished.")
+
+
 def test_finished_jobs_past_the_limit_are_counted(world):
     from services.phone import job_list
     engine, case, _, ext = world

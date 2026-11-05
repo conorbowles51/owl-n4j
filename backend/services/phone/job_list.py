@@ -138,14 +138,14 @@ def _approach(conn, case_id, since, user):
     out = []
     for r in rows:
         prog = r.progress or {}
-        state = "running" if r.status in ("queued", "running") else "failed" if r.status == "failed" else "done"
-        cancelled = r.status == "cancelled"
+        state = {"queued": "running", "running": "running", "failed": "failed",
+                 "cancelled": "cancelled"}.get(r.status, "done")
         out.append(_job(
             "approach", r.id, TITLES.get(r.approach, "Phone analysis"), state,
             step="Waiting to start" if r.status == "queued" else prog.get("phone") or "Analysing the phones",
             done=prog.get("read"), total=prog.get("total"), unit="records", started=r.started_at or r.created_at,
             ended=r.finished_at, error=r.error if state == "failed" else None, reference=str(r.id),
-            note="Stopped before it finished." if cancelled else None,
+            note="Cancelled before it finished." if state == "cancelled" else None,
             href="/cases/%s/phone-analyses" % case_id))
     return out
 
@@ -158,34 +158,39 @@ def _media(conn, case_id, since, user):
         if b["state"] != "running" and (ended is None or ended < since):
             continue
         what = "Transcribing" if b["kind"] == "transcript" else "Reading text in"
-        state = "running" if b["state"] == "running" else "done"
+        state = b["state"]
         left = "%s could not be read." % format(b["failed"], ",") if b["failed"] else None
+        if state == "cancelled":
+            left = "Cancelled; %s finished readings were kept. %s" % (format(b["done"], ","), left or "")
         out.append(_job(
             "media", b["id"], "%s %s" % (what, b["scope_words"] or b["noun"]), state, step="%s %s" % (what, b["noun"]),
             done=b["done"] + b["failed"], total=b["total"], unit=b["noun"],
-            started=b["first_started_at"] or b["created_at"], moved=ended, ended=ended if state == "done" else None,
-            note=left))
+            started=b["first_started_at"] or b["created_at"], moved=ended, ended=ended if state != "running" else None,
+            note=left and left.strip()))
     for j in image_search.status(conn, case_id):
         ended = _when(j["last_finished_at"])
         if j["state"] != "running" and (ended is None or ended < since):
             continue
-        state = "running" if j["state"] == "running" else "done"
+        state = j["state"]
+        note = "%s could not be indexed." % format(j["failed"], ",") if j["failed"] else None
+        if state == "cancelled":
+            note = "Cancelled; %s indexed images were kept." % format(j["done"], ",")
         out.append(_job(
             "media", j["id"], "Getting images ready for search", state, step="Indexing images",
             done=j["done"] + j["failed"], total=j["total"], unit="images",
-            started=j["first_started_at"] or j["created_at"], moved=ended, ended=ended if state == "done" else None,
-            note="%s could not be indexed." % format(j["failed"], ",") if j["failed"] else None))
+            started=j["first_started_at"] or j["created_at"], moved=ended, ended=ended if state != "running" else None,
+            note=note))
     bundles = conn.execute(text(
         "SELECT bundle_id, scope_words, state, files_done, files_total, error, created_at, started_at, finished_at "
         "FROM phone_original_bundles WHERE case_id = :c AND (state IN ('queued', 'running') OR finished_at >= :s) "
         "ORDER BY created_at DESC"), {"c": str(case_id), "s": since})
     for b in bundles:
-        state = {"queued": "running", "running": "running", "done": "done", "cancelled": "done"}.get(b.state, "failed")
+        state = {"queued": "running", "running": "running", "done": "done", "cancelled": "cancelled"}.get(b.state, "failed")
         out.append(_job(
             "media", b.bundle_id, "Download originals: %s" % b.scope_words, state, step="Gathering the original files",
             done=b.files_done, total=b.files_total, unit="files", started=b.started_at or b.created_at,
             ended=b.finished_at, error=b.error if state == "failed" else None, reference=str(b.bundle_id),
-            note="Cancelled; nothing was kept." if b.state == "cancelled" else None))
+            note="Cancelled; nothing was kept." if state == "cancelled" else None))
     return out
 
 
@@ -198,7 +203,8 @@ def _reparse(conn, case_id, since, user):
         {"c": str(case_id), "s": since})
     out = []
     for r in rows:
-        state = "running" if r.status in ("queued", "running") else "failed" if r.status == "failed" else "done"
+        state = {"queued": "running", "running": "running", "failed": "failed",
+                 "cancelled": "cancelled"}.get(r.status, "done")
         out.append(_job(
             "reparse", r.id, "Reading %s with an independent tool" % labels.get(str(r.extraction_id), "a phone"), state,
             step="Waiting to start" if r.status == "queued" else "Running %s" % r.tool,
