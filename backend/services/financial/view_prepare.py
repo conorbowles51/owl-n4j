@@ -65,6 +65,14 @@ def service_settings(run=_run):
     return settings
 
 
+def service_settings_for_release(run=_run):
+    """The service's settings with the folder of the code being released: the backend runs from a tree that moves only
+    at its restart, so the release's code is in the tree deploy/backend-tree.sh staged (LOUPE_PREPARE_BACKEND_DIR)."""
+    settings = service_settings(run)
+    settings['workingdirectory'] = os.environ.get('LOUPE_PREPARE_BACKEND_DIR') or settings['workingdirectory']
+    return settings
+
+
 def prepare_command(settings, started=None):
     """systemd-run for the prepare unit: the service's settings, at a lower CPU and I/O priority. ``started``: the
     time ``wait`` counts the cap from, passed to the prepare (LOUPE_PREPARE_STARTED) so it finishes and reports
@@ -110,7 +118,7 @@ def start(log=None, run=_run, state=STATE):
             run(['systemctl', 'stop', UNIT])  # a prepare left from an earlier release computes old code
         run(['systemctl', 'reset-failed', UNIT])
         started = time.time()
-        result = run(prepare_command(service_settings(run), started))
+        result = run(prepare_command(service_settings_for_release(run), started))
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout).strip()[:300])
         commit = _checkout_commit(run)
@@ -123,9 +131,10 @@ def start(log=None, run=_run, state=STATE):
 
 
 def _checkout_commit(run):
-    """The commit checked out in the tree this file belongs to (the live checkout), or None."""
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    result = run(['git', '-C', root, 'rev-parse', 'HEAD'])
+    """The commit of the code the prepare runs: the staged tree, else the tree this file belongs to; or None."""
+    root = os.path.dirname(os.environ.get('LOUPE_PREPARE_BACKEND_DIR') or os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))))
+    result = run(['git', '-c', 'safe.directory=*', '-C', root, 'rev-parse', 'HEAD'])
     commit = (result.stdout or '').strip()
     return commit if result.returncode == 0 and commit else None
 

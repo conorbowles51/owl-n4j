@@ -103,6 +103,8 @@ source "${PROJECT_DIR}/deploy/backend-stop.sh"
 source "${PROJECT_DIR}/deploy/backend-socket.sh"
 # shellcheck source=deploy/backend-handover.sh
 source "${PROJECT_DIR}/deploy/backend-handover.sh"
+# shellcheck source=deploy/backend-tree.sh
+source "${PROJECT_DIR}/deploy/backend-tree.sh"
 # shellcheck source=deploy/release-plan.sh
 source "${PROJECT_DIR}/deploy/release-plan.sh"
 
@@ -133,6 +135,15 @@ BACKEND_HANDOVER_ROLLING_BACK=true
 configure_ingestion_shutdown
 configure_backend_allocator
 check_ingestion_idle
+# Stage first: a commit from before the trees cannot run from one (its data paths follow the code), so it runs from
+# the checkout, which already holds it.
+if git cat-file -e "${TARGET_COMMIT}:deploy/backend-tree.sh" 2>/dev/null; then
+    backend_tree_stage "${TARGET_COMMIT}" || { fail "The backend tree could not be staged; nothing was restarted"; exit 1; }
+    backend_tree_apply || { fail "The backend tree did not switch; nothing was restarted"; exit 1; }
+else
+    $RUN_AS rm -f "${BACKEND_TREES}/current"
+    backend_tree_remove_dropin
+fi
 if ! restart_backend_bounded; then
     fail "owl-backend-v2 did not restart; the health check below will report it"
 fi

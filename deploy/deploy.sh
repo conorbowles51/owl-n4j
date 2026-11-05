@@ -114,6 +114,8 @@ source "${PROJECT_DIR}/deploy/backend-stop.sh"
 source "${PROJECT_DIR}/deploy/backend-socket.sh"
 # shellcheck source=deploy/backend-handover.sh
 source "${PROJECT_DIR}/deploy/backend-handover.sh"
+# shellcheck source=deploy/backend-tree.sh
+source "${PROJECT_DIR}/deploy/backend-tree.sh"
 # shellcheck source=deploy/release-plan.sh
 source "${PROJECT_DIR}/deploy/release-plan.sh"
 # shellcheck source=deploy/frontend-release.sh
@@ -169,6 +171,7 @@ on_deploy_exit() {
     trap - EXIT TERM INT HUP
     # A release that ends between starting the next backend and stopping the old one leaves the old one serving.
     backend_handover_abort_open || true
+    backend_tree_settle || true
     restore_frontend_on_exit
     write_deploy_summary "${rc}"
     exit "${rc}"
@@ -309,11 +312,6 @@ fi
 
 NEW_COMMIT="$(git rev-parse HEAD)"
 NEW_COMMIT_SHORT="$(git rev-parse --short HEAD)"
-# The release's Financial views are being computed for the code deploy-now.sh pulled; if this fetch brought other
-# code, compute them again for it (backend/services/financial/view_prepare.py). Never fails the release.
-if [ -f "${BACKEND_DIR}/services/financial/view_prepare.py" ] && [ "$(id -u)" -eq 0 ]; then
-    python3 "${BACKEND_DIR}/services/financial/view_prepare.py" follow || warn "Financial view prepare follow failed; release continues"
-fi
 if [ "${PREV_COMMIT}" = "${NEW_COMMIT}" ]; then
     warn "No new commits pulled"
 else
@@ -330,6 +328,25 @@ if [ "${STEP_PIP}${STEP_BACKEND}${STEP_ENGINE}" = skipskipskip ]; then
     RELEASE_TOUCHES_BACKEND=false
 else
     RELEASE_TOUCHES_BACKEND=true
+fi
+# The tree the new backend will run from (deploy/backend-tree.sh): the running backend reads none of it.
+if [ "${RELEASE_TOUCHES_BACKEND}" = true ]; then
+    step "Staging ${NEW_COMMIT_SHORT} in the tree no backend runs from"
+    if ! backend_tree_stage "${NEW_COMMIT}"; then
+        fail "The backend tree could not be staged; nothing was stopped or restarted."
+        if [ -n "${ROLLBACK_TARGET}" ] && [ "${ROLLBACK_TARGET}" != "${NEW_COMMIT}" ]; then
+            check_ingestion_idle
+            $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
+            warn "Checkout returned to the running revision $(git rev-parse --short HEAD)."
+        fi
+        exit 1
+    fi
+    success "Backend tree ${BACKEND_TREE_STAGED:-(checkout)} holds ${NEW_COMMIT_SHORT}; the running backend is untouched"
+    # The release's Financial views are being computed for the code deploy-now.sh pulled; if this fetch brought other
+    # code, compute them again for it (backend/services/financial/view_prepare.py). Never fails the release.
+    if [ -f "${BACKEND_DIR}/services/financial/view_prepare.py" ] && [ "$(id -u)" -eq 0 ]; then
+        python3 "${BACKEND_DIR}/services/financial/view_prepare.py" follow || warn "Financial view prepare follow failed; release continues"
+    fi
 fi
 PREV_FRONTEND_ID="$(frontend_current_build)"
 RELEASE_PLAN="$(release_plan_summary "${COMPONENTS_FILE}" "${LIVE_COMMIT}" "${NEW_COMPONENTS}")"
@@ -458,6 +475,7 @@ if [ "${STEP_BACKEND}" = run ]; then
         configure_backend_allocator
     fi
     check_ingestion_idle
+    backend_tree_apply || fail "The backend tree did not switch; the health check decides"
     BACKEND_RESTART_AT="$(date +%s)"
     if [ "${BACKEND_REPLACE}" = handover ] && backend_handover_possible; then
         # The new backend starts beside the old one; the old one is stopped only once the new one is healthy and the
@@ -598,6 +616,7 @@ fi
 
 step "Rollback: restarting services"
 BACKEND_HANDOVER_ROLLING_BACK=true
+backend_tree_rollback "${ROLLBACK_TARGET}" || warn "The backend tree could not go back to ${ROLLBACK_SHORT}"
 # A release that did not touch the backend (the plan said so) rolls back the frontend only, unless the backend
 # itself is not answering. A handover that did not happen left the old backend serving: it is not stopped now.
 if { [ "${RELEASE_TOUCHES_BACKEND}" = true ] && [ "${HANDOVER_KEPT_OLD}" != true ]; } ||

@@ -29,7 +29,7 @@ def _load():
 
 
 class Rig:
-    def __init__(self, root, **limits):
+    def __init__(self, root, workdir=None, **limits):
         self.root = Path(root)
         self.mode = self.root / 'mode'
         self.mode.write_text('ok')
@@ -50,11 +50,12 @@ class Rig:
         env = dict(os.environ, HANDOVER_TEST_MODE=str(self.mode), UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN='20')
         self.process = subprocess.Popen(
             [sys.executable, '-I', str(SUPERVISOR), '--state', str(self.state),
+             *(['--workdir', str(workdir)] if workdir else []),
              '--ready-seconds', str(options['ready']), '--commit-seconds', str(options['commit']),
              '--stop-seconds', str(options['stop']), '--sigint-seconds', str(options['sigint']),
              '--leftover-seconds', '1', '--', sys.executable, '-m', 'uvicorn', 'handover_app:app', '--fd', '3',
              '--workers', '2', '--log-level', 'warning'],
-            cwd=str(DEPLOY / 'tests'), env=env, preexec_fn=as_fd_three, close_fds=False,
+            cwd=str(workdir or DEPLOY / 'tests'), env=env, preexec_fn=as_fd_three, close_fds=False,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def ask(self, path='/health', timeout=30):
@@ -230,6 +231,31 @@ def test_the_supervisor_exits_with_the_backend_so_systemd_restarts_it(rig):
     server = rig.serving()
     os.killpg(server, signal.SIGKILL)
     assert rig.process.wait(30) != 0
+
+
+def test_each_generation_starts_in_the_tree_the_link_names_and_stays_there():
+    """A handover from one backend tree to the other (deploy/backend-tree.sh): the old backend keeps its own files."""
+    with tempfile.TemporaryDirectory() as root:
+        trees = Path(root).resolve()
+        for name in ('blue', 'green'):
+            (trees / name).mkdir()
+            (trees / name / 'handover_app.py').write_text((DEPLOY / 'tests/handover_app.py').read_text())
+        (trees / 'current').symlink_to('blue')
+        rig = Rig(root, workdir=trees / 'current')
+        try:
+            rig.wait_for(lambda: rig.read().get('server_pid'))
+            first = rig.read()['server_pid']
+            rig.ask()
+            assert os.readlink(f'/proc/{first}/cwd') == str(trees / 'blue')
+            assert os.readlink(f'/proc/{rig.process.pid}/cwd') == '/'  # only backends count as using a tree
+            (trees / '.next').symlink_to('green')
+            (trees / '.next').replace(trees / 'current')
+            rig.process.send_signal(signal.SIGUSR2)
+            rig.wait_for(lambda: rig.read()['handover'].get('phase') == 'ready')
+            assert os.readlink(f"/proc/{rig.read()['handover']['new_server_pid']}/cwd") == str(trees / 'green')
+            assert os.readlink(f'/proc/{first}/cwd') == str(trees / 'blue')  # the link moved, the old backend did not
+        finally:
+            rig.close()
 
 
 def test_healthy_means_what_the_release_check_means():

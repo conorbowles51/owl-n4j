@@ -210,12 +210,35 @@ PLATFORM_UPDATE_POLL_SECONDS=60
 
 Set `PLATFORM_UPDATE_POLL_SECONDS=3600` later if you want hourly checks.
 
+## Where the backend runs from
+
+The backend does not run from the live checkout. A release moves that checkout first, because the gates, the migrations
+and the image builds need the new commit, and it takes 12 to 20 minutes before the backend is replaced. Lazy imports, data
+files and child processes of a backend running there would read the new commit in that time.
+
+- `deploy/backend-tree.sh` keeps two git worktrees, `blue` and `green`, in `../loupe-backend`. `current` links to the one
+  the unit starts from, through the drop-in `70-lx-releaseprep-tree.conf` (`WorkingDirectory=`).
+- A release stages its commit in the tree no process of the unit has as its working directory, compiles it, and runs the
+  prepare unit there. `current` switches right before the backend is replaced. A running backend keeps the tree it started
+  in, so it reads one commit from its start to its end, and so do its children.
+- The trees hold code only: `.env`, `data`, `evidence-data`, `backend/logs` and `deploy/logs` are links to the live checkout.
+  A new folder of runtime data under the checkout goes in `BACKEND_TREE_SHARED`.
+- A gate or build that stops a release changes nothing the backend reads. A failed health check points `current` back at the
+  tree that ran, at the rollback commit. Commits from before the trees run from the checkout (`deploy/rollback.sh`).
+- The evidence engine has no such window: its containers run images and mount data folders only.
+- The virtual environment is shared. A release that changes `requirements.txt` installs into it while the old backend runs.
+- Way back: set `deploy/backend-tree.conf` to `checkout`; the next restart removes the drop-in and runs from the checkout.
+- `systemctl restart owl-backend-v2` starts what `current` names, which is what is live.
+- `bash deploy/tests/test-backend-tree.sh`; a whole release: `test_the_old_backend_keeps_its_own_code_while_a_release_prepares`
+  in `backend/tests/test_deployment_script_safety.py`.
+
 ## Replacing the backend without a wait
 
 A release that changes the backend restarts it, and requests wait in the held API port's queue while the new workers
 start. With `deploy/backend-restart.conf` (or `/etc/default/owl-backend-restart`, which overrides it on the host) set
 to `handover`, the unit's main process is `deploy/backend_supervisor.py`, installed to `/usr/local/lib/loupe`. A release
-then starts the new backend beside the old one on the same socket, so nginx and every client keep the same address;
+then starts the new backend beside the old one on the same socket, from the other backend tree, so nginx and every client
+keep the same address;
 the old backend stops only after each new worker has answered `/health` as healthy and the ingestion gate has passed
 again, and it finishes its requests within the usual stop bounds.
 

@@ -53,6 +53,16 @@ def test_the_prepare_unit_carries_every_service_setting_the_identity_reads():
     assert argv[-3:] == ['/bin/bash', '-lc', 'exec python -m services.financial.view_warmup --prepare']
 
 
+def test_the_prepare_runs_the_code_being_released_not_the_tree_the_backend_runs(monkeypatch, tmp_path):
+    """The backend's own folder holds the old commit until its restart (deploy/backend-tree.sh)."""
+    monkeypatch.setenv('LOUPE_PREPARE_BACKEND_DIR', '/trees/green/backend')
+    system = FakeSystem()
+    view_prepare.start(run=system, state=str(tmp_path / 'state'))
+    started = [call for call in system.calls if call[0] == 'systemd-run'][0]
+    assert '--property=WorkingDirectory=/trees/green/backend' in started
+    assert [call for call in system.calls if call[0] == 'git'][0][:5] == ['git', '-c', 'safe.directory=*', '-C', '/trees/green']
+
+
 def test_unreadable_service_settings_start_nothing(tmp_path):
     system = FakeSystem(shown='User=\n')
     state = tmp_path / 'state.json'

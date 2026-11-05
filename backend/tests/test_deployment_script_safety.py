@@ -27,7 +27,8 @@ def release_sandbox(tmp_path):
     for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py', 'backend-stop.sh', 'git-update.sh',
                  'release-plan.sh', 'frontend-release.sh', 'frontend-server.sh', 'frontend-server.conf',
                  'nginx-loupe-frontend.conf', 'record_release.py', 'backend-socket.sh', 'backend-socket.conf',
-                 'backend-handover.sh', 'backend-restart.conf', 'backend_supervisor.py'):
+                 'backend-handover.sh', 'backend-restart.conf', 'backend_supervisor.py', 'backend-tree.sh',
+                 'backend-tree.conf'):
         shutil.copy(DEPLOY / name, project / 'deploy' / name)
     # Exercise real install/mv commands, but target a synthetic unit directory.
     helper = project / 'deploy/ingestion-safety.sh'
@@ -72,9 +73,25 @@ if name == 'sudo':
     os.execvp(args[0], args)
 event = ' '.join([name, *args])
 if name == 'python':
-    event = 'gate'
+    event = 'compile' if '-m' in args and 'compileall' in args else 'gate'
 with (root / 'events').open('a') as stream:
     stream.write(json.dumps(event) + '\\n')
+serving = os.environ.get('SANDBOX_PORT')
+if serving and event.split()[0] in ('alembic', 'pip') or serving and event.startswith('docker compose build'):
+    # A request reaching the running backend while the release prepares.
+    import urllib.error, urllib.request
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:%s/profile' % serving, timeout=20) as answer:
+            seen = [answer.status, answer.read().decode()]
+    except urllib.error.HTTPError as error:
+        seen = [error.code, error.read().decode()]
+    except OSError:
+        seen = None  # no backend yet: the first release
+    if seen:
+        with (root / 'probes').open('a') as stream:
+            stream.write(json.dumps(seen) + '\\n')
+if os.environ.get('SANDBOX_REAL_GIT') and name == 'git':
+    os.execv('/usr/bin/git', ['git', *args])
 trigger = os.environ.get('WORK_ARRIVES_AFTER')
 if trigger and event.startswith(trigger) and not (root / 'arrived').exists():
     with sqlite3.connect(os.environ['GATE_DATABASE']) as db:
@@ -117,6 +134,24 @@ elif name == 'npm' and 'build' in args and '--outDir' in args:
     (out / 'assets').mkdir(parents=True, exist_ok=True)
     (out / 'index.html').write_text('<script src="/assets/app.js"></script>')
     (out / 'assets/app.js').write_text('app')
+elif name == 'systemctl' and serving and 'ControlGroup' in args:
+    print('/sandbox')
+elif name == 'systemctl' and serving and args[0] == 'start' and 'owl-backend-v2' in args:
+    import subprocess
+    tree = root / 'units/owl-backend-v2.service.d/70-lx-releaseprep-tree.conf'
+    lines = tree.read_text().splitlines() if tree.exists() else []
+    folder = next((line.split('=', 1)[1] for line in lines if line.startswith('WorkingDirectory=')), str(root / 'backend'))
+    server = subprocess.Popen([sys.executable, 'app.py', serving], cwd=folder, start_new_session=True,
+                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    (root / 'cgroup/sandbox/cgroup.procs').write_text('%d\\n' % server.pid)
+elif name == 'systemctl' and serving and args[0] == 'stop' and 'owl-backend-v2' in args:
+    import signal
+    for pid in (root / 'cgroup/sandbox/cgroup.procs').read_text().split():
+        try:
+            os.kill(int(pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    (root / 'cgroup/sandbox/cgroup.procs').write_text('')
 elif name == 'systemctl' and args[:1] == ['show']:
     print('inactive')  # the bounded stop sees the backend stopped at once
 elif name == 'systemctl' and args[:1] == ['kill'] and os.environ.get('HANDOVER_ANSWER'):
@@ -452,3 +487,187 @@ def test_a_failed_health_check_after_a_handover_rolls_back_with_a_restart(releas
     assert events.index(HUP) < events.index('systemctl stop --no-block owl-backend-v2')
     # The way back does not depend on the supervisor.
     assert not (release_sandbox / 'units/owl-backend-v2.service.d/65-lx-restartwait-supervisor.conf').exists()
+
+
+# A backend as the real one is: modules loaded at its start, a module first read by a request, a data file and a child
+# process. The commit after this one renames what the lazy module imports, as phone_setup did on 5 Nov.
+SERVED_APP = """
+import http.server, json, os, subprocess, sys
+import helper
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *arguments): pass
+    def do_GET(self):
+        if self.path == '/up':
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+            return
+        try:
+            import lazy
+            with open('zones.json') as stream:
+                zones = json.load(stream)['version']
+            child = subprocess.run([sys.executable, 'child.py'], capture_output=True, text=True, check=True).stdout.strip()
+            code, body = 200, dict(value=lazy.value(), zones=zones, child=child, folder=os.getcwd())
+        except Exception as error:
+            code, body = 500, dict(error=repr(error))
+        self.send_response(code); self.end_headers(); self.wfile.write(json.dumps(body).encode())
+http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Handler).serve_forever()
+"""
+
+
+def _commit_version(project, version, name, branch="main"):
+    for file, text in (('helper.py', f'def {name}():\n    return {version}\n'),
+                       ('lazy.py', f'from helper import {name}\ndef value():\n    return {name}()\n'),
+                       ('child.py', f'print({version})\n'), ('zones.json', json.dumps(dict(version=version)))):
+        (project / 'backend' / file).write_text(text)
+    subprocess.run(['/usr/bin/git', 'add', '-A'], cwd=project, check=True)
+    subprocess.run(['/usr/bin/git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', f'v{version}'], cwd=project, check=True)
+    subprocess.run(['/usr/bin/git', 'push', '-q', 'origin', 'main'], cwd=project, check=True)
+    return subprocess.run(['/usr/bin/git', 'rev-parse', 'HEAD'], cwd=project, check=True, capture_output=True, text=True).stdout.strip()
+
+
+@pytest.fixture
+def real_release(release_sandbox):
+    """Real git, a real server process and the real deploy.sh; the host's services stay stubs."""
+    import socket
+    project = release_sandbox
+    (project / 'backend/app.py').write_text(SERVED_APP)
+    (project / 'frontend_v2/package.json').write_text('{}')
+    (project / 'cgroup/sandbox').mkdir(parents=True)
+    (project / 'cgroup/sandbox/cgroup.procs').write_text('')
+    (project / '.gitignore').write_text('.env\n.venv\ncommands\ncgroup\nunits\nevents\nprobes\narrived\njobs.sqlite\ndeploy/logs\n'
+                                        'nginx\n__pycache__\nfrontend_v2/dist\nfrontend_v2/node_modules\nsupervisor\ndata\n'
+                                        'evidence-data\nbackend/logs\n')
+    (project / 'events').write_text('')
+    origin = project.parent / 'origin.git'
+    subprocess.run(['/usr/bin/git', 'init', '-q', '--bare', '-b', 'main', str(origin)], check=True)
+    subprocess.run(['/usr/bin/git', 'init', '-q', '-b', 'main'], cwd=project, check=True)
+    subprocess.run(['/usr/bin/git', 'remote', 'add', 'origin', str(origin)], cwd=project, check=True)
+    (project / 'deploy/logs/.last-good-commit').unlink()
+    with socket.socket() as free:
+        free.bind(('127.0.0.1', 0))
+        port = free.getsockname()[1]
+    env = {'SANDBOX_REAL_GIT': '1', 'SANDBOX_PORT': str(port), 'BACKEND_CGROUP_ROOT': str(project / 'cgroup')}
+    yield project, env
+    for pid in (project / 'cgroup/sandbox/cgroup.procs').read_text().split():
+        try:
+            os.kill(int(pid), 9)
+        except ProcessLookupError:
+            pass
+
+
+def _ask(env, path='/profile'):
+    import time
+    import urllib.request
+    for _ in range(100):
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:%s%s' % (env['SANDBOX_PORT'], path), timeout=20) as answer:
+                return json.loads(answer.read())
+        except OSError:
+            time.sleep(0.1)
+    raise AssertionError('the backend never answered')
+
+
+def _released_and_waiting_for_the_next(project, env):
+    """The first release on trees, then the next commit on origin: the state every later release starts in."""
+    first = _commit_version(project, 1, 'old_name')
+    result, _ = run_release(project, 'deploy.sh', extra_env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    _ask(env, '/up')  # not the lazy module: it stays unread until a request during the next release
+    (project / 'probes').unlink(missing_ok=True)
+    (project / 'events').write_text('')
+    subprocess.run(['/usr/bin/git', 'checkout', '-q', '-b', 'writer'], cwd=project, check=True)
+    second = _commit_version_on(project, 2, 'new_name')
+    subprocess.run(['/usr/bin/git', 'checkout', '-q', 'main'], cwd=project, check=True)
+    return first, second
+
+
+def _commit_version_on(project, version, name):
+    for file, text in (('helper.py', f'def {name}():\n    return {version}\n'),
+                       ('lazy.py', f'from helper import {name}\ndef value():\n    return {name}()\n'),
+                       ('child.py', f'print({version})\n'), ('zones.json', json.dumps(dict(version=version)))):
+        (project / 'backend' / file).write_text(text)
+    subprocess.run(['/usr/bin/git', 'add', '-A'], cwd=project, check=True)
+    subprocess.run(['/usr/bin/git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', f'v{version}'], cwd=project, check=True)
+    subprocess.run(['/usr/bin/git', 'push', '-q', 'origin', 'writer:main'], cwd=project, check=True)
+    return subprocess.run(['/usr/bin/git', 'rev-parse', 'HEAD'], cwd=project, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _probes(project):
+    return [json.loads(line) for line in (project / 'probes').read_text().splitlines()]
+
+
+def test_the_old_backend_keeps_its_own_code_while_a_release_prepares(real_release):
+    """5 Nov 06:36: /api/phones/<id>/profile answered 500 on every phone between the checkout moving and the restart."""
+    project, env = real_release
+    _released_and_waiting_for_the_next(project, env)
+    result, events = run_release(project, 'deploy.sh', extra_env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    seen = _probes(project)
+    assert seen and all(code == 200 for code, _ in seen), seen
+    assert all(json.loads(body)['zones'] == 1 and json.loads(body)['child'] == '1' for _, body in seen), seen
+    after = _ask(env)
+    assert (after['value'], after['zones'], after['child']) == (2, 2, '2')
+    assert after['folder'].endswith('loupe-backend/green/backend')
+    # The checkout moved first for the tooling; the tree the old backend ran from did not move at all.
+    assert subprocess.run(['/usr/bin/git', 'log', '-1', '--format=%s'], cwd=project.parent / 'loupe-backend/blue',
+                          capture_output=True, text=True).stdout.strip() == 'v1'
+
+
+def test_with_the_backend_in_the_checkout_the_same_release_breaks_it(real_release):
+    """The test above fails on the old layout: this is that layout, and the failure of 5 Nov."""
+    project, env = real_release
+    (project / 'deploy/backend-tree.conf').write_text('checkout\n')
+    _released_and_waiting_for_the_next(project, env)
+    result, _ = run_release(project, 'deploy.sh', extra_env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert any(code == 500 and 'new_name' in body for code, body in _probes(project)), _probes(project)
+
+
+def test_a_party_gate_refusal_leaves_the_running_tree_and_current_alone(real_release):
+    project, env = real_release
+    _released_and_waiting_for_the_next(project, env)
+    _party_gate(project, 1)
+    result, events = run_release(project, 'deploy.sh', extra_env=env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert 'systemctl stop --no-block owl-backend-v2' not in events
+    assert (project.parent / 'loupe-backend/current').resolve().name == 'blue'
+    assert _ask(env)['value'] == 1
+
+
+def test_a_failed_health_check_goes_back_to_the_tree_that_ran(real_release):
+    project, env = real_release
+    first, _ = _released_and_waiting_for_the_next(project, env)
+    result, _ = run_release(project, 'deploy.sh', health_failure=True, extra_env=env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert (project.parent / 'loupe-backend/current').resolve().name == 'blue'
+    after = _ask(env)
+    assert (after['value'], after['zones'], after['child']) == (1, 1, '1')
+    assert after['folder'].endswith('loupe-backend/blue/backend')
+
+
+def test_the_first_release_on_trees_can_go_back_to_the_checkout(real_release):
+    project, env = real_release
+    _commit_version(project, 1, 'old_name')
+    (project / 'deploy/logs/.last-good-commit').write_text(
+        subprocess.run(['/usr/bin/git', 'rev-parse', 'HEAD'], cwd=project, capture_output=True, text=True).stdout)
+    subprocess.run(['/usr/bin/git', 'checkout', '-q', '-b', 'writer'], cwd=project, check=True)
+    _commit_version_on(project, 2, 'new_name')
+    subprocess.run(['/usr/bin/git', 'checkout', '-q', 'main'], cwd=project, check=True)
+    result, _ = run_release(project, 'deploy.sh', health_failure=True, extra_env=env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert not (project.parent / 'loupe-backend/current').exists()
+    assert not (project / 'units/owl-backend-v2.service.d/70-lx-releaseprep-tree.conf').exists()
+    assert _ask(env)['folder'] == str(project / 'backend')
+
+
+def test_a_backend_in_a_tree_keeps_its_data_paths(tmp_path):
+    """Paths are stored and compared against the data folder: from a tree they must stay the checkout's, not the link's."""
+    checkout, tree = tmp_path / 'checkout', tmp_path / 'trees/blue'
+    (checkout / 'backend').mkdir(parents=True)
+    (tree / 'backend').mkdir(parents=True)
+    (checkout / '.env').write_text('')
+    (tree / '.env').symlink_to(checkout / '.env')
+    shutil.copy(Path(__file__).resolve().parents[1] / 'config.py', tree / 'backend/config.py')
+    env = {key: value for key, value in os.environ.items() if key not in ('EVIDENCE_DATA_ROOT', 'PLATFORM_UPDATE_REPO_DIR')}
+    answer = subprocess.run([sys.executable, '-c', 'import config; print(config.EVIDENCE_DATA_ROOT, config.PLATFORM_UPDATE_REPO_DIR, config.BASE_DIR)'],
+                            cwd=tree / 'backend', env=env, capture_output=True, text=True, check=True).stdout.split()
+    assert answer == [str(checkout / 'evidence-data'), str(checkout), str(tree)]

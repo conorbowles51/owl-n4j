@@ -33,9 +33,9 @@ LISTEN_FD = 3
 
 
 class Generation:
-    def __init__(self, command):
+    def __init__(self, command, cwd=None):
         # A session of its own: the group is what a stop signals, as a service stop signals the whole unit.
-        self.process = subprocess.Popen(command, pass_fds=(LISTEN_FD,), start_new_session=True)
+        self.process = subprocess.Popen(command, pass_fds=(LISTEN_FD,), start_new_session=True, cwd=cwd)
         self.pid = self.process.pid
 
     def signal(self, signum):
@@ -167,6 +167,10 @@ class Supervisor:
             self.abort('aborted by the release')
         return None
 
+    def generation(self):
+        # The folder as it is now: the link moves between generations and each stays in the tree it started in.
+        return Generation(self.command, cwd=os.path.realpath(self.options.workdir) if self.options.workdir else None)
+
     # --- the handover --------------------------------------------------------------------------------------------
 
     def begin(self):
@@ -177,7 +181,7 @@ class Supervisor:
         self.handover = dict(id=self.count, phase='starting', starting_at=time.time(), old_server_pid=self.current.pid)
         self.write_state()
         try:
-            self.next = Generation(self.command)
+            self.next = self.generation()
         except OSError as error:
             self.next = None
             self.phase('failed', reason=f'could not start: {error}')
@@ -294,7 +298,9 @@ class Supervisor:
 
     def run(self):
         self.install()
-        self.current = Generation(self.command)
+        if self.options.workdir:
+            os.chdir('/')
+        self.current = self.generation()
         self.write_state()
         self.say(f'backend started, server pid {self.current.pid}')
         while True:
@@ -324,6 +330,8 @@ def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--state', required=True)
     parser.add_argument('--workers', type=int, default=None)
+    parser.add_argument('--workdir', default=None, help='each generation starts here, read at its start; '
+                        'this process does not stay there, so a release can tell which tree is in use')
     parser.add_argument('--ready-seconds', type=float, default=300)
     parser.add_argument('--commit-seconds', type=float, default=300)
     parser.add_argument('--stop-seconds', type=float, default=60)

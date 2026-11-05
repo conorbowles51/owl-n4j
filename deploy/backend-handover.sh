@@ -43,6 +43,12 @@ backend_handover_wanted() {
     fi
 }
 
+# Each generation starts from the backend tree `current` names at that moment (deploy/backend-tree.sh).
+backend_handover_workdir() {
+    [ "$(backend_tree_wanted)" = trees ] && printf ' --workdir %s/current/backend' "${BACKEND_TREES}"
+    return 0
+}
+
 # The socket drop-in's ExecStart, with the supervisor in front of uvicorn.
 backend_handover_exec_start() {
     local line
@@ -51,7 +57,7 @@ backend_handover_exec_start() {
         *"'exec "*"/uvicorn "*"'") ;;
         *) return 1 ;;
     esac
-    printf '%s\n' "${line}" | sed -E "s#'exec ([^ ]+)/uvicorn (.*)'#'exec \1/python -I ${BACKEND_SUPERVISOR_DIR}/backend_supervisor.py --state $(backend_handover_state_file) -- \1/uvicorn \2'#"
+    printf '%s\n' "${line}" | sed -E "s#'exec ([^ ]+)/uvicorn (.*)'#'exec \1/python -I ${BACKEND_SUPERVISOR_DIR}/backend_supervisor.py --state $(backend_handover_state_file)$(backend_handover_workdir) -- \1/uvicorn \2'#"
 }
 
 backend_handover_remove() {

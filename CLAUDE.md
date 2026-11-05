@@ -293,6 +293,13 @@ sessions.
 
 ---
 
+## Deploy layout
+
+The live checkout (`/home/conorbowles51/app-v3/owl-n4j`) holds the release tooling, `.env`, the venv and the data folders.
+The backend runs from `../loupe-backend/current` (`blue` or `green`, git worktrees), never from the checkout, so editing or
+moving the checkout does not change running code, and a job reading `$LIVE/backend` during a release reads the next commit,
+not the one being served. `/health` reports the commit of the tree. See "Where the backend runs from" in `deploy/README.md`.
+
 ## Writing to Alex
 
 Every rule here was established by having a draft rejected. They cost real time to

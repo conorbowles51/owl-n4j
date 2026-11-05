@@ -61,7 +61,7 @@ from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, Evidenc
 from postgres.models.user import User
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from config import BASE_DIR, EVIDENCE_DATA_ROOT, USE_EVIDENCE_ENGINE
+from config import DATA_HOME, EVIDENCE_DATA_ROOT, USE_EVIDENCE_ENGINE
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -2648,7 +2648,7 @@ def _page_image_source(db: Session, evidence_id: str):
     return file_path, record.sha256
 
 
-FRAMES_CACHE_DIR = BASE_DIR / "data" / "video_frames"
+FRAMES_CACHE_DIR = DATA_HOME / "data" / "video_frames"
 
 
 def _extract_video_frames(video_path: Path, output_dir: Path, interval: int = 30, max_frames: int = 50) -> List[dict]:

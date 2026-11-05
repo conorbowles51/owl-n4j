@@ -15,6 +15,10 @@ if ENV_PATH.exists():
 else:
     load_dotenv()
 
+# The checkout holding this host's .env and data. A backend runs from a tree of code only (deploy/backend-tree.sh) whose
+# .env is a link back here, so paths stored or compared against the data folders stay what they always were.
+DATA_HOME = ENV_PATH.resolve().parent
+
 # Postgres config
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -166,7 +170,7 @@ _EVIDENCE_DATA_ROOT = Path(os.getenv("EVIDENCE_DATA_ROOT", "evidence-data"))
 EVIDENCE_DATA_ROOT = (
     _EVIDENCE_DATA_ROOT
     if _EVIDENCE_DATA_ROOT.is_absolute()
-    else BASE_DIR / _EVIDENCE_DATA_ROOT
+    else DATA_HOME / _EVIDENCE_DATA_ROOT
 )
 
 # Redis Configuration (shared with evidence-engine for job progress pub/sub)
@@ -189,11 +193,11 @@ PLATFORM_UPDATE_REMOTE = os.getenv("PLATFORM_UPDATE_REMOTE", "origin")
 PLATFORM_UPDATE_BRANCH = os.getenv("PLATFORM_UPDATE_BRANCH") or os.getenv("DEPLOY_BRANCH") or None
 PLATFORM_UPDATE_POLL_SECONDS = int(os.getenv("PLATFORM_UPDATE_POLL_SECONDS", "60"))
 PLATFORM_UPDATE_SERVICE = os.getenv("PLATFORM_UPDATE_SERVICE", "owl-self-update.service")
-_PLATFORM_UPDATE_REPO_DIR = Path(os.getenv("PLATFORM_UPDATE_REPO_DIR", str(BASE_DIR)))
+_PLATFORM_UPDATE_REPO_DIR = Path(os.getenv("PLATFORM_UPDATE_REPO_DIR", str(DATA_HOME)))
 PLATFORM_UPDATE_REPO_DIR = (
     _PLATFORM_UPDATE_REPO_DIR
     if _PLATFORM_UPDATE_REPO_DIR.is_absolute()
-    else BASE_DIR / _PLATFORM_UPDATE_REPO_DIR
+    else DATA_HOME / _PLATFORM_UPDATE_REPO_DIR
 )
 
 # Deleted items (lx-casebin): when on, deleting a case or an evidence file moves it to Deleted items for 30 days,
