@@ -112,6 +112,7 @@ class AgentService:
             role="user",
             content=request.message,
         )
+        feedback = self._proposal_feedback(db, request)
         run = storage.create_run(
             db,
             thread=thread,
@@ -124,6 +125,7 @@ class AgentService:
                 "case_layer": request.case_layer,
                 **self._workflow_metadata(request),
                 **({"all_cases": True} if request.all_cases else {}),
+                **({"proposal_feedback": feedback} if feedback else {}),
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -178,7 +180,7 @@ class AgentService:
                 ),
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
-                mandate_context_block=self._prompt_block(mandate_context.block, request),
+                mandate_context_block=self._prompt_block(mandate_context.block, request, feedback),
                 final_answer_rules=self._final_rules(request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
@@ -425,6 +427,7 @@ class AgentService:
                 content=request.message,
             )
 
+        feedback = self._proposal_feedback(db, request)
         run = storage.create_run(
             db,
             thread=thread,
@@ -437,6 +440,7 @@ class AgentService:
                 "case_layer": request.case_layer,
                 **self._workflow_metadata(request),
                 **({"all_cases": True} if request.all_cases else {}),
+                **({"proposal_feedback": feedback} if feedback else {}),
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -471,7 +475,7 @@ class AgentService:
                     else self._available_artifacts_for_runner(thread)
                 ),
                 allowed_entity_keys=allowed_entity_keys,
-                mandate_context_block=self._prompt_block(mandate_context.block, request),
+                mandate_context_block=self._prompt_block(mandate_context.block, request, feedback),
                 final_answer_rules=self._final_rules(request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
@@ -777,12 +781,22 @@ class AgentService:
         return workflows.final_rules(workflows.get(request.workflow_id))
 
     @staticmethod
-    def _prompt_block(mandate_block: str, request: AgentMessageRequest) -> str:
-        """The mandate block, followed by the guided workflow's plan when the run follows one."""
-        if not request.workflow_id:
-            return mandate_block
-        from services.agent import workflows
-        return "\n\n".join(x for x in (mandate_block, workflows.render_block(workflows.get(request.workflow_id), budget=DEFAULT_AGENT_MAX_TOOL_CALLS)) if x)
+    def _proposal_feedback(db: Session, request: AgentMessageRequest) -> dict | None:
+        """Past confirms and corrections per kind in this case. Not in all-cases mode: one case's outcomes are not
+        another's."""
+        if request.all_cases:
+            return None
+        from services.agent import proposal_feedback
+        return proposal_feedback.safe_read(db, request.case_id)
+
+    @staticmethod
+    def _prompt_block(mandate_block: str, request: AgentMessageRequest, feedback: dict | None = None) -> str:
+        """The mandate block, the guided workflow's plan when the run follows one, and what people did with earlier
+        proposals in this case."""
+        from services.agent import proposal_feedback, workflows
+        plan = (workflows.render_block(workflows.get(request.workflow_id), budget=DEFAULT_AGENT_MAX_TOOL_CALLS)
+                if request.workflow_id else "")
+        return "\n\n".join(x for x in (mandate_block, plan, proposal_feedback.block(feedback)) if x)
 
     @staticmethod
     def _name_other_cases(db: Session, run, result: dict[str, Any], case_id) -> str:

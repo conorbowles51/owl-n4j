@@ -475,7 +475,11 @@ def _filters(case_id, run_id, kind=None, strength=None, start=None, end=None, ph
 
 ORDERS = {"time": "r.period_start NULLS LAST, r.id",
           # approach 1 (05 4.3.8): the reading with the strongest candidate payment first, readings with none last
-          "strength": "coalesce((r.measures ->> 'match_rank')::int, -1) DESC, r.period_start NULLS LAST, r.id"}
+          "strength": "coalesce((r.measures ->> 'match_rank')::int, -1) DESC, r.period_start NULLS LAST, r.id",
+          # account leads by the stated rule (money_signals.LEAD_RANK_RULE, lead_rank_key): class, count, recency
+          "lead_rank": "CASE r.strength WHEN 'transactional' THEN 3 WHEN 'account' THEN 2 WHEN 'presence' THEN 1 ELSE 0 "
+                       "END DESC, coalesce((r.measures -> 'counts' ->> r.strength)::int, 0) DESC, "
+                       "r.measures ->> 'last_seen' DESC NULLS LAST, r.id"}
 
 
 def results(conn, case_id, run_id, *, kind=None, strength=None, start=None, end=None, phone=None, identity=None,
@@ -494,8 +498,11 @@ def results(conn, case_id, run_id, *, kind=None, strength=None, start=None, end=
     decisions = _decisions_for(conn, case_id, [(r.result_key, r) for r in rows])
     items = [_result_out(r, decisions.get(r.result_key, [])) for r in rows]
     if run.get("approach") == "money_signals":
-        from services.phone_analysis import money_pairings
+        from services.phone_analysis import money_pairings, money_signals
         items = money_pairings.overlay(conn, case_id, items)
+        for it in items:
+            if it.get("kind") == "account_lead":
+                it["rank_reason"] = money_signals.lead_rank_reason(it.get("strength"), it.get("measures"))
     return {"total": total, "offset": offset, "limit": limit, "items": items}
 
 

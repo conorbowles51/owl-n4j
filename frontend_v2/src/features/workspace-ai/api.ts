@@ -49,6 +49,8 @@ export interface WorkspaceAIContent {
 
 export interface WorkspaceAIOutput {
   id: string
+  /** How much of a long source a claims draft read; a clipped draft says so. */
+  source_reading?: { clipped?: boolean; chunks_read?: number; chunks_available?: number; conversation_rows_read?: number; conversation_rows_available?: number | string } | null
   case_id: string
   target_type: WorkspaceAITargetType
   target_id: string

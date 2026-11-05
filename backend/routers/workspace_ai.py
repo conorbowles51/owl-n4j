@@ -59,6 +59,7 @@ class WorkspaceAIOutputResponse(BaseModel):
     content: dict[str, Any]
     citations: list[dict[str, Any]]
     source_set: list[dict[str, Any]]
+    source_reading: dict[str, Any] | None = None
     proposed_actions: list[dict[str, Any]]
     accepted_targets: list[dict[str, Any]]
     model_metadata: dict[str, Any]

@@ -193,14 +193,18 @@ def _document_chunks(
     interview_id: uuid.UUID | None,
     preferred_anchor: dict[str, Any] | None,
     terms: list[str] | None = None,
+    whole: bool = False,
 ) -> list[dict[str, Any]]:
+    """Up to 6 chunks of the file's text. ``whole`` gives all of it: every line of a phone thread and every part of a
+    long page, for a caller that bounds the sources itself and states what it left out."""
     document = file.document_text
     if document is None or not document.content.strip():
         return []
-    if getattr(file, "source_type", None) == "phone_text":
+    if getattr(file, "source_type", None) == "phone_text" and not whole:
         return _phone_thread_chunks(file, document, interview_id=interview_id, preferred_anchor=preferred_anchor,
                                     terms=terms)
     content = document.content
+    limit = len(content) + len(document.source_locations or []) if whole else 6
     locations = [item for item in (document.source_locations or []) if isinstance(item, dict)]
     preferred_page = (preferred_anchor or {}).get("page")
     if preferred_page is not None:
@@ -215,24 +219,26 @@ def _document_chunks(
             if end <= start:
                 continue
             page = location.get("page_number") or location.get("page")
-            anchor = {"start_char": start, "end_char": end}
-            if page is not None:
-                anchor["page"] = page
-            if location.get("record_uid"):  # a phone thread line cites its record (03 section 11.5)
-                anchor["record_uid"] = str(location["record_uid"])
-            text = content[start:end].strip()[:MAX_CHUNK_CHARACTERS]
-            if text:
-                chunks.append(
-                    _source_record(
-                        file,
-                        text=text,
-                        anchor=anchor,
-                        interview_id=interview_id,
-                        content_hash=document.content_sha256,
+            for at in range(start, end, MAX_CHUNK_CHARACTERS) if whole else (start,):
+                stop = min(end, at + MAX_CHUNK_CHARACTERS) if whole else end
+                anchor = {"start_char": at, "end_char": stop}
+                if page is not None:
+                    anchor["page"] = page
+                if location.get("record_uid"):  # a phone thread line cites its record (03 section 11.5)
+                    anchor["record_uid"] = str(location["record_uid"])
+                text = content[at:stop].strip()[:MAX_CHUNK_CHARACTERS]
+                if text:
+                    chunks.append(
+                        _source_record(
+                            file,
+                            text=text,
+                            anchor=anchor,
+                            interview_id=interview_id,
+                            content_hash=document.content_sha256,
+                        )
                     )
-                )
     else:
-        for start in range(0, min(len(content), MAX_CHUNK_CHARACTERS * 6), MAX_CHUNK_CHARACTERS):
+        for start in range(0, min(len(content), MAX_CHUNK_CHARACTERS * limit), MAX_CHUNK_CHARACTERS):
             text = content[start : start + MAX_CHUNK_CHARACTERS].strip()
             if text:
                 chunks.append(
@@ -244,7 +250,7 @@ def _document_chunks(
                         content_hash=document.content_sha256,
                     )
                 )
-    return chunks[:6]
+    return chunks[:limit]
 
 
 def _transcript_chunks(
@@ -252,6 +258,7 @@ def _transcript_chunks(
     *,
     interview_id: uuid.UUID | None,
     preferred_anchor: dict[str, Any] | None,
+    whole: bool = False,
 ) -> list[dict[str, Any]]:
     segments = [item for item in (file.transcription_segments or []) if isinstance(item, dict)]
     preferred_start = (preferred_anchor or {}).get("start_seconds")
@@ -266,7 +273,7 @@ def _transcript_chunks(
         if narrowed:
             segments = narrowed
     chunks: list[dict[str, Any]] = []
-    for segment in segments[:12]:
+    for segment in segments if whole else segments[:12]:
         text = str(segment.get("text") or "").strip()
         if not text:
             continue
@@ -288,7 +295,7 @@ def _transcript_chunks(
     if not chunks and file.transcription and file.transcription.strip():
         transcript = file.transcription.strip()
         transcript_hash = hashlib.sha256(transcript.encode("utf-8")).hexdigest()
-        for start in range(0, min(len(transcript), MAX_CHUNK_CHARACTERS * 6), MAX_CHUNK_CHARACTERS):
+        for start in range(0, len(transcript) if whole else min(len(transcript), MAX_CHUNK_CHARACTERS * 6), MAX_CHUNK_CHARACTERS):
             text = transcript[start : start + MAX_CHUNK_CHARACTERS].strip()
             if text:
                 chunks.append(
@@ -300,7 +307,7 @@ def _transcript_chunks(
                         content_hash=transcript_hash,
                     )
                 )
-    return chunks[:12]
+    return chunks if whole else chunks[:12]
 
 
 def _source_record(
@@ -595,6 +602,7 @@ def create_output(
     interview_ids: list[uuid.UUID] | None = None,
     subject: dict[str, Any] | None = None,
     conversation: str | None = None,
+    document_ids: list[Any] | None = None,
 ) -> dict[str, Any]:
     """``subject`` and ``conversation`` are for ``statement_claims`` (04 section 9.2): the phone or person the drafted
     claims are about, and a conversation whose text is the statement (instead of interviews)."""
@@ -625,19 +633,25 @@ def create_output(
                 interview_id = _uuid(value, "interview identifier")
                 if interview_id not in selected_interviews:
                     selected_interviews.append(interview_id)
+            if document_ids and (selected_interviews or conversation):
+                raise WorkspaceAIError("One draft reads documents or interviews, not both. Draft them separately.")
             if conversation:
                 sources, reading = drafting.conversation_sources(db, case_id, str(conversation))
                 retrieval = {"conversation": reading}
+            elif document_ids:
+                sources, reading = drafting.document_sources(db, case_id, document_ids)
+                retrieval = {"documents": reading}
             elif selected_interviews:
                 # the case's phone material is read in full for drafting (04 section 9.2 step 4)
                 sources = _interview_sources(db, case_id=case_id, dossier_id=target_id,
                                              interview_ids=selected_interviews, phone_files_in_full=True)
             else:
-                raise WorkspaceAIError("Select an interview or a conversation")
+                raise WorkspaceAIError("Select an interview, a conversation or a document")
         except drafting.DraftingError as exc:
             raise WorkspaceAIError(str(exc)) from exc
         target_snapshot = {"display_name": target.display_name}
         drafting_input = {"subject": resolved["subject"], "conversation": conversation,
+                          "documents": [str(v) for v in document_ids or []],
                           "subject_label": resolved.get("name") or target.display_name}
     elif target_type == "dossier":
         for value in interview_ids or []:
@@ -1213,6 +1227,12 @@ def reject_output(
     return serialize_output(item)
 
 
+def _source_reading(item: WorkspaceAIOutput) -> dict[str, Any] | None:
+    """How much of a long document or conversation a draft read, so a clipped draft says so."""
+    retrieval = (item.generation_input or {}).get("retrieval") or {}
+    return retrieval.get("documents") or retrieval.get("conversation") or None
+
+
 def serialize_output(item: WorkspaceAIOutput) -> dict[str, Any]:
     requester = item.requester
     reviewer = item.reviewer
@@ -1233,6 +1253,7 @@ def serialize_output(item: WorkspaceAIOutput) -> dict[str, Any]:
         "content": dict(item.content or {}),
         "citations": list(item.citations or []),
         "source_set": list(item.source_set or []),
+        "source_reading": _source_reading(item),
         "proposed_actions": list(item.proposed_actions or []),
         "accepted_targets": list(item.accepted_targets or []),
         "model_metadata": dict(item.model_metadata or {}),

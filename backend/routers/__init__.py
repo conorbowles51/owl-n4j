@@ -29,6 +29,7 @@ from routers.workspace_overview import router as workspace_overview_router
 from routers.workspace_entries import router as workspace_entries_router
 from routers.workspace_ai import router as workspace_ai_router
 from routers.agent_proposals import router as agent_proposals_router
+from routers.phone_monitoring import router as phone_monitoring_router
 from routers.users import router as users_router
 from routers.setup import router as setup_router
 from routers.cost_ledger import router as cost_ledger_router
@@ -78,6 +79,7 @@ __all__ = [
     "workspace_entries_router",
     "workspace_ai_router",
     "agent_proposals_router",
+    "phone_monitoring_router",
     "users_router",
     "setup_router",
     "cost_ledger_router",

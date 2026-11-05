@@ -14,6 +14,7 @@ export const ANALYSES = [
   { code: "extraction_comparison", path: "phone-analyses/two-extractions", title: "Two extractions of one phone", what: "Whether two extractions are of one device, and what is in one and not the other, deleted between them, or new." },
   { code: "other_devices", path: "phone-analyses/devices-accounts", title: "Devices and accounts across phones", what: "WiFi networks, Bluetooth devices, accounts and web services each phone shows, and every one two or more phones share, graded by how well it matches." },
   { code: "plans", path: "phone-analyses/plans", title: "Plans and check-ins against location", what: "Calendar entries, check-ins and notes, and where the phone places one, whether its own location at the time agrees." },
+  { code: "monitoring_apps", path: "phone-analyses/monitoring-apps", title: "Monitoring apps and bank notices", what: "Installed apps on an editable, sourced list of monitoring apps, beside notices of bank changes such as a new payee or changed sign-in details, in date order. An indicator with its basis, never a finding of who did what." },
   { code: "awareness", path: "phone-analyses/groups", title: "Reading, replies and group roles", what: "When messages were read or played, how long replies took, messages read with no reply or still unread, and the admins and membership changes of each group chat." },
 ]
 

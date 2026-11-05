@@ -136,6 +136,8 @@ _INTERNAL_TOOL_MARKERS = (
     "get_contact_and_money_between",
     "get_money_signal_matches",
     "get_money_signal_leads",
+    "get_monitoring_app_indicators",
+    "get_glossary",
     "get_transfer_pairs",
     "get_payment_other_legs",
     "get_identity_suggestions",
@@ -147,6 +149,8 @@ _CROSS_TITLES = {"search_case": "Searched the case", "get_person_phones": "Read 
                  "get_contact_and_money_between": "Read contact and money between two people",
                  "get_money_signal_matches": "Read phone alerts that match payments",
                  "get_money_signal_leads": "Read accounts and periods the phones point to",
+                 "get_monitoring_app_indicators": "Read monitoring apps and bank control notices",
+                 "get_glossary": "Read the case's confirmed code words",
                  "evaluate_statement": "Checked a statement against the phones",
                  "get_analysis_results": "Read a phone analysis",
                  "draft_control_claim": "Drafted who had the means to operate an account",
@@ -163,8 +167,10 @@ _PHONE_PROMPT = """Phones (extraction reports of the case's phones):
 - A phone shows what was on the phone, not who used it. Places are where a phone recorded itself, with the stated accuracy. A money reading from a phone is a lead, never a statement: it does not change or replace a ledger row.
 - Phone records are sent to the AI provider in full for this answer; say so in one line at the end when you used a phone tool.
 - Phones and money together: search_case finds words, names and numbers in every group; get_person_phones lists a person's numbers and accounts; get_day_activity reads one day; get_together_apart, get_routine_deviations and get_phone_map_summary read places; get_analysis_results reads the phone analyses; evaluate_statement checks a statement a person confirmed and gives the check's outcome, which you report and never change.
-- For any "between A and B" question use get_contact_and_money_between: its money is the ledger's verified rows per currency with p3 beside them, and you never add totals yourself. Phone alerts that match ledger rows come from get_money_signal_matches: mention every pairing it returns with its strength (strong, moderate, weak or faint) and its reasons, list weak and faint ones as weak or faint rather than dropping them, state the search bound and what it left out when the tool says so, and say for each whether a person confirmed it or the rule found it (never call a rule-found pairing confirmed; rejected pairings are not matches and are not counted); and accounts or months the ledger lacks from get_money_signal_leads (alerts are listed, never totalled). Link each payment with the txn:// link in its txn field, as the ledger tools' cite field, and phone records by rec://.
+- For any "between A and B" question use get_contact_and_money_between: its money is the ledger's verified rows per currency with p3 beside them, and you never add totals yourself. Phone alerts that match ledger rows come from get_money_signal_matches: mention every pairing it returns with its strength (strong, moderate, weak or faint) and its reasons, list weak and faint ones as weak or faint rather than dropping them, state the search bound and what it left out when the tool says so, and say for each whether a person confirmed it or the rule found it (never call a rule-found pairing confirmed; rejected pairings are not matches and are not counted); and accounts or months the ledger lacks from get_money_signal_leads (alerts are listed, never totalled; give the leads in rank order with each rank_reason). Beside a pairing give its base_rate words when the result has them: the count and the base, which never make a pairing stronger or weaker and never remove one. Link each payment with the txn:// link in its txn field, as the ledger tools' cite field, and phone records by rec://.
 - Who controlled an account: use draft_control_claim and present its claim as "had the means to operate", with every strand for and against and the note that strands from one handset are not independent. Never say a person is an account's holder.
+- Monitoring apps and bank control notices come from get_monitoring_app_indicators: indicators with their basis, never a finding of who installed or used an app or who took control of an account. Code words a person confirmed come from get_glossary, each labelled as that person's reading; a meaning you read yourself goes through propose_glossary_term and stays a model reading until a person confirms it.
+- A line of a document or timeline to test against the phones goes through propose_claim, in its exact words with its citation; evaluate_statement checks it only after a person confirms it. A name, code or serial for the graph goes through propose_entity.
 - What a payment was for: read get_payment_conversation, then record your reading with draft_payment_purpose (consistent, different, or discussed but purpose not stated), quoting the messages by rec://. When the tool says no conversation in the window, report that and its reason. Label both as "model drafted, not confirmed" until a person confirms them.
 - A place is an investigative location, not cell-site opinion. A card payment places a card, not a person, at a terminal.
 """

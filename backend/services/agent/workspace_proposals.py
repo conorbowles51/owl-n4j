@@ -1,6 +1,6 @@
-"""Workspace AI widened to the case agent's drafts (agent-proposals B, D).
+"""Workspace AI widened to the case agent's drafts (agent-proposals B, D; agent-evidence-rest A, C, D, F, G).
 
-Five drafted kinds, each a Workspace AI output with ``target_type='case'``, held ``pending_review`` with checked
+Drafted kinds, each a Workspace AI output with ``target_type='case'``, held ``pending_review`` with checked
 citations until a person accepts or rejects it. Nothing is written to the Workspace before a person accepts.
 
 * ``entry_draft``: a Workspace note or finding (title, body, cited sources).
@@ -12,6 +12,10 @@ citations until a person accepts or rejects it. Nothing is written to the Worksp
 * ``timeline_addition``: payments, money trails, findings or phone records to add to the case timeline.
 * ``link_proposal``: a link from a Workspace entry to a source (supports / contradicts / context).
 * ``alternative_explanation``: the red cell's lines pointing away from the suspect (services.agent.red_cell).
+* ``statement_claim``: one claim a document or message makes, in its own words. Accepting makes a drafted ``pol_claim``
+  with no window; a person sets the window and confirms it, and only then is it evaluated.
+* ``entity_proposal``: an entity for the graph. Accepting creates it through the graph's own entity path.
+* ``glossary_term``: a code word and the meaning a model reads. A person confirms the meaning term by term.
 
 Accepting needs a person; what the person opened first is recorded (``model_metadata.review``) and the work it
 creates carries the model origin (``actor_origin``) so it always shows a model drafted it.
@@ -25,7 +29,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Mapping
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from services.agent.proposals import (NOT_IN_CASE, ProposalError, _checked_citations, _require_origin, _uuid, _why,
                                       review_facts)
@@ -33,13 +37,14 @@ from services.agent.proposals import (NOT_IN_CASE, ProposalError, _checked_citat
 log = logging.getLogger(__name__)
 
 AGENT_OUTPUT_TYPES = ('entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation',
-                      'control_claim', 'payment_purpose')
+                      'control_claim', 'payment_purpose', 'statement_claim', 'entity_proposal', 'glossary_term')
 # The phones' two drafts (agent-phones, phone_cross_tools): the deterministic check is re-run when stored.
 PHONE_DRAFTS = ('control_claim', 'payment_purpose')
 ENTRY_KINDS = ('note', 'finding')
 RELATIONSHIPS = ('supports', 'contradicts', 'context')
 MAX_TITLE, MAX_BODY = 255, 8000
 MAX_ALERTS = 500
+EDITABLE = ('title', 'body', 'schedule', 'meaning')
 
 
 def _now():
@@ -251,6 +256,25 @@ def mask_ending(ending) -> str | None:
     return f'ending {digits[-4:]}' if digits else None
 
 
+SCHEDULE_LABEL = 'Drafted by the case agent, not confirmed. A person edits it; it is not a legal document.'
+
+
+def draft_schedule(institution, ending, period, phones) -> str:
+    """The editable draft of a production-order schedule on a lead card, from the lead's own measures. It names what
+    the phone evidences and nothing else, and the route is left for a person to choose."""
+    who = institution or '[institution: not named on the phone]'
+    what = ending or '[account: no ending on the phone]'
+    when = f"{period['start']} to {period['end']}" if period else '[period: no dated alert; a person sets it]'
+    lines = [f'Institution: {who}', f'Account: {what}', f'Period: {when}', '',
+             'Records for the account and the period:',
+             '1. Statements of every account matching the description above.',
+             '2. Account opening documents, including the holder and every authorised signatory.',
+             '3. Payment instructions, card records and online banking access records in the period.']
+    if phones:
+        lines += ['', 'Basis: alerts on ' + ', '.join(phones) + ', cited one by one on the lead card.']
+    return '\n'.join(lines)
+
+
 def lead_card_content(lead: Mapping[str, Any], alerts: list[dict], phones: Mapping[str, str]) -> dict:
     """The card, by code. ``lead``: a stored account lead (measures as ``money_signals.leads`` writes them).
     ``alerts``: [{record_uid, class, instant, amount_minor, currency, direction, phone}]. Never totals an amount."""
@@ -265,13 +289,15 @@ def lead_card_content(lead: Mapping[str, Any], alerts: list[dict], phones: Mappi
         lines.append(dict(cite=f"rec://{a['record_uid']}", evidence_class=a.get('class'), at=a.get('instant'),
                           amount_minor=a.get('amount_minor'), currency=a.get('currency'),
                           direction=a.get('direction'), phone=phones.get(str(a.get('extraction_id'))) or None))
+    period = dict(start=span[0][:10], end=span[-1][:10]) if span else None
+    phone_names = sorted({p for p in (phones.get(str(a.get('extraction_id'))) for a in alerts) if p})
     return dict(
         institution=institution, account_ending=ending, status=measures.get('status'),
         status_sentence=measures.get('sentence'), counts=dict(measures.get('counts') or {}),
         first_alert=span[0] if span else None, last_alert=span[-1] if span else None,
         # The period a request would cover: shown only in this labelled draft, never on the phone screen.
-        request_period=dict(start=span[0][:10], end=span[-1][:10]) if span else None,
-        phones=sorted({p for p in (phones.get(str(a.get('extraction_id'))) for a in alerts) if p}),
+        request_period=period, phones=phone_names,
+        schedule=draft_schedule(institution, ending, period, phone_names), schedule_label=SCHEDULE_LABEL,
         alerts=lines, alerts_total=len(alerts), alerts_shown=len(lines),
         totalled=False, lead_result_id=str(lead.get('id') or ''),
         title=' · '.join(x for x in ('Lead', institution, ending) if x))
@@ -330,6 +356,114 @@ def lead_task_title(content) -> str:
 
 
 # ---------------------------------------------------------------------------
+# A statement claim, an entity, a code word (agent-evidence-rest C, D, F)
+# ---------------------------------------------------------------------------
+
+def propose_claim(session, *, case_id, kind, subject, quote, window_text=None, place_text=None, counterpart_text=None,
+                  why='', citations, origin, requested_by_user_id=None):
+    """One claim a document or message makes, in its own words, cited. The model never sets an instant: a person sets
+    the window when confirming. ``subject``: ``{kind: dossier|extraction, ...}`` as the claim screens take it."""
+    from services.pattern_of_life import claims, subjects
+    origin = _require_origin(origin)
+    if kind not in claims.KINDS:
+        raise ProposalError('The kind of claim is one of: ' + ', '.join(claims.KINDS) + '.')
+    try:
+        resolved = subjects.resolve(session.connection(), str(_uuid(case_id)), subject)
+    except subjects.SubjectError as exc:
+        raise ProposalError(NOT_IN_CASE if exc.status == 404 else str(exc), exc.status) from exc
+    quote = _text(quote, MAX_BODY, 'statement\'s exact words')
+    checked = _checked_citations(session, case_id, citations)
+    if not checked:
+        raise ProposalError('A claim cites the source it comes from.')
+    clean = lambda v: ' '.join(str(v).split())[:2000] if v else None  # noqa: E731
+    return _store(session, case_id=_uuid(case_id), output_type='statement_claim',
+                  content=dict(kind=kind, subject=resolved['subject'], subject_name=resolved.get('name'), quote=quote,
+                               window_text=clean(window_text), place_text=clean(place_text),
+                               counterpart_text=clean(counterpart_text), why=clean(why)),
+                  checked=checked, action=dict(action='create_statement_claim'), origin=origin,
+                  requested_by_user_id=requested_by_user_id)
+
+
+def propose_entity(session, *, case_id, name, entity_type, summary, why='', citations, origin,
+                   requested_by_user_id=None, _same=None):
+    """An entity for the graph. Refused when the case's graph already holds that name: the person then links to the
+    existing entity; a proposal never writes over one."""
+    origin = _require_origin(origin)
+    name, entity_type = _text(name, MAX_TITLE, 'entity\'s name'), _text(entity_type, 80, 'entity\'s type')
+    summary = _text(summary, MAX_BODY, 'summary')
+    checked = _checked_citations(session, case_id, citations)
+    if not checked:
+        raise ProposalError('An entity cites the source it comes from.')
+    existing = _same_name(case_id, name, _same)
+    if existing:
+        raise ProposalError(f'The graph already holds {existing[0].get("name")} (key {existing[0].get("key")}); '
+                            'nothing was recorded.', 409)
+    return _store(session, case_id=_uuid(case_id), output_type='entity_proposal',
+                  content=dict(name=name, entity_type=entity_type, summary=summary,
+                               why=' '.join(str(why or '').split())[:1200] or None),
+                  checked=checked, action=dict(action='create_entity'), origin=origin,
+                  requested_by_user_id=requested_by_user_id)
+
+
+def _same_name(case_id, name, reader=None):
+    from services import graph_entities
+    return (reader or graph_entities.same_name)(str(_uuid(case_id)), name)
+
+
+def propose_term(session, *, case_id, term, meaning, speaker=None, why='', citations, origin,
+                 requested_by_user_id=None):
+    """A code word: the meaning is a model reading until a person confirms it, term by term."""
+    from services.agent import glossary
+    origin = _require_origin(origin)
+    term, meaning = _text(term, 200, 'term'), _text(meaning, MAX_BODY, 'meaning')
+    checked = _checked_citations(session, case_id, citations, limit=MAX_ALERTS)
+    if not checked:
+        raise ProposalError('A term cites the messages it is read from.')
+    if glossary.confirmed(session, case_id, term) is not None:
+        raise ProposalError(f'A person has already confirmed a meaning for "{term}"; nothing was recorded.', 409)
+    return _store(session, case_id=_uuid(case_id), output_type='glossary_term',
+                  content=dict(term=term, meaning=meaning, speaker=' '.join(str(speaker).split())[:255] if speaker
+                               else None, why=' '.join(str(why or '').split())[:1200] or None),
+                  checked=checked, action=dict(action='confirm_glossary_term'), origin=origin,
+                  requested_by_user_id=requested_by_user_id)
+
+
+def _accept_claim(session, item, content, reviewer):
+    from services.financial.quarantine_row import actor_from_user
+    from services.pattern_of_life import claims
+    fields = dict(kind=content['kind'], subject=content['subject'], window_text=content.get('window_text'),
+                  place={'text': content['place_text']} if content.get('place_text')
+                  and content['kind'] in claims.PLACE_KINDS else None,
+                  source_anchor=dict(quote=content.get('quote'), citations=content.get('citations') or [],
+                                     counterpart_text=content.get('counterpart_text')))
+    meta = item.model_metadata or {}
+    try:
+        made = claims.create(session.connection(), item.case_id, fields, actor_from_user(reviewer), origin='ai_draft',
+                             ai_output_id=item.id, ai_model=meta.get('model_id') or meta.get('model') or 'a model')
+    except claims.ClaimError as exc:
+        raise ProposalError(str(exc), 409) from exc
+    return [dict(target_type='pol_claim', target_id=str(made['id']))]
+
+
+def _accept_entity(session, item, content, reviewer, provenance, edits):
+    from services import graph_entities
+    name = content['name']
+    existing = _same_name(item.case_id, name)
+    if existing:
+        raise ProposalError(f'The graph already holds {existing[0].get("name")}; nothing was added.', 409)
+    origin = provenance.get('origin') or {}
+    model = origin.get('model') or 'the case agent'
+    cites = list(content.get('citations') or [])
+    key, _ = graph_entities.create_case_entity(
+        case_id=str(item.case_id), name=name, entity_type=content['entity_type'],
+        summary=edits.get('body') or content.get('summary'), key_suffix=item.id.hex[:8],
+        notes=f'Proposed by {model} (case agent), accepted by {reviewer.name}. Sources: ' + ', '.join(cites),
+        properties=dict(proposed_by_model=model, accepted_by=reviewer.name, citations=cites,
+                        proposal_id=str(item.id), actor_origin=json.dumps(provenance, default=str)))
+    return [dict(target_type='graph_entity', target_id=key)]
+
+
+# ---------------------------------------------------------------------------
 # A person's answer
 # ---------------------------------------------------------------------------
 
@@ -361,7 +495,7 @@ def accept(session, *, case_id, output_id, reviewer, via='api', due_at=None, edi
     facts = review_facts(session, 'workspace_ai', item.id, reviewer, via=via)
     provenance = _origin_record(item, reviewer, facts)
     content, action = dict(item.content or {}), (item.proposed_actions or [{}])[0]
-    edits = {k: v for k, v in dict(edits or {}).items() if k in ('title', 'body') and str(v or '').strip()}
+    edits = {k: v for k, v in dict(edits or {}).items() if k in EDITABLE and str(v or '').strip()}
     # Claimed first, under the row lock: the work below commits on its own (entries, timeline), so a second accept
     # waiting on the lock then sees 'accepted' and is refused instead of applying the proposal twice.
     item.review_status, item.reviewed_by_user_id, item.reviewed_at = 'accepted', reviewer.id, _now()
@@ -421,6 +555,14 @@ def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
         return [dict(target_type='workspace_entry', target_id=entry['id'])]
     if kind == 'lead_card':
         return _accept_lead(session, item, content, reviewer, provenance, due_at, edits)
+    if kind == 'statement_claim':
+        return _accept_claim(session, item, content, reviewer)
+    if kind == 'entity_proposal':
+        return _accept_entity(session, item, content, reviewer, provenance, edits)
+    if kind == 'glossary_term':
+        from services.agent import glossary
+        row = glossary.confirm(session, item, content, reviewer, provenance, edits.get('meaning'))
+        return [dict(target_type='glossary_term', target_id=str(row.id))]
     if kind == 'link_proposal':
         from postgres.models.workspace_entry import WorkspaceEntry
         from services.workspace_entry_service import add_entry_links
@@ -481,6 +623,11 @@ def _accept_lead(session, item, content, reviewer, provenance, due_at, edits):
         + ', '.join(f'{k} {v}' for k, v in sorted((content.get('counts') or {}).items()))
         + (f"\nPeriod a request would cover: {period.get('start')} to {period.get('end')}" if period else '')
         + f"\n\n{alerts}")
+    schedule = edits.get('schedule') or content.get('schedule')
+    if schedule:
+        made = (f'Edited by {reviewer.name} from the case agent\'s draft.' if edits.get('schedule')
+                else content.get('schedule_label') or SCHEDULE_LABEL)
+        body += f'\n\nDraft production-order schedule ({made})\n{schedule}'
     title = edits.get('title') or content.get('title') or 'Lead'
     # The task is staged first: the entry's own save commits it with the entry, so neither exists without the other.
     task = CaseTask(id=uuid.uuid4(), case_id=item.case_id, title=lead_task_title(content),
@@ -523,7 +670,17 @@ def list_proposals(session, *, case_id, status='pending_review', output_types=No
         conditions.append(W.review_status == status)
     limit = max(1, min(int(limit or 50), 100))
     total = session.scalar(select(func.count()).select_from(W).where(*conditions)) or 0
-    rows = session.scalars(select(W).where(*conditions).order_by(W.created_at.desc()).limit(limit)
+    order, feedback = [W.created_at.desc(), W.id], None
+    if status == 'pending_review':
+        # What people did with earlier proposals of each kind comes first in the waiting list; every one stays listed.
+        from services.agent import proposal_feedback as PF
+        feedback = PF.safe_read(session, _uuid(case_id))
+        rank = PF.rank_of(feedback)
+        if rank:
+            order.insert(0, case(*[(W.output_type == k, i) for k, i in rank.items()], else_=len(rank)))
+    rows = session.scalars(select(W).where(*conditions).order_by(*order).limit(limit)
                            .offset(max(0, int(offset or 0)))).all()
-    return dict(items=[serialize(r) for r in rows], total=total, returned=len(rows), limit=limit,
-                offset=max(0, int(offset or 0)))
+    reasons = {r['kind']: r['reason'] for r in (feedback or {}).get('kinds') or []}
+    items = [dict(serialize(r), order_reason=reasons.get(r.output_type)) for r in rows]
+    return dict(items=items, total=total, returned=len(rows), limit=limit, offset=max(0, int(offset or 0)),
+                order_rule=(feedback or {}).get('rule'))

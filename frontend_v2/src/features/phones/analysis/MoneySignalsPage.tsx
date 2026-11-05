@@ -160,6 +160,7 @@ function ReadingRow({ caseId, r, canEdit, onChanged }: { caseId: string; r: Anal
           leftOut={m.pairings_left_out_words} canEdit={canEdit} onChanged={onChanged} />
       )}
       {r.kind === "account_lead" && <p className="text-xs">{m.sentence}</p>}
+      {r.kind === "account_lead" && r.rank_reason && <p className="text-xs text-muted-foreground" data-testid="lead-rank-reason">Placed here for: {r.rank_reason}</p>}
       {open && (
         <div className="mt-2 space-y-2">
           {r.directions.undercuts.length > 0 && (
@@ -206,7 +207,7 @@ export default function MoneySignalsPage() {
   const done = run?.status === "completed" ? run : null
   const results = useQuery({
     queryKey: ["money-results", caseId, done?.id, kind, strength, offset],
-    queryFn: () => moneyAPI.results(caseId, done!.id, kind, strength, offset),
+    queryFn: () => moneyAPI.results(caseId, done!.id, kind, strength, offset, 100, kind === "account_lead" ? "lead_rank" : "strength"),
     enabled: !!done,
   })
   const total = results.data?.total ?? 0
@@ -253,6 +254,11 @@ export default function MoneySignalsPage() {
           <p className="text-sm" data-testid="money-total">
             {total.toLocaleString("en-US")} {total === 1 ? "result" : "results"}
             {shown < total ? `, showing ${(offset + 1).toLocaleString("en-US")} to ${(offset + shown).toLocaleString("en-US")}` : ""}.
+          </p>
+        )}
+        {done && kind === "account_lead" && (
+          <p className="text-xs" data-testid="lead-rank-rule">
+            Ordered by the strongest evidence each holds (a payment alert, then a saved login or card record, then an app, cookie or page visit), then by how many records of that class, then by the most recent. Every lead stays listed.
           </p>
         )}
         {done && kind === "money_reading" && (

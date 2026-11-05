@@ -416,6 +416,6 @@ export const patternAPI = {
     fetchAPI<{ added: number; already_there: number }>(
       `/api/dossiers/${encodeURIComponent(dossierId)}/interviews/${encodeURIComponent(interviewId)}/evidence:add`,
       { method: "POST", body: { ...item, source_anchor: {} } as never }),
-  draft: (caseId: string, body: { dossier_id: string; subject: Subject; interview_ids?: string[]; conversation_locator?: string }) =>
+  draft: (caseId: string, body: { dossier_id: string; subject: Subject; interview_ids?: string[]; conversation_locator?: string; document_ids?: string[] }) =>
     fetchAPI<{ id: string; job_status: string }>(`${base(caseId)}/claim-drafts`, { method: "POST", body: body as never }),
 }

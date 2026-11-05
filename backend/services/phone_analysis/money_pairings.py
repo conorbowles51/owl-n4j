@@ -23,6 +23,10 @@ currency and direction where the reading states them) exists for cost; whatever 
 and stated on screen and in the agent's answer. At most ``SEARCH["per_reading"]`` pairings are kept per reading,
 strongest first, and the count beyond that is stated too.
 
+Beside each pairing stands its base rate (``base_rates``): how often that amount occurs on that account, as a true
+count and base read from the ledger. It is context for a person and changes no strength, order or outcome: a common
+amount is still listed, a rare one is not promoted.
+
 A decision (confirmed, rejected, undo) is a row in the case decision ledger (``adjudications``) on a
 ``phone_analysis_result_subjects`` row keyed by the phone record and the ledger row, so it survives reruns, releases
 and re-parses; a ledger row that was later corrected is followed through ``superseded_by_id``. A rerun that no longer
@@ -404,7 +408,66 @@ def overlay(conn, case_id, items):
         # the badge reads the strongest pairing a person has not rejected (the order stays the run's rank)
         live = [p for p in pairs if p.get("decision") != "rejected" and p.get("found_by_rule", True)]
         m["best_level"] = live[0]["level"] if live else None
+    base_rates(conn, case_id, readings)
     return items
+
+
+def base_rate_words(rate) -> str:
+    """The base rate in one sentence; the count and the base are always both stated."""
+    side = {"debit": "money-out", "credit": "money-in"}.get(rate["direction"], "")
+    rows = " ".join(x for x in (side, "row" if rate["rows"] == 1 else "rows") if x)
+    merged = "merged account" if rate["accounts"] > 1 else "account"
+    return "This amount occurs on %s of %s %s %s on this %s." % (
+        format(rate["same_amount"], ","), format(rate["rows"], ","), rate["currency"], rows, merged)
+
+
+def base_rates(conn, case_id, readings):
+    """Adds ``base_rate`` to every stored pairing of these readings: of the rows pairings are matched against on the
+    pairing's account (with the accounts merged into it) in that currency and direction, how many are of exactly that
+    amount. The rows are ``money_signals._ledger``'s (admitted, current, ledger classes, from an admitted source, with
+    a real date); a pairing whose row was corrected since the run counts the corrected amount. Read from the ledger as
+    it stands, in a bounded number of queries for the page. Context only: nothing here changes a strength, an order, a
+    count or an outcome."""
+    from services.financial.proof_class import LEDGER_CLASSES
+    from services.phone_analysis.money_signals import merge_groups
+    pairs = [p for it in readings for p in (it.get("measures") or {}).get("pairings") or []
+             if p.get("account_id") and p.get("amount_minor") is not None and p.get("currency")]
+    if not pairs:
+        return
+    corrected = {}
+    moved = {t: now for t, now in _effective(conn, case_id, {p["transaction_id"] for p in pairs}).items() if t != now}
+    if moved:
+        rows = {str(r.id): r for r in conn.execute(text(
+            "SELECT id, account_id::text AS account_id, amount_minor, currency, direction FROM financial_transactions "
+            "WHERE case_id = :c AND id = ANY(CAST(:ids AS uuid[]))"), {"c": str(case_id), "ids": list(moved.values())})}
+        corrected = {t: rows[now] for t, now in moved.items() if now in rows}
+    group_of = merge_groups(conn, case_id)
+    accounts = {p["account_id"] for p in pairs} | {r.account_id for r in corrected.values()}
+    groups = {a: tuple(group_of(a) or [a]) for a in accounts}
+    members = sorted({m for g in groups.values() for m in g})
+    tally = {}
+    for r in conn.execute(text(
+            "SELECT t.account_id::text AS a, t.currency, t.direction, abs(t.amount_minor) AS amount, count(*) AS n FROM "
+            "financial_transactions t JOIN financial_source_documents s ON s.id = t.source_document_id WHERE t.case_id "
+            "= :c AND s.case_id = :c AND t.ledger_status = 'admitted' AND t.superseded_by_id IS NULL AND s.status = "
+            "'admitted' AND t.proof_class = ANY(:k) AND s.proof_class = ANY(:k) AND coalesce(t.value_date, "
+            "t.transaction_date, t.posted_date, t.effective_date) IS NOT NULL AND coalesce(t.provenance ->> "
+            "'date_basis', '') <> 'statement_end_ordering_only' AND t.account_id = ANY(CAST(:ids AS uuid[])) GROUP BY "
+            "1, 2, 3, 4"), {"c": str(case_id), "ids": members, "k": [c.value for c in LEDGER_CLASSES]}):
+        tally.setdefault((r.a, r.currency, r.direction), {})[int(r.amount)] = int(r.n)
+    for p in pairs:
+        now = corrected.get(p["transaction_id"])
+        account, minor, currency, direction = (now.account_id, now.amount_minor, now.currency, now.direction) if now \
+            else (p["account_id"], p["amount_minor"], p["currency"], p.get("direction"))
+        group, amount = groups[account], abs(int(minor))
+        rows = same = 0
+        for m in group:
+            by_amount = tally.get((m, currency, direction), {})
+            rows += sum(by_amount.values())
+            same += by_amount.get(amount, 0)
+        rate = {"same_amount": same, "rows": rows, "currency": currency, "direction": direction,
+                "accounts": len(group)}
+        p["base_rate"] = dict(rate, words=base_rate_words(rate))
 
 
 def counts(pairs):

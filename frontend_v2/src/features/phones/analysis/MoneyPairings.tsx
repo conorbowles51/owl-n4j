@@ -52,6 +52,7 @@ function PairRow({ caseId, recordUid, fieldPath, p, canEdit, onChanged }: {
           Substantiated by {p.reasons.substantiation.length} {p.reasons.substantiation.length === 1 ? "source" : "sources"}: {p.reasons.substantiation.join("; ")}.
         </p>
       )}
+      {p.base_rate && <p className="text-xs" data-testid="pair-base-rate">{p.base_rate.words}</p>}
       {canEdit && (
         <div className="flex flex-wrap items-center gap-2">
           {p.decision !== "confirmed" && p.found_by_rule && (

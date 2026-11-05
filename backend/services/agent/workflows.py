@@ -188,8 +188,8 @@ WORKFLOWS: tuple[Workflow, ...] = (
             S("get_analysis_results", "approach 4 (awareness): read times and reply delays for who knew",
               ("phones",), optional=True),
         ),
-        proposals=(("propose_workspace_entry", "the code-word glossary, term by term (term, meaning, speaker, "
-                                               "citations)"),
+        proposals=(("propose_glossary_term", "the code-word glossary, term by term (term, meaning, speaker, "
+                                             "citations)"),
                    ("propose_link", "each chain link to its source"),
                    ("draft_payment_purpose", "the stated purpose of each leg")),
         person_confirms="the glossary, each chain link and any intermediary identity",
@@ -213,7 +213,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
               optional=True),
             S("evaluate_statement", "the person-confirmed claim against the phones", ("phones",), optional=True),
         ),
-        proposals=(("propose_workspace_entry", "the receipt reading as a claim, cited to its page"),
+        proposals=(("propose_claim", "the receipt reading as a claim, cited to its page"),
                    ("propose_link", "the receipt to the card line")),
         person_confirms="the receipt reading and the outcome",
         rules=("The receipt reading is model work until confirmed. The card line keeps its proof class; the alert "
@@ -325,7 +325,9 @@ WORKFLOWS: tuple[Workflow, ...] = (
             S("red_cell", "a person runs Red cell on the theory in Workspace: the away-from-the-suspect sweep",
               (), optional=True, by_person=True),
         ),
-        proposals=(("propose_workspace_entry", "each finding citing both the other side's statement and the source "
+        proposals=(("propose_claim", "each line of the other side's timeline as a claim, in its exact words, cited "
+                                     "to its page, for a person to confirm before it is evaluated"),
+                   ("propose_workspace_entry", "each finding citing both the other side's statement and the source "
                                                "that bears on it, both quoted"),
                    ("propose_link", "contradicting sources to the claim they bear on")),
         person_confirms="every claim extracted from the other side's timeline before it is evaluated",
@@ -359,7 +361,9 @@ WORKFLOWS: tuple[Workflow, ...] = (
                            "installs and logins, from 29 December 2015, and post-separation only from 5 April 2023."),
         steps=(
             S("get_financial_transactions", "bank control events on the complainant's accounts", ("ledger",)),
-            S("search_case", "monitoring-app installs and logins on the complainant's phone", ("phones",)),
+            S("get_monitoring_app_indicators", "monitoring-app installs and bank control notices on the complainant's "
+              "phone, between the hard dates", ("phones",)),
+            S("search_case", "logins and any words the list and notices do not cover", ("phones",), optional=True),
             S("get_day_activity", "the days of each event", ("phones",), optional=True),
         ),
         proposals=(("propose_timeline_addition", "each economic-abuse event inside the date limits"),),
@@ -417,7 +421,8 @@ WORKFLOWS: tuple[Workflow, ...] = (
             S("search_case", "pickup codes and banknote serial numbers in messages and documents", ()),
             S("build_table_artifact_from_rows", "the schedule, one column per field and a proof-class column", ()),
         ),
-        proposals=(("propose_workspace_entry", "the schedule as a finding; pickup codes and serials as entities"),),
+        proposals=(("propose_workspace_entry", "the schedule as a finding"),
+                   ("propose_entity", "each pickup code and banknote serial, with its citation")),
         person_confirms="each schedule row and each code or serial reading",
         rules=("Every cell carries its proof class (ledger row class, p4 alert, model reading, document page).",),
         needs=("ledger",),

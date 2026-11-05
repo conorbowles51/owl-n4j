@@ -981,47 +981,11 @@ def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_use
         raise HTTPException(status_code=400, detail="case_id is required")
 
     try:
-        # Generate a unique key from the name
-        import re
-        node_key = re.sub(r'[^a-z0-9]+', '-', request.name.strip().lower()).strip('-')
+        from services.graph_entities import create_case_entity
+        node_key, node_cypher = create_case_entity(
+            case_id=request.case_id, name=request.name, entity_type=request.type, summary=request.summary,
+            notes=request.description, properties=request.properties)
 
-        # Ensure key is not empty
-        if not node_key:
-            node_key = f"node-{abs(hash(request.name)) % 1000000}"
-
-        # Create node data structure
-        node_data = {
-            "key": node_key,
-            "name": request.name.strip(),
-            "type": request.type.strip(),
-            "id": node_key,
-            "summary": request.summary.strip() if request.summary else None,
-            "notes": request.description.strip() if request.description else None,
-        }
-        
-        # Add type-specific properties if provided
-        if request.properties:
-            # Put additional properties into a properties dict
-            # The cypher_generator will merge these with standard properties
-            node_data["properties"] = {}
-            for key, value in request.properties.items():
-                # Skip standard fields that are already handled
-                if key not in ['key', 'id', 'name', 'type', 'summary', 'notes', 'case_id']:
-                    node_data["properties"][key] = value
-
-        # Generate Cypher using the cypher generator (with case_id)
-        from services.cypher_generator import generate_cypher_from_graph
-
-        graph_data = {
-            "nodes": [node_data],
-            "links": []
-        }
-
-        node_cypher = generate_cypher_from_graph(graph_data, case_id=request.case_id)
-        
-        # Execute the Cypher query to create the node
-        neo4j_service.run_cypher(node_cypher, {})
-        
         # Log the operation
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,

@@ -480,17 +480,19 @@ def _pair_out(p):
             if p.get("amount_minor") is not None and p.get("currency") else None,
             "date": p.get("date"), "lag_days": p.get("lag_days"),
             "how_well_matched": (p.get("reasons") or {}).get("match") or [],
-            "how_substantiated": (p.get("reasons") or {}).get("substantiation") or []}
+            "how_substantiated": (p.get("reasons") or {}).get("substantiation") or [],
+            "base_rate": p.get("base_rate")}
 
 
 def _line(it, p):
     alert = "%s %s on %s, %s" % (it.get("source") or "record", " ".join(x for x in (it.get("amount_text") or "",
                                  {"debit": "out", "credit": "in"}.get(it.get("direction") or "", "")) if x),
                                  it.get("phone") or "a phone", (it.get("instant") or "")[:10])
-    return "%s | %s | payment %s, %s, %s | %s | %s" % (
+    return "%s | %s | payment %s, %s, %s | %s | %s%s" % (
         (p.get("strength") or "").capitalize(), alert, p.get("ref") or p["payment"], p.get("amount") or "",
         p.get("date") or "", "; ".join(p.get("how_well_matched") or []) or "no longer found by the rule",
-        p.get("decision_words") or p["status"])
+        p.get("decision_words") or p["status"],
+        " | %s" % p["base_rate"]["words"] if p.get("base_rate") else "")
 
 
 def match_lines(items) -> dict:
@@ -633,18 +635,21 @@ def _lead_alert_days(conn, case_id, run_id, record_uids):
 def money_signal_leads(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """Approach 1's leads (05 4.3.7) with the ledger half: a lead whose ending is not among the case's accounts is a
     missing account; a held account whose alerts fall on days no admitted statement period covers is a missing
-    period (the uncovered months are listed). Alerts are listed by day and never totalled (p4)."""
+    period (the uncovered months are listed). Alerts are listed by day and never totalled (p4). Leads come in the
+    stated rank order (``money_signals.LEAD_RANK_RULE``), each with its reason; every lead is listed."""
     from services.phone_analysis import framework as F
+    from services.phone_analysis.money_signals import LEAD_RANK_RULE
     tool = "money_signal_leads"
     run = _last_run(conn, case_id, "money_signals")
     if run is None:
         return _base(tool, case_id, total_matching=0, returned=0, has_more=False, next_offset=None, items=[],
                      coverage="Money on the phones has not been run in this case.",
                      limitation="Run it from Money on the phones; until then there are no leads.")
-    res = F.results(conn, case_id, run.id, kind="account_lead", offset=0, limit=F.MAX_LIMIT)
+    res = F.results(conn, case_id, run.id, kind="account_lead", offset=0, limit=F.MAX_LIMIT, order="lead_rank")
     rows = list(res["items"])
     while len(rows) < res["total"]:
-        res = F.results(conn, case_id, run.id, kind="account_lead", offset=len(rows), limit=F.MAX_LIMIT)
+        res = F.results(conn, case_id, run.id, kind="account_lead", offset=len(rows), limit=F.MAX_LIMIT,
+                        order="lead_rank")
         if not res["items"]:
             break
         rows += res["items"]
@@ -682,7 +687,8 @@ def money_signal_leads(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
                     ", ".join(uncovered)
             else:
                 ledger, ledger_words = "covered", "Every alert day falls inside a statement period held."
-        items.append({"result_id": r["id"], "institution": (m.get("institution") or {}).get("name"),
+        items.append({"rank": len(items) + 1, "rank_reason": r.get("rank_reason"),
+                      "result_id": r["id"], "institution": (m.get("institution") or {}).get("name"),
                       "account": m.get("account_ref"), "status": m.get("status"), "sentence": m.get("sentence"),
                       "evidence_counts": m.get("counts"), "signals": m.get("signals"),
                       "first_seen": m.get("first_seen"), "last_seen": m.get("last_seen"),
@@ -695,10 +701,11 @@ def money_signal_leads(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
     for it in items:
         by[it["ledger"]] = by.get(it["ledger"], 0) + 1
     return _paged(tool, case_id, items, offset, limit, "leads", run_id=str(run.id), by_ledger=by,
-                  coverage="Approach 1's last run: %d leads (%s)." % (len(items), ", ".join(
+                  rank_rule=LEAD_RANK_RULE, coverage="Approach 1's last run: %d leads (%s)." % (len(items), ", ".join(
                       "%s %d" % kv for kv in sorted(by.items())) or "none"),
                   note="A lead is evidence of an account or a period the case does not hold. Alerts are p4: listed, "
-                       "never totalled. A lead card the agent writes is a draft a person edits.")
+                       "never totalled. Give the leads in rank order with rank_reason and name rank_rule; every "
+                       "lead stays listed. A lead card the agent writes is a draft a person edits.")
 
 
 def statement_check(conn, case_id, claim_id, offset=0, limit=MAX_LIMIT) -> dict:
@@ -747,6 +754,42 @@ def statement_check(conn, case_id, claim_id, offset=0, limit=MAX_LIMIT) -> dict:
                      len(page), len(items), nxt)) if nxt is not None else None,
                  note="Computed by the check's own rule; the outcome is never the model's. Not stored: Check on the "
                       "Patterns screen keeps it.")
+
+
+def monitoring_app_indicators(conn, case_id, *, start=None, end=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
+    """Monitoring apps on the phones and bank control notices, one date-ordered lane, each with its basis. An indicator
+    a person weighs, never a finding. Dates are hard: what falls outside is counted, nothing is summed."""
+    from sqlalchemy.orm import Session
+
+    from services.phone_analysis import monitoring_apps as MA
+    tool = "monitoring_app_indicators"
+    a, b = _instant(start), _instant(end, end=True)
+    with Session(bind=conn) as session:
+        got = MA.indicators(conn, session, case_id, start=a, end=b)
+    items = got["items"]
+    return _paged(tool, case_id, items, offset, limit, "items", by_kind={"monitoring_app": got["monitoring_apps"],
+                                                                         "bank_control": got["bank_control_notices"]},
+                  set_aside=got["set_aside"], outside_dates=got["outside_dates"], list_source=got["list"],
+                  coverage=got["coverage"], not_read=got["not_read"], limitation=got["limits"],
+                  note="Report each item with its basis and its rec:// link, labelled as an indicator. Never say who "
+                       "installed or used an app, or that someone took control of an account.")
+
+
+def glossary_terms(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
+    """The code words a person confirmed, each with every mention and the ledger rows it joins to."""
+    from sqlalchemy.orm import Session
+
+    from services.agent import glossary as G
+    tool = "glossary_terms"
+    with Session(bind=conn) as session:
+        got = G.read(conn, session, case_id)
+    terms = [t for t in got["items"] if t["status"] == "confirmed"]
+    return _paged(tool, case_id, terms, offset, limit, "terms", confirmed=got["confirmed"],
+                  coverage="%d confirmed terms in this case; %d withdrawn by a person and left out." % (
+                      got["confirmed"], got["total"] - got["confirmed"]), limitation=got["limitation"],
+                  note="Say each meaning is a person's reading and name who confirmed it (reading_words). A meaning "
+                       "waiting on Workspace is a model reading and is not here. Link messages by rec:// and rows by "
+                       "txn://; state the join window and each mention's join_reason; never add amounts.")
 
 
 ANALYSES = ("deletion_timeline", "relationships", "awareness", "device_users")
@@ -1472,6 +1515,12 @@ class AnalysisArgs(_Page):
     end: str | None = None
 
 
+class MonitoringArgs(_Page):
+    start: str | None = Field(None, description="Hard start date (YYYY-MM-DD or ISO instant); earlier items are "
+                                                   "counted in outside_dates, not listed.")
+    end: str | None = Field(None, description="Hard end date.")
+
+
 class NearIdenticalArgs(_Page):
     strength: Literal["strong", "moderate", "weak", "faint"] | None = None
 
@@ -1547,6 +1596,13 @@ TOOLS = [
      "mixed, no_data), with exact totals, the count per strength (by_strength) and records cited. List weak and "
      "faint results as such; coverage_notes give the counts they rest on. Medium and weak keys are leads, never "
      "an identity."),
+    ("get_monitoring_app_indicators", "monitoring_app_indicators", MonitoringArgs,
+     "Monitoring apps on the phones (installed applications checked against an editable, sourced list) beside bank "
+     "control notices (new payee, changed sign-in details, new device, stopped card), in one date-ordered lane, each "
+     "with its rec:// link and basis. An indicator a person weighs, never a finding of who did what."),
+    ("get_glossary", "glossary_terms", _Page,
+     "The code words of this case a person confirmed, labelled as a person's reading, each with every mention "
+     "(rec://) and the ledger rows it joins to (txn://) within the stated window, or why it joins none."),
     ("get_near_identical_pictures", "near_identical_pictures", NearIdenticalArgs,
      "Pictures that look nearly the same on two phones although the files differ (a re-compressed forward), every "
      "pair graded strong, moderate, weak or faint with its reasons, the exact total and counts by strength, the "

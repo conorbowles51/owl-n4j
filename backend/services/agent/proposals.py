@@ -56,6 +56,9 @@ KIND_LABELS = {
     'alternative_explanation': 'Alternative explanation (red cell)',
     'control_claim': 'Means to operate an account (phones)',
     'payment_purpose': 'Stated purpose of a payment (phones)',
+    'statement_claim': 'Statement claim',
+    'entity_proposal': 'Entity for the graph',
+    'glossary_term': 'Code-word meaning',
 }
 MAX_CITATIONS = 20
 MAX_RECORD_CITATIONS = 500

@@ -56,6 +56,7 @@ CATEGORY_BY_TOOL = {
     "get_together_apart": "phones", "get_routine_deviations": "phones", "get_phone_map_summary": "phones",
     "get_contact_and_money_between": "phones", "get_money_signal_matches": "phones",
     "get_money_signal_leads": "phones", "evaluate_statement": "phones",
+    "get_monitoring_app_indicators": "phones", "get_glossary": "phones",
     # agent-allcases: reads of other cases (or of the identifier index over them), never this case's material.
     "identifier_in_other_cases": "other_cases", "list_my_cases": "other_cases",
     "find_identifier_across_cases": "other_cases", "read_in_case": "other_cases",

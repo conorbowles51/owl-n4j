@@ -1,7 +1,7 @@
 """Model drafting of statement claims (04 section 9.2, unit U12).
 
-A Workspace AI output of type ``statement_claims`` reads a dossier's selected interviews, or one phone conversation's
-text, and drafts the claims the statement makes. It runs under the ``statement_claim_drafting`` workload of the model
+A Workspace AI output of type ``statement_claims`` reads a dossier's selected interviews, one phone conversation's
+text, or documents of the case directly (a schedule, a timeline, a report), and drafts the claims they make. It runs under the ``statement_claim_drafting`` workload of the model
 policy (DeepSeek by default, through the existing switches) and reads the case's phone material in full, with no
 separate case setting (standing decision 8, Neil 2026-11-01 "full phone visibility"). Only material of the case the
 request is made in is read.
@@ -75,6 +75,27 @@ def conversation_sources(db, case_id, thread_key) -> tuple[list[dict[str, Any]],
     return sources, {"conversation_rows_read": read,
                      "conversation_rows_available": total if total <= MAX_CONVERSATION_ROWS else
                      "more than %d" % MAX_CONVERSATION_ROWS, "clipped": clipped}
+
+
+def document_sources(db, case_id, document_ids) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The chosen documents' own text, page by page, each page a cited source; only documents of this case (404
+    otherwise). A document longer than the source bound is read up to it and the draft says so."""
+    from services.workspace_ai_service import MAX_SOURCE_CHUNKS, _bounded_sources, _document_chunks, \
+        _load_evidence_with_text, _transcript_chunks, _uuid
+    ids = list(dict.fromkeys(_uuid(v, "document identifier") for v in document_ids))
+    files = _load_evidence_with_text(db, ids, True)
+    if len(files) != len(ids) or any(f.case_id != case_id for f in files):
+        raise DraftingError("That document is not in this case.")
+    raw = []
+    for file in files:
+        raw += _transcript_chunks(file, interview_id=None, preferred_anchor=None, whole=True)
+        raw += _document_chunks(file, interview_id=None, preferred_anchor=None, whole=True)
+    sources = _bounded_sources(raw, case_id=case_id)
+    if not sources:
+        raise DraftingError("That document holds no text to read.")
+    used = sum(1 for _ in sources)
+    return sources, {"documents_read": len(files), "chunks_read": used, "chunks_available": len(raw),
+                     "clipped": used < len(raw), "bound": MAX_SOURCE_CHUNKS}
 
 
 def prompt(common: str, generation_input: dict) -> str:

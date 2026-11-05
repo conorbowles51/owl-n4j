@@ -46,6 +46,8 @@ export interface Pairing {
   decision: PairDecision | null
   decision_words: string | null
   decision_note?: string
+  /** How often the amount occurs on the account: the true count and base. Context; it changes no strength. */
+  base_rate?: { same_amount: number; rows: number; words: string } | null
 }
 export interface PairCounts { by_level: Record<PairLevel, number>; confirmed: number; rejected: number }
 
@@ -80,6 +82,7 @@ export interface AnalysisResult {
   decision: AnalysisDecisionKind | null
   decisions: AnalysisDecision[]
   period_start: string | null
+  rank_reason?: string | null
 }
 
 export interface ResultPage { total: number; offset: number; limit: number; items: AnalysisResult[] }

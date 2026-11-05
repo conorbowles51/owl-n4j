@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { ProposalReview } from "@/features/financial/components/ProposalReview"
 import {
   AGENT_PROPOSAL_LABELS,
@@ -15,6 +16,7 @@ import {
   type AgentProposal,
   type LeadAlert,
 } from "../agent-proposals"
+import { GlossaryPanel } from "./GlossaryPanel"
 
 const STATUSES = [
   ["pending_review", "Waiting for a person"],
@@ -55,6 +57,53 @@ function ProposalBody({ item }: { item: AgentProposal }) {
             : "The model's reading of the messages around the payment. Accepting adds it as a finding."}
         </p>
         <p className="whitespace-pre-wrap text-sm">{text(c.body)}</p>
+      </div>
+    )
+  }
+  if (item.output_type === "statement_claim") {
+    return (
+      <div className="space-y-1 text-sm" data-testid="claim-proposal">
+        <p className="font-semibold">
+          {text(c.kind).replace(/_/g, " ")}
+          {text(c.subject_name) ? ` · ${text(c.subject_name)}` : ""}
+        </p>
+        <blockquote className="border-l-2 pl-2">{text(c.quote)}</blockquote>
+        {text(c.window_text) && <p>The source's words for the time: {text(c.window_text)}</p>}
+        {text(c.place_text) && <p>The source's words for the place: {text(c.place_text)}</p>}
+        {text(c.why) && <p>{text(c.why)}</p>}
+        <p className="text-xs text-muted-foreground">
+          The model's reading of the source. Accepting adds it to Patterns as a drafted statement; a person then sets its
+          time and confirms it, and only a confirmed statement is checked.
+        </p>
+      </div>
+    )
+  }
+  if (item.output_type === "entity_proposal") {
+    return (
+      <div className="space-y-1 text-sm" data-testid="entity-proposal">
+        <p className="font-semibold">
+          {text(c.name)} · {text(c.entity_type)}
+        </p>
+        <p>{text(c.summary)}</p>
+        {text(c.why) && <p>{text(c.why)}</p>}
+        <p className="text-xs text-muted-foreground">
+          The model's reading of the sources. Accepting adds this entity to the graph, showing that a model proposed it and
+          who accepted it.
+        </p>
+      </div>
+    )
+  }
+  if (item.output_type === "glossary_term") {
+    return (
+      <div className="space-y-1 text-sm" data-testid="term-proposal">
+        <p className="font-semibold">“{text(c.term)}”</p>
+        <p>Model reading: {text(c.meaning)}</p>
+        {text(c.speaker) && <p>Used by: {text(c.speaker)}</p>}
+        {text(c.why) && <p>{text(c.why)}</p>}
+        <p className="text-xs text-muted-foreground">
+          A model reading, not confirmed. Accepting records the meaning below as your reading, under your name, and joins
+          every mention to its ledger rows.
+        </p>
       </div>
     )
   }
@@ -124,10 +173,21 @@ function ProposalBody({ item }: { item: AgentProposal }) {
 function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentProposal; canEdit: boolean }) {
   const client = useQueryClient()
   const [due, setDue] = useState("")
+  const [schedule, setSchedule] = useState<string | null>(null)
+  const [meaning, setMeaning] = useState<string | null>(null)
   const refresh = () => client.invalidateQueries({ queryKey: agentProposalKeys.all(caseId) })
   const cites = item.content.citations || item.citations.map((c) => c.cite || c.source_id || "").filter(Boolean)
   const labels = Object.fromEntries(item.citations.map((c) => [c.cite || c.source_id || "", c.label]))
   const lead = item.output_type === "lead_card"
+  const term = item.output_type === "glossary_term"
+  const pending = item.review_status === "pending_review"
+  const draftSchedule = lead ? text(item.content.schedule) : ""
+  const draftMeaning = term ? text(item.content.meaning) : ""
+  const acceptBody = () => {
+    if (lead) return { due_at: due, ...(schedule !== null && schedule !== draftSchedule ? { schedule } : {}) }
+    if (term) return meaning !== null && meaning !== draftMeaning ? { meaning } : {}
+    return {}
+  }
   return (
     <li className="space-y-2 rounded-lg border p-3" data-testid="agent-proposal" data-kind={item.output_type}>
       <div className="flex flex-wrap items-center gap-2">
@@ -137,8 +197,40 @@ function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentPr
           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ""}
         </span>
       </div>
+      {pending && item.order_reason && (
+        <p className="text-xs text-muted-foreground" data-testid="proposal-order-reason">
+          Placed here because of earlier decisions. {item.order_reason}
+        </p>
+      )}
       <ProposalBody item={item} />
-      {item.review_status === "pending_review" ? (
+      {lead && draftSchedule && (
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">Draft production-order schedule</span>
+          <span className="block text-xs text-muted-foreground" data-testid="schedule-label">
+            {text(item.content.schedule_label)}
+          </span>
+          <Textarea
+            className="min-h-40 font-mono text-xs"
+            value={schedule ?? draftSchedule}
+            readOnly={!pending || !canEdit}
+            onChange={(event) => setSchedule(event.target.value)}
+            aria-label="Draft production-order schedule"
+          />
+        </label>
+      )}
+      {term && pending && (
+        <label className="block space-y-1 text-sm">
+          <span className="font-medium">Meaning, in your words</span>
+          <Textarea
+            className="min-h-16 text-sm"
+            value={meaning ?? draftMeaning}
+            readOnly={!canEdit}
+            onChange={(event) => setMeaning(event.target.value)}
+            aria-label="Meaning, in your words"
+          />
+        </label>
+      )}
+      {pending ? (
         <ProposalReview
           caseId={caseId}
           citations={cites}
@@ -146,7 +238,7 @@ function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentPr
           model={item.proposal.model}
           forName={item.proposal.for_name}
           canEdit={canEdit}
-          acceptLabel={lead ? "Accept: add the finding and the task" : "Accept"}
+          acceptLabel={lead ? "Accept: add the finding and the task" : term ? "Confirm this meaning" : "Accept"}
           acceptBlocked={lead && !due ? "Set the task's due date to accept." : null}
           acceptExtra={
             lead ? (
@@ -157,7 +249,7 @@ function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentPr
             ) : null
           }
           onOpened={(citation) => agentProposalOpened(caseId, item.id, citation)}
-          onAccept={() => acceptAgentProposal(caseId, item.id, lead ? { due_at: due } : {}).then(refresh)}
+          onAccept={() => acceptAgentProposal(caseId, item.id, acceptBody()).then(refresh)}
           onReject={(reason) => rejectAgentProposal(caseId, item.id, reason).then(refresh)}
         />
       ) : (
@@ -208,6 +300,9 @@ export function AgentProposalsPanel({ caseId, canEdit }: { caseId: string; canEd
           </Button>
         ))}
       </div>
+      {status === "pending_review" && query.data?.order_rule && query.data.items.some((i) => i.order_reason) && (
+        <p className="text-xs text-muted-foreground" data-testid="proposal-order-rule">{query.data.order_rule}</p>
+      )}
       {query.isPending ? (
         <p role="status">Loading proposals…</p>
       ) : query.isError ? (
@@ -236,6 +331,7 @@ export function AgentProposalsPanel({ caseId, canEdit }: { caseId: string; canEd
           )}
         </>
       )}
+      <GlossaryPanel caseId={caseId} canEdit={canEdit} />
     </section>
   )
 }

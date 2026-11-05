@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 from postgres.base import Base
+from postgres.models.agent_evidence import CaseGlossaryTerm
 from postgres.models.agent_proposals import AgentProposalSourceOpen, ProceedsCalculation
 from postgres.models.case import Case
 from postgres.models.case_context import CaseContext, CaseMandateVersion
@@ -33,7 +34,8 @@ from services.agent.tools import AgentToolContext
 TABLES = [User.__table__, Case.__table__, CaseMandateVersion.__table__, CaseContext.__table__, EvidenceFile.__table__,
           WorkspaceEntry.__table__, WorkspaceEntryRevision.__table__, WorkspaceEntryLink.__table__,
           WorkspaceEntryEvent.__table__, WorkspaceAIOutput.__table__, AgentProposalSourceOpen.__table__,
-          FinancialJudgement.__table__, ProceedsCalculation.__table__, WorkspaceLegacyMapping.__table__]
+          FinancialJudgement.__table__, ProceedsCalculation.__table__, WorkspaceLegacyMapping.__table__,
+          CaseGlossaryTerm.__table__]
 NOT_IN_CASE = "Not in this case."
 
 
@@ -128,6 +130,23 @@ QUESTIONS = [
     ("P10", "Draft a finding in a run that cannot propose.", "propose_workspace_entry",
      lambda i: dict(entry_type="finding", title="No proposer", body="x", citations=[f"doc://{i['doc']}/3"]),
      "none", "This run cannot record proposals."),
+    # agent-evidence-rest D, F (the claim tool is measured on PostgreSQL: tests/test_agent_evidence_phone.py)
+    ("P11", "Propose the pickup code in the schedule as an entity.", "propose_entity",
+     lambda i: dict(name="Pickup 7741", entity_type="Document", summary="A pickup code on page 3.",
+                    citations=[f"doc://{i['doc']}/3"]), "edit", "recorded"),
+    ("P12", "Propose an entity citing another case's file.", "propose_entity",
+     lambda i: dict(name="Elsewhere Ltd", entity_type="Company", summary="From another case.",
+                    citations=[f"doc://{i['foreign']}/1"]), "edit", NOT_IN_CASE),
+    ("P13", "Propose an entity the graph already holds.", "propose_entity",
+     lambda i: dict(name="Already There", entity_type="Company", summary="x", citations=[f"doc://{i['doc']}/3"]),
+     "edit", "already holds"),
+    ("P14", "Propose what \"breakfast\" means in these messages.", "propose_glossary_term",
+     lambda i: dict(term="breakfast", meaning="A cash payment.", citations=[f"rec://{i['rec']}"]), "edit", "recorded"),
+    ("P15", "Propose a code word from another case's message.", "propose_glossary_term",
+     lambda i: dict(term="lunch", meaning="x", citations=[f"rec://{i['foreign_rec']}"]), "edit", NOT_IN_CASE),
+    ("P16", "Propose a code word for a person who can only view the case.", "propose_glossary_term",
+     lambda i: dict(term="dinner", meaning="x", citations=[f"rec://{i['rec']}"]), "view",
+     "can view this case but not change it"),
 ]
 _ROWS = []
 
@@ -135,6 +154,9 @@ _ROWS = []
 @pytest.mark.parametrize("qid,question,tool,args,setting,expected", QUESTIONS, ids=[q[0] for q in QUESTIONS])
 def test_proposal_question(world, monkeypatch, qid, question, tool, args, setting, expected):
     tools = _tools(world, monkeypatch, can_propose=setting == "edit", proposer=setting != "none")
+    from services import graph_entities
+    monkeypatch.setattr(graph_entities, "same_name", lambda case, name: (
+        [dict(key="already", name=name)] if name == "Already There" else []))
     before = dict(outputs=_count(world, WorkspaceAIOutput), calls=_count(world, FinancialJudgement),
                   entries=_count(world, WorkspaceEntry), links=_count(world, WorkspaceEntryLink))
     out = tools[tool].invoke(args(world["ids"]))

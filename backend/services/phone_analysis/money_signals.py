@@ -676,6 +676,23 @@ def lead_sentence(name, ending, counts, first, last, status) -> str:
     return " ".join(parts)
 
 
+LEAD_RANK_RULE = ("Leads are ordered by the strongest evidence each holds (a payment alert, then a saved login or card "
+                  "record, then an app, cookie or page visit), then by how many records of that class it has, then by "
+                  "the most recent record. The order says which to look at first; every lead stays listed.")
+_CLASS_WORDS = {"transactional": ("payment alert", "payment alerts"),
+                "account": ("saved login or card record", "saved logins or card records"),
+                "presence": ("app, cookie or page visit", "apps, cookies or page visits")}
+
+
+def lead_rank_reason(strength, measures) -> str:
+    """Why the lead sits where it does, in the rule's own terms."""
+    counts = (measures or {}).get("counts") or {}
+    n = int(counts.get(strength) or 0)
+    words = _CLASS_WORDS.get(strength, ("record", "records"))[0 if n == 1 else 1]
+    last = (measures or {}).get("last_seen")
+    return "%d %s, the most recent on %s." % (n, words, last[:10]) if last else "%d %s, none with a time." % (n, words)
+
+
 def leads(evidence, accounts) -> list:
     groups = {}
     for match, ending, klass, code, sig in evidence:

@@ -31,6 +31,12 @@ class Accept(BaseModel):
     due_at: datetime | date | None = None
     title: str | None = Field(default=None, max_length=255)
     body: str | None = Field(default=None, max_length=8000)
+    schedule: str | None = Field(default=None, max_length=8000)
+    meaning: str | None = Field(default=None, max_length=8000)
+
+
+class Withdraw(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=4000)
 
 
 class Reject(BaseModel):
@@ -71,7 +77,7 @@ def accept_agent_proposal(case_id: UUID, output_id: UUID, body: Accept | None = 
     from services.agent.workspace_proposals import accept
     body = body or Accept()
     return _call(db, lambda: accept(db, case_id=case_id, output_id=output_id, reviewer=current_user, via=body.via,
-                                    due_at=body.due_at, edits=dict(title=body.title, body=body.body)))
+                                    due_at=body.due_at, edits=dict(title=body.title, body=body.body, schedule=body.schedule, meaning=body.meaning)))
 
 
 @router.post("/{case_id}/proposals/{output_id}/reject", dependencies=[Depends(require_case_edit)])
@@ -95,3 +101,22 @@ def run_red_cell(case_id: UUID, body: RedCell, db: Session = Depends(get_db),
     finds is a proposal pending review; nothing else changes."""
     from services.agent.red_cell import sweep
     return _call(db, lambda: sweep(db, case_id=case_id, theory_id=body.theory_id, requested_by=current_user))
+
+
+@router.get("/{case_id}/glossary", dependencies=[Depends(require_case_view)])
+def list_glossary(case_id: UUID, db: Session = Depends(get_db)):
+    """The code words a person confirmed, each with its mentions and the ledger rows they join to."""
+    from services.agent import glossary
+    return glossary.read(db.connection(), db, case_id)
+
+
+@router.post("/{case_id}/glossary/{term_id}/withdraw", dependencies=[Depends(require_case_edit)])
+@records('glossary_term_withdraw', 'set_aside', subject_type='glossary_term', subject=lambda c: c['kw'].get('term_id'))
+def withdraw_glossary_term(case_id: UUID, term_id: UUID, body: Withdraw, db: Session = Depends(get_db),
+                           current_user: User = Depends(get_current_db_user)):
+    from services.agent import glossary
+    try:
+        return glossary.withdraw(db, case_id=case_id, term_id=term_id, reviewer=current_user, reason=body.reason)
+    except glossary.GlossaryError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

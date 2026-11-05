@@ -9,6 +9,9 @@ export type AgentProposalKind =
   | "alternative_explanation"
   | "control_claim"
   | "payment_purpose"
+  | "statement_claim"
+  | "entity_proposal"
+  | "glossary_term"
 
 export interface LeadAlert {
   cite: string
@@ -27,6 +30,8 @@ export interface AgentProposal {
   review_status: "pending_review" | "accepted" | "rejected"
   created_at?: string | null
   reviewed_at?: string | null
+  /** Why this kind sits where it does in the waiting list: what people did with earlier proposals of it. */
+  order_reason?: string | null
   content: Record<string, unknown> & { citations?: string[] }
   citations: { source_id?: string; cite?: string; label?: string | null; status?: string }[]
   proposal: {
@@ -45,6 +50,61 @@ export interface AgentProposalPage {
   returned: number
   limit: number
   offset: number
+  order_rule?: string | null
+}
+
+export interface GlossaryRow {
+  txn: string
+  ref?: string | null
+  payment: string
+  amount: string
+  date: string
+  proof_class: string
+  paid_by: string
+  paid_to: string
+  days_from_mention: number
+}
+
+export interface GlossaryMention {
+  rec: string
+  kind: string
+  at: string | null
+  people: string[]
+  rows: GlossaryRow[]
+  rows_outside_window: number
+  join_reason: string | null
+}
+
+export interface GlossaryTerm {
+  id: string
+  term: string
+  meaning: string
+  model_meaning: string | null
+  meaning_changed: boolean
+  speaker: string | null
+  citations: string[]
+  status: "confirmed" | "withdrawn"
+  confirmed_by: string
+  confirmed_at: string | null
+  reading_words: string
+  keyword_list_note?: string | null
+  withdrawn_by: string | null
+  withdrawn_reason: string | null
+  mentions?: {
+    total: number
+    with_rows: number
+    without_rows: number
+    items: GlossaryMention[]
+    join_rule: string
+    search_limits: string[]
+  }
+}
+
+export interface Glossary {
+  total: number
+  confirmed: number
+  items: GlossaryTerm[]
+  limitation: string
 }
 
 export interface RedCellResult {
@@ -66,12 +126,16 @@ export const AGENT_PROPOSAL_LABELS: Record<AgentProposalKind, string> = {
   alternative_explanation: "Alternative explanation (red cell)",
   control_claim: "Means to operate an account (phones)",
   payment_purpose: "Stated purpose of a payment (phones)",
+  statement_claim: "Statement claim",
+  entity_proposal: "Entity for the graph",
+  glossary_term: "Code-word meaning",
 }
 
 const base = (caseId: string) => `/api/workspace/${encodeURIComponent(caseId)}/proposals`
 
 export const agentProposalKeys = {
   all: (caseId: string) => ["agent-proposals", caseId] as const,
+  glossary: (caseId: string) => ["agent-proposals", caseId, "glossary"] as const,
   list: (caseId: string, status: string) => ["agent-proposals", caseId, status] as const,
 }
 
@@ -83,7 +147,19 @@ export function agentProposalOpened(caseId: string, id: string, citation: string
   return fetchAPI<{ opened: string[] }>(`${base(caseId)}/${id}/opened`, { method: "POST", body: { citation } })
 }
 
-export function acceptAgentProposal(caseId: string, id: string, body: { due_at?: string | null; title?: string; body?: string } = {}) {
+export function fetchGlossary(caseId: string) {
+  return fetchAPI<Glossary>(`/api/workspace/${encodeURIComponent(caseId)}/glossary`)
+}
+
+export function withdrawGlossaryTerm(caseId: string, id: string, reason: string) {
+  return fetchAPI<GlossaryTerm>(`/api/workspace/${encodeURIComponent(caseId)}/glossary/${id}/withdraw`, { method: "POST", body: { reason } })
+}
+
+export function acceptAgentProposal(
+  caseId: string,
+  id: string,
+  body: { due_at?: string | null; title?: string; body?: string; schedule?: string; meaning?: string } = {}
+) {
   return fetchAPI<AgentProposal>(`${base(caseId)}/${id}/accept`, { method: "POST", body: { ...body, via: "ui" } })
 }
 

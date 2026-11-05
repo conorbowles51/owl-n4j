@@ -1,6 +1,7 @@
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MemoryRouter } from "react-router-dom"
 import { expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { AgentProposalsPanel } from "./AgentProposalsPanel"
@@ -66,4 +67,67 @@ it("a lead card lists each alert without a total, and is accepted only after a s
 it("formats an alert amount in its own currency's minor unit", () => {
   expect(alertAmount({ amount_minor: 1500, currency: "JPY" })).toBe("¥1,500")
   expect(alertAmount({ amount_minor: null, currency: "MXN" })).toBeNull()
+})
+
+const waiting = (over: Record<string, unknown>) => ({
+  id: "o-9",
+  case_id: "case-a",
+  review_status: "pending_review",
+  citations: [{ cite: "doc://1", label: "their-timeline.pdf", status: "valid" }],
+  proposal: { kind: over.output_type, model: "DeepSeek V4 Pro", for_name: "Alex" },
+  ...over,
+})
+
+function serve(items: unknown[], order_rule: string | null = null) {
+  vi.mocked(fetchAPI).mockImplementation((url: string) => {
+    if (url.includes("/glossary")) return Promise.resolve({ total: 0, confirmed: 0, items: [], limitation: "" }) as never
+    return Promise.resolve({ items, total: items.length, returned: items.length, limit: 50, offset: 0, order_rule }) as never
+  })
+}
+
+function panel() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <AgentProposalsPanel caseId="case-a" canEdit />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+
+it("shows a lead card's draft schedule, labelled, and sends a person's edit", async () => {
+  vi.mocked(fetchAPI).mockReset()
+  serve([waiting({ output_type: "lead_card", content: { institution: "Synthetic Bank", schedule: "Institution: Synthetic Bank", schedule_label: "Drafted by the case agent, not confirmed. A person edits it; it is not a legal document.", citations: ["doc://1"] } })])
+  panel()
+  const box = await screen.findByLabelText("Draft production-order schedule")
+  expect(screen.getByTestId("schedule-label").textContent).toContain("Drafted by the case agent, not confirmed")
+  fireEvent.change(box, { target: { value: "Institution: Synthetic Bank, as edited" } })
+  expect((box as HTMLTextAreaElement).value).toContain("as edited")
+})
+
+it("states why a kind sits where it does in the waiting list", async () => {
+  vi.mocked(fetchAPI).mockReset()
+  serve([waiting({ output_type: "statement_claim", order_reason: "Statement claim: 3 accepted of 4 decided in this case.", content: { kind: "no_contact", quote: "I never met him", window_text: "in March", citations: ["doc://1"] } })], "The rule.")
+  panel()
+  expect((await screen.findByTestId("proposal-order-reason")).textContent).toContain("3 accepted of 4 decided")
+  expect(screen.getByTestId("proposal-order-rule").textContent).toBe("The rule.")
+  expect(screen.getByTestId("claim-proposal").textContent).toContain("I never met him")
+  expect(screen.getByTestId("claim-proposal").textContent).toContain("only a confirmed statement is checked")
+})
+
+it("keeps a code word's reading a model's until a person confirms it", async () => {
+  vi.mocked(fetchAPI).mockReset()
+  serve([waiting({ output_type: "glossary_term", content: { term: "breakfast", meaning: "a cash payment", citations: ["doc://1"] } })])
+  panel()
+  expect((await screen.findByTestId("term-proposal")).textContent).toContain("Model reading: a cash payment")
+  expect((screen.getByLabelText("Meaning, in your words") as HTMLTextAreaElement).value).toBe("a cash payment")
+  expect(screen.getByRole("button", { name: "Confirm this meaning" })).toBeDisabled()
+})
+
+it("says an entity was proposed by a model", async () => {
+  vi.mocked(fetchAPI).mockReset()
+  serve([waiting({ output_type: "entity_proposal", content: { name: "Pickup 7741", entity_type: "Document", summary: "A pickup code.", citations: ["doc://1"] } })])
+  panel()
+  expect((await screen.findByTestId("entity-proposal")).textContent).toContain("showing that a model proposed it")
 })

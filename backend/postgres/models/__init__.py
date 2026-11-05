@@ -181,6 +181,8 @@ from postgres.models.pattern_places import PolPlaceCluster
 __all__ += ["PolPlaceCluster"]
 from postgres.models.agent_proposals import AgentProposalSourceOpen, ProceedsCalculation
 __all__ += ["AgentProposalSourceOpen", "ProceedsCalculation"]
+from postgres.models.agent_evidence import CaseGlossaryTerm, PhoneMonitoringAppEntry
+__all__ += ["CaseGlossaryTerm", "PhoneMonitoringAppEntry"]
 from postgres.models.removed_record import RemovedRecord
 __all__ += ["RemovedRecord"]
 from postgres.models.financial_transaction_number import FinancialTransactionNumber, FinancialTransactionNumberCounter

@@ -94,6 +94,39 @@ class PaymentPurposeProposalArgs(BaseModel):
     why: str = Field('', max_length=1200)
 
 
+class ClaimProposalArgs(BaseModel):
+    kind: Literal['inactive', 'active', 'at_place', 'not_at_place', 'with_subject', 'apart_from_subject', 'no_contact',
+                  'contact'] = Field(..., description='What the source claims a phone could test.')
+    person: str | None = Field(None, description='The person the claim is about: a dossier name or id.')
+    phone: str | None = Field(None, description='Or the phone it is about, as listed by the phone tools.')
+    quote: str = Field(..., min_length=1, max_length=8000, description="The source's exact words.")
+    window_text: str | None = Field(None, max_length=2000, description="The source's own words for the time. Never a "
+                                                                       "converted date or clock value.")
+    place_text: str | None = Field(None, max_length=2000, description="The source's own words for the place.")
+    counterpart_text: str | None = Field(None, max_length=2000, description="The source's words for the other person.")
+    why: str = Field('', max_length=1200)
+    citations: list[str] = Field(..., min_length=1, max_length=20,
+                                 description='The doc:// page, rec:// message or txn:// row the claim comes from.')
+
+
+class EntityProposalArgs(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description='The name, or the code or serial as printed.')
+    entity_type: str = Field(..., min_length=1, max_length=80,
+                             description='The graph type, as get_case_overview lists them, e.g. Person, Company, '
+                                         'Account, Location, Document.')
+    summary: str = Field(..., min_length=1, max_length=8000, description='What the sources say about it.')
+    why: str = Field('', max_length=1200)
+    citations: list[str] = Field(..., min_length=1, max_length=20)
+
+
+class GlossaryTermArgs(BaseModel):
+    term: str = Field(..., min_length=1, max_length=200, description='The code word, as written in the messages.')
+    meaning: str = Field(..., min_length=1, max_length=8000, description='Your reading of what it means.')
+    speaker: str | None = Field(None, max_length=255, description='Who uses it, as the messages show.')
+    why: str = Field('', max_length=1200, description='What in the messages supports this reading.')
+    citations: list[str] = Field(..., min_length=1, max_length=50, description='rec:// links of the messages.')
+
+
 class AssumptionProposalArgs(BaseModel):
     calculation_id: str
     key: Literal['messages', 'share_deals', 'deals_per_message', 'price_per_deal']
@@ -102,6 +135,22 @@ class AssumptionProposalArgs(BaseModel):
     source: str = Field(..., min_length=1, max_length=600, description='Where the value comes from: a txn://, doc:// '
                                                                        'or rec:// source, or a named reference.')
     why: str = Field(..., min_length=1, max_length=1200)
+
+
+def _claim_subject(session, case_id, person, phone) -> dict:
+    """The claim's subject as the Patterns screens take it; "Not in this case." for one outside it."""
+    from services.agent import phone_cross_tools as X
+    from services.agent.proposals import ProposalError
+    conn = session.connection()
+    try:
+        if phone:
+            ids, unknown = X._phone_ids(conn, case_id, [phone])
+            if unknown:
+                raise ProposalError('Not in this case.', 404)
+            return dict(kind='extraction', extraction_id=ids[0])
+        return dict(kind='dossier', dossier_id=str(X._dossier(conn, case_id, person).id))
+    except X._Missing as exc:
+        raise ProposalError('Not in this case.', 404) from exc
 
 
 def make_proposal_tools(context) -> list[StructuredTool]:
@@ -196,6 +245,35 @@ def make_proposal_tools(context) -> list[StructuredTool]:
                       person_a=args.person_a, person_b=args.person_b, hours=args.hours, days=args.days),
             requested_by_user_id=(context.proposer or {}).get('for_user_id')))
 
+    def propose_claim(**kw):
+        args = ClaimProposalArgs(**kw)
+        from services.agent import workspace_proposals as W
+
+        def work(session, o):
+            if bool(args.person) == bool(args.phone):
+                raise ProposalError('Say who the claim is about: a person or a phone, one of the two.')
+            subject = _claim_subject(session, context.case_id, args.person, args.phone)
+            return W.propose_claim(session, case_id=context.case_id, kind=args.kind, subject=subject, quote=args.quote,
+                                   window_text=args.window_text, place_text=args.place_text,
+                                   counterpart_text=args.counterpart_text, why=args.why, citations=args.citations,
+                                   origin=o, requested_by_user_id=(context.proposer or {}).get('for_user_id'))
+        return call('propose_claim', 'Workspace proposals', work)
+
+    def propose_entity(**kw):
+        args = EntityProposalArgs(**kw)
+        from services.agent import workspace_proposals as W
+        return call('propose_entity', 'Workspace proposals', lambda s, o: W.propose_entity(
+            s, case_id=context.case_id, name=args.name, entity_type=args.entity_type, summary=args.summary,
+            why=args.why, citations=args.citations, origin=o,
+            requested_by_user_id=(context.proposer or {}).get('for_user_id')))
+
+    def propose_glossary_term(**kw):
+        args = GlossaryTermArgs(**kw)
+        from services.agent import workspace_proposals as W
+        return call('propose_glossary_term', 'Workspace proposals', lambda s, o: W.propose_term(
+            s, case_id=context.case_id, term=args.term, meaning=args.meaning, speaker=args.speaker, why=args.why,
+            citations=args.citations, origin=o, requested_by_user_id=(context.proposer or {}).get('for_user_id')))
+
     def propose_assumption(**kw):
         args = AssumptionProposalArgs(**kw)
         from services.financial import proceeds as PR
@@ -245,6 +323,21 @@ def make_proposal_tools(context) -> list[StructuredTool]:
             func=propose_payment_purpose, name='propose_payment_purpose', args_schema=PaymentPurposeProposalArgs,
             description=('Record your reading of a payment\'s stated purpose (as draft_payment_purpose checks it) as a '
                          'proposal, quoting the messages by rec:// with the row\'s txn://.' + rule)),
+        StructuredTool.from_function(
+            func=propose_claim, name='propose_claim', args_schema=ClaimProposalArgs,
+            description=('Draft one claim a document or message makes, in its exact words with the source cited, so a '
+                         'person can confirm it and evaluate_statement can test it. Use it for each line of the other '
+                         'side\'s timeline or schedule, or a receipt\'s reading. Give the source\'s own words for time '
+                         'and place, never a converted time.' + rule)),
+        StructuredTool.from_function(
+            func=propose_entity, name='propose_entity', args_schema=EntityProposalArgs,
+            description=('Propose an entity for the graph (a person, company, account, pickup code, banknote serial) '
+                         'from cited sources. Refused when the graph already holds the name.' + rule)),
+        StructuredTool.from_function(
+            func=propose_glossary_term, name='propose_glossary_term', args_schema=GlossaryTermArgs,
+            description=('Propose one code word and your reading of its meaning, citing the messages. It stays a model '
+                         'reading until a person confirms it, term by term; get_glossary then lists every mention with '
+                         'its ledger rows.' + rule)),
         StructuredTool.from_function(
             func=propose_assumption, name='propose_assumption', args_schema=AssumptionProposalArgs,
             description=('Propose one assumption of a proceeds calculation (volume, share that are deals, deals per '
