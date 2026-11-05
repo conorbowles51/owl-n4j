@@ -42,6 +42,7 @@ beforeEach(() => {
 })
 
 describe("Add to… on Search results", () => {
+  // The 501-row tests find by label and text: a role query walks every row in jsdom (438 s at load 50-120, over the 300 s limit).
   it("adds the chosen hits and reports added and already-there, with Undo", async () => {
     api.searchGroup.mockResolvedValue(page([hit(1), hit(2), hit(3)]))
     const user = userEvent.setup()
@@ -66,17 +67,17 @@ describe("Add to… on Search results", () => {
     api.freeze.mockResolvedValue({ id: "s1", record_count: 540, event_count: 501, words: "Every message", group_total: 503, left_out: 2 })
     const user = userEvent.setup()
     open()
-    await user.click(await screen.findByRole("checkbox", { name: "Every hit (501)" }))
+    await user.click(await screen.findByLabelText("Every hit (501)"))
     await waitFor(() => expect(api.freeze).toHaveBeenCalledWith("c1", "blue", "messages", false, []))
     expect(await screen.findByText(/All 501 messages \(540 records, every copy included\) will be added as one selection\. 2 of the 503 hits have no phone record behind them and are left out\./)).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Add to…" }))
-    expect(await screen.findByRole("heading", { name: /Add 1 selection to/ })).toBeInTheDocument()
+    await user.click(screen.getByText("Add to…"))
+    expect(await screen.findByText(/Add 1 selection to/)).toBeInTheDocument()
   })
 
   it("does not freeze anything until every hit is chosen", async () => {
     api.searchGroup.mockResolvedValue(page(Array.from({ length: 501 }, (_, i) => hit(i))))
     open()
-    await screen.findByRole("checkbox", { name: "Every hit (501)" })
+    await screen.findByLabelText("Every hit (501)")
     expect(api.freeze).not.toHaveBeenCalled()
   })
 
