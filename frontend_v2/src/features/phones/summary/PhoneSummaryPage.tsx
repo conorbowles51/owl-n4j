@@ -7,9 +7,17 @@ import { profileText } from "../lib/profile-text"
 import { failureText } from "../api"
 import { phoneProfileQuery } from "../phone-queries"
 import { labelText } from "../lib/labels"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 import { ContinueReading } from "../ContinueReading"
 import { NONE } from "../media/media-queries"
 import { recordListHref } from "../records/record-list-url"
+import { liveCollectClient, undoCollect } from "../collect.api"
+import { useCollectTargets } from "../hooks/use-collect"
+import { AddToMenu } from "../ui/AddToMenu"
+import { EMPTY_SCOPE } from "../ui/scope"
+import { ScopeCrossings } from "../ui/ScopeCrossings"
+import { TypedDossierAdd } from "../ui/TypedDossierAdd"
 import { fmt } from "../ui/count-sentence"
 import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
@@ -44,6 +52,9 @@ function Section({ name, children, className }: { name: string; children: React.
 export function PhoneSummaryPage() {
   const { id: caseId = "", extraction = "" } = useParams()
   const q = useQuery({ ...phoneProfileQuery(caseId, extraction), enabled: !!caseId && !!extraction })
+  const caseQuery = useCase(caseId)
+  const { canEdit } = useCasePermissions(caseQuery.data)
+  const collect = useCollectTargets(caseId)
   if (q.isLoading) return <p className="p-6 text-sm">Loading the phone summary</p>
   if (q.isError || !q.data)
     return (
@@ -59,6 +70,11 @@ export function PhoneSummaryPage() {
   const maxMonth = Math.max(1, ...p.months.map((m) => m.messages + m.calls + m.other))
   const soFar = p.verdict.word === "Still reading" ? " (so far)" : ""
   const missing = p.files.verification.missing ?? 0
+  const notAllowed = canEdit ? undefined : "A case member who can edit can add."
+  const targets = collect.data ?? []
+  // a phone reaches a dossier as a device dossier, an identity through a link decision (07 6.1); both go to the rest
+  const notDossiers = targets.filter((t) => t.kind !== "dossier")
+  const ownerKey = p.owner.label?.identity_key
   return (
     <div className="flex flex-col gap-3 p-4">
       <header className="flex flex-wrap items-baseline gap-3">
@@ -79,6 +95,19 @@ export function PhoneSummaryPage() {
         {p.verdict.sentence}
         {soFar}
       </p>
+      <div aria-label="Add this phone" className="flex flex-wrap items-start gap-2">
+        <AddToMenu caseId={caseId} links={[{ target_type: "phone_extraction", target_id: extraction, label: p.phone.label, source_anchor: { extraction_id: extraction } }]}
+          noun="phones" targets={notDossiers} client={liveCollectClient} origin="Added from the Phone summary" keys={false} disabledReason={notAllowed}
+          onUndo={(t, r) => void undoCollect(caseId, t, r)} />
+        <TypedDossierAdd caseId={caseId} type="device" suggestedName={p.phone.label} origin="Added from the Phone summary" disabledReason={notAllowed}
+          link={{ target_type: "phone_extraction", target_id: extraction, label: p.phone.label, source_anchor: { extraction_id: extraction } }} />
+        {ownerKey && (
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/cases/${encodeURIComponent(caseId)}/dossiers?tab=phone-identities&identity=${encodeURIComponent(ownerKey)}`}>Link the owner to a person</Link>
+          </Button>
+        )}
+        <ScopeCrossings caseId={caseId} here="summary" scope={{ ...EMPTY_SCOPE, phones: [{ id: extraction, label: p.phone.label, index: 0 }] }} />
+      </div>
 
       <Section name="Needs a decision" className="rounded border border-status-review bg-status-review-soft p-3 text-sm">
         {p.needs.length === 0 ? (
@@ -152,13 +181,18 @@ export function PhoneSummaryPage() {
           ) : (
             <ol className="flex flex-col gap-0.5">
               {p.top_people.map((t) => (
-                <li key={t.text}>
+                <li key={t.text} className="flex flex-wrap items-center gap-2">
                   {t.link ? (
                     <Link className="underline underline-offset-2" to={t.link}>
                       {t.text}: {fmt(t.events)} messages and calls
                     </Link>
                   ) : (
                     `${t.text}: ${fmt(t.events)} messages and calls`
+                  )}
+                  {t.label.identity_key && (
+                    <AddToMenu caseId={caseId} links={[{ target_type: "phone_identity", target_id: t.label.identity_key, label: t.text, source_anchor: { extraction_id: extraction } }]}
+                      noun="people" targets={notDossiers} client={liveCollectClient} origin="Added from the Phone summary" keys={false} disabledReason={notAllowed}
+                      onUndo={(u, r) => void undoCollect(caseId, u, r)} />
                   )}
                 </li>
               ))}

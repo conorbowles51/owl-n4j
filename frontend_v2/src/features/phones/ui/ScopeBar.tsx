@@ -35,6 +35,7 @@ export function ScopeBar({
   recent = [],
   restored,
   narrowed = false,
+  notApplied = [],
   children,
 }: {
   scope: Scope
@@ -48,6 +49,8 @@ export function ScopeBar({
   restored?: boolean
   /** Filters outside this bar narrow the result, so it is not "everything" even with no chip here. */
   narrowed?: boolean
+  /** Parts of the carried scope this screen cannot apply, in words; they stay in the address and are never dropped silently. */
+  notApplied?: string[]
   /** More of the scope in words and controls, inside the same region (07 J-3: the chosen person). */
   children?: ReactNode
 }) {
@@ -109,7 +112,7 @@ export function ScopeBar({
                 Presets
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent align="start" className="max-h-80 overflow-auto">
               {presets.map((p) => (
                 <DropdownMenuItem key={p.label} onSelect={() => onChange(p.scope)}>
                   {p.label}
@@ -135,6 +138,11 @@ export function ScopeBar({
           </Button>
         )}
       </div>
+      {notApplied.length > 0 && (
+        <p role="note" className="text-sm">
+          Not applied on this screen: {notApplied.join("; ")}.
+        </p>
+      )}
       {children}
       {count ? (
         <ResultCount shown={count.shown} total={count.total} noun={count.noun} unconfirmed={count.unconfirmed} soFar={count.soFar} />

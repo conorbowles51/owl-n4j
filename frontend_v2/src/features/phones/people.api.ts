@@ -87,8 +87,18 @@ export const peopleAPI = {
   },
   dossierPhones: (caseId: string, dossierId: string) =>
     fetchAPI<DossierPhones>(`/api/phones/people/${encodeURIComponent(dossierId)}/phones?case_id=${encodeURIComponent(caseId)}`, { read: true }),
+  scopeIdentities: (caseId: string, phones: string[]) => {
+    const q = new URLSearchParams({ case_id: caseId })
+    if (phones.length) q.set("phones", phones.join(","))
+    return fetchAPI<{ total: number }>(`/api/phones/scope-identities?${q}`, { read: true })
+  },
   scopePresets: (caseId: string) =>
     fetchAPI<{ case_id: string; people: ScopePerson[] }>(`/api/phones/scope-presets?case_id=${encodeURIComponent(caseId)}`, { read: true }),
 }
 
 export const dayOf = (iso: string | null) => (iso ? iso.slice(0, 10) : "not recorded")
+
+/** A count's link: the phone's list for this person, narrowed to one channel and direction. */
+export function countHref(href: string, kind: string, direction: string) {
+  return `${href}&kinds=${encodeURIComponent(kind)}&directions=${encodeURIComponent(direction)}`
+}

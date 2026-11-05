@@ -35,7 +35,29 @@ def freeze(db, f: StreamFilter, user, words: str) -> dict:
         raise SelectionError("Nothing matches this filter, so there is nothing to add.")
     records = list(dict.fromkeys(r.r for r in rows))
     events = sum(1 for r in rows if r.copy_rank == 1) if f.collapse_copies else len(rows)
-    phones = sorted({str(r.extraction_id) for r in rows})
+    return _store(db, f, records, events, sorted({str(r.extraction_id) for r in rows}), user, words)
+
+
+def freeze_records(db, f: StreamFilter, record_uids, user, words: str) -> dict:
+    """A selection of records named one by one (a search group that is not a stream of messages, 07 J-5): only records
+    of this case on its active phones are kept; ``left_out`` says how many of those named are not."""
+    conn = db.connection()
+    named = list(dict.fromkeys(str(u) for u in record_uids))
+    rows = conn.execute(text(
+        "SELECT r.record_uid::text AS r, r.extraction_id FROM phone_record_summaries r JOIN phone_interpretation_state st "
+        "ON st.extraction_id = r.extraction_id AND st.generation = r.generation JOIN phone_extractions e ON e.id = "
+        "r.extraction_id AND e.case_id = CAST(:c AS uuid) AND e.standing = 'active' WHERE r.record_uid::text = ANY(:u)"),
+        {"c": f.case_id, "u": named}).fetchall()
+    if not rows:
+        raise SelectionError("Nothing matches this filter, so there is nothing to add.")
+    kept = {r.r for r in rows}
+    records = [u for u in named if u in kept]
+    out = _store(db, f, records, len(records), sorted({str(r.extraction_id) for r in rows}), user, words)
+    return dict(out, left_out=len(named) - len(records))
+
+
+def _store(db, f: StreamFilter, records, events, phones, user, words) -> dict:
+    conn = db.connection()
     versions = [dict(r._mapping) for r in conn.execute(text(
         "SELECT st.extraction_id::text AS extraction_id, st.generation, st.mapping_set_id::text AS mapping_set_id, "
         "st.interpreter_version FROM phone_interpretation_state st WHERE st.extraction_id::text = ANY(:p) "

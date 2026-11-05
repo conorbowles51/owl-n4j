@@ -5,6 +5,7 @@ import type { PhoneMapItem, PhoneMapPoints, PhoneMapSummary } from "@/features/p
 import { recordPath } from "@/lib/record-links"
 import { installKeymap, register } from "@/lib/keymap"
 import { useMapStore } from "../stores/map.store"
+import { TypedDossierAdd } from "@/features/phones/ui/TypedDossierAdd"
 import { phoneSummaryWords } from "./phone-summary-words"
 import { PLACE_LABEL } from "../lib/place-label"
 import { cn } from "@/lib/cn"
@@ -15,7 +16,7 @@ const n = (v: number) => v.toLocaleString("en-US")
  * The Map phone layer's panel: the totals line, why some records cannot be placed, any clustering limit, and
  * every point in view as a keyboard-steppable list with its accuracy and the record behind it (03 section 13.3).
  */
-export function PhoneLayerPanel({ caseId, summary, points }: { caseId: string; summary: PhoneMapSummary; points?: PhoneMapPoints }) {
+export function PhoneLayerPanel({ caseId, summary, points, addDisabled }: { caseId: string; summary: PhoneMapSummary; points?: PhoneMapPoints; addDisabled?: string }) {
   const [why, setWhy] = useState(false)
   const shown = points?.total ?? 0
   const words = phoneSummaryWords(summary, shown)
@@ -100,6 +101,8 @@ export function PhoneLayerPanel({ caseId, summary, points }: { caseId: string; s
                   <Link className="underline" to={`/cases/${encodeURIComponent(caseId)}/timeline?phone_record=${encodeURIComponent(p.record_uid)}`}>Show on Timeline</Link>
                 )}
               </span>
+              <TypedDossierAdd caseId={caseId} type="address" origin="Added from the Map" suggestedName={`${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`} disabledReason={addDisabled}
+                link={{ target_type: "phone_record", target_id: p.record_uid, label: `${p.phone_label} · ${p.time?.full ?? "No time recorded"}`, source_anchor: { extraction_id: p.extraction_id, lat: p.lat, lon: p.lon, accuracy_m: p.accuracy_m } }} />
             </li>
           ))}
         </ul>

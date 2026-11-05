@@ -39,6 +39,7 @@ import { useQuery } from "@tanstack/react-query"
 import { getPhones } from "@/features/phones/api"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { PhoneLens, PhoneLensToggle } from "../lens/PhoneLens"
+import { SCOPE_PARAMS } from "@/features/phones/ui/scope"
 import { usePhoneLens } from "../lens/usePhoneLens"
 import { PeriodPhones } from "../lens/PeriodPhones"
 import { UndatedEvents } from "./UndatedEvents"
@@ -69,13 +70,16 @@ export function TimelinePage() {
   const caseName = useCase(caseId ?? "").data?.title ?? "This case"
   // the first-use choice is stored only from a complete load of the whole case, never from a failed read or a layer
   const lens = usePhoneLens(caseId ?? "", events.length > 0, phoneCount > 0, !isLoading && !error && caseLayer !== "significant")
-  const lensOn = lens.on || (!!phoneRecord && phoneCount > 0)
+  // a phone scope carried here (07 4.5) opens the lens too: it is what the scope filters
+  const carriedScope = SCOPE_PARAMS.some((k) => new URLSearchParams(location.search).has(k))
+  const lensOn = lens.on || ((!!phoneRecord || carriedScope) && phoneCount > 0)
   // turning the lens off also leaves the record a Show on Timeline link opened, or the link would keep it on
   const setLens = (v: boolean) => {
     lens.setOn(v)
-    if (!v && phoneRecord) {
+    if (!v && (phoneRecord || carriedScope)) {
       const q = new URLSearchParams(location.search)
       q.delete("phone_record")
+      for (const k of SCOPE_PARAMS) q.delete(k)
       navigate({ pathname: location.pathname, search: q.toString() }, { replace: true })
     }
   }

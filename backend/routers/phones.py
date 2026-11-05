@@ -2386,6 +2386,19 @@ def scope_presets(case_id: UUID = Query(...), db: Session = Depends(get_db), use
     return people.scope_presets(db.connection(), case_id)
 
 
+@router.get("/scope-identities")
+def scope_identities(case_id: UUID = Query(...), phones: str = Query("", max_length=4000), db: Session = Depends(get_db),
+                     user: User = Depends(get_current_db_user)):
+    """How many identities a scope's phones hold, stated beside what the Graph draws of them (07 4.5)."""
+    from services.phone import people
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        ids = [str(UUID(p)) for p in phones.split(",") if p]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="phones holds something that is not a phone id")
+    return {"case_id": str(case_id), "total": people.scope_identities(db.connection(), case_id, ids)}
+
+
 class SelectionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filter: dict

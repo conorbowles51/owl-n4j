@@ -235,6 +235,14 @@ def dossier_phones(conn, case_id, dossier_id) -> dict:
                 expected_revision=identity_decisions.links_revision(conn, [r.identity_id for r in linked]))
 
 
+def scope_identities(conn, case_id, phones=None) -> int:
+    """Identities seen on these phones (every phone of the case with none named), for what a scope holds beside what
+    the Graph can draw of it (07 4.5). An address-book-only identity counts here and is not drawn."""
+    return int(conn.execute(text(
+        "SELECT count(DISTINCT identity_id) FROM pv_identity_sighting WHERE case_id = :c AND (CAST(:p AS uuid[]) IS NULL "
+        "OR extraction_id = ANY(CAST(:p AS uuid[])))"), {"c": str(case_id), "p": [str(p) for p in phones] if phones else None}).scalar())
+
+
 def scope_presets(conn, case_id) -> dict:
     """The people a scope can start from (07 4.5): for each person with linked identities, the phones they own and
     the phones they appear on. The owner of a phone is that phone's owner identity, linked to this person."""

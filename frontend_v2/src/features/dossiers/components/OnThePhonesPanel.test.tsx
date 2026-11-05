@@ -14,7 +14,8 @@ vi.mock("@/features/phones/review/identities.api", async (orig) => ({
   ...(await orig<typeof import("@/features/phones/review/identities.api")>()),
   identitiesAPI: { decide: api.decide },
 }))
-import { countHref, OnThePhonesPanel } from "./OnThePhonesPanel"
+import { countHref } from "@/features/phones/people.api"
+import { OnThePhonesPanel } from "./OnThePhonesPanel"
 
 /** 03 10.2, 10.5 U-4, U-7, U-8; 07 XF-5. Invented data only. */
 const C1 = "/cases/c1/conversations?tab=people&people=phone%3A%2B1&phones=e1"

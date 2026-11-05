@@ -1,5 +1,6 @@
 import { lazy, Suspense, useRef, useState, useCallback, useMemo, useEffect } from "react"
 import { PhoneCommunicationEdges } from "./PhoneCommunicationEdges"
+import { GraphPhoneScope } from "./GraphPhoneScope"
 import { useLocation, useParams } from "react-router-dom"
 import type { ForceGraphMethods } from "react-force-graph-2d"
 import type { ForceGraphMethods as ForceGraph3DMethods } from "react-force-graph-3d"
@@ -300,6 +301,7 @@ export function GraphPage() {
           Search or open a node's neighbours to reach the rest; the Table lists every item.
         </p>
       )}
+      {graphData && caseId && <GraphPhoneScope caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} />}
       {graphData && caseId && <PhoneCommunicationEdges caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} />}
       <GraphToolbar
         caseId={caseId!}

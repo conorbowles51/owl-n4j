@@ -10,6 +10,12 @@ import { instantWords } from "@/features/phones/lib/time-words"
 import { recordPath } from "@/lib/record-links"
 import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, lensIndex, lensLocateRecord, lensMoney, lensMoneyItems, type LaneBy, type LensMoney, type LensFilter, type LensKind } from "./lens-api"
 import { SignificantNote } from "@/features/phones/ui/SignificantNote"
+import { DEFAULT_VIEW, viewToFilter } from "@/features/phones/lib/filter-url"
+import { phoneSettingsQuery } from "@/features/phones/phone-queries"
+import { ScopeBar } from "@/features/phones/ui/ScopeBar"
+import { ScopeCrossings } from "@/features/phones/ui/ScopeCrossings"
+import { scopeToSearch } from "@/features/phones/ui/scope"
+import { useUrlScope } from "@/features/phones/ui/use-phone-scope"
 
 const n = (x: number) => x.toLocaleString("en-US")
 const KIND_LABELS: Record<LensKind, string> = {
@@ -180,10 +186,21 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
   const [laneBy, setLaneBy] = useState<LaneBy>("phone")
   const [mode, setMode] = useState<"stream" | "lanes">("stream")
   const [significant, setSignificant] = useState(false)
-  const filter = useMemo<LensFilter>(() => ({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy, ...(significant ? { significant_only: true } : {}) }), [caseId, kinds, laneBy, significant])
+  // the phone scope carried in the address (07 4.5), read by the lens's own stream filter; its kinds are the lens's own
+  const carried = useUrlScope(caseId, { people: true, window: true })
+  const settings = useQuery({ ...phoneSettingsQuery(caseId), enabled: !!caseId })
+  const zoneName = settings.data?.effective.name ?? "UTC"
+  const scopeSignature = scopeToSearch(carried.scope)
+  const scoped = useMemo<Partial<LensFilter>>(() => {
+    const { people, mode, phones, window: span } = carried.scope
+    const f = viewToFilter(caseId, { ...DEFAULT_VIEW, people: people.map((p) => p.key), mode, phones: phones.map((p) => p.id), from: span?.from ?? null, to: span?.to ?? null }, zoneName)
+    return { phones: f.phones, participants: f.participants, participant_mode: f.participant_mode, group_scope: f.group_scope, from_instant: f.from_instant, to_instant: f.to_instant }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the scope
+  }, [scopeSignature, caseId, zoneName])
+  const filter = useMemo<LensFilter>(() => ({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy, ...scoped, ...(significant ? { significant_only: true } : {}) }), [caseId, kinds, laneBy, significant, scoped])
   const everything = useQuery({
-    queryKey: ["phone-lens-all", caseId, kinds, laneBy],
-    queryFn: () => lensIndex({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy }),
+    queryKey: ["phone-lens-all", caseId, kinds, laneBy, scoped],
+    queryFn: () => lensIndex({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy, ...scoped }),
     enabled: significant,
   })
   const stream = useStream(filter, { source: LENS_SOURCE })
@@ -214,6 +231,10 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
   }, [focusRecord, snapshot]) // eslint-disable-line react-hooks/exhaustive-deps -- once per record and result
   return (
     <section aria-label="Phone entries" className="flex min-h-0 flex-1 flex-col gap-2 p-3">
+      <ScopeBar scope={carried.scope} onChange={carried.apply} presets={carried.presets} recent={carried.recent} restored={carried.restored} notApplied={carried.notApplied}
+        count={idx ? { shown: idx.total ?? idx.counts.events ?? 0, total: idx.total ?? idx.counts.events ?? 0, noun: "phone entries" } : null}>
+        <ScopeCrossings caseId={caseId} scope={carried.scope} here="timeline" />
+      </ScopeBar>
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <h2 className="font-semibold">Phone entries</h2>
         {idx && <span role="status">{n(idx.total ?? idx.counts.events ?? 0)} phone {(idx.total ?? 0) === 1 ? "entry" : "entries"}</span>}

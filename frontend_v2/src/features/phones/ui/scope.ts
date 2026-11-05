@@ -48,8 +48,45 @@ export function searchToScopeIds(search: string) {
   }
 }
 
+/** The URL parameters a scope is carried in between screens, the names Conversations reads (03 6.4). */
+export const SCOPE_PARAMS = ["people", "mode", "phones", "from", "to", "kinds"] as const
+
+export function scopeToParams(scope: Scope): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (scope.people.length) out.people = scope.people.map((p) => p.key).join(",")
+  if (scope.people.length && scope.mode !== "involving") out.mode = scope.mode
+  if (scope.phones.length) out.phones = scope.phones.map((p) => p.id).join(",")
+  if (scope.window?.from) out.from = scope.window.from
+  if (scope.window?.to) out.to = scope.window.to
+  if (scope.kinds.length) out.kinds = scope.kinds.join(",")
+  return out
+}
+
+/** A screen's address with the scope in it, the receiving screen showing the same chips (07 4.5). */
+export function scopeHref(path: string, scope: Scope, extra: Record<string, string> = {}): string {
+  const q = new URLSearchParams({ ...extra, ...scopeToParams(scope) }).toString()
+  return q ? `${path}?${q}` : path
+}
+
+export function paramsToScopeIds(search: string) {
+  const q = new URLSearchParams(search)
+  const list = (k: string) => (q.get(k) ? q.get(k)!.split(",").filter(Boolean) : [])
+  const from = q.get("from")
+  const to = q.get("to")
+  const mode = q.get("mode")
+  return {
+    people: list("people"),
+    mode: (mode === "between" || mode === "sent-by" || mode === "sent-to" ? mode : "involving") as ParticipantMode,
+    phones: list("phones"),
+    window: from || to ? { from: from ?? to!, to: to ?? from! } : null,
+    labels: list("labels"),
+    kinds: list("kinds"),
+  }
+}
+
 /** Remembered per case for the session; storage failures never break the page (07 4.2 item 13). */
 export function rememberScope(caseId: string, scope: Scope) {
+  if (!scopeToSearch(scope)) return // "everything" is the screen's start, not a selection to bring back
   try {
     sessionStorage.setItem(`phone-scope:${caseId}`, JSON.stringify(scope))
     const recentKey = `phone-scope-recent:${caseId}`

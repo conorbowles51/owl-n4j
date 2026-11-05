@@ -37,6 +37,12 @@ def link(c, case, d, key):
                    ":x)"), {"c": case, "i": ensure_identity(c, case, key), "d": d, "x": uuid.uuid4()})
 
 
+def sighting(c, case, ext, key):
+    c.execute(text("INSERT INTO phone_identity_sightings (sighting_uid, case_id, extraction_id, identity_id, identity_key, "
+                   "field_path, identifier_raw, context, generation) VALUES (:u, :c, :e, :i, :k, 'x', 'x', 'party', 1)"),
+              {"u": uuid.uuid4(), "c": case, "e": ext, "i": ensure_identity(c, case, key), "k": key})
+
+
 @pytest.fixture
 def world():
     with fresh_engine() as engine:
@@ -51,6 +57,9 @@ def world():
             c2, _ = phone(c, case, label="C2", contacts={ANA: "Mom"}, events=[
                 msg(at(2023, 3, 20, 9), ANA, [OWNER2], OWNER2),
                 msg(at(2023, 3, 21, 9), OWNER2, [BEN], OWNER2)])
+            for ext, keys in ((c1, (ANA, ANA2, BEN)), (c2, (ANA,))):
+                for key in keys:
+                    sighting(c, case, ext, key)
             ana = dossier(c, case, "Ana Synthetic")
             link(c, case, ana, ANA)
             link(c, case, ana, ANA2)
@@ -85,7 +94,7 @@ def test_filters_by_phone_link_and_text_keep_an_exact_total(world):
     assert {i["identity_key"] for i in P.registry(w["conn"], w["case"], linked=True)["items"]} == {ANA, ANA2}
     unlinked = P.registry(w["conn"], w["case"], linked=False)
     assert ANA not in {i["identity_key"] for i in unlinked["items"]} and unlinked["linked_in_case"] == 2
-    assert ANA2 not in {i["identity_key"] for i in P.registry(w["conn"], w["case"], phone=w["c2"])["items"]}
+    assert [i["identity_key"] for i in P.registry(w["conn"], w["case"], phone=w["c2"])["items"]] == [ANA]
     assert [i["identity_key"] for i in P.registry(w["conn"], w["case"], q="mom")["items"]] == [ANA]
     first = P.registry(w["conn"], w["case"], limit=2)
     second = P.registry(w["conn"], w["case"], limit=2, cursor=first["next_cursor"])
@@ -134,3 +143,42 @@ def test_presets_name_owned_phones_and_phones_they_appear_on(world):
     assert out["Ana Synthetic"]["appears_on"] == sorted([w["c1"], w["c2"]])
     assert out["Ana Synthetic"]["owned_phones"] == []
     assert w["c1"] in out["Nobody Yet"]["owned_phones"] and w["c1"] in out["Nobody Yet"]["appears_on"]
+
+
+def test_a_scope_counts_the_identities_its_phones_hold(world):
+    w = world
+    assert P.scope_identities(w["conn"], w["case"], [w["c2"]]) == 1
+    assert P.scope_identities(w["conn"], w["case"], [w["c1"], w["c2"]]) == P.scope_identities(w["conn"], w["case"]) == 3
+
+
+def test_u2_linking_then_unlinking_keeps_counts_and_both_decisions_show_with_the_actor(world):
+    from sqlalchemy.orm import Session
+
+    from services.financial.decisions import Actor
+    from services.phone import identity_decisions as D
+    w = world
+    with Session(bind=w["conn"]) as db:
+        actor = Actor(name="Jane Reviewer", email="jane@synthetic.test")
+        before = X.count(w["conn"], X.conversations_scope(w["case"], [BEN])[0])
+        D.decide(db, case_id=w["case"], decision="link_phone_identity", identity_keys=[BEN], actor=actor, user=None,
+                 dossier_id=w["unlinked"])
+        linked = P.dossier_phones(w["conn"], w["case"], w["unlinked"])
+        assert linked["total"] == before and [i["identity_key"] for i in linked["identities"]] == [BEN]
+        D.decide(db, case_id=w["case"], decision="unlink_phone_identity", identity_keys=[BEN], actor=actor, user=None,
+                 reason="Not the same person after all")
+        out = P.dossier_phones(w["conn"], w["case"], w["unlinked"])
+    assert out["identities"] == [] and X.count(w["conn"], X.conversations_scope(w["case"], [BEN])[0]) == before
+    assert [h["decision"] for h in out["history"]] == ["unlink_phone_identity", "link_phone_identity"]
+    assert {h["actor"] for h in out["history"]} == {"Jane Reviewer"} and out["history_total"] == 2
+
+
+def test_a_count_with_its_channel_and_direction_equals_conversations(world):
+    w = world
+    out = P.dossier_phones(w["conn"], w["case"], w["ana"])
+    c1 = next(p for p in out["phones"] if p["label"] == "C1")
+    keys = [i["identity_key"] for i in out["identities"]]
+    for kind in c1["kinds"]:
+        for d in kind["directions"]:
+            f = X.conversations_scope(w["case"], keys, phones=[w["c1"]])[0]
+            f.update({"kinds": [kind["kind"]], "directions": [d["direction"]]})
+            assert X.count(w["conn"], f) == d["events"]

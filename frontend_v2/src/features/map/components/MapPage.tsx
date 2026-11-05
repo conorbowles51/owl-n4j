@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { getPhoneMapNear, getPhoneMapPoints, getPhoneMapSummary, type PhoneMapFilter } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
 import { NearMessageNote } from "./NearMessageNote"
 import { PhonesInArea } from "./PhonesInArea"
 import { useParams, useSearchParams } from "react-router-dom"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
+import { DEFAULT_VIEW, viewToFilter } from "@/features/phones/lib/filter-url"
+import { phoneSettingsQuery } from "@/features/phones/phone-queries"
+import { ScopeBar } from "@/features/phones/ui/ScopeBar"
+import { ScopeCrossings } from "@/features/phones/ui/ScopeCrossings"
+import { useUrlScope } from "@/features/phones/ui/use-phone-scope"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
@@ -62,7 +69,19 @@ export function MapPage() {
     near.data && near.data.within > 0
       ? { phones: [near.data.extraction_id], from_instant: near.data.from_instant ?? undefined, to_instant: near.data.to_instant ?? undefined, include_no_time: false }
       : undefined
-  const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint || !!nearUid, nearFilter)
+  // a scope carried from another phone screen (07 4.5): phones and dates apply; people and kinds are stated as not
+  const carried = useUrlScope(caseId ?? "", { window: true })
+  const { canEdit } = useCasePermissions(useCase(caseId ?? "").data)
+  const settings = useQuery({ ...phoneSettingsQuery(caseId ?? ""), enabled: !!caseId })
+  const zoneName = settings.data?.effective.name ?? "UTC"
+  const carriedFilter = useMemo<PhoneMapFilter | undefined>(() => {
+    const { phones: picked, window: span } = carried.scope
+    if (!picked.length && !span) return undefined
+    const f = viewToFilter(caseId ?? "", { ...DEFAULT_VIEW, phones: picked.map((p) => p.id), from: span?.from ?? null, to: span?.to ?? null }, zoneName)
+    return { phones: f.phones, from_instant: f.from_instant, to_instant: f.to_instant, ...(span ? { include_no_time: false } : {}) }
+  }, [carried.scope, caseId, zoneName])
+  const scoped = !!carriedFilter || carried.scope.people.length > 0 || carried.scope.kinds.length > 0
+  const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint || !!nearUid || scoped, nearFilter ?? carriedFilter)
   const shapes = useMapStore((s) => s.boundingShapes)
   const lastShape = shapes.length ? shapes[shapes.length - 1] : null
 
@@ -145,6 +164,12 @@ export function MapPage() {
           </Button>
         </div>
       )}
+      {phones.summary.data && (scoped || phones.summary.data.total > 0) && (
+        <ScopeBar scope={carried.scope} onChange={carried.apply} presets={carried.presets} recent={carried.recent} restored={carried.restored} notApplied={carried.notApplied}
+          count={{ shown: phones.summary.data.positioned, total: phones.summary.data.total, noun: "records with a position" }}>
+          <ScopeCrossings caseId={caseId!} scope={carried.scope} here="map" />
+        </ScopeBar>
+      )}
       <MapToolbar caseId={caseId!} locations={safeLocations} phonePositions={phones.on ? phones.summary.data?.positioned ?? null : null} />
 
       <div className="relative flex-1">
@@ -168,7 +193,7 @@ export function MapPage() {
           </button>
         )}
         {phones.on && phones.summary.data && phones.summary.data.total > 0 && (
-          <PhoneLayerPanel caseId={caseId!} summary={phones.summary.data} points={phones.points.data} />
+          <PhoneLayerPanel caseId={caseId!} summary={phones.summary.data} points={phones.points.data} addDisabled={canEdit ? undefined : "A case member who can edit can add."} />
         )}
         {phones.on && lastShape && <PhonesInArea caseId={caseId!} shape={lastShape} />}
         <MapLegend locations={safeLocations} />

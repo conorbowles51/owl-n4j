@@ -90,6 +90,14 @@ export async function searchGroup(caseId: string, q: string, group: string, curs
   return GroupPageSchema.parse(await fetchAPI(`/api/search/group?${p}`, { signal }))
 }
 
+/** A whole group kept as one phone selection for Add to… (07 J-5): its counts, and how many hits it could not hold. */
+export async function freezeSearchGroup(caseId: string, q: string, group: string, exact: boolean, phones: string[]) {
+  return fetchAPI<{ id: string; record_count: number; event_count: number; words: string; group_total: number; left_out: number }>("/api/search/group/selection", {
+    method: "POST",
+    body: { case_id: caseId, q, group, exact, phones },
+  })
+}
+
 /** Saved keyword lists (03 section 11.2; 07 J-6, section 14): a search saved as named terms that runs on every phone
  * of the case, including phones added later. Totals per phone, term and group are the search's own totals. */
 const RunPhoneSchema = lazySchema(() => z.object({

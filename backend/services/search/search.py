@@ -506,3 +506,29 @@ def _score(g, q, exact):
     base = {"messages": 2.0, "people": 1.5, "emails": 1.4, "calls": 1.2, "documents": 1.1, "records": 1.0, "machine_text": 0.9,
             "payments": 1.05}
     return base.get(g["group"], 1.0)
+
+
+def freeze_group(db, user, case_id, q, group, *, exact=False, phones=None) -> dict:
+    """A whole search group as one ``phone_selection`` (07 J-5, section 6.1): the message, call and email groups by the
+    stream filter they count with, so every copy is held; the other phone groups by the records their hits name. The
+    group's total and any hit with no phone record behind it come back as ``group_total`` and ``left_out``."""
+    from services.phone import selections
+    from services.phone.filters import StreamFilter
+    conn = db.connection()
+    if group in COMM_KINDS:
+        f = _comm_filter(case_id, group, q, exact, phones or [], None, None)
+        total = group_page(conn, case_id, q, group, limit=1, exact=exact, phones=phones)["total"]
+        out = selections.freeze(db, f, user, 'Every %s matching "%s"' % (group[:-1], q))
+        return dict(out, group_total=int(total), left_out=max(0, int(total) - int(out["event_count"])))
+    uids, cursor, total = [], None, 0
+    while True:
+        page = group_page(conn, case_id, q, group, cursor=cursor, limit=MAX_PAGE, exact=exact, phones=phones)
+        total = int(page["total"])
+        uids += [i["record_uid"] for i in page["items"] if i.get("record_uid")]
+        cursor = page["next_cursor"]
+        if not cursor:
+            break
+    f = StreamFilter.model_validate({"case_id": str(case_id), "text": {"query": q, "exact_characters": exact},
+                                     **({"phones": phones} if phones else {})})
+    out = selections.freeze_records(db, f, uids, user, 'Every hit in %s matching "%s"' % (group.replace("_", " "), q))
+    return dict(out, group_total=total, left_out=total - int(out["record_count"]))

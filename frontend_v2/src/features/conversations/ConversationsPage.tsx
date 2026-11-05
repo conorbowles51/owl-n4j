@@ -54,6 +54,8 @@ import { fmt } from "@/features/phones/ui/count-sentence"
 import { ScopeBar, type Scope } from "@/features/phones/ui/ScopeBar"
 import { SignificantNote } from "@/features/phones/ui/SignificantNote"
 import { EMPTY_SCOPE, scopeWords } from "@/features/phones/ui/scope"
+import { ScopeCrossings } from "@/features/phones/ui/ScopeCrossings"
+import { useScopeMemory, useScopePresets } from "@/features/phones/ui/use-phone-scope"
 import { useChatStore } from "@/features/chat/stores/chat.store"
 import { useUIStore } from "@/stores/ui.store"
 import { TimeStrip, type StripDay } from "@/features/phones/ui/TimeStrip"
@@ -499,6 +501,9 @@ export function ConversationsPage() {
       thread: s.people.length ? null : view.thread,
       tab: s.people.length ? "people" : view.tab,
     })
+  const { presets: scopePresets } = useScopePresets(caseId)
+  // restored only on a plain arrival: a link that names a thread, record or filter is followed as it stands
+  const scopeMemory = useScopeMemory(caseId, scope, onScope, !fixedPhone && !location.search)
 
   const counts = threadsQ.data?.counts
   const strip = useMemo(() => daysOf(stream.index?.items ?? []), [stream.index])
@@ -676,7 +681,8 @@ export function ConversationsPage() {
           )}
         </nav>}
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col" ref={listRoot}>
-          <ScopeBar scope={scope} onChange={onScope} narrowed={narrowed} count={stream.status === "ready" && stream.index ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
+          <ScopeBar scope={scope} onChange={onScope} narrowed={narrowed} presets={scopePresets} recent={scopeMemory.recent} restored={scopeMemory.restored}
+            count={stream.status === "ready" && stream.index ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
             {view.people.length > 0 && (
               <PersonScope
                 caseId={caseId}
@@ -691,6 +697,7 @@ export function ConversationsPage() {
             <SignificantNote caseId={caseId} on={view.significant} onChange={(on) => setView({ significant: on })} hiddenWords={significantHidden} />
             <ConversationFilters view={view} setView={setView} listFilter={listFilter} zoneWords={dayZoneOf(view, zoneName)} threadCounts={threadsQ.data?.counts}
               phones={fixedPhone ? undefined : phones.map((p) => ({ id: p.extraction_id, label: p.label }))} />
+            <ScopeCrossings caseId={caseId} scope={scope} here="conversations" />
           </ScopeBar>
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5 text-sm">
             {current ? (

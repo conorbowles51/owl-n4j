@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { dayOf, peopleAPI, type DossierPhones, type PanelDecision, type PanelPhone } from "@/features/phones/people.api"
+import { countHref, dayOf, peopleAPI, type DossierPhones, type PanelDecision, type PanelPhone } from "@/features/phones/people.api"
 import { errorWords, identitiesAPI } from "@/features/phones/review/identities.api"
 
 const fmt = (n: number) => n.toLocaleString("en-US")
@@ -20,11 +20,6 @@ const DECISION_WORDS: Record<string, string> = {
   restore_phone_identity_link: "Restored as a possible match",
 }
 const NOT_ALLOWED = "A case admin can change links."
-
-/** A count's link: the phone's list for this person, narrowed to one channel and direction. */
-export function countHref(href: string, kind: string, direction: string) {
-  return `${href}&kinds=${encodeURIComponent(kind)}&directions=${encodeURIComponent(direction)}`
-}
 
 /**
  * On the phones (03 section 10.2; 07 J-3, J-16, XF-5): the identities linked to this person, then per phone the names

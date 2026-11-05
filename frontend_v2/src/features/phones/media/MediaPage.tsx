@@ -17,6 +17,9 @@ import { acceptDerivedText, checkMediaDownload, requestOriginals, confirmDerived
 import { noTimeWords } from "./no-time-words"
 import { useMediaBlur } from "./use-media-blur"
 import { SignificantNote } from "../ui/SignificantNote"
+import { ScopeBar } from "../ui/ScopeBar"
+import { ScopeCrossings } from "../ui/ScopeCrossings"
+import { useUrlScope } from "../ui/use-phone-scope"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -472,9 +475,9 @@ export default function MediaPage() {
   }, { replace: true })
   const [phone, setPhone] = useState("")
   const [app, setApp] = useState("")
-  const [person, setPerson] = useState("")
-  const [fromDay, setFromDay] = useState("")
-  const [toDay, setToDay] = useState("")
+  const [pickedPerson, setPerson] = useState("")
+  const [pickedFrom, setFromDay] = useState("")
+  const [pickedTo, setToDay] = useState("")
   const [size, setSize] = useState<ThumbSize>(storedThumbSize)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [note, setNote] = useState<string | null>(null)
@@ -498,10 +501,22 @@ export default function MediaPage() {
     else next.delete("significant")
     return next
   }, { replace: true }))
+  // a scope carried from another phone screen (07 4.5) fills the filters a person has not set here; the grid takes
+  // one phone and one person, so more than that is stated, never dropped silently
+  const carried = useUrlScope(caseId, { people: true, window: true, restore: false })
+  const scopePerson = carried.scope.people[0]?.key ?? ""
+  const scopePhone = carried.scope.phones.length === 1 ? carried.scope.phones[0].id : ""
+  const scopeNote = [...carried.notApplied,
+    ...(carried.scope.phones.length > 1 ? [`the ${n(carried.scope.phones.length)} phones chosen: this grid shows one phone or every phone`] : []),
+    ...(carried.scope.people.length > 1 ? ["every person after the first"] : []),
+    ...(carried.scope.people.length && carried.scope.mode !== "involving" ? ["the direction chosen"] : [])]
+  const person = pickedPerson || scopePerson
+  const fromDay = pickedFrom || (carried.scope.window?.from ?? "")
+  const toDay = pickedTo || (carried.scope.window?.to ?? "")
   const from = dayStart(fromDay)
   const to = dayStart(toDay, 1)
   // the phone in the address, every phone in the case, or another phone of the case
-  const onPhone = phone || extraction
+  const onPhone = phone || scopePhone || extraction
   const filter: MediaFilter = mediaFilter(caseId, onPhone, thread, category, state, {
     ...(app ? { apps: [app] } : {}), ...(person ? { participants: [person] } : {}),
     ...(from ? { from_instant: from } : {}), ...(to ? { to_instant: to } : {}),
@@ -574,6 +589,10 @@ export default function MediaPage() {
           <h1 className="text-lg font-semibold">Media</h1>
           <Link className="text-sm underline" to={`/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(extraction)}/records/media/spread`}>Media spread: the same file on other phones</Link>
         </div>
+        <ScopeBar scope={carried.scope} onChange={carried.apply} presets={carried.presets} recent={carried.recent} notApplied={scopeNote}
+          count={idx.data ? { shown: total, total, noun: total === 1 ? "file" : "files" } : null}>
+          <ScopeCrossings caseId={caseId} scope={carried.scope} here="media" />
+        </ScopeBar>
         {thread && (
           <div role="group" aria-label="Scope" className="flex flex-wrap items-center gap-2 text-sm">
             <span className="rounded-full border px-2 py-0.5">

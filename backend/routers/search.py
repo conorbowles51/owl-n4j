@@ -72,6 +72,27 @@ class AttachTheoryRequest(BaseModel):
     theory_id: UUID
 
 
+class GroupSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    q: str = Field(min_length=1, max_length=500)
+    group: str = Field(min_length=1, max_length=40)
+    exact: bool = False
+    phones: list[str] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/group/selection")
+def freeze_search_group(body: GroupSelection, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Keep a whole search group as one selection for Add to… (07 J-5), with its counts. Needs edit access, because it
+    is made to be added somewhere."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return S.freeze_group(db, user, body.case_id, body.q, body.group, exact=body.exact, phones=body.phones or None)
+    except (S.SearchError, ValueError, KeyError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/keyword-lists")
 def keyword_lists(case_id: UUID = Query(...), theory: Optional[UUID] = None, db: Session = Depends(get_db),
                   user: User = Depends(get_current_db_user)):
