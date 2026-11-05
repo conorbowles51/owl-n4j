@@ -10,6 +10,11 @@ import type { StreamFilter, ThreadSort } from "../api"
 export type Mode = "involving" | "between" | "sent-by" | "sent-to"
 export type Tab = "threads" | "people"
 export type Tri = boolean | null
+/** One deletion state alone; `deleted` keeps "deleted or in trash" (the links the Phone summary writes). */
+export type OneDeletion = "Deleted" | "Trash" | null
+
+/** The `apps` value that means "the report names no app": about one event in six on the reference phones. */
+export const NO_APP = "not-recorded"
 
 export interface ConversationView {
   tab: Tab
@@ -25,6 +30,7 @@ export interface ConversationView {
   apps: string[]
   directions: string[]
   deleted: Tri
+  oneDeletion: OneDeletion
   unreadable: Tri
   attachment: Tri
   text: string
@@ -49,7 +55,7 @@ export interface ConversationView {
 
 export const DEFAULT_VIEW: ConversationView = {
   tab: "threads", thread: null, record: null, people: [], mode: "involving", expand: false, phones: [], from: null,
-  to: null, kinds: [], apps: [], directions: [], deleted: null, unreadable: null, attachment: null, text: "",
+  to: null, kinds: [], apps: [], directions: [], deleted: null, oneDeletion: null, unreadable: null, attachment: null, text: "",
   exact: false, everyCopy: false, allChannels: false, sort: "oldest_first", threadSort: "recent", zone: "case",
   names: "phone", hl: "", hlExact: false, at: null, selection: null, noTime: true, significant: false,
 }
@@ -77,6 +83,7 @@ export function viewFromSearch(search: string, fixedPhone?: string | null): Conv
     apps: list(q, "apps"),
     directions: list(q, "directions"),
     deleted: tri(q.get("deleted")),
+    oneDeletion: q.get("deleted") === "deleted" ? "Deleted" : q.get("deleted") === "trash" ? "Trash" : null,
     unreadable: tri(q.get("unreadable")),
     attachment: tri(q.get("attachment")),
     text: q.get("q") ?? "",
@@ -113,7 +120,7 @@ export function viewToSearch(v: ConversationView, fixedPhone?: string | null): s
   set("kinds", v.kinds.join(","))
   set("apps", v.apps.join(","))
   set("directions", v.directions.join(","))
-  set("deleted", triWord(v.deleted))
+  set("deleted", v.oneDeletion ? v.oneDeletion.toLowerCase() : triWord(v.deleted))
   set("unreadable", triWord(v.unreadable))
   set("attachment", triWord(v.attachment))
   set("q", v.text.trim())
@@ -147,6 +154,11 @@ const MODE: Record<Mode, StreamFilter["participant_mode"]> = {
 /** The participant key the server reads as "the owner of each phone in scope" (streams.PHONE_OWNER). */
 export const PHONE_OWNER = "owner:this-phone"
 
+/** The zone a view's dates are days in. */
+export function dayZoneOf(v: ConversationView, zoneName: string): string {
+  return v.zone === "utc" ? "UTC" : zoneName
+}
+
 export function viewToFilter(caseId: string, v: ConversationView, zoneName: string, withThread = true): StreamFilter {
   const f: StreamFilter = { case_id: caseId, zone: { mode: v.zone, phone: v.zone === "phone" && v.phones.length === 1 ? v.phones[0] : null } }
   if (v.phones.length) f.phones = v.phones
@@ -163,10 +175,11 @@ export function viewToFilter(caseId: string, v: ConversationView, zoneName: stri
     if (between) f.group_scope = v.allChannels ? "include_groups" : "direct"
   }
   if (v.kinds.length) f.kinds = v.kinds as StreamFilter["kinds"]
-  if (v.apps.length) f.apps = v.apps
+  if (v.apps.length) f.apps = v.apps.map((a) => (a === NO_APP ? null : a))
   if (v.directions.length) f.directions = v.directions as StreamFilter["directions"]
   // The report's deletion states (live 2 November: Intact, Unknown, Trash, Deleted, or none recorded).
-  if (v.deleted !== null) f.deleted_states = v.deleted ? ["Deleted", "Trash"] : [null, "Intact", "Unknown"]
+  if (v.oneDeletion) f.deleted_states = [v.oneDeletion]
+  else if (v.deleted !== null) f.deleted_states = v.deleted ? ["Deleted", "Trash"] : [null, "Intact", "Unknown"]
   const flags: NonNullable<StreamFilter["flags"]> = {}
   if (v.unreadable !== null) flags.unreadable = v.unreadable
   if (v.attachment !== null) flags.has_attachment = v.attachment
@@ -174,7 +187,7 @@ export function viewToFilter(caseId: string, v: ConversationView, zoneName: stri
   if (!v.noTime) f.include_no_time = false
   if (v.significant) f.significant_only = true
   // a view in UTC has its days in UTC, whatever the case's zone (a volume chart's week is counted in UTC)
-  const dayZone = v.zone === "utc" ? "UTC" : zoneName
+  const dayZone = dayZoneOf(v, zoneName)
   if (v.from) f.from_instant = new Date(dayStart(v.from, dayZone)).toISOString()
   if (v.to) {
     const next = new Date(Date.UTC(Number(v.to.slice(0, 4)), Number(v.to.slice(5, 7)) - 1, Number(v.to.slice(8, 10)) + 1))
@@ -185,4 +198,42 @@ export function viewToFilter(caseId: string, v: ConversationView, zoneName: stri
   f.names = { mode: v.names }
   if (v.sort !== "oldest_first") f.sort = v.sort
   return f
+}
+
+const DIRECTION_WORDS: Record<string, string> = { incoming: "Incoming", outgoing: "Outgoing", unknown: "Direction unknown" }
+
+export interface FilterChip {
+  key: string
+  text: string
+  clear: Partial<ConversationView>
+}
+
+/** What the view narrows by beyond people, phones and kinds (the scope bar's own chips), in words, each removable. */
+export function filterChips(v: ConversationView): FilterChip[] {
+  const out: FilterChip[] = []
+  for (const a of v.apps) out.push({ key: `app:${a}`, text: a === NO_APP ? "App not recorded" : a, clear: { apps: v.apps.filter((x) => x !== a) } })
+  for (const d of v.directions) out.push({ key: `dir:${d}`, text: DIRECTION_WORDS[d] ?? d, clear: { directions: v.directions.filter((x) => x !== d) } })
+  // both dates are one chip in the scope bar; one date alone is a chip here, or it would narrow the list unseen
+  if (v.from && !v.to) out.push({ key: "from", text: `From ${v.from}`, clear: { from: null } })
+  if (v.to && !v.from) out.push({ key: "to", text: `Up to ${v.to}`, clear: { to: null } })
+  if (v.oneDeletion) out.push({ key: "deleted", text: v.oneDeletion === "Deleted" ? "Deleted only" : "In trash only", clear: { oneDeletion: null } })
+  else if (v.deleted !== null) out.push({ key: "deleted", text: v.deleted ? "Deleted or in trash only" : "Without deleted or in trash", clear: { deleted: null } })
+  if (v.unreadable !== null) out.push({ key: "unreadable", text: v.unreadable ? "Unreadable only" : "Without unreadable", clear: { unreadable: null } })
+  if (v.attachment !== null) out.push({ key: "attachment", text: v.attachment ? "Has an attachment" : "No attachment", clear: { attachment: null } })
+  if (v.text.trim()) out.push({ key: "text", text: `Contains "${v.text.trim()}"${v.exact ? ", exact characters" : ""}`, clear: { text: "", exact: false } })
+  return out
+}
+
+/** Every narrowing the filter bar sets, cleared at once. People, phones and the open thread are left alone. */
+export const NO_FILTERS: Partial<ConversationView> = {
+  from: null, to: null, kinds: [], apps: [], directions: [], deleted: null, oneDeletion: null, unreadable: null, attachment: null, text: "", exact: false,
+}
+
+export function hasFilters(v: ConversationView): boolean {
+  return filterChips(v).length > 0 || v.kinds.length > 0 || !!(v.from && v.to)
+}
+
+/** The filters in words, for what a person keeps or sends on: a copy's footer, a saved view, a frozen selection. */
+export function filterChipWords(v: ConversationView): string {
+  return filterChips(v).map((c) => c.text).join(", ")
 }

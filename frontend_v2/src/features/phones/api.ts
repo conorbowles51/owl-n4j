@@ -29,7 +29,8 @@ export interface StreamFilter {
   participant_mode?: "any" | "all" | "between" | "sent_by" | "sent_to"
   expand_person_identities?: boolean
   group_scope?: "direct" | "include_groups"
-  apps?: string[]
+  /** null: the events whose report names no app. */
+  apps?: (string | null)[]
   kinds?: ("message" | "call" | "email" | "voicemail" | "chat_activity")[]
   directions?: ("incoming" | "outgoing" | "unknown")[]
   deleted_states?: (string | null)[]
@@ -99,6 +100,22 @@ export async function streamFind(filter: StreamFilter, snapshot: string, query: 
     if (e instanceof ApiError && e.status === 409) throw new StaleSnapshotError()
     throw e
   }
+}
+
+/** The apps in scope with their counts, under every filter but the apps themselves (03 section 6.4). */
+export async function streamApps(filter: StreamFilter): Promise<{ items: { app: string | null; count: number }[]; counts: Record<string, number> }> {
+  return fetchAPI("/api/phones/streams/apps", { method: "POST", body: filter, read: true })
+}
+
+export type StreamDensity = "comfortable" | "compact"
+
+/** A person's own way of reading the stream (07 section 4.4), saved on the server so it follows them. */
+export async function getReaderSettings(): Promise<{ stream_density: StreamDensity }> {
+  return fetchAPI("/api/phones/reader-settings", { read: true })
+}
+
+export async function saveReaderSettings(density: StreamDensity): Promise<{ stream_density: StreamDensity }> {
+  return fetchAPI("/api/phones/reader-settings", { method: "PUT", body: { stream_density: density } })
 }
 
 export async function streamLocate(filter: StreamFilter, snapshot: string, eventUid: string): Promise<{ day: string | null; offset: number }> {

@@ -26,6 +26,16 @@ export function row(over: Partial<StreamRow> = {}): StreamRow {
 }
 
 describe("copy rows (03 3.7, A13, A2)", () => {
+  it("states a forward apart from its sender, and a reply with or without its original (03 6.6)", () => {
+    const forwarded = rowText(row({ forward: { original_sender: owner, time_created: "Mon, Mar 1, 2023" } }))
+    expect(forwarded).toContain("Maria Lopez (+1 202-555-0143) -> Owner of C3")
+    expect(forwarded).toContain("[Forwarded. First written by Owner of C3 (+1 202-555-0100), Mon, Mar 1, 2023]")
+    expect(rowText(row({ forward: { original_sender: null, time_created: null } }))).toContain("[Forwarded. The report does not say who first wrote it]")
+    expect(rowText(row({ replies: [{ kind: "reply", original_id: "AB12", state: "not_in_extraction", target: null }] }))).toContain("[Replying to a message that is not in this extraction (the report's id: AB12)]")
+    const target = { event_uid: "e0", record_uid: "r0", thread_key: "t", thread_title: "Family", same_thread: false, kind: "message", from: maria, time: "Tue, Mar 14", excerpt: "first", chars: 5, subject: null, flags: [] }
+    expect(rowText(row({ replies: [{ kind: "quote", original_id: "AB12", state: "found", target }] }))).toContain("[Quoting Maria Lopez (+1 202-555-0143), Tue, Mar 14 in Family: first]")
+  })
+
   it("writes one line per event with day, 12-hour time, zone, phone, app, both labels and the full body", () => {
     expect(rowText(row())).toBe(
       "Tue, Mar 14, 2023, 3:07:12 PM EDT | C3 | WhatsApp | Maria Lopez (+1 202-555-0143) -> Owner of C3 (+1 202-555-0100) | Line one\n  Line two",

@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest"
-import { DEFAULT_VIEW, PHONE_OWNER, viewFromSearch, viewToFilter, viewToSearch } from "./filter-url"
+import { DEFAULT_VIEW, filterChips, filterChipWords, hasFilters, NO_APP, NO_FILTERS, PHONE_OWNER, viewFromSearch, viewToFilter, viewToSearch } from "./filter-url"
+
+describe("Conversations filters (03 6.4)", () => {
+  it("offers one deletion state and keeps the Phone summary's deleted=only link meaning both", () => {
+    expect(viewToFilter("c", viewFromSearch("deleted=only"), "UTC").deleted_states).toEqual(["Deleted", "Trash"])
+    const trash = viewFromSearch("deleted=trash")
+    expect(trash.oneDeletion).toBe("Trash")
+    expect(viewToFilter("c", trash, "UTC").deleted_states).toEqual(["Trash"])
+    expect(viewToSearch(trash)).toBe("deleted=trash")
+    expect(viewToFilter("c", viewFromSearch("deleted=deleted"), "UTC").deleted_states).toEqual(["Deleted"])
+  })
+
+  it("sends the apps, with no app recorded as null", () => {
+    expect(viewToFilter("c", { ...DEFAULT_VIEW, apps: ["SyntheticApp", NO_APP] }, "UTC").apps).toEqual(["SyntheticApp", null])
+  })
+
+  it("says every filter as a chip that removes it, one date alone included", () => {
+    const v = viewFromSearch("apps=SyntheticApp,not-recorded&directions=outgoing&from=2023-03-01&unreadable=exclude&attachment=only&q=cafe&exact=1&deleted=only")
+    expect(filterChips(v).map((c) => c.text)).toEqual([
+      "SyntheticApp", "App not recorded", "Outgoing", "From 2023-03-01", "Deleted or in trash only", "Without unreadable", "Has an attachment", 'Contains "cafe", exact characters',
+    ])
+    for (const c of filterChips(v)) {
+      const left = filterChips({ ...v, ...c.clear })
+      expect(left.map((x) => x.key)).not.toContain(c.key)
+      expect(left).toHaveLength(filterChips(v).length - 1)
+    }
+    expect(filterChipWords(v)).toContain("Outgoing")
+    expect(hasFilters({ ...v, ...NO_FILTERS })).toBe(false)
+    expect(hasFilters(viewFromSearch("from=2023-03-01&to=2023-03-02"))).toBe(true)
+    expect(hasFilters(viewFromSearch("kinds=call"))).toBe(true)
+  })
+
+  it("makes a date range days in the stated zone", () => {
+    const f = viewToFilter("c", viewFromSearch("from=2023-03-14&to=2023-03-14"), "Asia/Tokyo")
+    expect(f.from_instant).toBe("2023-03-13T15:00:00.000Z")
+    expect(f.to_instant).toBe("2023-03-14T14:59:59.999Z")
+  })
+})
 
 describe("Conversations view in the URL (03 6.4)", () => {
   it("round-trips every filter and leaves defaults out", () => {

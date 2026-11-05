@@ -38,12 +38,15 @@ import { ThreadReviewBar } from "./ThreadReviewBar"
 import type { ReadRow } from "./use-reading-position"
 import { ThreadAttachments } from "./ThreadAttachments"
 import { PersonScope } from "./PersonScope"
+import { ConversationFilters } from "./ConversationFilters"
+import { useStreamDensity } from "@/features/phones/hooks/use-stream-density"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { useThreadMatches } from "./use-thread-matches"
-import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
+import { dayZoneOf, filterChipWords, hasFilters, NO_FILTERS, viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
 import { rememberSpot } from "@/features/phones/lib/continue-reading"
 import { translateWords } from "@/features/phones/lib/translate-words"
 import { labelText } from "@/features/phones/lib/labels"
-import type { StreamRow, ThreadRow } from "@/features/phones/schemas"
+import type { ReplyTarget, StreamRow, ThreadRow } from "@/features/phones/schemas"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { fmt } from "@/features/phones/ui/count-sentence"
 import { ScopeBar, type Scope } from "@/features/phones/ui/ScopeBar"
@@ -129,12 +132,26 @@ export function ConversationsPage() {
     enabled: !!caseId && settingsQ.isSuccess && (view.tab === "people" || view.people.length > 0),
   })
   const threads = useMemo(() => threadsQ.data?.items ?? [], [threadsQ.data])
+  const narrowed = hasFilters(view)
+
+  // 07 section 4.3: below 1440 px the thread list collapses to a 48 px rail, and picking a thread collapses it again
+  const wide = useMediaQuery("(min-width: 1440px)")
+  const [railOpen, setRailOpen] = useState(false)
+  const railed = !wide && !railOpen
+  const { density, setDensity, saveFailed } = useStreamDensity()
 
   // D-38: the first thread opens on arrival, so j, r, m and c act at once (07 J-8b, J-12, J-13). A saved selection
   // opens whole: its frozen total and the list's total agree until a thread is picked.
   useEffect(() => {
     if (view.tab === "threads" && !view.thread && !view.record && !view.selection && threads.length) setView({ thread: threads[0].thread_key }, true)
   }, [view.tab, view.thread, view.record, view.selection, threads, setView])
+  // A filter that leaves the open thread with no message moves to the first thread that has one; with none matching
+  // the list says so. Only once the list of this filter has arrived, and never away from a thread opened with no filter.
+  useEffect(() => {
+    if (view.tab !== "threads" || !narrowed || !view.thread || !threadsQ.isSuccess || threadsQ.isPlaceholderData) return
+    if (threads.some((t) => t.thread_key === view.thread)) return
+    setView({ thread: threads[0]?.thread_key ?? null, at: null }, true)
+  }, [view.tab, view.thread, narrowed, threads, threadsQ.isSuccess, threadsQ.isPlaceholderData, setView])
 
   // A link to one record (?record=) reads every message of the phones in scope with that record open beside it; a
   // saved selection (?selection=) reads its frozen records.
@@ -198,6 +215,26 @@ export function ConversationsPage() {
     },
     [streamFilter, stream.index],
   )
+  // A reply's original: in place when this list holds it, else in its own conversation with the filters cleared, and
+  // the list says so. Back returns to the reply.
+  const [originalNote, setOriginalNote] = useState<string | null>(null)
+  const goToOriginal = useCallback(
+    async (target: ReplyTarget, row: StreamRow) => {
+      setOriginalNote(null)
+      if (streamFilter && stream.index) {
+        try {
+          const loc = await streamLocate(streamFilter, stream.index.snapshot, target.event_uid)
+          setJump({ day: loc.day, offset: loc.offset, seq: Date.now() })
+          return
+        } catch {
+          /* not in this list: its own conversation, below */
+        }
+      }
+      setOriginalNote(`That message is not in this list, so it is shown in its own conversation${narrowed ? " with the filters cleared" : ""}. Back returns you here.`)
+      setView({ ...NO_FILTERS, tab: "threads", people: [], record: null, selection: null, thread: target.thread_key ?? `none:${row.phone.extraction_id}`, at: target.event_uid })
+    },
+    [streamFilter, stream.index, narrowed, setView],
+  )
   const arrivedAt = useRef<string | null>(null)
   useEffect(() => {
     // open at the hit's message once the list is ready
@@ -233,7 +270,8 @@ export function ConversationsPage() {
   }, [stream])
   const { usedIn, refresh: refreshUsedIn } = useUsedIn(caseId, marked.ids, marked.complete)
   const across = useAcrossBadges(caseId, stream)
-  const filterWords = `${current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"}${view.significant ? ", significant phone identities only" : ""}`
+  const chipWords = filterChipWords(view)
+  const filterWords = `${current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"}${view.significant ? ", significant phone identities only" : ""}${chipWords ? `, ${chipWords}` : ""}`
   const freeze = useQuery({
     queryKey: ["phone-selection", streamFilter, selection.all],
     queryFn: () => freezeSelection(streamFilter!, `${filterWords}, every message`),
@@ -263,7 +301,7 @@ export function ConversationsPage() {
     const ids: string[] = []
     for (const r of selection.rows) if (!ids.includes(r.record_uid)) ids.push(r.record_uid)
     useChatStore.getState().setPhoneContext({
-      caseId, thread: view.thread, thread_title: current?.title ?? null, scope_words: scopeWords(scope),
+      caseId, thread: view.thread, thread_title: current?.title ?? null, scope_words: chipWords ? `${scopeWords(scope)}, ${chipWords}` : scopeWords(scope),
       scope_total: stream.status === "ready" ? stream.total : null, record_ids: ids,
       // "select all" covers every message in scope, but only the rows loaded on screen have ids to send
       selected_total: selection.all && stream.status === "ready" ? stream.total : ids.length,
@@ -504,7 +542,14 @@ export function ConversationsPage() {
         )}
       </header>
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Threads and people" className="flex w-80 shrink-0 flex-col border-r bg-card">
+        {railed && (
+          <nav aria-label="Threads and people" className="flex w-12 shrink-0 flex-col border-r bg-card" data-testid="thread-rail">
+            <button type="button" className="flex-1 py-2 text-sm font-medium [writing-mode:vertical-rl] hover:bg-muted" aria-expanded={false} onClick={() => setRailOpen(true)}>
+              {view.tab === "threads" ? `Threads (${fmt(threadsQ.data?.counts.threads ?? threads.length)})` : `People (${fmt(peopleQ.data?.items.length ?? 0)})`}
+            </button>
+          </nav>
+        )}
+        {!railed && <nav aria-label="Threads and people" className="flex w-80 shrink-0 flex-col border-r bg-card">
           <div className="flex gap-1 border-b p-2" role="group" aria-label="List">
             <Button size="sm" variant={view.tab === "threads" ? "secondary" : "ghost"} aria-pressed={view.tab === "threads"} onClick={() => setView({ tab: "threads", people: [] })}>
               Threads
@@ -512,6 +557,11 @@ export function ConversationsPage() {
             <Button size="sm" variant={view.tab === "people" ? "secondary" : "ghost"} aria-pressed={view.tab === "people"} onClick={() => setView({ tab: "people", thread: null })}>
               People
             </Button>
+            {!wide && (
+              <Button size="sm" variant="ghost" className="ml-auto" aria-label="Collapse the list" onClick={() => setRailOpen(false)}>
+                Collapse
+              </Button>
+            )}
           </div>
           {view.tab === "threads" ? (
             <>
@@ -531,8 +581,8 @@ export function ConversationsPage() {
                   </select>
                 </label>
                 {threadsQ.data && (
-                  <p className="text-xs">
-                    {shownThreads.length < threads.length ? `Showing ${fmt(shownThreads.length)} of ${fmt(threads.length)} threads` : `${fmt(threads.length)} threads`}
+                  <p className="text-xs" data-testid="thread-count">
+                    {narrowed && threadsQ.data.counts.threads_total !== undefined && shownThreads.length === threads.length ? `${fmt(threads.length)} of ${fmt(threadsQ.data.counts.threads_total)} threads have messages matching these filters` : shownThreads.length < threads.length ? `Showing ${fmt(shownThreads.length)} of ${fmt(threads.length)} threads` : `${fmt(threads.length)} threads`}
                   </p>
                 )}
               </div>
@@ -554,8 +604,8 @@ export function ConversationsPage() {
                       role="option"
                       tabIndex={0}
                       aria-selected={t.thread_key === view.thread}
-                      onClick={() => setView({ thread: t.thread_key, record: null })}
-                      onKeyDown={(e) => e.key === "Enter" && setView({ thread: t.thread_key, record: null })}
+                      onClick={() => { setRailOpen(false); setView({ thread: t.thread_key, record: null }) }}
+                      onKeyDown={(e) => { if (e.key === "Enter") { setRailOpen(false); setView({ thread: t.thread_key, record: null }) } }}
                       className="cursor-pointer border-b px-2 py-1.5 text-sm hover:bg-muted aria-selected:bg-accent"
                     >
                       <span className="block truncate font-medium">{t.title}</span>
@@ -597,9 +647,9 @@ export function ConversationsPage() {
               })}
             </ul>
           )}
-        </nav>
+        </nav>}
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col" ref={listRoot}>
-          <ScopeBar scope={scope} onChange={onScope} count={stream.status === "ready" && stream.index ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
+          <ScopeBar scope={scope} onChange={onScope} narrowed={narrowed} count={stream.status === "ready" && stream.index ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
             {view.people.length > 0 && (
               <PersonScope
                 caseId={caseId}
@@ -612,6 +662,8 @@ export function ConversationsPage() {
               />
             )}
             <SignificantNote caseId={caseId} on={view.significant} onChange={(on) => setView({ significant: on })} hiddenWords={significantHidden} />
+            <ConversationFilters view={view} setView={setView} listFilter={listFilter} zoneWords={dayZoneOf(view, zoneName)} threadCounts={threadsQ.data?.counts}
+              phones={fixedPhone ? undefined : phones.map((p) => ({ id: p.extraction_id, label: p.label }))} />
           </ScopeBar>
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5 text-sm">
             {current ? (
@@ -624,7 +676,7 @@ export function ConversationsPage() {
               <ThreadAttachments caseId={caseId} extraction={current.phone.extraction_id} threadKey={current.thread_key} title={current.title}
                 back={`${location.pathname}?${viewToSearch({ ...view, at: focused?.event_uid ?? view.at }, fixedPhone)}`} />
             )}
-            {view.deleted === true && (
+            {(view.deleted === true || !!view.oneDeletion) && (
               // 07 J-11: a deletion state never carries a time; say what it does and does not establish.
               <span className="w-full text-xs">Deleted at some time between the message's own time and the extraction. The report does not record when.</span>
             )}
@@ -636,6 +688,14 @@ export function ConversationsPage() {
                 <input type="checkbox" checked={view.everyCopy} onChange={(e) => setView({ everyCopy: e.target.checked })} />
                 Show every copy
               </label>
+              <label className="inline-flex items-center gap-1 text-xs">
+                Density
+                <select className="rounded border bg-card px-1 py-0.5" value={density} onChange={(e) => setDensity(e.target.value as "comfortable" | "compact")}>
+                  <option value="comfortable">Comfortable</option>
+                  <option value="compact">Compact</option>
+                </select>
+              </label>
+              {saveFailed && <span role="alert" className="text-xs">The density could not be saved.</span>}
               <Button size="sm" variant="outline" disabled={!streamFilter} onClick={() => setExporting(true)}>
                 Export…
               </Button>
@@ -709,6 +769,11 @@ export function ConversationsPage() {
                 </button>
               </p>
             )}
+            {originalNote && (
+              <p role="status" className="w-full text-xs" data-testid="original-note">
+                {originalNote}
+              </p>
+            )}
             {translateNote && translateNote.thread === view.thread && (
               <p role="status" className="w-full text-xs" data-testid="translate-note">
                 {translateNote.text}
@@ -776,6 +841,8 @@ export function ConversationsPage() {
               onFocusRow={onFocusRead}
               onTopRow={onReadRow}
               onSelectionChange={onSelectionChange}
+              density={density}
+              onGoToOriginal={(target, row) => void goToOriginal(target, row)}
               rowExtra={(row) => (
                 <>
                 <MessageTranslation caseId={caseId} row={row} />

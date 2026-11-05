@@ -71,6 +71,37 @@ export const TranslationSchema = lazySchema(() => z.object({
 }))
 export type Translation = z.infer<typeof TranslationSchema>
 
+/** A reply or quote on a row (03 section 6.6): the report's link to its original, in the extraction or not. */
+export const ReplyLinkSchema = lazySchema(() => z.object({
+  kind: z.enum(["reply", "quote"]),
+  original_id: z.string().nullable(),
+  /** found; not_in_extraction: the id names no message on this phone; not_recorded: the report gives no id. */
+  state: z.enum(["found", "not_in_extraction", "not_recorded"]),
+  target: z.object({
+    event_uid: z.string(),
+    record_uid: z.string(),
+    thread_key: z.string().nullable(),
+    thread_title: z.string().nullable(),
+    same_thread: z.boolean(),
+    kind: z.string(),
+    from: ParticipantLabelSchema.nullable(),
+    time: z.string(),
+    excerpt: z.string().nullable(),
+    chars: z.number(),
+    subject: z.string().nullable(),
+    flags: z.array(z.string()),
+  }).nullable(),
+}))
+export type ReplyLink = z.infer<typeof ReplyLinkSchema>
+export type ReplyTarget = NonNullable<ReplyLink["target"]>
+
+/** A forwarded message: `original_sender` first wrote it; the row's `from` sent this copy (02 section 5.3). */
+export const ForwardSchema = lazySchema(() => z.object({
+  original_sender: ParticipantLabelSchema.nullable(),
+  time_created: z.string().nullable(),
+}))
+export type ForwardInfo = z.infer<typeof ForwardSchema>
+
 export const StreamRowSchema = lazySchema(() => z.object({
   event_uid: z.string(),
   record_uid: z.string(),
@@ -95,6 +126,8 @@ export const StreamRowSchema = lazySchema(() => z.object({
   interpretation_level: z.string(),
   line: z.string(),
   translation: TranslationSchema.nullable().optional(),
+  replies: z.array(ReplyLinkSchema).optional(),
+  forward: ForwardSchema.nullable().optional(),
 }))
 export type StreamRow = z.infer<typeof StreamRowSchema>
 

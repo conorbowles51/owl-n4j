@@ -1,5 +1,6 @@
 import { htmlEscape } from "@/lib/copy-text"
 import type { StreamRow } from "../schemas"
+import { forwardWords, replyWords } from "./reply-words"
 
 /**
  * Copy formats for phone rows (03 section 3.7, test A13). Pure functions; the click handler writes both flavours
@@ -21,6 +22,9 @@ function what(row: StreamRow): string {
 
 function extras(row: StreamRow): string[] {
   const out: string[] = []
+  const words = forwardWords(row)
+  if (words) out.push(`[${words}]`)
+  for (const r of row.replies ?? []) out.push(`[${replyWords(r)}]`)
   for (const a of row.attachments) out.push(`[attachment: ${a.filename ?? "file name not recorded"}${a.category ? `, ${a.category}` : ""}]`)
   for (const f of row.flags) out.push(`[${f}]`)
   if (row.copies.count > 1) out.push(`[Found ${row.copies.count} times]`)

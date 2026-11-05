@@ -25,7 +25,11 @@ const api = vi.hoisted(() => ({
   translateThread: vi.fn(),
   saveView: vi.fn(),
   getSavedView: vi.fn(),
+  getReaderSettings: vi.fn(),
+  saveReaderSettings: vi.fn(),
 }))
+const screenWide = vi.hoisted(() => ({ value: true }))
+vi.mock("@/hooks/use-media-query", () => ({ useMediaQuery: () => screenWide.value }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { title: "Synthetic case" } }) }))
 vi.mock("@/features/phones/hooks/use-collect", () => ({
@@ -36,7 +40,7 @@ const streamFilters = vi.hoisted(() => [] as unknown[])
 const streamState = vi.hoisted(() => ({ index: null as unknown }))
 const threadMatches = vi.hoisted(() => ({ value: { isLoading: false, data: undefined as unknown } }))
 vi.mock("./use-thread-matches", () => ({ useThreadMatches: () => threadMatches.value }))
-const listProps = vi.hoisted(() => ({ last: null as null | { highlight?: unknown; jumpTo?: unknown } }))
+const listProps = vi.hoisted(() => ({ last: null as null | { highlight?: unknown; jumpTo?: unknown; density?: unknown; filterWords?: string; onGoToOriginal?: (t: unknown, r: unknown) => void } }))
 vi.mock("@/features/phones/hooks/use-stream", () => ({
   useStream: (f: unknown) => {
     streamFilters.push(f)
@@ -106,8 +110,80 @@ describe("Conversations", () => {
   })
   afterEach(() => {
     vi.clearAllMocks()
+    screenWide.value = true
     streamState.index = null
     threadMatches.value = { isLoading: false, data: undefined }
+  })
+
+  it("sets a filter into the URL, shows it as a removable chip and says the true total over every conversation (03 6.4)", async () => {
+    api.streamIndex.mockResolvedValue({ snapshot: "s", counts: { events: 1234 }, no_time_count: 7, items: [], zone: { label: "UTC" } })
+    page("/cases/case-1/conversations?thread=t1&directions=outgoing&from=2023-03-01")
+    expect(await screen.findByText("Outgoing")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId("filter-total")).toHaveTextContent("1,234 messages and calls match in 2 of 2 conversations."))
+    expect(await screen.findByText(/7 with no time are included/)).toBeInTheDocument()
+    expect(screen.queryByText("Everything on every phone in this case")).not.toBeInTheDocument()
+    expect(screen.getByTestId("filter-zone")).toHaveTextContent("Days in UTC")
+    expect(listProps.last?.filterWords).toContain("Outgoing, From 2023-03-01")
+    fireEvent.click(screen.getByRole("button", { name: "Remove Outgoing" }))
+    await waitFor(() => expect(seen.search).not.toContain("directions"))
+    expect(seen.search).toContain("from=2023-03-01")
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }))
+    await waitFor(() => expect(seen.search).toBe("?thread=t1"))
+  })
+
+  it("moves off an open thread a filter has emptied, and says when nothing matches", async () => {
+    api.streamIndex.mockResolvedValue({ snapshot: "s", counts: { events: 3 }, no_time_count: 0, items: [], zone: { label: "UTC" } })
+    page("/cases/case-1/conversations?thread=gone&apps=SyntheticApp")
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    api.getThreads.mockResolvedValue({ case_id: "case-1", snapshot: "s", complete: true, limits: [], counts: { threads: 0, threads_total: 2, reviewed: 0, not_reviewed: 0 }, items: [], sort: "recent" })
+    fireEvent.change(screen.getByLabelText("Attachment"), { target: { value: "only" } })
+    expect(await screen.findByText("No conversation matches these filters.")).toBeInTheDocument()
+    expect(await screen.findByTestId("thread-count")).toHaveTextContent("0 of 2 threads have messages matching these filters")
+  })
+
+  it("stays on an open thread that is not listed when no filter is set", async () => {
+    page("/cases/case-1/conversations?thread=gone")
+    await threadOptions()
+    expect(seen.search).toContain("thread=gone")
+  })
+
+  it("collapses the thread list to a rail below 1440 px and back when a thread is picked (07 4.3)", async () => {
+    screenWide.value = false
+    page("/cases/case-1/conversations?thread=t1")
+    const rail = await screen.findByRole("button", { name: "Threads (2)" })
+    expect(screen.queryByRole("listbox", { name: /^Threads/ })).not.toBeInTheDocument()
+    fireEvent.click(rail)
+    fireEvent.click((await threadOptions())[1])
+    expect(await screen.findByRole("button", { name: "Threads (2)" })).toBeInTheDocument()
+    await waitFor(() => expect(seen.search).toContain("thread=t2"))
+  })
+
+  it("reads the person's saved density and saves a new choice (07 4.4)", async () => {
+    api.getReaderSettings.mockResolvedValue({ stream_density: "compact" })
+    api.saveReaderSettings.mockResolvedValue({ stream_density: "comfortable" })
+    page("/cases/case-1/conversations?thread=t1")
+    await waitFor(() => expect(listProps.last?.density).toBe("compact"))
+    fireEvent.change(screen.getByLabelText("Density"), { target: { value: "comfortable" } })
+    await waitFor(() => expect(api.saveReaderSettings.mock.calls[0][0]).toBe("comfortable"))
+    await waitFor(() => expect(listProps.last?.density).toBe("comfortable"))
+  })
+
+  it("goes to a reply's original in place, or to its own conversation with the filters cleared, and says so", async () => {
+    streamState.index = { snapshot: "s", zone: { label: "UTC" }, items: [], counts: {} }
+    api.streamIndex.mockResolvedValue({ snapshot: "s", counts: { events: 1 }, no_time_count: 0, items: [], zone: { label: "UTC" } })
+    api.streamLocate.mockResolvedValue({ day: "2023-03-14", offset: 2 })
+    page("/cases/case-1/conversations?thread=t1&directions=outgoing")
+    await threadOptions()
+    const row = { phone: { extraction_id: "e1", label: "C1" } }
+    await act(async () => listProps.last!.onGoToOriginal!({ event_uid: "v9", thread_key: "t2" }, row))
+    await waitFor(() => expect(listProps.last?.jumpTo).toMatchObject({ day: "2023-03-14", offset: 2 }))
+    expect(seen.search).toContain("thread=t1")
+    api.streamLocate.mockRejectedValue(new Error("not in this list"))
+    await act(async () => listProps.last!.onGoToOriginal!({ event_uid: "v9", thread_key: "t2" }, row))
+    await waitFor(() => expect(seen.search).toContain("thread=t2"))
+    expect(seen.search).toContain("at=v9")
+    expect(seen.search).not.toContain("directions")
+    expect(screen.getByTestId("original-note")).toHaveTextContent("shown in its own conversation with the filters cleared")
   })
 
   it("a search hit shows the whole thread, says how many messages matched, marks them and steps through them (S-8)", async () => {

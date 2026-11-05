@@ -34,6 +34,7 @@ export function ScopeBar({
   presets = [],
   recent = [],
   restored,
+  narrowed = false,
   children,
 }: {
   scope: Scope
@@ -45,6 +46,8 @@ export function ScopeBar({
   recent?: Scope[]
   /** Set when the scope was restored from this session: "Showing your last selection: 3 phones. Reset". */
   restored?: boolean
+  /** Filters outside this bar narrow the result, so it is not "everything" even with no chip here. */
+  narrowed?: boolean
   /** More of the scope in words and controls, inside the same region (07 J-3: the chosen person). */
   children?: ReactNode
 }) {
@@ -98,7 +101,7 @@ export function ScopeBar({
         {scope.kinds.map((k) => (
           <Chip key={k} text={k} onRemove={() => remove({ kinds: scope.kinds.filter((x) => x !== k) })} />
         ))}
-        {empty && <span className="text-sm text-muted-foreground">Everything on every phone in this case</span>}
+        {empty && !narrowed && <span className="text-sm text-muted-foreground">Everything on every phone in this case</span>}
         {(presets.length > 0 || recent.length > 0) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -144,7 +147,7 @@ export function ScopeBar({
   )
 }
 
-function Chip({ text, onRemove }: { text: string; onRemove: () => void }) {
+export function Chip({ text, onRemove }: { text: string; onRemove: () => void }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-sm border bg-card px-1.5 py-0.5 text-xs font-medium">
       {text}

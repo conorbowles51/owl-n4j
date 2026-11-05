@@ -10,7 +10,8 @@ import { WINDOW_FAILED } from "../hooks/use-stream"
 import { rowsHtml, rowsText } from "../lib/copy-rows"
 import { LONG_BODY, plural, STALE_AFTER_COPY, STALE_COPY, totalWords, undatedSentence, undatedWords } from "../lib/stream-words"
 import { matchRanges } from "@/features/search/lib/fold"
-import type { StreamRow } from "../schemas"
+import type { ReplyTarget, StreamRow } from "../schemas"
+import { ReplyBlock } from "./ReplyBlock"
 import { Arrow } from "./ParticipantLabel"
 import { ParticipantMenu } from "./ParticipantMenu"
 import { rowBadges } from "../lib/badges"
@@ -31,6 +32,7 @@ import { TimeCell } from "./TimeCell"
 
 const HEADER = 44
 const ROW = 76
+const ROW_COMPACT = 44
 
 export interface StreamListProps {
   stream: UseStream
@@ -56,6 +58,10 @@ export interface StreamListProps {
   onSelectionChange?: (rows: StreamRow[], all: boolean) => void
   /** Extra line under a row (e.g. "In 2 dossiers"). */
   rowExtra?: (row: StreamRow) => React.ReactNode
+  /** Comfortable (default) or Compact (07 section 4.4); neither removes the name or the number. */
+  density?: "comfortable" | "compact"
+  /** Offered on a reply whose original is in the extraction; without it the block is words only. */
+  onGoToOriginal?: (target: ReplyTarget, row: StreamRow) => void
   className?: string
 }
 
@@ -89,6 +95,8 @@ export function StreamList({
   highlight,
   onSelectionChange,
   rowExtra,
+  density = "comfortable",
+  onGoToOriginal,
   className,
 }: StreamListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
@@ -102,7 +110,7 @@ export function StreamList({
   const virtualizer = useVirtualizer({
     count: stream.count,
     getScrollElement: () => parentRef.current,
-    estimateSize: (i) => (stream.item(i).type === "header" ? HEADER : ROW),
+    estimateSize: (i) => (stream.item(i).type === "header" ? HEADER : density === "compact" ? ROW_COMPACT : ROW),
     overscan: 8,
   })
   const virtualItems = virtualizer.getVirtualItems()
@@ -443,7 +451,8 @@ export function StreamList({
                 data-index={v.index}
                 data-event={row.event_uid}
                 style={style}
-                className={cn("flex gap-3 border-b px-3 py-2 text-sm select-text", focusIndex === v.index && "outline outline-2 outline-ring", isSel && "bg-accent/40")}
+                data-density={density}
+                className={cn("flex border-b px-3 select-text", density === "compact" ? "gap-2 py-0.5 text-xs" : "gap-3 py-2 text-sm", focusIndex === v.index && "outline outline-2 outline-ring", isSel && "bg-accent/40")}
                 onClick={() => setFocusIndex(v.index)}
               >
                 <input
@@ -464,7 +473,7 @@ export function StreamList({
                     </span>
                     <StateBadges badges={rowBadges(row)} />
                   </div>
-                  {row.kind !== "record" && <div className="text-sm">
+                  {row.kind !== "record" && <div className={density === "compact" ? "text-xs" : "text-sm"}>
                     <ParticipantMenu caseId={caseId} label={row.from} parties={row} />
                     <Arrow />
                     {row.to.length ? (
@@ -478,6 +487,7 @@ export function StreamList({
                       <span className="text-muted-foreground">(recipient not recorded)</span>
                     )}
                   </div>}
+                  <ReplyBlock row={row} onGo={onGoToOriginal} />
                   {row.kind === "call" && <p>{row.call?.words}</p>}
                   {row.subject && <p className="font-semibold">{row.subject}</p>}
                   {row.body && (
