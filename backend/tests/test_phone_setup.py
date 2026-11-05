@@ -143,6 +143,7 @@ def test_a_zone_applied_to_a_time_with_no_offset_keeps_the_report_and_is_labelle
         uid = c.execute(text("SELECT record_uid FROM pv_time WHERE original_text = :w AND extraction_id = :e"),
                         {"w": WALL, "e": ext}).scalar()
         assert (str(uid), "TimeStamp") in phone_setup.zone_decided_times(c, case, [uid])
+        assert phone_setup.zone_decided_files(c, case, ["00000000-0000-0000-0000-000000000001"]) == set()  # the query runs
     with Session(engine) as db:  # a clock offset moves it too, and both show in the basis
         corrections.set_clock_offset(db, case_id=case, extraction_id=ext, offset_seconds=60, reason="fast", actor=actor)
         db.commit()

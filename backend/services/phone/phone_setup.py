@@ -192,13 +192,29 @@ def describe_clock(conn, extraction_id, offset_seconds, start, end) -> dict:
 
 # ---- times that came from a decision --------------------------------------------------------------------------------
 
+def _has_zone_decision(conn, case_id) -> bool:
+    return conn.execute(text("SELECT 1 FROM adjudications WHERE case_id = :c AND subject_type = 'phone_extraction' AND "
+                             "decision = 'apply_phone_zone_to_offsetless' LIMIT 1"), {"c": case_id}).first() is not None
+
+
+def zone_decided_files(conn, case_id, file_uids) -> set:
+    """The given files carried by a message whose time comes from a zone decision, for Media's ``taken_or_sent``."""
+    uids = [str(u) for u in file_uids]
+    if not uids or not _has_zone_decision(conn, case_id):
+        return set()
+    return {str(r[0]) for r in conn.execute(text(
+        "SELECT DISTINCT l.file_uid FROM pv_attachment_link l JOIN phone_record_summaries s ON s.record_uid = l.record_uid "
+        "JOIN phone_comm_events ev ON ev.record_uid = coalesce(s.root_record_uid, l.record_uid) AND ev.generation = "
+        "s.generation JOIN phone_time_values t ON t.record_uid = ev.record_uid AND t.generation = ev.generation AND "
+        "t.field_name = ev.time_field WHERE l.case_id = :c AND l.file_uid = ANY(CAST(:u AS uuid[])) AND t.instant_basis "
+        "= ANY(CAST(:b AS text[]))"), {"c": case_id, "u": uids, "b": list(T.ZONE_BASES)})}
+
+
 def zone_decided_times(conn, case_id, record_uids) -> set:
     """``{(record_uid, field name or path)}`` of the given records whose time comes from a zone decision (02 section 4.1 rule
     2), so a list labels them as decided. No such decision in the case: no read of the time table."""
     uids = [str(u) for u in record_uids]
-    if not uids or not conn.execute(text(
-            "SELECT 1 FROM adjudications WHERE case_id = :c AND subject_type = 'phone_extraction' AND decision = "
-            "'apply_phone_zone_to_offsetless' LIMIT 1"), {"c": case_id}).first():
+    if not uids or not _has_zone_decision(conn, case_id):
         return set()
     return {(str(r[0]), f) for r in conn.execute(text(
         "SELECT t.record_uid, t.field_name, t.field_path FROM phone_time_values t JOIN phone_interpretation_state s ON "

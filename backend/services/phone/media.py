@@ -190,18 +190,22 @@ def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 2
     zones = {str(r[0]): r[1] for r in conn.execute(text(
         "SELECT extraction_id, device_zone FROM pv_extraction WHERE case_id = :c"), {"c": str(case_id)})}
     items = []
-    for r in conn.execute(text(
-            "SELECT f.file_uid, f.extraction_id, f.category, f.local_path, f.size, f.verification, f.deleted_state, "
-            "f.is_carved, c.first_at, coalesce(c.messages, 0) AS messages, f.md5, f.sha256 " + _base(_where(f, p)) +
-            " ORDER BY c.first_at NULLS LAST, f.document_index, f.ordinal, f.file_uid OFFSET :o LIMIT :l"), p):
+    found = conn.execute(text(
+        "SELECT f.file_uid, f.extraction_id, f.category, f.local_path, f.size, f.verification, f.deleted_state, "
+        "f.is_carved, c.first_at, coalesce(c.messages, 0) AS messages, f.md5, f.sha256 " + _base(_where(f, p)) +
+        " ORDER BY c.first_at NULLS LAST, f.document_index, f.ordinal, f.file_uid OFFSET :o LIMIT :l"), p).fetchall()
+    from services.phone import phone_setup
+    zone_decided = phone_setup.zone_decided_files(conn, case_id, [r.file_uid for r in found])
+    for r in found:
         ext = str(r.extraction_id)
         name = (r.local_path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
         z = zones.get(ext) or "UTC"
         items.append({
             "file_uid": str(r.file_uid), "extraction_id": ext, "phone_label": labels.get(ext, "A phone"),
             "category": r.category, "filename": name, "size": int(r.size) if r.size is not None else None,
-            "taken_or_sent": {"instant": T.iso(r.first_at), "full": T.format_full(r.first_at, z) if r.first_at
-                              else T.NO_TIME, "basis": "message_time" if r.first_at else "none"},
+            "taken_or_sent": {"instant": T.iso(r.first_at), "full": T.format_decided(
+                r.first_at, z, "zone_decision" if str(r.file_uid) in zone_decided else None) if r.first_at else T.NO_TIME,
+                "basis": "message_time" if r.first_at else "none"},
             "verification": r.verification, "verification_words": OUTCOME_WORDS.get(r.verification or "",
                                                                                      "Not checked"),
             "missing": r.verification == "missing", "deleted_state": r.deleted_state, "is_carved": bool(r.is_carved),

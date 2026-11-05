@@ -97,10 +97,13 @@ def points(conn, case_id, bbox, zoom, f: dict | None = None, zone: str | None = 
         zones = {str(r[0]): r[1] for r in conn.execute(text(
             "SELECT extraction_id, device_zone FROM pv_extraction WHERE case_id = :c"), {"c": str(case_id)})}
         items = []
-        for r in conn.execute(text(
-                "SELECT t.point_uid, t.record_uid, t.extraction_id, t.lat, t.lon, t.accuracy_m, t.accuracy_basis, "
-                "t.source_kind, t.affiliation, t.instant, t.model_type, t.flags, t.deleted_state FROM "
-                "pv_location_point t WHERE " + where + " ORDER BY t.instant NULLS LAST, t.point_uid"), p):
+        found = conn.execute(text(
+            "SELECT t.point_uid, t.record_uid, t.extraction_id, t.lat, t.lon, t.accuracy_m, t.accuracy_basis, "
+            "t.source_kind, t.affiliation, t.instant, t.time_field, t.model_type, t.flags, t.deleted_state FROM "
+            "pv_location_point t WHERE " + where + " ORDER BY t.instant NULLS LAST, t.point_uid"), p).fetchall()
+        from services.phone import phone_setup
+        zone_decided = phone_setup.zone_decided_times(conn, case_id, [r.record_uid for r in found])
+        for r in found:
             ext = str(r.extraction_id)
             z = zone or zones.get(ext) or "UTC"
             items.append({
@@ -113,7 +116,8 @@ def points(conn, case_id, bbox, zoom, f: dict | None = None, zone: str | None = 
                 "source_kind": r.source_kind, "source_words": SOURCE_WORDS.get(r.source_kind or "", r.source_kind or
                                                                                "Unknown source"),
                 "affiliation": r.affiliation, "instant": T.iso(r.instant),
-                "time": T.time_block(r.instant, z) if r.instant is not None else None,
+                "time": T.time_block(r.instant, z, zone_decided=(str(r.record_uid), r.time_field) in zone_decided)
+                if r.instant is not None else None,
                 "model_type": r.model_type, "flags": list(r.flags or []), "deleted_state": r.deleted_state})
         return {"case_id": str(case_id), "total": total, "clustered": False, "items": items, "limits": []}
     size = _grid(zoom)
