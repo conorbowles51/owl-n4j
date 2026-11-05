@@ -310,6 +310,12 @@ def test_a_group_with_a_pair_without_an_offset_keeps_own_clocks_and_names_the_pa
     assert "C3" in g["clock_words"] and all(p["clock_shift_s"] is None for p in g["phones"])
 
 
+def test_a_group_with_one_timed_phone_never_reads_as_a_known_offset():
+    from services.phone import media_spread
+    out = media_spread._clock(["C1"], {"pairs": {}})
+    assert out["unknown"] is True and out["used"] == [] and out["words"] == media_spread.CLOCK_OWN
+
+
 def test_phones_changed_since_the_run_is_said(world, monkeypatch):
     _offsets(monkeypatch, [_reading(600.0)], current=False)
     win = _all(world)

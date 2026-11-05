@@ -397,8 +397,8 @@ def _offset_words(o) -> str:
 
 def _clock(names, clocks) -> dict:
     """What the order of one group rests on. ``names`` are the group's phones with a time, in own-clock order."""
-    if len(names) < 2:
-        return {"unknown": False, "shift": {}, "used": [], "words": CLOCK_OWN}
+    if len(names) < 2:   # nothing to order across phones, and no offset is any more known for it
+        return {"unknown": True, "shift": {}, "used": [], "words": CLOCK_OWN}
     pairs = clocks["pairs"]
     missing = []
     for i, a in enumerate(names):
