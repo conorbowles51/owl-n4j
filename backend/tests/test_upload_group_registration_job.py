@@ -145,6 +145,26 @@ def test_a_short_registration_still_answers_complete_with_its_receipt(groups):
     assert receipt['status'] == 'completed' and len(receipt['receipt']['file_ids']) == 3
 
 
+def test_the_receipt_does_not_wait_for_saved_parts_to_be_removed(groups, monkeypatch):
+    f = groups
+    gate, removed, original = threading.Event(), [], api.uploads.remove_parts
+
+    def slow_removal(item):
+        gate.wait(2)
+        removed.append(item.id)
+        original(item)
+    monkeypatch.setattr(api.uploads, 'remove_parts', slow_removal)
+    state, _ = staged(f)
+    parts = [api.uploads.ROOT / str(f.case) / m['id'] for m in state['members']]
+    assert all(path.is_dir() for path in parts)
+    answer = control(f, state, 'complete').json()
+    assert answer['status'] == 'completed' and len(answer['receipt']['file_ids']) == 3
+    assert removed == []
+    gate.set()
+    api._parts_remover.submit(lambda: None).result(30)  # one worker, in order: everything before this has run
+    assert len(removed) == 3 and not any(path.exists() for path in parts)
+
+
 def test_refusals_answer_complete_at_once(groups):
     f = groups
     content = {'Bundle/a.txt': b'a', 'Bundle/b.txt': b'b'}

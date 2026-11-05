@@ -875,6 +875,22 @@ def _forget_finished():
             _running.pop(identity, None)
 
 
+_parts_remover = ThreadPoolExecutor(max_workers=1, thread_name_prefix='upload-parts')
+
+
+def _parts_of(rows):
+    """Read before the commit: afterwards each row would reload, one query a file."""
+    return [SimpleNamespace(id=row.id, case_id=row.case_id) for row in rows]
+
+
+def _remove_parts_after_answer(parts):
+    """A registered file is safe in its place and its parts are no longer needed, so the person's receipt does not
+    wait for thousands of folders to go. One worker, in order; a process that is stopped finishes this queue first."""
+    def remove():
+        for part in parts: uploads.remove_parts(part)
+    _parts_remover.submit(remove)
+
+
 async def _register(registration, identity, user, bind):
     """The finish of a selection, as the request did it before: in its own session, the selection held alone from
     the first step to the commit that ends it."""
@@ -960,10 +976,10 @@ async def _complete(db, identity, user, registration):
             group.status = 'dispatching' if group.receipt['dispatch'] else 'completed'
             if group.status == 'completed':
                 for row in rows: row.status = 'completed'
+            parts = _parts_of(rows)
             # The receipt and evidence rows commit together before any external job call.
             db.commit()
-            if group.status == 'completed':
-                for row in rows: uploads.remove_parts(row)
+            if group.status == 'completed': _remove_parts_after_answer(parts)
         await run_in_threadpool(register)
     # What the engine calls read, loaded here: after a commit the objects reload on first use.
     dispatch = await run_in_threadpool(lambda: None if group.status != 'dispatching' else (
@@ -982,8 +998,9 @@ async def _complete(db, identity, user, registration):
             group.status = 'completed'
             done = members(db, group)
             for row in done: row.status = 'completed'
+            parts = _parts_of(done)
             db.commit()
-            for row in done: uploads.remove_parts(row)
+            _remove_parts_after_answer(parts)
             return snapshot(db, group)
         return await run_in_threadpool(finish)
     return await run_in_threadpool(snapshot, db, group)
