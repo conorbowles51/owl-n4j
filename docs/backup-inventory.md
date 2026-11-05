@@ -12,6 +12,7 @@ The boot disk has a daily snapshot (`default-schedule-1`, 06:20 UTC, kept 14 day
 | Evidence originals and derived files | `/mnt/owl-data/evidence-data`, mounted at `evidence-data` | 68 GB, 365,098 files | data | Copy tool built; off until a second location is named | **No** |
 | Evidence engine working files | `/mnt/owl-data/evidence-files`, mounted into the volume `owl-v2_evidence-files` | 19 GB | data | Copy tool built; off until a second location is named | **No** |
 | Older evidence paths | `ingestion/data` | 2.3 GB, 5,585 `evidence_files` rows | boot | Disk snapshot; in the copy tool's sources | Yes, snapshot only |
+| Former evidence volume | `/var/lib/docker/volumes/owl-v2_evidence-files/_data.ssd-old` | 14 GB | boot | Disk snapshot. No live row points at it; it holds byte-identical copies of files the live paths also hold. Not in the copy tool's sources. | Yes, snapshot |
 | Previous platform's data | `/mnt/owl-data/ingestion-data`, bound to `app_v2/ingestion/data` | 205 GB | data | In the copy tool's sources; off until a second location is named | **No** |
 | Reference data | `/mnt/owl-data/reference-data` | 47 MB | data | In the copy tool's sources | **No** |
 | Database and vector backups | `/mnt/owl-data/backups` | 5.0 GB, about 45 GB at full retention (estimate, not measured) | data | In the copy tool's sources | **No** |
