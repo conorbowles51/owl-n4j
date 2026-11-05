@@ -1,13 +1,13 @@
 {
   "kind": "type",
   "name": "InstantMessage",
-  "version": 1,
+  "version": 2,
   "status": "applied_unconfirmed",
   "origin": "ai_draft",
   "review": {
     "reviewed_by": null,
     "reviewed_on": null,
-    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule.",
+    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule. Version 2: comms reads a sole To party marked as the owner as an incoming message (04 decision 55); no rule of this mapping changed.",
     "registry_requirements": [
       [
         "InstantMessage",

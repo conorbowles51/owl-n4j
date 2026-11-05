@@ -572,6 +572,35 @@ def _mail(top, folder, status=None, *, sender_owner=None, to_owner=None):
             [ts(top, "0.0", "TimeStamp", "Email")])
 
 
+def _chat(top, *to_marks, sender_owner=None):
+    """A message with its From party and one To party per mark."""
+    f = [fld("TimeStamp", ("TimeStamp", "2023-03-14T15:07:12-04:00")), refs("From", top + 1, kind="modelField"),
+         refs("To", *[top + 2 + i for i in range(len(to_marks))])]
+    rows = [(top, None, top, model("InstantMessage", f)), (top + 1, top, top, _party(top + 1, "a@example.test", owner=sender_owner))]
+    rows += [(top + 2 + i, top, top, _party(top + 2 + i, "b%d@example.test" % i, owner=mark)) for i, mark in enumerate(to_marks)]
+    return rows, [ts(top, "0.0", "TimeStamp", "InstantMessage")]
+
+
+def test_message_direction_reads_a_sole_recipient_marked_as_the_owner(hooks):
+    """04 decision 55, from followups m11050732008523. On the old code the row at 3 read unknown. Several To parties
+    say nothing: on the 14 reports the owner listed among several is the sender in 984 of 985."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [_chat(0, None, sender_owner=True), _chat(3, True), _chat(6, True, False), _chat(10, False),
+                                  _chat(13, True, sender_owner=True), _chat(16, None)])
+        run(engine, ext)
+        with engine.connect() as c:
+            rows = c.execute(text(
+                "SELECT ordinal, direction, direction_basis FROM phone_comm_events WHERE extraction_id = :e AND kind = "
+                "'message' ORDER BY ordinal"), {"e": ext}).fetchall()
+    assert [tuple(r)[1:] for r in rows] == [("outgoing", "sender_owner_flag"), ("incoming", "recipient_owner_flag"),
+                                            ("unknown", None), ("unknown", None), ("outgoing", "sender_owner_flag"),
+                                            ("unknown", None)]
+
+
 def test_mail_direction_reads_the_owner_mark_on_either_side_then_status_then_folder(hooks):
     """04 decision 54, from followups m11050526143420. On the old code every one of these reads unknown except the two
     with a From mark: on the reference phones no From party states the mark, the To party does."""

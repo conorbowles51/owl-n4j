@@ -1967,6 +1967,14 @@ Each is a decision with its reasoning and what would reverse it.
     Activity strength version 4 reads `direction` first: outgoing is interaction by the owner, incoming is passive, and
     Status and Folder rows apply only when the direction is `unknown`. *Reverse if* an inbox folder is shown to hold
     the owner's own sent mail with no mark on it.
+55. **A message's direction reads a sole recipient marked as the owner (3.2).** A message whose From party carries no
+    owner mark is `incoming`, basis `recipient_owner_flag`, when it has exactly one To party and that party is marked as
+    the owner. With several To parties the mark says nothing. Measured on the 14 reports
+    (`measurements/message-direction-gate.json`) on messages where the From party is marked too: a sole To party marked
+    as the owner has a From party that is someone else in 2,465 of 2,465; among several To parties the owner is the
+    sender in 984 of 985. Of 377,648 messages, `unknown` falls from 102,922 to 66,357 and no message that had a direction
+    changes it. InstantMessage mapping version 2 re-derives stored phones through the sweep. *Reverse if* a message
+    from the owner is shown with the owner as its only To party.
 
 ## 15. Not yet established
 

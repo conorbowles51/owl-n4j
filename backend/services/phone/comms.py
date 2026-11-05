@@ -127,6 +127,16 @@ def email_direction(status, folder, owner_is_recipient) -> tuple:
     return "unknown", None
 
 
+def message_direction(recipients) -> tuple:
+    """(direction, basis) of a message whose From party does not say whether it is the owner (04 decision 55), or
+    ("unknown", None). ``recipients``: the To parties' owner marks. Only a To party marked as the owner and alone means
+    the owner received it: where the From party is marked too, 14 reports hold 2,465 of 2,465 such messages from someone
+    else, and with several To parties 984 of 985 are the owner's own, listed among the recipients."""
+    if len(recipients) == 1 and recipients[0] is True:
+        return "incoming", "recipient_owner_flag"
+    return "unknown", None
+
+
 def _parties(conn, ext, gen, t):
     out = defaultdict(list)
     for r in conn.execute(text(
@@ -229,6 +239,8 @@ def _events(conn, w, ext, case_id, gen, m, b, levels, chats, thread_of_record, s
             elif kind == "email" and b.participants.owner_flag:
                 direction, basis = email_direction(first(sf.get("status")), first(b.thread.group_field),
                                                    bool(owner_roles & {"recipient", "cc", "bcc"}))
+            elif kind == "message":
+                direction, basis = message_direction([p[2] for p in ps if p[1] == "recipient"])
         if kind in OWNER_SIDE_KINDS and not owner_roles:
             if kind == "call":
                 implied = {"outgoing": "caller", "incoming": "callee"}.get(direction)
