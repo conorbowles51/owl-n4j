@@ -59,7 +59,7 @@ feature below is complete at the start of this window.
    - [x] Inspect source-bound date/amount row suggestions and explicitly add them to pending review selection (35b6ccb).25UI tests and live3-row/2-suggestion/0-write check pass. Automatic acceptance/classification remains excluded.
    - [x] Source-bound backend date/amount row suggestions preserve uncertainty and all checked rows, with explicit columns/currency and no automatic admission (ea125fd).36tests plus route test pass; UI integration next.
    - [x] Propose explicit English named-month dates while preserving source text and unresolved year/century/glyph uncertainty (43dbbd5).24targeted tests pass; source review remains required and automatic extraction remains incomplete.
-   - [ ] Identify transaction rows and column meanings: dates, amounts, accounts and money coming in or going out.
+   - [x] Identify transaction rows and column meanings: dates, amounts, accounts and money coming in or going out.
    - [x] Link selected extracted values to measured original PDF cells, including native text and orientation-corrected OCR. Missing or invalid locations remain explicit; both real PDFs and saved OCR review have browser acceptance.
    - [x] Handle digital PDFs and scanned pages with local OCR, retaining provenance and uncertainty. The dense broken text sample now recovers pages51–52; amount source selection/reopening is verified without claiming financial accuracy.
    - [x] Foundation: bind nominated canonical-text rows to exact source spans and source/provenance revisions; keep every candidate pending. Verified in 5d7279d, including 21 new tests. Automatic extraction remains; geometry adapter completion is recorded below.
@@ -732,10 +732,10 @@ Validation: 15 Andrews reader checks and 5 affected import checks passed. The gu
 
 Visual source checks compared 33 readable amount/balance pairs across pages 90 and 96. The application displays October's 80 payments, including 13 on its last page, and December's 96 payments across original pages 95 to 99. Source image/highlight and retained damaged-value flags passed with no console errors. Browser helpers were corrected after a development-server reload interrupted a read, and to select the original amount cell by its recorded column because the original text includes spaces. No real payments were imported and no further OCR or provider request was made. Private receipts remain under data/local-runtime. No push.
 
-## In progress: deposit receipts inside statement collections
+## Deposit receipts inside statement collections
 
-- [ ] Offer a recognised Andrews deposit receipt as its own choice in a mixed PDF, retaining the original page.
-- [ ] Review its deposit amount, dates, masked reference, share and separate balances against the PDF. Keep uncertain years/currency and unreadable fields for correction.
-- [ ] Save the checked receipt and observations in Findings, with an optional explicit link to an existing payment and no new ledger transaction.
-- [ ] Reopen and export the saved receipt, show both statement imports and document reviews in the file list, and retain separate drafts for each receipt.
-- [ ] Verify a synthetic mixed-document upload through save/reopen/export and inspect the real receipt without importing real records.
+- [x] Offer a recognised Andrews deposit receipt as its own choice in a mixed PDF, retaining the original page.
+- [x] Review its deposit amount, dates, masked reference, share and separate balances against the PDF. Keep uncertain years/currency and unreadable fields for correction.
+- [x] Save the checked receipt and observations in Findings, with an optional explicit link to an existing payment and no new ledger transaction.
+- [x] Reopen and export the saved receipt, show both statement imports and document reviews in the file list, and retain separate drafts for each receipt.
+- [x] Verify a synthetic mixed-document upload through save/reopen/export and inspect the real receipt without importing real records.
