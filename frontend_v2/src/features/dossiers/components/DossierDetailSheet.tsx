@@ -23,8 +23,8 @@ import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
 import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
-import { ReplacedLinkNote } from "@/features/phones/ReplacedLinkNote"
-import { useReplacedLinks } from "@/features/phones/replaced-links"
+import { LinkStateNote } from "@/features/phones/LinkStateNote"
+import { useLinkChoice, useLinkStates } from "@/features/phones/link-states"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -523,7 +523,8 @@ export function DossierDetailSheet({
 }) {
   const query = useDossier(dossierId)
   const dossier = query.data
-  const replaced = useReplacedLinks(caseId, [...(dossier?.links ?? []), ...(dossier?.assessments ?? []).flatMap((a) => a.supporting_links ?? [])])
+  const linkStates = useLinkStates(caseId, "dossier", dossierId ?? undefined, !!dossier)
+  const linkChoice = useLinkChoice(caseId, "dossier", dossierId ?? undefined, () => void query.refetch())
   const [briefDirty, setBriefDirty] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
   const [mediaOpen, setMediaOpen] = useState(false)
@@ -602,7 +603,7 @@ export function DossierDetailSheet({
         {link.label || (isPhoneLinkType(link.target_type) ? phoneLinkSummary(link).kind : "Open source evidence")}
         {isPhoneLinkType(link.target_type) && <PhoneLinkDetail link={link} />}
       </button>
-      {link.target_type === "phone_record" && <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />}
+      <LinkStateNote caseId={caseId} state={linkStates[link.id]} busy={linkChoice.isPending} onChoose={(state, choice) => linkChoice.mutateAsync({ state, choice })} />
     </span>
   )
   const queryClient = useQueryClient()
@@ -983,7 +984,7 @@ export function DossierDetailSheet({
                           ) : (
                             <span className="min-w-0 flex-1 break-all text-xs">
                               {link.label || link.target_id}
-                              {link.target_type === "phone_record" && <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />}
+                              <LinkStateNote caseId={caseId} state={linkStates[link.id]} busy={linkChoice.isPending} onChoose={(state, choice) => linkChoice.mutateAsync({ state, choice })} />
                             </span>
                           )}
                           {link.target_type === "phone_selection" && (

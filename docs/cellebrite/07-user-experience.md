@@ -699,7 +699,7 @@ Every phone item can be collected as the investigator works: message, call, emai
   - the **mapping version set** behind that record at collect time
   - who added it, when, from which screen, and the relationship or role
 - An optional "what this shows" note and the investigator's grade are kept apart from the automatic origin mark.
-- **Link state** is worked out when the link is shown, and the stored link is never rewritten. The states:
+- **Link state** is worked out when the link is shown, and the stored link is never rewritten. Earlier readings of a phone are purged after each re-read, so `phone_reading_changes` records what a re-read changed on collected records while both readings exist; a link collected before those rows begin says the phone was read again and that what changed was not kept. The states:
   - active
   - **from a replaced copy of this report** (the matching record in the current copy is offered once 05-S15 record correspondence exists; until then the state is shown with no offer)
   - **corrected since collected** (both values shown)
@@ -736,7 +736,7 @@ Every phone item can be collected as the investigator works: message, call, emai
 | CO-5 | The financial report builds and reopens with a phone link | lx-collect |
 | CO-6 | The Notebook prefill carries a 412-item phone selection with the pinned preview | cb-screens; built `cb-records-rest` 90571f23 |
 | CO-7 | "Used in this case" equals the reverse lookup | cb-screens |
-| CO-8 | A corrected record shows both values on the finding and in the export | cb-screens |
+| CO-8 | A corrected record shows both values on the finding and in the export | cb-screens; built `cb-linkstates` |
 | CO-9a | After Replace, a link shows "from a replaced copy" | cb-screens |
 | CO-9b | ...and offers the matching record | cb-approaches |
 | CO-10 | Theory analysis cites phone-linked messages, with full phone visibility | cb-crossev |
@@ -744,7 +744,7 @@ Every phone item can be collected as the investigator works: message, call, emai
 | CO-12 | The collection export total equals the collected count | cb-screens |
 | CO-13 | "Add to Dossiers" on a phone identity goes through the identity decision | cb-crossev |
 | CO-14 | Every collect action and decision writes an event or feed line, on plain http, in the verification case and the phones-only case | each gate |
-| CO-15 | Correcting a sender mapping flags every link to the affected records as "reading changed" and changes no stored link | cb-screens |
+| CO-15 | Correcting a sender mapping flags every link to the affected records as "reading changed" and changes no stored link | cb-screens; built `cb-linkstates` |
 | CO-16 | A record collected only inside a 12,345-item selection shows "In 1 finding" | lx-collect (API), cb-screens (UI) |
 | CO-17 | A message and a call attached to an interview open back to their records and appear in the interview's evidence list | lx-collect + cb-screens |
 | CO-18 | Accepting an agent answer or machine transcript into a dossier assessment stores `ai_assisted` with the output id and shows "Read by <model>, accepted by <name>" | cb-crossev (agent), cb-media (transcript) |

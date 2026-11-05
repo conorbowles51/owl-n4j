@@ -149,6 +149,51 @@ def replaced_links(body: ReplacedLinksBody, db: Session = Depends(get_db), user:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class LinkStatesBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    container: Literal["entry", "dossier"]
+    container_id: UUID
+
+
+@router.post("/links/states")
+def link_states_of(body: LinkStatesBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The state of every phone link of one finding or dossier, worked out now (07 section 6.3): corrected, reading
+    changed, set aside, from a replaced copy, with what the viewer may do. A read, one call per finding or dossier."""
+    from services.phone import link_states
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return {"links": link_states.of_container(db.connection(), body.case_id, body.container, body.container_id, user.id)}
+
+
+class LinkChoiceBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    link_kind: Literal["entry", "dossier", "assessment"]
+    choice: Literal["keep", "remove"]
+    through_seq: int
+    expected_version: Optional[int] = Field(default=None, ge=1)
+
+
+@router.post("/links/{link_id}/choice")
+def link_choice(link_id: UUID, body: LinkChoiceBody, db: Session = Depends(get_db),
+                user: User = Depends(get_current_db_user)):
+    """Keep or Remove by the person who added a link whose reading changed (07 section 6.3). The stored link is not
+    touched by Keep; Remove is the link's own removal, which keeps its record. Each choice is recorded."""
+    from services.phone import link_states
+    from services.workspace_entry_service import WorkspaceEntryConflict
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return link_states.choose(db, case_id=body.case_id, link_kind=body.link_kind, link_id=link_id,
+                                  choice=body.choice, through_seq=body.through_seq, user=user,
+                                  expected_version=body.expected_version)
+    except link_states.LinkStateError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    except WorkspaceEntryConflict as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
 @router.get("/financial-presence")
 def financial_presence(case_id: UUID = Query(...), db: Session = Depends(get_db),
                        user: User = Depends(get_current_db_user)):

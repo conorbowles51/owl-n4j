@@ -137,15 +137,17 @@ def freeze_entry(db, case_id, entry_id, user) -> dict:
         raise EntryExportError(sentence(g) or "This entry has no messages or calls from the phones to export.")
     entry = g["entry"]
     words = "The phone records of %s “%s”" % (entry.entry_type, (entry.title or "Untitled").strip())
-    sid, filter_body, events = store_selection(db, str(entry.case_id), g["records"], words, user)
+    sid, filter_body, events = store_selection(db, str(entry.case_id), g["records"], words, user,
+                                               collected_from={"container": "entry", "id": str(entry.id)})
     db.commit()
     return {"selection_id": str(sid), "filter": filter_body, "collected": len(g["records"]),
             "events": events, "words": words, "sentence": sentence(g)}
 
 
-def store_selection(db, case, records, words, user) -> tuple:
+def store_selection(db, case, records, words, user, collected_from=None) -> tuple:
     """Freeze ``records`` (record uids) as one ``phone_selection`` of the case, every copy kept, with the mapping
-    versions of the phones they come from: ``(selection_id, filter, events)``. The caller commits."""
+    versions of the phones they come from: ``(selection_id, filter, events)``. ``collected_from`` names the finding or
+    dossier they were gathered from, so the export carries the state of its links. The caller commits."""
     conn = db.connection()
     rows = conn.execute(text(
         "SELECT count(DISTINCT event_uid) AS events, array_agg(DISTINCT extraction_id::text) AS phones FROM "
@@ -160,8 +162,9 @@ def store_selection(db, case, records, words, user) -> tuple:
     filter_body = {"case_id": case, "selection": str(sid), "collapse_copies": False}
     conn.execute(text(
         "INSERT INTO phone_selections (id, case_id, filter, words, record_uids, record_count, event_count, "
-        "mapping_versions, created_by_user_id) VALUES (:i, :c, CAST(:f AS jsonb), :w, :r, :n, :e, CAST(:v AS jsonb), "
-        ":u)"), {"i": sid, "c": case, "f": json.dumps(filter_body), "w": words, "r": list(records),
-                 "n": len(records), "e": int(rows.events), "v": json.dumps({"phones": versions}),
-                 "u": getattr(user, "id", None)})
+        "mapping_versions, created_by_user_id, collected_from) VALUES (:i, :c, CAST(:f AS jsonb), :w, :r, :n, :e, "
+        "CAST(:v AS jsonb), :u, CAST(:o AS jsonb))"),
+        {"i": sid, "c": case, "f": json.dumps(filter_body), "w": words, "r": list(records), "n": len(records),
+         "e": int(rows.events), "v": json.dumps({"phones": versions}), "u": getattr(user, "id", None),
+         "o": json.dumps(collected_from) if collected_from else None})
     return sid, filter_body, int(rows.events)

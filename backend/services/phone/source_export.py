@@ -201,7 +201,11 @@ def freeze_collected(db, case_id, source, ref, user) -> dict:
         sid, filter_body = g["selection_id"], {"case_id": str(case_id), "selection": g["selection_id"],
                                                "collapse_copies": False}
     else:
-        sid, filter_body, events = store_selection(db, str(case_id), g["records"], g["words"], user)
+        # the state of the links it was gathered from travels with the export (07 CO-8)
+        origin = ({"selection": g["selection_id"]} if g["selection_id"] else
+                  {"container": "dossier", "id": str((ref or {}).get("dossier_id"))})
+        sid, filter_body, events = store_selection(db, str(case_id), g["records"], g["words"], user,
+                                                   collected_from=origin)
         db.commit()
     return {"selection_id": str(sid), "filter": filter_body, "collected": len(g["records"]),
             "members": g["members"], "events": events, "words": g["words"], "sentence": words}

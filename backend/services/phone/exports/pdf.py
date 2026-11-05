@@ -121,6 +121,8 @@ def _row_html(r, missing) -> str:
         parts.append('<div class="body">%s</div>' % _e(r["call"].get("words") or "Call", missing))
     if r.get("body"):
         parts.append('<div class="body">%s</div>' % _e(r["body"], missing))
+    for word in r.get("link_notes") or []:
+        parts.append('<div class="body"><i>%s</i></div>' % _e(word, missing))
         parts += _translation_html(r.get("translation"), missing)
     for v in r.get("sensitive") or []:  # only when Include sensitive fields was ticked (03 section 3.10)
         parts.append('<div class="body">Sensitive field %s: %s</div>' % (_e(v["field"], missing), _e(v["value"] or "", missing)))

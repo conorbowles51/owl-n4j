@@ -196,6 +196,10 @@ def interpret_one(engine, extraction_id) -> dict:
             for fn in _hooks["apply"]:
                 applied.update(fn(conn, extraction_id, new_gen, the_plan) or {})
             lap("apply")
+            if generation:  # the earlier reading is purged after the swap: what changed on a collected record stays
+                from services.phone import link_states
+                link_states.note_reading_changes(conn, ext["case_id"], extraction_id, generation, new_gen)
+                lap("link_states")
             counts = dict(counts, flags_raised=obs["flags_raised"],
                           seconds=round(time.monotonic() - started, 1), **phase,
                           **{"applied:%s" % k: v for k, v in applied.items()})

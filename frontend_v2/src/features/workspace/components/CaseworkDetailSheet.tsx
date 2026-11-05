@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
 import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
-import { ReplacedLinkNote } from "@/features/phones/ReplacedLinkNote"
-import { useReplacedLinks } from "@/features/phones/replaced-links"
+import { LinkStateNote } from "@/features/phones/LinkStateNote"
+import { useLinkChoice, useLinkStates } from "@/features/phones/link-states"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
 import {
   ArchiveRestore,
@@ -129,7 +129,8 @@ export function CaseworkDetailSheet({
     useState<FindingSignificance | null>(null)
   const entryQuery = useCaseworkEntry(caseId, entryId ?? undefined, true)
   const entry = entryQuery.data
-  const replaced = useReplacedLinks(caseId, entry?.links)
+  const linkStates = useLinkStates(caseId, "entry", entryId ?? undefined, !!entry)
+  const linkChoice = useLinkChoice(caseId, "entry", entryId ?? undefined, () => void entryQuery.refetch())
   const lifecycleMutation = useChangeCaseworkLifecycle(caseId)
   const conversionMutation = useConvertTheory(caseId)
   const deleteMutation = useDeleteCaseworkEntry(caseId)
@@ -548,9 +549,12 @@ export function CaseworkDetailSheet({
                               </span>
                             </span>
                           </button>
-                          {link.target_type === "phone_record" && (
-                            <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />
-                          )}
+                          <LinkStateNote
+                            caseId={caseId}
+                            state={linkStates[link.id]}
+                            busy={linkChoice.isPending}
+                            onChoose={(state, choice) => linkChoice.mutateAsync({ state, choice, expectedVersion: entry.version })}
+                          />
                           {link.target_type === "phone_selection" && (
                             <CollectedPhoneExport caseId={caseId} source="collection" id={link.target_id} label="Export this collection" />
                           )}

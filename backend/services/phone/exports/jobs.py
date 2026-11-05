@@ -33,6 +33,7 @@ from services.phone.filters import StreamFilter, snapshot
 
 log = logging.getLogger(__name__)
 BUILT_FORMATS = ("pdf", "rsmf")
+LINK_SOURCES = ("collection", "finding", "dossier")
 BUILT_SOURCES = ("stream", "timeline_lens", "collection", "finding", "dossier", "statement_check", "analysis_result",
                  "incident_window", "phone_profile")
 # the Phone summary as a PDF (03 section 7.3 "Export profile as PDF", same renderer): filter {"phones": [one id]}
@@ -460,6 +461,15 @@ def draw(engine, export_id, claimed=None) -> dict:
             for _, rows in out_days:
                 for r in rows:
                     r["sensitive"] = sens.get(r.get("record_uid") or "", [])
+        # 07 CO-8, CO-15: what was collected carries the state of its links, both values on the row
+        link_notes = {}
+        if e.source in LINK_SOURCES and getattr(f, "selection", None):
+            from services.phone import link_states
+            link_notes = link_states.export_notes(conn, e.case_id, f.selection)
+            for _, rows in out_days:
+                for r in rows:
+                    r["link_notes"] = link_notes.get(r.get("record_uid") or "", [])
+        noted_rows = sum(1 for _, rows in out_days for r in rows if r.get("link_notes"))
         phones = sorted(set(phone_labels(conn, e.case_id).get(p, "") for p in (f.phones or [])) - {""})
         # the review coverage of the threads this export prints (07 J-13 step 6, CO-20): the marks' own counts
         from services.phone import review_share
@@ -480,6 +490,14 @@ def draw(engine, export_id, claimed=None) -> dict:
         sensitive_words(include_sensitive, sensitive_total),
     ]
     fmt = e.format or "pdf"
+    if e.source in LINK_SOURCES:
+        contains.insert(-1, ("%s of these %s rows changed since they were collected (corrected, read differently or "
+                             "set aside as a duplicate); each such row shows what changed." % (
+                                 "{:,}".format(noted_rows), "{:,}".format(total))) if noted_rows else
+                        "No row was corrected, read differently or set aside since it was collected.")
+        if fmt == "rsmf":  # RSMF rows hold the originals only, so every note is printed here, none clipped
+            contains += ["Record %s: %s" % (r.get("record_uid"), word) for _, rows in out_days for r in rows
+                         for word in r.get("link_notes") or []]
     if machine["total"] and fmt == "rsmf":
         # RSMF carries the original files only; the machine texts are named so their absence is not silent
         n = machine["total"]
@@ -537,7 +555,7 @@ def draw(engine, export_id, claimed=None) -> dict:
               "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"],
               "machine_translations": translations["total"], "machine_translations_stale": translations["stale"],
               "review": review_cov["counts"], "sensitive_values": sensitive_total,
-              "sensitive_included": include_sensitive, **extra}
+              "sensitive_included": include_sensitive, "link_state_rows": noted_rows, **extra}
     return _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, "phone-messages")
 
 

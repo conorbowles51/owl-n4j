@@ -46,6 +46,7 @@ REASON_LABELS = {
     "phone_reading": "Phone report being read",
     "phone_needs_attention": "Phone report needs attention",
     "phone_ready": "Phone report ready",
+    "phone_link_reading_changed": "Reading changed on your link",
 }
 
 
@@ -532,6 +533,36 @@ def _phone_candidates(db: Session, *, case_id: UUID, now: datetime) -> list[Atte
     return out
 
 
+def _link_state_candidates(db: Session, *, case_id: UUID, user: User) -> list[AttentionCandidate]:
+    """07 section 6.3: the person who added links whose reading changed is told once, with the true count, however
+    many links a bulk change touched. A new change makes a new item."""
+    if db.get_bind().dialect.name != "postgresql":
+        return []  # phone tables are PostgreSQL only, as for _phone_candidates
+    from services.phone import link_states
+
+    found = link_states.outstanding(db.connection(), case_id, user.id)
+    if found is None:
+        return []
+    links, records = found["links"], found["records"]
+    title = "The reading changed on %s you collected, on %s" % (
+        "1 record" if records == 1 else f"{records:,} records", "1 link" if links == 1 else f"{links:,} links")
+    href = (
+        f"/cases/{case_id}/dossiers?dossier={found['first_container']}"
+        if found["first_kind"] != "entry"
+        else f"/cases/{case_id}/workspace?view=casework&entry={found['first_container']}"
+    )
+    return [
+        AttentionCandidate(
+            source_type="phone_link_state", source_id=str(user.id), version_token=str(found["through_seq"]),
+            reason_code="phone_link_reading_changed", priority_band=2,
+            sort_value=-datetime.fromisoformat(found["at"]).timestamp(), title=title,
+            summary=_short(found["first_words"] + " Keep or remove each link."),
+            occurred_at=datetime.fromisoformat(found["at"]), due_at=None, href=href,
+            metadata={"links": links, "records": records},
+        )
+    ]
+
+
 def _personal_candidates(
     db: Session,
     *,
@@ -539,7 +570,7 @@ def _personal_candidates(
     user: User,
     now: datetime,
 ) -> list[AttentionCandidate]:
-    candidates: list[AttentionCandidate] = []
+    candidates: list[AttentionCandidate] = list(_link_state_candidates(db, case_id=case_id, user=user))
     due_soon = now + timedelta(days=DUE_SOON_DAYS)
     assigned = (
         db.query(CaseTask)
