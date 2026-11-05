@@ -349,6 +349,29 @@ def test_the_other_phones_gap_is_a_reason_and_makes_nothing_explained(engine):
     assert counts["one_side_only_in_gap"] == 1
 
 
+def test_the_conversation_with_the_same_people_counts_though_no_message_of_it_matched(engine):
+    """Nothing in this conversation is on both phones, so no strong match links it; the people still name it."""
+    y_talk = [dict(_msg(at(2023, 1, d), "only on the second phone %d" % d, Y_OWNER, [X_OWNER], Y_OWNER), thread="t-yx")
+              for d in (1, 2, 3, 28, 29, 30)]
+    y_talk.append(dict(_msg(at(2023, 1, 15), "another conversation here", "phone:+12025550199", [Y_OWNER], Y_OWNER),
+                       thread="t-other"))
+    x_talk = [dict(_msg(at(2023, 1, 15), "only on the first phone", X_OWNER, [Y_OWNER], X_OWNER), thread="t-xy")]
+    case, _, _, _ = _pair(engine, x_talk, y_talk)
+    with engine.connect() as c:
+        results, counts = R.analyse(c, case, PARAMS)
+    one = [r for r in _of(results, "one_side_only") if r["measures"]["on"] == "C1"]
+    assert [d["code"] for d in one[0]["directions"]["undercuts"]] == ["counterpart_conversation_gap"]
+    assert counts["one_side_only_in_gap"] == 1
+
+
+def test_a_gap_in_a_conversation_with_other_people_is_no_reason():
+    m = {"recipients": frozenset({"a", "b", "c"}), "sender": "a", "family": "whatsapp", "thread": "t"}
+    other = dict(m, recipients=frozenset({"a", "b"}), thread="u")
+    index = R.same_conversations({"msgs": [other]}, {"a": False}, {"b": False})
+    assert ("whatsapp", frozenset()) in index
+    assert index.get(("whatsapp", R.others_in(m, {"a": False}, {"b": False}))) is None
+
+
 def test_a_gap_while_the_app_recorded_nothing_is_no_hole_and_no_reason(engine):
     results, counts = _gap_world(engine, recording_elsewhere=False)
     one = [r for r in _of(results, "one_side_only") if r["measures"]["on"] == "C1"]

@@ -151,8 +151,9 @@ def measure(xml):
         if p:
             m = NUM.search(p)
             word = (p[:m.start()] if m else p).strip(" :") or "<none>"
+            no_word = word == "<none>"
             if not GUARD_RE.match(word):
-                word = "<other>"
+                word = "<none>" if no_word else "<other>"
             if m:
                 v = float(m.group(0))
                 x["num"] = v
@@ -160,7 +161,7 @@ def measure(xml):
                 nums["%s | %s" % (word, s)].append(v)
                 if x["acc"] is not None:
                     both.append((v, x["acc"]))
-                if word == "<none>":
+                if no_word:
                     bare["%s | %s | %s | %s | %s" % (x["parent"], source_word(x["type"], occ2),
                                                      source_word(x["cat"], occ2), "negative" if v < 0 else "positive",
                                                      "position" if x["pos"] else "no position")] += 1

@@ -27,8 +27,8 @@ Decisions (05 section 19, 19.S5-a to 19.S5-g):
 - 19.S5-f Copies of one message on one phone (02's duplicate group) count once: the first record of the group.
 - 19.S5-g The counterpart's gap: the message time, on the other phone's clock where the pair has an established
   offset for the family, lies inside a hole (approach 3's rule, ``conversation_gaps``, at its default threshold) of a
-  conversation linked to this message's by a strong match (the link of 19.S6-c). Read from records, never from a run
-  of approach 3, so neither approach waits on the other. A gap is a reason to look, not an account of the absence, so
+  conversation linked to this message's by a strong match (the link of 19.S6-c) or holding the same people on the same
+  app. Read from records, never from a run of approach 3, so neither approach waits on the other. A gap is a reason to look, not an account of the absence, so
   it does not make a message "explained". Leaving a group before the time stays unbuilt: ChatActivity parties are
   "participant named", 19.S7-b, so who left is not established.
 """
@@ -440,6 +440,21 @@ def _absent_reasons(m, py, start_y):
     return reasons
 
 
+def others_in(m, ox, oy) -> frozenset:
+    """Who else is in the message's conversation, past the two owners: empty for the two owners' own conversation."""
+    return frozenset((m["recipients"] | ({m["sender"]} if m["sender"] else set())) - set(ox) - set(oy))
+
+
+def same_conversations(p, ox, oy) -> dict:
+    """``{(family, others): threads}`` on one phone, so a message finds the conversation with the same people on the
+    other phone although none of its messages matched."""
+    out = defaultdict(set)
+    for m in p["msgs"]:
+        if m["thread"]:
+            out[(m["family"], others_in(m, ox, oy))].add(m["thread"])
+    return out
+
+
 def gap_over(m, threads, holes, shift_s=0.0):
     """The hole of a linked conversation on the other phone that the message time falls in, or None (19.S5-g).
     ``shift_s`` moves the time onto the other phone's clock."""
@@ -539,6 +554,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                                                               (y, x, py, px, oy, ox, res["used_y"]))):
             if not ob:
                 continue
+            theirs = same_conversations(pb, oa, ob)
             for idx, m in enumerate(pa["msgs"]):
                 if idx in used or not between_owners(m, oa, ob):
                     continue
@@ -546,7 +562,8 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                 measures = {"phones": [labels[a], labels[b]], "on": labels[a], "not_on": labels[b],
                             "family": m["family"], "deleted": m["deleted"]}
                 offset = res["offsets"].get(m["family"], {}).get("offset_s") or 0.0
-                hole = gap_over(m, links.get((side, m["thread"]), ()), holes[b], offset if side == 0 else -offset)
+                threads = links.get((side, m["thread"]), set()) | theirs.get((m["family"], others_in(m, oa, ob)), set())
+                hole = gap_over(m, threads, holes[b], offset if side == 0 else -offset)
                 gap = []
                 if hole:
                     counts["one_side_only_in_gap"] += 1
