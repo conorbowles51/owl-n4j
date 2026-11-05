@@ -89,7 +89,6 @@ async function fetchPage(
   evidenceId: string,
   page: number,
   width: number | undefined,
-  session: string | null,
   signal: AbortSignal
 ): Promise<PageImage> {
   const response = await fetch(evidenceAPI.getPageImageUrl(evidenceId, page, width), {
@@ -158,7 +157,7 @@ export function loadPageImage(
       }
     })
     const promise = begun
-      .then(() => fetchPage(evidenceId, page, width, session, controller.signal))
+      .then(() => fetchPage(evidenceId, page, width, controller.signal))
       .then((image) => {
         keep(key, image)
         return image
