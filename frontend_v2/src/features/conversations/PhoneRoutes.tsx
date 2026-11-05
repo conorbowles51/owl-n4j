@@ -27,7 +27,10 @@ export function PhonesIndexPage() {
   const viewId = q.get("view")
   const saved = useQuery({ queryKey: ["phone-view", caseId, viewId], queryFn: () => getSavedView(caseId, viewId!), enabled: !!caseId && !!viewId && !target, retry: false })
   const phones = useQuery({ ...phonesQuery(caseId), enabled: !!caseId && !target })
-  const [comparing, setComparing] = useState(false)
+  // a dossier's "Compare phones" names the two phones and the person (07 J-16)
+  const comparePair = (q.get("compare") ?? "").split(",").filter(Boolean)
+  const comparePerson = q.get("person")
+  const [comparing, setComparing] = useState(comparePair.length === 2)
   if (target) return <Navigate to={target} replace />
   if (saved.data && saved.data.location.startsWith(`/cases/${caseId}/`)) {
     const at = saved.data.location
@@ -56,7 +59,7 @@ export function PhonesIndexPage() {
           </Button>
         </div>
       )}
-      {comparing && phones.data && <ComparePhones caseId={caseId} phones={active} />}
+      {comparing && phones.data && <ComparePhones caseId={caseId} phones={active} first={comparePair[0]} second={comparePair[1]} person={comparePerson} />}
       <ul className="flex flex-col gap-1">
         {active.map((p) => (
           <li key={p.extraction_id}>

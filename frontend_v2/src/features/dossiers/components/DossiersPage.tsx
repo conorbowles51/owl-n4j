@@ -30,6 +30,7 @@ import { cn } from "@/lib/cn"
 import { useDossiers } from "../hooks"
 import { DossierCreateSheet } from "./DossierCreateSheet"
 import { DossierDetailSheet } from "./DossierDetailSheet"
+import { PhoneIdentitiesTab } from "./PhoneIdentitiesTab"
 
 const TYPES = [
   "person",
@@ -50,6 +51,7 @@ export function DossiersPage() {
   const [linkage, setLinkage] = useState("all")
   const [archived, setArchived] = useState(false)
   const selected = searchParams.get("dossier")
+  const tab = searchParams.get("tab") === "phone-identities" ? "phone-identities" : "dossiers"
   const [createOpen, setCreateOpen] = useState(false)
   const caseQuery = useCase(caseId)
   const { canEdit } = useCasePermissions(caseQuery.data)
@@ -67,6 +69,12 @@ export function DossiersPage() {
     const next = new URLSearchParams(searchParams)
     if (dossierId) next.set("dossier", dossierId)
     else next.delete("dossier")
+    setSearchParams(next, { replace: true })
+  }
+  const setTab = (value: "dossiers" | "phone-identities") => {
+    const next = new URLSearchParams(searchParams)
+    if (value === "phone-identities") next.set("tab", value)
+    else next.delete("tab")
     setSearchParams(next, { replace: true })
   }
   if (!caseId) return <EmptyState title="No case selected" />
@@ -91,6 +99,27 @@ export function DossiersPage() {
           ) : null}
         </div>
       </header>
+      <div role="tablist" aria-label="People" className="flex gap-1 border-b border-border bg-card px-4 sm:px-6">
+        {([["dossiers", "Dossiers"], ["phone-identities", "Phone identities"]] as const).map(([value, words]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+            className={cn(
+              "border-b-2 px-3 py-2 text-xs font-medium",
+              tab === value ? "border-brand-500 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {words}
+          </button>
+        ))}
+      </div>
+      {tab === "phone-identities" ? (
+        <PhoneIdentitiesTab caseId={caseId} canEdit={canEdit} onOpenDossier={setSelected} />
+      ) : (
+        <>
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-panel px-4 py-3 sm:px-6">
         <div className="relative min-w-56 flex-1">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -273,6 +302,8 @@ export function DossiersPage() {
           )}
         </div>
       </ScrollArea>
+        </>
+      )}
       <DossierCreateSheet
         key={createOpen ? "open" : "closed"}
         caseId={caseId}

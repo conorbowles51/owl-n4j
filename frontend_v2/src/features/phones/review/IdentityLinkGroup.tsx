@@ -35,7 +35,7 @@ function SuggestionLine({ s }: { s: IdentitySuggestion }) {
   )
 }
 
-export function IdentityLinkGroup({ caseId, identityKey }: { caseId: string; identityKey: string }) {
+export function IdentityLinkGroup({ caseId, identityKey, canEdit = true }: { caseId: string; identityKey: string; canEdit?: boolean }) {
   const client = useQueryClient()
   const detail = useQuery({ queryKey: ["phone-identity", caseId, identityKey], queryFn: () => identitiesAPI.get(caseId, identityKey) })
   const sugg = useQuery({ queryKey: ["phone-identity-suggestions", caseId], queryFn: () => identitiesAPI.suggestions(caseId) })
@@ -59,6 +59,8 @@ export function IdentityLinkGroup({ caseId, identityKey }: { caseId: string; ide
   const refresh = async () => {
     await client.invalidateQueries({ queryKey: ["phone-identity", caseId, identityKey] })
     await client.invalidateQueries({ queryKey: ["phone-identity-suggestions", caseId] })
+    await client.invalidateQueries({ queryKey: ["phone-identities", caseId] })
+    await client.invalidateQueries({ queryKey: ["dossier-phones", caseId] })
   }
   const run = async (body: Parameters<typeof identitiesAPI.decide>[1], words: string) => {
     if (busy) return
@@ -132,6 +134,11 @@ export function IdentityLinkGroup({ caseId, identityKey }: { caseId: string; ide
       )}
       {!d.can_be_a_person ? (
         <p className="text-sm">This is a group, not a person, so it cannot be linked to one.</p>
+      ) : !canEdit ? (
+        <div className="flex flex-col gap-1 text-sm">
+          <p role="status">{d.linked_dossier ? `Linked to ${d.linked_dossier.name ?? "a person"}.` : "Not linked to a person."}</p>
+          <p className="text-muted-foreground">A case admin can change links.</p>
+        </div>
       ) : d.linked_dossier ? (
         <div className="flex flex-col gap-2 text-sm">
           <p role="status">Linked to {d.linked_dossier.name ?? "a person"}.</p>
@@ -172,6 +179,11 @@ export function IdentityLinkGroup({ caseId, identityKey }: { caseId: string; ide
               ))}
               <option value="new">A new person</option>
             </select>
+            {(people.data?.total ?? 0) > (people.data?.dossiers.length ?? 0) && (
+              <span className="text-xs text-muted-foreground">
+                Offering the {fmt(people.data!.dossiers.length)} most recently changed of {fmt(people.data!.total)} dossiers.
+              </span>
+            )}
           </label>
           {target === "new" && (
             <label className="flex flex-col gap-1">

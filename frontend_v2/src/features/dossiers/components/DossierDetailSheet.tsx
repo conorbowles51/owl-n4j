@@ -66,6 +66,7 @@ import {
   SheetDescription,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { OnThePhonesPanel } from "./OnThePhonesPanel"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { NotebookEntityPicker } from "@/features/notebook/components/NotebookEntityPicker"
@@ -812,6 +813,7 @@ export function DossierDetailSheet({
                     })
                   }
                 />
+                <OnThePhonesPanel caseId={caseId} dossierId={dossier.id} canEdit={canEdit} />
                 <section className="space-y-3">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Accepted summaries & comparisons

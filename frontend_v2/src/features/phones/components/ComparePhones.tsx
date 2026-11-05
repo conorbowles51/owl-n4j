@@ -9,12 +9,20 @@ const KIND_WORDS = { message: ["message", "messages"], call: ["call", "calls"] }
  * Compare two phones (07 J-16): one column per phone and the matched records between them, for messages and for
  * calls: on both, only on one (with how many fall outside the other phone's period), only on the other.
  */
-export function ComparePhones({ caseId, phones }: { caseId: string; phones: { extraction_id: string; label: string }[] }) {
-  const [a, setA] = useState(phones[0]?.extraction_id ?? "")
-  const [b, setB] = useState(phones[1]?.extraction_id ?? "")
+export function ComparePhones({ caseId, phones, first, second, person = null }: {
+  caseId: string
+  phones: { extraction_id: string; label: string }[]
+  first?: string
+  second?: string
+  /** One identity: only what each phone holds with this person (07 J-16). */
+  person?: string | null
+}) {
+  const known = (id?: string) => (id && phones.some((p) => p.extraction_id === id) ? id : undefined)
+  const [a, setA] = useState(known(first) ?? phones[0]?.extraction_id ?? "")
+  const [b, setB] = useState(known(second) ?? phones[1]?.extraction_id ?? "")
   const res = useQuery({
-    queryKey: ["phone-compare", caseId, a, b],
-    queryFn: ({ signal }) => comparePhones(caseId, a, b, null, signal),
+    queryKey: ["phone-compare", caseId, a, b, person],
+    queryFn: ({ signal }) => comparePhones(caseId, a, b, person, signal),
     enabled: !!a && !!b && a !== b,
     retry: false,
   })
