@@ -47,5 +47,6 @@ def test_the_register_fields_are_the_ones_the_page_reads():
     import pathlib
     import re
     page = pathlib.Path(__file__).resolve().parents[2] / 'frontend_v2/src/features/financial/hooks/use-statement-register.ts'
-    schema = page.read_text().split('export const statementFile = z.object({', 1)[1].split('\n})', 1)[0]
+    source = page.read_text()
+    schema = re.search(r'export const statementFile = (?:lazySchema\(\(\) => )?z\.object\(\{(.*?)\n\}\)', source, re.S).group(1)
     assert tuple(re.findall(r'^\s+(\w+):', schema, re.M)) == evidence.STATEMENT_REGISTER_FIELDS

@@ -244,11 +244,11 @@ def test_a_lens_with_no_communication_kind_exports_its_other_entries(world):
     assert machine["total"] == 0
 
 
-def test_create_accepts_all_eight_sources_and_refuses_a_selection_source_without_its_selection(world):
+def test_create_accepts_all_nine_sources_and_refuses_a_selection_source_without_its_selection(world):
     from services.phone.exports import jobs
     w = world
     assert set(jobs.BUILT_SOURCES) == {"stream", "timeline_lens", "collection", "finding", "dossier",
-                                       "statement_check", "analysis_result", "incident_window"}
+                                       "statement_check", "analysis_result", "incident_window", "phone_profile"}
     with w["engine"].begin() as c:
         for source in ("collection", "dossier"):
             with pytest.raises(jobs.ExportError, match="exported through the selection of its phone records"):

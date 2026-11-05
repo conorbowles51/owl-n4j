@@ -10,7 +10,7 @@ class PublicTimestampOptInTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output=Path(temporary)/'timestamp'
             result=subprocess.run([sys.executable,str(Path(__file__).resolve().parents[2]/'scripts/check_public_financial_timestamp.py'),
-                '--output',str(output)],capture_output=True,text=True,timeout=180)  # hang guard: the script imports services.financial, 7-9 s alone on the shared box
+                '--output',str(output)],capture_output=True,text=True,timeout=900)  # hang guard: the script imports services.financial, 7-9 s alone, past 180 s at load 40-54
             self.assertEqual(result.returncode,2)
             self.assertIn('Explicit --submit-synthetic is required',result.stderr)
             self.assertFalse(output.exists())

@@ -45,7 +45,7 @@ class ExtractionReleaseTests(unittest.TestCase):
                 '--review-record', str(directory / 'review.json'), '--expected-review-sha256', record['review_record_sha256'],
                 '--baseline', str(directory / 'baseline.json'), '--expected-baseline-sha256', '0'*64 if wrong_pin else digest,
                 '--current', str(directory / 'current.json'), '--output', str(directory / 'result.json')],
-                capture_output=True, text=True, timeout=180)
+                capture_output=True, text=True, timeout=900)
             report = json.loads((directory / 'result.json').read_text()) if (directory / 'result.json').exists() else None
             return result, report
 
