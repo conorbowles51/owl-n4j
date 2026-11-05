@@ -153,11 +153,12 @@ class LedgerSnapshotTests(_test_financial_ledger_summary.LedgerSummaryTests):
         case_id=self.case.id
         with patch.object(router,'capture_ledger_export',return_value=LedgerExport(self.capture(),'{}')) as call, patch.object(router,'record_prepared_export',return_value=dict(export_id='synthetic',entry_sha256='a'*64,sequence=1)) as audited:
             response=router.download_ledger_export(case_id,None,None,None,self.db)
-            call.assert_called_once_with(self.db.get_bind(),case_id=case_id,account_id=None,account_ids=None,account_holders=None,start_date=None,end_date=None,privilege_marking="unmarked",generated_by=None)
+            call.assert_called_once_with(self.db.get_bind(),case_id=case_id,account_id=None,account_ids=None,account_holders=None,start_date=None,end_date=None,privilege_marking="unmarked",packet_records=True,generated_by=None)
             self.assertEqual(response.headers['content-type'],'application/zip')
             self.assertEqual(response.headers['x-loupe-case-id'],str(case_id))
             self.assertEqual(response.headers['cache-control'],'no-store')
             self.assertEqual(response.headers['x-loupe-export-event-sha256'],'a'*64)
+            self.assertEqual(json.loads(response.headers['x-loupe-expert-packet'])['completeness'],'incomplete_expert_packet')
             self.assertEqual(audited.call_args.kwargs['content'],response.body)
         with patch.object(router,'capture_ledger_export',side_effect=RuntimeError('private')):
             with self.assertRaises(HTTPException) as caught:router.download_ledger_export(case_id,None,None,None,self.db)

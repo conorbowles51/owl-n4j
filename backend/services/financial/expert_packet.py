@@ -91,7 +91,9 @@ def capture_decision_coverage(session, *, case_id, scopes, decisions, readings):
                    if (source or {}).get('source') in ('investigator', 'model_reading')]
         if reasons or reading.get('investigation_label_history') or row.get('superseded_by_id'):
             changed += 1
-            if row['key'] not in decided and row.get('source_document_id') not in documents:
+            # A replaced row can be replaced by a decision on its whole statement; a name or reading needs its own.
+            whole_statement = bool(row.get('superseded_by_id')) and not reasons and row.get('source_document_id') in documents
+            if row['key'] not in decided and not whole_statement:
                 unexplained.append(dict(transaction_id=row['key'], fields=reasons,
                                         superseded=bool(row.get('superseded_by_id'))))
     return dict(schema_version='loupe.financial.decision_coverage/1',

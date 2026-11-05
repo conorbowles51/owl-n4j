@@ -339,10 +339,10 @@ class CapturedRecordsTests(unittest.TestCase):
         self.assertNotIn('private', json.dumps(processing))
 
     def test_the_layout_comes_from_the_saved_reading(self):
-        self.doc.metadata_ = dict(statement_import_statement_id='s', statement_import_original=dict(
-            statement_choices=[dict(id='s', layout_id='capital-one-card')]))
-        self.f.db.commit()
-        self.assertEqual(self.captured()['processing_provenance']['readers'][0]['layout_id'], 'capital-one-card')
+        reading = SimpleNamespace(metadata_=dict(statement_import_statement_id='s', statement_import_original=dict(
+            statement_choices=[dict(id='s', layout_id='capital-one-card')])))
+        self.assertEqual(expert_packet._reader(reading), dict(layout_id='capital-one-card'))
+        self.assertEqual(expert_packet._reader(SimpleNamespace(metadata_={})), dict(layout_id=None))
 
     def test_the_default_capture_has_no_packet_records_so_a_trace_fingerprint_survives_audit_writes(self):
         """Tracing compares this fingerprint between two reads; the audit head moves with any write in the case."""
