@@ -694,23 +694,26 @@ def test_a_backend_in_a_tree_keeps_its_data_paths(tmp_path):
     assert answer == [str(checkout / 'evidence-data'), str(checkout), str(tree)]
 
 
-def _with_work_hook(project, clears_jobs=True):
+def _with_work_hook(project, clears_jobs=True, migrations=None):
     """The host's script named in deploy/logs/.release-work-hook, standing in for headless/release-work.sh."""
     hook = project / 'commands/work-hook'
     clear = '''
-if [ "$1" = pause ]; then "%s" -c "import sqlite3, os; c = sqlite3.connect(os.environ['GATE_DATABASE']); c.execute('update jobs set paused=1'); c.commit()"; fi
+if [ "$1" = pause-uploads ]; then "%s" -c "import sqlite3, os; c = sqlite3.connect(os.environ['GATE_DATABASE']); c.execute('update jobs set paused=1'); c.commit()"; fi
 ''' % sys.executable if clears_jobs else ''
     hook.write_text('#!/bin/bash\necho "\\"hook $1\\"" >> "$RELEASE_SANDBOX/events"' + clear + '\n')
     hook.chmod(0o755)
     (project / 'deploy/logs/.release-work-hook').write_text(f'{hook}\n')
+    if migrations:
+        (project / 'deploy/migration_safety.py').write_text(f'print({migrations!r})\n')
 
 
 def test_running_work_is_paused_only_for_the_step_that_replaces_services(release_sandbox):
     """5 Nov 07:53-17:12: uploads held 7 of 9 h 19 min, because the pause came before the build."""
-    _with_work_hook(release_sandbox)
+    _with_work_hook(release_sandbox, migrations='additive 1')
     result, events = run_release(release_sandbox, 'deploy.sh', initially_active=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    pause = events.index('hook pause')
+    imports = events.index('hook pause-imports')
+    uploads = events.index('hook pause-uploads')
     resume = events.index('hook resume')
     build = next(i for i, event in enumerate(events) if event.startswith('docker compose build'))
     frontend = next(i for i, event in enumerate(events) if event.startswith('npm '))
@@ -718,17 +721,25 @@ def test_running_work_is_paused_only_for_the_step_that_replaces_services(release
     refresh = next(i for i, event in enumerate(events) if event.startswith('docker compose up'))
     restart = next(i for i, event in enumerate(events) if event.startswith('systemctl') and 'owl-backend-v2' in event
                    and any(word in event for word in (' restart ', ' start ')))
-    assert frontend < pause and build < pause
-    assert pause < migrate < refresh < restart < resume
+    assert frontend < imports and build < imports
+    assert imports < migrate < uploads < refresh < restart < resume
     assert events.count('hook resume') == 1
 
 
+def test_uploads_stop_before_a_migration_the_old_backend_cannot_run_beside(release_sandbox):
+    _with_work_hook(release_sandbox, migrations='unsafe 20261105_x: drops a column')
+    result, events = run_release(release_sandbox, 'deploy.sh', initially_active=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert events.index('hook pause-uploads') < next(i for i, event in enumerate(events) if event.startswith('alembic'))
+    assert sum(event.startswith('alembic') for event in events) == 1
+
+
 def test_a_failed_gate_after_the_pause_still_resumes(release_sandbox):
-    _with_work_hook(release_sandbox, clears_jobs=False)
+    _with_work_hook(release_sandbox, clears_jobs=False, migrations='none')
     result, events = run_release(release_sandbox, 'deploy.sh', initially_active=True)
     assert result.returncode == 75
-    assert events.index('hook pause') < events.index('hook resume')
-    assert not any(event.startswith(('alembic', 'docker compose up')) for event in events)
+    assert events.index('hook pause-uploads') < events.index('hook resume')
+    assert not any(event.startswith('docker compose up') for event in events)
 
 
 def test_without_the_hook_every_gate_applies_from_the_start(release_sandbox):

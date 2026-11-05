@@ -217,12 +217,13 @@ Set `PLATFORM_UPDATE_POLL_SECONDS=3600` later if you want hourly checks.
 Work is paused only for the part of a release that replaces services. Everything else happens beside them: staging the tree,
 packages, the prepare, the frontend build, the image build.
 
-- `deploy.sh` reads a host script's path from `deploy/logs/.release-work-hook` (outside the repository). `<hook> pause` runs after
-  the last build and before the first gate that needs the work idle; `<hook> resume` runs as soon as the release is healthy,
-  before anything is tidied, and on every exit. Without that file every gate applies from the start of `deploy.sh`, and whoever
-  runs it must pause first.
-- On this host the hook pauses imports and engine jobs first, lets the work in hand finish (20-minute cap each) with uploads still
-  running, and pauses uploads last. It resumes uploads first. A hold keeps pausing work that starts during the swap.
+- `deploy.sh` reads a host script's path from `deploy/logs/.release-work-hook` (outside the repository). `<hook> pause-imports`
+  runs after the last build. `<hook> pause-uploads` runs before the gate that needs uploads stopped, after any additive migrations
+  and their prepare (`deploy/migration_safety.py`: old code keeps working beside them); any other migration waits for uploads to
+  stop. `<hook> resume` runs as soon as the release is healthy, before anything is tidied, and on every exit. Without that file
+  every gate applies from the start of `deploy.sh`, and whoever runs it must pause first.
+- On this host the hook lets the work in hand finish (20-minute cap each) with uploads still running. It resumes uploads first. A
+  hold keeps pausing work that starts during the swap.
 - With the hook, gates before the pause pass without looking; after it each gate tries 3 times, 5 s apart.
 - A release takes a systemd scope of its own, so a release started by a job is not held by the jobs' memory limit.
 - Every step in a deploy log carries its UTC time.

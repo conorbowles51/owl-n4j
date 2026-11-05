@@ -68,8 +68,9 @@ mkdir -p "${LOG_DIR}"
 
 # Running work (imports, engine jobs, uploads) is paused only for the phase that replaces services (lx-releasehold; 5 Nov:
 # 7 h of 9 h 19 held for a whole release). This host's script, named in .release-work-hook outside the repo, does it:
-# "<hook> pause" right before the first step that needs the work idle, "<hook> resume" as soon as the release is healthy
-# or has ended. No file: whoever runs this script pauses before it, and every gate applies from the start.
+# "<hook> pause-imports" when everything that can be built beside the running services is built, "<hook> pause-uploads"
+# right before the first step that needs uploads stopped, "<hook> resume" as soon as the release is healthy or has ended.
+# No file: whoever runs this script pauses before it, and every gate applies from the start.
 RELEASE_WORK_HOOK="$(cat "${LOG_DIR}/.release-work-hook" 2>/dev/null || true)"
 [ -x "${RELEASE_WORK_HOOK}" ] || RELEASE_WORK_HOOK=""
 RELEASE_WORK_PAUSED=false
@@ -182,13 +183,13 @@ write_deploy_summary() {
         frontend_switch_at="${FRONTEND_SWITCH_AT:-}" healthy_at="${HEALTHY_AT:-}" log_file="${LOG_FILE}" \
         2>&1 | tee -a "${LOG_FILE}" || true
 }
-release_work_pause() {
-    [ -n "${RELEASE_WORK_HOOK}" ] && [ "${RELEASE_TOUCHES_BACKEND}" != false ] && [ "${RELEASE_WORK_PAUSED}" = false ] || return 0
-    RELEASE_WORK_PAUSED=true
-    "${RELEASE_WORK_HOOK}" pause || warn "Pausing running work did not finish; the ingestion gate decides"
+release_work_pause() {  # imports | uploads
+    [ -n "${RELEASE_WORK_HOOK}" ] && [ "${RELEASE_TOUCHES_BACKEND}" != false ] || return 0
+    if [ "$1" = imports ]; then RELEASE_WORK_PAUSED=imports; else RELEASE_WORK_PAUSED=all; fi
+    "${RELEASE_WORK_HOOK}" "pause-$1" || warn "Pausing $1 did not finish; the ingestion gate decides"
 }
 release_work_resume() {
-    [ "${RELEASE_WORK_PAUSED}" = true ] || return 0
+    [ "${RELEASE_WORK_PAUSED}" != false ] || return 0
     RELEASE_WORK_PAUSED=false
     "${RELEASE_WORK_HOOK}" resume || warn "Resuming paused work did not finish; the release script resumes it"
 }
@@ -315,7 +316,7 @@ ingestion_gate() {
         check_ingestion_idle
         return
     fi
-    [ "${RELEASE_WORK_PAUSED}" = true ] || return 0
+    [ "${RELEASE_WORK_PAUSED}" = all ] || return 0
     # Work that started in the seconds before the hook's hold caught it is paused on its next pass.
     while [ "${tries}" -gt 0 ]; do
         rc=0
@@ -473,27 +474,28 @@ if [ "${STEP_ENGINE}" = run ]; then
     $(release_build_scope) docker compose build
 fi
 
-# Everything that can be done beside the running services is done. From here to the health check they are replaced.
-step "Pausing running work: imports and engine jobs, then uploads"
-release_work_pause
+# Everything that can be done beside the running services is done. Imports and engine jobs stop here; uploads last.
+step "Pausing imports and engine jobs; uploads keep running"
+release_work_pause imports
 
-step "Checking ingestion before migrations and service replacement"
-ingestion_gate
-
-# Whether the old backend may stay up beside the new schema decides how this release replaces it; read before the
-# migrations run (deploy/migration_safety.py).
+# Whether the old backend may stay up beside the new schema decides how this release replaces it and, with the hook,
+# whether uploads may run on through the migrations; read before the migrations run (deploy/migration_safety.py).
 BACKEND_REPLACE=restart
-if [ "${STEP_BACKEND}" = run ] && [ "$(backend_handover_wanted)" = handover ]; then
+MIGRATION_VERDICT=""
+if [ "${STEP_BACKEND}" = run ] && { [ -n "${RELEASE_WORK_HOOK}" ] || [ "$(backend_handover_wanted)" = handover ]; }; then
     MIGRATION_VERDICT="$(cd "${BACKEND_DIR}" && $RUN_AS env PYTHONPATH=. "${VENV_DIR}/bin/python" ../deploy/migration_safety.py 2>&1 | tail -1 || true)"
     case "${MIGRATION_VERDICT}" in
         none|additive*)
-            BACKEND_REPLACE=handover
-            success "Pending migrations: ${MIGRATION_VERDICT}; the old backend can stay up beside them" ;;
-        *) warn "This release replaces the backend by a restart: ${MIGRATION_VERDICT}" ;;
+            if [ "$(backend_handover_wanted)" = handover ]; then
+                BACKEND_REPLACE=handover
+                success "Pending migrations: ${MIGRATION_VERDICT}; the old backend can stay up beside them"
+            fi ;;
+        *) warn "Pending migrations: ${MIGRATION_VERDICT}; this release replaces the backend by a restart" ;;
     esac
 fi
 
-if [ "${STEP_BACKEND}" = run ]; then
+MIGRATED=false
+run_migrations() {
     step "Running database migrations"
     cd "${BACKEND_DIR}"
     $RUN_AS "${VENV_DIR}/bin/alembic" upgrade head
@@ -503,8 +505,24 @@ if [ "${STEP_BACKEND}" = run ]; then
         python3 "${PREPARE_VIEWS}" after-migrations || warn "Financial view prepare after migrations failed; release continues"
     fi
     cd "${PROJECT_DIR}"
-else
+    MIGRATED=true
+}
+# The old backend's writes all still succeed beside additive migrations, so uploads go on through them and their prepare
+# (up to 10 minutes; 9 of the 12 backend releases of 5 Nov up to 10:08 migrated).
+if [ -n "${RELEASE_WORK_HOOK}" ] && [ "${STEP_BACKEND}" = run ]; then
+    case "${MIGRATION_VERDICT}" in none|additive*) run_migrations ;; esac
+fi
+
+step "Pausing uploads"
+release_work_pause uploads
+
+step "Checking ingestion before migrations and service replacement"
+ingestion_gate
+
+if [ "${STEP_BACKEND}" != run ]; then
     success "Backend unchanged; migrations skipped"
+elif [ "${MIGRATED}" != true ]; then
+    run_migrations
 fi
 
 if [ "${STEP_ENGINE}" = run ]; then
