@@ -1,3 +1,4 @@
+import { opensWholeCaseRun } from "../lib/whole-case-run"
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { QueryClientContext } from "@tanstack/react-query"
 import { queryClient } from "@/lib/query-client"
@@ -197,7 +198,7 @@ function ViewLoadProgress({ caseId, page, opened, work }: { caseId: string; page
   }, [open, since, workDone, opened])
 
   const { now, fraction, movedAt } = clock
-  const reads = requestsSince(since)
+  const reads = requestsSince(since).filter((read) => !opensWholeCaseRun(read.failed))
   const elapsed = now - since
   const view = withWork(picture(reads), work)
   const failures = view.failed

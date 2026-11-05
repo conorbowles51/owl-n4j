@@ -22,7 +22,7 @@ from services.financial.ledger_tracing import TraceAttributionInput, _exact_json
 from services.financial.ledger_transfers import TransferPairChoice, ledger_transfer_candidates
 from services.financial.network_tracing import NetworkOpening, network_results
 from services.financial.ledger_snapshot import view_capture, snapshot_matches
-from services.financial.tracing import Doctrine
+from services.financial.tracing import Doctrine, TracingError
 
 MAX_STEPS = 25
 DEFAULT_STEPS = 3
@@ -155,8 +155,11 @@ def trace_walk(capture, request):
     scoped = {key: row for key, row in rows.items() if row['account_id'] in accounts}
     ordered, moved = movement_order(request, scoped, followed)
     positions = {key: i for i, key in enumerate(ordered)}
-    results = network_results(request, rows=scoped, accounts=accounts, openings=openings, ordered=ordered, positions=positions, links=followed,
-                              backward_pairs=[], account_order=[], roots=roots, root_totals=root_totals)
+    try:
+        results = network_results(request, rows=scoped, accounts=accounts, openings=openings, ordered=ordered, positions=positions, links=followed,
+                                  backward_pairs=[], account_order=[], roots=roots, root_totals=root_totals)
+    except TracingError as error:
+        raise LedgerSummaryError(str(error)) from error
     labels = {row['account_id']: row.get('account_label') for row in scoped.values()}
     stops = {}
     for method, outcome in results.items():

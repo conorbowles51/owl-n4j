@@ -167,8 +167,7 @@ def start_run(engine, *, kind, case_id, params):
         _write_state(directory, state)
         backend = Path(__file__).resolve().parents[2]
         child = subprocess.Popen([sys.executable, '-m', 'services.financial.whole_case_runs', '--run', identifier,
-                                  '--parent', str(os.getpid())], cwd=str(backend), stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL)
+                                  '--parent', str(os.getpid())], cwd=str(backend), stdout=subprocess.DEVNULL)
         # A short-lived thread collects the exit, so a finished child leaves no zombie behind.
         threading.Thread(target=child.wait, name='whole-case-wait', daemon=True).start()
         state['pid'] = child.pid
@@ -499,7 +498,8 @@ def compute_patterns(capture, params, run):
 
 def compute_trace(capture, params, run):
     from services.financial.trace_walk import trace_walk
-    summary, report = trace_walk(capture, params)
+    request = {key: value for key, value in params.items() if key not in ('case_id', 'run_id')}
+    summary, report = trace_walk(capture, request)
     return summary, dict(files={'trace-report.json': report})
 
 

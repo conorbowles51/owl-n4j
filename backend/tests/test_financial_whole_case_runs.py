@@ -282,6 +282,14 @@ class TraceWalk(_network.NetworkTracingTests):
         self.assertFalse(further['stopped'])
         self.assertEqual(further['methods']['first_in_first_out']['claims'], self.fifo_claims(export, request))
 
+    def test_a_claim_larger_than_its_payment_is_refused_in_words(self):
+        from services.financial.ledger_summary import LedgerSummaryError
+        from services.financial.trace_walk import trace_walk
+        export, request, _ = self.network()
+        over = [{**a, 'amount_minor': '999999999'} for a in request['attributions']]
+        with self.assertRaisesRegex(LedgerSummaryError, 'cannot be traceable to more'):
+            trace_walk(export, self.walk_request(request, attributions=over))
+
     def fifo_claims(self, export, request):
         from services.financial.network_tracing import evaluate_network_trace
         return json.loads(evaluate_network_trace(export, request)['scenario_json'])['results']['first_in_first_out']['claims']
@@ -315,6 +323,19 @@ class TraceWalk(_network.NetworkTracingTests):
             trace_walk(export, self.walk_request(request, pairs=request['pairs'] * 2))
         with self.assertRaises(LedgerSummaryError):
             trace_walk(export, self.walk_request(request, expected_snapshot_sha256='0' * 64))
+
+
+class ComputeTraceRequest(TestCase):
+    def test_the_run_ids_do_not_reach_the_trace_input(self):
+        from services.financial.trace_walk import TraceWalkInput
+        request = dict(expected_snapshot_sha256='0' * 64, population='working', tolerance_days=3, currency='USD', order_basis='Recorded.',
+                       doctrines=['lowest_intermediate_balance'], attributions=[dict(transaction_id=str(uuid4()), claim_id='claim', amount_minor='100', basis='Check.')])
+        def walk(capture, given):
+            TraceWalkInput.model_validate(given)
+            return dict(ok=True), b'{}'
+        with patch('services.financial.trace_walk.trace_walk', walk):
+            summary, sections = W.compute_trace(None, {**request, 'case_id': 'case', 'run_id': 'a' * 32}, None)
+        self.assertEqual(summary, dict(ok=True))
 
 
 class NumberedPdfParts(TestCase):

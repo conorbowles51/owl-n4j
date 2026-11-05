@@ -64,7 +64,7 @@ export function isPdfSizeRefusal(message: string | undefined) {
 
 /** A trace or account comparison above one answer's size. */
 export function isTraceSizeRefusal(message: string | undefined) {
-  return /Tracing requires between 1 and 1000|Cross-account tracing needs 1/i.test(message ?? "") || isSizeRefusal(message)
+  return /Tracing requires between 1 and 1000|Cross-account tracing needs 1|complete ledger record exceeds/i.test(message ?? "") || isSizeRefusal(message)
 }
 
 function runUrl(id: string, caseId: string, rest = "") {
@@ -191,4 +191,9 @@ export async function verifyWholeCaseScenario(
   )
     throw Error("Transfer report does not match the selected scope and assumptions.")
   return raw
+}
+
+/** A refusal the page answers with a stored run: the size of one answer, not a failed read. */
+export function opensWholeCaseRun(message: string | null) {
+  return !!message && (isSizeRefusal(message) || isPdfSizeRefusal(message) || isTraceSizeRefusal(message))
 }
