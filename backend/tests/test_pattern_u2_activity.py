@@ -552,6 +552,55 @@ def _app_usage(top, active):
 
 
 @needs_template
+def _party(ordinal, name, *, owner=None):
+    f = [fld("Identifier", ("String", name)), fld("Role", ("PartyRole", "To"))]
+    if owner is not None:
+        f.append(fld("IsPhoneOwner", ("Boolean", "True" if owner else "False")))
+    return model("Party", f)
+
+
+def _mail(top, folder, status=None, *, sender_owner=None, to_owner=None):
+    """A mail with its From and To parties, as the reports write them (one modelField, one multiModelField)."""
+    f = [fld("TimeStamp", ("TimeStamp", "2023-03-14T15:07:12-04:00"))]
+    if folder:
+        f.append(fld("Folder", ("String", folder)))
+    if status:
+        f.append(fld("Status", ("MessageStatus", status)))
+    f += [refs("From", top + 1, kind="modelField"), refs("To", top + 2)]
+    return ([(top, None, top, model("Email", f)), (top + 1, top, top, _party(top + 1, "a@example.test", owner=sender_owner)),
+             (top + 2, top, top, _party(top + 2, "b@example.test", owner=to_owner))],
+            [ts(top, "0.0", "TimeStamp", "Email")])
+
+
+def test_mail_direction_reads_the_owner_mark_on_either_side_then_status_then_folder(hooks):
+    """04 decision 54, from followups m11050526143420. On the old code every one of these reads unknown except the two
+    with a From mark: on the reference phones no From party states the mark, the To party does."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [_mail(0, "Weekly", sender_owner=True), _mail(3, "Weekly", sender_owner=False),
+                                  _mail(6, "Inbox, Updates", to_owner=True), _mail(9, "Weekly", "Sent", to_owner=True),
+                                  _mail(12, "Inbox, Promos"), _mail(15, "Outbox"), _mail(18, "Weekly")])
+        run(engine, ext)
+        with engine.connect() as c:
+            rows = c.execute(text(
+                "SELECT ordinal, direction, direction_basis FROM phone_comm_events WHERE extraction_id = :e AND kind = "
+                "'email' ORDER BY ordinal"), {"e": ext}).fetchall()
+            implied = dict(c.execute(text(
+                "SELECT ordinal, implied_role FROM phone_participations WHERE extraction_id = :e AND role = "
+                "'owner_implicit'"), {"e": ext}).fetchall())
+            ev = events(c, ext)
+    assert [tuple(r)[1:] for r in rows] == [("outgoing", "sender_owner_flag"), ("incoming", "sender_owner_flag"),
+                                            ("incoming", "recipient_owner_flag"), ("outgoing", "status_field"),
+                                            ("incoming", "folder_name"), ("outgoing", "folder_name"), ("unknown", None)]
+    assert implied[12] == "recipient" and implied[15] == "sender" and implied[18] is None  # the owner side follows
+    cls = {k[2]: v.activity_class for k, v in ev.items()}
+    assert cls[0] == cls[9] == cls[15] == "interaction"  # an owner mail in an unusual folder used to read passive
+    assert cls[3] == cls[6] == cls[12] == "passive"
+
+
 def test_sent_mail_and_app_use_count_as_use_and_mail_in_the_inbox_does_not(hooks):
     """04 sections 3.2 and M2. Fails on the old code: every Email and ApplicationUsage fell to default_unknown."""
     setup(hooks)
@@ -566,11 +615,11 @@ def test_sent_mail_and_app_use_count_as_use_and_mail_in_the_inbox_does_not(hooks
             ev = events(c, ext)
         got = {k[2]: (v.activity_class, v.actor, v.strength, v.activity_mapping_row.rsplit("/", 1)[1] if v.activity_mapping_row else None)
                for k, v in ev.items()}
-    assert got[0] == ("interaction", "owner", "strong", "email-sent")
-    assert got[1] == ("passive", "owner", "none", "email-other-folders")
-    assert got[2] == ("interaction", "owner", "strong", "email-composed")
+    assert got[0] == ("interaction", "owner", "strong", "email-outgoing")
+    assert got[1] == ("passive", "owner", "none", "email-incoming")
+    assert got[2] == ("interaction", "owner", "strong", "email-outgoing")
     assert got[3][0] == "unknown" and got[3][3] == "email-nofolder"
-    assert got[4] == ("interaction", "owner", "none", "email-composed")  # a draft's time is not established
+    assert got[4] == ("interaction", "owner", "none", "email-outgoing")  # a draft's time is not established
     assert got[5] == ("interaction", "owner", "weak", "appusage-summary-active")  # a summary period, so weak
     assert got[6] == ("unknown", "unknown", "none", None)
     assert len(ev) == 7  # EndTime is the end of the StartTime event, not an event of its own

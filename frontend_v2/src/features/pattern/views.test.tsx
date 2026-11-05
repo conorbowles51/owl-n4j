@@ -60,6 +60,16 @@ describe("Places over time", () => {
     expect(screen.getByText("Investigative location, not cell-site opinion.")).toBeTruthy()
   })
 
+  it("labels a harvested position plainly and leaves it out of the trajectory", async () => {
+    const harvested = { ...body.observations[0], id: 3, kind: "harvested", source_kind: "harvested", radius_m: null, radius_basis: "precision_value" }
+    vi.spyOn(patternAPI, "places").mockResolvedValue({ ...body, returned: 3, next_cursor: null, observations: [...body.observations, harvested] })
+    vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
+    vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: 2, days_scored: 30, label: "x", flagged: [] })
+    wrap(<PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" />)
+    expect(await screen.findByText(/1 dot is the position of a network or tower the phone heard, not the phone's own position/)).toBeTruthy()
+    expect(screen.getByText("A network or tower the phone heard, not the phone's position")).toBeTruthy()
+  })
+
   it("asks the server for the chosen window", async () => {
     const places = vi.spyOn(patternAPI, "places").mockResolvedValue(body)
     vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)

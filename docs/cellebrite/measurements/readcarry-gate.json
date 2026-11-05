@@ -1,0 +1,281 @@
+{
+ "measure": "cb-readcarry gate, pol_readcarry_gate.py",
+ "reports": {
+  "P01": {
+   "email": {
+    "location_other": 1220
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P02": {
+   "email": {
+    "after:incoming": 106,
+    "after:unknown": 2,
+    "basis:None": 2,
+    "basis:recipient_owner_flag": 106,
+    "before:unknown": 108,
+    "location_other": 6,
+    "total": 108
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P03": {
+   "email": {
+    "after:incoming": 74,
+    "basis:sender_owner_flag": 74,
+    "before:incoming": 74,
+    "location_other": 462,
+    "location_other_with_gps_accuracy": 3,
+    "total": 74
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 1,
+    "points_before": 1
+   }
+  },
+  "P04": {
+   "email": {
+    "after:incoming": 7248,
+    "after:outgoing": 5,
+    "basis:sender_owner_flag": 7253,
+    "before:incoming": 7248,
+    "before:outgoing": 5,
+    "location_harvested": 23838,
+    "location_other": 16246,
+    "location_other_with_gps_accuracy": 13255,
+    "total": 7253
+   },
+   "stays": {
+    "after": 73,
+    "before": 73,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 10863,
+    "points_before": 10863
+   }
+  },
+  "P05": {
+   "email": {
+    "after:incoming": 403,
+    "after:outgoing": 5,
+    "basis:folder_name": 18,
+    "basis:recipient_owner_flag": 385,
+    "basis:sender_owner_flag": 5,
+    "before:outgoing": 5,
+    "before:unknown": 403,
+    "location_other": 81,
+    "total": 408
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P06": {
+   "email": {
+    "after:incoming": 293,
+    "after:unknown": 1,
+    "basis:None": 1,
+    "basis:folder_name": 54,
+    "basis:recipient_owner_flag": 239,
+    "before:unknown": 294,
+    "location_other": 21,
+    "total": 294
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P07": {
+   "email": {
+    "after:incoming": 200,
+    "after:unknown": 1,
+    "basis:None": 1,
+    "basis:folder_name": 12,
+    "basis:recipient_owner_flag": 188,
+    "before:unknown": 201,
+    "location_other": 461,
+    "total": 201
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P08": {
+   "email": {
+    "after:incoming": 470,
+    "after:outgoing": 6,
+    "basis:folder_name": 18,
+    "basis:recipient_owner_flag": 453,
+    "basis:sender_owner_flag": 5,
+    "before:outgoing": 5,
+    "before:unknown": 471,
+    "location_other": 7,
+    "total": 476
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P09": {
+   "email": {
+    "after:incoming": 2,
+    "basis:recipient_owner_flag": 2,
+    "before:unknown": 2,
+    "total": 2
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P10": {
+   "email": {
+    "after:incoming": 10866,
+    "after:outgoing": 19,
+    "after:unknown": 5,
+    "basis:None": 5,
+    "basis:folder_name": 7,
+    "basis:recipient_owner_flag": 2,
+    "basis:sender_owner_flag": 10876,
+    "before:incoming": 10857,
+    "before:outgoing": 19,
+    "before:unknown": 14,
+    "total": 10890
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P11": {
+   "email": {
+    "after:incoming": 5485,
+    "after:outgoing": 16,
+    "after:unknown": 91,
+    "basis:None": 91,
+    "basis:folder_name": 101,
+    "basis:recipient_owner_flag": 1116,
+    "basis:sender_owner_flag": 4284,
+    "before:incoming": 4268,
+    "before:outgoing": 16,
+    "before:unknown": 1308,
+    "location_other": 120,
+    "location_other_with_gps_accuracy": 9,
+    "total": 5592
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 8,
+    "points_before": 8
+   }
+  },
+  "P12": {
+   "email": {
+    "location_other": 45
+   },
+   "stays": {
+    "after": 0,
+    "before": 0,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 0,
+    "points_before": 0
+   }
+  },
+  "P13": {
+   "email": {
+    "after:incoming": 383,
+    "after:outgoing": 4,
+    "after:unknown": 5,
+    "basis:None": 5,
+    "basis:sender_owner_flag": 387,
+    "before:incoming": 383,
+    "before:outgoing": 4,
+    "before:unknown": 5,
+    "location_other": 2846,
+    "location_other_with_gps_accuracy": 2608,
+    "total": 392
+   },
+   "stays": {
+    "after": 14,
+    "before": 14,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 1618,
+    "points_before": 1618
+   }
+  },
+  "P14": {
+   "email": {
+    "after:incoming": 21,
+    "after:outgoing": 3,
+    "after:unknown": 13,
+    "basis:None": 13,
+    "basis:sender_owner_flag": 24,
+    "before:incoming": 21,
+    "before:outgoing": 3,
+    "before:unknown": 13,
+    "location_other": 12865,
+    "location_other_with_gps_accuracy": 12728,
+    "total": 37
+   },
+   "stays": {
+    "after": 28,
+    "before": 28,
+    "lost": 0,
+    "lost_with_gps": 0,
+    "points_after": 11995,
+    "points_before": 11995
+   }
+  }
+ }
+}

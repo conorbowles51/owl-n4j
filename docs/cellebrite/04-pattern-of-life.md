@@ -703,6 +703,7 @@ a claim about intent or plans, never about presence.
 | Location with Confidence | Int32 on 24,054 records, 5 phones | not used for radius until M5 shows its scale | not established | shown beside the point |
 | Location, no accuracy | the rest | null | | shown as a point with "accuracy not stated"; compared only under an assumed radius chosen in the analysis and printed with every result (8.4) |
 | Location Type `Searched` | C3 7, C8 4, C9 6 (POL-S) | as above | | kind `searched` |
+| Location Type `Harvested` | 24,048 on the 14 reports, 23,988 on P04 (`measurements/m5-precision.json`) | as above; a bare number gives none (15) | decision 53 | kind `harvested`: a network or tower the phone heard, never presence |
 | Location Category `Media Locations` | C3 21, C8 30 (POL-S) | null unless the media carries a positioning error | | kind `media`; presence only if the media was taken on this device (camera make and model match the extraction device, or the file is in the device camera folder); else `declared`-like `received_media` and excluded from presence |
 | WirelessNetwork with Position Coordinate | C8 3 (POL-N); P04 likely most of its 24,390 (M5) | 2 × accuracy if present; else 100 m | a WiFi position fix | `wifi_position` |
 | WiFi BSSID without position | BSSId on 25,484 values, 7 phones | case-derived anchor (6.3) | | never SSID |
@@ -1920,9 +1921,9 @@ Each is a decision with its reasoning and what would reverse it.
     live 2485efd1.
 
 51. **Sent mail, drafts and app use count as phone use, from M2 (3.2, 2.3).** Activity strength version 3 and
-    timestamp meaning version 2. Email is classified by Status first, because Status Sent or Unsent marks the owner's
-    mail whatever the folder is called, and a stored Email's direction is `unknown` (328 of 328 live, the Email type
-    mapping names no owner flag); a Status-less Outbox or
+    timestamp meaning version 2. An Email whose direction is known is classified by it (decision 54). When it is not,
+    Status comes first, because Status Sent or Unsent marks the owner's
+    mail whatever the folder is called; a Status-less Outbox or
     draft folder is composed by the owner; every other folder is passive; a record with no Folder and a Status that
     says nothing, or a Recents entry, is `unknown`. A draft's time is `unknown`, so a draft is listed as context and never undercuts or
     supports a statement at a time. An ApplicationUsage period is a whole number of hours, so it is a summary and
@@ -1943,6 +1944,25 @@ Each is a decision with its reasoning and what would reverse it.
     sends `assumed_radius_m` and `max_speed_mps` from the screen (144 km/h by default, 900 km/h for air travel) and
     states the values the run used. No agent tool edits claims. *Reverse if* a contact statement must name several
     identities at once (the field already holds a list), or the allowances should live on the case.
+
+53. **A Harvested position is not the phone (6.2).** `Location` records with `Type = Harvested` are the positions of
+    Wireless Networks and Cell Towers the phone heard, not of the phone: against a GPS fix of at most 20 m within 15 s
+    they lie a median 192 m away (2,191 pairs on P04, `measurements/m5-precision.json`). They take kind and source
+    `harvested`, with no presence basis, and enter no stay, routine, Together, statement check or WiFi anchor. They stay
+    on the Places map and list with the words "A network or tower the phone heard, not the phone's position", and
+    the map's note counts them. `PLACES_VERSION` 3 rebuilds each phone through the projection. Measured on the 14
+    reports with `pol_readcarry_gate.py`: see `measurements/readcarry-gate.json` for the stays with and without them.
+    *Reverse if* Cellebrite documents a Harvested record as the phone's own fix.
+
+54. **Email direction reads the owner's mark on either side (3.2).** The Email type mapping version 2 names
+    `IsPhoneOwner`. Direction is, in order: the From party's mark; Status Sent or Unsent, which is outgoing; a To, Cc or
+    Bcc party marked as the owner, which is incoming; an outbox or draft folder, which is outgoing; an inbox folder,
+    which is incoming; else `unknown`. The rule used is recorded in `direction_basis`. On the reference phones no From
+    party states the mark and the To party does (243 of 328 stored mails), so a mail's own To party decides it. On the
+    14 reports every inbox mail that states its From party is from someone else (21,657 of 21,657, `m2-enums.json`).
+    Activity strength version 4 reads `direction` first: outgoing is interaction by the owner, incoming is passive, and
+    Status and Folder rows apply only when the direction is `unknown`. *Reverse if* an inbox folder is shown to hold
+    the owner's own sent mail with no mark on it.
 
 ## 15. Not yet established
 

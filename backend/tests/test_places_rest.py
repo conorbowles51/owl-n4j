@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from sqlalchemy import text
 
@@ -176,6 +176,50 @@ def test_e_a_photo_taken_on_the_phone_is_presence_and_a_received_one_never_is(ho
 
 
 @needs_template
+def test_a_harvested_position_is_shown_and_is_never_presence(hooks):
+    """04 decision 53, followups m110505041416467. A network or tower the phone heard is not the phone. Fails on the
+    old code, where each of these is kind presence with a radius, so they make a stay and a routine place."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            p = PlacePhone()
+            for i in range(6):
+                p.location(DAY + timedelta(minutes=10 * i), loc_type="Harvested")
+            ext = p.make(c, case)
+        build(engine, ext)
+        got = obs(engine, ext)
+        assert {(o["kind"], o["source_kind"], o["presence_basis"]) for o in got} == {("harvested", "harvested", None)}
+        assert len(got) == 6  # still on the map and in the list
+        assert "harvested" not in places.ROUTINE_KINDS
+        with engine.connect() as c:
+            assert routine.presence(c, [ext]) == []
+            assert routine.compute(c, [ext], timezone.utc)["stays"] == []
+            total, shown = places.observations(c, [str(ext)], DAY - timedelta(days=1), DAY + timedelta(days=1))
+            assert total == 6 and {o["kind"] for o in shown} == {"harvested"}
+
+
+@needs_template
+def test_a_gps_stay_stands_when_harvested_points_sit_inside_it(hooks):
+    """A stay with GPS support keeps every GPS point: Harvested rows between them are left out, the stay is not lost."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            p = PlacePhone()
+            for i in range(6):
+                p.location(DAY + timedelta(minutes=10 * i))
+                p.location(DAY + timedelta(minutes=10 * i + 1), loc_type="Harvested")
+            ext = p.make(c, case)
+        build(engine, ext)
+        with engine.connect() as c:
+            assert len(routine.presence(c, [ext])) == 6
+            assert len(routine.compute(c, [ext], timezone.utc)["stays"]) == 1
+
+
+@needs_template
 def test_l_places_state_the_positions_no_window_can_show(hooks):
     from tests.pattern_pg import api_client
     setup(hooks)
@@ -216,7 +260,7 @@ def test_e_the_places_version_is_part_of_the_projection_signature(hooks, monkeyp
             now = activity.signature(c, ext)
             monkeypatch.setattr(routine, "PLACES_VERSION", 1)
             assert activity.signature(c, ext) != now  # a phone built under version 1 is rebuilt
-            monkeypatch.setattr(routine, "PLACES_VERSION", 2)
+            monkeypatch.undo()
             assert activity.signature(c, ext) == now
 
 

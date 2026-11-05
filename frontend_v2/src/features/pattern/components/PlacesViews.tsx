@@ -30,6 +30,7 @@ function addDays(day: string, n: number) {
 const KIND_WORDS: Record<string, string> = {
   presence: "Presence", media: "Photo, not shown taken on this phone", searched: "Searched for", planned: "Planned",
   declared: "Declared (check-in)", transaction: "Payment place",
+  harvested: "A network or tower the phone heard, not the phone's position",
 }
 
 /** The window chooser shared by Places over time and Together: two dates, inclusive, in UTC. */
@@ -78,6 +79,7 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
   const routine = useQuery({ queryKey: ["pattern-routine", caseId, subjectKey(subject)], queryFn: () => patternAPI.routine(caseId, subject) })
   const deviations = useQuery({ queryKey: ["pattern-deviations", caseId, subjectKey(subject)], queryFn: () => patternAPI.deviations(caseId, subject) })
   const routinePlaces = (routine.data?.places ?? []).filter((p) => p.routine)
+  const heard = drawn.pts.filter((o) => o.kind === "harvested").length
   return (
     <section aria-label="Places over time" className="flex flex-col gap-2 text-sm">
       <WindowPicker idPrefix="places" start={win.start} end={win.end} onChange={(s, e) => { setWin({ start: s, end: e }); setPages(1) }} />
@@ -99,6 +101,7 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
             Circles are each position's radius as used in comparisons; a faint dot has no accuracy recorded. Lines join
             presence positions in time order: {drawn.traj.segments.toLocaleString()} moves drawn,{" "}
             {drawn.traj.gaps.toLocaleString()} {drawn.traj.gaps === 1 ? "gap" : "gaps"} of over 2 hours left undrawn (whereabouts unknown).
+            {heard > 0 ? ` ${heard.toLocaleString()} ${heard === 1 ? "dot is the position of a network or tower" : "dots are positions of networks or towers"} the phone heard, not the phone's own position, so ${heard === 1 ? "it does" : "they do"} not count toward stays, routine or Together.` : ""}
           </p>
           <KeepResult caseId={caseId} origin="Added from Phone patterns, Places over time"
             request={{ kind: "places", subject: JSON.stringify(subject), start: startIso, end: endIso, zone: "UTC" }} />

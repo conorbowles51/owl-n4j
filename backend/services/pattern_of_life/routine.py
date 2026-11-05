@@ -31,9 +31,9 @@ from sqlalchemy import text
 from services.pattern_of_life.places import ROUTINE_KINDS, haversine_m
 
 # Bumped when what enters places changes (2: photos taken on the phone count as presence, received ones never;
-# cb-places-rest E). Echoed with every routine result and part of the projection signature, so phones built under
+# cb-places-rest E. 3: a Harvested position is a network's or tower's, never the phone's; cb-readcarry C). Echoed with every routine result and part of the projection signature, so phones built under
 # an older version are rebuilt through the projection.
-PLACES_VERSION = 2
+PLACES_VERSION = 3
 
 PARAMS = {"stay_max_radius_m": 250.0, "stay_min_distance_m": 100.0, "stay_min_minutes": 10, "stay_min_points": 2,
           "eps_m": 150.0, "min_samples": 3, "routine_min_days": 4, "routine_min_share": 0.25,

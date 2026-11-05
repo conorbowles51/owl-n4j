@@ -104,6 +104,29 @@ class _Writer(generic.Writer):
             implicit.clear()
 
 
+EMAIL_OWNER_STATUS = ("sent", "unsent")
+EMAIL_OWNER_FOLDERS = ("outbox", "bandeja de salida", "postausgang", "draft", "borrador", "brouillon", "entwu", "bozza")
+EMAIL_INBOX_FOLDERS = ("inbox", "bandeja de entrada", "recibidos", "eingang", "boite de reception")
+
+
+def email_direction(status, folder, owner_is_recipient) -> tuple:
+    """(direction, basis) of a mail whose From party does not say whether it is the owner (04 decision 54), or
+    ("unknown", None). On Phone reference 1 and 2 no From party states it and 243 of 328 To parties do. In this order:
+    Status Sent or Unsent is the owner's mail whatever the folder is called; a To party marked as the owner received
+    it; an outbox or draft folder is the owner's; an inbox holds mail that arrived (M2: 21,657 of 21,657 inbox mails
+    that state their From party are from someone else)."""
+    if (status or "").lower() in EMAIL_OWNER_STATUS:
+        return "outgoing", "status_field"
+    if owner_is_recipient:
+        return "incoming", "recipient_owner_flag"
+    low = (folder or "").lower()
+    if any(w in low for w in EMAIL_OWNER_FOLDERS):
+        return "outgoing", "folder_name"
+    if any(w in low for w in EMAIL_INBOX_FOLDERS):
+        return "incoming", "folder_name"
+    return "unknown", None
+
+
 def _parties(conn, ext, gen, t):
     out = defaultdict(list)
     for r in conn.execute(text(
@@ -203,6 +226,9 @@ def _events(conn, w, ext, case_id, gen, m, b, levels, chats, thread_of_record, s
                 direction, basis = "outgoing", "sender_owner_flag"
             elif senders and senders[0][2] is False:
                 direction, basis = "incoming", "sender_owner_flag"
+            elif kind == "email" and b.participants.owner_flag:
+                direction, basis = email_direction(first(sf.get("status")), first(b.thread.group_field),
+                                                   bool(owner_roles & {"recipient", "cc", "bcc"}))
         if kind in OWNER_SIDE_KINDS and not owner_roles:
             if kind == "call":
                 implied = {"outgoing": "caller", "incoming": "callee"}.get(direction)

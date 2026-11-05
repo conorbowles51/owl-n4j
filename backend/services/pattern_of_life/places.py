@@ -2,7 +2,7 @@
 
 Every place-bearing record becomes an area in time (``pol_place_observation``): position, an uncertainty radius used
 in comparisons with the rule that gave it, the source's own figure, the time with its meaning and offset, the kind
-(presence, searched, planned, declared, media) and the attribution flags.
+(presence, searched, planned, declared, media, harvested) and the attribution flags.
 
 - GPS accuracy is a 68 percent radius; comparisons use twice it (04 decision 5).
 - WiFi positions come only from the case itself: a BSSID seen within 5 minutes of the same phone's GPS fixes (radius
@@ -91,6 +91,10 @@ def classify_point(model_type, p_source_kind, accuracy_basis, facts, flags):
             source = "account_location"
         if typ == "Searched":
             return "searched", source, None, extra
+        if typ == "Harvested":
+            # where a network or tower the phone heard is, never where the phone was (04 decision 53). The source
+            # keeps it out of the GPS fixes that anchor WiFi networks too
+            return "harvested", "harvested", None, extra
         if cat == "Media Locations":
             extra.append("media_device_not_established")
             return "media", "media_exif", None, extra

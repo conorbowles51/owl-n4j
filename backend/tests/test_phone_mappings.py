@@ -477,9 +477,12 @@ def test_email_drafts_and_app_summaries_take_the_measured_rows():
     rows = body["body"]["rows"]
 
     def row(t, f, fields=None, **ctx):
-        m = R.match(rows, t, f, {"fields": fields or {}, "context": ctx})
+        m = R.match(rows, t, f, {"fields": fields or {}, "context": dict({"direction": "unknown"}, **ctx)})
         return m and m["row_id"]
 
+    # a known direction decides, whatever the Status and Folder say; they decide only when it is not known (decision 54)
+    assert row("Email", "TimeStamp", {"Folder": ["Mi carpeta"], "Status": ["Read"]}, direction="outgoing") == "email-outgoing"
+    assert row("Email", "TimeStamp", {"Folder": ["INBOX"], "Status": ["Unread"]}, direction="incoming") == "email-incoming"
     assert row("Email", "TimeStamp", {"Folder": ["[Gmail]/Sent Mail"], "Status": ["Sent"]}) == "email-sent"
     assert row("Email", "TimeStamp", {"Folder": ["Enviados"], "Status": ["Sent"]}) == "email-sent"
     assert row("Email", "TimeStamp", {"Folder": ["Outbox"]}) == "email-composed"

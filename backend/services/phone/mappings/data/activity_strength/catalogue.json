@@ -1,13 +1,13 @@
 {
  "kind": "activity_strength",
  "name": "catalogue",
- "version": 3,
+ "version": 4,
  "status": "applied_unconfirmed",
  "origin": "ai_draft",
  "review": {
   "reviewed_by": null,
   "reviewed_on": null,
-  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): sensor records from a wearable are recorded by another device (3.2), from M9. Version 3 (04 decision 51): Email by Status and Folder, a message Draft whose direction is unknown, and ApplicationUsage with ActiveTime above zero, from M2 on the 14 server reports. A build job wrote these rows; no person has reviewed them yet.",
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): sensor records from a wearable are recorded by another device (3.2), from M9. Version 3 (04 decision 51): Email by Status and Folder, a message Draft whose direction is unknown, and ApplicationUsage with ActiveTime above zero, from M2 on the 14 server reports. A build job wrote these rows; no person has reviewed them yet. Version 4 (04 decision 54): Email by its direction when the direction is known, and by Status and Folder only when it is not.",
   "registry_requirements": []
  },
  "body": {
@@ -1653,6 +1653,48 @@
     "would_change": "A measurement or source shows the event happens without the stated actor."
    },
    {
+    "row_id": "email-outgoing",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "outgoing"
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "The owner sent this mail: the From party is marked as the phone's owner, or Status or Folder says the owner wrote it (m2-enums.json: every mail with From marked owner has Status Sent or Unsent or an outbox or draft folder). Sending mail needs a person.",
+    "would_change": "Scheduled or automatic sending shown by Source."
+   },
+   {
+    "row_id": "email-incoming",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "incoming"
+     }
+    ],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Mail that arrived. Arrival needs no one at the phone (m2-enums.json: 21,657 inbox mails with From stated are all from someone other than the owner).",
+    "would_change": "A read time on the mail, which would be its own event."
+   },
+   {
     "row_id": "email-sent",
     "type": "Email",
     "field": "TimeStamp",
@@ -1666,7 +1708,13 @@
       ]
      }
     ],
-    "context": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "unknown"
+     }
+    ],
     "outputs": {
      "class": "interaction",
      "actor": "owner",
@@ -1700,7 +1748,13 @@
       "op": "absent"
      }
     ],
-    "context": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "unknown"
+     }
+    ],
     "outputs": {
      "class": "interaction",
      "actor": "owner",
@@ -1715,7 +1769,13 @@
     "type": "Email",
     "field": "TimeStamp",
     "predicates": [],
-    "context": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "unknown"
+     }
+    ],
     "outputs": {
      "class": "passive",
      "actor": "owner",
@@ -1745,7 +1805,13 @@
       "op": "absent"
      }
     ],
-    "context": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "unknown"
+     }
+    ],
     "outputs": {
      "class": "unknown",
      "actor": "unknown",
@@ -1769,7 +1835,13 @@
       "op": "absent"
      }
     ],
-    "context": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "unknown"
+     }
+    ],
     "outputs": {
      "class": "unknown",
      "actor": "unknown",
@@ -1794,7 +1866,13 @@
       "value": "Default"
      }
     ],
-    "context": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "unknown"
+     }
+    ],
     "outputs": {
      "class": "unknown",
      "actor": "unknown",

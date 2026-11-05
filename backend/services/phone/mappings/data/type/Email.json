@@ -1,13 +1,13 @@
 {
   "kind": "type",
   "name": "Email",
-  "version": 1,
+  "version": 2,
   "status": "applied_unconfirmed",
   "origin": "ai_draft",
   "review": {
     "reviewed_by": null,
     "reviewed_on": null,
-    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule.",
+    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule. Version 2 (04 decision 54): the owner is marked by IsPhoneOwner on either side of a mail. On the 14 server reports the From party states it on 21,000+ mails; on Phone reference 1 and 2 only the To party does (243 of 328 stored mails).",
     "registry_requirements": [
       [
         "Email",
@@ -34,7 +34,7 @@
         "To": "recipient",
         "Cc": "cc"
       },
-      "owner_flag": null,
+      "owner_flag": "IsPhoneOwner",
       "direction_field": null
     },
     "thread": {
