@@ -212,6 +212,21 @@ PLATFORM_UPDATE_POLL_SECONDS=60
 
 Set `PLATFORM_UPDATE_POLL_SECONDS=3600` later if you want hourly checks.
 
+## When a release pauses running work
+
+Work is paused only for the part of a release that replaces services. Everything else happens beside them: staging the tree,
+packages, the prepare, the frontend build, the image build.
+
+- `deploy.sh` reads a host script's path from `deploy/logs/.release-work-hook` (outside the repository). `<hook> pause` runs after
+  the last build and before the first gate that needs the work idle; `<hook> resume` runs as soon as the release is healthy,
+  before anything is tidied, and on every exit. Without that file every gate applies from the start of `deploy.sh`, and whoever
+  runs it must pause first.
+- On this host the hook pauses imports and engine jobs first, lets the work in hand finish (20-minute cap each) with uploads still
+  running, and pauses uploads last. It resumes uploads first. A hold keeps pausing work that starts during the swap.
+- With the hook, gates before the pause pass without looking; after it each gate tries 3 times, 5 s apart.
+- A release takes a systemd scope of its own, so a release started by a job is not held by the jobs' memory limit.
+- Every step in a deploy log carries its UTC time.
+
 ## Where the backend runs from
 
 The backend does not run from the live checkout. A release moves that checkout first, because the gates, the migrations
@@ -225,6 +240,12 @@ files and child processes of a backend running there would read the new commit i
   in, so it reads one commit from its start to its end, and so do its children.
 - The trees hold code only: `.env`, `data`, `evidence-data`, `backend/logs` and `deploy/logs` are links to the live checkout.
   A new folder of runtime data under the checkout goes in `BACKEND_TREE_SHARED`.
+- Packages follow the tree. `<tree>/.venv` links to `venvs/<hash of backend/requirements.txt>`, built beside by a hard-link copy
+  of the venv in use plus `pip install -r`: `pip` replaces files and never writes one in place, so the copies share only files
+  that did not change. The unit starts `current/.venv/bin/uvicorn`; that script's first line names the venv's real folder, so a
+  running backend never reads a package newer than its tree, whichever way the link moves. A process started as
+  `current/.venv/bin/python` would follow the link: start scripts, not the bare interpreter. Rollback needs no pip. The
+  checkout's `.venv` is the release tooling's and is brought up to date after a healthy release.
 - A gate or build that stops a release changes nothing the backend reads. A failed health check points `current` back at the
   tree that ran, at the rollback commit. Commits from before the trees run from the checkout (`deploy/rollback.sh`).
 - The evidence engine has no such window: its containers run images and mount data folders only.

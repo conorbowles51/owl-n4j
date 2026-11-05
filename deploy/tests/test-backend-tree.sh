@@ -19,7 +19,7 @@ gitc() { git -c user.name=t -c user.email=t@t "$@"; }
 echo 1 > backend/code.py; git add -A; gitc commit -qm one; one="$(git rev-parse HEAD)"
 echo 2 > backend/code.py; git add -A; gitc commit -qm two; two="$(git rev-parse HEAD)"
 git checkout -q "${one}"
-printf '#!/bin/bash\nmkdir -p "${@: -1}/compiled"\n' > venv/bin/python; chmod +x venv/bin/python
+printf '#!/bin/bash\n[ "$1" = -m ] && [ "$2" = compileall ] && mkdir -p "${@: -1}/compiled"\nexit 0\n' > venv/bin/python; chmod +x venv/bin/python
 VENV_DIR="${PROJECT_DIR}/venv"; RUN_AS=""
 BACKEND_SOCKET_UNIT_DIR="${test_root}/units"
 BACKEND_CGROUP_ROOT="${test_root}/cgroup"

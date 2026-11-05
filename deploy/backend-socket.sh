@@ -35,6 +35,11 @@ backend_socket_exec_start() {
         *" --host "*" --port "*) ;;
         *) return 1 ;;
     esac
+    # With trees the backend's packages are those of the tree it starts from (deploy/backend-tree.sh).
+    if declare -F backend_tree_wanted >/dev/null && [ "$(backend_tree_wanted)" = trees ] &&
+       [ -e "${BACKEND_TREES}/current/.venv/bin/uvicorn" ]; then
+        line="$(printf '%s\n' "${line}" | sed -E "s#'exec [^ ]+/uvicorn #'exec ${BACKEND_TREES}/current/.venv/bin/uvicorn #")"
+    fi
     printf '%s\n' "${line}" | sed -E 's/ --host [^ ]+ --port [^ ]+/ --fd 3/'
 }
 

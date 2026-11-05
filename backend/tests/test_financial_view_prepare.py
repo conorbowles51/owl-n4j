@@ -50,7 +50,9 @@ def test_the_prepare_unit_carries_every_service_setting_the_identity_reads():
     assert 'User=conorbowles51' in properties and 'Group=conorbowles51' in properties
     assert 'WorkingDirectory=/home/conorbowles51/app-v3/owl-n4j/backend' in properties
     assert 'RuntimeMaxSec=%d' % view_prepare.PREPARE_CAP_SECONDS in properties
-    assert argv[-3:] == ['/bin/bash', '-lc', 'exec python -m services.financial.view_warmup --prepare']
+    assert argv[-3:-1] == ['/bin/bash', '-lc']
+    assert argv[-1].endswith('exec python -m services.financial.view_warmup --prepare')
+    assert '../.venv/bin' in argv[-1]
 
 
 def test_the_prepare_runs_the_code_being_released_not_the_tree_the_backend_runs(monkeypatch, tmp_path):

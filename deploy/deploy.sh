@@ -15,7 +15,7 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-step()    { echo -e "\n${BLUE}[STEP]${NC} ${BOLD}$1${NC}"; }
+step()    { echo -e "\n${BLUE}[STEP]${NC} $(date -u +%T) ${BOLD}$1${NC}"; }
 success() { echo -e "  ${GREEN}[  OK]${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}[WARN]${NC} $1"; }
 fail()    { echo -e "  ${RED}[FAIL]${NC} $1"; }
@@ -65,6 +65,22 @@ release_is_healthy() {
 }
 
 mkdir -p "${LOG_DIR}"
+
+# Running work (imports, engine jobs, uploads) is paused only for the phase that replaces services (lx-releasehold; 5 Nov:
+# 7 h of 9 h 19 held for a whole release). This host's script, named in .release-work-hook outside the repo, does it:
+# "<hook> pause" right before the first step that needs the work idle, "<hook> resume" as soon as the release is healthy
+# or has ended. No file: whoever runs this script pauses before it, and every gate applies from the start.
+RELEASE_WORK_HOOK="$(cat "${LOG_DIR}/.release-work-hook" 2>/dev/null || true)"
+[ -x "${RELEASE_WORK_HOOK}" ] || RELEASE_WORK_HOOK=""
+RELEASE_WORK_PAUSED=false
+# Where a job started it, a release runs in the jobs' memory limit: on 5 Nov 13:35 that stalled it 84 minutes with the
+# work paused. It takes a scope of its own; its builds still go to the jobs' low-priority slice.
+if [ -n "${RELEASE_WORK_HOOK}" ] && [ -z "${LOUPE_RELEASE_SCOPED:-}" ] && [ "$(id -u)" -eq 0 ]; then
+    export LOUPE_RELEASE_SCOPED=1
+    if systemd-run --scope --quiet --collect true >/dev/null 2>&1; then
+        exec systemd-run --scope --quiet --collect bash "${BASH_SOURCE[0]}" "$@"
+    fi
+fi
 
 # Single-instance guard: an auto-deploy racing a manual build in the same tree
 # corrupts npm state mid-install (2026-07-19: tsc saw a half-populated
@@ -166,6 +182,16 @@ write_deploy_summary() {
         frontend_switch_at="${FRONTEND_SWITCH_AT:-}" healthy_at="${HEALTHY_AT:-}" log_file="${LOG_FILE}" \
         2>&1 | tee -a "${LOG_FILE}" || true
 }
+release_work_pause() {
+    [ -n "${RELEASE_WORK_HOOK}" ] && [ "${RELEASE_TOUCHES_BACKEND}" != false ] && [ "${RELEASE_WORK_PAUSED}" = false ] || return 0
+    RELEASE_WORK_PAUSED=true
+    "${RELEASE_WORK_HOOK}" pause || warn "Pausing running work did not finish; the ingestion gate decides"
+}
+release_work_resume() {
+    [ "${RELEASE_WORK_PAUSED}" = true ] || return 0
+    RELEASE_WORK_PAUSED=false
+    "${RELEASE_WORK_HOOK}" resume || warn "Resuming paused work did not finish; the release script resumes it"
+}
 on_deploy_exit() {
     local rc=$?
     trap - EXIT TERM INT HUP
@@ -173,6 +199,7 @@ on_deploy_exit() {
     backend_handover_abort_open || true
     backend_tree_settle || true
     restore_frontend_on_exit
+    release_work_resume
     write_deploy_summary "${rc}"
     exit "${rc}"
 }
@@ -280,9 +307,24 @@ plan_release() {
 # Running ingestion matters only to a release that changes the backend, its packages or the engine: one that only
 # changes the frontend leaves every worker and its code alone. Unknown plan: always check.
 RELEASE_TOUCHES_BACKEND=true
+# Before the pause nothing that running work uses has changed, so there is nothing to gate.
 ingestion_gate() {
+    local tries=3 rc=0
     [ "${RELEASE_TOUCHES_BACKEND}" = false ] && return 0
-    check_ingestion_idle
+    if [ -z "${RELEASE_WORK_HOOK}" ]; then
+        check_ingestion_idle
+        return
+    fi
+    [ "${RELEASE_WORK_PAUSED}" = true ] || return 0
+    # Work that started in the seconds before the hook's hold caught it is paused on its next pass.
+    while [ "${tries}" -gt 0 ]; do
+        rc=0
+        check_ingestion_idle || rc=$?
+        [ "${rc}" -eq 75 ] || return "${rc}"
+        tries=$(( tries - 1 ))
+        [ "${tries}" -gt 0 ] && sleep 5
+    done
+    return "${rc}"
 }
 if [ -n "${DEPLOY_TARGET_SHA:-}" ] && git rev-parse --verify --quiet "${DEPLOY_TARGET_SHA}^{commit}" >/dev/null; then
     plan_release "${DEPLOY_TARGET_SHA}"
@@ -335,7 +377,7 @@ if [ "${RELEASE_TOUCHES_BACKEND}" = true ]; then
     if ! backend_tree_stage "${NEW_COMMIT}"; then
         fail "The backend tree could not be staged; nothing was stopped or restarted."
         if [ -n "${ROLLBACK_TARGET}" ] && [ "${ROLLBACK_TARGET}" != "${NEW_COMMIT}" ]; then
-            check_ingestion_idle
+            ingestion_gate
             $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
             warn "Checkout returned to the running revision $(git rev-parse --short HEAD)."
         fi
@@ -368,7 +410,7 @@ if [ -f "${PARTY_GATE}" ]; then
     if [ "${PARTY_RC}" -eq 1 ]; then
         fail "Party coverage gate failed: more payments would show a bare \"Not identified\". Release stopped."
         if [ -n "${ROLLBACK_TARGET}" ] && [ "${ROLLBACK_TARGET}" != "${NEW_COMMIT}" ]; then
-            check_ingestion_idle
+            ingestion_gate
             $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
             warn "Checkout returned to the running revision $(git rev-parse --short HEAD); services were not changed."
         fi
@@ -381,7 +423,9 @@ if [ -f "${PARTY_GATE}" ]; then
     fi
 fi
 
-if [ "${STEP_PIP}" = run ]; then
+if [ "${STEP_PIP}" = run ] && [ -n "${BACKEND_TREE_STAGED}" ]; then
+    success "Backend dependencies: ${VENV_DIR} (beside the running backend's)"
+elif [ "${STEP_PIP}" = run ]; then
     step "Installing backend dependencies"
     check_ingestion_idle
     $(release_build_scope) $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
@@ -408,7 +452,7 @@ step "Building the frontend aside"
 if ! frontend_build_aside "${NEW_COMMIT}" "${FRONTEND_ID}" "${NPM_HASH}"; then
     fail "Frontend build failed; nothing was stopped or restarted."
     if [ -n "${ROLLBACK_TARGET}" ] && [ "${ROLLBACK_TARGET}" != "${NEW_COMMIT}" ]; then
-        check_ingestion_idle
+        ingestion_gate
         $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
         warn "Checkout returned to the running revision $(git rev-parse --short HEAD)."
     fi
@@ -423,6 +467,15 @@ else
     sudo bash "${PROJECT_DIR}/deploy/install-frontend-service.sh"
 fi
 success "Frontend service configured to serve the compiled bundle"
+
+if [ "${STEP_ENGINE}" = run ]; then
+    step "Building Docker images without replacing running containers"
+    $(release_build_scope) docker compose build
+fi
+
+# Everything that can be done beside the running services is done. From here to the health check they are replaced.
+step "Pausing running work: imports and engine jobs, then uploads"
+release_work_pause
 
 step "Checking ingestion before migrations and service replacement"
 ingestion_gate
@@ -455,9 +508,6 @@ else
 fi
 
 if [ "${STEP_ENGINE}" = run ]; then
-    step "Building Docker images without replacing running containers"
-    $(release_build_scope) docker compose build
-
     step "Refreshing Docker stack"
     check_ingestion_idle
     docker compose up -d --no-build --remove-orphans
@@ -560,6 +610,15 @@ if [ "${HEALTHY}" = true ]; then
     release_record_write "${COMPONENTS_FILE}" "${NEW_COMMIT}" "${BACKEND_COMMIT:-${LIVE_COMMIT}}" "${NEW_COMPONENTS}" ||
         rm -f "${COMPONENTS_FILE}"
     echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
+    step "Resuming paused work: the new services are healthy"
+    release_work_resume
+    step "Tidying up"
+    # The checkout's venv is the release tooling's; nothing that serves reads it any more.
+    if [ "${STEP_PIP}" = run ] && [ -n "${BACKEND_TREE_STAGED}" ]; then
+        $(release_build_scope) $RUN_AS "${PROJECT_DIR}/.venv/bin/python" -m pip install -r "${BACKEND_DIR}/requirements.txt" --quiet ||
+            warn "The release tooling's packages could not be brought up to date"
+    fi
+    backend_venv_prune || warn "Old package folders could not be pruned"
     frontend_prune || warn "Old frontend builds could not be pruned"
     # The measure this healthy release passed with is the baseline the next release is held to.
     [ -f "${PARTY_CANDIDATE}" ] && mv -f "${PARTY_CANDIDATE}" "${PARTY_BASELINE}"
@@ -601,7 +660,10 @@ $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 step "Rollback: dependencies"
 if [ "${STEP_PIP}" = run ]; then
     check_ingestion_idle
-    $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet || true
+    # With trees the previous packages are still there, beside; going back to that tree goes back to them.
+    if [ -z "${BACKEND_TREE_STAGED}" ]; then
+        $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet || true
+    fi
 fi
 ROLLBACK_FRONTEND_ID="${PREV_FRONTEND_ID}"
 if [ -z "${ROLLBACK_FRONTEND_ID}" ] || ! frontend_build_exists "${ROLLBACK_FRONTEND_ID}"; then

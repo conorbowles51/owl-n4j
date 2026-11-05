@@ -94,7 +94,9 @@ def prepare_command(settings, started=None):
     if started is not None:
         argv += ['--property=Environment=LOUPE_PREPARE_STARTED=%.3f' % started]
     # The backend's ExecStart is a login shell (bash -lc), which can set more of the environment.
-    argv += ['/bin/bash', '-lc', 'exec python -m services.financial.view_warmup --prepare']
+    # The packages are the released tree's (deploy/backend-tree.sh); a folder without its own runs on the service's.
+    argv += ['/bin/bash', '-lc', '[ -x ../.venv/bin/python ] && PATH="$PWD/../.venv/bin:$PATH"; '
+             'exec python -m services.financial.view_warmup --prepare']
     return argv
 
 

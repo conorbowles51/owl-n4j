@@ -17,6 +17,13 @@
 # The live checkout still moves first: the release tooling, the gates, the migrations and the image builds use it. A
 # failed release needs no undo here: until the switch nothing the backend reads has changed.
 #
+# Packages follow the same rule (lx-releasehold): <tree>/.venv links to venvs/<hash of backend/requirements.txt>, built
+# beside by a hard-link copy of the venv in use plus pip, so a running backend never reads a package newer than its
+# tree. pip never writes a file in place, so the copies share only files that did not change. The backend starts
+# through current/.venv; the scripts in a venv's bin name that venv's own folder, so a running process holds the real
+# folder whichever way the link moves. The checkout's .venv stays the release tooling's, brought up to date after a
+# healthy release.
+#
 # Callers provide PROJECT_DIR, RUN_AS, SYSTEMCTL, VENV_DIR; the unit file helpers are in deploy/backend-socket.sh.
 # Way back: "checkout" in deploy/backend-tree.conf; the next restart removes the drop-in.
 
@@ -90,6 +97,65 @@ backend_tree_link_shared() {
     done
 }
 
+# The hash of <commit>'s package list, "none" when it has none.
+backend_venv_hash() {
+    (cd "${PROJECT_DIR}" && $RUN_AS git rev-parse --verify --quiet "$1:backend/requirements.txt" 2>/dev/null) || echo none
+}
+
+backend_venv_dir() {
+    echo "${BACKEND_TREES}/venvs/$1"
+}
+
+# Builds venvs/<hash> beside the venv in use, unless it is complete already. Prints nothing; fails with the venv in use
+# untouched. <requirements>: the list to install, from the tree being staged.
+backend_venv_build() {
+    local hash="$1" requirements="$2" dir source tmp file installed
+    dir="$(backend_venv_dir "${hash}")"
+    [ -e "${dir}/.loupe-venv" ] && return 0
+    source="$(readlink -f "${BACKEND_TREES}/current/.venv" 2>/dev/null || true)"
+    [ -d "${source}" ] || source="$(readlink -f "${VENV_DIR}")"
+    tmp="${dir}.building"
+    $RUN_AS mkdir -p "${BACKEND_TREES}/venvs" || return 1
+    $RUN_AS rm -rf -- "${tmp}"
+    $RUN_AS cp -al "${source}" "${tmp}" || { $RUN_AS rm -rf -- "${tmp}"; return 1; }
+    installed="$(cat "${source}/.loupe-venv" 2>/dev/null || true)"
+    if [ "${installed}" != "${hash}" ] && [ -f "${requirements}" ]; then
+        if ! $(release_build_scope 2>/dev/null) $RUN_AS "${tmp}/bin/python" -m pip install -r "${requirements}" --quiet; then
+            $RUN_AS rm -rf -- "${tmp}"
+            return 1
+        fi
+    fi
+    # sed -i writes a new file, so the copy it came from keeps its own folder names.
+    for file in "${tmp}"/bin/* "${tmp}/pyvenv.cfg"; do
+        [ -f "${file}" ] && [ ! -L "${file}" ] && grep -qIF -e "${source}" -e "${tmp}" "${file}" 2>/dev/null || continue
+        $RUN_AS sed -i -e "s#${tmp}#${dir}#g" -e "s#${source}#${dir}#g" "${file}" || { $RUN_AS rm -rf -- "${tmp}"; return 1; }
+    done
+    $RUN_AS rm -f -- "${tmp}/.loupe-venv"
+    $RUN_AS sh -c 'echo "$1" > "$2"' sh "${hash}" "${tmp}/.loupe-venv" || { $RUN_AS rm -rf -- "${tmp}"; return 1; }
+    $RUN_AS rm -rf -- "${dir}"
+    $RUN_AS mv -T -- "${tmp}" "${dir}"
+}
+
+# <tree name> <commit>: the tree's .venv is the venv of the commit's package list.
+backend_venv_stage() {
+    local tree="${BACKEND_TREES}/$1" hash
+    hash="$(backend_venv_hash "$2")"
+    backend_venv_build "${hash}" "${tree}/backend/requirements.txt" || return 1
+    $RUN_AS ln -sfn "../venvs/${hash}" "${tree}/.venv.tmp" && $RUN_AS mv -Tf "${tree}/.venv.tmp" "${tree}/.venv"
+}
+
+# Removes every venv neither tree links to. A process started from one keeps both trees' links until its tree moves,
+# and backend_tree_free never moves a tree in use.
+backend_venv_prune() {
+    local dir keep
+    [ -d "${BACKEND_TREES}/venvs" ] || return 0
+    keep="$(readlink -f "${BACKEND_TREES}/blue/.venv" "${BACKEND_TREES}/green/.venv" 2>/dev/null || true)"
+    for dir in "${BACKEND_TREES}"/venvs/*; do
+        [ -d "${dir}" ] || continue
+        echo "${keep}" | grep -qxF "$(readlink -f "${dir}")" || $RUN_AS rm -rf -- "${dir}"
+    done
+}
+
 # Puts <commit> in <tree>, which no backend process runs from. A tree keeps its compiled files, so only what the commit
 # changed compiles again: a backend started from a tree with none takes 130 s to import at load 43, 21-26 s with them.
 backend_tree_move() {
@@ -107,11 +173,13 @@ backend_tree_move() {
         fi
     fi
     backend_tree_link_shared "${tree}" || return 1
+    backend_venv_stage "${name}" "${commit}" || return 1
     $(release_build_scope 2>/dev/null) $RUN_AS "${VENV_DIR}/bin/python" -m compileall -q -x '/(tests|benchmarks|scripts)/' \
         "${tree}/backend" >/dev/null || echo "  [WARN] Not every file of ${name} compiled; the backend compiles them at its start" >&2
 }
 
-# Moves a free tree to <commit>. Sets BACKEND_TREE_STAGED and, for the prepare, LOUPE_PREPARE_BACKEND_DIR.
+# Moves a free tree to <commit>. Sets BACKEND_TREE_STAGED and, for the prepare, LOUPE_PREPARE_BACKEND_DIR. From here the
+# release's tooling (gates, migrations) runs on the staged tree's packages.
 backend_tree_stage() {
     local commit="$1" name
     if [ "$(backend_tree_wanted)" != trees ]; then
@@ -126,6 +194,7 @@ backend_tree_stage() {
     fi
     backend_tree_move "${name}" "${commit}" || return 1
     BACKEND_TREE_STAGED="${name}"
+    VENV_DIR="$(readlink -f "${BACKEND_TREES}/${name}/.venv")"
     LOUPE_PREPARE_BACKEND_DIR="${BACKEND_TREES}/${name}/backend"
     export LOUPE_PREPARE_BACKEND_DIR
     # The running backend sees no new code on disk: this says its views are about to be replaced (view_warmup.py).
@@ -160,7 +229,7 @@ backend_tree_apply() {
     $RUN_AS rm -f "${BACKEND_TREES}/.release-staged"
     BACKEND_TREE_APPLIED=true
     changed="$(backend_socket_install_file "$(backend_tree_dropin)" \
-        "$(printf '# deploy/backend-tree.sh: the backend runs from a tree a release never moves under it.\n[Service]\nWorkingDirectory=%s/current/backend\n' "${BACKEND_TREES}")")" || return 1
+        "$(printf '# deploy/backend-tree.sh: the backend runs from a tree a release never moves under it.\n[Service]\nWorkingDirectory=%s/current/backend\nEnvironment="PATH=%s/current/.venv/bin:/usr/local/bin:/usr/bin:/bin"\n' "${BACKEND_TREES}" "${BACKEND_TREES}")")" || return 1
     [ -n "${changed}" ] && $SYSTEMCTL daemon-reload
     echo "  [  OK] The backend starts from ${BACKEND_TREE_STAGED} (was ${BACKEND_TREE_PREVIOUS:-the checkout})"
 }
@@ -179,6 +248,9 @@ backend_tree_rollback() {
     fi
     if ! backend_tree_in_use | grep -qx "${BACKEND_TREE_PREVIOUS}"; then
         backend_tree_move "${BACKEND_TREE_PREVIOUS}" "${commit}" || return 1
+    else
+        # In use and older than the packages layout: the unit starts through this link.
+        [ -e "${BACKEND_TREES}/${BACKEND_TREE_PREVIOUS}/.venv" ] || backend_venv_stage "${BACKEND_TREE_PREVIOUS}" "${commit}" || return 1
     fi
     backend_tree_point "${BACKEND_TREE_PREVIOUS}"
 }

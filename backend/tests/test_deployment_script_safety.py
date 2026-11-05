@@ -3,6 +3,7 @@
 The real read-only SQL gate still runs. Synthetic jobs arrive between release
 stages to check that neither deployment nor rollback replaces their services.
 """
+import re
 import json
 import os
 from pathlib import Path
@@ -192,8 +193,9 @@ def run_release(project, script, *, arrives_after=None, initially_active=False, 
     if health_failure:
         env['FORCE_HEALTH_FAILURE'] = '1'
     env.update(extra_env or {})
+    # A hang guard. Every stub is a python start: one plain sandbox release took 476 s at load 110, 5 Nov.
     result = subprocess.run(['bash', str(project / 'deploy' / script), 'previous-safe-revision'],
-                            input='y\n', text=True, capture_output=True, env=env, timeout=600)
+                            input='y\n', text=True, capture_output=True, env=env, timeout=1800)
     events = [json.loads(line) for line in (project / 'events').read_text().splitlines()]
     return result, events
 
@@ -690,3 +692,53 @@ def test_a_backend_in_a_tree_keeps_its_data_paths(tmp_path):
     answer = subprocess.run([sys.executable, '-c', 'import config; print(config.EVIDENCE_DATA_ROOT, config.PLATFORM_UPDATE_REPO_DIR, config.BASE_DIR)'],
                             cwd=tree / 'backend', env=env, capture_output=True, text=True, check=True).stdout.split()
     assert answer == [str(checkout / 'evidence-data'), str(checkout), str(tree)]
+
+
+def _with_work_hook(project, clears_jobs=True):
+    """The host's script named in deploy/logs/.release-work-hook, standing in for headless/release-work.sh."""
+    hook = project / 'commands/work-hook'
+    clear = '''
+if [ "$1" = pause ]; then "%s" -c "import sqlite3, os; c = sqlite3.connect(os.environ['GATE_DATABASE']); c.execute('update jobs set paused=1'); c.commit()"; fi
+''' % sys.executable if clears_jobs else ''
+    hook.write_text('#!/bin/bash\necho "\\"hook $1\\"" >> "$RELEASE_SANDBOX/events"' + clear + '\n')
+    hook.chmod(0o755)
+    (project / 'deploy/logs/.release-work-hook').write_text(f'{hook}\n')
+
+
+def test_running_work_is_paused_only_for_the_step_that_replaces_services(release_sandbox):
+    """5 Nov 07:53-17:12: uploads held 7 of 9 h 19 min, because the pause came before the build."""
+    _with_work_hook(release_sandbox)
+    result, events = run_release(release_sandbox, 'deploy.sh', initially_active=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    pause = events.index('hook pause')
+    resume = events.index('hook resume')
+    build = next(i for i, event in enumerate(events) if event.startswith('docker compose build'))
+    frontend = next(i for i, event in enumerate(events) if event.startswith('npm '))
+    migrate = next(i for i, event in enumerate(events) if event.startswith('alembic'))
+    refresh = next(i for i, event in enumerate(events) if event.startswith('docker compose up'))
+    restart = next(i for i, event in enumerate(events) if event.startswith('systemctl') and 'owl-backend-v2' in event
+                   and any(word in event for word in (' restart ', ' start ')))
+    assert frontend < pause and build < pause
+    assert pause < migrate < refresh < restart < resume
+    assert events.count('hook resume') == 1
+
+
+def test_a_failed_gate_after_the_pause_still_resumes(release_sandbox):
+    _with_work_hook(release_sandbox, clears_jobs=False)
+    result, events = run_release(release_sandbox, 'deploy.sh', initially_active=True)
+    assert result.returncode == 75
+    assert events.index('hook pause') < events.index('hook resume')
+    assert not any(event.startswith(('alembic', 'docker compose up')) for event in events)
+
+
+def test_without_the_hook_every_gate_applies_from_the_start(release_sandbox):
+    result, events = run_release(release_sandbox, 'deploy.sh', initially_active=True)
+    assert result.returncode == 75
+    assert not any(event.startswith(('npm ', 'docker compose build')) for event in events)
+
+
+def test_every_step_of_a_release_has_its_time(release_sandbox):
+    result, _ = run_release(release_sandbox, 'deploy.sh')
+    assert result.returncode == 0, result.stdout + result.stderr
+    steps = [line for line in result.stdout.splitlines() if '[STEP]' in line]
+    assert steps and all(re.search(r'\d\d:\d\d:\d\d', line) for line in steps)
