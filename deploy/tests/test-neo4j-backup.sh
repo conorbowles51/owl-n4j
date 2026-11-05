@@ -3,6 +3,7 @@
 set -euo pipefail
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "${test_root:?}"' EXIT
+export SEAL_DIR="${test_root}/seal"   # never the box's real keys
 source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="${source_dir}/neo4j-backup.sh"
 dir="${test_root}/backups"; store="${test_root}/store"; state="${test_root}/state"; alerts="${test_root}/alerts"
@@ -144,4 +145,19 @@ run "${now9}" dump || fail "dump for retention failed"
 
 # 10. The store is only read.
 [[ "$(cat "${store}/databases/neo4j/neostore")" == x ]] || fail "store changed"
+# Sealed: plain stays until custody is proven; then the set holds only sealed dumps and the check reads them.
+crypt="${source_dir}/backup-crypt.sh"
+rm -f "${state}/smalldump" "${state}/nodump" "${state}/nostart"
+bash "${crypt}" new-key < /dev/null | sed -n '/BEGIN PGP PRIVATE/,/END PGP PRIVATE/p' > "${test_root}/private.asc"
+t1="$(epoch '2027-03-01 02:10')"
+s1="neo4j-$(date -u -d "@${t1}" +%Y%m%d-%H%M)Z"
+SEALRUN=1 run "${t1}" dump || fail "dump with an unproven key failed"
+[[ -s "${dir}/${s1}/neo4j.dump" && -s "${dir}/${s1}/neo4j.dump.gpg" && -s "${dir}/${s1}/system.dump.gpg" ]] || fail "unproven custody: plain and sealed not both kept"
+bash "${crypt}" confirm-key < "${test_root}/private.asc" > /dev/null
+s2="neo4j-$(date -u -d "@$(( t1 + 3600 ))" +%Y%m%d-%H%M)Z"
+run $(( t1 + 3600 )) dump || fail "sealed dump failed"
+[[ ! -e "${dir}/${s2}/neo4j.dump" && ! -e "${dir}/${s2}/system.dump" && -s "${dir}/${s2}/neo4j.dump.gpg" ]] || fail "plain dump left after custody"
+[[ ! -e "${dir}/${s1}/neo4j.dump" && -s "${dir}/${s1}/neo4j.dump.gpg" ]] || fail "earlier plain dump not removed by the next run"
+run $(( t1 + 3600 )) check || fail "check failed on a sealed set"
+run $(( t1 + 7200 )) dump || fail "dump after a sealed set failed"
 echo "test-neo4j-backup: all passed"

@@ -195,7 +195,8 @@ def run(args):
     started = time.monotonic()
     throttle = Throttle(args.max_mb_s) if args.max_mb_s else None
     floor = args.min_free_gb * 1024 ** 3
-    tally = dict(seen=0, skipped=0, copied=0, changed=0, moving=0, failed=0, gone=0, bytes_copied=0, unreadable=0)
+    custody_proven = os.path.exists(os.path.join(os.environ.get("SEAL_DIR", "/root/.config/loupe-backup"), "recovery-custody"))
+    tally = dict(seen=0, plain_held_back=0, skipped=0, copied=0, changed=0, moving=0, failed=0, gone=0, bytes_copied=0, unreadable=0)
     stopped = ""
     errors = []
     pending = 0
@@ -213,6 +214,11 @@ def run(args):
                 stopped = "budget"
                 break
             key = f"{label}/{os.path.relpath(path, root)}"
+            if label == "backups" and custody_proven and os.path.exists(path + ".gpg"):
+                # Once the recovery key is proven, a dump leaves the box only sealed (deploy/backup-crypt.sh). Before
+                # that the plain file goes too: a copy nobody can open is no copy.
+                tally["plain_held_back"] += 1
+                continue
             tally["seen"] += 1
             try:
                 info = os.lstat(path)

@@ -28,6 +28,9 @@ The boot disk has a daily snapshot (`default-schedule-1`, 06:20 UTC, kept 14 day
 Each set records the application commit and the image it came from (`meta.env`, or `.meta` beside a Postgres dump), and
 the schema version travels inside the dump (`alembic_version`). `docs/backup-restore.md` holds the restore steps.
 
+Dumps of Postgres and Neo4j and the Chroma copy are mode 600, root only. `deploy/backup-crypt.sh` seals them to a public key
+once a recovery key is on the machine (`docs/backup-restore.md`, Switching on encryption).
+
 ## Evidence copy: what it needs
 
 The sources above total about 300 GB (68 + 19 + 2.3 + 205 + 0.05 + 5). The boot disk has 42 GB free, so it cannot hold

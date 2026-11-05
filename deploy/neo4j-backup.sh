@@ -14,12 +14,15 @@
 # independent proof: when they agree with each other, the recovered copy has to match them or the set is refused.
 # Measured: 80,748 nodes, 196,935 relationships matched on the first try, 5 transactions replayed.
 #
+# The dumps are sealed by deploy/backup-crypt.sh when a recovery key is on the box.
+#
 # Install: see the header of deploy/owl-neo4j-backup.service.
 set -euo pipefail
 umask 077   # a dump holds every case; only root reads it
 LOG_NAME=neo4j-backup
 BACKUP_DIR="${BACKUP_DIR:-/mnt/owl-data/backups/neo4j}"
 . "$(dirname "${BASH_SOURCE[0]}")/backup-lib.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/backup-crypt.sh"
 NEO4J_CONTAINER="${NEO4J_CONTAINER:-owl-v2-n4j}"
 NEO4J_DATA="${NEO4J_DATA:-${LIVE_CHECKOUT}/neo4j/data}"
 SCRATCH="${SCRATCH:-lxbf-neo4j-backup}"
@@ -72,7 +75,7 @@ do_dump() {
     local name previous prev_size=0 size free_kb started tries=0 stable=0 before after recovered
     name="neo4j-$(stamp)Z"
     previous="$(sets neo4j | tail -n 1)"
-    [[ -n "${previous}" ]] && prev_size="$(stat -c %s "${BACKUP_DIR}/${previous}/neo4j.dump")"
+    [[ -n "${previous}" ]] && prev_size="$(stored_size "${BACKUP_DIR}/${previous}/neo4j.dump")"
     free_kb="$(df -Pk "${BACKUP_DIR}" | awk 'NR==2 {print $4}')"
     if (( free_kb < 8 * 1024 * 1024 )); then
         alert "not enough room in ${BACKUP_DIR} for a Neo4j backup (${free_kb} KB free, 8 GB needed); nothing written"
@@ -158,8 +161,11 @@ do_dump() {
     (( stable )) || printf '%s\n' "${recovered}" > "${out}/counts.tsv"
     write_meta "${out}/meta.env" "neo4j_image=${image}" "counts_source=$( (( stable )) && echo live || echo recovered-copy )" "copy_tries=${tries}"
     chown -R root:root "${out}"; chmod -R go-rwx "${out}"
+    seal_one "${out}/neo4j.dump"
+    seal_one "${out}/system.dump"
     mv -f -- "${out}" "${BACKUP_DIR}/${name}"
     log "wrote ${name} (${size} bytes, $(( $(date -u +%s) - started )) s)"
+    seal_pending "${BACKUP_DIR}" 2 neo4j.dump system.dump
     prune_sets neo4j
 }
 
@@ -167,7 +173,8 @@ do_check() {
     check_set_age neo4j "Neo4j" || return 1
     local f
     for f in neo4j.dump system.dump counts.tsv meta.env; do
-        if [[ ! -s "${BACKUP_DIR}/${NEWEST_SET}/${f}" ]]; then
+        if [[ -s "${BACKUP_DIR}/${NEWEST_SET}/${f}" ]]; then continue; fi
+        if ! seal_check "${BACKUP_DIR}/${NEWEST_SET}/${f}.gpg"; then
             alert "newest Neo4j backup ${NEWEST_SET} has no ${f}"
             return 1
         fi

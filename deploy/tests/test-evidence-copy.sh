@@ -72,4 +72,13 @@ if python3 -I "${tool}" run --dest "${src}/copy" --source "ev=${src}" >> "${log}
 
 # Every report keeps when the copy began and when a whole pass last finished; a stopped run does not reset them.
 python3 -I -c "import json,sys; r=json.load(open(sys.argv[1])); assert r['first_started'] and r['last_complete']" "${dest}/last-run.json" || fail "pass times not reported"
+# Custody proven: a dump with a sealed twin leaves the box only sealed. Not proven: the plain dump goes too, so a lost key
+# cannot leave the copy with nothing anyone can open.
+bk="${test_root}/backups-src"; mkdir -p "${bk}/scheduled" "${test_root}/seal"
+echo plain > "${bk}/scheduled/a.dump"; echo sealed > "${bk}/scheduled/a.dump.gpg"; echo only > "${bk}/scheduled/b.dump"
+SEAL_DIR="${test_root}/seal" python3 -I "${tool}" run --dest "${dest}" --source "backups=${bk}" >> "${log}" 2>&1 || fail "backups run failed"
+[[ -e "${dest}/files/backups/scheduled/a.dump" && -e "${dest}/files/backups/scheduled/a.dump.gpg" ]] || fail "unproven custody: plain and sealed not both copied"
+echo plain > "${bk}/scheduled/c.dump"; echo sealed > "${bk}/scheduled/c.dump.gpg"; touch "${test_root}/seal/recovery-custody"
+SEAL_DIR="${test_root}/seal" python3 -I "${tool}" run --dest "${dest}" --source "backups=${bk}" >> "${log}" 2>&1 || fail "backups run failed"
+[[ -e "${dest}/files/backups/scheduled/c.dump.gpg" && ! -e "${dest}/files/backups/scheduled/c.dump" ]] || fail "a plain dump left the box with custody proven"
 echo "test-evidence-copy: all passed"

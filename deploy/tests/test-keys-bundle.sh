@@ -3,6 +3,7 @@
 set -euo pipefail
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "${test_root:?}"' EXIT
+export SEAL_DIR="${test_root}/seal"   # never the box's real keys
 export GNUPGHOME="${test_root}/gnupg"; mkdir -m 700 "${GNUPGHOME}"
 source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="${source_dir}/keys-bundle.sh"
@@ -60,4 +61,11 @@ echo "${good}" > "${pass}"
 : > "${alerts}"
 if run "$(epoch '2026-11-06 03:06')" check; then fail "stale bundle passed"; fi
 grep -q '25 h old' "${alerts}" || fail "no stale alert"
+# A public key and custody record travel with the bundle; the drill's private key never does.
+mkdir -p "${SEAL_DIR}"; echo pub > "${SEAL_DIR}/recovery-public.asc"; echo fp > "${SEAL_DIR}/recovery-custody"; echo priv > "${SEAL_DIR}/drill-private.asc"
+n="keys-$(date -u -d "@$(epoch '2027-02-01 02:05')" +%Y%m%d-%H%M)Z"
+run "$(epoch '2027-02-01 02:05')" dump || fail "bundle with key files failed"
+grep -q 'recovery-public.asc' "${dir}/${n}/files.tsv" || fail "public key not bundled"
+grep -q 'recovery-custody' "${dir}/${n}/files.tsv" || fail "custody record not bundled"
+grep -q 'drill-private' "${dir}/${n}/files.tsv" && fail "the drill's private key was bundled"
 echo "test-keys-bundle: all passed"

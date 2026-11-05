@@ -20,6 +20,9 @@
 # restored dump against that file exactly; live has moved on by then. A run where the snapshot session fails still
 # writes the dump, with no counts file, and alerts.
 #
+# With a recovery key on the box the dump is sealed (owl_db-...Z.dump.gpg, deploy/backup-crypt.sh): the plain dump stays
+# beside it until the key's custody is proven, and is gone from then on. Names below mean the dump either way.
+#
 # Install: deploy/owl-db-backup.service + .timer, deploy/owl-db-backup-check.service + .timer (see their headers).
 set -euo pipefail
 umask 077   # a dump holds every case; only root reads it
@@ -35,6 +38,7 @@ DOCKER="${DOCKER:-docker}"
 NOW_EPOCH="${NOW_EPOCH:-}"   # tests only: pretend "now" is this epoch second
 LIVE_CHECKOUT="${LIVE_CHECKOUT:-/home/conorbowles51/app-v3/owl-n4j}"
 COUNTS_SQL="$(dirname "${BASH_SOURCE[0]}")/pg-counts.sql"
+. "$(dirname "${BASH_SOURCE[0]}")/backup-crypt.sh"
 
 now() { if [[ -n "${NOW_EPOCH}" ]]; then echo "${NOW_EPOCH}"; else date -u +%s; fi; }
 log() { printf '%s db-backup: %s\n' "$(date -u +%FT%TZ)" "$*"; }
@@ -47,10 +51,11 @@ alert() {
     fi
 }
 
-# Scheduled dumps, oldest first (the name sorts by time).
+# Scheduled dumps, oldest first (the name sorts by time), each once whether it is plain, sealed or both.
 scheduled_dumps() {
-    find "${BACKUP_DIR}" -maxdepth 1 -type f -name 'owl_db-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]Z.dump' \
-        -printf '%f\n' 2>/dev/null | sort || true
+    find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name 'owl_db-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]Z.dump' \
+        -o -name 'owl_db-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]Z.dump.gpg' \) \
+        -printf '%f\n' 2>/dev/null | sed 's/\.gpg$//' | sort -u || true
 }
 
 verify_dump() {  # <file> -> 0 when pg_restore reads its table of contents and it lists table data
@@ -75,7 +80,7 @@ prune() {
         f="${all[i]}"
         if (( $(dump_epoch "$f") < cutoff )); then
             log "prune ${f} (older than ${BACKUP_KEEP_DAYS} days)"
-            rm -f -- "${BACKUP_DIR}/${f}" "${BACKUP_DIR}/${f%.dump}.counts.tsv" "${BACKUP_DIR}/${f%.dump}.meta"
+            rm -f -- "${BACKUP_DIR}/${f}" "${BACKUP_DIR}/${f}.gpg" "${BACKUP_DIR}/${f}.gpg.sha256" "${BACKUP_DIR}/${f%.dump}.counts.tsv" "${BACKUP_DIR}/${f%.dump}.meta"
         fi
     done
 }
@@ -119,7 +124,7 @@ do_dump() {
     partial="${BACKUP_DIR}/.${name}.partial"
     previous="$(scheduled_dumps | tail -n 1)"
     prev_size=0
-    [[ -n "${previous}" ]] && prev_size="$(stat -c %s "${BACKUP_DIR}/${previous}")"
+    [[ -n "${previous}" ]] && prev_size="$(stored_size "${BACKUP_DIR}/${previous}")"
     free_kb="$(df -Pk "${BACKUP_DIR}" | awk 'NR==2 {print $4}')"
     if (( prev_size > 0 && free_kb * 1024 < prev_size * 2 )); then
         alert "not enough room in ${BACKUP_DIR} for a dump (${free_kb} KB free, last dump ${prev_size} bytes); nothing written"
@@ -164,6 +169,8 @@ do_dump() {
     printf 'taken_utc=%s\napp_commit=%s\n' "$(date -u -d "@$(now)" +%FT%TZ)" \
         "$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' <<<"$(curl -fsS -m 5 "${BACKUP_HEALTH_URL:-http://127.0.0.1:${API_PORT:-8002}/health}" 2>/dev/null)" | grep . || echo unknown)" > "${BACKUP_DIR}/${name%.dump}.meta"
     log "wrote ${name} (${size} bytes, $(( $(date -u +%s) - started )) s)"
+    seal_one "${BACKUP_DIR}/${name}"
+    seal_pending "${BACKUP_DIR}" 1 'owl_db-[0-9]*Z.dump'
     prune
 }
 
@@ -179,7 +186,12 @@ do_check() {
         alert "newest database dump ${newest} is ${age_h} h old (limit ${BACKUP_MAX_AGE_HOURS} h)"
         return 1
     fi
-    if ! verify_dump "${BACKUP_DIR}/${newest}"; then
+    if [[ ! -f "${BACKUP_DIR}/${newest}" ]]; then
+        if ! seal_check "${BACKUP_DIR}/${newest}.gpg"; then
+            alert "newest database dump ${newest} is sealed but not to this box's recovery key, or has no hash file"
+            return 1
+        fi
+    elif ! verify_dump "${BACKUP_DIR}/${newest}"; then
         alert "newest database dump ${newest} does not read back with pg_restore --list"
         return 1
     fi

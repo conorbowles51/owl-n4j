@@ -14,6 +14,8 @@
 # vectors barely compress. A set is 1.44 GB, so the default 14 days (the vectors change far less often than the
 # dumps) is about 20 GB. Way back to 30 days: Environment=BACKUP_KEEP_DAYS=30 in the unit.
 #
+# The copy is sealed by deploy/backup-crypt.sh when a recovery key is on the box.
+#
 # Install: see the header of deploy/owl-chroma-backup.service.
 set -euo pipefail
 umask 077
@@ -21,6 +23,7 @@ LOG_NAME=chroma-backup
 BACKUP_DIR="${BACKUP_DIR:-/mnt/owl-data/backups/chroma}"
 BACKUP_KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
 . "$(dirname "${BASH_SOURCE[0]}")/backup-lib.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/backup-crypt.sh"
 CHROMA_DATA="${CHROMA_DATA:-/var/lib/docker/volumes/owl-v2_chromadb-data/_data}"
 COPY_TRIES="${COPY_TRIES:-3}"
 PY="${PY:-python3}"
@@ -54,7 +57,7 @@ do_dump() {
     local name previous prev_size=0 size started tries=0 ok=0 s0 s1
     name="chroma-$(stamp)Z"
     previous="$(sets chroma | tail -n 1)"
-    [[ -n "${previous}" ]] && prev_size="$(stat -c %s "${BACKUP_DIR}/${previous}/chroma.sqlite3")"
+    [[ -n "${previous}" ]] && prev_size="$(stored_size "${BACKUP_DIR}/${previous}/chroma.sqlite3")"
     if [[ ! -f "${CHROMA_DATA}/chroma.sqlite3" ]]; then
         alert "no Chroma backup: ${CHROMA_DATA}/chroma.sqlite3 not found; newest is ${previous:-none}"
         return 1
@@ -91,8 +94,12 @@ do_dump() {
         return 1
     fi
     write_meta "${out}/meta.env" "chroma_image=$("${DOCKER}" inspect owl-v2-chromadb --format '{{.Image}}' 2>/dev/null || echo unknown)" "copy_tries=${tries}"
+    local index_size; index_size="$(stat -c %s "${out}/hnsw.tar")"
+    seal_one "${out}/hnsw.tar"
+    seal_one "${out}/chroma.sqlite3"
     mv -f -- "${out}" "${BACKUP_DIR}/${name}"
-    log "wrote ${name} (${size} bytes database, $(stat -c %s "${BACKUP_DIR}/${name}/hnsw.tar") bytes indexes, $(( $(date -u +%s) - started )) s)"
+    log "wrote ${name} (${size} bytes database, ${index_size} bytes indexes, $(( $(date -u +%s) - started )) s)"
+    seal_pending "${BACKUP_DIR}" 2 hnsw.tar chroma.sqlite3
     prune_sets chroma
 }
 
@@ -100,7 +107,8 @@ do_check() {
     check_set_age chroma "Chroma" || return 1
     local f
     for f in hnsw.tar chroma.sqlite3 counts.tsv meta.env; do
-        if [[ ! -s "${BACKUP_DIR}/${NEWEST_SET}/${f}" ]]; then
+        if [[ -s "${BACKUP_DIR}/${NEWEST_SET}/${f}" ]]; then continue; fi
+        if ! seal_check "${BACKUP_DIR}/${NEWEST_SET}/${f}.gpg"; then
             alert "newest Chroma backup ${NEWEST_SET} has no ${f}"
             return 1
         fi

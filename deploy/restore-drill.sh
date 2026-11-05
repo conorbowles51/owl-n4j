@@ -13,6 +13,10 @@
 #   through the live one.
 # Evidence: every file the RESTORED database names must be on disk, and a random sample is hashed at its live path (and
 #   in the copy, when EVIDENCE_COPY_DEST is set) against the hash the restored database holds.
+# Keys: the newest bundle opens with the passphrase and each file equals its line in files.tsv.
+# Sealed sets (deploy/backup-crypt.sh): the ciphertext's hash is checked and the set opened with the drill key, or with
+# the key named in BACKUP_PRIVATE_KEY_FILE, so a drill proves the decrypt. A set that is only sealed, with no key here,
+# fails the drill: it is a restore that could not be proved. Plain is used only where nothing can be decrypted.
 # Live is the reference when the backup was taken, not when the drill runs: the drift since then is printed beside
 # each check and does not fail the drill.
 #
@@ -23,10 +27,13 @@ umask 077
 LOG_NAME=restore-drill
 BACKUP_DIR="${DRILL_DIR:-/mnt/owl-data/backups/drills}"
 . "$(dirname "${BASH_SOURCE[0]}")/backup-lib.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/backup-crypt.sh"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PG_BACKUPS="${PG_BACKUPS:-/mnt/owl-data/backups/scheduled}"
 NEO4J_BACKUPS="${NEO4J_BACKUPS:-/mnt/owl-data/backups/neo4j}"
 CHROMA_BACKUPS="${CHROMA_BACKUPS:-/mnt/owl-data/backups/chroma}"
+KEYS_BACKUPS="${KEYS_BACKUPS:-/mnt/owl-data/backups/keys}"
+BACKUP_PRIVATE_KEY_FILE="${BACKUP_PRIVATE_KEY_FILE:-${SEAL_DRILL_PRIVATE}}"
 WORK="${WORK:-/mnt/owl-data/tmp/lxbf-drill}"
 PG_CONTAINER="${PG_CONTAINER:-owl-v2-pg}"; PG_USER="${PG_USER:-owl_us}"; PG_DB="${PG_DB:-owl_db}"
 NEO4J_CONTAINER="${NEO4J_CONTAINER:-owl-v2-n4j}"
@@ -49,10 +56,28 @@ fail() { note "FAIL $*"; failures=$(( failures + 1 )); }
 elapsed() { echo $(( $(date -u +%s) - $1 )); }
 
 cleanup() {
+    open_end
     "${DOCKER}" rm -f "${SCRATCH_PG}" "${SCRATCH_N4J}" "${SCRATCH_N4J}-admin" "${SCRATCH_CHROMA}" >/dev/null 2>&1 || true
     rm -rf -- "${WORK}"
     return 0
 }
+
+# how_to_read <plain path>: sets HOW to sealed (open it, so proving the decrypt), plain, or locked (already failed)
+how_to_read() {
+    HOW=locked
+    if [[ -f "$1.gpg" && -f "${BACKUP_PRIVATE_KEY_FILE}" ]]; then
+        if seal_hash_ok "$1.gpg"; then HOW=sealed; else fail "$(basename "$1").gpg: the file does not match its hash"; fi
+    elif [[ -f "$1" ]]; then
+        HOW=plain
+    elif [[ -f "$1.gpg" ]]; then
+        fail "$(basename "$1"): only sealed, and no private key here (${BACKUP_PRIVATE_KEY_FILE}): restore not proved"
+    else
+        fail "$(basename "$1"): not in the set"
+    fi
+}
+
+# to_stdout <plain path> <sealed|plain>
+to_stdout() { if [[ "$2" == sealed ]]; then open_file "$1.gpg"; else cat -- "$1"; fi; }
 
 need_memory() {
     wait_for_memory 2000 || { fail "$1: not enough free memory for a scratch container"; return 1; }
@@ -87,10 +112,14 @@ PY
 
 drill_postgres() {
     local dump counts t0 image
-    dump="$(find "${PG_BACKUPS}" -maxdepth 1 -type f -name 'owl_db-[0-9]*-[0-9][0-9][0-9][0-9]Z.dump' -printf '%f\n' | sort | tail -n 1)"
+    dump="$(find "${PG_BACKUPS}" -maxdepth 1 -type f \( -name 'owl_db-[0-9]*-[0-9][0-9][0-9][0-9]Z.dump' -o -name 'owl_db-[0-9]*-[0-9][0-9][0-9][0-9]Z.dump.gpg' \) -printf '%f\n' | sed 's/\.gpg$//' | sort -u | tail -n 1)"
     [[ -n "${dump}" ]] || { fail "postgres: no dump in ${PG_BACKUPS}"; return; }
     counts="${PG_BACKUPS}/${dump%.dump}.counts.tsv"
-    note "postgres: dump ${dump} ($(stat -c %s "${PG_BACKUPS}/${dump}") bytes)"
+    t0="$(date -u +%s)"
+    how_to_read "${PG_BACKUPS}/${dump}"
+    [[ "${HOW}" != locked ]] || return
+    note "postgres: dump ${dump} ($(stored_size "${PG_BACKUPS}/${dump}") bytes, ${HOW}, hash checked in $(elapsed "${t0}") s)"
+    local pg_how="${HOW}"
     need_memory postgres || return
     image="$("${DOCKER}" inspect "${PG_CONTAINER}" --format '{{.Image}}')"
     mkdir -p "${WORK}/pg"
@@ -104,8 +133,8 @@ drill_postgres() {
         "${DOCKER}" exec "${SCRATCH_PG}" pg_isready -q -h 127.0.0.1 -U "${PG_USER}" -d "${PG_DB}" && break
         sleep 3
     done
-    if ! "${DOCKER}" exec -i "${SCRATCH_PG}" nice -n 15 pg_restore -U "${PG_USER}" -d "${PG_DB}" --no-owner --no-privileges \
-        < "${PG_BACKUPS}/${dump}" > "${WORK}/pg_restore.log" 2>&1; then
+    if ! to_stdout "${PG_BACKUPS}/${dump}" "${pg_how}" | "${DOCKER}" exec -i "${SCRATCH_PG}" nice -n 15 pg_restore -U "${PG_USER}" -d "${PG_DB}" --no-owner --no-privileges \
+        > "${WORK}/pg_restore.log" 2>&1; then
         fail "postgres: pg_restore reported errors, first: $(grep -m1 -E 'error|ERROR' "${WORK}/pg_restore.log")"
     fi
     note "postgres: restored in $(elapsed "${t0}") s"
@@ -183,21 +212,59 @@ drill_evidence() {
     fi
 }
 
+drill_keys() {
+    local set t0 bad=0 path size sha
+    set="$(BACKUP_DIR="${KEYS_BACKUPS}" sets keys | tail -n 1)"
+    [[ -n "${set}" ]] || { fail "keys: no set in ${KEYS_BACKUPS}"; return; }
+    t0="$(date -u +%s)"
+    mkdir -p "${WORK}/keys"
+    if ! BACKUP_DIR="${KEYS_BACKUPS}" bash "${HERE}/keys-bundle.sh" open "${set}" "${WORK}/keys" > "${WORK}/keys.log" 2>&1; then
+        fail "keys: ${set} did not open: $(tail -n 1 "${WORK}/keys.log" | cut -c1-200)"
+        return
+    fi
+    while IFS=$'\t' read -r path size sha; do
+        [[ "${size}" == missing ]] && continue
+        [[ "$(sha256sum "${WORK}/keys/${path#/}" 2>/dev/null | cut -d' ' -f1)" == "${sha}" ]] || bad=$(( bad + 1 ))
+    done < "${KEYS_BACKUPS}/${set}/files.tsv"
+    if [[ ! -s "${KEYS_BACKUPS}/${set}/files.tsv" ]]; then
+        fail "keys: ${set} has no list of files to compare with"
+    elif (( bad )); then
+        fail "keys: ${bad} files differ from ${set}/files.tsv"
+    else
+        pass "keys: ${set} opens, $(wc -l < "${KEYS_BACKUPS}/${set}/files.tsv") files equal its list ($(elapsed "${t0}") s)"
+    fi
+    rm -rf -- "${WORK}/keys"
+}
+
 plain_to_tsv() { tail -n +2 | tr -d '"' | sed 's/, /\t/g' | LC_ALL=C sort; }
 
 drill_neo4j() {
     local set image t0 i ready=0 db
     set="$(BACKUP_DIR="${NEO4J_BACKUPS}" sets neo4j | tail -n 1)"
     [[ -n "${set}" ]] || { fail "neo4j: no set in ${NEO4J_BACKUPS}"; return; }
-    local dir="${NEO4J_BACKUPS}/${set}"
-    note "neo4j: set ${set} ($(stat -c %s "${dir}/neo4j.dump") bytes), $(grep -h counts_source "${dir}/meta.env")"
+    local dir="${NEO4J_BACKUPS}/${set}" input="${NEO4J_BACKUPS}/${set}" f
+    note "neo4j: set ${set} ($(stored_size "${dir}/neo4j.dump") bytes), $(grep -h counts_source "${dir}/meta.env")"
     need_memory neo4j || return
     image="$("${DOCKER}" inspect "${NEO4J_CONTAINER}" --format '{{.Image}}')"
     mkdir -p "${WORK}/n4j"
     t0="$(date -u +%s)"
+    local -A how=()
+    for f in neo4j.dump system.dump; do
+        how_to_read "${dir}/${f}"
+        [[ "${HOW}" != locked ]] || return
+        how[${f}]="${HOW}"
+        [[ "${HOW}" != sealed ]] || input="${WORK}/n4j-in"
+    done
+    if [[ "${input}" != "${dir}" ]]; then
+        mkdir -p "${input}"
+        for f in neo4j.dump system.dump; do
+            to_stdout "${dir}/${f}" "${how[${f}]}" > "${input}/${f}" || { fail "neo4j: ${f} did not open"; return; }
+        done
+    fi
+    note "neo4j: read in $(elapsed "${t0}") s ($( [[ "${input}" == "${dir}" ]] && echo plain || echo sealed))"
     admin() {
         "${DOCKER}" run --rm --name "${SCRATCH_N4J}-admin" --hostname localhost "${LIMITS[@]}" --network none \
-            -v "${WORK}/n4j:/data" -v "${dir}:/in:ro" --entrypoint /usr/bin/nice "${image}" -n 15 neo4j-admin "$@"
+            -v "${WORK}/n4j:/data" -v "${input}:/in:ro" --entrypoint /usr/bin/nice "${image}" -n 15 neo4j-admin "$@"
     }
     for db in neo4j system; do
         admin database load "${db}" --from-path=/in --overwrite-destination=true > "${WORK}/load-${db}.log" 2>&1 ||
@@ -238,7 +305,7 @@ drill_neo4j() {
     else
         fail "neo4j: consistency check: $(tail -n 2 "${WORK}/check.log" | tr '\n' ' ' | cut -c1-240)"
     fi
-    rm -rf -- "${WORK}/n4j"
+    rm -rf -- "${WORK}/n4j" "${WORK}/n4j-in"
 }
 
 drill_chroma() {
@@ -251,8 +318,15 @@ drill_chroma() {
     image="$("${DOCKER}" inspect "${CHROMA_CONTAINER}" --format '{{.Image}}')"
     t0="$(date -u +%s)"
     mkdir -p "${WORK}/chroma"
-    tar -C "${WORK}/chroma" -xf "${dir}/hnsw.tar" && cp "${dir}/chroma.sqlite3" "${WORK}/chroma/" ||
-        { fail "chroma: the set did not unpack"; return; }
+    how_to_read "${dir}/hnsw.tar"; [[ "${HOW}" != locked ]] || return
+    local index_how="${HOW}"
+    how_to_read "${dir}/chroma.sqlite3"; [[ "${HOW}" != locked ]] || return
+    note "chroma: indexes ${index_how}, database ${HOW}"
+    if ! to_stdout "${dir}/hnsw.tar" "${index_how}" | tar -C "${WORK}/chroma" -xf - ||
+        ! to_stdout "${dir}/chroma.sqlite3" "${HOW}" > "${WORK}/chroma/chroma.sqlite3"; then
+        fail "chroma: the set did not unpack"
+        return
+    fi
     "${DOCKER}" run -d --name "${SCRATCH_CHROMA}" "${LIMITS[@]}" -v "${WORK}/chroma:/data" "${image}" >/dev/null ||
         { fail "chroma: scratch container did not start"; return; }
     ip="$("${DOCKER}" inspect "${SCRATCH_CHROMA}" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')"
@@ -326,6 +400,10 @@ do_run() {
     if (( free_kb < 30 * 1024 * 1024 )); then
         fail "scratch disk: ${free_kb} KB free, 30 GB needed"
     else
+        if [[ -f "${BACKUP_PRIVATE_KEY_FILE}" ]]; then
+            open_begin "${BACKUP_PRIVATE_KEY_FILE}" || fail "the private key in ${BACKUP_PRIVATE_KEY_FILE} does not import"
+        fi
+        drill_keys
         drill_postgres
         drill_neo4j
         drill_chroma

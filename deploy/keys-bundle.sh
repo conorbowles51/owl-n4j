@@ -34,6 +34,12 @@ KEYS_PATHS="${KEYS_PATHS:-${LIVE_CHECKOUT}/.env
 /etc/systemd/system/loupe*
 /etc/systemd/system/fin-watchdog*}"
 
+# The public halves and the custody record come back with the rest. Listed only when there, so a box with no recovery key
+# does not read as a short bundle. The private drill key is never bundled: a restored box makes its own.
+for extra in recovery-public.asc recovery-custody drill-public.asc; do
+    [[ ! -s "${SEAL_DIR:-/root/.config/loupe-backup}/${extra}" ]] || KEYS_PATHS+=$'\n'"${SEAL_DIR:-/root/.config/loupe-backup}/${extra}"
+done
+
 gpg_args=(--batch --yes --quiet --pinentry-mode loopback --passphrase-file "${KEYS_PASSPHRASE_FILE}")
 
 do_init() {

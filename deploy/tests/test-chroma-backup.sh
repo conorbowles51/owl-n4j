@@ -3,6 +3,7 @@
 set -euo pipefail
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "${test_root:?}"' EXIT
+export SEAL_DIR="${test_root}/seal"   # never the box's real keys
 source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="${source_dir}/chroma-backup.sh"
 dir="${test_root}/backups"; vol="${test_root}/vol"; alerts="${test_root}/alerts"
@@ -80,4 +81,18 @@ mkdir "${dir}/${old}" "${dir}/${keep}"; echo x > "${dir}/${keep}/chroma.sqlite3"
 run "${now2}" dump || fail "copy for retention failed"
 [[ ! -d "${dir}/${old}" ]] || fail "15-day-old set kept"
 [[ -d "${dir}/${keep}" ]] || fail "13-day-old set pruned"
+# Sealed: only once custody is proven is the plain copy gone; the check and the size rule read the sealed files.
+crypt="${source_dir}/backup-crypt.sh"
+bash "${crypt}" new-key < /dev/null | sed -n '/BEGIN PGP PRIVATE/,/END PGP PRIVATE/p' > "${test_root}/private.asc"
+s1="chroma-$(date -u -d "@$(( now2 + 3600 ))" +%Y%m%d-%H%M)Z"
+run $(( now2 + 3600 )) dump || fail "copy with an unproven key failed"
+[[ -s "${dir}/${s1}/hnsw.tar" && -s "${dir}/${s1}/hnsw.tar.gpg" && -s "${dir}/${s1}/chroma.sqlite3.gpg" ]] || fail "unproven custody: plain and sealed not both kept"
+bash "${crypt}" confirm-key < "${test_root}/private.asc" > /dev/null
+s2="chroma-$(date -u -d "@$(( now2 + 7200 ))" +%Y%m%d-%H%M)Z"
+run $(( now2 + 7200 )) dump || fail "sealed copy failed"
+[[ ! -e "${dir}/${s2}/hnsw.tar" && ! -e "${dir}/${s2}/chroma.sqlite3" && -s "${dir}/${s2}/hnsw.tar.gpg" ]] || fail "plain copy left after custody"
+[[ ! -e "${dir}/${s1}/hnsw.tar" && -s "${dir}/${s1}/hnsw.tar.gpg" ]] || fail "earlier plain copy not removed by the next run"
+run $(( now2 + 7200 )) check || fail "check failed on a sealed set"
+run $(( now2 + 10800 )) dump || fail "copy after a sealed set failed"
+bash "${crypt}" open "${dir}/${s2}/hnsw.tar.gpg" "${test_root}/private.asc" | tar -tf - > /dev/null || fail "sealed indexes do not open to a tar"
 echo "test-chroma-backup: all passed"

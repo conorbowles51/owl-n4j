@@ -4,13 +4,15 @@
 #
 #   backup-check.sh          write STATUS_FILE (store <tab> state <tab> detail <tab> checked at); exit 1 if any failed
 #
-# States: ok, FAILED, and OFF for the evidence copy until a destination is set in EVIDENCE_COPY_DEST. OFF is a real gap
-# and shows on the board as one, but sends no alert: it waits on a decision, and an hourly alert would not change that.
+# States: ok, FAILED, and OFF for the evidence copy until a destination is set in EVIDENCE_COPY_DEST, and for encryption
+# until a recovery key's custody is proven. OFF is a real gap and shows on the board as one, but sends no alert: it waits
+# on a decision, and an hourly alert would not change that.
 # Install: see the header of deploy/owl-backup-check.service.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_NAME=backup-check
 . "${HERE}/backup-lib.sh"
+. "${HERE}/backup-crypt.sh"
 STATUS_FILE="${STATUS_FILE:-/mnt/owl-data/backups/status.tsv}"
 EVIDENCE_COPY_DEST="${EVIDENCE_COPY_DEST:-}"
 EVIDENCE_COPY_MAX_AGE_HOURS="${EVIDENCE_COPY_MAX_AGE_HOURS:-73}"
@@ -67,12 +69,38 @@ PY
     fi
 }
 
+unsealed_newest() {  # the newest set of each store that has no sealed file, one name
+    local root="${BACKUP_ROOT:-/mnt/owl-data/backups}" n
+    n="$(find "${root}/scheduled" -maxdepth 1 -type f \( -name 'owl_db-[0-9]*Z.dump' -o -name 'owl_db-[0-9]*Z.dump.gpg' \) -printf '%f\n' 2>/dev/null | sed 's/\.gpg$//' | sort -u | tail -n 1)"
+    if [[ -n "${n}" && ! -s "${root}/scheduled/${n}.gpg" ]]; then echo "${n}"; return; fi
+    n="$(BACKUP_DIR="${root}/neo4j" sets neo4j | tail -n 1)"
+    if [[ -n "${n}" && ! -s "${root}/neo4j/${n}/neo4j.dump.gpg" ]]; then echo "${n}"; return; fi
+    n="$(BACKUP_DIR="${root}/chroma" sets chroma | tail -n 1)"
+    if [[ -n "${n}" && ! -s "${root}/chroma/${n}/hnsw.tar.gpg" ]]; then echo "${n}"; fi
+}
+
+encryption() {
+    case "$(seal_state)" in
+        none) record encryption OFF "no recovery key on this box: dumps are plain at rest (mode 600); run deploy/backup-crypt.sh new-key" ;;
+        unconfirmed) record encryption OFF "recovery key here, custody not proven: sets are written plain and sealed; run deploy/backup-crypt.sh confirm-key" ;;
+        confirmed)
+            local open; open="$(unsealed_newest)"
+            if [[ -n "${open}" ]]; then
+                alert "newest set ${open} is not sealed although a recovery key is in place"
+                record encryption FAILED "newest set ${open} is not sealed"
+                failed=$(( failed + 1 ))
+            elif [[ -s "${SEAL_DRILL_PRIVATE}" ]]; then record encryption ok "sealed to the recovery key; the drill key opens them on this box"
+            else record encryption ok "sealed to the recovery key; no drill key, so the weekly drill cannot open sealed-only sets"; fi ;;
+    esac
+}
+
 store postgres bash "${HERE}/db-backup.sh" check
 store neo4j bash "${HERE}/neo4j-backup.sh" check
 store chroma bash "${HERE}/chroma-backup.sh" check
 store keys bash "${HERE}/keys-bundle.sh" check
 store restore-drill bash "${HERE}/restore-drill.sh" check
 evidence_copy
+encryption
 chmod 644 "${tmp}"
 mv -f -- "${tmp}" "${STATUS_FILE}"
 exit $(( failed > 0 ))

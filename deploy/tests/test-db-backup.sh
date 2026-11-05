@@ -3,6 +3,7 @@
 set -euo pipefail
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "${test_root}"' EXIT
+export SEAL_DIR="${test_root}/seal"   # never the box's real keys
 source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="${source_dir}/db-backup.sh"
 
@@ -137,5 +138,33 @@ rm -f "${dir}"/owl_db-*
 touch "${dir}/owl_db-20261023-1649-pre-pid-d5.dump"
 run $(( now7 + 86400 )) dump || fail "dump 40 failed"
 [[ -f "${dir}/owl_db-20261023-1649-pre-pid-d5.dump" ]] || fail "hand-made dump pruned"
+
+# 9. Sealed dumps. With a key whose custody is not proven the plain dump stays; a proven key removes it, the check reads
+# the sealed file, retention takes the sealed files too, and what was plain before custody is sealed by the next run.
+crypt="${source_dir}/backup-crypt.sh"
+rm -f "${dir}"/owl_db-* "${dir}"/.owl_db-*
+bash "${crypt}" new-key < /dev/null | sed -n '/BEGIN PGP PRIVATE/,/END PGP PRIVATE/p' > "${test_root}/private.asc"
+t9="$(epoch '2027-01-20 01:30')"
+old_plain="$(name_at $(( t9 - 86400 )))"
+run $(( t9 - 86400 )) dump || fail "dump with an unproven key failed"
+[[ -s "${dir}/${old_plain}" && -s "${dir}/${old_plain}.gpg" ]] || fail "unproven custody: plain and sealed not both kept"
+[[ "$(bash "${crypt}" open "${dir}/${old_plain}.gpg" "${test_root}/private.asc" | sha256sum)" == "$(sha256sum < "${dir}/${old_plain}")" ]] || fail "sealed dump does not open to the dump"
+bash "${crypt}" confirm-key < "${test_root}/private.asc" > /dev/null
+: > "${alerts}"
+run "${t9}" dump || fail "sealed dump failed"
+new="$(name_at "${t9}")"
+[[ ! -e "${dir}/${new}" && -s "${dir}/${new}.gpg" ]] || fail "plain dump left after custody"
+[[ ! -e "${dir}/${old_plain}" && -s "${dir}/${old_plain}.gpg" ]] || fail "older plain dump not sealed by the next run"
+[[ "$(stat -c %a "${dir}/${new}.gpg")" == 600 ]] || fail "sealed dump not mode 600"
+run "${t9}" check || fail "check failed on a sealed dump: $(cat "${alerts}")"
+later="$(name_at $(( t9 + 86400 )))"
+run $(( t9 + 86400 )) dump || fail "dump after a sealed dump failed (size rule cannot read a sealed previous dump?)"
+rm -f "${SEAL_DIR}/recovery-public.asc"
+: > "${alerts}"
+if run $(( t9 + 86400 )) check; then fail "check passed a sealed dump with the key gone"; fi
+grep -q "sealed but not to this box's recovery key" "${alerts}" || fail "no alert for the wrong key"
+: > "${alerts}"
+run $(( t9 + 40 * 86400 )) dump || fail "dump for sealed retention failed"
+[[ ! -e "${dir}/${later}.gpg" && ! -e "${dir}/${later}.gpg.sha256" && ! -e "${dir}/${new}.gpg" ]] || fail "retention left a sealed dump"
 
 echo "test-db-backup: all passed"

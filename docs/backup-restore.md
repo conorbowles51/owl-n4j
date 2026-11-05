@@ -22,6 +22,24 @@ and 2 GB of memory. A machine with nothing else running is faster.
    `meta.env`.
 2. Mount the data disk, or the disk or bucket holding the copy, at `/mnt/owl-data`.
 
+## Sealed files
+
+A file ending `.gpg` is a sealed dump. It opens with the recovery key, kept in the password manager and never on the
+machine. Save the key to a file in memory, and open each file before the step that needs it:
+
+```
+sha256sum -c owl_db-YYYYMMDD-HHMMZ.dump.gpg.sha256     # proves the file, with no key
+bash deploy/backup-crypt.sh open owl_db-YYYYMMDD-HHMMZ.dump.gpg /dev/shm/recovery.asc > owl_db-YYYYMMDD-HHMMZ.dump
+```
+
+The sealed files are `owl_db-*.dump.gpg`, and `neo4j.dump.gpg`, `system.dump.gpg`, `hnsw.tar.gpg`, `chroma.sqlite3.gpg` in
+their sets. Delete `/dev/shm/recovery.asc` and the opened files when finished. The keys bundle is not sealed to this key: it
+has its own passphrase, step 2.
+
+`bash deploy/backup-crypt.sh status` shows the state on this machine. With no recovery key, dumps are plain. With a key
+whose custody is not proven, each dump is there both plain and sealed. With custody proven, a nightly run leaves only the sealed file. A hand-made dump is not touched by a nightly run: `status` counts
+them, and `bash deploy/backup-crypt.sh seal-file <file>` seals one.
+
 ## 2. Keys and settings
 
 The bundle is encrypted. The passphrase is in `/root/.config/loupe-backup/passphrase` and in Neil's password manager.
@@ -99,7 +117,24 @@ has its earlier copy under `superseded/`.
 3. Sign in, open a case, open a statement and a citation, run a search.
 4. Compare `evidence_files.sha256` with a sample of files on disk, as `drill_evidence` in `deploy/restore-drill.sh` does.
 
+## Switching on encryption
+
+`bash deploy/backup-crypt.sh new-key` at a terminal, as root. It shows the private key once, and asks for it to be pasted back
+from the password manager, which proves the saved copy opens this machine's backups. Only then does a nightly run remove a
+plain dump. It offers a second key for the weekly drill. That key stays on the boot disk, is used only by the drill, and is
+what lets the drill open sealed sets; without it the drill reports a failure once sets are sealed-only.
+
+## A set before a release
+
+`bash deploy/backup-now.sh --check` says whether a set can run now. `bash deploy/backup-now.sh` takes one: keys, Postgres, Neo4j
+and Chroma, through the nightly scripts, in the same directories, under the same retention. It refuses at once when memory or
+disk is short, and writes its record to `/mnt/owl-data/backups/manual/`.
+
 ## Switching on the evidence copy
+
+Prove the recovery key first, and seal any hand-made dumps. Until the key is proven, plain dumps are copied too, because a copy
+no one can open is no copy; a copied plain dump stays in the copy. Once it is proven, a dump with a sealed file beside it goes
+only sealed.
 
 1. Mount the disk or bucket, and mark it once: `python3 deploy/evidence_copy.py init --dest <directory>`. A run refuses
    an unmarked directory, so a mount that is missing after a reboot stops the copy and alerts.

@@ -272,5 +272,10 @@ docker logs -f owl-v2-evidence-worker
 ## Backups
 
 `docs/backup-inventory.md` lists every store and its protection; `docs/backup-restore.md` holds the restore steps.
+`docs/customer-data-procedures.md` holds customer export, offboarding, backup expiry and two-person deletion.
 `bash deploy/tests/test-<name>.sh` exercises `db-backup`, `neo4j-backup`, `chroma-backup`, `keys-bundle`,
-`evidence-copy`, `backup-check` and `restore-drill`. `deploy/restore-drill.sh run` restores the newest backups into scratch containers.
+`evidence-copy`, `backup-check`, `backup-crypt`, `backup-now`, `backup-procedures` and `restore-drill`.
+`deploy/restore-drill.sh run` restores the newest backups into scratch containers.
+
+Before a release, `bash deploy/backup-now.sh` takes a full recovery set (keys, Postgres, Neo4j, Chroma), and refuses when the box
+has too little memory or disk; `--check` says whether it would run. `bash deploy/backup-crypt.sh new-key` switches on encryption at rest.

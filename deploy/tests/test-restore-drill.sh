@@ -4,6 +4,7 @@
 set -euo pipefail
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "${test_root:?}"' EXIT
+export SEAL_DIR="${test_root}/seal"   # never the box's real keys
 source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ev="${test_root}/ev"; mkdir -p "${ev}/folder" "${test_root}/work"
 echo one > "${ev}/a"; echo two > "${ev}/b"
@@ -47,4 +48,34 @@ printf 'r1\t%s\t%s\n' "${ev}/a" "0000" > "${rows}"
 drill
 grep -q 'hash differs: row r1' "${report}" || fail "changed file not found"
 grep -q 'FAIL evidence: 1 hash differences' "${report}" || fail "changed file did not fail"
+# A sealed set: opened with the key, which proves the decrypt; refused and failed with no key, never skipped; a changed
+# byte fails on the hash; plain is read only where there is no key.
+crypt="${source_dir}/backup-crypt.sh"
+store="${test_root}/store"; mkdir -p "${store}"
+echo 'dump bytes' > "${store}/x.dump"
+bash "${crypt}" new-key < /dev/null | sed -n '/BEGIN PGP PRIVATE/,/END PGP PRIVATE/p' > "${test_root}/private.asc"
+bash "${crypt}" seal-file "${store}/x.dump"
+reads() {  # <key file>: the verdict and the bytes for one file, through the drill's own functions
+    : > "${report}"
+    env REPORT="${report}" KEY="$1" STORE="${store}" DRILL="${source_dir}/restore-drill.sh" CRYPT="${crypt}" bash -c '
+        set -uo pipefail
+        . "${CRYPT}"
+        source <(sed -n "/^how_to_read() {/,/^}/p; /^to_stdout() {/p" "${DRILL}")
+        report="${REPORT}"; failures=0; BACKUP_PRIVATE_KEY_FILE="${KEY}"
+        fail() { printf "FAIL %s
+" "$*" >> "${report}"; }
+        how_to_read "${STORE}/x.dump"
+        echo "${HOW}"
+        if [[ "${HOW}" == sealed ]]; then open_begin "${KEY}"; fi
+        if [[ "${HOW}" != locked ]]; then to_stdout "${STORE}/x.dump" "${HOW}"; fi
+        open_end'
+}
+[[ "$(reads "${test_root}/private.asc")" == $'sealed\ndump bytes' ]] || fail "sealed file not opened with the key"
+[[ "$(reads /no/key)" == $'plain\ndump bytes' ]] || fail "plain not used with no key"
+rm "${store}/x.dump"
+[[ "$(reads /no/key)" == locked ]] || fail "sealed-only with no key was not locked"
+grep -q 'FAIL x.dump: only sealed, and no private key here' "${report}" || fail "sealed-only with no key did not fail the drill"
+printf 'x' | dd of="${store}/x.dump.gpg" bs=1 seek=100 conv=notrunc 2>/dev/null
+[[ "$(reads "${test_root}/private.asc")" == locked ]] || fail "changed ciphertext was read"
+grep -q 'does not match its hash' "${report}" || fail "changed ciphertext did not fail the drill"
 echo "test-restore-drill: all passed"
