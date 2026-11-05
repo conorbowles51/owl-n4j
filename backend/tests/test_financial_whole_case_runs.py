@@ -355,7 +355,8 @@ class NumberedPdfParts(TestCase):
             with patch('services.financial.ledger_snapshot.render_ledger_report', return_value='<h1>x</h1>'), patch('services.financial.ledger_pdf.render_ledger_pdf', render):
                 with self.assertRaises(RuntimeError):
                     W.compute_pdf(capture, params, run)
-                summary, sections = W.compute_pdf(capture, params, run)
+                # A release changes the code version and so the run's name: the finished part is still found.
+                summary, sections = W.compute_pdf(capture, {**params, 'run_id': 'b' * 32}, run)
             self.assertEqual(len(calls), 3)  # part 1 once, part 2 failed then written; never part 1 again
             self.assertEqual((summary['parts'], summary['readings']), (2, MAX_PDF_READINGS + 5))
             stream = __import__('io').BytesIO(sections['files']['ledger-report-parts.zip'])
@@ -364,7 +365,7 @@ class NumberedPdfParts(TestCase):
                 self.assertTrue(manifest['covers_every_reading'])
                 self.assertEqual(sorted(archive.namelist())[0], 'ledger-report-part-001-of-002.pdf')
             run.after_publish()
-            self.assertFalse((W.root() / 'resume' / params['run_id']).exists())
+            self.assertEqual(list((W.root() / 'resume').iterdir()), [])
 
     def snapshot(self, count):
         from services.financial.ledger_snapshot import LedgerSnapshot

@@ -42,9 +42,9 @@ KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'pdf')
 PAGE_LIMIT = 200
 HEARTBEAT_SECONDS = 5
 STALE_HEARTBEAT_SECONDS = 180  # for a run whose child never recorded itself
-# A child at background priority on a busy box can go minutes without a beat while its one long step holds the
-# interpreter (seen at 3+ minutes in a PDF render at load 40-70), so a living child is only called hung well past that.
-HUNG_HEARTBEAT_SECONDS = 1800
+# A living child at background priority on a busy box went over 30 minutes without a beat during a PDF render at load
+# 40-70, so its own process being there is what counts; this only catches one truly wedged.
+HUNG_HEARTBEAT_SECONDS = 6 * 3600
 MAX_WAITING = 6
 KEEP_SECONDS = 14 * 24 * 3600
 KEEP_BYTES = 4 * 1024 ** 3
@@ -408,7 +408,7 @@ def _write_sections(directory, sections, run, step, steps):
     return counts, digest.hexdigest()
 
 
-def _capture(connection, case_id, params, kind, identifier):
+def _capture(connection, case_id, params, kind):
     from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope
     def day(name):
         from datetime import date
@@ -419,7 +419,7 @@ def _capture(connection, case_id, params, kind, identifier):
                  account_holders=params.get('account_holders') or None, start_date=day('start_date'), end_date=day('end_date'))
     if kind == 'pdf':
         return capture_ledger_export(connection, generated_by=params.get('generated_by'), privilege_marking=params.get('privilege_marking', 'unmarked'),
-                                     size_limit=False, generated_at=_export_time(identifier), **scope)
+                                     size_limit=False, generated_at=_export_time(case_id, params), **scope)
     return capture_ledger_scope(connection, **scope)
 
 
@@ -503,16 +503,28 @@ def compute_trace(capture, params, run):
     return summary, dict(files={'trace-report.json': report})
 
 
-def _resume_dir(identifier):
-    """What a stopped report keeps for its next run; removed when the report is finished."""
-    directory = root() / 'resume' / identifier
+def _resume_dir(case_id, params):
+    """What a stopped report keeps for its next run, removed when the report is finished. Named without the code
+    version, which is in a run's own name: a release stops the run, and the run after it picks up the finished parts."""
+    asked = {key: value for key, value in params.items() if key not in ('case_id', 'run_id')}
+    name = hashlib.sha256(json.dumps([str(case_id), asked], sort_keys=True).encode()).hexdigest()[:32]
+    directory = root() / 'resume' / name
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     return directory
 
 
-def _export_time(identifier):
+def _render_version():
+    """A kept part is reused only by the same report code."""
+    from services.financial import ledger_pdf, ledger_snapshot
+    digest = hashlib.sha256()
+    for module in (ledger_pdf, ledger_snapshot):
+        digest.update(Path(module.__file__).read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def _export_time(case_id, params):
     """The report's generation time, the same across a restart, so a part already written stays the same part."""
-    path = _resume_dir(identifier) / 'generated_at'
+    path = _resume_dir(case_id, params) / 'generated_at'
     if not path.exists():
         path.write_text(_now())
     return datetime.fromisoformat(path.read_text())
@@ -527,12 +539,13 @@ def compute_pdf(capture, params, run):
     parts = list(numbered_report_parts(capture.snapshot))
     listed, members = [], []
     run.phase(2, 3, 'Writing the PDF parts', done=0, total=len(parts))
-    resume = _resume_dir(params['run_id'])
+    resume = _resume_dir(params['case_id'], params)
+    version = _render_version()
     for number, of, document, words in parts:
         content = json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
         part = LedgerSnapshot(content, hashlib.sha256(content.encode()).hexdigest(), len(content.encode()))
         # A part already written from these same bytes is kept across a restart: a release does not start the report over.
-        finished = resume / (part.sha256 + '.pdf')
+        finished = resume / (version + '-' + part.sha256 + '.pdf')
         if finished.exists():
             pdf = finished.read_bytes()
         else:
@@ -596,7 +609,7 @@ def _execute(run):
             recording = view_cache._Recording(owner=view_cache._dbapi(owner), snapshot=snapshot, connection=owner, view='whole-case-' + kind)
             token = view_cache._recording.set(recording)
             try:
-                capture = _capture(owner, case_id, params, kind, state['id'])
+                capture = _capture(owner, case_id, params, kind)
                 run.phase(2, steps, COMPUTE_LABEL[kind])
                 summary, sections = COMPUTE[kind](capture, {**params, 'case_id': state['case_id'], 'run_id': state['id']}, run)
             finally:
