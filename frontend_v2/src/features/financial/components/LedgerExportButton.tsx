@@ -339,7 +339,7 @@ function ScopedExport({
         selected above; otherwise source hashes are recorded values rather than
         fresh file checks.
       </p>
-      {message && <p role="status">{message}</p>}
+      {message && !(includePdf && isPdfSizeRefusal(message)) && <p role="status">{message}</p>}
       <ExpertPacketResult packet={packet} />
       {includePdf && isPdfSizeRefusal(message) && (
         <WholeCasePdf caseId={caseId} params={params} marking={marking} />
