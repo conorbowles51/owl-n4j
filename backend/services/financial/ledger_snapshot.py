@@ -685,6 +685,11 @@ def render_ledger_report(snapshot):
             + ' recorded decisions are in this export; ' + text(len(coverage['changed_rows_without_a_record'])) + ' of '
             + text(coverage['changed_rows']) + ' changed payments have no decision record.</p>',
             table(['Subject', 'Recorded', 'In this export'], [[item['subject_type'], item['stored'], item['in_export']] for item in coverage['by_subject']])]
+        if coverage.get('label_changes'):
+            parts += ['<h3>Name and category changes on payments</h3><p>Each change as recorded on the payment: the original stays visible.</p>',
+                table(['Payment', 'Recorded at', 'Made by', 'Original', 'Changed to'], [[item['ref_id'] or item['transaction_id'], item['at'], item['made_by'],
+                    json.dumps(item['before'], ensure_ascii=False, sort_keys=True), json.dumps(item['after'], ensure_ascii=False, sort_keys=True)]
+                    for item in coverage['label_changes']], widths=[18, 18, 24, 20, 20])]
     for decision in document.get('decisions', []):
         parts += ['<article><h3>' + text(decision['decision']) + '</h3>',
             table(['Subject', 'Sequence', 'Recorded at', 'Made by', 'Reason'], [[

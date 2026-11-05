@@ -30,7 +30,7 @@ _LABELS = dict(custody_and_decisions='Custody and decisions', components='Compon
 
 def made_by(record):
     """Who or what made a recorded decision, in the words a reader sees."""
-    origin = record.get('actor_origin') or {}
+    origin = _origin(record)
     if origin.get('kind') == 'model':
         person = (origin.get('for') or {}).get('name') or 'a person'
         return f"{origin.get('model') or 'A model'} for {person} · not confirmed"
@@ -39,8 +39,13 @@ def made_by(record):
     return f"{record.get('actor_name') or record.get('actor_email') or NOT_RECORDED} (person)"
 
 
+def _origin(record):
+    origin = record.get('actor_origin') or record.get('origin')
+    return origin if isinstance(origin, dict) else {}
+
+
 def _maker_kind(record):
-    origin = record.get('actor_origin') or {}
+    origin = _origin(record)
     return 'model' if origin.get('kind') == 'model' else 'software' if record.get('by_machine') else 'person'
 
 
@@ -83,17 +88,24 @@ def capture_decision_coverage(session, *, case_id, scopes, decisions, readings):
             gaps.append(dict(subject_type=subject[0], subject_id=subject[1], sequences=sorted(values)))
     decided = {item['subject_id'] for item in decisions if item['subject_type'] == 'transaction'}
     documents = {item['subject_id'] for item in decisions if item['subject_type'] == 'source_document'}
-    unexplained = []
+    unexplained, label_changes = [], []
     changed = 0
     for reading in readings:
         row = reading['row']
+        history = reading.get('investigation_label_history') or []
+        labelled = {field for entry in history if isinstance(entry, dict) for field in entry.get('after') or {}}
+        label_changes.extend(dict(transaction_id=row['key'], ref_id=row.get('ref_id'), at=entry.get('at'),
+            made_by=made_by(entry), before=entry.get('before'), after=entry.get('after'))
+            for entry in history if isinstance(entry, dict))
         reasons = [field for field, source in (row.get('label_sources') or {}).items()
                    if (source or {}).get('source') in ('investigator', 'model_reading')]
         if reasons or reading.get('investigation_label_history') or row.get('superseded_by_id'):
             changed += 1
             # A replaced row can be replaced by a decision on its whole statement; a name or reading needs its own.
             whole_statement = bool(row.get('superseded_by_id')) and not reasons and row.get('source_document_id') in documents
-            if row['key'] not in decided and not whole_statement:
+            # A name or category change is recorded on the payment itself: who, when, from what, to what.
+            on_the_payment = bool(history) and set(reasons) <= labelled
+            if row['key'] not in decided and not whole_statement and not on_the_payment:
                 unexplained.append(dict(transaction_id=row['key'], fields=reasons,
                                         superseded=bool(row.get('superseded_by_id'))))
     return dict(schema_version='loupe.financial.decision_coverage/1',
@@ -101,7 +113,7 @@ def capture_decision_coverage(session, *, case_id, scopes, decisions, readings):
         stored_total=sum(stored.values()), in_export_total=len(decisions), sequence_gaps=gaps,
         made_by=dict(Counter(_maker_kind(item) for item in decisions)),
         corrections_without_original=sum(1 for item in decisions if item.get('before') is None and item.get('after') is not None),
-        changed_rows=changed, changed_rows_without_a_record=unexplained)
+        changed_rows=changed, changed_rows_without_a_record=unexplained, label_changes=label_changes)
 
 
 def capture_audit_summary(session, *, case_id):

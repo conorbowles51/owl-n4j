@@ -248,6 +248,26 @@ class CapturedRecordsTests(unittest.TestCase):
         self.assertEqual(checked['changed_rows_without_a_record'],
                          [dict(transaction_id=str(self.row.id), fields=['to_name'], superseded=False)])
 
+    def test_a_name_or_category_change_recorded_on_the_payment_counts_with_who_and_the_original(self):
+        document = self.captured()
+        reading = document['ledger']['readings'][0]
+        reading['row']['label_sources'] = dict(category=dict(source='investigator'), to_name=dict(source='investigator'))
+        reading['investigation_label_history'] = [dict(actor_name='Ann Reviewer', at=LATER, before=dict(category='Taxes'),
+            after=dict(category='Bank fees')), dict(actor_name='Claude', origin=dict(kind='model', model='Claude',
+            **{'for': dict(name='Ann Reviewer')}), at=LATER, before=dict(to_name=''), after=dict(to_name='ANN'))]
+        checked = expert_packet.capture_decision_coverage(self.f.db, case_id=self.f.case.id, scopes=dict(transaction={self.row.id}),
+            decisions=[], readings=[reading])
+        self.assertEqual(checked['changed_rows_without_a_record'], [])
+        self.assertEqual([item['made_by'] for item in checked['label_changes']],
+                         ['Ann Reviewer (person)', 'Claude for Ann Reviewer · not confirmed'])
+        self.assertEqual(checked['label_changes'][0]['before'], dict(category='Taxes'))
+        reading['investigation_label_history'] = reading['investigation_label_history'][:1]
+        checked = expert_packet.capture_decision_coverage(self.f.db, case_id=self.f.case.id, scopes=dict(transaction={self.row.id}),
+            decisions=[], readings=[reading])
+        self.assertEqual(checked['changed_rows_without_a_record'][0]['fields'], ['category', 'to_name'])
+        document['decision_coverage'] = checked | dict(label_changes=checked['label_changes'])
+        self.assertIn('Name and category changes on payments', render_ledger_report(snapshot_of(document)))
+
     def test_a_dropped_decision_shows_in_the_count(self):
         from services.financial.quarantine_row import quarantine_case_row
         quarantine_case_row(self.f.db, case_id=self.f.case.id, transaction_id=self.row.id, actor=self.f.user, reason='Checked')
