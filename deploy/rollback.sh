@@ -129,6 +129,7 @@ docker compose up -d --no-build
 success "Docker stack refreshed"
 
 step "Restarting services"
+BACKEND_HANDOVER_ROLLING_BACK=true
 configure_ingestion_shutdown
 configure_backend_allocator
 check_ingestion_idle

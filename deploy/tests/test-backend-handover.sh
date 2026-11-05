@@ -162,6 +162,15 @@ grep -q SIGQUIT "${calls}"
 backend_handover_abort_open > /dev/null
 ! grep -q SIGQUIT "${calls}"
 
+# A rollback's restart leaves the supervisor out, whatever the switch says.
+echo handover > "${test_root}/deploy/backend-restart.conf"
+backend_handover_apply > /dev/null
+test -e "${dropin}"
+BACKEND_HANDOVER_ROLLING_BACK=true
+backend_handover_apply > /dev/null
+test ! -e "${dropin}"
+BACKEND_HANDOVER_ROLLING_BACK=false
+
 # Switched off again: the next restart puts the plain unit back.
 echo restart > "${test_root}/deploy/backend-restart.conf"
 restart_backend_bounded > /dev/null

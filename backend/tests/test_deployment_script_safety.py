@@ -450,3 +450,5 @@ def test_a_failed_health_check_after_a_handover_rolls_back_with_a_restart(releas
     assert result.returncode == 1, result.stdout + result.stderr
     assert HUP in events
     assert events.index(HUP) < events.index('systemctl stop --no-block owl-backend-v2')
+    # The way back does not depend on the supervisor.
+    assert not (release_sandbox / 'units/owl-backend-v2.service.d/65-lx-restartwait-supervisor.conf').exists()

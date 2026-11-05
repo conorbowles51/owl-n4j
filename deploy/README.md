@@ -225,7 +225,7 @@ again, and it finishes its requests within the usual stop bounds.
   (`deploy/migration_safety.py`). Any other migration uses a restart.
 - A changed `.env`, unit file or supervisor also uses a restart: the environment is read once, when the unit starts.
 - Every background loop states its owner in `backend/services/backend_handover.py` (`BACKGROUND_LOOPS`).
-- Way back: set the switch to `restart`; the next restart puts the plain unit back. Rollback always uses a restart.
+- Way back: set the switch to `restart`; the next restart puts the plain unit back. A rollback always restarts into the plain unit.
 - Rehearsal on a throwaway port under real systemd: `deploy/tests/rehearse-handover.sh <python with uvicorn>`.
 
 ## Rolling Back

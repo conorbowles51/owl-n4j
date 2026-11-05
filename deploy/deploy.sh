@@ -597,6 +597,7 @@ if [ "${STEP_ENGINE}" = run ]; then
 fi
 
 step "Rollback: restarting services"
+BACKEND_HANDOVER_ROLLING_BACK=true
 # A release that did not touch the backend (the plan said so) rolls back the frontend only, unless the backend
 # itself is not answering. A handover that did not happen left the old backend serving: it is not stopped now.
 if { [ "${RELEASE_TOUCHES_BACKEND}" = true ] && [ "${HANDOVER_KEPT_OLD}" != true ]; } ||

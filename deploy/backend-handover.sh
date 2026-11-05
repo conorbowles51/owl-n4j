@@ -68,7 +68,9 @@ backend_handover_apply() {
     local exec_start changed="" elevate=()
     local dropin="${BACKEND_SOCKET_UNIT_DIR}/${BACKEND_UNIT}.service.d/${BACKEND_HANDOVER_DROPIN_NAME}"
     [ "$(id -u)" -ne 0 ] && elevate=(sudo)
-    if [ "$(backend_handover_wanted)" != handover ]; then
+    # A rollback goes back to the plain unit: if the supervisor is what failed, the way back must not depend on it.
+    # The next release restarts into the supervisor again.
+    if [ "$(backend_handover_wanted)" != handover ] || [ "${BACKEND_HANDOVER_ROLLING_BACK:-}" = true ]; then
         backend_handover_remove
         return 0
     fi

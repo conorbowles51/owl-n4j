@@ -132,10 +132,14 @@ class Supervisor:
                      server_pid=self.current.pid if self.current else None, handovers=self.count,
                      handover=self.handover)
         temporary = f'{self.options.state}.{os.getpid()}.tmp'
-        with open(temporary, 'w') as handle:
-            json.dump(state, handle)
-        os.chmod(temporary, 0o644)
-        os.replace(temporary, self.options.state)
+        try:
+            with open(temporary, 'w') as handle:
+                json.dump(state, handle)
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, self.options.state)
+        except OSError as error:
+            # The backend runs regardless; a release that cannot read this state restarts instead.
+            self.say(f'state file not written: {error}')
 
     def say(self, line):
         print(f'[backend-supervisor] {line}', flush=True)
