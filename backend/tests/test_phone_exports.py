@@ -307,3 +307,13 @@ def test_e8_the_preview_is_the_first_page_of_the_export(tmp_path, monkeypatch):
         assert pages > 1 and got["rows"] == 60
         assert keep(got["text"]) == keep(whole)
         assert base64.b64decode(got["image"]).startswith(b"\x89PNG")
+
+
+@pytest.mark.parametrize("notes", [[], ["One note"], ["One note", "Another note"]])
+def test_a_translated_message_prints_its_translation_once_whatever_its_link_notes(notes):
+    from services.phone.exports import pdf
+    row = {"record_uid": "r1", "time": {"full": "Tue, Mar 14, 2023"}, "phone": {"label": "C1"}, "body": "Hola", "link_notes": notes,
+           "translation": {"detected_language_name": "Spanish", "text": "Hello", "label": "Machine translation"}}
+    html = pdf._row_html(row, set())
+    assert html.count("Machine translation from Spanish: Hello") == 1
+    assert all(word in html for word in notes)
