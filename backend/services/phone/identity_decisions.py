@@ -521,7 +521,8 @@ def standard_reason_kinds(reasons_shown):
 
 READING = {"same_card": "listed together on one contact card", "owner_accounts": "the phone's own account",
            "dossier_contact": "a contact detail on this person's dossier", "name_support": "the same name",
-           "financial_identifier": "an account identifier on a statement"}
+           "financial_identifier": "an account identifier on a statement",
+           "number_change": "a possible number change, one stopping as the other starts"}
 
 
 def standard_link_reason(reasons_shown):

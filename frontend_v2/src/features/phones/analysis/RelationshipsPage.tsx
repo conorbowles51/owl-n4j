@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom"
 import { analysisAPI } from "./analysis-api"
 import { ApproachLayout } from "./ApproachLayout"
 import { TABS, relationshipWords } from "./relationship-words"
+import { VolumeChart } from "./VolumeChart"
 
 /** Approach 11, relationships over time (05 section 14), in the shared layout (05 3.9). */
 export const WHAT_IT_DOES =
@@ -16,6 +17,7 @@ export default function RelationshipsPage() {
       queryKey="phone-relationships" tabs={TABS} words={relationshipWords} origin="phone-relationships" testId="relationship-result"
       collectLabel={(r) => relationshipWords(r).title} emptyWords="No calls, messages or contacts with anyone on the phones in this case."
       extra={<p className="text-sm">To test a statement such as "no contact after a date", use <Link className="underline" to={`/cases/${caseId}/phone-patterns`}>Check a statement</Link> in Patterns.</p>}
+      rowDetail={(r) => <VolumeChart caseId={caseId} resultId={r.id} />}
       openLink={(r) => {
         const keys = (r.measures.identity_keys as string[] | undefined) || []
         const ext = r.measures.extraction_id as string | undefined

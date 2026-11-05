@@ -2,16 +2,18 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { Fragment, useEffect, useRef, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { CollectBar } from "@/features/pattern/components/CollectBar"
 import { recordPath } from "@/lib/record-links"
 import { useCollectTargets } from "../collect-targets"
 import { translationKey } from "../lib/translation-key"
 import { BatchReading } from "./BatchReading"
 import { ImageSearch } from "./ImageSearch"
+import { OriginalsJobs } from "./OriginalsJobs"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
 import { EVERY_PHONE, mediaFilter, mediaIndexQuery, mediaPhoneIndexQuery, mediaWindowQuery, NONE } from "./media-queries"
-import { THUMB_KEY, THUMB_SIZES, copyText, dayStart, fileListText, saveBlob, sizeWords, storedThumbSize, useArrowKeys, type ThumbSize } from "./media-tools"
-import { acceptDerivedText, checkMediaDownload, confirmDerivedText, correctDerivedText, downloadMediaOriginals, getDerivedTexts, getMediaDetail, getMediaFacets, getPhones, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaDownloadFacts, type MediaFilter, type MediaItem } from "../api"
+import { THUMB_KEY, THUMB_SIZES, copyText, dayStart, fileListText, sizeWords, storedThumbSize, useArrowKeys, type ThumbSize } from "./media-tools"
+import { acceptDerivedText, checkMediaDownload, requestOriginals, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaFacets, getPhones, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaDownloadFacts, type MediaFilter, type MediaItem } from "../api"
 import { noTimeWords } from "./no-time-words"
 import { useMediaBlur } from "./use-media-blur"
 import { SignificantNote } from "../ui/SignificantNote"
@@ -446,6 +448,7 @@ export function Detail({ caseId, fileUid, onClose, onPrev = null, onNext = null,
 /** Media (03 section 8): every file on the phone, by category and state; the total is the phone summary's. */
 export default function MediaPage() {
   const { id: caseId = "", extraction = "" } = useParams()
+  const queryClient = useQueryClient()
   const [category, setCategory] = useState("")
   const [state, setState] = useState("")
   const [params, setParams] = useSearchParams()
@@ -546,6 +549,7 @@ export default function MediaPage() {
     if (copyText(text)) { setManual(null); setNote(`Copied the list of ${what}.`) }
     else { setManual(text); setNote(`This browser did not allow copying. The list of ${what} is below to copy by hand.`) }
   }
+  const downloadScope = [chosen[0]?.phone_label ?? items[0]?.phone_label, category && (category === NONE ? "uncategorised" : category), state && (state === NONE ? "unchecked" : state), selected.size ? `${n(selected.size)} chosen` : ""].filter(Boolean).join(" ") || "Selected files"
   const askDownload = async () => {
     setDownloadError(null)
     try { setPlan(await checkMediaDownload(filter, [...selected])) } catch (e) { setDownloadError(e instanceof Error ? e.message : "The download could not be checked.") }
@@ -553,10 +557,10 @@ export default function MediaPage() {
   const doDownload = async () => {
     setDownloading(true); setDownloadError(null)
     try {
-      const r = await downloadMediaOriginals(filter, [...selected])
-      saveBlob(r.blob, "phone-originals.zip")
+      const job = await requestOriginals(filter, [...selected], downloadScope)
+      await queryClient.invalidateQueries({ queryKey: ["phone-originals", caseId] })
       setPlan(null)
-      setNote(`Downloaded ${n(r.files)} ${r.files === 1 ? "file" : "files"} with manifest.csv of their hashes.`)
+      setNote(`Making the zip of ${n(job.files_total)} ${job.files_total === 1 ? "file" : "files"}; you can leave this page. Its progress is below.`)
     } catch (e) { setDownloadError(e instanceof Error ? e.message : "The download could not be made.") } finally { setDownloading(false) }
   }
   const setFilter = (fn: () => void) => { fn(); setSelected(new Set()); setPlan(null) }
@@ -652,6 +656,10 @@ export default function MediaPage() {
           {selected.size > 0 && <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear the choice</Button>}
           <Button size="sm" variant="outline" onClick={copyList} disabled={!items.length}>Copy file list</Button>
           <Button size="sm" variant="outline" onClick={() => void askDownload()} disabled={!total || downloading}>Download originals</Button>
+          {chosen.length > 0 && (
+            <CollectBar caseId={caseId} noun={chosen.length === 1 ? "file" : "files"} origin="phone-media"
+              links={chosen.map((it) => ({ target_type: "phone_file" as const, target_id: it.file_uid, label: it.filename, source_anchor: { kind: "phone_file", file_uid: it.file_uid } }))} />
+          )}
         </div>
         {note && <p role="status" className="text-xs">{note}</p>}
         {manual && <textarea aria-label="File list to copy" readOnly className="h-32 w-full rounded border p-1 font-mono text-[11px]" value={manual} onFocus={(e) => e.currentTarget.select()} />}
@@ -664,7 +672,7 @@ export default function MediaPage() {
                   {plan.not_in_production ? ` ${n(plan.not_in_production)} the report names are not in the production; the manifest lists them.` : ""}
                 </p>
                 <div className="flex gap-1">
-                  <Button size="sm" disabled={downloading} onClick={() => void doDownload()}>{downloading ? "Preparing the zip" : "Download the zip"}</Button>
+                  <Button size="sm" disabled={downloading} onClick={() => void doDownload()}>{downloading ? "Starting the zip" : "Make the zip"}</Button>
                   <Button size="sm" variant="ghost" disabled={downloading} onClick={() => setPlan(null)}>Cancel</Button>
                 </div>
               </>
@@ -673,6 +681,7 @@ export default function MediaPage() {
           </div>
         )}
         {downloadError && <p role="alert" className="text-xs">{downloadError}</p>}
+        <OriginalsJobs caseId={caseId} />
         {pages.isError && <p role="alert" className="text-sm">The files could not be loaded.</p>}
         <BatchReading caseId={caseId} filter={filter} scopeWords={[category && `${category === NONE ? "uncategorised" : category} files`, state && `${state === NONE ? "unchecked" : state} files`].filter(Boolean).join(", ") || (phone === EVERY_PHONE ? "every phone in the case" : "this phone")} />
         <ImageSearch caseId={caseId} blur={blur.on} onOpen={setOpen} />

@@ -131,6 +131,33 @@ def test_link_then_unlink_restores_and_both_decisions_are_in_order(people):
 
 
 @needs_template
+def test_a_number_change_links_both_sides_with_its_reason_and_leaves_an_existing_link(people):
+    """05 16c.4: the row's action is one decision per side, under the person, with the standard reason; a side
+    already on that person writes nothing."""
+    with fresh_engine() as engine:
+        case, _, actor, uid = _setup(engine, [_card(0, "Synthetic Two", "+12025550143", "+12025550144")])
+        with Session(engine) as db:
+            ids = [r[0] for r in db.connection().execute(text(
+                "SELECT id FROM phone_identities WHERE identity_key = ANY(:k) AND case_id = :c"), {"k": [A, B], "c": case})]
+            rev = idd.links_revision(db.connection(), ids)
+            out = idd.decide(db, case_id=case, decision="link_phone_identity", identity_keys=[A, B], actor=actor,
+                             user=_user(db, uid), new_person_name="Synthetic Person",
+                             reasons_shown=[{"reason": "number_change"}], expected_revision=rev)
+            db.commit()
+            assert len(out["decisions"]) == 2
+            again = idd.decide(db, case_id=case, decision="link_phone_identity", identity_keys=[A, B], actor=actor,
+                               user=_user(db, uid), dossier_id=out["dossier_id"], reasons_shown=[{"reason": "number_change"}])
+            db.commit()
+            assert again["decisions"] == []
+        with engine.connect() as c:
+            words = {r[0] for r in c.execute(text(
+                "SELECT a.reason FROM adjudications a JOIN phone_identities i ON i.id = a.subject_id WHERE i.case_id = :c"),
+                {"c": case})}
+            assert words == {"Linked on the review screen after seeing: a possible number change, one stopping as the "
+                             "other starts"}
+
+
+@needs_template
 def test_a_rejected_pair_is_not_suggested_again(people):
     with fresh_engine() as engine:
         # A is on one card with B and on another with C: two suggestions; rejecting A-B leaves A-C open

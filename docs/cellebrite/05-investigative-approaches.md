@@ -2083,8 +2083,9 @@ base rate of 0); the defaults stand. Most candidate pairs share only the phone's
 single-counterpart sets: 267,536), which the 5-shared minimum removes. **Built (`cb-approaches`, 05-S16c,
 `number_switching` version 16.1, screen "Possible number changes").** 16c.3 steps 1 to 4 with these defaults; a stop
 or start within the gap of the end or start of a phone's data is not counted (16c.8 test 2); nothing is joined; 16c.8
-tests 1 to 3 in `test_phone_analysis_number_switching.py`. The identity-link action of 03 section 10 is not offered
-from the row yet.
+tests 1 to 3 in `test_phone_analysis_number_switching.py`. The row offers the identity-link action of 03 section 10:
+`Link these two to one person…` records one `link_phone_identity` decision per side under the person who clicks, with
+the standard reason, and never moves an existing link.
 
 **Every possible pair, graded (version 16.2).** A pair at the defaults is a `switch_candidate`, moderate, or strong
 when a saved contact entry or a same name on a phone also holds both. A pair under the threshold or the 5-shared

@@ -38,6 +38,31 @@ export const BucketsSchema = lazySchema(() => z.object({
 }))
 export type LensBuckets = z.infer<typeof BucketsSchema>
 
+export const LensMoneySchema = lazySchema(() => z.object({
+  label: z.string(),
+  words: z.string(),
+  proof_class: z.literal("p4"),
+  run: z.object({ id: z.string(), finished_at: z.string().nullable() }).nullable(),
+  buckets: z.array(z.object({ start: z.string(), wall: z.string(), end: z.string(), count: z.number() })),
+  readings: z.number(),
+  no_time: z.number(),
+  rejected: z.number(),
+  absent_words: z.string().nullable(),
+}))
+export type LensMoney = z.infer<typeof LensMoneySchema>
+
+export const LensMoneyItemsSchema = lazySchema(() => z.object({
+  total: z.number(),
+  limit: z.number(),
+  words: z.string(),
+  items: z.array(z.object({
+    result_id: z.string(), record_uid: z.string(), instant: z.string().nullable(), amount_text: z.string().nullable(), currency: z.string().nullable(),
+    direction: z.string().nullable(), institution: z.string().nullable(), source: z.string().nullable(), phone_label: z.string().nullable(), outcome: z.string().nullable(),
+    proof_class: z.literal("p4"), from_the_phone: z.literal(true),
+  })),
+}))
+export type LensMoneyItems = z.infer<typeof LensMoneyItemsSchema>
+
 async function stale<T>(p: Promise<T>): Promise<T> {
   try {
     return await p
@@ -62,6 +87,15 @@ export async function lensLocateRecord(filter: LensFilter, snapshot: string, rec
 
 export async function lensBuckets(filter: LensFilter, snapshot: string, start: string, end: string, bucket: "hour" | "day" | "week"): Promise<LensBuckets> {
   return BucketsSchema.parse(await stale(fetchAPI("/api/phones/timeline/buckets", { method: "POST", body: { filter, snapshot, start, end, bucket }, read: true })))
+}
+
+/** Phone money readings for the money lane (05 4.4): asked for apart, so they are in no total of the lens. */
+export async function lensMoney(filter: LensFilter, start: string, end: string, bucket: "hour" | "day" | "week"): Promise<LensMoney> {
+  return LensMoneySchema.parse(await fetchAPI("/api/phones/timeline/money", { method: "POST", body: { filter, start, end, bucket }, read: true }))
+}
+
+export async function lensMoneyItems(filter: LensFilter, start: string, end: string): Promise<LensMoneyItems> {
+  return LensMoneyItemsSchema.parse(await fetchAPI("/api/phones/timeline/money", { method: "POST", body: { filter, start, end, items: true }, read: true }))
 }
 
 /** The lens as a source for the one phone list (useStream): the same list, copy and badges as Conversations. */

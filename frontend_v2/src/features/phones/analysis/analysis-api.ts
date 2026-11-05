@@ -22,6 +22,20 @@ export type KeptResult = Omit<Snapshot, "kind"> & { kind: "analysis_result" }
 
 export interface ApproachPage { total: number; offset: number; limit: number; items: ApproachResult[] }
 
+/** Approach 11: one person's weekly contact on one phone, with the run's changepoints (05 14.4). */
+export interface VolumeChange { result_id: string; week_start: string; direction: "rise" | "fall"; rate_before: number; rate_after: number; weeks_before: number; weeks_after: number }
+export interface RelationshipVolume {
+  result_id: string
+  phone_label: string | null
+  extraction_id: string
+  identity_keys: string[]
+  weeks: { week_start: string; count: number }[]
+  total: number
+  untimed: number
+  changepoints: VolumeChange[]
+  changed_words: string | null
+}
+
 const BASE = "/api/phone-analysis"
 const q = (o: Record<string, string | number | undefined>) =>
   Object.entries(o).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&")
@@ -47,6 +61,10 @@ export function analysisAPI(approach: string) {
 }
 
 export type AnalysisClient = ReturnType<typeof analysisAPI>
+
+export function relationshipVolume(caseId: string, resultId: string) {
+  return fetchAPI<RelationshipVolume>(`${BASE}/results/${resultId}/volume?${q({ case_id: caseId })}`)
+}
 
 /** A kept analysis result as listed on the analyses page. */
 export interface KeptItem { id: string; label: string; approach: string | null; record_count: number; created_by_name: string | null; created_at: string | null }

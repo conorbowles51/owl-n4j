@@ -122,3 +122,31 @@ def test_one_contact_card_listing_two_numbers_gives_two_results_with_their_own_k
         page = F.results(c, case, run["id"], kind="relationship")
     assert page["total"] == 2
     assert {i["measures"]["extraction_id"] for i in page["items"]} == {str(ext)}
+
+
+@needs_template
+def test_the_volume_chart_equals_the_run_and_its_changepoints(engine):
+    """14.4: the weeks count what the run counted, with weeks of zero to the phone's end and the stored changepoint."""
+    F.register(R)
+    base = at(2023, 1, 2)
+    events = [_m(base + timedelta(days=7 * w, hours=h), ANA, OWNER, "a%d-%d" % (w, h)) for w in range(3) for h in range(10)]
+    events += [_m(base + timedelta(days=7 * w + 1), BEN, OWNER, "b%d" % w) for w in range(6)]
+    with engine.begin() as c:
+        case = make_case(c)
+        phone(c, case, events=events)
+        run, _ = F.request_run(c, case, "relationships", None, "synthetic@example.org")
+    assert F.execute(engine, uuid.UUID(run["id"]))["status"] == "completed"
+    run = run["id"]
+    with engine.connect() as c:
+        rel, ch = None, None
+        for r in F.results(c, case, run, limit=100)["items"]:
+            if r["measures"].get("group") == ANA:
+                rel, ch = (r, ch) if r["kind"] == "relationship" else (rel, r)
+        out = R.volume(c, case, rel["id"])
+        assert [w["count"] for w in out["weeks"]] == [10, 10, 10, 0, 0, 0]
+        assert out["weeks"][3]["week_start"] == (base + timedelta(days=21)).date().isoformat()
+        assert out["total"] == 30 and out["identity_keys"] == [ANA] and out["changed_words"] is None
+        assert [(x["week_start"], x["direction"]) for x in out["changepoints"]] == [(out["weeks"][3]["week_start"], "fall")]
+        assert R.volume(c, case, ch["id"])["weeks"] == out["weeks"]  # the same chart from the change's own row
+        with pytest.raises(LookupError):
+            R.volume(c, make_case(c), rel["id"])

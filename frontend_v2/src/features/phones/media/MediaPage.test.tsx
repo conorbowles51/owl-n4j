@@ -26,9 +26,11 @@ const api = vi.hoisted(() => ({
   getMediaFacets: vi.fn().mockResolvedValue({ apps: [{ app: "SyntheticApp", files: 1 }], participants: [{ key: "phone:+12025550143", label: "Synthetic Contact", files: 1 }] }),
   getPhones: vi.fn().mockResolvedValue({ case_id: "c", total: 2, phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }], case_zone: { name: "UTC", basis: "default", note: null } }),
   checkMediaDownload: vi.fn(),
-  downloadMediaOriginals: vi.fn(),
+  requestOriginals: vi.fn(),
+  getOriginals: vi.fn().mockResolvedValue({ items: [] }),
 }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
+vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: ({ links }: { links: { target_type: string; target_id: string }[] }) => <div data-testid="add-to">{links.map((l) => `${l.target_type}:${l.target_id}`).join(",")}</div> }))
 vi.mock("../collect-targets", () => ({ useCollectTargets: () => ({ targets: [{ kind: "dossier", id: "p1", label: "Synthetic Person" }, { kind: "note", id: "n1", label: "A note" }], note: null, loading: false, error: null }) }))
 import MediaPage, { DerivedTexts } from "./MediaPage"
 
@@ -394,24 +396,31 @@ describe("Media viewer tools (03 8.3)", () => {
     await waitFor(() => expect(dl).toBeEnabled())
     fireEvent.click(dl)
     expect(await screen.findByRole("alert")).toHaveTextContent("so nothing was made")
-    expect(api.downloadMediaOriginals).not.toHaveBeenCalled()
-    expect(screen.queryByRole("button", { name: "Download the zip" })).toBeNull()
+    expect(api.requestOriginals).not.toHaveBeenCalled()
+    expect(screen.queryByRole("button", { name: "Make the zip" })).toBeNull()
   })
 
-  it("downloads the chosen originals after stating what the zip holds", async () => {
+  it("makes the originals as a job after stating what the zip holds", async () => {
     localStorage.clear()
-    api.checkMediaDownload.mockResolvedValueOnce({ count: 2, held: 1, not_in_production: 1, bytes: 2048, refusal: null, max_files: 2000, max_bytes: 1 })
-    api.downloadMediaOriginals.mockResolvedValueOnce({ blob: new Blob(["z"]), files: 2 })
-    const made = vi.fn().mockReturnValue("blob:x")
-    Object.defineProperty(URL, "createObjectURL", { value: made, configurable: true })
+    api.checkMediaDownload.mockResolvedValueOnce({ count: 2, held: 1, not_in_production: 1, bytes: 2048, refusal: null })
+    api.requestOriginals.mockResolvedValueOnce({ bundle_id: "b1", files_total: 2 })
     page()
     const dl = await screen.findByRole("button", { name: "Download originals" })
     await waitFor(() => expect(dl).toBeEnabled())
     fireEvent.click(dl)
     expect(await screen.findByText(/2 files, 2 KB, as a zip with manifest.csv/)).toBeInTheDocument()
     expect(screen.getByText(/1 the report names are not in the production/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Download the zip" }))
-    expect(await screen.findByText("Downloaded 2 files with manifest.csv of their hashes.")).toBeInTheDocument()
-    expect(made).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Make the zip" }))
+    expect(await screen.findByText(/Making the zip of 2 files; you can leave this page/)).toBeInTheDocument()
+    expect(api.requestOriginals).toHaveBeenCalledTimes(1)
+  })
+
+  it("offers Add to… for the chosen files, each as a phone file link", async () => {
+    localStorage.clear()
+    page()
+    const grid = await screen.findByRole("list", { name: "Files" })
+    expect(screen.queryByTestId("add-to")).toBeNull()
+    fireEvent.click(await within(grid).findByRole("checkbox", { name: /synthetic-a.jpg/ }))
+    expect((await screen.findByTestId("add-to")).textContent).toBe("phone_file:f1")
   })
 })

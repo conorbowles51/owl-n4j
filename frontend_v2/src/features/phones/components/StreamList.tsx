@@ -11,7 +11,8 @@ import { rowsHtml, rowsText } from "../lib/copy-rows"
 import { LONG_BODY, plural, STALE_AFTER_COPY, STALE_COPY, totalWords, undatedSentence, undatedWords } from "../lib/stream-words"
 import { matchRanges } from "@/features/search/lib/fold"
 import type { StreamRow } from "../schemas"
-import { Arrow, ParticipantLabel } from "./ParticipantLabel"
+import { Arrow } from "./ParticipantLabel"
+import { ParticipantMenu } from "./ParticipantMenu"
 import { rowBadges } from "../lib/badges"
 import { StateBadges } from "./StateBadges"
 import { TimeCell } from "./TimeCell"
@@ -464,13 +465,13 @@ export function StreamList({
                     <StateBadges badges={rowBadges(row)} />
                   </div>
                   {row.kind !== "record" && <div className="text-sm">
-                    <ParticipantLabel label={row.from} />
+                    <ParticipantMenu caseId={caseId} label={row.from} parties={row} />
                     <Arrow />
                     {row.to.length ? (
                       row.to.map((t, k) => (
                         <span key={`${t.identity_key}-${k}`}>
                           {k > 0 && ", "}
-                          <ParticipantLabel label={t} />
+                          <ParticipantMenu caseId={caseId} label={t} parties={row} />
                         </span>
                       ))
                     ) : (

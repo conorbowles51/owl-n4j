@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { rowText } from "@/features/phones/lib/copy-rows"
 import type { StreamRow } from "@/features/phones/schemas"
@@ -21,6 +22,11 @@ vi.mock("@/lib/api-client", async (orig) => ({
         hidden: shown ? { count: 0, by_kind: {}, words: null } : { count: net.hidden, by_kind: { device: net.hidden }, words: `${net.hidden} device events and sensor readings hidden.` },
         kinds: [], comm_filter_applies: true, other_filter_applies: true,
       }
+    }
+    if (url.endsWith("/timeline/money")) {
+      if (opts.body.items) return { total: 1, limit: 500, words: "p4, from the phone.", items: [{ result_id: "r1", record_uid: "rec-1", instant: "2023-03-14T09:00:00+00:00", amount_text: "$12.50", currency: "USD", direction: "debit", institution: "Synthetic Bank", source: "notification", phone_label: "C1", outcome: "unresolved", proof_class: "p4", from_the_phone: true }] }
+      return { label: "Money: readings from the phone (p4)", words: "Readings are never added to any total.", proof_class: "p4", run: { id: "r", finished_at: null }, readings: 2, no_time: 1, rejected: 0, absent_words: null,
+        buckets: [{ start: "2023-03-14T00:00:00+00:00", wall: "2023-03-14T00:00:00", end: "2023-03-15T00:00:00+00:00", count: 2 }] }
     }
     if (url.endsWith("/timeline/window")) return { case_id: "c", snapshot: "s1", complete: true, limits: [], counts: {}, items: [] }
     if (url.endsWith("/timeline/buckets"))
@@ -87,6 +93,20 @@ describe("Timeline phone lens (03 section 9)", () => {
     expect(await screen.findByTestId("phone-list")).toHaveTextContent("one day from the lanes")
     // the bucket's rows come through the lens with the bucket's span and nothing undated
     await waitFor(() => expect(net.calls.some((c) => c.url.endsWith("/timeline/index") && c.body.from_instant === "2023-03-14T00:00:00+00:00" && c.body.include_no_time === false)).toBe(true))
+  })
+
+  it("05 4.4: phone money readings sit on their own lane, labelled p4 from the phone, and in no count of the phones", async () => {
+    wrap(<MemoryRouter><PhoneLens caseId="c" caseName="Synthetic case" /></MemoryRouter>)
+    await screen.findByText("6 phone entries")
+    fireEvent.click(screen.getByRole("button", { name: "Lanes" }))
+    const lane = await screen.findByRole("region", { name: "Lane: Money: readings from the phone (p4)" })
+    expect(lane).toHaveTextContent("Readings are never added to any total.")
+    expect(lane).toHaveTextContent("1 with no time is not drawn.")
+    expect(await screen.findByText("6 phone entries")).toBeInTheDocument() // the phones' total is the same with readings on screen
+    fireEvent.click(within(lane).getByRole("button", { name: /2 p4 readings from the phone/ }))
+    const list = await screen.findByRole("region", { name: "Phone money readings" })
+    expect(within(list).getByText("p4 · from the phone")).toBeInTheDocument()
+    expect(within(list).getByRole("link", { name: /\$12\.50 · debit · Synthetic Bank/ })).toHaveAttribute("href", expect.stringContaining("rec-1"))
   })
 
   it("an All span over ten years asks for weekly lanes, which the server answers, not daily lanes it refuses", async () => {

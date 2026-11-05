@@ -1126,11 +1126,14 @@ message_count, thumbnail_url or null, has_derived: ["transcript"]}`.
   - dates: whole UTC days by the carrying message's time. The files with no time that a date range leaves out are counted.
 - Files are chosen with their boxes.
 - `Copy file list` copies file, phone, category, time, state, SHA-256 and MD5, tab-separated, without the clipboard API. When the browser refuses, the list is shown to copy by hand. With nothing chosen, it says when only the loaded files are in the list.
-- `Download originals` (`POST /api/phones/media/download`):
+- `Add to…` takes the chosen files as `phone_file` links.
+- `Download originals` (`POST /api/phones/media/download`) is a background job:
   - it first states what the zip holds (files, size, and how many the production lacks);
-  - it then downloads the zip: each file stored as it is, plus `manifest.csv` with the stated hashes and the SHA-256 of the bytes in the zip;
-  - over 2,000 files or 1 GB it is refused with the numbers, and nothing is made;
-  - a file that cannot be read refuses the whole download before the first byte.
+  - it then freezes the set and draws the zip on the phone worker, stating files and bytes as it goes, with Cancel;
+  - each file is stored as it is. `manifest.csv` has a line for every file asked for: the MD5 and SHA-256 computed from the bytes in the zip, each stored hash, and whether they agree;
+  - a file that differs from a stored hash is included and reported; a file absent from the production or unreadable is listed with the reason;
+  - a set the disk cannot hold is refused with the numbers, and nothing is made;
+  - asking and fetching are in the audit log; the zip is kept 7 days, then removed, and the job says so.
 - Blur:
   - follows the case default until the person chooses for themselves;
   - the default is on in a criminal case (case context template `criminal_defense`) unless Case settings › `Blur phone pictures` sets it for the case (`case_phone_settings`, `PUT /api/phones/settings/media-blur`).

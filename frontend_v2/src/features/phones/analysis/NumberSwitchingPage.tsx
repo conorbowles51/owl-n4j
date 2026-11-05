@@ -2,11 +2,12 @@ import { useMemo } from "react"
 import { useParams } from "react-router-dom"
 import { analysisAPI } from "./analysis-api"
 import { ApproachLayout } from "./ApproachLayout"
+import { NumberChangeLink } from "./NumberChangeLink"
 import { TABS, switchWords } from "./switch-words"
 
 /** Approach 16, number switching (05 section 16c), in the shared layout (05 3.9). */
 export const WHAT_IT_DOES =
-  "Numbers or accounts whose contact stops while another, in contact with mostly the same people, starts soon after: the gap, how many counterparts they share, and any saved contact entry or name that holds both. It does not say the two are the same person, and it joins nothing."
+  "Numbers or accounts whose contact stops while another, in contact with mostly the same people, starts soon after: the gap, how many counterparts they share, and any saved contact entry or name that holds both. It does not say the two are the same person, and it joins nothing unless you link them to one person."
 
 export default function NumberSwitchingPage() {
   const { id: caseId = "" } = useParams()
@@ -14,6 +15,7 @@ export default function NumberSwitchingPage() {
   return (
     <ApproachLayout caseId={caseId} title="Possible number changes" whatItDoes={WHAT_IT_DOES} client={client}
       queryKey="phone-number-switching" tabs={TABS} words={switchWords} origin="phone-number-switching" testId="switch-result"
+      rowAction={(r) => <NumberChangeLink caseId={caseId} from={String(r.measures.from)} to={String(r.measures.to)} fromDisplay={String(r.measures.from_display)} toDisplay={String(r.measures.to_display)} />}
       runExtra={(run) => run.left_out_words ? <p className="text-sm" data-testid="switch-left-out">{run.left_out_words}</p> : null}
       collectLabel={(r) => switchWords(r).title} emptyWords="No number or account stops while another with mostly the same counterparts starts within the gap." />
   )

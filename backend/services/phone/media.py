@@ -409,23 +409,13 @@ def _in_container(conn, c, case_root, extraction_id, disk_relpath):
 
 # ---- Download originals (03 8.3): a zip of the chosen files with a manifest of hashes ----------------------------------
 
-# The download is built in the browser's memory, so it is held to what a browser keeps comfortably; a larger choice
-# is refused with its numbers, never cut. Reverse if measured downloads need more (then stream to a file).
-DOWNLOAD_MAX_FILES = 2_000
-DOWNLOAD_MAX_BYTES = 1024 * 1024 * 1024
-
-
 class DownloadRefused(ValueError):
     pass
 
 
-def _size_words(n):
-    return ("%.1f GB" % (n / 1024 ** 3)) if n >= 1024 ** 3 else ("{:,} MB".format(max(1, n // (1024 ** 2))))
-
-
 def download_plan(conn, case_id, f: dict | None = None, file_uids=None) -> dict:
-    """The files a download holds (the filter's, or the chosen files within it), their total bytes, and the refusal
-    when it is too large. Missing files are listed in the manifest as not in the production, never left out."""
+    """The files a download holds (the filter's, or the chosen files within it) and their total bytes. Missing files
+    are listed in the manifest as not in the production, never left out. ``services.phone.originals`` draws them."""
     f, p = with_significant(conn, case_id, dict(f or {})), {"c": str(case_id)}
     where = _where(f, p)
     if file_uids:
@@ -442,103 +432,5 @@ def download_plan(conn, case_id, f: dict | None = None, file_uids=None) -> dict:
     refusal = None
     if not rows:
         refusal = "There are no files to download."
-    elif len(rows) > DOWNLOAD_MAX_FILES or total_bytes > DOWNLOAD_MAX_BYTES:
-        refusal = ("These %s files are %s. A download holds at most %s files and %s, so nothing was made. Choose "
-                   "fewer (a phone, a category or dates) and download again." % (
-                       "{:,}".format(len(rows)), _size_words(total_bytes), "{:,}".format(DOWNLOAD_MAX_FILES),
-                       _size_words(DOWNLOAD_MAX_BYTES)))
     return {"files": rows, "count": len(rows), "held": len(held), "not_in_production": len(rows) - len(held),
             "bytes": total_bytes, "refusal": refusal}
-
-
-MANIFEST_HEADER = ["file_in_zip", "phone", "original_path", "category", "time", "state", "size_bytes", "stated_md5",
-                   "stated_sha256", "sha256_of_the_file_in_this_zip", "sha256_matches"]
-
-
-def download_openers(conn, case_id, plan) -> dict:
-    """{file_uid: opener} for every held file of the plan, resolved before the first byte is sent: a file that cannot
-    be read raises ContentRefused here, so a partial zip is never delivered. The openers read from disk only."""
-    out = {}
-    for r in plan["files"]:
-        if r["verification"] != "missing":
-            # a download carries the original whatever its size (the inline limit is for the viewer)
-            out[str(r["file_uid"])] = content(conn, case_id, r["file_uid"], max_bytes=float("inf"))[2]
-    return out
-
-
-def download_stream(plan, labels, openers):
-    """Yield the zip's bytes: each held file stored as it is, then ``manifest.csv`` with every file's hashes (the
-    SHA-256 is computed while the file is written, so the manifest describes exactly the bytes in the zip). Uses no
-    database connection: ``openers`` come from ``download_openers``."""
-    import csv
-    import hashlib
-    import io
-    import posixpath
-    import zipfile
-
-    class Sink:
-        def __init__(self):
-            self.buf = bytearray()
-            self.pos = 0
-
-        def write(self, b):
-            self.buf += b
-            self.pos += len(b)
-            return len(b)
-
-        def tell(self):
-            return self.pos
-
-        def flush(self):
-            pass
-
-        def take(self):
-            out = bytes(self.buf)
-            self.buf.clear()
-            return out
-
-    sink = Sink()
-    zf = zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED, allowZip64=True)
-    rows = []
-    used = set()
-    for r in plan["files"]:
-        phone = labels.get(str(r["extraction_id"]), "phone")
-        base = posixpath.basename((r["local_path"] or "").replace("\\", "/")) or "file"
-        folder = "".join(ch if ch.isalnum() or ch in "-_ ." else "_" for ch in phone)
-        name = "%s/%s" % (folder, base)
-        k = 1
-        while name in used:
-            k += 1
-            stem, ext = posixpath.splitext(base)
-            name = "%s/%s (%d)%s" % (folder, stem, k, ext)
-        stated_sha = (r["sha256"] or r["declared_sha256"] or "").strip().lower() or None
-        if r["verification"] == "missing":
-            rows.append(["", phone, r["local_path"] or "", r["category"] or "", T.iso(r["first_at"]) or "",
-                         "not in the production", "", (r["md5"] or "").strip(), stated_sha or "", "", ""])
-            continue
-        used.add(name)
-        opener = openers[str(r["file_uid"])]
-        h = hashlib.sha256()
-        size = 0
-        with opener() as fh, zf.open(zipfile.ZipInfo(name), "w", force_zip64=True) as out:
-            while True:
-                chunk = fh.read(1024 * 1024)
-                if not chunk:
-                    break
-                h.update(chunk)
-                size += len(chunk)
-                out.write(chunk)
-                if len(sink.buf) >= 4 * 1024 * 1024:
-                    yield sink.take()
-        got = h.hexdigest()
-        rows.append([name, phone, r["local_path"] or "", r["category"] or "", T.iso(r["first_at"]) or "",
-                     OUTCOME_WORDS.get(r["verification"] or "", "Not checked"), str(size), (r["md5"] or "").strip(),
-                     stated_sha or "", got, ("yes" if got == stated_sha else "no") if stated_sha else "no hash stated"])
-        yield sink.take()
-    text_out = io.StringIO()
-    w = csv.writer(text_out)
-    w.writerow(MANIFEST_HEADER)
-    w.writerows(rows)
-    zf.writestr("manifest.csv", text_out.getvalue().encode("utf-8"))
-    zf.close()
-    yield sink.take()

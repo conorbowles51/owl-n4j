@@ -41,6 +41,10 @@ export interface ApproachLayoutProps {
   runExtra?: (run: AnalysisRun) => ReactNode
   /** Where a result opens beside its records (for example Conversations filtered to the person). */
   openLink?: (r: ApproachResult) => { to: string; label: string } | null
+  /** An action of this approach on the row itself (for example linking the two sides of a number change). */
+  rowAction?: (r: ApproachResult) => ReactNode
+  /** Shown when a result is opened, above what supports it (for example its volume chart). */
+  rowDetail?: (r: ApproachResult) => ReactNode
   /** Words for a result against one key date, where the approach's time means something narrower than a period. */
   anchorRelation?: (r: ApproachResult, anchorIso: string, anchorLabel: string) => string | null
 }
@@ -171,9 +175,11 @@ function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: Approach
       </div>
       {w.line && <p className="text-xs">{w.line}</p>}
       {open2 && <Link className="text-xs underline" to={open2.to}>{open2.label}</Link>}
+      {p.rowAction?.(r)}
       {rel.length > 0 && <p className="text-xs" aria-label="Against key dates">{rel.join(". ")}.</p>}
       {open && (
         <div className="mt-2 space-y-2">
+          {p.rowDetail?.(r)}
           {r.directions.supports.length > 0 && (
             <ul className="list-disc pl-4 text-xs" aria-label="What supports it">{r.directions.supports.map((d, i) => <li key={i}>{d.detail}</li>)}</ul>
           )}

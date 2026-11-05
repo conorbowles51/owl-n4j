@@ -468,8 +468,9 @@ class MediaFilter(BaseModel):
 class MediaDownloadBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filter: MediaFilter
-    file_uids: list[UUID] = Field(default_factory=list, max_length=5000)
+    file_uids: list[UUID] = Field(default_factory=list, max_length=200_000)
     check_only: bool = False
+    scope_words: str = Field(default="Selected files", max_length=300)
 
 
 @router.post("/media/facets")
@@ -480,15 +481,24 @@ def phone_media_facets(f: MediaFilter, db: Session = Depends(get_db), user: User
     return media.facets(db.connection(), f.case_id, f.model_dump(exclude={"case_id"}))
 
 
+def _originals_log(db, user, action, case_id, bundle):
+    from services.system_log_service import LogOrigin, LogType, system_log_service
+    system_log_service.log(log_type=LogType.CASE_OPERATION, origin=LogOrigin.BACKEND, action=action,
+                           details={"case_id": str(case_id), "bundle_id": bundle["bundle_id"],
+                                    "files": bundle["files_total"], "bytes": bundle["bytes_total"],
+                                    "scope": bundle["scope_words"], "mismatched": bundle["mismatched"],
+                                    "not_included": bundle["not_included"],
+                                    "sha256": (bundle["file"] or {}).get("sha256")},
+                           user=user.email, success=True, db=db)
+
+
 @router.post("/media/download")
 def phone_media_download(body: MediaDownloadBody, db: Session = Depends(get_db),
                          user: User = Depends(get_current_db_user)):
-    """Download originals (03 8.3): the chosen files (or every file the filter shows) as a zip, stored as they are,
-    with manifest.csv of their hashes. Too many files or bytes is refused with the numbers (413), never cut; a file
-    that cannot be read is refused before the first byte (409). ``check_only`` answers what the zip would hold."""
-    from fastapi.responses import StreamingResponse
-    from services.phone import media
-    from services.phone.readings import phone_labels
+    """Download originals (03 8.3): the chosen files (or every file the filter shows), frozen and queued as a job that
+    draws a zip with a manifest of hashes. ``check_only`` answers what the zip would hold, or the refusal with its
+    numbers, before anything is made. Recorded in the audit log when asked for and when fetched."""
+    from services.phone import media, originals
     f = body.filter
     authorize_case(db, f.case_id, user, ("case", "view"))
     if (f.from_instant and f.from_instant.tzinfo is None) or (f.to_instant and f.to_instant.tzinfo is None):
@@ -498,25 +508,56 @@ def phone_media_download(body: MediaDownloadBody, db: Session = Depends(get_db),
         plan = media.download_plan(conn, f.case_id, f.model_dump(exclude={"case_id"}), body.file_uids or None)
     except media.DownloadRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    facts = {k: plan[k] for k in ("count", "held", "not_in_production", "bytes", "refusal")}
-    facts.update(max_files=media.DOWNLOAD_MAX_FILES, max_bytes=media.DOWNLOAD_MAX_BYTES)
+    refusal = plan["refusal"] or originals.count_refusal(plan["count"]) or originals.space_refusal(plan["bytes"])
     if body.check_only:
-        return facts
-    if plan["refusal"]:
-        raise HTTPException(status_code=413, detail=plan["refusal"])
+        return {**{k: plan[k] for k in ("count", "held", "not_in_production", "bytes")}, "refusal": refusal}
+    if refusal:
+        raise HTTPException(status_code=413, detail=refusal)
     try:
-        openers = media.download_openers(conn, f.case_id, plan)
-    except media.ContentRefused as exc:
-        raise HTTPException(status_code=409, detail="A file could not be read (%s); nothing was downloaded." % exc)
-    labels = phone_labels(conn, f.case_id)
-    from services.system_log_service import LogOrigin, LogType, system_log_service
-    system_log_service.log(log_type=LogType.CASE_OPERATION, origin=LogOrigin.BACKEND, action="Started a download of phone originals",
-                           details={"case_id": str(f.case_id), "files": plan["count"], "bytes": plan["bytes"]},
-                           user=user.email, success=True, db=db)
-    return StreamingResponse(media.download_stream(plan, labels, openers), media_type="application/zip",
-                             headers={"Content-Disposition": 'attachment; filename="phone-originals.zip"',
-                                      "X-Files": str(plan["count"]), "X-Files-Not-In-Production":
-                                          str(plan["not_in_production"]), "X-Content-Type-Options": "nosniff"})
+        out = originals.create(conn, case_id=f.case_id, user_id=user.id,
+                               file_uids=[r["file_uid"] for r in plan["files"]], scope_words=body.scope_words)
+    except originals.BundleError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    _originals_log(db, user, "Asked for phone originals", f.case_id, out)
+    db.commit()
+    return out
+
+
+@router.get("/media/originals")
+def list_originals(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_db_user)):
+    from services.phone import originals
+    authorize_case(db, case_id, user, ("case", "view"))
+    return {"case_id": str(case_id), "items": originals.recent(db.connection(), case_id)}
+
+
+@router.post("/media/originals/{bundle_id}/cancel")
+def cancel_originals(bundle_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                     user: User = Depends(get_current_db_user)):
+    from services.phone import originals
+    authorize_case(db, case_id, user, ("case", "view"))
+    if not originals.cancel(db.connection(), case_id, bundle_id, user.id):
+        raise HTTPException(status_code=409, detail="This download is finished, or it is someone else's.")
+    out = originals.get(db.connection(), case_id, bundle_id)
+    _originals_log(db, user, "Cancelled phone originals", case_id, out)
+    db.commit()
+    return out
+
+
+@router.get("/media/originals/{bundle_id}/file")
+def originals_file(bundle_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_db_user)):
+    from fastapi.responses import FileResponse
+
+    from services.phone import originals
+    authorize_case(db, case_id, user, ("case", "view"))
+    r = originals.file_of(db.connection(), case_id, bundle_id)
+    if r is None or not r.storage_path or not os.path.exists(r.storage_path):
+        raise HTTPException(status_code=404, detail="That download has no finished file.")
+    _originals_log(db, user, "Fetched phone originals", case_id, originals.get(db.connection(), case_id, bundle_id))
+    db.commit()
+    return FileResponse(r.storage_path, media_type="application/zip", filename=r.filename,
+                        headers={"X-Content-SHA256": r.sha256 or "", "X-Content-Type-Options": "nosniff"})
 
 
 class MediaWindowBody(BaseModel):
@@ -1359,6 +1400,26 @@ def identity_suggestions(case_id: UUID = Query(...), db: Session = Depends(get_d
             "by_level": counts(out), "scale": SCALE_WORDS}
 
 
+@router.get("/identity-pair")
+def identity_pair(case_id: UUID = Query(...), keys: list[str] = Query(..., min_length=1, max_length=2),
+                  db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The sides of a possible number change that are identities (05 16c.4): each one's link, and the one revision a
+    decision on them together must name, so a change made meanwhile is refused and shown."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from sqlalchemy import text as sql
+    conn = db.connection()
+    rows = conn.execute(sql(
+        "SELECT i.id, i.identity_key, i.kind, i.subkind, i.value_display, l.dossier_id, p.display_name FROM "
+        "phone_identities i LEFT JOIN phone_identity_links l ON l.identity_id = i.id LEFT JOIN case_profiles p ON "
+        "p.id = l.dossier_id WHERE i.case_id = :c AND i.identity_key = ANY(:k)"), {"c": case_id, "k": keys}).fetchall()
+    if len(rows) != len(set(keys)):
+        raise HTTPException(status_code=404, detail="An identity is not in this case")
+    return {"items": [{"identity_key": r.identity_key, "value_display": r.value_display,
+                       "linked_dossier": {"id": str(r.dossier_id), "name": r.display_name} if r.dossier_id else None,
+                       "can_be_a_person": not (r.kind == "other" and r.subkind == "group")} for r in rows],
+            "expected_revision": identity_decisions.links_revision(conn, [r.id for r in rows])}
+
+
 @router.get("/identities/{identity_key:path}")
 def identity_detail(identity_key: str, case_id: UUID = Query(...), db: Session = Depends(get_db),
                     user: User = Depends(get_current_db_user)):
@@ -2016,6 +2077,29 @@ class LensLocateBody(BaseModel):
     filter: dict
     snapshot: str = Field(min_length=1, max_length=64)
     record_uid: UUID
+
+
+class LensMoneyBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    start: datetime
+    end: datetime
+    bucket: Literal["hour", "day", "week"] = "day"
+    items: bool = False
+
+
+@router.post("/timeline/money")
+def timeline_money(body: LensMoneyBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Phone money readings for the Timeline's money lane (05 4.4): counts of p4 readings per bucket, or one mark's
+    readings. Asked for apart, so they are in no total of the lens."""
+    from services.phone import timeline_money as TM
+    f = _lens_filter(body.filter, db, user)
+    if body.end <= body.start:
+        raise HTTPException(status_code=422, detail="The end of the span must be after its start.")
+    conn = db.connection()
+    if body.items:
+        return TM.items(conn, f, start=body.start, end=body.end)
+    return TM.lane(conn, f, start=body.start, end=body.end, bucket=body.bucket)
 
 
 @router.post("/timeline/locate")

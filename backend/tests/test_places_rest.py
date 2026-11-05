@@ -384,47 +384,56 @@ def _on_disk(engine, case, ext, tmp_path, monkeypatch, data=b"synthetic bytes"):
 
 
 @needs_template
-def test_i_download_originals_is_a_zip_of_the_files_with_a_manifest_whose_hashes_match(world, tmp_path, monkeypatch):
+def test_i_download_originals_is_a_job_giving_a_zip_with_a_manifest_whose_hashes_match(world, tmp_path, monkeypatch):
     import csv
     import io
     import zipfile
+
+    from services.phone import originals
     engine, case, _, ext = world
     sha = _on_disk(engine, case, ext, tmp_path, monkeypatch)
+    monkeypatch.setenv("LOUPE_PHONE_BUNDLE_DIR", str(tmp_path / "bundles"))
     with _phones_client(engine, case) as cl:
-        body = {"filter": {"case_id": str(case)}, "file_uids": [LINKED, MISSING]}
+        body = {"filter": {"case_id": str(case)}, "file_uids": [LINKED, MISSING], "scope_words": "C1 chosen"}
         r = cl.post("/api/phones/media/download", json=dict(body, check_only=True))
         assert r.status_code == 200, r.text
         facts = r.json()
         assert (facts["count"], facts["held"], facts["not_in_production"], facts["refusal"]) == (2, 1, 1, None)
         r = cl.post("/api/phones/media/download", json=body)
         assert r.status_code == 200, r.text
-        assert r.headers["x-files"] == "2" and r.headers["x-files-not-in-production"] == "1"
+        job = r.json()
+        assert job["state"] == "queued" and job["files_total"] == 2 and job["scope_words"] == "C1 chosen"
+        assert originals.run_pending(engine)[0]["state"] == "done"
+        got = cl.get("/api/phones/media/originals", params={"case_id": str(case)}).json()["items"][0]
+        assert (got["files_done"], got["matched"], got["not_included"]) == (2, 1, 1)
+        r = cl.get("/api/phones/media/originals/%s/file" % job["bundle_id"], params={"case_id": str(case)})
+        assert r.status_code == 200, r.text
         z = zipfile.ZipFile(io.BytesIO(r.content))
         assert z.testzip() is None
-        names = z.namelist()
-        assert names[-1] == "manifest.csv" and len(names) == 2
-        assert z.read(names[0]) == b"synthetic bytes"
-        rows = list(csv.reader(io.StringIO(z.read("manifest.csv").decode("utf-8"))))
-        assert rows[0][0] == "file_in_zip" and len(rows) == 3
-        held = next(x for x in rows[1:] if x[0] == names[0])
-        assert (held[9], held[10]) == (sha, "yes")
-        gone = next(x for x in rows[1:] if x is not held)
-        assert gone[5] == "not in the production" and gone[9] == "" and gone[0] == ""  # nothing in the zip for it
-        # a file that cannot be read refuses the whole download before any byte
-        r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case)}})
-        assert r.status_code == 409 and "nothing was downloaded" in r.json()["detail"], r.text
+        rows = list(csv.DictReader(io.StringIO(z.read("manifest.csv").decode("utf-8"))))
+        assert len(rows) == 2
+        held = next(x for x in rows if x["file_uid"] == LINKED)
+        assert z.read(held["path_in_zip"]) == b"synthetic bytes"
+        assert (held["sha256_computed"], held["comparison"]) == (sha, "match")
+        gone = next(x for x in rows if x is not held)
+        assert gone["comparison"] == "not_included" and gone["path_in_zip"] == ""  # nothing in the zip for it
+        with engine.connect() as c:
+            actions = [x[0] for x in c.execute(text("SELECT action FROM system_logs WHERE details->>'bundle_id' = :b "
+                                                    "ORDER BY timestamp"), {"b": job["bundle_id"]})]
+        assert actions == ["Asked for phone originals", "Fetched phone originals"]  # both in the audit trail
 
 
 @needs_template
-def test_i_a_download_over_the_limit_is_refused_with_its_numbers_and_nothing_is_made(world, monkeypatch):
-    from services.phone import media
+def test_i_a_download_the_disk_cannot_hold_is_refused_with_its_numbers_and_nothing_is_made(world, tmp_path, monkeypatch):
+    import shutil
     engine, case, _, _ext = world
-    monkeypatch.setattr(media, "DOWNLOAD_MAX_FILES", 2)
+    monkeypatch.setenv("LOUPE_PHONE_BUNDLE_DIR", str(tmp_path / "bundles"))
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: type("D", (), {"free": 1024})())
     with _phones_client(engine, case) as cl:
         r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case)}})
         assert r.status_code == 413, r.text
         words = r.json()["detail"]
-        assert words.startswith("These 3 files are") and "at most 2 files" in words and "nothing was made" in words
+        assert words.startswith("These files come to") and "Nothing was started" in words
         r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case)}, "check_only": True})
         assert r.status_code == 200 and r.json()["refusal"] == words
         # a chosen file outside the filter is refused, never silently dropped

@@ -1,3 +1,18 @@
+## 5 November: the missing controls inside phone screens (cb-screen-rest)
+
+- **Participant menu.** `ParticipantMenu.tsx` on every stream row (03 6.7): Show all with this person, Show this pair,
+  Open in People (the linked dossier, else Link to a person), Copy name and number.
+- **Number changes.** `NumberChangeLink.tsx`: one `link_phone_identity` decision per side, under the person who clicks;
+  `GET /api/phones/identity-pair` gives the revision; nothing moves an existing link.
+- **Relationships chart.** `GET /api/phone-analysis/results/{id}/volume` reads the weeks on request (19.S9-b) with the
+  run's stored changepoints; `VolumeChart.tsx`. A view with `zone=utc` now takes its days in UTC (`viewToFilter`).
+- **Timeline money lane.** `services/phone/timeline_money.py`, `POST /api/phones/timeline/money`: counts of p4 readings on
+  their own request, in no lens total; the module never reads a parsed amount.
+- **Download originals is a job.** `services/phone/originals.py`, table `phone_original_bundles` (migration
+  `20261104_phone_original_bundles`), thread `phone-originals` in the phone worker. It replaces the inline zip and its
+  2,000 file / 1 GB limit. `manifest.csv` has a line per file asked for, hashes from the zipped bytes, against each
+  stored hash. Zips live in `EVIDENCE_DATA_ROOT/phone-exports/originals`, 7 days; the hourly sweep removes anything
+  no live job owns. Add to… on the Media grid takes the chosen files.
 ## 4 November: wearable and affiliation_unknown flags from M9 and M5 (cb-polflags, 04 decision 22)
 
 - **Measured** on all 14 server reports, counts only: `measurements/m9-sensors.json` (`pol_m9_sensors.py`) and

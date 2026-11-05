@@ -365,6 +365,8 @@ def start_worker(engine):
     _worker["thread"] = threading.Thread(target=_export_loop, args=(lambda: engine, stop), name="phone-exports",
                                          daemon=True)
     _worker["thread"].start()
+    from services.phone import originals
+    originals.start_worker(engine, stop)  # Download originals: its own thread, long jobs never hold up a PDF
 
 
 def _rows(conn, f):

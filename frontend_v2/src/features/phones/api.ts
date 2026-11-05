@@ -590,31 +590,10 @@ export async function getMediaFacets(filter: MediaFilter) {
   return fetchAPI<MediaFacets>("/api/phones/media/facets", { method: "POST", body: filter, read: true })
 }
 
-export interface MediaDownloadFacts { count: number; held: number; not_in_production: number; bytes: number; refusal: string | null; max_files: number; max_bytes: number }
+export interface MediaDownloadFacts { count: number; held: number; not_in_production: number; bytes: number; refusal: string | null }
 /** What Download originals would hold, or why it is refused (03 8.3). */
 export async function checkMediaDownload(filter: MediaFilter, fileUids: string[]) {
   return fetchAPI<MediaDownloadFacts>("/api/phones/media/download", { method: "POST", body: { filter, file_uids: fileUids, check_only: true }, read: true })
-}
-/** The originals as a zip with manifest.csv of their hashes. A refusal or an unreadable file throws with the
- * server's words; nothing partial is returned. */
-export async function downloadMediaOriginals(filter: MediaFilter, fileUids: string[]) {
-  const token = localStorage.getItem("authToken")
-  const response = await fetch("/api/phones/media/download", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    credentials: "include",
-    body: JSON.stringify({ filter, file_uids: fileUids }),
-  })
-  if (!response.ok) {
-    let words = "The download could not be made."
-    try {
-      words = ((await response.json()) as { detail?: string }).detail ?? words
-    } catch {
-      /* not JSON */
-    }
-    throw new Error(words)
-  }
-  return { blob: await response.blob(), files: Number(response.headers.get("X-Files") ?? 0) }
 }
 
 export interface MediaBlurDefault { default_on: boolean; basis: "case_setting" | "criminal_case" | "not_criminal"; words: string; set: boolean | null }
@@ -630,6 +609,37 @@ export async function getMediaIndex(filter: MediaFilter) {
 export async function getMediaWindow(filter: MediaFilter, offset: number, limit = 200) {
   return fetchAPI<{ items: MediaItem[]; offset: number; limit: number }>("/api/phones/media/window", { method: "POST", body: { filter, offset, limit }, read: true })
 }
+/** Download originals: a job drawing a zip with a manifest of hashes (03 8.3). */
+export interface OriginalsBundle {
+  bundle_id: string
+  state: "queued" | "running" | "done" | "failed" | "cancelled" | "removed"
+  scope_words: string
+  files_total: number
+  bytes_total: number
+  files_done: number
+  bytes_done: number
+  matched: number
+  mismatched: number
+  no_stored_hash: number
+  not_included: number
+  file: { filename: string; size: number; sha256: string } | null
+  error: string | null
+  created_at: string | null
+  finished_at: string | null
+  expires_at: string | null
+}
+export async function requestOriginals(filter: MediaFilter, fileUids: string[], scopeWords: string) {
+  return fetchAPI<OriginalsBundle>("/api/phones/media/download", { method: "POST", body: { filter, file_uids: fileUids, scope_words: scopeWords } })
+}
+export async function getOriginals(caseId: string) {
+  return fetchAPI<{ items: OriginalsBundle[] }>(`/api/phones/media/originals?case_id=${encodeURIComponent(caseId)}`)
+}
+export async function cancelOriginals(caseId: string, bundleId: string) {
+  return fetchAPI<OriginalsBundle>(`/api/phones/media/originals/${encodeURIComponent(bundleId)}/cancel?case_id=${encodeURIComponent(caseId)}`, { method: "POST" })
+}
+export const originalsFileUrl = (caseId: string, bundleId: string) =>
+  `/api/phones/media/originals/${encodeURIComponent(bundleId)}/file?case_id=${encodeURIComponent(caseId)}`
+
 /** Media spread across phones, exact tier (05 section 11): the same file (equal MD5) on two or more phones. */
 export interface SpreadPhoneRef { extraction_id: string; label: string }
 export interface SpreadIndex {

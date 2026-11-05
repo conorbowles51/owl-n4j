@@ -141,6 +141,19 @@ def result_detail(result_id: UUID, case_id: UUID = Query(...), db: Session = Dep
         _fail(exc)
 
 
+@router.get("/results/{result_id}/volume")
+def relationship_volume(result_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                        user: User = Depends(get_current_db_user)):
+    """Approach 11's weekly volume with the run's changepoints (05 14.4)."""
+    from services.phone_analysis import relationships
+    _ready()
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return relationships.volume(db.connection(), case_id, result_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.post("/results/{result_id}/keep")
 def keep(result_id: UUID, body: KeepBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """Freeze one result as a kept phone analysis (``phone_analysis`` link target; 02 decision 50)."""

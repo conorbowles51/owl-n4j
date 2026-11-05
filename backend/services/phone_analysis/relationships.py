@@ -252,6 +252,52 @@ def analyse_phone(conn, case_id, ext, label, people, names_by_group, params, cou
     return out
 
 
+def volume(conn, case_id, result_id) -> dict:
+    """The weekly volume behind a relationship or volume-change result, for the chart of 05 14.4. The weeks are read
+    from the phone's records with the rule of 19.S9-b, on request, because storing every week on every result would
+    write about 500 numbers per person into each row of the results list; the changepoints are the run's own stored
+    results. ``changed_words`` says so when the records no longer give the run's count."""
+    r = conn.execute(text("SELECT run_id, kind, measures FROM phone_analysis_results WHERE id = CAST(:i AS uuid) AND "
+                          "case_id = :c"), {"i": str(result_id), "c": str(case_id)}).first()
+    if r is None or r.kind not in KINDS:
+        raise LookupError("That result is not in this case.")
+    group, ext = r.measures.get("group"), r.measures.get("extraction_id")
+    rows = conn.execute(text(
+        "SELECT id, kind, strength, measures FROM phone_analysis_results WHERE run_id = :r AND measures->>'group' = :g "
+        "AND measures->>'extraction_id' = :e"), {"r": r.run_id, "g": group, "e": ext}).fetchall()
+    rel = next((x for x in rows if x.kind == "relationship"), None)
+    if rel is None:
+        raise LookupError("That result is not in this case.")
+    keys = rel.measures.get("identity_keys") or []
+    timed = [x[0] for x in conn.execute(text(
+        "SELECT e.sort_instant FROM pv_comm_event e JOIN pv_comm_party p ON p.event_uid = e.event_uid WHERE "
+        "e.extraction_id = :e AND e.kind IN ('message', 'call', 'email') AND p.identity_key = ANY(:k) AND NOT "
+        "coalesce(p.is_phone_owner, false) AND e.sort_instant IS NOT NULL ORDER BY e.sort_instant"),
+        {"e": ext, "k": keys})]
+    phone_last = conn.execute(text(
+        "SELECT max(e.sort_instant) FROM pv_comm_event e JOIN pv_comm_party p ON p.event_uid = e.event_uid WHERE "
+        "e.extraction_id = :e AND e.kind IN ('message', 'call', 'email') AND p.identity_key IS NOT NULL AND NOT "
+        "coalesce(p.is_phone_owner, false)"), {"e": ext}).scalar()
+    weeks = []
+    if timed:
+        w0, w1 = _week(timed[0]), _week(phone_last)
+        series = [0] * ((w1 - w0).days // 7 + 1)
+        for t in timed:
+            series[(_week(t) - w0).days // 7] += 1
+        weeks = [{"week_start": (w0 + timedelta(weeks=i)).isoformat(), "count": n} for i, n in enumerate(series)]
+    stored = int(rel.measures.get("communications") or 0) - int(rel.measures.get("untimed") or 0)
+    changes = sorted(({"result_id": str(x.id), "week_start": x.measures.get("week_start"), "direction": x.strength,
+                       "rate_before": x.measures.get("rate_before"), "rate_after": x.measures.get("rate_after"),
+                       "weeks_before": x.measures.get("weeks_before"), "weeks_after": x.measures.get("weeks_after")}
+                      for x in rows if x.kind == "volume_change"), key=lambda c: c["week_start"] or "")
+    return {"result_id": str(rel.id), "phone_label": rel.measures.get("phone_label"), "extraction_id": ext,
+            "identity_keys": keys, "weeks": weeks, "total": len(timed), "untimed": int(rel.measures.get("untimed") or 0),
+            "changepoints": changes,
+            "changed_words": None if stored == len(timed) else (
+                "The phone's records now give %d with a time; this run counted %d. Run the analysis again to bring "
+                "the changepoints up to date." % (len(timed), stored))}
+
+
 def analyse(conn, case_id, params, ctx=None) -> tuple:
     counts = defaultdict(int)
     phones = FV.active_phones(conn, case_id)

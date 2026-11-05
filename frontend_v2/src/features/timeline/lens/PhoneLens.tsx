@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { ExportDialog } from "@/features/conversations/ExportDialog"
 import { Lanes, type LaneRow } from "@/features/pattern/components/Lanes"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useStream } from "@/features/phones/hooks/use-stream"
-import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, lensIndex, lensLocateRecord, type LaneBy, type LensFilter, type LensKind } from "./lens-api"
+import { instantWords } from "@/features/phones/lib/time-words"
+import { recordPath } from "@/lib/record-links"
+import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, lensIndex, lensLocateRecord, lensMoney, lensMoneyItems, type LaneBy, type LensMoney, type LensFilter, type LensKind } from "./lens-api"
 import { SignificantNote } from "@/features/phones/ui/SignificantNote"
 
 const n = (x: number) => x.toLocaleString("en-US")
@@ -49,7 +52,7 @@ function LensLanes({ caseId, caseName, filter, snapshot, firstDay, lastDay, filt
 }) {
   const [span, setSpan] = useState<(typeof SPANS)[number]["id"]>("all")
   const [anchor, setAnchor] = useState(`${firstDay}T00:00:00Z`)
-  const [picked, setPicked] = useState<{ start: string; end: string } | null>(null)
+  const [picked, setPicked] = useState<{ start: string; end: string; money?: boolean } | null>(null)
   const spanDays = SPANS.find((s) => s.id === span)!.days
   const allEnd = addDays(`${lastDay}T00:00:00Z`, 2)
   const start = span === "all" ? addDays(`${firstDay}T00:00:00Z`, -1) : anchor
@@ -61,6 +64,8 @@ function LensLanes({ caseId, caseName, filter, snapshot, firstDay, lastDay, filt
     queryKey: ["timeline-lens-buckets", filter, snapshot, start, end, bucket],
     queryFn: () => lensBuckets(filter, snapshot, start, end, bucket),
   })
+  // its own request: the lanes above never wait for it, and a reading is in no lens total
+  const money = useQuery({ queryKey: ["timeline-lens-money", filter, start, end, bucket], queryFn: () => lensMoney(filter, start, end, bucket) })
   const step = bucket === "hour" ? 3600000 : bucket === "day" ? 86400000 : 7 * 86400000
   const rows: LaneRow[] = (q.data?.lanes ?? []).map((l) => {
     const total = l.buckets.reduce((a, b) => a + b.count, 0)
@@ -76,8 +81,9 @@ function LensLanes({ caseId, caseName, filter, snapshot, firstDay, lastDay, filt
       })),
     }
   })
+  if (money.data && q.data) rows.push(moneyRow(money.data, setPicked))
   const pickedFilter = useMemo<LensFilter | null>(
-    () => (picked ? { ...filter, from_instant: picked.start, to_instant: new Date(new Date(picked.end).getTime() - 1).toISOString(), include_no_time: false } : null),
+    () => (picked && !picked.money ? { ...filter, from_instant: picked.start, to_instant: new Date(new Date(picked.end).getTime() - 1).toISOString(), include_no_time: false } : null),
     [filter, picked],
   )
   return (
@@ -95,8 +101,51 @@ function LensLanes({ caseId, caseName, filter, snapshot, firstDay, lastDay, filt
       </div>
       {q.isError && <p role="alert" className="text-sm">The lanes could not be loaded. {q.error instanceof Error ? q.error.message : ""}</p>}
       {q.data && <Lanes start={start} end={end} zone={q.data.zone} rows={rows} />}
-      {pickedFilter ? <LensList caseId={caseId} caseName={caseName} filter={pickedFilter} filterWords={`${filterWords}; one ${bucket} from the lanes`} /> : <p className="text-sm text-muted-foreground">Choose a mark in a lane to list its entries here.</p>}
+      {money.isError && <p role="alert" className="text-sm">The phone money readings could not be loaded; the lanes above are complete without them.</p>}
+      {picked?.money ? <MoneyReadings caseId={caseId} filter={filter} start={picked.start} end={picked.end} /> : pickedFilter ? <LensList caseId={caseId} caseName={caseName} filter={pickedFilter} filterWords={`${filterWords}; one ${bucket} from the lanes`} /> : <p className="text-sm text-muted-foreground">Choose a mark in a lane to list its entries here.</p>}
     </div>
+  )
+}
+
+/** The money lane: readings counted, never amounts added (05 4.4). A reading with no time is stated, not placed. */
+function moneyRow(m: LensMoney, pick: (p: { start: string; end: string; money: boolean }) => void): LaneRow {
+  const apart = [
+    m.no_time ? `${n(m.no_time)} with no time ${m.no_time === 1 ? "is" : "are"} not drawn.` : "",
+    m.rejected ? `${n(m.rejected)} rejected by a person ${m.rejected === 1 ? "is" : "are"} left out.` : "",
+  ].filter(Boolean).join(" ")
+  return {
+    id: "phone-money",
+    label: m.label,
+    ...(m.run ? { total: m.readings } : {}),
+    absent: m.absent_words ?? undefined,
+    note: m.run ? `${m.readings ? "" : "No readings in this span. "}${m.words} ${apart}`.trim() : undefined,
+    marks: m.buckets.map((b) => ({
+      key: `phone-money-${b.start}`, at: b.start, label: `${n(b.count)} p4 ${b.count === 1 ? "reading" : "readings"} from the phone`, tone: "money" as const,
+      onClick: () => pick({ start: b.start, end: b.end, money: true }),
+    })),
+  }
+}
+
+/** One mark's readings: the words as the phone gave them, labelled, each opening its phone record. */
+function MoneyReadings({ caseId, filter, start, end }: { caseId: string; filter: LensFilter; start: string; end: string }) {
+  const q = useQuery({ queryKey: ["timeline-lens-money-items", filter, start, end], queryFn: () => lensMoneyItems(filter, start, end) })
+  if (q.isError) return <p role="alert" className="text-sm">These readings could not be loaded.</p>
+  if (!q.data) return <p role="status" className="text-sm">Loading the readings.</p>
+  const d = q.data
+  return (
+    <section aria-label="Phone money readings" className="flex flex-col gap-1 overflow-auto text-sm">
+      <p className="text-xs text-muted-foreground">{d.words}</p>
+      {d.total > d.items.length && <p role="note" className="text-xs">Showing the first {n(d.items.length)} of {n(d.total)} readings in this mark; choose a shorter span to see the rest.</p>}
+      <ul className="flex flex-col gap-1">
+        {d.items.map((r) => (
+          <li key={r.result_id} className="flex flex-wrap items-baseline gap-2">
+            <span className="rounded bg-muted px-1 text-xs">p4 · from the phone</span>
+            <Link className="underline" to={recordPath(caseId, r.record_uid)}>{r.amount_text ?? "Amount not read"}{r.direction ? ` · ${r.direction}` : ""}{r.institution ? ` · ${r.institution}` : ""}</Link>
+            <span className="text-xs text-muted-foreground">{[r.source, r.phone_label, r.instant ? instantWords(r.instant, "UTC") : null].filter(Boolean).join(" · ")}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

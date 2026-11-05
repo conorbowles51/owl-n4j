@@ -173,10 +173,12 @@ export function viewToFilter(caseId: string, v: ConversationView, zoneName: stri
   if (Object.keys(flags).length) f.flags = flags
   if (!v.noTime) f.include_no_time = false
   if (v.significant) f.significant_only = true
-  if (v.from) f.from_instant = new Date(dayStart(v.from, zoneName)).toISOString()
+  // a view in UTC has its days in UTC, whatever the case's zone (a volume chart's week is counted in UTC)
+  const dayZone = v.zone === "utc" ? "UTC" : zoneName
+  if (v.from) f.from_instant = new Date(dayStart(v.from, dayZone)).toISOString()
   if (v.to) {
     const next = new Date(Date.UTC(Number(v.to.slice(0, 4)), Number(v.to.slice(5, 7)) - 1, Number(v.to.slice(8, 10)) + 1))
-    f.to_instant = new Date(dayStart(next.toISOString().slice(0, 10), zoneName) - 1).toISOString()
+    f.to_instant = new Date(dayStart(next.toISOString().slice(0, 10), dayZone) - 1).toISOString()
   }
   if (v.text.trim()) f.text = { query: v.text.trim(), exact_characters: v.exact }
   if (v.everyCopy) f.collapse_copies = false

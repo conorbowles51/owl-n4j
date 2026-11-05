@@ -1,10 +1,9 @@
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
-import { ApiError } from "@/lib/api-client"
 import { dossiersAPI } from "@/features/dossiers/api"
 import { fmt } from "../ui/count-sentence"
-import { identitiesAPI, type IdentitySuggestion } from "./identities.api"
+import { errorWords, identitiesAPI, type IdentitySuggestion } from "./identities.api"
 
 /**
  * Needs a decision, link to a person (02 sections 8.7 and 8.8; 07 J-7). Opened from the graph's "Add to Dossiers"
@@ -19,14 +18,6 @@ const REASON_WORDS: Record<string, string> = {
   dossier_contact: "a contact detail on this person's dossier",
   name_support: "the same name",
   financial_identifier: "an account identifier on a statement",
-}
-
-function errorWords(e: unknown) {
-  if (e instanceof ApiError) {
-    const detail = (e.data as { detail?: unknown } | undefined)?.detail
-    return typeof detail === "string" ? detail : e.message
-  }
-  return e instanceof Error ? e.message : String(e)
 }
 
 /** The words the ledger stores (services/phone/identity_decisions.standard_link_reason): reason kinds sorted. */

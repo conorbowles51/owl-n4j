@@ -1,4 +1,4 @@
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 
 /** One identity in a case and the decisions on it (02 sections 8.5 to 8.8; 07 J-7). */
 export interface IdentityName {
@@ -65,11 +65,27 @@ export interface IdentityDecisionBody {
   expected_revision?: string
 }
 
+export interface IdentityPair {
+  items: { identity_key: string; value_display: string; linked_dossier: { id: string; name: string | null } | null; can_be_a_person: boolean }[]
+  expected_revision: string
+}
+
+/** A server refusal in the server's words. */
+export function errorWords(e: unknown) {
+  if (e instanceof ApiError) {
+    const detail = (e.data as { detail?: unknown } | undefined)?.detail
+    return typeof detail === "string" ? detail : e.message
+  }
+  return e instanceof Error ? e.message : String(e)
+}
+
 const q = (caseId: string) => `case_id=${encodeURIComponent(caseId)}`
 
 export const identitiesAPI = {
   get: (caseId: string, key: string) =>
     fetchAPI<IdentityDetail>(`/api/phones/identities/${encodeURIComponent(key)}?${q(caseId)}`),
+  pair: (caseId: string, keys: string[]) =>
+    fetchAPI<IdentityPair>(`/api/phones/identity-pair?${q(caseId)}&${keys.map((k) => `keys=${encodeURIComponent(k)}`).join("&")}`),
   suggestions: (caseId: string) =>
     fetchAPI<{ case_id: string; total: number; decided?: number; suggestions: IdentitySuggestion[]; by_level?: Record<MatchLevel, number>; scale?: string }>(`/api/phones/identity-suggestions?${q(caseId)}`),
   decide: (caseId: string, body: IdentityDecisionBody) =>
