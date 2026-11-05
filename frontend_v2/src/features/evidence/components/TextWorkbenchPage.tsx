@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Link, useParams, useSearchParams } from "react-router-dom"
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react"
+import { ArrowLeft, ChevronLeft, ChevronRight, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ProgressPanel } from "@/components/ui/progress-panel"
+import { useProgressClock } from "@/components/ui/use-progress-clock"
 import { useProtectedObjectUrl } from "@/lib/protected-file"
 import { cn } from "@/lib/cn"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
@@ -40,10 +42,35 @@ function ReaderLine({ reader, readAt }: { reader: TextReader; readAt?: string | 
   )
 }
 
-function PageImage({ evidenceId, page, rects, name }: { evidenceId: string; page: number; rects: PageRect[]; name: string }) {
+/** How long each kind of wait took last time on this visit: the only time-left figure the panel may quote. */
+const lastTook = new Map<string, number>()
+
+/** The shared waiting panel (the page-speed standard): the step in words within 300 ms, Try again after 10 s. */
+function Waiting({ kind, step, onRetry }: { kind: string; step: string; onRetry?: () => void }) {
+  const [startedAt] = useState(() => performance.now())
+  const now = useProgressClock(true, startedAt)
+  useEffect(() => () => { lastTook.set(kind, performance.now() - startedAt) }, [kind, startedAt])
+  return <ProgressPanel progress={{ step, startedAt, movedAt: startedAt, lastDurationMs: lastTook.get(kind) }} now={now} onRetry={onRetry} className="m-3" />
+}
+
+function Failed({ children, onRetry }: { children: ReactNode; onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex items-center gap-3 p-4 text-sm text-destructive">
+      {children}
+      <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button>
+    </div>
+  )
+}
+
+function PageImage(props: { evidenceId: string; page: number; rects: PageRect[]; name: string }) {
+  const [attempt, setAttempt] = useState(0)
+  return <PageImageAttempt key={`${props.page}:${attempt}`} {...props} onRetry={() => setAttempt((value) => value + 1)} />
+}
+
+function PageImageAttempt({ evidenceId, page, rects, name, onRetry }: { evidenceId: string; page: number; rects: PageRect[]; name: string; onRetry: () => void }) {
   const image = useProtectedObjectUrl(evidenceAPI.getPageImageUrl(evidenceId, page, 1200))
-  if (image.error) return <p role="alert" className="p-4 text-sm text-destructive">Page {n(page)} could not be shown: {image.error.message}</p>
-  if (!image.objectUrl) return <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading page {n(page)}…</p>
+  if (image.error) return <Failed onRetry={onRetry}>Page {n(page)} could not be shown: {image.error.message}.</Failed>
+  if (!image.objectUrl) return <Waiting kind="image" step={`Drawing page ${n(page)} from the original`} onRetry={onRetry} />
   return (
     <div className="relative">
       <img src={image.objectUrl} alt={`Page ${n(page)} of ${name}`} className="block w-full" />
@@ -55,10 +82,15 @@ function PageImage({ evidenceId, page, rects, name }: { evidenceId: string; page
   )
 }
 
-function WholeImage({ evidenceId, name }: { evidenceId: string; name: string }) {
+function WholeImage(props: { evidenceId: string; name: string }) {
+  const [attempt, setAttempt] = useState(0)
+  return <WholeImageAttempt key={attempt} {...props} onRetry={() => setAttempt((value) => value + 1)} />
+}
+
+function WholeImageAttempt({ evidenceId, name, onRetry }: { evidenceId: string; name: string; onRetry: () => void }) {
   const image = useProtectedObjectUrl(evidenceAPI.getFileUrl(evidenceId))
-  if (image.error) return <p role="alert" className="p-4 text-sm text-destructive">The image could not be shown: {image.error.message}</p>
-  if (!image.objectUrl) return <p className="p-4 text-sm text-muted-foreground">Loading the image…</p>
+  if (image.error) return <Failed onRetry={onRetry}>The image could not be shown: {image.error.message}.</Failed>
+  if (!image.objectUrl) return <Waiting kind="whole-image" step="Fetching the image" onRetry={onRetry} />
   return <img src={image.objectUrl} alt={name} className="block w-full" />
 }
 
@@ -301,7 +333,7 @@ export function TextWorkbenchPage() {
         </form>
         {urlQuery.length >= 2 && (
           <span className="flex items-center gap-1 text-xs" aria-live="polite">
-            {search.isLoading ? "Finding…" : search.isError ? "The search failed." : total === 0 ? "No matches in this text." : <>
+            {search.isLoading ? null : search.isError ? <>The search failed.<Button size="sm" variant="outline" onClick={() => void search.refetch()}>Retry</Button></> : total === 0 ? "No matches in this text." : <>
               Match {n(matchIndex + 1)} of {n(total)}
               <Button size="icon-sm" variant="ghost" aria-label="Previous match" onClick={() => stepMatch(-1)}><ChevronLeft className="size-4" /></Button>
               <Button size="icon-sm" variant="ghost" aria-label="Next match" onClick={() => stepMatch(1)}><ChevronRight className="size-4" /></Button>
@@ -309,13 +341,9 @@ export function TextWorkbenchPage() {
           </span>
         )}
       </header>
-      {pages.isLoading && <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading the document…</p>}
-      {pages.isError && (
-        <div role="alert" className="flex items-center gap-3 p-4 text-sm text-destructive">
-          The document could not be loaded: {pages.error instanceof Error ? pages.error.message : "the request failed"}.
-          <Button size="sm" variant="outline" onClick={() => void pages.refetch()}>Retry</Button>
-        </div>
-      )}
+      {urlQuery.length >= 2 && search.isLoading && <Waiting key={urlQuery} kind="find" step={`Finding "${urlQuery}" in this document`} onRetry={() => void search.refetch()} />}
+      {pages.isLoading && <Waiting kind="document" step="Reading the document's pages" onRetry={() => void pages.refetch()} />}
+      {pages.isError && <Failed onRetry={() => void pages.refetch()}>The document could not be loaded: {pages.error instanceof Error ? pages.error.message : "the request failed"}.</Failed>}
       {data && (
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
           <Original data={data} evidenceId={fileId} page={page} rects={positions.data?.rects ?? []} positionsNote={positionsNote} />
@@ -331,7 +359,7 @@ export function TextWorkbenchPage() {
               {data.text_absent && <p role="status" className="m-3 rounded border border-border bg-muted/30 p-3 text-sm" data-testid="text-absent">{data.text_absent}</p>}
               {!data.text_absent && current && <PageText page={current} marks={marks} onSelect={onSelect} textRef={textRef} />}
               {!data.text_absent && !current && !pages.isPlaceholderData && <p className="m-3 text-sm text-muted-foreground">Page {n(page)} is past the end of this document ({n(data.page_count)} pages).</p>}
-              {!data.text_absent && !current && pages.isPlaceholderData && <p className="m-3 flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading page {n(page)}…</p>}
+              {!data.text_absent && !current && pages.isPlaceholderData && <Waiting key={page} kind="text" step={`Reading the text of page ${n(page)}`} onRetry={() => void pages.refetch()} />}
             </div>
             {picked && <Selection key={`${picked.start}:${picked.end}`} caseId={caseId} data={data} picked={picked} onClear={() => { setPicked(null); window.getSelection()?.removeAllRanges() }} />}
           </section>

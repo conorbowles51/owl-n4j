@@ -6,8 +6,9 @@ import { evidenceAPI } from "../api"
 import { textWorkbenchAPI, type TextPages } from "../text-workbench.api"
 import { TextWorkbenchPage } from "./TextWorkbenchPage"
 
+const image = vi.hoisted(() => ({ state: null as null | { objectUrl: string | null; error: Error | null } }))
 vi.mock("@/lib/protected-file", () => ({
-  useProtectedObjectUrl: (url: string | null) => ({ objectUrl: url ? `blob:${url}` : null, loading: false, error: null }),
+  useProtectedObjectUrl: (url: string | null) => image.state ?? { objectUrl: url ? `blob:${url}` : null, loading: false, error: null },
 }))
 vi.mock("@/features/phones/collect-targets", () => ({
   useCollectTargets: () => ({ targets: [{ kind: "finding", id: "f1", label: "A finding" }], note: null, loading: false, error: null }),
@@ -44,6 +45,7 @@ function show(address: string) {
 describe("TextWorkbenchPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    image.state = null
     fetched.mockReset()
     fetched.mockResolvedValue({})
     vi.spyOn(textWorkbenchAPI, "pages").mockResolvedValue(pages())
@@ -62,6 +64,31 @@ describe("TextWorkbenchPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }))
     expect(await screen.findByText("Paid to ACME Ltd")).toBeInTheDocument()
     expect(screen.getByAltText("Page 1 of statement.pdf")).toBeInTheDocument()
+  })
+
+  it("names the step within the page standard while the document loads, not a bare spinner", async () => {
+    vi.spyOn(textWorkbenchAPI, "pages").mockReturnValue(new Promise(() => {}))
+    show("/cases/case-1/evidence/file-1/text")
+    expect(await screen.findByTestId("progress-panel")).toHaveTextContent("Reading the document's pages")
+  })
+
+  it("names the step while a page is drawn, and a failed page offers a retry", async () => {
+    image.state = { objectUrl: null, error: null }
+    const { unmount } = show("/cases/case-1/evidence/file-1/text")
+    expect(await screen.findByTestId("progress-panel")).toHaveTextContent("Drawing page 1 from the original")
+    unmount()
+    image.state = { objectUrl: null, error: new Error("File request failed: 503") }
+    show("/cases/case-1/evidence/file-1/text")
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("Page 1 could not be shown: File request failed: 503")
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument()
+  })
+
+  it("a failed Find says so and offers a retry", async () => {
+    const find = vi.spyOn(evidenceAPI, "getTextMatches").mockRejectedValue(new Error("boom"))
+    show("/cases/case-1/evidence/file-1/text?q=Wire")
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }))
+    await waitFor(() => expect(find.mock.calls.length).toBeGreaterThan(1))
   })
 
   it("says why a page has no text, and why a document has none", async () => {
