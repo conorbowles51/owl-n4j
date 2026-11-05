@@ -234,12 +234,39 @@ def refresh_after_edit(case_id: str | None, keys: Iterable[str], *, run: Callabl
     return thread
 
 
+def pending_keys(case_id: str, *, session_factory: Callable | None = None) -> list[str]:
+    """Keys of the case's entities with no vector yet: a merge kept while embedding was refused (the engine's
+    ``vector_pending`` mark)."""
+    if session_factory is None:
+        from services.neo4j.driver import driver
+        session_factory = driver.session
+    with session_factory() as session:
+        return [row["key"] for row in session.run(
+            "MATCH (n) WHERE n.case_id = $case_id AND n.vector_pending = true RETURN n.key AS key", case_id=case_id)]
+
+
+def clear_pending(case_id: str, keys: list[str], *, session_factory: Callable | None = None) -> None:
+    if session_factory is None:
+        from services.neo4j.driver import driver
+        session_factory = driver.session
+    with session_factory() as session:
+        session.run("UNWIND $keys AS k MATCH (n {key: k}) WHERE n.case_id = $case_id REMOVE n.vector_pending",
+                    keys=keys, case_id=case_id)
+
+
 def backfill_case(case_id: str, *, stale: Callable | None = None, refresh: Callable | None = None,
-                  log: Callable[[str, str], None] | None = None) -> dict[str, Any]:
-    """The gap backfill's entity pass for one case: re-embed every stale entity vector."""
-    keys = (stale or stale_keys)(case_id)
+                  log: Callable[[str, str], None] | None = None, pending: Callable | None = None,
+                  clear: Callable | None = None) -> dict[str, Any]:
+    """The gap backfill's entity pass for one case: re-embed every stale entity vector and embed every entity still
+    waiting for its first one. The mark goes only when the whole pass finished; a pass that stopped embeds them again."""
+    waiting = (pending or pending_keys)(case_id)
+    keys = list(dict.fromkeys(list((stale or stale_keys)(case_id)) + waiting))
     if not keys:
         return {"requested": 0, "embedded": 0, "skipped": 0, "stopped": None}
     if log:
-        log("info", "Case %s: %d entity vector(s) older than the graph" % (case_id, len(keys)))
-    return (refresh or refresh_entities)(case_id, keys)
+        log("info", "Case %s: %d entity vector(s) older than the graph, %d waiting for a first one" % (
+            case_id, len(keys) - len(waiting), len(waiting)))
+    result = (refresh or refresh_entities)(case_id, keys)
+    if waiting and not result.get("stopped"):
+        (clear or clear_pending)(case_id, waiting)
+    return result

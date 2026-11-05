@@ -202,3 +202,29 @@ def test_restore_rebuild_uses_the_same_text():
                                                  "properties": LOCO}, "case-a")
     assert calls == [ev.embedding_text("Person", LOCO)]
     assert vectors.upserts[0][2]["case_id"] == "case-a"
+
+
+def _kept_merge_pass(result):
+    """A merge kept while embedding was refused gets its first vector from the gap backfill (m110501513529986)."""
+    calls = {"cleared": None, "refreshed": None}
+
+    def refresh(case_id, keys):
+        calls["refreshed"] = list(keys)
+        return result
+
+    def clear(case_id, keys):
+        calls["cleared"] = list(keys)
+    ev.backfill_case("c", stale=lambda c: ["old", "merged"], pending=lambda c: ["merged"], refresh=refresh, clear=clear)
+    return calls
+
+
+def test_a_kept_merge_is_embedded_and_its_mark_goes():
+    assert _kept_merge_pass({"embedded": 2, "stopped": None}) == {"refreshed": ["old", "merged"], "cleared": ["merged"]}
+
+
+def test_a_pass_that_stopped_keeps_the_mark():
+    assert _kept_merge_pass({"embedded": 0, "stopped": "429"})["cleared"] is None
+
+
+def test_nothing_waiting_touches_nothing():
+    assert ev.backfill_case("c", stale=lambda c: [], pending=lambda c: [])["requested"] == 0

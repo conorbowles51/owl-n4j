@@ -180,6 +180,11 @@ def test_merge_result_is_persisted_in_the_job_state_for_terminal_recovery() -> N
     }
 
 
+def test_merge_result_says_when_the_entity_waits_for_its_vector() -> None:
+    state = build_merge_result_state(None, merged_entity_key="m", relationship_count=1, vector_pending=True)
+    assert state["merge_result"]["vector_pending"] is True
+
+
 def test_relationship_write_properties_replace_stale_endpoint_ids() -> None:
     original = {"case_id": "case-1", "detail": "Named director"}
 

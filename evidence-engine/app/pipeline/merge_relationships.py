@@ -113,6 +113,7 @@ def build_merge_result_state(
     *,
     merged_entity_key: str,
     relationship_count: int,
+    vector_pending: bool = False,
 ) -> dict[str, Any]:
     state = dict(current_state or {})
     state["merge_result"] = {
@@ -120,6 +121,8 @@ def build_merge_result_state(
         "entity_count": 1,
         "relationship_count": relationship_count,
     }
+    if vector_pending:
+        state["merge_result"]["vector_pending"] = True
     return state
 
 

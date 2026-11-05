@@ -387,6 +387,7 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
             )
             return
 
+    vector_pending = False
     try:
         async with ingestion_cost_context(
             case_id=case_id,
@@ -426,33 +427,46 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
                 f"Entity created with {rel_count} relationships",
             )
 
-            # Stage 3: Embed for RAG (85–100%). If embedding fails, the merged
-            # entity would be invisible to cross-job dedup → leaks duplicates.
-            # Roll back the Neo4j write rather than leave a half-indexed entity.
+            # Stage 3: Embed for RAG (85–100%). A refused embedding must not undo
+            # a merge the person asked for: the entity stays, marked vector_pending,
+            # and the backend's gap backfill embeds it when the service answers
+            # (services/entity_vectors.py). Until then it is missing from meaning
+            # search and cross-job dedup, the same as every entity read in the
+            # outage. Only when the mark cannot be written is the entity rolled
+            # back, because nothing would ever fill its vector.
             try:
                 await _embed_merged_entity(merged, new_key, case_id, entities, category)
             except Exception:
                 logger.exception(
-                    "Embedding failed for merge job %s; rolling back Neo4j writes",
+                    "Embedding failed for merge job %s; keeping the entity, vector pending",
                     job_id,
                 )
                 try:
                     await neo4j_client.execute_write(
-                        "MATCH (n {id: $id, case_id: $case_id}) DETACH DELETE n",
+                        "MATCH (n {id: $id, case_id: $case_id}) SET n.vector_pending = true",
                         {"id": new_key, "case_id": case_id},
                     )
+                    vector_pending = True
                 except Exception:
-                    logger.exception(
-                        "Compensating delete failed for merged entity %s in case %s",
-                        new_key, case_id,
-                    )
-                raise
+                    logger.exception("Could not mark merged entity %s; rolling back", new_key)
+                    try:
+                        await neo4j_client.execute_write(
+                            "MATCH (n {id: $id, case_id: $case_id}) DETACH DELETE n",
+                            {"id": new_key, "case_id": case_id},
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Compensating delete failed for merged entity %s in case %s",
+                            new_key, case_id,
+                        )
+                    raise
 
         # Complete
         job.pipeline_state = build_merge_result_state(
             job.pipeline_state,
             merged_entity_key=new_key,
             relationship_count=rel_count,
+            vector_pending=vector_pending,
         )
         job.entity_count = 1
         job.relationship_count = rel_count
