@@ -151,6 +151,72 @@ def communication(conn, case_id, a_keys, b_keys, *, from_instant=None, to_instan
     return out
 
 
+def every_pair(conn, case_id, owner_keys: dict) -> dict:
+    """``communication`` for every pair of identities of a case at once, with the same result for each pair: one read
+    of the events and their parties, the Conversations rules applied in Python, so the graph's stored counts need
+    no query per pair (R-1, C11). ``owner_keys``: ``{extraction id: [owner key, ...]}``.
+
+    Between A and B, direct: one sent and the other received, in a conversation that is not a group. Copies collapse
+    per pair: the fullest copy of a group among those matching the pair is the one counted, in its direction.
+    Returns ``{(a, b): {"counts", "first", "last", "phones", "groups"}}`` for a < b; ``groups``: the copy groups
+    counted, so a caller can tell an event no pair counts."""
+    f = _filter(case_id, None, None, "direct", True, KIND_PREFIX)
+    q = streams.Query(conn, f, owner_keys)
+    groups = {(r[0], r[1]) for r in conn.execute(text(
+        "SELECT t.thread_key, t.generation FROM phone_threads t JOIN phone_extractions e ON e.id = t.extraction_id "
+        "WHERE e.case_id = :c AND t.chat_type = ANY(CAST(:g AS text[]))"), {"c": case_id,
+                                                                            "g": list(streams.GROUP_CHAT_TYPES)})}
+    events = {}
+    for r in conn.execute(text(
+            "SELECT ev.event_uid, ev.record_uid, ev.extraction_id, ev.kind, ev.sort_instant, ev.dup_group_uid, "
+            "ev.thread_key, ev.generation, %s AS filled, %s AS key, %s AS sends, %s AS receives, %s AS actual FROM %s "
+            "JOIN phone_participations p ON p.record_uid = ev.record_uid AND p.generation = ev.generation WHERE %s"
+            % (streams.POPULATED_SQL, streams.PARTY_KEY_SQL, streams.SENDER_SQL, streams.RECIPIENT_SQL,
+               streams.ACTUAL_SENDER_SQL, q.FROM, q.where_sql())), q.params):
+        e = events.setdefault(r.event_uid, {"row": r, "keys": set(), "s": set(), "r": set(), "a": set()})
+        if r.key:
+            e["keys"].add(r.key)
+            if r.sends:
+                e["s"].add(r.key)
+            if r.receives:
+                e["r"].add(r.key)
+            if r.actual:
+                e["a"].add(r.key)
+    best = {}
+    for e in events.values():
+        r = e["row"]
+        if len(e["keys"]) > 2 or (r.thread_key, r.generation) in groups:
+            continue
+        grp = copy_group(r.extraction_id, r.dup_group_uid, r.event_uid)
+        rank = (-r.filled, r.record_uid)
+        for x in e["s"]:
+            for y in e["r"]:
+                if x == y:
+                    continue
+                pair = (min(x, y), max(x, y))
+                kept = best.get((pair, grp))
+                if kept is None or rank < kept[0]:
+                    best[(pair, grp)] = (rank, e)
+    out = {}
+    for ((a, b), grp), (_, e) in best.items():
+        r = e["row"]
+        v = out.setdefault((a, b), {"counts": defaultdict(int), "first": None, "last": None, "phones": set(),
+                                    "groups": set()})
+        a_sent = a in e["a"] or (b not in e["a"] and a in e["s"])
+        v["counts"]["%s_%s" % (KIND_PREFIX[r.kind], "ab" if a_sent else "ba")] += 1
+        v["groups"].add(grp)
+        v["phones"].add(str(r.extraction_id))
+        if r.sort_instant is not None:
+            v["first"] = min(v["first"], r.sort_instant) if v["first"] else r.sort_instant
+            v["last"] = max(v["last"], r.sort_instant) if v["last"] else r.sort_instant
+    return out
+
+
+def copy_group(extraction_id, dup_group_uid, event_uid) -> str:
+    """The group one event's copies share: ``streams.Query.matched_sql``'s partition."""
+    return "%s:%s" % (extraction_id, dup_group_uid) if dup_group_uid else str(event_uid)
+
+
 def comm_total(c: dict, prefix: str) -> int:
     return c[prefix + "_ab"] + c[prefix + "_ba"]
 

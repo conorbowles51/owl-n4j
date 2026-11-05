@@ -180,3 +180,30 @@ def for_rows(conn, ctx, rows, zone: str) -> dict:
                 "flags": row_flags(target)}
         out[parent]["replies"].append(entry)
     return dict(out)
+
+
+def reply_words(row) -> list:
+    """A forward and a reply as the row states them (03 section 6.6), for an export: the row's sender stays the sender
+    of this copy. The PDF prints these lines and RSMF carries them in custom fields."""
+    from services.phone.labels import label_text
+    out = []
+    forward = row.get("forward")
+    if forward:
+        by = forward.get("original_sender")
+        out.append("Forwarded. " + ("First written by %s%s." % (
+            label_text(by), ", %s" % forward["time_created"] if forward.get("time_created") else "")
+            if by else "The report does not say who first wrote it."))
+    for link in row.get("replies") or []:
+        verb = "Quoting" if link["kind"] == "quote" else "Replying to"
+        target = link.get("target")
+        if target:
+            who = target.get("from")
+            excerpt = target.get("excerpt") or "(no text)"
+            out.append("%s %s, %s: %s%s" % (verb, label_text(who) if who else "(sender not recorded)", target["time"],
+                                            excerpt, "…" if target.get("chars", 0) > len(target.get("excerpt") or "")
+                                            else ""))
+        elif link["state"] == "not_in_extraction":
+            out.append("%s a message that is not in this extraction (the report's id: %s)." % (verb, link["original_id"]))
+        else:
+            out.append("Marked as a reply; the report does not say to which message.")
+    return out

@@ -108,6 +108,55 @@ def test_an_invalid_manifest_is_refused_before_anything_is_delivered():
                        "events": [{"type": "message", "timestamp": "14 March"}]})
 
 
+def _reply_row(uid, line, *, replies=None, forward=None, thread="t1", sender="Synthetic Sender"):
+    return {"record_uid": uid, "kind": "message", "phone": {"extraction_id": "e1", "label": "C1"}, "body": line,
+            "thread": {"thread_key": thread, "title": "Synthetic"}, "app": "WhatsApp", "direction": "incoming",
+            "time": {"instant": "2023-03-01T10:00:00+00:00"}, "from": {"name": sender, "identifier": None},
+            "to": [], "flags": [], "attachments": [], "replies": replies or [], "forward": forward}
+
+
+def _target(uid, thread="t1"):
+    return {"record_uid": uid, "thread_key": thread, "from": {"name": "Synthetic Sender", "identifier": None},
+            "time": "1 March 2023, 10:00", "excerpt": "the first message", "chars": 17}
+
+
+def test_a_reply_points_at_its_parent_and_a_forward_says_who_first_wrote_it():
+    from services.phone.exports import rsmf
+    rows = [_reply_row("m1", "the first message"),
+            _reply_row("m2", "my answer", replies=[{"kind": "reply", "state": "found", "original_id": "x",
+                                                    "target": _target("m1")}]),
+            _reply_row("m3", "passed on", forward={"original_sender": {"name": "First Author", "identifier": None},
+                                                   "time_created": "1 March 2023, 09:00"}),
+            _reply_row("m4", "elsewhere", replies=[{"kind": "reply", "state": "found", "original_id": "y",
+                                                    "target": _target("gone")}]),
+            _reply_row("m5", "missing", replies=[{"kind": "reply", "state": "not_in_extraction", "original_id": "z",
+                                                  "target": None}]),
+            _reply_row("m6", "quoted", replies=[{"kind": "quote", "state": "found", "original_id": "x",
+                                                 "target": _target("m1")}]),
+            _reply_row("m7", "across", thread="t2", replies=[{"kind": "reply", "state": "found", "original_id": "x",
+                                                              "target": _target("m1")}])]
+    data, _ = rsmf.build(rows, title="t", contains=[])
+    events = {e["id"]: e for e in rsmf.read(data)[1]["events"]}
+
+    def custom(uid, name):
+        return next((c["value"] for c in events[uid]["custom"] if c["name"] == name), None)
+
+    assert events["m2"]["parent"] == "m1"
+    assert "Replying to Synthetic Sender" in custom("m2", "Reply")
+    assert custom("m3", "Forward").startswith("Forwarded. First written by First Author")
+    assert custom("m3", "Forward").endswith(", 1 March 2023, 09:00.")
+    # the sender of this copy stays the participant: the first author is never made the sender
+    people = {p["id"]: p["display"] for p in rsmf.read(data)[1]["participants"]}
+    assert people[events["m3"]["participant"]].startswith("Synthetic Sender")
+    assert not any("First Author" in p for p in people.values())
+    # the schema allows a parent only in the same conversation of this file; the words carry the rest
+    assert "parent" not in events["m4"] and "Replying to" in custom("m4", "Reply")
+    assert "parent" not in events["m7"] and "Replying to" in custom("m7", "Reply")
+    assert "not in this extraction" in custom("m5", "Reply")
+    assert "parent" not in events["m6"] and custom("m6", "Reply").startswith("Quoting")
+    assert "parent" not in events["m1"] and custom("m1", "Reply") is None
+
+
 def test_the_bundled_schema_is_relativitys_unchanged():
     s = rsmf.schema()
     assert s["required"] == ["version", "participants", "conversations", "events"]

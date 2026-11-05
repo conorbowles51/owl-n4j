@@ -17,6 +17,12 @@ custom fields with the phone, record id, badges and copies. A call is an event o
 what the call was (RSMF has no call type), with the custom field ``Kind`` set to ``Call``. An attachment whose bytes
 are not in the production, or cannot be read, is still listed on its event with the reason in a custom field and is
 counted; nothing is dropped silently. Every file in the zip is listed with its SHA-256 in the event's custom fields.
+
+A reply sets the standard ``parent`` to the message it answers when that message is an event of the same conversation
+in this file, the only place the format lets it point (the schema: "another event in the same conversation"). RSMF has
+no forward field and no quote field, so a forward, a quote, and a reply whose message is elsewhere are stated in the
+custom fields ``Forward`` and ``Reply``, in the words the PDF prints. The event's ``participant`` stays the party that
+sent this copy, never a forward's first author.
 """
 from __future__ import annotations
 
@@ -30,6 +36,7 @@ from email.policy import SMTP
 from pathlib import Path
 
 from services.phone import labels as L
+from services.phone.replies import reply_words
 
 VERSION = "2.0.0"
 GENERATOR = "Loupe"
@@ -108,6 +115,7 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
     attachments_total = 0
     times = []
     used = {}
+    first_event, wanted_parent = {}, []
     for row in rows:
         thread = row.get("thread") or {}
         ckey = thread.get("thread_key") or "loose:%s:%s" % (row["phone"]["extraction_id"], row.get("app") or "")
@@ -129,6 +137,7 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
         used[eid] = used.get(eid, 0) + 1
         if used[eid] > 1:
             eid = "%s-%d" % (eid, used[eid])
+        first_event.setdefault(row["record_uid"], (eid, conv_of[ckey]))
         ev = {"id": eid, "type": "message", "conversation": conv_of[ckey],
               "body": (_call_body(row) if row.get("kind") == "call" else (row.get("body") or "")) + "".join(
                   "\nSensitive field %s: %s" % (v["field"], v["value"] or "") for v in row.get("sensitive") or []),
@@ -162,6 +171,11 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
         if atts:
             ev["attachments"] = atts
         copies = row.get("copies") or {}
+        words = reply_words(row)
+        linked = next((x["target"]["record_uid"] for x in row.get("replies") or []
+                       if x["kind"] == "reply" and x.get("target")), None)
+        if linked:
+            wanted_parent.append((ev, linked))
         ev["custom"] = _custom([
             ("Kind", "Call" if row.get("kind") == "call" else row.get("kind", "").capitalize()),
             ("Phone", row["phone"].get("label")), ("Record id", row["record_uid"]),
@@ -170,8 +184,14 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
             ("Time", None if stamp else "No time recorded"),
             ("Badges", "; ".join(flags)),
             ("Copies", copies.get("count") if (copies.get("count") or 1) > 1 else None),
+            ("Forward", words[0] if row.get("forward") else None),
+            ("Reply", "; ".join(words[1:] if row.get("forward") else words)),
         ] + att_custom)
         events.append(ev)
+    for ev, target in wanted_parent:
+        parent, conversation = first_event.get(target, (None, None))
+        if conversation == ev["conversation"] and parent != ev["id"]:
+            ev["parent"] = parent
     for ckey, c in convs.items():
         c["participants"] = conv_members[ckey]
         c["type"] = "direct" if len(conv_members[ckey]) <= 2 else "channel"

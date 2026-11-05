@@ -43,6 +43,10 @@ RECIPIENT_SQL = "(p.role IN ('recipient','cc','bcc','callee') OR p.implied_role 
 ACTUAL_SENDER_SQL = "(p.role IN ('sender','caller','author') OR p.implied_role IN ('sender','caller'))"
 # A participant key that stands for the owner of each phone in scope (07 J-3 "Between A and B" with one person).
 PHONE_OWNER = "owner:this-phone"
+# How full a copy is: Conversations shows the fullest copy of each group (3.4)
+POPULATED_SQL = ("(ev.body IS NOT NULL)::int + (ev.subject IS NOT NULL)::int + (ev.app IS NOT NULL)::int + "
+                 "(ev.sort_instant IS NOT NULL)::int + (ev.thread_key IS NOT NULL)::int + "
+                 "(ev.call_duration_s IS NOT NULL)::int + (ev.status IS NOT NULL)::int")
 PARTY_KEY_SQL = ("coalesce(p.identity_key, CASE WHEN p.role = 'owner_implicit' OR p.is_phone_owner IS TRUE "
                  "THEN ok.k END)")
 CALL_STATUS = {"established": "answered", "missed": "missed", "rejected": "declined", "canceled": "cancelled",
@@ -301,9 +305,7 @@ class Query:
     def matched_sql(self, extra=(), columns=()):
         """Matching events with the copy rank and count (3.4); ``columns``: more ``expr AS name`` items computed per
         row before the copies are ranked."""
-        populated = ("(ev.body IS NOT NULL)::int + (ev.subject IS NOT NULL)::int + (ev.app IS NOT NULL)::int + "
-                     "(ev.sort_instant IS NOT NULL)::int + (ev.thread_key IS NOT NULL)::int + "
-                     "(ev.call_duration_s IS NOT NULL)::int + (ev.status IS NOT NULL)::int")
+        populated = POPULATED_SQL
         grp = "coalesce(ev.extraction_id::text || ':' || ev.dup_group_uid, ev.event_uid::text)"
         cols = "".join("%s, " % c for c in columns)
         return ("SELECT ev.*, %srow_number() OVER (PARTITION BY %s ORDER BY %s DESC, ev.record_uid) AS copy_rank, "

@@ -99,6 +99,57 @@ def test_edge_counts_equal_conversations_between_under_every_scope_and_copy_sett
 
 
 @needs_template
+def test_every_pair_equals_the_pair_edge_for_each_pair():
+    """The graph's bulk read (every_pair) and the one edge implementation agree pair by pair, copies, groups and
+    direction included (03 R-1)."""
+    from services.phone import labels as L
+    with fresh_engine() as engine:
+        case = _setup(engine)
+        with engine.connect() as c:
+            ctx = L.LabelContext(c, case, "phone")
+            both = LE.every_pair(c, case, {e: o["keys"] for e, o in ctx.owners.items() if o["keys"]})
+            assert sorted(both) == sorted([tuple(sorted(x)) for x in ((ANA, OWNER), (ANA2, OWNER), (BEN, OWNER))])
+            for (a, b), v in both.items():
+                e = LE.communication(c, case, [a], [b], ctx=ctx)
+                for k in ("messages_ab", "messages_ba", "calls_ab", "calls_ba", "emails_ab", "emails_ba"):
+                    assert v["counts"][k] == e[k], ((a, b), k)
+                assert (v["first"].isoformat(), v["last"].isoformat()) == (e["first_instant"], e["last_instant"])
+
+
+@needs_template
+def test_the_stored_graph_counts_equal_the_pair_edge_for_every_edge():
+    """Followups m110505595923401. Fails on the old plan: it counted every copy, applied its own group rule, and put a
+    message of unknown direction under its sender, where Conversations' Between shows none of these that way."""
+    from services.phone import graph_projection as G
+    from services.phone import labels as L
+    from tests.phone_streams_fixture import at, phone
+    unknown = dict(_m(at(2023, 3, 8, 9), BEN, [], thread="t4"), direction="unknown")
+    unknown["parties"] = [(BEN, "sender", None, None, None), (None, "owner_implicit", None, None, None)]
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            phone(c, case, label="C1", events=_events() + [unknown],
+                  threads={"grp": {"chat_type": "Group", "title": "Synthetic group", "members": [OWNER, ANA, BEN]},
+                           # a direct chat whose thread lists a third identity: not a group to Conversations
+                           "t3": {"chat_type": "Direct", "title": "Synthetic", "members": [OWNER, BEN, ANA2]}})
+        with engine.connect() as c:
+            p = G.plan(c, case)
+            ctx = L.LabelContext(c, case, "phone")
+            rows = {(r["source"].split(":", 1)[1], r["target"].split(":", 1)[1]): r for r in p["rels"]["COMMUNICATED"]}
+            assert rows
+            for (a, b), r in rows.items():
+                e = LE.communication(c, case, [a], [b], ctx=ctx)
+                for k in ("messages_ab", "messages_ba", "calls_ab", "calls_ba", "emails_ab", "emails_ba"):
+                    assert r[k] == e[k], ((a, b), k)
+            pair = rows[tuple(sorted((BEN, OWNER)))]
+            # Ben's message of unknown direction keeps the pair on the graph and is in no direction
+            assert pair["undirected"] == 1
+            assert pair["messages_ab"] + pair["messages_ba"] == 1
+            ana = rows[tuple(sorted((ANA, OWNER)))]
+            assert ana["messages_ab"] + ana["messages_ba"] == 2  # the two copies of one message count once
+
+
+@needs_template
 def test_a_person_side_is_every_identity_linked_to_the_dossier_and_equals_conversations_expanded():
     with fresh_engine() as engine:
         case = _setup(engine)

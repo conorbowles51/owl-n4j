@@ -867,7 +867,7 @@ forward's `OriginalSender` and `TimeCreated` in `phone_participations` and `phon
 on the same phone only. A row shows `found`, `not_in_extraction` (with the report's id) or `not_recorded`. A forward's
 author sits on the child record, so it can never be the row's sender. Go to this message jumps in place when the list
 holds the original; otherwise it opens the original's own conversation with the filters cleared and says so, and Back
-returns. Copy and the PDF export state the same words; the RSMF export does not carry them.
+returns. Copy and the PDF export state the same words; the RSMF export carries them in its fields (12.4).
 
 Media plays and displays inline: images as thumbnails (opens `DocumentViewer`), audio with a play control
 that fetches bytes only on play (v1 checklist `media-voice-preload`). Missing or mismatched files show the
@@ -1609,7 +1609,10 @@ field `Kind` `Call`. Custom fields carry the phone, record id, recipients, subje
 each attachment, its SHA-256 or the reason its bytes are not included (not in the production, too large to
 read). Every attachment stays listed on its event; the export's counts say how many were listed without their
 file and the dialog says so. A row with no time has no `timestamp` and the custom field `Time` says "No time
-recorded". Tests: `tests/test_phone_exports_rsmf.py` (E-6 and the attachment cases) and
+recorded". A reply sets the standard `parent` to the message it answers when that message is an event of the same
+conversation in the file, which is the only place the schema lets `parent` point. RSMF has no forward or quote field, so
+a forward, a quote and a reply whose message is elsewhere are stated in the custom fields `Forward` and `Reply`, in the
+words the PDF prints. `participant` stays the party that sent this copy, never a forward's first author. Tests: `tests/test_phone_exports_rsmf.py` (E-6 and the attachment cases) and
 `ExportDialog.test.tsx`.
 
 ### 12.5 Acceptance tests (Export)
@@ -1719,7 +1722,12 @@ Individual messages and calls are not graph nodes (377,648 messages). The graph 
 - one aggregated `COMMUNICATED` relationship per unordered identity pair (never one edge per message or
   call), with its counts, and sums where a ledger is linked (02 section 11), and properties `messages_ab`, `messages_ba`,
   `calls_ab`, `calls_ba`, `emails_ab`, `emails_ba`, `first_instant`, `last_instant`, `phones` (labels whose
-  records support it), rebuilt from Postgres (plan 1.6);
+  records support it), rebuilt from Postgres (plan 1.6). The counts are what Conversations shows for Between A
+  and B, direct, one copy of each message (`link_edges.every_pair`, the bulk form of the one edge implementation), so
+  a stored count equals the pair edge. Direct means what Conversations calls direct: not a group chat type and at most
+  two identities on the event. A message in a chat with more identities on its other messages stays on `POSTED_IN` too.
+  An event with exactly two identities that Between does not show, because its direction is not known, keeps its pair
+  on the graph and counts in `undirected`, never in a direction;
 - `person_id` on identity nodes linked to dossiers, so a person's identities can be shown collapsed into the
   person when the case-name toggle is on.
 

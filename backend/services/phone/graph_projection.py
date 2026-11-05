@@ -13,9 +13,11 @@ Membership (9.4): an identity has ``APPEARS_ON`` for every phone it is seen on. 
 plan loses that phone's node and edges, and an identity still seen on another phone keeps its node and that
 phone's edges. Every node and relationship matched here is matched with its ``case_id``.
 
-``COMMUNICATED`` counts events with exactly two identities in a direct conversation (the owner side included
-through the phone's owner); group messages count on ``POSTED_IN``. An event whose direction is not known counts
-in ``undirected``. A node an investigator wrote notes on is kept, marked ``phone_projection_orphaned``, when the
+``COMMUNICATED`` holds what Conversations shows for Between A and B, direct, one copy of each message: the counts come
+from ``link_edges.every_pair``, the bulk form of the one edge implementation (03 R-1, 02 C11), so a stored count
+always equals the pair edge. An event with exactly two identities that Between does not show, because its direction is
+not known, keeps its pair on the graph and counts in ``undirected``, never in a direction. Messages in a group
+conversation count on ``POSTED_IN``. A node an investigator wrote notes on is kept, marked ``phone_projection_orphaned``, when the
 plan no longer holds it, because notes are investigator content (9.5 step 5).
 """
 from __future__ import annotations
@@ -80,6 +82,7 @@ def _identity_labels(conn, case_id):
 def plan(conn, case_id) -> dict:
     """The desired phone layer of one case, as rows, with a revision over all of it."""
     from services.phone import identities as I
+    from services.phone import link_edges
     from services.phone.readings import phone_labels
     case = str(case_id)
     labels = phone_labels(conn, case_id)
@@ -108,11 +111,11 @@ def plan(conn, case_id) -> dict:
         "SELECT thread_key, extraction_id, record_uid, title_in_record, chat_type, party_identity_keys FROM pv_thread "
         "WHERE case_id = :c AND (chat_type ILIKE '%group%' OR thread_kind = 'sms_group' OR (thread_kind = 'chat' AND "
         "coalesce(cardinality(party_identity_keys), 0) > 2))"), {"c": case_id})}  # chat_type is often absent
-    events = defaultdict(lambda: {"kind": None, "ext": None, "thread": None, "at": None, "parties": []})
+    events = defaultdict(lambda: {"kind": None, "ext": None, "thread": None, "at": None, "parties": [], "group": None})
     communicating = set()
-    for ev, ext, kind, thread, at, key, role, implied, is_owner in conn.execute(text(
-            "SELECT e.event_uid, e.extraction_id, e.kind, e.thread_key, e.sort_instant, p.identity_key, p.role, "
-            "p.implied_role, p.is_phone_owner FROM pv_comm_event e JOIN pv_comm_party p ON p.event_uid = e.event_uid "
+    for ev, ext, kind, thread, at, dup, key, role, implied, is_owner in conn.execute(text(
+            "SELECT e.event_uid, e.extraction_id, e.kind, e.thread_key, e.sort_instant, e.dup_group_uid, p.identity_key, "
+            "p.role, p.implied_role, p.is_phone_owner FROM pv_comm_event e JOIN pv_comm_party p ON p.event_uid = e.event_uid "
             "AND p.extraction_id = e.extraction_id WHERE e.case_id = :c"), {"c": case_id}):
         if role == "owner_implicit":
             key, role = owners.get(str(ext), (None,))[0], implied
@@ -123,6 +126,7 @@ def plan(conn, case_id) -> dict:
             continue
         d = events[ev]
         d["kind"], d["ext"], d["thread"], d["at"] = kind, str(ext), thread, at
+        d["group"] = link_edges.copy_group(ext, dup, ev)
         d["parties"].append((key, role))
         communicating.add(key)
 
@@ -185,9 +189,15 @@ def plan(conn, case_id) -> dict:
                          "decision_id": str(decision_id) if decision_id else None})
 
     # COMMUNICATED and POSTED_IN
+    both = link_edges.every_pair(conn, case_id, {e: [v[0]] for e, v in owners.items() if v[0]})
     pairs = {}
+    for (a, b), v in both.items():
+        if a in wanted and b in wanted:
+            pairs[(a, b)] = {"counts": v["counts"], "span": (v["first"], v["last"]),
+                             "phones": {labels.get(p, p) for p in v["phones"]}, "groups": v["groups"]}
     posted = {}
     undirected_events = 0
+    unshown = set()  # one copy of an event Between does not show counts once
     for d in events.values():
         keys = sorted({k for k, _ in d["parties"] if k in wanted})
         thread = groups_threads.get(d["thread"])
@@ -202,16 +212,12 @@ def plan(conn, case_id) -> dict:
         if len(keys) != 2 or d["kind"] not in KIND_PREFIX:
             continue
         a, b = keys
-        pr = pairs.setdefault((a, b), {"counts": defaultdict(int), "span": (None, None), "phones": set()})
-        senders = {k for k, role in d["parties"] if role in FROM_ROLES}
-        prefix = KIND_PREFIX[d["kind"]]
-        if senders == {a}:
-            pr["counts"][prefix + "_ab"] += 1
-        elif senders == {b}:
-            pr["counts"][prefix + "_ba"] += 1
-        else:
-            pr["counts"]["undirected"] += 1
-            undirected_events += 1
+        if d["group"] in both.get((a, b), {}).get("groups", ()) or ((a, b), d["group"]) in unshown:
+            continue
+        unshown.add(((a, b), d["group"]))
+        pr = pairs.setdefault((a, b), {"counts": defaultdict(int), "span": (None, None), "phones": set(), "groups": set()})
+        pr["counts"]["undirected"] += 1
+        undirected_events += 1
         pr["span"] = _span(pr["span"], d["at"])
         pr["phones"].add(labels.get(d["ext"], d["ext"]))
     communicated = []
