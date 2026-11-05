@@ -18,7 +18,7 @@ export function PhonesInArea({ caseId, shape }: { caseId: string; shape: Boundin
     queryFn: ({ signal }) => getPhoneMapArea(caseId, ring, {}, signal),
   })
   return (
-    <section aria-label="Phones seen in this area" className="absolute right-3 top-14 z-10 flex max-h-[50%] w-80 flex-col gap-1 overflow-auto rounded-lg border border-border bg-card/95 p-3 text-xs shadow-md backdrop-blur">
+    <section aria-label="Phones seen in this area" className="absolute right-14 top-14 z-10 flex max-h-[50%] w-80 flex-col gap-1 overflow-auto rounded-lg border border-border bg-card/95 p-3 text-xs shadow-md backdrop-blur">
       <h2 className="text-sm font-semibold">Phones seen in this area</h2>
       {q.isLoading && <p>Counting the positions inside the area…</p>}
       {q.isError && <p role="alert">The area could not be read: {q.error instanceof Error ? q.error.message : "try again"}.</p>}
