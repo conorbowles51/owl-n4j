@@ -20,7 +20,11 @@ try {
   const page = await context.newPage()
   page.setDefaultTimeout(120000)
   const failed = []
-  page.on("response", (r) => { if (r.status() >= 400 && /\/(api|basemap)\//.test(r.url())) failed.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`) })
+  const fonts = new Set()
+  page.on("response", (r) => {
+    if (r.status() >= 400 && /\/(api|basemap)\//.test(r.url())) failed.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`)
+    if (r.url().includes("/assets/fonts/")) fonts.add(`${r.status()} ${decodeURIComponent(new URL(r.url()).pathname.split("/assets/fonts/")[1])}`)
+  })
   const go = async (path) => {
     await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded" })
     if ((await page.evaluate(() => window.isSecureContext)) !== false) throw new Error("isSecureContext was not false")
@@ -72,7 +76,12 @@ try {
     const list = page.getByRole("region", { name: "Routine places" })
     await list.waitFor()
     await list.getByText(/^Routine places \(\d/).waitFor()
-    await page.waitForTimeout(25000) // the map paints late on a loaded box; 4 s gave a black pane
+    // The map paints late on a loaded box, and a name asks for its font only once it is drawn: no font asked for proves nothing.
+    const until = Date.now() + 180000
+    while (Date.now() < until && ![...fonts].some((f) => f.includes("Noto Sans Medium"))) await page.waitForTimeout(2000)
+    await page.waitForTimeout(5000)
+    console.log("FONT_REQUESTS", JSON.stringify([...fonts]))
+    if (![...fonts].some((f) => f.startsWith("200 ") && f.includes("Noto Sans Medium"))) failed.push("no Noto Sans Medium font was asked for: the place name was not drawn")
     console.log("ROUTINE", (await list.textContent())?.replace(/\s+/g, " ").slice(0, 420))
     await page.screenshot({ path: `${shots}/routine-place-list.png`, fullPage: true })
     await go(`/phone-patterns?view=check&subject=e:${phone}`)
@@ -87,6 +96,7 @@ try {
     await page.screenshot({ path: `${shots}/routine-place-in-form.png`, fullPage: true })
   }
   console.log("FAILED_REQUESTS", JSON.stringify(failed))
+  if (failed.length) process.exitCode = 1
 } finally {
   await browser.close()
 }
