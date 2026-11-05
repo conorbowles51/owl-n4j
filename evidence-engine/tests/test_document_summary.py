@@ -242,6 +242,36 @@ async def test_single_digest_reduction_accepts_actual_payload_shrinkage(
 
 
 @pytest.mark.asyncio
+async def test_dense_digests_that_stop_shrinking_still_produce_a_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live 5 Nov: 60,000 and 100,000 character documents ended with no summary at all."""
+    final_prompts: list[str] = []
+    dense_digest = "D" * 32_000
+
+    async def fake_chat_completion(**kwargs: Any) -> str:
+        prompt = kwargs["messages"][-1]["content"]
+        if kwargs.get("response_format"):
+            return '{"corrected_summary":"final summary","correction_count":0}'
+        if "DIGEST CONSOLIDATION" in prompt:
+            return dense_digest  # the model hands the digest back unchanged, so a reduction level gains nothing
+        if "SOURCE SEGMENT" in prompt:
+            return dense_digest
+        final_prompts.append(prompt)
+        return "final summary"
+
+    monkeypatch.setattr(summary_module, "chat_completion", fake_chat_completion)
+
+    doc = ExtractedDocument(text="Payment to the account holder recorded. " * 2_000)
+    summary = await summary_module.generate_document_summary(doc, "large.txt")
+
+    assert summary == "final summary"
+    assert doc.metadata["document_summary_status"] == "generated"
+    assert len(final_prompts) == 1
+    assert dense_digest in final_prompts[0]
+
+
+@pytest.mark.asyncio
 async def test_empty_segment_digest_retries_with_a_reasoning_safe_output_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

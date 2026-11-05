@@ -273,10 +273,17 @@ async def _summarize_all_segments(
 
         after_chars = _digest_payload_chars(reduced)
         if len(reduced) >= len(digests) and after_chars >= before_chars:
-            raise RuntimeError(
-                "Document digest reduction made no progress "
-                f"({before_chars} characters before, {after_chars} after)"
+            # The model has stopped condensing (dense digests come back as they went in). Every digest is still
+            # whole, and SUMMARY_REDUCE_CHARS is a working target, not a model limit: write the summary from them
+            # instead of leaving the document with no summary at all.
+            logger.warning(
+                "Digest reduction stopped at level %d for %s: %d characters before, %d after",
+                level,
+                file_name,
+                before_chars,
+                after_chars,
             )
+            break
         digests = reduced
         level += 1
 
