@@ -150,3 +150,16 @@ def test_the_volume_chart_equals_the_run_and_its_changepoints(engine):
         assert R.volume(c, case, ch["id"])["weeks"] == out["weeks"]  # the same chart from the change's own row
         with pytest.raises(LookupError):
             R.volume(c, make_case(c), rel["id"])
+
+
+@needs_template
+def test_one_message_counts_once_for_a_person_on_two_of_its_rows(engine):
+    two_rows = _m(at(2023, 3, 1), ANA, OWNER, "hi")
+    two_rows["parties"].append((ANA, "recipient", False, None, None))
+    with engine.begin() as c:
+        case = make_case(c)
+        phone(c, case, label="C1", events=[two_rows, _m(at(2023, 3, 2), ANA, OWNER, "again")], contacts={ANA: "Ana S"})
+    with engine.connect() as c:
+        res, _ = R.analyse(c, case, PARAMS)
+    rel = next(r["measures"] for r in res if r["kind"] == "relationship")
+    assert rel["communications"] == 2 and sum(sum(m.values()) for m in rel["monthly"].values()) == 2

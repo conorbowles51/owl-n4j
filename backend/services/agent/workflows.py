@@ -40,6 +40,7 @@ SCHEMA = "loupe.agent.workflows/1"
 # Kinds of case data a step reads. Counted per case by ``case_counts``.
 DATA_KINDS = {
     "ledger": "ledger rows (payments read from statements)",
+    "trades": "brokerage trades (rows read from securities statements)",
     "phones": "phone extractions",
     "documents": "evidence documents other than statements and phone files",
     "dossiers": "people dossiers (a person on People; the person tools need one)",
@@ -224,23 +225,22 @@ WORKFLOWS: tuple[Workflow, ...] = (
     Workflow(
         id="insider-trading", number=6, title="Insider trading",
         question="Did the trader act on inside information, and who passed it?",
-        starting_question=("Set {person}'s trades against the calls and messages of the information chain, to the "
-                           "minute, with time zones explicit."),
+        starting_question=("Set {person}'s trades against the calls and messages of the information chain, by trade "
+                           "date, with time zones explicit."),
         steps=(
-            S("get_financial_transactions", "brokerage executions (instrument, quantity, execution time)",
-              ("ledger",)),
+            S("get_trades", "brokerage trades (instrument, quantity, printed trade date)", ("trades",)),
             S("get_day_activity", "call starts and ends and message times on the chain's phones", ("phones",)),
             S("get_payment_conversation", "messages around each trade", ("phones", "ledger")),
             S("get_analysis_results", "approach 4 (awareness): read and reply events", ("phones",), optional=True),
             S("draft_control_claim", "nominee accounts (connection 3)", ("phones", "ledger", "dossiers"), optional=True),
         ),
-        proposals=(("propose_workspace_entry", "each 'order placed during call' relation with its two citations"),),
+        proposals=(("propose_workspace_entry", "each trade set beside the contact of that day, with its two citations"),),
         person_confirms="each chain link and any nominee control claim",
         rules=("Time zones are explicit: the raw value and the offset side by side.",
+               "Statements print no time of execution: set a trade against calls and messages by its date only, and "
+               "say so in the answer. An order placed during a call cannot be shown from them.",
                "Never state that someone knew; report read and reply events."),
-        needs=("ledger", "phones"), min_phones=1,
-        not_modelled=("Brokerage trades: the ledger holds payments, not instrument and quantity rows, so a trade's "
-                      "execution time and instrument cannot be read."),
+        needs=("trades", "phones"), min_phones=1,
     ),
     Workflow(
         id="payment-scam-victim", number=7, title="Payment-scam victims",
@@ -556,6 +556,7 @@ def case_counts(conn, case_id) -> dict[str, int | None]:
     from sqlalchemy.exc import DBAPIError
     queries = {
         "ledger": "SELECT count(*) FROM financial_transactions WHERE case_id = :c",
+        "trades": "SELECT count(*) FROM financial_security_rows WHERE case_id = :c AND row_kind = 'trade'",
         "financial_sources": "SELECT count(*) FROM financial_source_documents WHERE case_id = :c",
         "phones": "SELECT count(*) FROM phone_extractions WHERE case_id = :c AND standing <> 'superseded'",
         "documents": "SELECT count(*) FROM evidence_files e WHERE e.case_id = :c AND e.deleted_at IS NULL "

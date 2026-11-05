@@ -29,6 +29,7 @@ pytestmark = needs_template
 R = "readiness"
 SA = {"person_a": "Sam Synthetic", "person_b": "Ana Synthetic"}
 NO_DOCS = "the case holds no evidence documents other than statements and phone files"
+NO_TRADES = "the case holds no brokerage trades (rows read from securities statements)"
 APRIL = {"start_date": "2023-04-01", "end_date": "2023-04-30"}
 
 
@@ -83,7 +84,7 @@ QUESTIONS = [
     ("WF15", "expense-fraud", "Can the expense workflow run on this case?", R, {}, [NO_DOCS], None, None),
     # 6 Insider trading
     ("WF16", "insider-trading", "Can the insider-trading workflow run on this case?", R, {},
-     [W.get("insider-trading").not_modelled], None, None),
+     [NO_TRADES], None, None),
     ("WF17", "insider-trading", "Which calls did Sam make on 17 March?", "get_day_activity",
      {"person": "Sam Synthetic", "day": "2023-03-17", "zone": "UTC", "lanes": ["communications"]}, 1, ["e4"],
      lambda d: d["items"][0]["kind"] == "call"),
@@ -150,7 +151,7 @@ def test_all_data_every_workflow_question_states_the_known_answer(world):
     from sqlalchemy.orm import Session
     with Session(bind=world["engine"]) as s:
         counts = W.case_counts(s.connection(), world["case"])
-    assert counts == {"ledger": 5, "financial_sources": 1, "phones": 2, "documents": 0, "dossiers": 4, "timeline": 0}
+    assert counts == {"ledger": 5, "trades": 0, "financial_sources": 1, "phones": 2, "documents": 0, "dossiers": 4, "timeline": 0}
     tools = _tools(world, significant=False)
     table, wrong = [], []
     for q in QUESTIONS:

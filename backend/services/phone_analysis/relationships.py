@@ -137,6 +137,7 @@ def _week(dt):
 def analyse_phone(conn, case_id, ext, label, people, names_by_group, params, counts) -> list:
     comms = defaultdict(list)  # group -> [(instant, kind, direction, record_uid)]
     keys_of = defaultdict(set)
+    counted = set()
     phone_last = None
     for r in conn.execute(text(
             "SELECT e.record_uid::text AS uid, e.kind, e.direction, e.sort_instant, e.deleted_state, p.identity_key "
@@ -144,8 +145,13 @@ def analyse_phone(conn, case_id, ext, label, people, names_by_group, params, cou
             "e.kind IN ('message', 'call', 'email') AND p.identity_key IS NOT NULL AND NOT coalesce(p.is_phone_owner, "
             "false) ORDER BY e.sort_instant NULLS LAST, e.record_uid"), {"e": ext}).mappings():
         g = people.get(r["identity_key"], (r["identity_key"], None, None))[0]
-        comms[g].append((r["sort_instant"], r["kind"], r["direction"] or "unknown", r["uid"], r["deleted_state"]))
         keys_of[g].add(r["identity_key"])
+        # one communication counts once for a person, however many of their rows it has (a party row and a contact
+        # row, or two numbers joined under one person)
+        if (g, r["uid"]) in counted:
+            continue
+        counted.add((g, r["uid"]))
+        comms[g].append((r["sort_instant"], r["kind"], r["direction"] or "unknown", r["uid"], r["deleted_state"]))
         if r["sort_instant"] and (phone_last is None or r["sort_instant"] > phone_last):
             phone_last = r["sort_instant"]
     cards = defaultdict(set)

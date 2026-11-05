@@ -19,7 +19,7 @@ PENDING_ON_SIBLING_BRANCHES = {
 }
 BY_PERSON = {"red_cell"}
 
-ALL = {"ledger": 100, "financial_sources": 3, "phones": 3, "documents": 5, "dossiers": 4, "timeline": 2}
+ALL = {"ledger": 100, "trades": 7, "financial_sources": 3, "phones": 3, "documents": 5, "dossiers": 4, "timeline": 2}
 
 
 def test_ten_scenarios_and_seven_more():
@@ -89,9 +89,16 @@ def test_readiness_counts_decide():
     assert [s["tool"] for s in r["steps"] if not s["runs"]] == ["get_money_signal_leads"]
 
 
-def test_insider_trading_is_not_possible_while_brokerage_rows_are_not_modelled():
-    r = W.assess(W.get("insider-trading"), ALL, W.registered_tool_names() | PENDING_ON_SIBLING_BRANCHES)
-    assert r["status"] == "not_possible" and "instrument and quantity" in r["reasons"][0]
+def test_insider_trading_runs_on_trades_and_phones_and_says_why_when_either_is_absent():
+    tools = W.registered_tool_names() | PENDING_ON_SIBLING_BRANCHES
+    w = W.get("insider-trading")
+    r = W.assess(w, ALL, tools)
+    assert r["status"] in ("ready", "partial") and "get_trades" in [s["tool"] for s in r["steps"] if s["runs"]]
+    assert w.not_modelled is None and "by its date only" in " ".join(w.rules)
+    r = W.assess(w, {**ALL, "phones": 0}, tools)  # a real brokerage case with no phone
+    assert r["status"] == "not_possible" and r["reasons"] == ["the case holds no phone extractions"]
+    r = W.assess(w, {**ALL, "trades": 0}, tools)
+    assert r["status"] == "not_possible" and "brokerage trades" in r["reasons"][0]
 
 
 def test_missing_tool_makes_partial_and_is_named():
