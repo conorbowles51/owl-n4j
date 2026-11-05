@@ -20,6 +20,7 @@ Command line (writes report folders, ``manifest.json`` and ``ui-fixture.json``):
     python3 fixture_builder.py phones-only OUT_DIR [--scale 0.02]
     python3 fixture_builder.py training OUT_DIR
     python3 fixture_builder.py phone OUT_DIR --like P08 --scale 1.0   # one phone at real scale
+    python3 fixture_builder.py check-seed OUT_DIR                     # the phone docs/check-case-seed.md uploads
 
 Other forms (zip, split sections, protected single-file reports) are added to this module by the
 units that test them (01 unit 1.2); they are not separate generators.
@@ -117,6 +118,15 @@ class PhoneSpec:
     # Emails shaped as Phone reference 1: Inbox folder, no mark on the From party, the To party marked as the owner
     # (04 decision 54). 0 leaves every fixture as before.
     owner_mails: int = 0
+    # one extra conversation of ``(term, count)``: every message holds the plain word, so a search group can pass 500
+    # (cb-checkseed). Empty leaves every fixture as before.
+    term_messages: tuple = ()
+    # one extra conversation that makes a statement: ``(start, ((who, text), ...))``, who being "owner" or "other", a
+    # line every 4 minutes from ``start``. Empty leaves every fixture as before.
+    statement_lines: tuple = ()
+    # accurate repeat positions at one place: ``(lat, lon, first_day, days)``, an evening of half-hourly fixes with GPS
+    # accuracy on each day, so a routine place forms. Empty leaves every fixture as before.
+    routine_place: tuple = ()
     report_name: str = "Report.xml"
 
 
@@ -341,13 +351,35 @@ class PhoneBuild:
             group = c % 9 == 4 and len(contacts) >= 3
             members = self.rng.sample(contacts, 3) if group else [contacts[c % len(contacts)]]
             out.append(self.chat(c, app, members, sizes[c], group))
+        # drawn apart, so every record above stays exactly as it is without the seeded conversations
+        kept = (self.rng, self.ids)
+        self.rng, self.ids = random.Random(self.spec.seed * 31 + 4), Ids(self.spec.seed * 31 + 5)
+        try:
+            if self.spec.term_messages:
+                out.append(self.term_chat(n_chats, contacts[0]))
+            if self.spec.statement_lines:
+                out.append(self.statement_chat(n_chats + 1, contacts[0]))
+        finally:
+            self.rng, self.ids = kept
         return out
 
-    def chat(self, c: int, app: str, members: list[Person], size: int, group: bool) -> str:
+    def term_chat(self, c: int, other: Person) -> str:
+        term, size = self.spec.term_messages
+        bodies = [f"{PHRASES[i % len(PHRASES)]}, about the {term} order" for i in range(size)]
+        return self.chat(c, APPS[0], [other], size, False, bodies=bodies)
+
+    def statement_chat(self, c: int, other: Person) -> str:
+        start, lines = self.spec.statement_lines
+        return self.chat(c, APPS[2], [other], len(lines), False, bodies=[text for _, text in lines],
+                         times=[start + dt.timedelta(minutes=4 * i) for i in range(len(lines))],
+                         outgoing=[who == "owner" for who, _ in lines])
+
+    def chat(self, c: int, app: str, members: list[Person], size: int, group: bool, *, bodies: list[str] | None = None,
+             times: list[dt.datetime] | None = None, outgoing: list[bool] | None = None) -> str:
         thread_id = f"{self.spec.label}-t{c}"
         chat = Model(self, "Chat", False)
         chat.f("Source", "String", app).f("Id", "String", self.ids.guid())
-        times = sorted(self.instant() for _ in range(size))
+        times = times or sorted(self.instant() for _ in range(size))
         later = []
         if c == 0 and self.spec.later_messages:  # drawn apart, so every other record stays exactly as it was
             lr = random.Random(self.spec.seed * 31 + 1)
@@ -362,7 +394,8 @@ class PhoneBuild:
         chat.nest("multiModelField", "Participants", parts)
         msgs = []
         for i, t in enumerate(times):
-            msgs.append(self.message(thread_id, app, members, t, i))
+            msgs.append(self.message(thread_id, app, members, t, i, body=bodies[i] if bodies else None,
+                                     out=outgoing[i] if outgoing else None))
         # messages with no time are listed at the end (07 J-4 failure state)
         if c == 0:
             for j in range(max(1, size // 50)):
@@ -381,14 +414,19 @@ class PhoneBuild:
         return chat.xml()
 
     def message(self, thread_id: str, app: str, members: list[Person], t: dt.datetime | None,
-                i: int) -> Model:
+                i: int, *, body: str | None = None, out: bool | None = None) -> Model:
         outgoing = self.rng.random() < 0.45
+        if out is not None:
+            outgoing = out
         other = self.rng.choice(members)
         r = self.rng.random()
         deleted = "Deleted" if r < 0.012 else ("Trash" if r < 0.014 else ("Unknown" if r < 0.05 else "Intact"))
+        if body is not None:  # a seeded line is counted on, so it is always an intact message
+            deleted = "Intact"
         if deleted != "Intact":
             self.count.fact(f"messages_{deleted.lower()}")
-        body = self.rng.choice(EDGE_TEXTS) if self.rng.random() < 0.01 else self.rng.choice(PHRASES)
+        if body is None:
+            body = self.rng.choice(EDGE_TEXTS) if self.rng.random() < 0.01 else self.rng.choice(PHRASES)
         m = Model(self, "InstantMessage", True, deleted)
         m.f("Source", "String", app)
         m.f("Body", "String", body) if body else m.f("Body", "String", None)
@@ -528,6 +566,32 @@ class PhoneBuild:
             loc.nest("modelField", "Position", [co])
             self.count.fact("locations_positioned")
             out.append(loc.xml())
+        if self.spec.routine_place:
+            out += self.routine_fixes()
+        return out
+
+    def routine_fixes(self) -> list[str]:
+        """Eight half-hourly fixes from 20:00 on each day, within a few metres of one place, each with GPS accuracy."""
+        lat, lon, first_day, days = self.spec.routine_place
+        rng = random.Random(self.spec.seed * 31 + 6)
+        kept = self.ids  # drawn apart, like the seeded conversations
+        self.ids = Ids(self.spec.seed * 31 + 7)
+        out = []
+        for d in range(days):
+            for k in range(8):
+                loc = Model(self, "Location", False)
+                loc.f("Source", "String", "Synthetic Maps")
+                loc.t("TimeStamp", dt.datetime.combine(first_day, dt.time(20)) + dt.timedelta(days=d, minutes=30 * k))
+                loc.f("Category", "String", "Locations")
+                co = Model(self, "Coordinate", True)
+                co.f("Longitude", "Double", f"{lon + rng.uniform(-5e-5, 5e-5):.6f}")
+                co.f("Latitude", "Double", f"{lat + rng.uniform(-5e-5, 5e-5):.6f}")
+                co.f("GpsHorizontalAccuracy", "Double", "12")
+                loc.nest("modelField", "Position", [co])
+                self.count.fact("locations_positioned")
+                self.count.fact("locations_routine")
+                out.append(loc.xml())
+        self.ids = kept
         return out
 
     def owner_mail(self) -> list[str]:
@@ -735,6 +799,31 @@ def training_case() -> CaseSpec:
                   extraction_date=dt.date(2024, 5, 10)),
     ]
     return CaseSpec("Phone training (synthetic)", people, phones, ledger=True, seed=23)
+
+
+# The words of the seeded conversation: invented, and specific enough for a model to draft claims from (cb-checkseed).
+CHECK_SEED_TERM = "lantern"
+CHECK_SEED_STATEMENT = (
+    ("other", "I need to ask you about the first week of June. Where were you on the night of Tuesday 4 June?"),
+    ("owner", "I was at home in Larkspur Close all evening. I went to bed at about 11 pm and slept until 7 am on Wednesday 5 June."),
+    ("owner", "My phone was switched off overnight. I did not use it at all between 11 pm and 7 am."),
+    ("other", "Were you near the Harbour Road unit on Thursday 6 June?"),
+    ("owner", "No. I was nowhere near the Harbour Road unit on Thursday 6 June, I was at home all day."),
+    ("other", "And have you been in contact with Rowan Ashdown?"),
+    ("owner", "I have not been in contact with Rowan Ashdown since April, no calls and no messages."),
+    ("owner", "On Friday 7 June I was at the Mill Lane workshop from 9 am until 5 pm with Avery Corwood."),
+)
+
+
+def check_seed_case() -> CaseSpec:
+    """One more phone for the Phones-only check case (docs/check-case-seed.md): a search group over 500 messages, a
+    conversation that makes a statement, and a routine place. P13 is a phone whose Coordinates carry GPS accuracy."""
+    case = phones_only_case()
+    phone = PhoneSpec("C7", like="P13", scale=0.01, owner="p16", contacts=["p0", "p1", "p2", "p3", "p4", "p5"], seed=107,
+                      extraction_date=dt.date(2024, 6, 20), gap=None, term_messages=(CHECK_SEED_TERM, 640),
+                      statement_lines=(dt.datetime(2024, 6, 12, 10, 0), CHECK_SEED_STATEMENT),
+                      routine_place=(CENTRE[0] + 0.02, CENTRE[1] - 0.03, dt.date(2024, 5, 20), 21))
+    return CaseSpec("Check seed for Phones-only (synthetic)", case.people, [phone], ledger=False, seed=11)
 
 
 def write_ledger(case: CaseSpec, out: Path, phones_period: tuple[dt.datetime, dt.datetime]) -> dict:
@@ -1019,7 +1108,7 @@ def protected_ufdr(out: Path, kind: str, seed: int = 7) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("shape", choices=["phones-only", "training", "phone", "c1-later"])
+    ap.add_argument("shape", choices=["phones-only", "training", "phone", "c1-later", "check-seed"])
     ap.add_argument("out", type=Path)
     ap.add_argument("--scale", type=float, default=0.02)
     ap.add_argument("--like", default="P06")
@@ -1038,6 +1127,8 @@ def main(argv=None) -> int:
         case.phones = [c1]
     elif a.shape == "training":
         case = training_case()
+    elif a.shape == "check-seed":
+        case = check_seed_case()
     else:
         people = invent_people(40, seed=31)
         case = CaseSpec(f"Synthetic {a.like} at scale {a.scale}", people,

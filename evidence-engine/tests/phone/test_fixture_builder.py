@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 try:  # run as package (pytest from evidence-engine) or as a plain module
     from . import fixture_builder as fb
@@ -288,6 +289,37 @@ def test_a_newer_report_of_c1_keeps_every_record_and_adds_three_later_messages(t
     assert b["phones"][0]["extraction_date"] > old_c1["extraction_date"]
     assert b["phones"][0]["period_end"] == old_c1["period_end"]
 
+
+
+class CheckSeedTest(unittest.TestCase):
+    def _report(self, out: Path, **extra) -> str:
+        people = fb.invent_people(10, seed=31)
+        spec = fb.PhoneSpec("V1", like="P13", scale=0.002, contacts=[p.key for p in people[1:]], seed=301, gap=None, **extra)
+        fb.build_case(fb.CaseSpec("Synthetic", people, [spec]), out)
+        return (out / "V1" / "Report.xml").read_text()
+
+    def test_the_seeded_conversations_and_fixes_add_records_and_change_nothing_else(self):
+        import datetime as dt
+        with tempfile.TemporaryDirectory() as d:
+            a = self._report(Path(d) / "a")
+            b = self._report(Path(d) / "b", term_messages=("lantern", 30),
+                             statement_lines=(dt.datetime(2024, 4, 1, 10), (("owner", "I was at home."), ("other", "Sure."))),
+                             routine_place=(39.3, -76.6, dt.date(2024, 3, 1), 5))
+        self.assertTrue(set(re.findall(r"<model [^>]*>", a)) <= set(re.findall(r"<model [^>]*>", b)))
+        self.assertEqual(b.count("about the lantern order"), 30)
+        self.assertEqual(b.count("I was at home."), 1)
+        self.assertEqual(b.count("GpsHorizontalAccuracy"), 40)
+
+    def test_the_check_seed_phone_holds_what_its_recipe_says(self):
+        case = fb.check_seed_case()
+        with tempfile.TemporaryDirectory() as d:
+            manifest = fb.build_case(case, Path(d))
+            text = (Path(d) / "C7" / "Report.xml").read_text()
+        self.assertEqual(text.count(f"about the {fb.CHECK_SEED_TERM} order"), 640)
+        self.assertEqual(manifest["phones"][0]["facts"]["locations_routine"], 21 * 8)
+        for _, line in fb.CHECK_SEED_STATEMENT:
+            self.assertEqual(text.count(escape(line)), 1)
+        self.assertIn(fb.SYNTHETIC_MARK, text)
 
 
 class TypedValuesTest(unittest.TestCase):
