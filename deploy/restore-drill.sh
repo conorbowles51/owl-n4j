@@ -11,8 +11,8 @@
 # Chroma: the newest copy starts in a scratch chroma of the live image; records per collection must equal the set's
 #   counts file, and a sample of stored vectors must find themselves through the restored index at least as often as
 #   through the live one.
-# Evidence: a random sample of files named by the RESTORED database is hashed at its live path (and in the copy, when
-#   EVIDENCE_COPY_DEST is set) against the hash the restored database holds.
+# Evidence: every file the RESTORED database names must be on disk, and a random sample is hashed at its live path (and
+#   in the copy, when EVIDENCE_COPY_DEST is set) against the hash the restored database holds.
 # Live is the reference when the backup was taken, not when the drill runs: the drift since then is printed beside
 # each check and does not fail the drill.
 #
@@ -131,26 +131,46 @@ drill_postgres() {
 }
 
 drill_evidence() {
-    local t0 checked=0 bad=0 missing=0 copy_checked=0 copy_bad=0 line id path sha got rel
+    local t0 checked=0 bad=0 copy_checked=0 copy_bad=0 id path sha got rel
     t0="$(date -u +%s)"
+    # Every live row of the restored database names a file that is there; a row can name a folder (a phone extraction
+    # is one row over its folder), which is checked by being there. Then a random sample of the files is hashed.
     "${DOCKER}" exec "${SCRATCH_PG}" psql -U "${PG_USER}" -d "${PG_DB}" -AtqX -F $'\t' -c \
-        "SELECT id, stored_path, sha256 FROM evidence_files WHERE deleted_at IS NULL AND stored_path LIKE '/%' AND sha256 <> '' ORDER BY random() LIMIT ${SAMPLE}" > "${WORK}/sample.tsv"
+        "SELECT id, stored_path, sha256 FROM evidence_files WHERE deleted_at IS NULL AND stored_path LIKE '/%' AND sha256 <> ''" > "${WORK}/rows.tsv"
+    local rows folders=0 missing=0
+    rows="$(wc -l < "${WORK}/rows.tsv")"
+    : > "${WORK}/present.tsv"
+    while IFS=$'\t' read -r id path sha; do
+        if [[ -f "${path}" ]]; then printf '%s\t%s\t%s\n' "${id}" "${path}" "${sha}" >> "${WORK}/present.tsv"
+        elif [[ -d "${path}" ]]; then folders=$(( folders + 1 ))
+        else
+            missing=$(( missing + 1 ))
+            (( missing > 40 )) || note "  no file on disk: row ${id}"
+        fi
+    done < "${WORK}/rows.tsv"
+    if (( rows == 0 )); then
+        fail "evidence: the restored database named no files"
+    elif (( missing )); then
+        fail "evidence: ${missing} of ${rows} rows name a file that is not on disk ($(elapsed "${t0}") s)"
+    else
+        pass "evidence: all ${rows} rows name a file or folder that is on disk, ${folders} folders ($(elapsed "${t0}") s)"
+    fi
+    t0="$(date -u +%s)"
     while IFS=$'\t' read -r id path sha; do
         checked=$(( checked + 1 ))
-        if [[ ! -f "${path}" ]]; then missing=$(( missing + 1 )); note "  missing: file ${id}"; continue; fi
         got="$(nice -n 15 sha256sum "${path}" | cut -d' ' -f1)"
-        if [[ "${got}" != "${sha}" ]]; then bad=$(( bad + 1 )); note "  hash differs: file ${id}"; fi
+        if [[ "${got}" != "${sha}" ]]; then bad=$(( bad + 1 )); note "  hash differs: row ${id}"; fi
         if [[ -n "${EVIDENCE_COPY_DEST}" ]]; then
             rel="${path#"${LIVE_CHECKOUT}/"}"; rel="${rel/#ingestion\/data/ingestion}"
             copy_checked=$(( copy_checked + 1 ))
             got="$(nice -n 15 sha256sum "${EVIDENCE_COPY_DEST}/files/${rel}" 2>/dev/null | cut -d' ' -f1)"
-            [[ "${got}" == "${sha}" ]] || { copy_bad=$(( copy_bad + 1 )); note "  copy differs or is missing: file ${id}"; }
+            [[ "${got}" == "${sha}" ]] || { copy_bad=$(( copy_bad + 1 )); note "  copy differs or is missing: row ${id}"; }
         fi
-    done < "${WORK}/sample.tsv"
+    done < <(shuf -n "${SAMPLE}" "${WORK}/present.tsv")
     if (( checked == 0 )); then
-        fail "evidence: the restored database named no files to sample"
-    elif (( bad + missing )); then
-        fail "evidence: ${bad} hash differences and ${missing} missing in a sample of ${checked} ($(elapsed "${t0}") s)"
+        fail "evidence: no file to sample"
+    elif (( bad )); then
+        fail "evidence: ${bad} hash differences in a sample of ${checked} ($(elapsed "${t0}") s)"
     else
         pass "evidence: ${checked} sampled files match the hash in the restored database at their live path ($(elapsed "${t0}") s)"
     fi

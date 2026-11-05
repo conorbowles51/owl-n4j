@@ -273,4 +273,4 @@ docker logs -f owl-v2-evidence-worker
 
 `docs/backup-inventory.md` lists every store and its protection; `docs/backup-restore.md` holds the restore steps.
 `bash deploy/tests/test-<name>.sh` exercises `db-backup`, `neo4j-backup`, `chroma-backup`, `keys-bundle`,
-`evidence-copy` and `backup-check`. `deploy/restore-drill.sh run` restores the newest backups into scratch containers.
+`evidence-copy`, `backup-check` and `restore-drill`. `deploy/restore-drill.sh run` restores the newest backups into scratch containers.

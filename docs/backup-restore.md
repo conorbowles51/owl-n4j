@@ -13,7 +13,7 @@ and 2 GB of memory. A machine with nothing else running is faster.
 | Neo4j load and start | under 4 minutes |
 | Neo4j consistency check | 73 seconds |
 | Chroma unpack and start | 84 seconds |
-| Hash check of 300 evidence files | 151 seconds |
+| Every evidence row checked against the disk, and a hash check of 300 files | 3 minutes |
 | The whole drill | 25 minutes |
 
 ## 1. Prepare
