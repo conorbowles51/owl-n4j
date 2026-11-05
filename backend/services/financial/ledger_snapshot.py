@@ -256,12 +256,13 @@ def capture_ledger_scope(engine, *, case_id, account_id=None, start_date=None, e
     return LedgerScope(document=dict(ledger=ledger, decisions=decisions, export_ready=True), sha256=sha256)
 
 
-def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None, packet_records=False):
+def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None, packet_records=False, size_limit=True):
     """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads.
 
     ``packet_records`` adds the expert packet's records for a download. Tracing and other callers compare this
     capture's fingerprint between two reads, and the case audit head moves with any write in the case, so those
-    records stay out of the default capture."""
+    records stay out of the default capture. ``size_limit``: the 64 MiB limit of a download built in a request; a
+    stored background report in numbered parts has no such limit."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
@@ -324,7 +325,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                     document['limitations'].append('Bundled source files were read and matched to their recorded ingestion hashes for this export. This checks retained bytes, not source authenticity.')
                 content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     encoded=content.encode('utf-8')
-    if len(encoded)>MAX_LEDGER_SNAPSHOT_BYTES:
+    if size_limit and len(encoded)>MAX_LEDGER_SNAPSHOT_BYTES:
         raise LedgerSummaryError('The complete ledger record exceeds 64 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
     snapshot=LedgerSnapshot(content,hashlib.sha256(encoded).hexdigest(),len(encoded))
     manifest=dict(schema='loupe.financial.ledger_export_manifest/1',digest_covers=FULL_DOCUMENT_COVERS,

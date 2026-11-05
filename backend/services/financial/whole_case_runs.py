@@ -38,7 +38,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 
 logger = logging.getLogger(__name__)
 
-KINDS = ('transfers', 'timeline', 'patterns', 'trace')
+KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'pdf')
 PAGE_LIMIT = 200
 HEARTBEAT_SECONDS = 5
 STALE_HEARTBEAT_SECONDS = 180  # a child at nice 15 on a loaded box can miss several beats
@@ -401,16 +401,19 @@ def _write_sections(directory, sections, run, step, steps):
     return counts, digest.hexdigest()
 
 
-def _capture(connection, case_id, params):
-    from services.financial.ledger_snapshot import capture_ledger_scope
+def _capture(connection, case_id, params, kind):
+    from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope
     def day(name):
         from datetime import date
         return date.fromisoformat(params[name]) if params.get(name) else None
     def ids(name):
         return [UUID(value) for value in params[name]] if params.get(name) else None
-    return capture_ledger_scope(connection, case_id=case_id, account_id=UUID(params['account_id']) if params.get('account_id') else None,
-                                account_ids=ids('account_ids'), account_holders=params.get('account_holders') or None,
-                                start_date=day('start_date'), end_date=day('end_date'))
+    scope = dict(case_id=case_id, account_id=UUID(params['account_id']) if params.get('account_id') else None, account_ids=ids('account_ids'),
+                 account_holders=params.get('account_holders') or None, start_date=day('start_date'), end_date=day('end_date'))
+    if kind == 'pdf':
+        return capture_ledger_export(connection, generated_by=params.get('generated_by'), privilege_marking=params.get('privilege_marking', 'unmarked'),
+                                     size_limit=False, **scope)
+    return capture_ledger_scope(connection, **scope)
 
 
 def _pair_side(row):
@@ -426,9 +429,14 @@ def compute_transfers(capture, params, run):
     graded = result['graded']
     def side(item):
         return {**item, 'debit': _pair_side(by_id[item['debit_id']]), 'credit': _pair_side(by_id[item['credit_id']])}
+    def row_words(row):
+        return (row['ordering_date'], row.get('account_label'), row['direction'], row.get('description'), row.get('from_name'), row.get('to_name'),
+                row.get('txn_number'), row['currency'], row['amount_minor'])
+    def pair_words(pair):
+        return row_words(by_id[pair['debit_id']]) + row_words(by_id[pair['credit_id']])
     sections = dict(
-        rows=[(row, None, None) for row in result['rows']],
-        candidates=[(side(pair), None, None) for pair in result['candidates']],
+        rows=[(row, row['direction'], row_words(row)) for row in result['rows']],
+        candidates=[(side(pair), None, pair_words(pair)) for pair in result['candidates']],
         graded=[(side(pair), pair['level'], None) for pair in graded['pairs']],
         reference_evidence=[(item, None, None) for item in result['reference_evidence']])
     summary = {key: result[key] for key in ('case_id', 'start_date', 'end_date', 'population', 'tolerance_days', 'snapshot_sha256',
@@ -471,7 +479,8 @@ def compute_patterns(capture, params, run):
         members = hypothesis['sources']
         kinds[hypothesis['kind']] = kinds.get(hypothesis['kind'], 0) + 1
         item = {**hypothesis, 'sources': members[:SOURCES_SHOWN], 'sources_total': len(members), 'sources_start': len(sources)}
-        sources.extend((member, None, None) for member in members)
+        if len(members) > SOURCES_SHOWN:  # the rest open a page at a time; a smaller group is complete on its own line
+            sources.extend((member, None, None) for member in members)
         hypotheses.append((item, hypothesis['kind'], (hypothesis['kind'], hypothesis['account_label'], hypothesis.get('counterparty_label'),
                                                      hypothesis['currency'], hypothesis['amount_minor'], hypothesis['explanation'])))
     summary = {key: result[key] for key in result if key not in ('hypotheses', 'date_unavailable_ids')}
@@ -486,10 +495,50 @@ def compute_trace(capture, params, run):
     return summary, dict(files={'trace-report.json': report})
 
 
+def compute_pdf(capture, params, run):
+    """Numbered PDF parts covering every captured reading, in one archive, with a manifest of each part's digest."""
+    import io
+    import zipfile
+    from services.financial.ledger_pdf import numbered_report_parts, render_ledger_pdf
+    from services.financial.ledger_snapshot import LedgerSnapshot, render_ledger_report
+    parts = list(numbered_report_parts(capture.snapshot))
+    listed, members = [], []
+    run.phase(2, 3, 'Writing the PDF parts', done=0, total=len(parts))
+    for number, of, document, words in parts:
+        content = json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
+        part = LedgerSnapshot(content, hashlib.sha256(content.encode()).hexdigest(), len(content.encode()))
+        pdf = render_ledger_pdf(part, render_ledger_report(part), part_words=words)
+        name = 'ledger-report-part-%03d-of-%03d.pdf' % (number, of)
+        keys = sorted(reading['row']['key'] for reading in document['ledger']['readings'])
+        listed.append(dict(part=number, of=of, filename=name, readings=len(keys), sha256=hashlib.sha256(pdf).hexdigest(), byte_count=len(pdf),
+                           first_key=keys[0] if keys else None, last_key=keys[-1] if keys else None, words=words))
+        members.append((name, pdf))
+        run.phase(2, 3, 'Writing the PDF parts', done=number, total=of)
+    readings = json.loads(capture.snapshot.content)['ledger']['readings']
+    manifest = dict(schema='loupe.financial.ledger_pdf_parts/1', snapshot_sha256=capture.snapshot.sha256, ledger_scope_sha256=capture.ledger_scope_sha256,
+                    digest_covers='The full export document; the snapshot itself stays available through a ledger export.',
+                    readings=len(readings), parts=listed, covers_every_reading=sum(item['readings'] for item in listed) == len(readings))
+    if not manifest['covers_every_reading']:
+        raise WholeCaseRunError('The numbered parts did not cover every captured payment; no report was produced.')
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(zipfile.ZipInfo('parts-manifest.json', date_time=(1980, 1, 1, 0, 0, 0)), json.dumps(manifest, sort_keys=True, indent=1))
+        for name, pdf in members:
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, pdf)
+    data = stream.getvalue()
+    summary = dict(case_id=str(params['case_id']), snapshot_sha256=capture.snapshot.sha256, readings=len(readings), parts=len(listed),
+                   part_limit=max(item['readings'] for item in listed), archive_sha256=hashlib.sha256(data).hexdigest(), archive_bytes=len(data),
+                   filename='ledger-report-parts.zip', listed=[{key: item[key] for key in ('part', 'of', 'filename', 'readings', 'byte_count', 'words')} for item in listed])
+    return summary, dict(files={'ledger-report-parts.zip': data})
+
+
 SOURCES_SHOWN = 50
-COMPUTE = dict(transfers=compute_transfers, timeline=compute_timeline, patterns=compute_patterns, trace=compute_trace)
+COMPUTE = dict(transfers=compute_transfers, timeline=compute_timeline, patterns=compute_patterns, trace=compute_trace, pdf=compute_pdf)
 COMPUTE_LABEL = dict(transfers='Comparing every payment by amount and date', timeline='Putting the payments in date order',
-                     patterns='Screening the payments for patterns', trace='Following the selected transfers from the start point')
+                     patterns='Screening the payments for patterns', trace='Following the selected transfers from the start point',
+                     pdf='Writing the PDF parts')
 
 
 def _execute(run):
@@ -514,9 +563,9 @@ def _execute(run):
             recording = view_cache._Recording(owner=view_cache._dbapi(owner), snapshot=snapshot, connection=owner, view='whole-case-' + kind)
             token = view_cache._recording.set(recording)
             try:
-                capture = _capture(owner, case_id, params)
-                run.phase(2, steps, COMPUTE_LABEL[kind], total=len(capture.document['ledger']['readings']))
-                summary, sections = COMPUTE[kind](capture, params, run)
+                capture = _capture(owner, case_id, params, kind)
+                run.phase(2, steps, COMPUTE_LABEL[kind])
+                summary, sections = COMPUTE[kind](capture, {**params, 'case_id': state['case_id']}, run)
             finally:
                 recording.paused = True
                 view_cache._recording.reset(token)

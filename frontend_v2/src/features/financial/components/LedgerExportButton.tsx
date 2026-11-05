@@ -3,6 +3,8 @@ import { sha256 } from "@noble/hashes/sha2.js"
 import { sameTableView, type LedgerTableView } from "../lib/ledger-table-view"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { isPdfSizeRefusal } from "../lib/whole-case-run"
+import { WholeCasePdf } from "./WholeCasePdf"
 import { candidateUrl } from "../lib/candidate-contract"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { TraceSupportAssembly } from "./TraceSupportAssembly"
@@ -286,7 +288,9 @@ function ScopedExport({
       {includePdf && (
         <p className="text-sm">
           The PDF uses the same captured readings, totals and history as the
-          JSON and HTML report. Up to 2,000 captured readings per PDF.
+          JSON and HTML report. Up to 2,000 captured readings per PDF; a
+          larger scope is written in the background as numbered parts that
+          together cover every reading.
         </p>
       )}
       <label className="flex items-start gap-2 text-sm">
@@ -337,6 +341,9 @@ function ScopedExport({
       </p>
       {message && <p role="status">{message}</p>}
       <ExpertPacketResult packet={packet} />
+      {includePdf && isPdfSizeRefusal(message) && (
+        <WholeCasePdf caseId={caseId} params={params} marking={marking} />
+      )}
     </section>
   )
 }

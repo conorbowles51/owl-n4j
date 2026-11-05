@@ -174,6 +174,22 @@ class WholeCaseTransfers(_transfers._test_financial_ledger_summary.LedgerSummary
         self.assertEqual(summary['snapshot_sha256'], plain['snapshot_sha256'])
 
 
+class PathWorkLimit(TestCase):
+    def test_a_stopped_path_search_states_what_it_did_not_search(self):
+        from tests.test_financial_pattern_review import PatternReviewTests
+        import services.financial.pattern_review as P
+        case = PatternReviewTests('test_optional_paths_retain_every_posting_and_candidate_pair')
+        rows, pairs = case.path_fixture(returning=False)
+        with patch('services.financial.ledger_transfers.ledger_transfer_candidates', return_value=dict(candidates=pairs)):
+            whole = P.screen_ledger_patterns(case.capture(rows), cross_account=True, whole_case=True)
+            with patch.object(P, 'MAX_WHOLE_CASE_PATH_EXTENSIONS', 0):
+                stopped = P.screen_ledger_patterns(case.capture(rows), cross_account=True, whole_case=True)
+        self.assertEqual(whole['paths_not_searched'], 0)
+        self.assertIsNone(whole['paths_words'])
+        self.assertEqual(stopped['paths_not_searched'], 2)
+        self.assertIn('2 of 2 starting transfers were not searched', stopped['paths_words'])
+
+
 class WholeCaseTimelineAndPatterns(TestCase):
     def capture(self, count):
         from services.financial.ledger_snapshot import LedgerScope
@@ -285,3 +301,33 @@ class TraceWalk(_network.NetworkTracingTests):
             trace_walk(export, self.walk_request(request, pairs=request['pairs'] * 2))
         with self.assertRaises(LedgerSummaryError):
             trace_walk(export, self.walk_request(request, expected_snapshot_sha256='0' * 64))
+
+
+class NumberedPdfParts(TestCase):
+    def snapshot(self, count):
+        from services.financial.ledger_snapshot import LedgerSnapshot
+        readings = [dict(row=dict(key='k%05d' % n, ordering_date='2024-%02d-01' % (n % 12 + 1))) for n in range(count)]
+        decisions = [dict(subject_type='transaction', subject_id='k00003', decision='d'), dict(subject_type='account', subject_id='a', decision='e')]
+        content = json.dumps(dict(ledger=dict(readings=readings), decisions=decisions, investigation_notes=[1], exhibit_assessment=dict(a=1)))
+        return LedgerSnapshot(content, 'x', len(content))
+
+    def test_parts_cover_every_reading_exactly_once_in_date_order(self):
+        from services.financial.ledger_pdf import MAX_PDF_READINGS, numbered_report_parts
+        parts = list(numbered_report_parts(self.snapshot(MAX_PDF_READINGS * 2 + 7)))
+        self.assertEqual([(p[0], p[1]) for p in parts], [(1, 3), (2, 3), (3, 3)])
+        keys = [r['row']['key'] for p in parts for r in p[2]['ledger']['readings']]
+        self.assertEqual(len(keys), MAX_PDF_READINGS * 2 + 7)
+        self.assertEqual(len(set(keys)), len(keys))
+        dates = [r['row']['ordering_date'] for p in parts for r in p[2]['ledger']['readings']]
+        self.assertEqual(dates, sorted(dates))
+        self.assertTrue(all(len(p[2]['ledger']['readings']) <= MAX_PDF_READINGS for p in parts))
+        self.assertIn('Part 2 of 3: payments 2,001 to 4,000 of 4,007', parts[1][3])
+
+    def test_a_decision_goes_with_its_payment_and_case_material_with_part_one(self):
+        from services.financial.ledger_pdf import numbered_report_parts
+        parts = list(numbered_report_parts(self.snapshot(2500)))
+        decisions = [d for p in parts for d in p[2]['decisions']]
+        self.assertEqual(sorted(d['subject_id'] for d in decisions), ['a', 'k00003'])
+        self.assertIn('investigation_notes', parts[0][2])
+        self.assertNotIn('investigation_notes', parts[1][2])
+        self.assertIn('are in part 1', parts[1][3])

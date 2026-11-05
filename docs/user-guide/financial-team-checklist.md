@@ -338,8 +338,8 @@ A case can contain more payments than one analysis permits. These are separate l
 | Saved payment selections | No 100-payment count restriction; saved details must fit within 32 MB | Save a known selection across pages, refresh and reopen its first and last payments. |
 | Payment graph | No 1,000-payment count restriction; 250 connections drawn per page | Check the total payment count and the underlying payments on later graph pages. |
 | Combined reports | No 20-finding or 20-PDF count restriction; 32 MB saved report data and 64 MB supporting files | Include findings from several pages and check that the saved report and download retain all of them. |
-| Transfers | 500 payments per comparison, with 1,000 pair/reference comparisons | Narrow From date and To date, then select Find possible transfers. |
-| Payments and case events | 1,000 payments per check | Choose an account or shorter dates, select Apply, then Load payments and case events. |
+| Transfers | 500 payments in one answer | Above that the whole comparison runs in the background, stored and paged, with true counts. |
+| Payments and case events | 1,000 payments in one answer | Above that the whole timeline runs in the background; each month opens to its payments. |
 | Patterns | 1,000 input payments; also 200 proposed matches, 50 payments per repeated-name group, and 10,000 examined steps between accounts | Narrow the account/dates, select Apply and Find patterns again. |
 
 The larger imports, selections, graph and reports were checked locally with a 5,000-payment statement, a 2,700-payment case and a 50-finding report. These figures describe earlier development checks, not results your team has already obtained on the deployed server. General response and file-size bounds still apply.

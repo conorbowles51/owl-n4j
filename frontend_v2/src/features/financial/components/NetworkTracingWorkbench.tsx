@@ -13,6 +13,8 @@ import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
+import { isTraceSizeRefusal } from "../lib/whole-case-run"
+import { WholeCaseTrace } from "./WholeCaseTrace"
 import { candidateUrl } from "../lib/candidate-contract"
 import { correctionMinor, correctionMoney } from "../lib/correction-contract"
 import { methods } from "../lib/ledger-trace"
@@ -143,7 +145,18 @@ export function NetworkTracingWorkbench({ caseId }: { caseId: string }) {
           </Button>
         </fieldset>
       </form>
-      {load.isError && <p role="alert">{load.error.message}</p>}
+      {load.isError && !isTraceSizeRefusal(load.error.message) && (
+        <p role="alert">{load.error.message}</p>
+      )}
+      {load.isError && isTraceSizeRefusal(load.error.message) && (
+        <WholeCaseTrace
+          caseId={caseId}
+          start={start}
+          end={end}
+          population={population}
+          tolerance={Number(tolerance)}
+        />
+      )}
       {freshness.stale && (
         <p role="status">
           Payments may have changed. Select Load cross-account inputs again,
@@ -365,11 +378,13 @@ function NetworkForm({
     ordered.length > scope.network_row_limit
   )
     return (
-      <p>
-        Choose a date scope with 2–10 accounts and at most{" "}
-        {scope.network_row_limit} current readings in one currency. No partial
-        trace is calculated.
-      </p>
+      <WholeCaseTrace
+        caseId={scope.case_id}
+        start={scope.start_date}
+        end={scope.end_date}
+        population={scope.population}
+        tolerance={scope.tolerance_days}
+      />
     )
   return (
     <div className="space-y-4">

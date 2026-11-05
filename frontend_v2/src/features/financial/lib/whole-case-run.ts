@@ -4,7 +4,7 @@ import { fetchAPI } from "@/lib/api-client"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { candidateUrl } from "./candidate-contract"
 
-export type WholeCaseKind = "transfers" | "timeline" | "patterns"
+export type WholeCaseKind = "transfers" | "timeline" | "patterns" | "trace" | "pdf"
 
 export interface WholeCaseRequest {
   kind: WholeCaseKind
@@ -19,6 +19,7 @@ export interface WholeCaseRequest {
   threshold_minor?: string
   threshold_currency?: string
   cross_account?: boolean
+  privilege_marking?: string
 }
 
 export interface WholeCaseRun<Summary = Record<string, unknown>> {
@@ -51,9 +52,19 @@ export interface WholeCasePage<Item> {
  * Other refusals (a date tolerance, a missing date) stay on the page as they are.
  */
 export function isSizeRefusal(message: string | undefined) {
-  return /^More than [0-9, ]+.*(match|share|comparisons|extensions)|^A threshold candidate contains more than/i.test(
+  return /^More than ?[0-9][0-9,]*.*(match|share|comparisons|extensions)|^A threshold candidate contains more than/i.test(
     message ?? ""
   )
+}
+
+/** The PDF refusals that numbered parts replace. */
+export function isPdfSizeRefusal(message: string | undefined) {
+  return /PDF reports support up to|PDF report exceeds|complete ledger record exceeds|Export timed out/i.test(message ?? "")
+}
+
+/** A trace or account comparison above one answer's size. */
+export function isTraceSizeRefusal(message: string | undefined) {
+  return /Tracing requires between 1 and 1000|Cross-account tracing needs 1/i.test(message ?? "") || isSizeRefusal(message)
 }
 
 function runUrl(id: string, caseId: string, rest = "") {
@@ -63,13 +74,16 @@ function runUrl(id: string, caseId: string, rest = "") {
 /** Starts the run (or joins the one for the same inputs) and follows it until it finishes or stops. */
 export function useWholeCaseRun<Summary>(
   caseId: string,
-  request: WholeCaseRequest
+  request: WholeCaseRequest | Record<string, unknown>,
+  path = "whole-case-runs",
+  enabled = true
 ) {
   const client = useQueryClient()
   const known = useRef<string | null>(null)
   const key = ["whole-case-run", caseId, JSON.stringify(request)]
   const query = useQuery({
     queryKey: key,
+    enabled,
     retry: false,
     refetchOnWindowFocus: false,
     staleTime: Infinity,
@@ -79,7 +93,7 @@ export function useWholeCaseRun<Summary>(
             read: true,
           })
         : await fetchAPI<WholeCaseRun<Summary>>(
-            candidateUrl("whole-case-runs", caseId),
+            candidateUrl(path, caseId),
             { method: "POST", body: request, read: true }
           )
       known.current = run.id

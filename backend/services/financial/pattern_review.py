@@ -7,6 +7,8 @@ from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.ledger_snapshot import view_capture
 
 MAX_HYPOTHESES = 200
+# A guard on the whole-case path search only: BNB2 needs far fewer. What it leaves unsearched is counted and stated.
+MAX_WHOLE_CASE_PATH_EXTENSIONS = 2_000_000
 
 
 def _other_party(row):
@@ -118,6 +120,7 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
                 days = (date.fromisoformat(right['chronology_date']) - date.fromisoformat(left['chronology_date'])).days
                 add('split_payment_threshold', left, right, days,
                     'Several same-direction postings in one account are individually below the investigator-selected amount and together reach or exceed it. This is a configurable split-payment screen, not a statutory threshold or evidence of intent. Different counterparties may be involved. Overlapping candidates must not be added together.', group=selected)
+    examined = path_starts = paths_not_searched = 0
     if cross_account:
         from services.financial.ledger_transfers import ledger_transfer_candidates
         by_id = {r['key']:r for r in usable}
@@ -128,7 +131,6 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
             if not debit or not credit or int(pair['amount_minor']) == 0 or debit['chronology_date'] > credit['chronology_date']:
                 continue
             outgoing.setdefault((debit['account_id'],pair['currency'],pair['amount_minor']),[]).append((debit,credit,pair))
-        examined = 0
         def extend(path, used):
             nonlocal examined
             first,last = path[0][0],path[-1][1]
@@ -142,8 +144,10 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
                 hypotheses[-1]['transfer_pairs']=[pair for _,_,pair in path]
                 if kind=='possible_return_flow' or len(path)==3:return
             for edge in outgoing.get((last['account_id'],last['currency'],last['amount_minor']),[]):
+                if whole_case and examined>=MAX_WHOLE_CASE_PATH_EXTENSIONS:
+                    return
                 examined+=1
-                if examined>10000:raise LedgerSummaryError('More than10,000candidate path extensions. Narrow the dates; no partial screen was returned.')
+                if not whole_case and examined>10000:raise LedgerSummaryError('More than10,000candidate path extensions. Narrow the dates; no partial screen was returned.')
                 debit,credit,_=edge
                 if debit['key'] in used or credit['key'] in used or debit['chronology_date']<last['chronology_date']:
                     continue
@@ -153,9 +157,14 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
         for edges in outgoing.values():
             for edge in edges:
                 if (date.fromisoformat(edge[1]['chronology_date'])-date.fromisoformat(edge[0]['chronology_date'])).days<=window_days:
+                    path_starts+=1
+                    if whole_case and examined>=MAX_WHOLE_CASE_PATH_EXTENSIONS:
+                        paths_not_searched+=1
+                        continue
                     extend([edge],{edge[0]['key'],edge[1]['key']})
     return dict(schema='loupe.financial.pattern_review/1',case_id=timeline['case_id'],account_id=timeline['account_id'],
         start_date=timeline['start_date'],end_date=timeline['end_date'],population=population,window_days=window_days,cross_account=cross_account,
         threshold_minor=None if threshold_minor is None else str(threshold_minor),threshold_currency=threshold_currency,
-        **stamp,reviewed_rows=len(timeline['rows']),date_unavailable_ids=excluded_dates,
+        **stamp,reviewed_rows=len(timeline['rows']),date_unavailable_ids=excluded_dates,paths_examined=examined,paths_not_searched=paths_not_searched,
+        paths_words=None if not paths_not_searched else f'The search for paths between accounts stopped at its work limit of {examined:,} steps: {paths_not_searched:,} of {path_starts:,} starting transfers were not searched. Narrow the dates to search them; the other checks are complete.',
         hypotheses=hypotheses,limitation='Optional cross-account screening follows two or three equal-value candidate transfers, with no repeated posting, a maximum seven-day per-pair date tolerance and the selected overall window. All alternatives remain proposals; same-day order is unknown. Repeated equal amounts and equal incoming/outgoing pairs are screened within one account and currency. An optional investigator-selected threshold also screens groups of smaller same-direction payments. Dates use the labelled chronology basis. Candidates can overlap and must not be totalled together. No regulatory threshold, intent, typology conclusion or automatic finding is applied.')

@@ -13,6 +13,8 @@ import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
 import type { TraceAssetUse } from "../lib/trace-assets"
 import { useState } from "react"
 import { fetchAPI } from "@/lib/api-client"
+import { isTraceSizeRefusal } from "../lib/whole-case-run"
+import { WholeCaseTrace } from "./WholeCaseTrace"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
 import {
@@ -186,7 +188,15 @@ function ScopedTracing({
       >
         {busy ? "Loading…" : "Load tracing inputs"}
       </Button>
-      {error && <p role="alert">{error}</p>}
+      {error && !isTraceSizeRefusal(error) && <p role="alert">{error}</p>}
+      {isTraceSizeRefusal(error) && (
+        <WholeCaseTrace
+          caseId={caseId}
+          start={params.startDate ?? ""}
+          end={params.endDate ?? ""}
+          population={population}
+        />
+      )}
       {freshness.stale && (
         <p role="status">
           Payments may have changed. Select Load tracing inputs again, review

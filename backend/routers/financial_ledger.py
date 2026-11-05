@@ -1522,7 +1522,7 @@ from services.financial.trace_walk import TraceWalkInput
 class WholeCaseRunRequest(BaseModel):
     """A workbench's inputs; what its answer would have refused for size runs here, stored and paged."""
     model_config = ConfigDict(extra='forbid')
-    kind: Literal['transfers', 'timeline', 'patterns']
+    kind: Literal['transfers', 'timeline', 'patterns', 'pdf']
     population: Literal['working', 'verified'] = 'working'
     start_date: Optional[date] = None
     end_date: Optional[date] = None
@@ -1534,13 +1534,15 @@ class WholeCaseRunRequest(BaseModel):
     threshold_minor: Optional[int] = Field(None, ge=1, le=9223372036854775807)
     threshold_currency: Optional[str] = Field(None, pattern='^[A-Z]{3}$')
     cross_account: bool = False
+    privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked'
 
     def parameters(self):
         """Only what this analysis reads, so equal inputs name the same run."""
         keep = dict(transfers=('population', 'start_date', 'end_date', 'tolerance_days'),
                     timeline=('population', 'start_date', 'end_date', 'account_id', 'account_ids', 'account_holders'),
                     patterns=('population', 'start_date', 'end_date', 'account_id', 'account_ids', 'account_holders', 'window_days',
-                              'threshold_minor', 'threshold_currency', 'cross_account'))[self.kind]
+                              'threshold_minor', 'threshold_currency', 'cross_account'),
+                    pdf=('start_date', 'end_date', 'account_id', 'account_ids', 'account_holders', 'privilege_marking'))[self.kind]
         values = self.model_dump(mode='json')
         result = {name: values[name] for name in keep if values[name] not in (None, [])}
         if 'threshold_minor' in result:
@@ -1559,12 +1561,15 @@ def _whole_case(call):
 
 
 @router.post('/whole-case-runs')
-def start_whole_case_run(body: WholeCaseRunRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def start_whole_case_run(body: WholeCaseRunRequest, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     if (body.threshold_minor is None) != (body.threshold_currency is None):
         raise HTTPException(status_code=422, detail='Provide both an amount threshold and its currency.')
     if body.cross_account and body.account_id:
         raise HTTPException(status_code=422, detail='Clear the account filter to screen paths between accounts.')
-    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind=body.kind, case_id=case_id, params=body.parameters()))
+    params = body.parameters()
+    if body.kind == 'pdf':
+        params['generated_by'] = dict(id=str(current_user.id), name=current_user.name, email=current_user.email) if getattr(current_user, 'id', None) else None
+    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind=body.kind, case_id=case_id, params=params))
 
 
 @router.post('/whole-case-runs/trace')
@@ -1587,8 +1592,14 @@ def get_whole_case_page(run_id: str, section: str, case_id: UUID = Query(...), o
 
 
 @router.get('/whole-case-runs/{run_id}/files/{name}')
-def get_whole_case_file(run_id: str, name: str, case_id: UUID = Query(...)):
+def get_whole_case_file(run_id: str, name: str, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     path = _whole_case(lambda: whole_case_runs.read_file(case_id, run_id, name))
+    if name.endswith('.zip'):
+        # The same receipt as any ledger export: who took this report, and exactly which bytes.
+        run = whole_case_runs.read_run(case_id, run_id)
+        record_prepared_export(db.get_bind(), case_id=case_id, kind='ledger_exports', content=path.read_bytes(),
+            actor=dict(id=str(current_user.id), name=current_user.name, email=current_user.email),
+            scope=dict(whole_case_run=run_id, snapshot_sha256=run['summary']['snapshot_sha256'], params={k: v for k, v in run['params'].items() if k != 'generated_by'}))
     return FileResponse(path, filename=name, media_type='application/x-ndjson' if name.endswith('.jsonl') else 'application/json' if name.endswith('.json') else 'application/zip')
 
 

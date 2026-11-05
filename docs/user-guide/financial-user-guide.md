@@ -1281,7 +1281,7 @@ Returned-transfer comparisons currently recognise explicitly described SPEI/SPID
 
 Nearby dates do not prove a connection. Events with unusable dates may be absent from the ordered list. The timeline download retains those original records for inspection.
 
-One check can include up to 1,000 payments. If the screen asks for fewer, choose an account or shorter **From** and **To** dates, select **Apply**, then **Load payments and case events** again. This changes the payments being compared; it does not just shorten the display. Check the chosen dates before interpreting the result.
+One answer on this page can hold up to 1,000 payments. Above that, the whole timeline runs in the background and shows its steps as it goes: every payment is kept, month by month. Each month's count opens to its payments, and a search reads all of them. You can keep working while it runs. If a run stops, for example when the server restarts, the page says so and offers to run it again; nothing partial is shown.
 
 ## Compare possible transfers
 
@@ -1296,7 +1296,7 @@ One check can include up to 1,000 payments. If the screen asks for fewer, choose
 7. Compare the amount, currency, account, actual date basis and any payment-reference evidence.
 8. Check whether the same outgoing payment could match more than one incoming payment before selecting a pair.
 
-One comparison can include up to 500 payments across all accounts, with up to 1,000 possible pairs or payment-reference comparisons. If a limit message appears, enter a shorter **From date** and **To date**, then select **Find possible transfers** again. No incomplete result is returned. Both sides of a transfer must fall within the selected dates; checking separate date ranges can miss a transfer that crosses their boundary.
+One answer on this page can hold up to 500 payments across all accounts, with up to 1,000 possible pairs or payment-reference comparisons. Above that, the comparison of every payment runs in the background and is stored, so a pair either side of a month end or a date you might have split on is still found. The counts are true counts, every strength stays listed, and the lists open a page at a time. You can select pairs and compare totals as usual.
 
 If **Payments may have changed** appears after another action in the case, select **Find possible transfers** again. The earlier result is hidden until you reload. Your explanation remains, and selected pairs return if the refreshed payment list matches. Check the selection and calculate again before saving. Existing saved findings are unchanged.
 
@@ -1351,7 +1351,7 @@ The working or verified selection follows you between Trends, People and busines
 8. To retain a theory, enter **Theory title** and **Reasoning and alternative explanations**, then select **Save explanation and supporting payments**.
 9. Select **Open Workspace** to confirm the theory and supporting attachments were saved.
 
-One pattern check can include up to 1,000 payments. It also stops above 200 proposed matches, above 50 payments in a repeated-name group, or after examining 10,000 possible steps between accounts. A limit message means the check was not completed, not that no patterns exist. Choose an account or shorter dates, select **Apply**, then **Find patterns** again. Each result covers only those accounts and dates; separate checks can miss relationships across date boundaries.
+One answer on this page can hold up to 1,000 payments, 200 proposed matches and 50 payments in a repeated-name group. Above that, the whole check runs in the background and is stored: every match is listed by kind with its true count, and a repeated-name group of any size opens to all its payments. An explanation can be saved for a group of up to 50 payments; narrow the dates to save a larger one. The search for paths between accounts has a work limit; if it is reached, the page states how many starting transfers were not searched.
 
 If **Payments may have changed** appears, select **Find patterns** again before saving a result. This reruns the checks against the current payments; previously saved findings are kept.
 
@@ -1645,7 +1645,7 @@ ZIP is a container of files. HTML is a report you open in a browser. JSON retain
 
 For more than 200 readings, the HTML report uses a compact table containing every payment and its source reference. Full original readings and corrections remain in `ledger-snapshot.json` alongside it. Keep the extracted files together.
 
-The complete ledger record supports up to 64 MiB, and the whole export, including originals, supports up to 128 MiB. The PDF option supports up to 2,000 captured readings. The originals option supports up to 100 files and 64 MiB. If a limit is exceeded, use a narrower documented scope or omit the optional PDF/originals as appropriate, then retain the needed separate captures. Do not describe several partial captures as one complete case export without checking their coverage.
+The complete ledger record supports up to 64 MiB, and the whole export, including originals, supports up to 128 MiB. One PDF holds up to 2,000 captured readings; a larger scope is written in the background as numbered parts that together cover every reading, and the first page of each part says which payments it holds. If the complete record or the PDF is too large for one download, the page offers those parts. The originals option supports up to 100 files and 64 MiB. If a limit is exceeded, use a narrower documented scope or omit the optional PDF/originals as appropriate, then retain the needed separate captures. Do not describe several partial captures as one complete case export without checking their coverage.
 
 Originals are complete files. They may contain pages outside the selected account or date range. Review that scope before sharing. When originals are included, Loupe checks their bytes against the saved hashes. When they are not included, a recorded source hash is not a fresh check of the original file.
 
