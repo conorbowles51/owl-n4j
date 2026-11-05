@@ -1,3 +1,21 @@
+## 4 November: wearable and affiliation_unknown flags from M9 and M5 (cb-polflags, 04 decision 22)
+
+- **Measured** on all 14 server reports, counts only: `measurements/m9-sensors.json` (`pol_m9_sensors.py`) and
+  `measurements/m5-places.json` (`pol_m5_places.py`, the affiliation cross-tab per Location Source; M5's other columns
+  stay in `measurements/a3`). Sensor records on 3 reports (45,518), none naming a wearable. No Location says Synced.
+- **Built** (9e2e2408, 46cdcb3e, 0e61965a): attribution and activity_strength catalogues at version 2; a `contains_any`
+  predicate; samples match on their sensor record's DeviceName (`rows.INHERITED_FROM_ROOT`); the seven syncing sources
+  as an attribution row; lanes show flags in words (`flag_words`, from `attribution.UI_COPY`).
+- **Fixed on the way:** a new mapping version left the old version's open readings counted, so the readings queue would
+  have doubled. `_judgement_calls` sets records_touched to 0 on its own open calls it did not write; a decided call
+  is kept.
+- **Live 25868fc7, re-derived by the phone sweep:** one count moved across 15 extractions, `affiliation_unknown` 12 to 61
+  on one phone (49 Gmail Locations, equal to the dry run over 45,768 events). `wearable`: 0, no sensor event is live.
+  Signed-in Day view: 6 of 6 Gmail marks on one day carry the words in their hover text, 0 carry the code.
+- **What a fresh session needs:** a shipped catalogue's version is no longer 1, so a test takes "next version" as
+  shipped + 1. Group B flags demote interactions only, so these passive Locations keep their strength; the flag
+  is a word on the record. The 10 activity v1 calls still counted sit on one superseded phone the queue leaves out.
+
 ## 4 November: shared devices, plans against location and near-identical pictures, no count gate (cb-gated-spread)
 
 - **Devices and accounts across phones (05 9, approach 6).** `backend/services/phone_analysis/other_devices.py`

@@ -1589,8 +1589,13 @@ Each is a decision with its reasoning and what would reverse it.
       DeviceName and SourceDeviceType, only for samples). The activity mapping (version 2) reads such records as
       `passive` by `other_device` (3.2). M9 found no sensor record naming a wearable on the 14 server reports (13.1),
       so the rule raises nothing there: it is proven on synthetic records. SourceDeviceType is not used: its only
-      value seen is `Unknown`. *Reverse if* a report shows a SourceDeviceType value naming the device kind (then a
-      row on that value), or a phone whose own name holds one of these words (then the word leaves the list).
+      value seen is `Unknown`. The rule reads only the name: a record with no DeviceName (every record of P11 and
+      P14, one of P13) is not called a wearable and is not shown to be the phone either. Heart rate is a sign no rule
+      uses, because no field says which device took it: P13's one record with no DeviceName holds 166 HeartRate
+      samples, and every P14 record has the MaxHeartrate field (its values were not measured). *Reverse if* a report
+      shows a SourceDeviceType value naming the device kind (then a row on that value), a phone whose own name holds
+      one of these words (then the word leaves the list), or a document or a person's check shows heart-rate records
+      come from a paired device (then a row on them).
     - `affiliation_unknown` (group B) also on a Location whose DeviceLocationAffiliation is absent and whose Source
       is one the reports show keeping places on the account: a Location from it names its account, or is marked
       `Extracted` on the account, on at least one of the 14 reports. The list: Facebook, Find My, Gmail, Google
