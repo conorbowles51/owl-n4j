@@ -1784,7 +1784,7 @@ Each is a decision with its reasoning and what would reverse it.
     total. Together takes a chosen window and a phone or a person on either side, and draws each compared pair as a
     line coloured by verdict; "The map draws X of Y pairs" counts the pairs whose positions are no longer held.
     Every map carries "Investigative location, not cell-site opinion" on its face. Built in cb-places-rest
-    (7d8aeb28, 85abddb4), live LIVE_SHA. *Reverse if* the Case Map page takes a subject and a Together run by
+    (8949ecd8, 3e6995d3), live LIVE_SHA. *Reverse if* the Case Map page takes a subject and a Together run by
     address; the views then link to it as well.
 
 37. **Context events in a statement check are counted per phone, hour and reason (9.5).** Undercutting,
@@ -1871,7 +1871,7 @@ Each is a decision with its reasoning and what would reverse it.
     one name per place, so a name survives new data and never crosses to another subject. The route recomputes the
     place on the server from its number; the page also sends the centre it showed, and a number that now names a
     place more than 150 m away is refused (409, "Reload and name the place again"). A deviation then reads "Usually
-    at <name> on Tuesdays 21:00 to 00:00." Built in cb-places-rest (7d8aeb28, e4f1c82e), live LIVE_SHA. *Reverse if*
+    at <name> on Tuesdays 21:00 to 00:00." Built in cb-places-rest (8949ecd8, de63ebf4), live LIVE_SHA. *Reverse if*
     named locations are wanted case-wide; a name then shows on every subject's place within 150 m.
 
 48. **Photos taken on the phone are presence; received photos are not (6.2).** A `Media Locations` point is
@@ -1883,18 +1883,18 @@ Each is a decision with its reasoning and what would reverse it.
     received media, and the other phone's 33 match the device exactly. Every other media point is kind `media`
     with flag `received_media` and never enters stays, routine or Together. `PLACES_VERSION` 2 is part of the
     projection signature, so every phone's places are rebuilt through the projection at release. Built in
-    cb-places-rest (7d8aeb28, e4f1c82e), live LIVE_SHA. *Reverse if* the camera roll is shown to hold only the
+    cb-places-rest (8949ecd8, de63ebf4), live LIVE_SHA. *Reverse if* the camera roll is shown to hold only the
     phone's own photos, or one phone's camera is recorded under two spellings.
 
 49. **A place for a payment on screen (8.5).** The transaction panel and the ledger source dialog show the place
     attached to a payment, with who attached it and why, and attach, change or remove it through the manual-place
     routes of decision 28 (latitude, longitude, a radius of 1 to 50,000 whole metres, a reason). Earlier places stay
     counted as kept in the decision log. A person who can only view the case is told so. Built in cb-places-rest
-    (85abddb4), live LIVE_SHA.
+    (3e6995d3), live LIVE_SHA.
 
 50. **The investigative label on maps and exports (8.3, 6.2).** "Investigative location, not cell-site opinion" is
     drawn on the Places, Together and Case Map phone layer maps and in Phones seen in this area. It is printed on
-    the cover of every phone export whose kinds include locations. Built in cb-places-rest (7d8aeb28, 956ef372),
+    the cover of every phone export whose kinds include locations. Built in cb-places-rest (8949ecd8, 3ed6c605),
     live LIVE_SHA.
 
 ## 15. Not yet established

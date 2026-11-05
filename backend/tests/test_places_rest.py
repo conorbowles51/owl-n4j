@@ -176,6 +176,31 @@ def test_e_a_photo_taken_on_the_phone_is_presence_and_a_received_one_never_is(ho
 
 
 @needs_template
+def test_l_places_state_the_positions_no_window_can_show(hooks):
+    from tests.pattern_pg import api_client
+    setup(hooks)
+    phone = PlacePhone()
+    phone.location(DAY)
+    top = phone.o
+    phone.records += [(top, None, top, model("Location", [refs("Position", top + 1, kind="modelField")])),
+                      (top + 1, top, top, model("Coordinate", [fld("Latitude", ("Double", str(LAT))),
+                                                               fld("Longitude", ("Double", str(LON)))]))]
+    phone.o = top + 2
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone.make(c, case)
+        build(engine, ext)
+        with api_client(engine, case) as cl:
+            r = cl.get("/api/pattern/%s/places" % case, params={
+                "subject": _subject(ext), "start": (DAY - timedelta(days=1)).isoformat(),
+                "end": (DAY + timedelta(days=1)).isoformat()})
+        assert r.status_code == 200, r.text
+        assert (r.json()["total"], r.json()["positions_no_time"]) == (1, 1)
+
+
+@needs_template
 def test_e_the_places_version_is_part_of_the_projection_signature(hooks, monkeypatch):
     setup(hooks)
     with fresh_engine() as engine:

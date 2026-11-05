@@ -193,6 +193,7 @@ def get_places(subject: str = Query(...), start: str = Query(...), end: str = Qu
     nxt = cursor + len(rows) if cursor + len(rows) < total else None
     return _jsonable({"subject": r["subject"], "total": total, "returned": len(rows), "next_cursor": nxt,
                       "page_size": PLACE_PAGE, "observations": rows, "label": PLACE_LABEL_WORDS,
+                      "positions_no_time": places.undated_positions(conn, r["extraction_ids"]),
                       "towers_not_placed": [dict(t, words=places.TOWER_WORDS[t["reason"]],
                                                  mcc_words=places.MCC_INFERRED_WORDS if t["mcc_inferred"] else None)
                                             for t in places.unplaced_towers(conn, r["extraction_ids"])],

@@ -32,7 +32,7 @@ export function PlacesMap({ layers, height = 360 }: { layers: PlacesMapLayers; h
     return boundsOf(coords)
   }, [layers])
   const initial = bounds
-    ? { bounds: [[bounds[0] - 0.002, bounds[1] - 0.002], [bounds[2] + 0.002, bounds[3] + 0.002]] as [[number, number], [number, number]] }
+    ? { bounds: [[bounds[0] - 0.002, bounds[1] - 0.002], [bounds[2] + 0.002, bounds[3] + 0.002]] as [[number, number], [number, number]], fitBoundsOptions: { padding: 40 } }
     : { longitude: 0, latitude: 20, zoom: 1 }
   return (
     <figure className="flex flex-col gap-1" aria-label="Places map">

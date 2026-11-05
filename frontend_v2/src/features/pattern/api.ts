@@ -248,6 +248,8 @@ export interface PlacesResponse {
   next_cursor: number | null
   page_size: number
   observations: PlaceObservation[]
+  /** Positions held with no usable time, so no window can show them. */
+  positions_no_time?: number
   towers_not_placed: { words: string; reason: string; mcc_inferred?: boolean; mcc_words?: string | null }[]
   mcc_inferred_words?: string
   reverse_geocoding: { enabled: boolean; reason: string }

@@ -1116,7 +1116,7 @@ message_count, thumbnail_url or null, has_derived: ["transcript"]}`.
 - Selection and `Copy file list` (filename, phone, category, time, hashes, state, one per line);
   `Download originals` as a zip with a manifest of hashes.
 
-**Built (cb-places-rest, D_MEDIA_B, D_MEDIA_F, D_REVIEW; live LIVE_SHA).**
+**Built (cb-places-rest, 7b374f1a, cb74c6d5, de63ebf4; live LIVE_SHA).**
 - The open file has `Previous` and `Next`, also the left and right arrow keys, through the filtered result. At the end of what is loaded, Next loads the next page.
 - `Thumbnails` sets the grid to small, medium or large (kept per browser).
 - The filter bar has:
@@ -1651,7 +1651,7 @@ to a lookup service.
   hardware Loupe targets, and clustering above it keeps the counts exact; *reverse if* measured rendering
   on Owl's machines says otherwise.
 
-**Built (cb-places-rest, D_MAP; live LIVE_SHA).**
+**Built (cb-places-rest, 3ed6c605; live LIVE_SHA).**
 - With the phone layer on, the last area drawn lists "Phones seen in this area" (`POST /api/phones/map/area`, a ring of up to 500 vertices).
 - Each phone shows its exact count of positions inside, and its first and last time there. Nothing is capped, and the totals are stated.
 - Each phone links to its conversations in that window (J-10).
@@ -1714,7 +1714,7 @@ applies regardless.
 - From the lessons of the existing phone piece (16.2): flow view with arrows and thickness by volume and direction, trace path between
   two people, drill (re-anchor on a person), expand neighbours, edge detail never empty.
 
-**Built (cb-places-rest, D_GRAPH; live LIVE_SHA).**
+**Built (cb-places-rest, c4678910; live LIVE_SHA).**
 - The communication edges have a window (`Edges from` / `to`, `Count this window`, `All time`).
 - Each pair's counts are read for the window through `/api/phones/link-analysis/edges` with `from_instant` and `to_instant`.
 - The canvas restyles edges from the stored counts without reloading nodes: an edge with nothing in the window is drawn thin and dashed.

@@ -627,6 +627,22 @@ def install():
     activity.register_after_activity(build)
 
 
+def undated_positions(conn, extraction_ids) -> int:
+    """Positions the phones hold that no window can show: read from the report, but with no usable instant (no time,
+    or a local time with neither offset nor device zone), so ``build`` makes no observation of them. The Places view
+    states this count, so "0 of 0" never reads as a phone with no positions."""
+    n = 0
+    for e in extraction_ids:
+        st = activity.current_generation(conn, e)
+        if st is None or not st.generation:
+            continue
+        n += int(conn.execute(text(
+            "SELECT count(*) FROM phone_location_points p WHERE p.extraction_id = :e AND p.generation = :g AND NOT "
+            "EXISTS (SELECT 1 FROM pol_place_observation o WHERE o.extraction_id = p.extraction_id AND o.record_uid = "
+            "p.record_uid)"), {"e": str(e), "g": st.generation}).scalar() or 0)
+    return n
+
+
 def observations(conn, extraction_ids, start, end, kinds=None, offset=0, limit=1000):
     params = {"e": [str(x) for x in extraction_ids], "a": start, "b": end}
     where = ("extraction_id = ANY(CAST(:e AS uuid[])) AND start_utc < :b AND end_utc >= :a")

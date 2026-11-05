@@ -16,7 +16,7 @@ vi.mock("@/features/map/components/PlacesMap", () => ({
 // The body GET /api/pattern/{case}/places returns (routers/pattern_of_life.py get_places): the rows are under
 // "observations". The screen once read "items" and crashed the page on live.
 const body: PlacesResponse = {
-  total: 3, returned: 2, next_cursor: 2, page_size: 2,
+  total: 3, returned: 2, next_cursor: 2, page_size: 2, positions_no_time: 9,
   observations: [
     { id: 1, extraction_id: "e1", record_uid: null, kind: "presence", source_kind: "gps", lat: 40, lon: -74, radius_m: 12.4, radius_basis: "reported",
       start_utc: "2023-03-14T10:00:00+00:00", end_utc: "2023-03-14T10:00:00+00:00", source_app: null },
@@ -47,6 +47,7 @@ describe("Places over time", () => {
       flagged: [{ date: "2023-03-07", score_bits: 4, expectation: "Usually at Place 1 on Tuesdays 21:00 to 00:00.", hours: [{ hour: 21, place: "elsewhere" }, { hour: 22, place: "elsewhere" }] }] })
     wrap(<PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" />)
     expect(await screen.findByText(/Showing 2 of 3 positioned records, 2023-03-08 to 2023-03-14/)).toBeTruthy()
+    expect(screen.getByText(/9 more positions have no usable time, so no window can show them\./)).toBeTruthy()
     expect(screen.getByText("12 m")).toBeTruthy()
     expect(screen.getByText("Accuracy not recorded")).toBeTruthy()
     expect(screen.getByText(/the rest are on later pages/)).toBeTruthy()

@@ -86,6 +86,7 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
       {q.data && (
         <>
           <p>Showing {q.data.returned.toLocaleString()} of {q.data.total.toLocaleString()} positioned records, {win.start} to {win.end}.
+            {q.data.positions_no_time ? ` ${q.data.positions_no_time.toLocaleString()} more ${q.data.positions_no_time === 1 ? "position has" : "positions have"} no usable time, so no window can show ${q.data.positions_no_time === 1 ? "it" : "them"}.` : ""}
             {q.data.towers_not_placed.length > 0 ? ` ${q.data.towers_not_placed.length.toLocaleString()} cell tower sightings cannot be placed: ${q.data.towers_not_placed[0].words}` : ""}
             {towerMccWords(q.data.towers_not_placed, q.data.mcc_inferred_words) ? ` ${towerMccWords(q.data.towers_not_placed, q.data.mcc_inferred_words)}` : ""}</p>
           {q.data.next_cursor !== null && (
