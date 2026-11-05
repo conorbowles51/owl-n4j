@@ -237,12 +237,10 @@ export const timelineAPI = {
     ),
 
   downloadExport: async (request: TimelineExportRequest) => {
-    const token = localStorage.getItem("authToken")
     const response = await fetch("/api/timeline/export", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       credentials: "include",
       body: JSON.stringify(request),

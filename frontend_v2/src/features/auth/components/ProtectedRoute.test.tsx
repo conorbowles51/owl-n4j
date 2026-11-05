@@ -10,7 +10,7 @@ vi.mock("../api", () => ({ authAPI: { me } }))
 const user = { username: "first@example.test", name: "First", role: "user" }
 beforeEach(() => {
   me.mockReset()
-  localStorage.setItem("authToken", "old-token")
+  localStorage.setItem("loupeSession", "old-token")
   useAuthStore.setState({ isAuthenticated: true, user: null })
 })
 function mount() {
@@ -27,7 +27,7 @@ function mount() {
 }
 it("returns to login when profile loading expires, including after the API removes the token", async () => {
   me.mockImplementation(async () => {
-    localStorage.removeItem("authToken")
+    localStorage.removeItem("loupeSession")
     throw Error("Expired")
   })
   mount()
@@ -52,7 +52,7 @@ it("does not replace a newer login with an old in-flight profile response", asyn
   act(() =>
     useAuthStore
       .getState()
-      .login("new-token", { ...user, username: "second@example.test" })
+      .login({ ...user, username: "second@example.test" })
   )
   await act(async () => resolve(user))
   expect(useAuthStore.getState().user?.username).toBe("second@example.test")
@@ -67,7 +67,7 @@ it("keeps a valid token after a server failure and confirms the profile on retry
   expect(
     await screen.findByRole("heading", { name: "Cannot check sign-in" })
   ).toBeVisible()
-  expect(localStorage.getItem("authToken")).toBe("old-token")
+  expect(localStorage.getItem("loupeSession")).toBe("old-token")
   expect(screen.queryByText("Private case")).not.toBeInTheDocument()
   expect(screen.queryByText("Login form")).not.toBeInTheDocument()
   expect(me).toHaveBeenCalledTimes(1)
@@ -80,10 +80,10 @@ it("offers explicit sign-in after a network failure without signing out automati
   me.mockRejectedValue(new TypeError("Failed to fetch"))
   mount()
   await screen.findByRole("alert")
-  expect(localStorage.getItem("authToken")).toBe("old-token")
+  expect(localStorage.getItem("loupeSession")).toBe("old-token")
   fireEvent.click(screen.getByRole("button", { name: "Sign in again" }))
   expect(await screen.findByText("Login form")).toBeVisible()
-  expect(localStorage.getItem("authToken")).toBeNull()
+  expect(localStorage.getItem("loupeSession")).toBeNull()
 })
 
 it.each([401, 403])(
@@ -92,7 +92,7 @@ it.each([401, 403])(
     me.mockRejectedValue(new ApiError("Sign-in refused", status))
     mount()
     expect(await screen.findByText("Login form")).toBeVisible()
-    expect(localStorage.getItem("authToken")).toBeNull()
+    expect(localStorage.getItem("loupeSession")).toBeNull()
   }
 )
 
@@ -109,10 +109,10 @@ it("does not clear a newer login when the old profile request fails", async () =
   act(() =>
     useAuthStore
       .getState()
-      .login("new-token", { ...user, username: "second@example.test" })
+      .login({ ...user, username: "second@example.test" })
   )
   await act(async () => reject(new ApiError("Expired old token", 401)))
-  expect(localStorage.getItem("authToken")).toBe("new-token")
+  expect(localStorage.getItem("loupeSession")).not.toBe("old-token")
   expect(useAuthStore.getState().user?.username).toBe("second@example.test")
   expect(screen.getByText("Private case")).toBeVisible()
 })

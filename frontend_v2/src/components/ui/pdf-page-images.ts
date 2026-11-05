@@ -42,8 +42,8 @@ const pending = new Map<string, Pending>()
 const queue: string[] = []
 let inFlight = 0
 
-function keyFor(evidenceId: string, page: number, width: number | undefined, token: string | null) {
-  return JSON.stringify([token, evidenceId, page, width ?? null])
+function keyFor(evidenceId: string, page: number, width: number | undefined, session: string | null) {
+  return JSON.stringify([session, evidenceId, page, width ?? null])
 }
 
 function keep(key: string, image: PageImage) {
@@ -89,11 +89,10 @@ async function fetchPage(
   evidenceId: string,
   page: number,
   width: number | undefined,
-  token: string | null,
+  session: string | null,
   signal: AbortSignal
 ): Promise<PageImage> {
   const response = await fetch(evidenceAPI.getPageImageUrl(evidenceId, page, width), {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include",
     signal,
   })
@@ -129,11 +128,11 @@ function abortError() {
 export function loadPageImage(
   evidenceId: string,
   page: number,
-  options: { width?: number; token: string | null; signal: AbortSignal }
+  options: { width?: number; session: string | null; signal: AbortSignal }
 ): Promise<PageImage> {
-  const { width, token, signal } = options
+  const { width, session, signal } = options
   if (signal.aborted) return Promise.reject(abortError())
-  const key = keyFor(evidenceId, page, width, token)
+  const key = keyFor(evidenceId, page, width, session)
   dropExpired()
   const ready = kept.get(key)
   if (ready) {
@@ -159,7 +158,7 @@ export function loadPageImage(
       }
     })
     const promise = begun
-      .then(() => fetchPage(evidenceId, page, width, token, controller.signal))
+      .then(() => fetchPage(evidenceId, page, width, session, controller.signal))
       .then((image) => {
         keep(key, image)
         return image

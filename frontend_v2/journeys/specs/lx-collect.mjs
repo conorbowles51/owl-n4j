@@ -10,10 +10,9 @@ export default [
     await ctx.open(ctx.cases.training, "/dossiers")
     await ctx.step("over the limit is refused, not cut", async () => {
       const r = await page.evaluate(async () => {
-        const token = localStorage.getItem("authToken") ?? ""
         const links = Array.from({ length: 5001 }, (_, i) => ({ target_type: "phone_record", target_id: `x${i}`, relationship_type: "link", label: "kit check", source_anchor: null }))
         const res = await fetch("/api/dossiers/00000000-0000-4000-8000-000000000000/links:add", {
-          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ links, origin: "journey test" }),
         })
         return res.status

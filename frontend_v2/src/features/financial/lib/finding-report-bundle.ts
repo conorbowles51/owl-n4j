@@ -144,13 +144,11 @@ export async function verifiedFindingSources(
           )
       })
     }
-    const token = localStorage.getItem("authToken")
     const response = await fetch(
       `/api/evidence/${encodeURIComponent(file.id)}/file`,
       {
         signal,
         credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       }
     )
     if (!response.ok || !response.body)

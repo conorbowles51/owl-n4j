@@ -27,14 +27,6 @@ const DARK_FLAVOR: Flavor = {
   water: "#2c353c",
 }
 
-function authToken(): string | null {
-  try {
-    return localStorage.getItem("authToken")
-  } catch {
-    return null
-  }
-}
-
 export function basemapArchiveUrl(origin: string): string {
   return `${origin}${BASEMAP_PATH}/${ARCHIVE_FILE}`
 }
@@ -86,32 +78,23 @@ export function outsideCoverage(
 }
 
 /**
- * Registers the pmtiles:// protocol with MapLibre once, and keeps the archive's requests carrying the current
- * sign-in token (the sign-in cookie goes too; the token covers a browser that holds only the token).
+ * Registers the pmtiles:// protocol with MapLibre once. The archive's requests carry the sign-in cookie.
  */
 export function ensureBasemapProtocol(origin: string = window.location.origin): void {
   const url = basemapArchiveUrl(origin)
-  const token = authToken()
-  const headers = new Headers(token ? { Authorization: `Bearer ${token}` } : {})
   if (!protocol) {
     protocol = new Protocol()
     maplibregl.addProtocol("pmtiles", protocol.tile)
   }
   if (!archiveSource || archiveSource.url !== url) {
-    archiveSource = new FetchSource(url, headers)
+    archiveSource = new FetchSource(url)
     archive = new PMTiles(archiveSource)
     protocol.add(archive)
-  } else {
-    archiveSource.customHeaders = headers
   }
 }
 
-/** MapLibre's transformRequest: the fonts and symbols under /basemap/ carry the sign-in token as well. */
+/** MapLibre's transformRequest: the fonts and symbols under /basemap/ go with the sign-in cookie. */
 export function basemapTransformRequest(url: string): RequestParameters {
-  const token = authToken()
-  if (token && url.startsWith(`${window.location.origin}${BASEMAP_PATH}/`)) {
-    return { url, headers: { Authorization: `Bearer ${token}` } }
-  }
   return { url }
 }
 

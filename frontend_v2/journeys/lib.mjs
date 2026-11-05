@@ -80,7 +80,7 @@ export function context(page, base, journey) {
     },
     async api(path) {
       return page.evaluate(async (p) => {
-        const r = await fetch(p, { credentials: "include", headers: { Authorization: `Bearer ${localStorage.getItem("authToken") ?? ""}` } })
+        const r = await fetch(p, { credentials: "include" })
         return { status: r.status, body: r.ok ? await r.json() : null }
       }, path)
     },

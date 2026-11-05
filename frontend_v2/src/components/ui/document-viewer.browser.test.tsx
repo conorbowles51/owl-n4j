@@ -30,14 +30,12 @@ beforeEach(() => {
   requests.length = 0
   totalPages = 1928
   failedPage = null
-  localStorage.setItem("authToken", "synthetic-user")
+  localStorage.setItem("loupeSession", "synthetic-user")
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, options: RequestInit) => {
       const pageNumber = Number(url.match(/\/page\/(\d+)\/image/)?.[1])
-      expect(options.headers).toEqual({
-        Authorization: "Bearer synthetic-user",
-      })
+      expect(options.credentials).toBe("include")
       requests.push(pageNumber)
       if (pageNumber === failedPage) return new Response(null, { status: 503 })
       const canvas = document.createElement("canvas")

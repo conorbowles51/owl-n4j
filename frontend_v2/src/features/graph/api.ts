@@ -540,7 +540,6 @@ export function findSimilarEntitiesStream(
   },
   callbacks: SimilarEntitiesStreamCallbacks
 ): () => void {
-  const token = localStorage.getItem("authToken")
   const params = new URLSearchParams({ case_id: caseId })
   if (options.similarityThreshold != null)
     params.set("name_similarity_threshold", String(options.similarityThreshold))
@@ -550,9 +549,7 @@ export function findSimilarEntitiesStream(
     params.set("entity_types", options.entityTypes.join(","))
 
   const url = `/api/graph/find-similar-entities/stream?${params}`
-  const es = new EventSource(
-    token ? `${url}&token=${encodeURIComponent(token)}` : url
-  )
+  const es = new EventSource(url)
 
   es.addEventListener("start", () => callbacks.onStart?.())
   es.addEventListener("type_start", (e) =>

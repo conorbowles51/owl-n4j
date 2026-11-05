@@ -32,17 +32,16 @@ describe("fetchAPI", () => {
     )
   })
 
-  it("includes auth token when present", async () => {
-    localStorage.setItem("authToken", "my-token")
+  it("sends no token of its own: the sign-in is the cookie", async () => {
+    localStorage.setItem("loupeSession", "mark")
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({}), { status: 200 })
     )
 
     await fetchAPI("/api/test")
     const [, options] = vi.mocked(globalThis.fetch).mock.calls[0]
-    expect((options?.headers as Record<string, string>)["Authorization"]).toBe(
-      "Bearer my-token"
-    )
+    expect(options?.headers as Record<string, string>).not.toHaveProperty("Authorization")
+    expect(options?.credentials).toBe("include")
   })
 
   it("sends POST with JSON body and Content-Type", async () => {
@@ -111,14 +110,14 @@ describe("fetchAPI", () => {
     expect(result).toBeUndefined()
   })
 
-  it("removes authToken on 401", async () => {
-    localStorage.setItem("authToken", "expired")
+  it("removes loupeSession on 401", async () => {
+    localStorage.setItem("loupeSession", "expired")
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ detail: "Unauthorized" }), { status: 401 })
     )
 
     await expect(fetchAPI("/api/test")).rejects.toThrow()
-    expect(localStorage.getItem("authToken")).toBeNull()
+    expect(localStorage.getItem("loupeSession")).toBeNull()
   })
 
   it("cancels the request when a caller-provided signal aborts", async () => {

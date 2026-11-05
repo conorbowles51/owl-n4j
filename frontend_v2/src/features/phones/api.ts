@@ -450,11 +450,9 @@ export async function getExport(caseId: string, exportId: string) {
 export async function getExportHistory(caseId: string) {
   return z.object({ items: z.array(ExportStateSchema) }).parse(await fetchAPI(`/api/phones/exports?case_id=${encodeURIComponent(caseId)}`))
 }
-/** Saves a finished export's file (the same signed-in fetch as the timeline export; a plain link carries no token). */
+/** Saves a finished export's file (the same signed-in fetch as the timeline export; a browser download cannot name the file). */
 export async function downloadExport(caseId: string, exportId: string, filename: string) {
-  const token = localStorage.getItem("authToken")
   const response = await fetch(`/api/phones/exports/${encodeURIComponent(exportId)}/file?case_id=${encodeURIComponent(caseId)}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include",
   })
   if (!response.ok) throw new Error("The export file could not be fetched.")
@@ -878,13 +876,11 @@ export async function getTranslations(caseId: string, sourceType: "message" | "d
 export async function getMediaDetail(caseId: string, fileUid: string) {
   return fetchAPI<MediaDetail>(`/api/phones/media/${encodeURIComponent(fileUid)}?case_id=${encodeURIComponent(caseId)}`)
 }
-/** A phone file's bytes as an object URL (the bearer token cannot ride on an <img src>). The caller revokes it. */
+/** A phone file's bytes as an object URL (so the caller can tell a refusal from a missing file). The caller revokes it. */
 export async function mediaObjectUrl(caseId: string, fileUid: string, signal?: AbortSignal, variant: "content" | "thumbnail" | "converted" = "content") {
-  const token = localStorage.getItem("authToken")
   // the Media grid asks for a small preview made on the server; the viewer asks for the original, and for a
   // converted copy (H.264/AAC, made on the server) only when the browser cannot play the original
   const response = await fetch(`/api/phones/media/${encodeURIComponent(fileUid)}/${variant}?case_id=${encodeURIComponent(caseId)}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include",
     signal,
   })

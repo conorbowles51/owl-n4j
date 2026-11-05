@@ -77,7 +77,6 @@ export function TraceSupportVerification({ caseId }: { caseId: string }) {
         throw Error("This file differs from the previously saved digest.")
       const body = new FormData()
       body.set("archive", file)
-      const token = localStorage.getItem("authToken")
       const response = await fetch(
         candidateUrl("trace-support-verification", caseId) +
           (pin ? `&expected_sha256=${pin}` : ""),
@@ -86,7 +85,6 @@ export function TraceSupportVerification({ caseId }: { caseId: string }) {
           body,
           credentials: "include",
           signal: controller.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       )
       if (!response.ok)

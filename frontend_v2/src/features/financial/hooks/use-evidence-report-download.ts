@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { sessionMark } from "@/lib/session-mark"
 
 export function useEvidenceReportDownload(caseId: string | undefined) {
   const [status, setStatus] = useState({ caseId, busy: false, error: "" })
@@ -17,7 +18,7 @@ export function useEvidenceReportDownload(caseId: string | undefined) {
       if (!caseId || request.current) return
       const version = generation.current
       const controller = new AbortController()
-      const token = localStorage.getItem("authToken")
+      const token = sessionMark()
       request.current = controller
       setStatus({ caseId, busy: true, error: "" })
       const timeout = window.setTimeout(() => controller.abort(), 120000)
@@ -25,7 +26,6 @@ export function useEvidenceReportDownload(caseId: string | undefined) {
         const response = await fetch(`/api/financial/export/pdf?${params}`, {
           credentials: "include",
           signal: controller.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
         if (!response.ok) {
           const failure = await response.json().catch(() => null)
@@ -68,7 +68,7 @@ export function useEvidenceReportDownload(caseId: string | undefined) {
         if (
           version !== generation.current ||
           controller.signal.aborted ||
-          localStorage.getItem("authToken") !== token
+          sessionMark() !== token
         )
           return
         const url = URL.createObjectURL(new Blob(chunks, { type }))

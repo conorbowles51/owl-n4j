@@ -79,7 +79,6 @@ export function LedgerExportComparison({ caseId }: { caseId: string }) {
       const body = new FormData()
       body.set("before", before)
       body.set("after", after)
-      const token = localStorage.getItem("authToken")
       const response = await fetch(
         candidateUrl("ledger-export-comparison", caseId),
         {
@@ -87,7 +86,6 @@ export function LedgerExportComparison({ caseId }: { caseId: string }) {
           body,
           credentials: "include",
           signal: controller.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       )
       if (!response.ok) {

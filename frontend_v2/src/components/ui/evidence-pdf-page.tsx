@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Button } from "./button"
 import { loadPageImage } from "./pdf-page-images"
+import { sessionMark } from "@/lib/session-mark"
 
 export function EvidencePdfPage({
   evidenceId,
@@ -27,8 +28,8 @@ export function EvidencePdfPage({
     url?: string
     error?: string
   } | null>(null)
-  const token = localStorage.getItem("authToken")
-  const key = JSON.stringify([evidenceId, page, token, retry])
+  const session = sessionMark()
+  const key = JSON.stringify([evidenceId, page, session, retry])
   const current = result?.key === key ? result : null
 
   useEffect(() => {
@@ -37,12 +38,12 @@ export function EvidencePdfPage({
     async function load() {
       try {
         const image = await loadPageImage(evidenceId, page, {
-          token,
+          session,
           signal: controller.signal,
         })
         if (
           controller.signal.aborted ||
-          localStorage.getItem("authToken") !== token
+          sessionMark() !== session
         )
           return
         objectUrl = URL.createObjectURL(image.blob)
@@ -52,7 +53,7 @@ export function EvidencePdfPage({
       } catch (error) {
         if (
           !controller.signal.aborted &&
-          localStorage.getItem("authToken") === token
+          sessionMark() === session
         )
           setResult({
             key,
@@ -68,7 +69,7 @@ export function EvidencePdfPage({
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [evidenceId, page, token, key, onPageCount, onPageSize])
+  }, [evidenceId, page, session, key, onPageCount, onPageSize])
 
   return (
     <div className={inline ? "" : "flex h-full min-h-0 flex-col"}>

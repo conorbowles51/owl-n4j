@@ -349,3 +349,20 @@ def test_stored_credentials_move_to_a_new_key_with_no_moment_unreadable():
     wrong = AIProviderCredentialStore(encryption_key="other")
     with pytest.raises(CredentialDecryptionError):
         wrong.rekey_stored(db, apply=True)
+
+
+# --- E: the cookie alone -------------------------------------------------------------------------------------------
+
+def _extract(header: str | None, cookie: str | None):
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    request = SimpleNamespace(cookies={"access_token": cookie} if cookie else {})
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=header) if header else None
+    return asyncio.run(auth._extract_token(request, credentials))
+
+
+def test_the_cookie_alone_signs_in_a_script_token_still_wins_and_an_empty_header_falls_back():
+    assert _extract(None, "from-cookie") == "from-cookie"
+    assert _extract("real.token.here", "from-cookie") == "real.token.here"
+    assert _extract("null", "from-cookie") == "from-cookie"
+    assert _extract("undefined", None) is None

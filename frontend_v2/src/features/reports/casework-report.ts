@@ -19,10 +19,9 @@ export function moveSection(order: CaseworkSection[], index: number, delta: -1 |
 }
 
 export async function downloadCaseworkReport(caseId: string, sections: CaseworkSection[], marking: PrivilegeMarking) {
-  const token = localStorage.getItem("authToken")
   const response = await fetch(`/api/workspace/${encodeURIComponent(caseId)}/report`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ sections, privilege_marking: marking }),
   })

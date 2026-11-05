@@ -29,7 +29,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 const want = (page: number, signal = new AbortController().signal) =>
-  loadPageImage("file-a", page, { token: "t", signal })
+  loadPageImage("file-a", page, { session: "t", signal })
 
 it("runs at most three page requests at once and starts the next as one finishes", async () => {
   const pages = [1, 2, 3, 4, 5].map((page) => want(page))
@@ -108,12 +108,12 @@ it("keeps no failed page, so a retry asks the server again", async () => {
   expect(fetchFile).toHaveBeenCalledTimes(2)
 })
 
-it("keeps each signed-in token's pages apart", async () => {
+it("keeps each sign-in's pages apart", async () => {
   const mine = want(1)
   await flush()
   answers[0](imageResponse())
   await mine
-  const theirs = loadPageImage("file-a", 1, { token: "other", signal: new AbortController().signal })
+  const theirs = loadPageImage("file-a", 1, { session: "other", signal: new AbortController().signal })
   await flush()
   expect(fetchFile).toHaveBeenCalledTimes(2)
   answers[1](imageResponse())

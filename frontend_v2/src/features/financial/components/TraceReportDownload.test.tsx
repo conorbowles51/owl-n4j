@@ -48,7 +48,7 @@ async function mount(changes: Record<string, string> = {}) {
   return { fetch, makeUrl, click, ...view }
 }
 it("downloads an authenticated bundle for the captured scenario after checking integrity", async () => {
-  localStorage.setItem("authToken", "test-token")
+  localStorage.setItem("loupeSession", "test-token")
   const { fetch, click } = await mount()
   fireEvent.click(
     screen.getByRole("button", { name: "Download tracing audit bundle" })
@@ -61,9 +61,7 @@ it("downloads an authenticated bundle for the captured scenario after checking i
     scenarios: ["original"],
     privilege_marking: "unmarked",
   })
-  expect(fetch.mock.calls[0][1]?.headers).toMatchObject({
-    Authorization: "Bearer test-token",
-  })
+  expect(fetch.mock.calls[0][1]?.credentials).toBe("include")
 })
 it.each<Record<string, string>>([
   { "X-Loupe-Case-Id": "other" },

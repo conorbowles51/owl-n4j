@@ -13,9 +13,9 @@ describe("authAPI.changePassword", () => {
     globalThis.fetch = originalFetch
   })
 
-  it("keeps this sign-in by storing the token the change returns", async () => {
+  it("keeps this sign-in on the cookie the reply sets, and stores no token", async () => {
     // Changing the password ends every sign-in issued before it, this one's included.
-    localStorage.setItem("authToken", "before-the-change")
+    localStorage.setItem("loupeSession", "before-the-change")
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ success: true, access_token: "after-the-change" }), {
         status: 200,
@@ -23,6 +23,7 @@ describe("authAPI.changePassword", () => {
       })
     )
     await authAPI.changePassword("old-secret", "new-secret")
-    expect(localStorage.getItem("authToken")).toBe("after-the-change")
+    expect(localStorage.getItem("loupeSession")).toBe("before-the-change")
+    expect(JSON.stringify({ ...localStorage })).not.toContain("after-the-change")
   })
 })

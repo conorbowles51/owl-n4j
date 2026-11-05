@@ -11,6 +11,7 @@ import {
 } from "./financial-view-updates"
 import { answerRequest, bodyLength, endRequest, readJSON, startRequest } from "./request-progress"
 import { JOB_STARTED_EVENT, startsJob } from "./job-started"
+import { clearSessionMark, sessionMark } from "./session-mark"
 
 export class ApiError extends Error {
   status: number
@@ -62,16 +63,13 @@ export async function fetchAPI<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<T> {
-  const token = localStorage.getItem("authToken")
+  const mark = sessionMark()
   const { body, timeout, signal: callerSignal, onViewAnswer, headersOnly, read, ...init } = options
 
   const headers: Record<string, string> = {
     ...(init.headers as Record<string, string>),
   }
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`
-  }
   const marksUpdating = acceptsUpdating(endpoint, init.method)
   const requestNumber = marksUpdating ? nextRequestNumber() : 0
   if (marksUpdating) {
@@ -131,9 +129,9 @@ export async function fetchAPI<T>(
 
       if (
         response.status === 401 &&
-        localStorage.getItem("authToken") === token
+        sessionMark() === mark
       ) {
-        localStorage.removeItem("authToken")
+        clearSessionMark()
       }
 
       if (response.status === 401 || response.status === 403) {

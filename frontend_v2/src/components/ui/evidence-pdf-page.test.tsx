@@ -26,7 +26,7 @@ beforeEach(() => {
       static revokeObjectURL = revokeUrl
     }
   )
-  localStorage.setItem("authToken", "test-user")
+  localStorage.setItem("loupeSession", "test-user")
   resetPageImagesForTests()
   fetchFile.mockReset()
   createUrl.mockClear()
@@ -44,9 +44,7 @@ it("loads the authenticated page and reports its actual page count", async () =>
     await screen.findByRole("img", { name: "Page 2 of the original PDF" })
   ).toHaveAttribute("src", "blob:page")
   expect(fetchFile.mock.calls[0][0]).toBe("/api/evidence/file-a/page/2/image")
-  expect(fetchFile.mock.calls[0][1].headers.Authorization).toBe(
-    "Bearer test-user"
-  )
+  expect(fetchFile.mock.calls[0][1].credentials).toBe("include")
   expect(count).toHaveBeenCalledWith("file-a", 3)
   fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF page" }))
   expect(screen.getByRole("img")).toHaveStyle({ width: "125%" })

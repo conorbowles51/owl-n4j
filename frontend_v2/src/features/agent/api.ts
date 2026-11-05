@@ -58,12 +58,10 @@ export const agentAPI = {
     params: SendAgentMessageParams,
     onEvent: (event: AgentStreamEvent) => void
   ) => {
-    const token = localStorage.getItem("authToken")
     const response = await fetch("/api/agent/messages/stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       credentials: "include",
       body: JSON.stringify({

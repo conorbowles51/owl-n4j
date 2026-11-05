@@ -770,7 +770,7 @@ it("a sign-in change during a batched upload stops new batches and keeps what wa
   const files = Array.from({ length: 400 }, (_, i) => file(`Phone/s${i}.db`, 65536, i % 251))
   let group: (Omit<UploadGroup, "members"> & { members: { id: string; path: string; status: string }[] }) | undefined
   let batches = 0
-  localStorage.setItem("authToken", "first-user")
+  localStorage.setItem("loupeSession", "first-user")
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     const method = options?.method ?? "GET"
     if (url.startsWith("/api/evidence-upload-groups?")) return group ? [group] : []
@@ -786,7 +786,7 @@ it("a sign-in change during a batched upload stops new batches and keeps what wa
     if (group && url === `/api/evidence-upload-groups/${group.id}/files`) {
       batches++
       await new Promise((resolve) => setTimeout(resolve, 50))
-      localStorage.setItem("authToken", "second-user") // someone else signs in on this browser while four are sent
+      localStorage.setItem("loupeSession", "second-user") // someone else signs in on this browser while four are sent
       const head = JSON.parse((await (options!.body as unknown as Blob).slice(0, 64 * 1024).text()).split("\n")[0]) as {
         files: { id: string }[]
       }
@@ -798,6 +798,6 @@ it("a sign-in change during a batched upload stops new batches and keeps what wa
     await expect(uploadFolderOrArchive("case", files, { isFolder: true })).rejects.toThrow("The signed-in session changed")
     expect(batches).toBe(SEND_AT_ONCE)
   } finally {
-    localStorage.removeItem("authToken")
+    localStorage.removeItem("loupeSession")
   }
 })

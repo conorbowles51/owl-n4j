@@ -17,12 +17,12 @@ beforeEach(() => {
   useAuthStore.setState({ user: null, isAuthenticated: false })
 })
 it("does not offer the previous member's cached financial case after signing in as someone else", () => {
-  useAuthStore.getState().login("first-token", first)
+  useAuthStore.getState().login(first)
   queryClient.setQueryData(["financial-ledger", "private-case"], {
     rows: [{ description: "Private payment" }],
   })
   queryClient.setQueryData(["cases"], { cases: [{ id: "private-case" }] })
-  useAuthStore.getState().login("second-token", second)
+  useAuthStore.getState().login(second)
   expect(
     queryClient.getQueryData(["financial-ledger", "private-case"])
   ).toBeUndefined()
@@ -30,7 +30,7 @@ it("does not offer the previous member's cached financial case after signing in 
   expect(useAuthStore.getState().user?.username).toBe(second.username)
 })
 it("discards a late response from the previous session instead of returning it to the next member", async () => {
-  useAuthStore.getState().login("first-token", first)
+  useAuthStore.getState().login(first)
   let resolve!: (value: unknown) => void
   const request = queryClient
     .fetchQuery({
@@ -42,7 +42,7 @@ it("discards a late response from the previous session instead of returning it t
     })
     .catch(() => undefined)
   useAuthStore.getState().logout()
-  useAuthStore.getState().login("second-token", second)
+  useAuthStore.getState().login(second)
   resolve({ rows: [{ description: "Late private payment" }] })
   await request
   expect(
@@ -50,7 +50,7 @@ it("discards a late response from the previous session instead of returning it t
   ).toBeUndefined()
 })
 it("clears case data on logout but retains the same member's active queries when refreshing their profile", () => {
-  useAuthStore.getState().login("token", first)
+  useAuthStore.getState().login(first)
   queryClient.setQueryData(["financial-ledger", "case"], { rows: [] })
   useAuthStore
     .getState()
@@ -60,5 +60,5 @@ it("clears case data on logout but retains the same member's active queries when
   })
   useAuthStore.getState().logout()
   expect(queryClient.getQueryData(["financial-ledger", "case"])).toBeUndefined()
-  expect(localStorage.getItem("authToken")).toBeNull()
+  expect(localStorage.getItem("loupeSession")).toBeNull()
 })

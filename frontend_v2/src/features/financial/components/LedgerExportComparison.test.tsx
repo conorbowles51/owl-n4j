@@ -30,7 +30,7 @@ it("uploads selected archives with case authentication and clears stale results 
   const fetch = vi
     .spyOn(globalThis, "fetch")
     .mockResolvedValue(new Response(JSON.stringify(report)))
-  localStorage.setItem("authToken", "fixture-token")
+  localStorage.setItem("loupeSession", "fixture-token")
   render(<LedgerExportComparison caseId="case" />)
   files()
   fireEvent.click(
@@ -38,9 +38,7 @@ it("uploads selected archives with case authentication and clears stale results 
   )
   await screen.findByRole("region", { name: "Saved export comparison" })
   expect(String(fetch.mock.calls[0][0])).toContain("case_id=case")
-  expect(fetch.mock.calls[0][1]?.headers).toEqual({
-    Authorization: "Bearer fixture-token",
-  })
+  expect(fetch.mock.calls[0][1]?.credentials).toBe("include")
   expect(fetch.mock.calls[0][1]?.body).toBeInstanceOf(FormData)
   fireEvent.change(screen.getByLabelText("Later ledger export"), {
     target: { files: [new File(["changed"], "changed.zip")] },

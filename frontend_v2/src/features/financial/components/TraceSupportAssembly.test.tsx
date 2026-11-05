@@ -66,7 +66,7 @@ async function mount(wrongInputs = false, ledgerOnly = false) {
   return { fetch, click, makeUrl, ...view }
 }
 it("downloads a case- and input-bound package after checking the response digest", async () => {
-  localStorage.setItem("authToken", "fixture-token")
+  localStorage.setItem("loupeSession", "fixture-token")
   const { fetch, click } = await mount()
   fireEvent.click(
     screen.getByRole("button", { name: "Prepare and download review package" })
@@ -75,9 +75,7 @@ it("downloads a case- and input-bound package after checking the response digest
     "prepared and checked"
   )
   expect(click).toHaveBeenCalledOnce()
-  expect(fetch.mock.calls[0][1]?.headers).toEqual({
-    Authorization: "Bearer fixture-token",
-  })
+  expect(fetch.mock.calls[0][1]?.credentials).toBe("include")
   expect(
     (fetch.mock.calls[0][1]?.body as FormData).getAll("scenarios")
   ).toHaveLength(1)

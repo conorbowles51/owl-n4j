@@ -89,7 +89,6 @@ function ScopedExport({
         search.set("include_case_financial_history", "true")
       if (includePdf) search.set("include_pdf", "true")
       if (includeSourceFiles) search.set("include_source_files", "true")
-      const token = localStorage.getItem("authToken")
       const response = await fetch(
         `${candidateUrl("ledger-export", caseId)}&${search}`,
         {
@@ -98,7 +97,6 @@ function ScopedExport({
             ? JSON.stringify({ table_view: encodedView })
             : undefined,
           headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...(useBody ? { "Content-Type": "application/json" } : {}),
           },
           credentials: "include",

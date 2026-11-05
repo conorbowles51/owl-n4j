@@ -20,12 +20,10 @@ export const authAPI = {
       (r) => r.users
     ),
 
-  // Changing the password ends every other sign-in; this one continues with the token it returns.
+  // Changing the password ends every other sign-in; this one continues with the cookie the reply sets.
   changePassword: (currentPassword: string, newPassword: string) =>
-    fetchAPI<{ access_token?: string }>("/api/auth/change-password", {
+    fetchAPI<void>("/api/auth/change-password", {
       method: "PUT",
       body: { current_password: currentPassword, new_password: newPassword },
-    }).then((result) => {
-      if (result?.access_token) localStorage.setItem("authToken", result.access_token)
     }),
 }

@@ -6,7 +6,7 @@ const NativeURL = URL
 const create = vi.fn(() => "blob:synthetic-report")
 const click = vi.fn()
 beforeEach(() => {
-  localStorage.setItem("authToken", "synthetic-session")
+  localStorage.setItem("loupeSession", "synthetic-session")
   create.mockClear()
   click.mockClear()
   vi.stubGlobal(
@@ -46,7 +46,7 @@ it("downloads with the current credentials and exact filters while blocking a re
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(fetch.mock.calls[0][0]).toContain("min_amount=100&max_amount=200")
   expect(fetch.mock.calls[0][1]).toMatchObject({
-    headers: { Authorization: "Bearer synthetic-session" },
+    credentials: "include",
   })
   await act(async () => {
     resolve(
@@ -120,7 +120,7 @@ it("discards a response when the signed-in session has changed", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => {
-      localStorage.setItem("authToken", "new-session")
+      localStorage.setItem("loupeSession", "new-session")
       return new Response("%PDF-1.7 old session", {
         headers: { "content-type": "application/pdf" },
       })

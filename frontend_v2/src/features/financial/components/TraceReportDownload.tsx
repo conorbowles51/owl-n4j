@@ -54,7 +54,6 @@ export function TraceReportDownload({ trace }: { trace: VerifiedTrace }) {
     request.current = controller
     const timeout = setTimeout(() => controller.abort(), 120000)
     try {
-      const token = localStorage.getItem("authToken")
       const response = await fetch(
         candidateUrl("trace-support-export", trace.envelope.case_id),
         {
@@ -63,7 +62,6 @@ export function TraceReportDownload({ trace }: { trace: VerifiedTrace }) {
           signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             scenarios: [trace.envelope.scenario_json],

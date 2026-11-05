@@ -37,7 +37,7 @@ try {
   const section = page.getByRole("region", { name: "Re-parse runs" })
   await section.waitFor({ timeout: 60000 })
   const runs = () => page.evaluate(async (c) => {
-    const r = await fetch(`/api/phones/reparse/runs?case_id=${c}`, { headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` } })
+    const r = await fetch(`/api/phones/reparse/runs?case_id=${c}`, { credentials: "include" })
     return (await r.json()).phones.map((p) => ({ id: p.extraction_id, latest: p.runs[0]?.id ?? null }))
   }, caseId)
   const before = await runs()

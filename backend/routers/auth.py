@@ -65,7 +65,8 @@ async def _extract_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str | None:
-    if credentials and credentials.credentials:
+    # "null": a page script that read the token browsers no longer keep. Its sign-in cookie, if any, still counts.
+    if credentials and credentials.credentials and credentials.credentials not in {"null", "undefined"}:
         return credentials.credentials
     if request:
         return request.cookies.get("access_token")

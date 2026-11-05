@@ -76,7 +76,6 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
       if (ledger) body.set("ledger", ledger)
       if (review) body.set("review", review)
       if (predictions) body.set("predictions", predictions)
-      const token = localStorage.getItem("authToken")
       const response = await fetch(
         candidateUrl("trace-support-assembly", caseId) +
           `&privilege_marking=${marking}`,
@@ -85,7 +84,6 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
           body,
           credentials: "include",
           signal: controller.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
         }
       )
       if (!response.ok) {

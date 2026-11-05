@@ -27,7 +27,7 @@ describe("fetchProtectedBlob", () => {
   })
 
   it("fetches protected file bytes with bearer auth and cookies", async () => {
-    localStorage.setItem("authToken", "file-token")
+    localStorage.setItem("loupeSession", "file-token")
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response("image", {
         status: 200,
@@ -42,7 +42,6 @@ describe("fetchProtectedBlob", () => {
       "/api/evidence/123/file",
       expect.objectContaining({
         credentials: "include",
-        headers: { Authorization: "Bearer file-token" },
       })
     )
   })
@@ -138,7 +137,7 @@ describe("useProtectedObjectUrl", () => {
 
 describe("protected source response ownership", () => {
   beforeEach(() => {
-    localStorage.setItem("authToken", "first-user")
+    localStorage.setItem("loupeSession", "first-user")
     vi.stubGlobal("fetch", vi.fn())
     vi.spyOn(URL, "createObjectURL")
       .mockReturnValueOnce("blob:new-source")
@@ -146,7 +145,7 @@ describe("protected source response ownership", () => {
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
   })
   afterEach(() => {
-    localStorage.removeItem("authToken")
+    localStorage.removeItem("loupeSession")
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
@@ -165,7 +164,7 @@ describe("protected source response ownership", () => {
       const controller = new AbortController()
       const pending = fetchProtectedBlob("/source", controller.signal)
       if (change === "cancelled") controller.abort()
-      else localStorage.removeItem("authToken")
+      else localStorage.removeItem("loupeSession")
       finish(new Blob(["old private bytes"]))
       await expect(pending).rejects.toThrow()
     }
@@ -205,13 +204,10 @@ describe("protected source response ownership", () => {
       expect(result.current.objectUrl).toBe("blob:new-source")
     )
     vi.mocked(fetch).mockResolvedValue(new Response("second bytes"))
-    localStorage.setItem("authToken", "second-user")
+    localStorage.setItem("loupeSession", "second-user")
     rerender()
     expect(result.current.objectUrl).toBeNull()
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
-    expect(vi.mocked(fetch).mock.calls[1][1]?.headers).toEqual({
-      Authorization: "Bearer second-user",
-    })
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:new-source")
   })
 })

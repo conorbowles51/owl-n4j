@@ -42,7 +42,7 @@ const pageErrors = []
 page.on("pageerror", (e) => pageErrors.push(e.message.slice(0, 160)))
 const base = `${login.url}/cases/${caseId}`
 const api = (path, init) => page.evaluate(async ([p, i]) => {
-  const r = await fetch(p, { ...(i ?? {}), credentials: "include", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("authToken") ?? ""}` } })
+  const r = await fetch(p, { ...(i ?? {}), credentials: "include", headers: { "Content-Type": "application/json" } })
   return { status: r.status, body: r.ok ? await r.json() : null }
 }, [path, init ?? null])
 const shot = (name) => page.screenshot({ path: `${shots}/${name}.png` })

@@ -48,10 +48,9 @@ export const snapshotsAPI = {
 
   /** The snapshot report PDF: its graph, its own events with their sources, and the chosen privilege marking. */
   report: async (snapshotId: string, privilegeMarking: PrivilegeMarking): Promise<{ blob: Blob; filename: string }> => {
-    const token = localStorage.getItem("authToken")
     const response = await fetch(`/api/snapshots/${encodeURIComponent(snapshotId)}/report`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ privilege_marking: privilegeMarking }),
     })

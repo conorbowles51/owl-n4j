@@ -40,16 +40,14 @@ async function setup(overrides = {}) {
   return { fetch, hash, ...view }
 }
 it("authenticates a case-bound check and clears the result when inputs change", async () => {
-  localStorage.setItem("authToken", "fixture-token")
+  localStorage.setItem("loupeSession", "fixture-token")
   const { fetch } = await setup()
   fireEvent.click(screen.getByRole("button", { name: "Check package" }))
   await screen.findByRole("region", { name: "Saved package verification" })
   expect(fetch.mock.calls[0][0]).toContain(
     "trace-support-verification?case_id=case"
   )
-  expect(fetch.mock.calls[0][1]?.headers).toEqual({
-    Authorization: "Bearer fixture-token",
-  })
+  expect(fetch.mock.calls[0][1]?.credentials).toBe("include")
   fireEvent.change(
     screen.getByLabelText("Previously saved SHA-256 (optional)"),
     { target: { value: "a" } }

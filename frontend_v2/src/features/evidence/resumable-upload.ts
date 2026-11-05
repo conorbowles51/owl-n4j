@@ -3,6 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js"
 import { fetchAPI } from "@/lib/api-client"
 import type { EvidenceFile } from "@/types/evidence.types"
 import type { UploadResponse } from "./api"
+import { sessionMark } from "@/lib/session-mark"
 
 export interface UploadSession {
   id: string
@@ -30,9 +31,9 @@ const transfers = new Map<
 const endpoint = "/api/evidence-upload-sessions"
 
 export function uploadSessionGuard() {
-  const token = localStorage.getItem("authToken")
+  const token = sessionMark()
   return () => {
-    if (localStorage.getItem("authToken") !== token)
+    if (sessionMark() !== token)
       throw new Error(
         "The signed-in session changed. Received upload data is retained. Sign in and resume from upload activity."
       )

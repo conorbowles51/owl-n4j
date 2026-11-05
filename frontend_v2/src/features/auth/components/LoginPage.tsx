@@ -41,7 +41,7 @@ export function LoginPage() {
 
     try {
       const response = await authAPI.login({ username, password })
-      login(response.access_token, {
+      login({
         username: response.username,
         name: response.name,
         role: response.role,

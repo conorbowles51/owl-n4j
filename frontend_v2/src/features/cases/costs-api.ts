@@ -37,9 +37,7 @@ export const caseCostsAPI = {
 
   /** The same report as a PDF file; the server's refusal (e.g. too many lines) comes back as the error message. */
   downloadPdf: async (caseId: string, start?: string, end?: string) => {
-    const token = localStorage.getItem("authToken")
     const response = await fetch(`/api/cost-ledger/case-report.pdf?${query(caseId, start, end)}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
       credentials: "include",
     })
     if (!response.ok) {

@@ -1,16 +1,12 @@
 import { useEffect, useState } from "react"
-
-function authHeaders(token: string | null): Record<string, string> {
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
+import { sessionMark } from "@/lib/session-mark"
 
 export async function fetchProtectedBlob(
   url: string,
   signal?: AbortSignal
 ): Promise<Blob> {
-  const token = localStorage.getItem("authToken")
+  const token = sessionMark()
   const response = await fetch(url, {
-    headers: authHeaders(token),
     credentials: "include",
     signal,
   })
@@ -22,7 +18,7 @@ export async function fetchProtectedBlob(
   const blob = await response.blob()
   if (signal?.aborted)
     throw new DOMException("File request was cancelled", "AbortError")
-  if (localStorage.getItem("authToken") !== token)
+  if (sessionMark() !== token)
     throw new Error("Your sign-in changed. Open this file again.")
   return blob
 }
@@ -32,7 +28,7 @@ export function useProtectedObjectUrl(
   enabled = true
 ) {
   const activeUrl = enabled ? (url ?? null) : null
-  const token = localStorage.getItem("authToken")
+  const token = sessionMark()
   const [result, setResult] = useState<{
     url: string
     token: string | null
@@ -53,7 +49,7 @@ export function useProtectedObjectUrl(
       .then((blob) => {
         if (
           controller.signal.aborted ||
-          localStorage.getItem("authToken") !== token
+          sessionMark() !== token
         )
           return
         nextObjectUrl = URL.createObjectURL(blob)
@@ -67,7 +63,7 @@ export function useProtectedObjectUrl(
       .catch((err: unknown) => {
         if (
           controller.signal.aborted ||
-          localStorage.getItem("authToken") !== token
+          sessionMark() !== token
         )
           return
         setResult({

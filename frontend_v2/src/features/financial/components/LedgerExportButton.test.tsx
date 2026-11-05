@@ -48,7 +48,7 @@ function mount(
   return { fetch, makeUrl, click }
 }
 it("downloads binary without parsing and sends authenticated applied scope", async () => {
-  localStorage.setItem("authToken", "fixture-token")
+  localStorage.setItem("loupeSession", "fixture-token")
   const { fetch, makeUrl, click } = mount()
   fireEvent.click(
     screen.getByRole("button", { name: "Download ledger snapshot" })
@@ -57,9 +57,7 @@ it("downloads binary without parsing and sends authenticated applied scope", asy
   expect(String(fetch.mock.calls[0][0])).toContain(
     "account_id=account-a&start_date=2026-01-01&end_date=2026-01-31"
   )
-  expect(fetch.mock.calls[0][1]?.headers).toEqual({
-    Authorization: "Bearer fixture-token",
-  })
+  expect(fetch.mock.calls[0][1]?.credentials).toBe("include")
   expect(makeUrl).toHaveBeenCalledTimes(1)
   expect(click).toHaveBeenCalledTimes(1)
 })

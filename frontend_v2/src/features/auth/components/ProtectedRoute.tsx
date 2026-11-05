@@ -5,36 +5,37 @@ import { useAuthStore } from "../hooks/use-auth"
 import { authAPI } from "../api"
 import { Button } from "@/components/ui/button"
 import { ApiError } from "@/lib/api-client"
+import { sessionMark } from "@/lib/session-mark"
 
 export function ProtectedRoute() {
   const { isAuthenticated, user, setUser, logout } = useAuthStore()
   const location = useLocation()
   const [retry, setRetry] = useState(0)
   const [profileError, setProfileError] = useState<{
-    token: string | null
+    mark: string | null
   } | null>(null)
 
   useEffect(() => {
     if (isAuthenticated && !user) {
-      const token = localStorage.getItem("authToken")
+      const mark = sessionMark()
       let active = true
       authAPI
         .me()
         .then((u) => {
-          if (active && localStorage.getItem("authToken") === token) setUser(u)
+          if (active && sessionMark() === mark) setUser(u)
         })
         .catch((error: unknown) => {
-          const currentToken = localStorage.getItem("authToken")
-          if (!active || (currentToken && currentToken !== token)) return
+          const currentMark = sessionMark()
+          if (!active || (currentMark && currentMark !== mark)) return
           if (
-            !currentToken ||
+            !currentMark ||
             (error instanceof ApiError && [401, 403].includes(error.status))
           ) {
             logout()
           } else {
             // A failed connection does not establish that this sign-in expired.
             // Keep private pages closed until a retry confirms the profile.
-            setProfileError({ token })
+            setProfileError({ mark })
           }
         })
       return () => {
@@ -50,7 +51,7 @@ export function ProtectedRoute() {
   if (!user) {
     if (
       profileError &&
-      profileError.token === localStorage.getItem("authToken")
+      profileError.mark === sessionMark()
     ) {
       return (
         <main className="flex min-h-screen items-center justify-center p-6">

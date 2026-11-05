@@ -21,9 +21,6 @@ export function EvidenceImage({
     const controller = new AbortController()
     let objectUrl: string | null = null
     void fetch(url, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("authToken") ?? ""}`,
-      },
       credentials: "include",
       signal: controller.signal,
     })
