@@ -2,7 +2,7 @@
 from alembic import op
 
 revision = "20261105_pol_harvested_kind"
-down_revision = "20261105_link_choice_interview"
+down_revision = "20261105_evidence_passage_links"
 branch_labels = None
 depends_on = None
 
