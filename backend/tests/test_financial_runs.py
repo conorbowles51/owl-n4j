@@ -363,7 +363,9 @@ class IngestionRunLifecycleTests(RunTestCase):
             run_id = run.run_id
 
         stored = self.read_run(run_id)
+        components = stored.config.pop("components")
         self.assertEqual(stored.config, {"batch": "march"})
+        self.assertEqual(components["schema_version"], "loupe.financial.component_manifest/1")
         self.assertEqual(stored.notes, "Re-ingest after the parser fix.")
 
 

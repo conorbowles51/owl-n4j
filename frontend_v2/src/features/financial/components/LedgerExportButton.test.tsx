@@ -246,3 +246,34 @@ it("posts large name selections and verifies the exact filter digest without rel
   expect(String(fetch.mock.calls[0][0])).not.toContain("table_view=")
   expect(click).toHaveBeenCalledTimes(1)
 })
+
+it("states the expert packet parts the server reported for this export, with its size", async () => {
+  mount({
+    "X-Loupe-Expert-Packet": JSON.stringify({
+      completeness: "incomplete_expert_packet",
+      byte_count: 2097152,
+      sentence:
+        "This export is not a complete expert packet. Complete: Custody and decisions. Incomplete: Measured validation.",
+      parts: [
+        { label: "Custody and decisions", holds: true },
+        { label: "Measured validation", holds: false },
+      ],
+    }),
+  })
+  expect(screen.queryByText(/not a complete expert packet/)).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+  const result = await screen.findByLabelText(
+    "Expert packet parts in this export"
+  )
+  expect(result).toHaveTextContent("not a complete expert packet")
+  expect(result).toHaveTextContent("Custody and decisions: complete")
+  expect(result).toHaveTextContent("Measured validation: incomplete")
+  expect(result).toHaveTextContent("Download size: 2.0 MB")
+})
+
+it("makes no packet claim when a download carries no statement of its parts", async () => {
+  mount()
+  fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+  await screen.findByText(/Download started/)
+  expect(screen.queryByLabelText("Expert packet parts in this export")).toBeNull()
+})

@@ -4,12 +4,18 @@ from postgres.models.enums import LedgerStatus, TransactionDirection
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 from tests import test_financial_duplicates as fixture
 
+from postgres.models.evidence import EvidenceDocumentText
+from postgres.models.financial_audit import FinancialAuditEvent
+from postgres.models.financial_judgements import FinancialJudgement
+from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+
+
 class LedgerSummaryTests(fixture.DuplicateTestCase):
     def setUp(self):
         super().setUp()
         from postgres.base import Base
         from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization, FinancialCandidateTransaction
-        Base.metadata.create_all(self.engine,tables=[m.__table__ for m in (FinancialCandidateMapping,FinancialExtractionCandidate,FinancialCandidateReview,FinancialCandidateFinalization,FinancialCandidateTransaction)])
+        Base.metadata.create_all(self.engine,tables=[m.__table__ for m in (FinancialCandidateMapping,FinancialExtractionCandidate,FinancialCandidateReview,FinancialCandidateFinalization,FinancialCandidateTransaction,FinancialJudgement,FinancialAuditEvent,WorkspaceEntry,WorkspaceEntryLink,EvidenceDocumentText)])
 
     def read(self, **changes):
         return ledger_summary(self.db, **{**dict(case_id=self.case.id), **changes})

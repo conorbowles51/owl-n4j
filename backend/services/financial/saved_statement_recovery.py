@@ -287,6 +287,7 @@ def save_recovery(session, *, case_id, source_id, request, actor):
         payload = request.model_dump(mode='json')
         if previous and previous.get('request') == payload:
             return previous['result']  # Lost response: never create a second split.
+        from services.financial.component_manifest import run_components
         document, view, rows, preview = _prepare(session, case_id, source_id, request)
         if request.expected_preview != preview['revision']:
             raise PdfMappingError('Review the current section assignments before saving.', 409)
@@ -300,7 +301,8 @@ def save_recovery(session, *, case_id, source_id, request, actor):
                 code_version='saved-statement-recovery-v1', ruleset_version='1', started_by_user_id=actor.user_id,
                 started_by_email=actor.email, completed_at=now, documents_seen=1,
                 transactions_admitted=sum(by_id[key].ledger_status == 'admitted' for key in section.transaction_ids),
-                config=dict(operation='split_saved_statement', source_document_id=str(source_id), reason=request.reason.strip()))
+                config=dict(operation='split_saved_statement', source_document_id=str(source_id), reason=request.reason.strip(),
+                    components=run_components()))
             session.add(run); session.flush()
             stamp = SimpleNamespace(case_id=case_id, run_id=run.id)
             stamp.stamp = lambda item: (setattr(item, 'case_id', case_id), setattr(item, 'ingestion_run_id', run.id))

@@ -1979,6 +1979,10 @@ __all__ += ["compare_extraction_evaluations"]
 from services.financial.expert_support import build_expert_support
 __all__ += ["build_expert_support"]
 
+from services.financial.component_manifest import run_components
+from services.financial.expert_packet import capture_packet_records, packet_parts
+__all__ += ["capture_packet_records", "packet_parts", "run_components"]
+
 from services.financial.processing_provenance import capture_processing_provenance
 __all__ += ["capture_processing_provenance"]
 

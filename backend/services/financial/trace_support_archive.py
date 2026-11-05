@@ -8,6 +8,7 @@ import io
 import json
 import zipfile
 
+from services.financial.expert_packet import COMPLETE, INCOMPLETE, packet_parts, packet_sentence, source_overlap
 from services.financial.expert_support import build_expert_support
 from services.financial.review_package_report import render_review_package_report
 from services.financial.trace_scenario_report import render_scenario_report
@@ -20,17 +21,7 @@ from services.financial.audit_chain import verify_financial_audit_chain
 
 
 def validation_source_overlap(source_records, corpus):
-    """Compare recorded source digests only; do not infer extractor equivalence."""
-    sources = source_records['sources']
-    known = {source.get('sha256_at_ingestion') for source in sources if source.get('sha256_at_ingestion')}
-    measured = {document['source_sha256'] for document in corpus['documents']}
-    return dict(scope='selected_ledger_source_records',
-        matching_source_sha256=sorted(known & measured),
-        unmeasured_source_sha256=sorted(known - measured),
-        sources_without_digest=sum(not source.get('sha256_at_ingestion') for source in sources),
-        corpus_sources_not_selected=sorted(measured - known),
-        extraction_version_equivalence='not_established',
-        limitation='Recorded digest overlap does not establish that the case used the measured extraction version, settings or review process. Pending sources outside selected ledger readings are not covered by this comparison.')
+    return source_overlap(source_records['sources'], corpus)
 
 
 def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_review=None, validation_predictions=None, ledger_archive=None, expected_case_id=None, preparation=None, include_readable_index=True, include_ledger_support_summary=True, include_scenario_reports=True):
@@ -54,6 +45,7 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
         validation_corpus = evaluation_from_reference_reviews(reference_review, validation_predictions)
     entries = {}
     cases, digests, scopes = set(), set(), []
+    scenario_documents = {}
 
     def add_json(name, value):
         entries[name] = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
@@ -74,6 +66,7 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
         prefix = f'scenarios/{index:02d}/'
         entries[prefix + 'scenario.json'] = content
         add_json(prefix + 'replay.json', replay)
+        scenario_documents[prefix + 'expert-support.json'] = scenario['ledger_snapshot']
         support = build_expert_support(scenario['ledger_snapshot'],
             snapshot_sha256=replay['snapshot_sha256'], code_version=scenario['ledger_manifest'].get('code_version'))
         support['tracing'] = dict(status='selected_conditional_scenario',
@@ -147,6 +140,11 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
             support = json.loads(entries[scope['support_reference']])
             support['validation'] = {**validation, 'source_overlap': validation_source_overlap(support['source_records'], validation_corpus)}
             add_json(scope['support_reference'], support)
+    for scope in scopes:
+        # A scenario's own capture has no packet records; an attached ledger export of this case has them.
+        support = json.loads(entries[scope['support_reference']])
+        _state_packet(support, ledger_document or scenario_documents[scope['support_reference']])
+        add_json(scope['support_reference'], support)
     ledger_support = (json.loads(entries['ledger/captured-expert-support.json'])
         if include_ledger_support_summary and 'ledger/captured-expert-support.json' in entries else None)
     if include_readable_index:
@@ -156,9 +154,15 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
             preparation=preparation, ledger=ledger_document, measurement=measurement,
             ledger_support_attached=bool(captured_ledger and captured_ledger.get('support_reference')),
             ledger_support=ledger_support, scenario_reports=bool(scenarios and include_scenario_reports))
+    states = [json.loads(entries[scope['support_reference']]) for scope in scopes]
+    complete = bool(states) and all(state['completeness'] == COMPLETE for state in states)
     manifest = dict(schema_version='loupe.financial.trace_support_archive/1', case_id=next(iter(cases)),
-        completeness='incomplete_expert_packet', scenarios=scopes, validation=validation, preparation=preparation,
-        limitation='Selected scenarios preserve separate captured scopes. This bundle does not establish complete case custody, all human decisions, a complete historical toolchain, an expert opinion or signature. Hashes detect byte changes relative to this manifest; they do not authenticate authorship.',
+        completeness=COMPLETE if complete else INCOMPLETE,
+        packet_parts=[dict(support_reference=scope['support_reference'], parts=state['packet_parts'],
+                           sentence=state['packet_sentence']) for scope, state in zip(scopes, states)],
+        scenarios=scopes, validation=validation, preparation=preparation,
+        limitation=('Selected scenarios preserve separate captured scopes. ' + ('' if complete else 'This bundle does not establish complete case custody, all human decisions, a complete historical toolchain. ')
+            + 'This bundle is not an expert opinion or signature. Hashes detect byte changes relative to this manifest; they do not authenticate authorship.'),
         files=[dict(filename=name, byte_count=len(content), sha256=hashlib.sha256(content).hexdigest())
                for name, content in sorted(entries.items())])
     if include_readable_index:
@@ -185,6 +189,12 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
 
 
 MAX_SUPPORT_ARCHIVE_BYTES = 256 * 1024 * 1024
+
+
+def _state_packet(support, document):
+    """This support index's parts, from the scenario's capture plus the validation and tracing this package holds."""
+    status = packet_parts(document, validation=support['validation'], tracing=support['tracing'])
+    support.update(completeness=status['completeness'], packet_parts=status['parts'], packet_sentence=status['sentence'])
 
 
 def verify_trace_support_archive(content, *, expected_sha256=None, expected_case_id=None):

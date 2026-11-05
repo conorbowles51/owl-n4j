@@ -256,8 +256,12 @@ def capture_ledger_scope(engine, *, case_id, account_id=None, start_date=None, e
     return LedgerScope(document=dict(ledger=ledger, decisions=decisions, export_ready=True), sha256=sha256)
 
 
-def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None):
-    """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads."""
+def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None, packet_records=False):
+    """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads.
+
+    ``packet_records`` adds the expert packet's records for a download. Tracing and other callers compare this
+    capture's fingerprint between two reads, and the case audit head moves with any write in the case, so those
+    records stay out of the default capture."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
@@ -294,6 +298,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                 document['processing_provenance']=capture_processing_provenance(session,case_id=case_id,readings=document['ledger']['readings'])
                 from services.financial.transaction_notes import capture_transaction_notes
                 document['investigation_notes']=capture_transaction_notes(session,case_id=case_id,readings=document['ledger']['readings'])
+                if packet_records:
+                    from services.financial.expert_packet import capture_packet_records
+                    capture_packet_records(session,document,case_id=case_id)
                 if table_view is not None:
                     from services.financial.ledger_table_view import capture_table_view
                     batch_scope = None
@@ -361,14 +368,17 @@ def ledger_export_archive(export, *, include_pdf=False):
         manifest['source_files_verified_against_ingestion'] = True
         manifest['source_files_scope'] = 'Complete original files referenced by captured rows; files may contain pages or information outside the ledger filters.'
     from services.financial.expert_support import build_expert_support
-    support = json.dumps(build_expert_support(json.loads(export.snapshot.content),
+    built = build_expert_support(json.loads(export.snapshot.content),
         snapshot_sha256=export.snapshot.sha256, code_version=manifest.get('code_version'),
-        source_files=export.source_files),sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
+        source_files=export.source_files)
+    packet = dict(completeness=built['completeness'], parts=built['packet_parts'], sentence=built['packet_sentence'])
+    support = json.dumps(built,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     support_bytes = support.encode('utf-8')
     if len(support_bytes)>MAX_EXPORT_BYTES:
         raise LedgerSummaryError('Expert support inventory exceeds the export limit; no partial export was produced.')
     manifest['expert_support'] = dict(filename='expert-support.json',sha256=hashlib.sha256(support_bytes).hexdigest(),
-        byte_count=len(support_bytes),derived_from_sha256=export.snapshot.sha256,completeness='incomplete_expert_packet')
+        byte_count=len(support_bytes),derived_from_sha256=export.snapshot.sha256,completeness=packet['completeness'],
+        parts=packet['parts'],sentence=packet['sentence'])
     snapshot_bytes = export.snapshot.content.encode('utf-8')
     if len(snapshot_bytes) > MAX_LEDGER_SNAPSHOT_BYTES:
         raise LedgerSummaryError('The complete ledger record exceeds 64 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
@@ -513,6 +523,12 @@ def render_ledger_report(snapshot):
         table(['Currency', 'Rows', 'Credits', 'Debits', 'Net postings'],
               [[c['currency'], c['rows'], money_display(c['credits_minor'], c['currency']), money_display(c['debits_minor'], c['currency']), money_display(c['net_minor'], c['currency'])] for c in ledger['currencies']]),
         '<h2>Limitations</h2><ul>' + ''.join('<li>' + text(v) + '</li>' for v in document['limitations']) + '</ul>']
+    from services.financial.expert_packet import component_rows, made_by, packet_parts
+    packet = packet_parts(document)
+    parts_after_limitations = ['<h2>Expert packet: what this export holds</h2><p>' + text(packet['sentence']) + '</p>',
+        table(['Part', 'State', 'Detail'], [[part['label'], 'Complete' if part['holds'] else 'Incomplete', part['detail']]
+                                            for part in packet['parts']], widths=[24, 12, 64])]
+    verification_parts += parts_after_limitations
     working = document.get('working_totals')
     if working is not None:
         parts += ['<h2>Working transaction totals</h2>',
@@ -663,12 +679,26 @@ def render_ledger_report(snapshot):
             details('Original captured row, dates and source locator', row),
             details('Preserved transaction provenance', reading['provenance']), '</article>']
     parts += ['<h2>Relevant recorded decisions</h2>', '<p>' + text(document.get('decision_order', 'Decision history has not been captured.')) + '</p>']
+    coverage = document.get('decision_coverage')
+    if coverage is not None:
+        parts += ['<p>Count check against the store: ' + text(coverage['in_export_total']) + ' of ' + text(coverage['stored_total'])
+            + ' recorded decisions are in this export; ' + text(len(coverage['changed_rows_without_a_record'])) + ' of '
+            + text(coverage['changed_rows']) + ' changed payments have no decision record.</p>',
+            table(['Subject', 'Recorded', 'In this export'], [[item['subject_type'], item['stored'], item['in_export']] for item in coverage['by_subject']])]
     for decision in document.get('decisions', []):
         parts += ['<article><h3>' + text(decision['decision']) + '</h3>',
-            table(['Subject', 'Sequence', 'Recorded at', 'Actor', 'Reason'], [[
+            table(['Subject', 'Sequence', 'Recorded at', 'Made by', 'Reason'], [[
                 decision['subject_type'] + ': ' + decision['subject_id'], decision['subject_sequence'],
-                decision['recorded_at'], decision['actor_name'] or decision['actor_email'], decision['reason']]]),
+                decision['recorded_at'], made_by(decision), decision['reason']]]),
             details('Decision reference, original values and changed values', decision), '</article>']
+    calls = document.get('judgement_calls')
+    if calls:
+        made = dict(processor='Software rule', agent='Model · not confirmed', person='Person')
+        parts += ['<h2>Judgement calls on these records</h2><p>Values the reader or a model chose that the page does not '
+            'print outright. Each stays as made until a person answers it; an open call has had no person\u2019s review.</p>',
+            table(['Made by', 'Call', 'Summary', 'Strength', 'State', 'Answered by', 'Reason'], [[
+                made.get(item['origin'], item['origin']), item['rule_label'], item['summary'], item['strength'], item['status'],
+                item['resolved_by'] or 'No one yet', item['resolution_reason']] for item in calls], widths=[12, 16, 34, 8, 8, 10, 12])]
     history=document.get('pdf_review_history')
     if history is not None:
         parts += ['<h2>PDF reading review history</h2><p>' + text(history['scope']) + '</p>']
@@ -748,6 +778,17 @@ def render_ledger_report(snapshot):
         parts += ['<h2>Recorded processing versions</h2><p>' + text(processing['limitation']) + '</p>',
             table(['Run', 'Code version', 'Ruleset', 'Started', 'Completed'], [[r['id'],r['code_version'] or 'Unknown',r['ruleset_version'] or 'Unknown',r['started_at'] or 'Unknown',r['completed_at'] or 'Unknown'] for r in processing['runs']]),
             details('Recorded source registration, parsers and processing operators',displayed_processing)]
+        component_table = {}
+        for row in component_rows(document):
+            key = (row['preparation']['status'], row['reading']['reader'], row['reading']['version'], row['reading']['layout'],
+                   row['saving']['commit'], row['saving']['ruleset'])
+            component_table[key] = component_table.get(key, 0) + 1
+        if component_table:
+            parts += ['<h3>Component and toolchain manifest</h3><p>"not recorded" means history does not hold that fact; '
+                'current versions are never used in its place. Each statement\u2019s row is in expert-support.json.</p>',
+                table(['Statements', 'Text preparation', 'Reader', 'Reader version', 'Layout', 'Code commit', 'Ruleset'],
+                      [[count, *[str(value).replace('_', ' ') for value in key]] for key, count in
+                       sorted(component_table.items(), key=lambda item: (-item[1], item[0]))])]
     if processing and processing.get('custody_reports'):
         parts += ['<h2>Reported source custody</h2>']
         for custody in processing['custody_reports']:
@@ -780,6 +821,14 @@ def render_ledger_report(snapshot):
                 '<p>Chain head SHA-256: <code>' + text(checked['head_sha256']) + '</code>.</p>',
                 '<p>' + text(chain['limitation']) + '</p>']
 
+    selected = document.get('selected_tracing')
+    if selected:
+        parts += ['<h2>Selected tracing methods</h2><p>Calculations investigators saved in Findings, re-run at export. '
+            'Methods are calculation rules; no legal applicability is inferred.</p>',
+            table(['Name', 'Saved by', 'Methods', 'Recalculation', 'Scenario SHA-256'], [[item['title'], item['saved_by'],
+                ', '.join(item.get('methods') or []) or 'Not recorded', item['status'].replace('_', ' '), item['scenario_sha256']]
+                for item in selected]),
+            details('Parameters and results as saved', selected)]
     parts += ['<h2>Verification</h2><p>This report is derived only from the bundled ledger-snapshot.json. '
         'Its SHA-256 is <code>' + text(snapshot.sha256) + '</code>; its UTF-8 size is ' + text(snapshot.byte_count) +
         ' bytes. The manifest separately identifies the report bytes.</p></body></html>']

@@ -307,6 +307,7 @@ def open_ingestion_run(
     function is for callers whose run genuinely outlives a single block, and
     they take on the duty of calling :meth:`IngestionRunHandle.terminate`.
     """
+    from services.financial.component_manifest import run_components
     run_id = uuid.uuid4()
     resolved_code_version = code_version()
     resolved_ruleset_version = ruleset_version(ruleset)
@@ -319,7 +320,7 @@ def open_ingestion_run(
                 status=IngestionRunStatus.running.value,
                 code_version=resolved_code_version,
                 ruleset_version=resolved_ruleset_version,
-                config=dict(config or {}),
+                config={**dict(config or {}), 'components': run_components()},
                 started_by_user_id=getattr(actor, "id", None),
                 started_by_email=getattr(actor, "email", None),
                 started_at=_now(),

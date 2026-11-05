@@ -8,6 +8,14 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { TraceSupportAssembly } from "./TraceSupportAssembly"
 import { TraceSupportVerification } from "./TraceSupportVerification"
 import { LedgerExportComparison } from "./LedgerExportComparison"
+import { ExpertPacketResult } from "./ExpertPacketResult"
+import { readExpertPacket, type ExpertPacket } from "../lib/expert-packet"
+
+// A 4,672-row account took 250 s on the loaded box; the proxy allows an hour.
+const EXPORT_TIMEOUT_MS = 15 * 60 * 1000
+
+const EXPERT_PACKET_NOTE =
+  "Includes recorded review methods and the four parts of the expert packet: custody and decisions, components, measured validation and selected tracing. Each download states which parts are complete for that export."
 
 export function LedgerExportButton({
   caseId,
@@ -45,7 +53,8 @@ function ScopedExport({
   tableView?: LedgerTableView
 }) {
   const [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("")
+    [message, setMessage] = useState(""),
+    [packet, setPacket] = useState<ExpertPacket | null>(null)
   const [marking, setMarking] = useState("unmarked")
   const [includeCaseHistory, setIncludeCaseHistory] = useState(false)
   const [includePdf, setIncludePdf] = useState(false)
@@ -58,11 +67,12 @@ function ScopedExport({
     active.current = controller
     setBusy(true)
     setMessage("")
+    setPacket(null)
     let timedOut = false
     const timeout = setTimeout(() => {
       timedOut = true
       controller.abort()
-    }, 120000)
+    }, EXPORT_TIMEOUT_MS)
     try {
       const search = new URLSearchParams()
       search.set("privilege_marking", marking)
@@ -156,6 +166,7 @@ function ScopedExport({
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       setMessage("Download started: ledger snapshot and manifest.")
+      setPacket(readExpertPacket(response.headers.get("X-Loupe-Expert-Packet")))
     } catch (error) {
       if (timedOut)
         setMessage(
@@ -207,12 +218,12 @@ function ScopedExport({
         {historyControl}
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm">
-            Includes recorded review methods and an inventory of available
-            expert support. Missing validation, custody history and tracing
-            material remain identified; this is not a complete expert packet.
+            {EXPERT_PACKET_NOTE}
           </p>
           <Button disabled={busy} onClick={() => void download()}>
-            {busy ? "Preparing table export…" : "Download this table view"}
+            {busy
+              ? "Preparing table export… large accounts take minutes"
+              : "Download this table view"}
           </Button>
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -246,6 +257,7 @@ function ScopedExport({
           </p>
         )}
         {message && <p role="status">{message}</p>}
+        <ExpertPacketResult packet={packet} />
       </section>
     )
   return (
@@ -296,13 +308,11 @@ function ScopedExport({
         </p>
       )}
       <p className="text-sm">
-        Includes recorded review methods and an inventory of available expert
-        support. Missing validation, custody history and tracing material remain
-        identified; this is not a complete expert packet.
+        {EXPERT_PACKET_NOTE}
       </p>
       <Button disabled={busy} onClick={() => void download()}>
         {busy
-          ? "Preparing ledger export…"
+          ? "Preparing ledger export… large accounts take minutes"
           : tableView
             ? "Download this table view"
             : "Download ledger snapshot"}
@@ -326,6 +336,7 @@ function ScopedExport({
         fresh file checks.
       </p>
       {message && <p role="status">{message}</p>}
+      <ExpertPacketResult packet={packet} />
     </section>
   )
 }
