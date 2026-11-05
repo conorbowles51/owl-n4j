@@ -5,7 +5,12 @@ import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelin
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { AddPaymentsToFinding } from "./AddPaymentsToFinding"
-import { findingDraft, findingKindLabel } from "../lib/investigator-finding"
+import { FindingEvidenceChangeList } from "./FindingEvidenceChangeList"
+import {
+  findingDraft,
+  findingKindLabel,
+  findingPaymentIds,
+} from "../lib/investigator-finding"
 import { useFinancialStore } from "../stores/financial.store"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { FinancialReportBuilder } from "./FinancialReportBuilder"
@@ -25,7 +30,10 @@ import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { findingReport } from "../lib/finding-report"
 import { useState } from "react"
-import { useCaseworkEntries } from "@/features/workspace/hooks/use-casework"
+import {
+  useCaseworkEntries,
+  useFindingEvidenceChanges,
+} from "@/features/workspace/hooks/use-casework"
 import { Button } from "@/components/ui/button"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { formatLedgerAmount } from "../lib/ledger-format"
@@ -81,11 +89,17 @@ export function FinancialFindings({
     limit: 25,
     offset: page * 25,
   })
-  if (!caseId) return <p>Choose a case to open its financial notes.</p>
   const entries =
     query.data?.entries.filter(
       (entry) => entry.case_id === caseId && entry.tags.includes("financial")
     ) ?? []
+  const evidenceChanges = useFindingEvidenceChanges(
+    caseId,
+    entries
+      .filter((entry) => findingPaymentIds(entry).length > 0)
+      .map((entry) => entry.id)
+  )
+  if (!caseId) return <p>Choose a case to open its financial notes.</p>
   return (
     <section
       className="space-y-4 p-4"
@@ -229,6 +243,7 @@ export function FinancialFindings({
             canEdit={canEdit}
             onTimeline={() => setTimeline(entry)}
             onEdit={() => setEditing(entry)}
+            evidence={evidenceChanges.data?.entries[entry.id]}
             onAddPayments={
               entry.tags.includes("financial-workspace")
                 ? () => setAddingTo(entry)
@@ -299,6 +314,17 @@ export function FinancialFindings({
               </div>
             ) : (
               <Markdown className="text-sm break-words" content={entry.body} />
+            )}
+            {evidenceChanges.isError && findingPaymentIds(entry).length > 0 && (
+              <p role="status" className="text-sm">
+                Whether its cited payments changed could not be checked.
+              </p>
+            )}
+            {evidenceChanges.data?.entries[entry.id] && (
+              <FindingEvidenceChangeList
+                evidence={evidenceChanges.data.entries[entry.id]}
+                onOpen={setSource}
+              />
             )}
             {entry.links.map((link) => {
               const ids = Array.isArray(

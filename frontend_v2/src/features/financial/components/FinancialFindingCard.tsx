@@ -1,7 +1,10 @@
 import type { ReactNode } from "react"
-import { ChevronDown, ChevronRight, Pencil, CalendarPlus, Plus } from "lucide-react"
+import { ChevronDown, ChevronRight, Pencil, CalendarPlus, Plus, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { CaseworkEntry } from "@/features/workspace/casework-api"
+import type {
+  CaseworkEntry,
+  FindingEvidenceChanges,
+} from "@/features/workspace/casework-api"
 import {
   findingDraft,
   findingKindLabel,
@@ -16,6 +19,7 @@ export function FinancialFindingCard({
   onEdit,
   onTimeline,
   onAddPayments,
+  evidence,
   included,
   onInclude,
   selectionDisabled,
@@ -28,6 +32,7 @@ export function FinancialFindingCard({
   onEdit: () => void
   onTimeline: () => void
   onAddPayments?: () => void
+  evidence?: FindingEvidenceChanges["entries"][string]
   included: boolean
   onInclude: (included: boolean) => void
   selectionDisabled: boolean
@@ -104,6 +109,14 @@ export function FinancialFindingCard({
           {payments > 0 && (
             <p className="text-sm">
               {payments} supporting {payments === 1 ? "payment" : "payments"}
+            </p>
+          )}
+          {!!evidence?.changed.length && (
+            <p className="finance-badge" data-finance-tone="review">
+              <TriangleAlert className="inline size-4 mr-1" aria-hidden="true" />
+              {evidence.changed.length} cited{" "}
+              {evidence.changed.length === 1 ? "payment" : "payments"} changed
+              since cited
             </p>
           )}
           <p className="text-xs text-muted-foreground break-words">

@@ -59,6 +59,14 @@ function useRefreshCasework(caseId: string) {
   ])
 }
 
+export function useFindingEvidenceChanges(caseId: string | undefined, entryIds: string[]) {
+  return useQuery({
+    queryKey: ["casework", caseId, "evidence-changes", entryIds],
+    queryFn: () => caseworkAPI.financialEvidenceChanges(caseId!, entryIds),
+    enabled: !!caseId && entryIds.length > 0,
+  })
+}
+
 export function useCreateCaseworkEntry(caseId: string) {
   const refresh = useRefreshCasework(caseId)
   return useMutation({

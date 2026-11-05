@@ -99,6 +99,30 @@ export interface CaseworkEntry {
   events?: CaseworkEvent[]
 }
 
+export interface CitedPaymentChange {
+  transaction_id: string
+  ref_id?: string | null
+  /** corrected: a later row replaced it; set_aside: it no longer counts; missing: it is no longer in the case */
+  state: "changed" | "corrected" | "set_aside" | "missing"
+  current_id?: string | null
+  currency?: string
+  changes: {
+    field: string
+    label: string
+    cited?: string | null
+    current?: string | null
+    reading?: string
+  }[]
+}
+
+export interface FindingEvidenceChanges {
+  case_id: string
+  entries: Record<
+    string,
+    { cited: number; not_compared: number; changed: CitedPaymentChange[] }
+  >
+}
+
 export interface CaseworkListParams {
   tag?: string
   entry_type?: CaseworkEntryType
@@ -200,6 +224,13 @@ export const caseworkAPI = {
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}`,
       { method: "PATCH", body: input }
     ),
+
+  /** What changed in these findings' cited payments since they were cited. Reads only. */
+  financialEvidenceChanges: (caseId: string, entryIds: string[]) =>
+    fetchAPI<FindingEvidenceChanges>(`${base(caseId)}/financial-evidence-changes`, {
+      method: "POST",
+      body: { entry_ids: entryIds },
+    }),
 
   /** Appends payments to a saved finding; what it already cites stays exactly as saved. */
   addFindingPayments: (

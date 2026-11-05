@@ -237,6 +237,10 @@ class EntryPaymentsRequest(BaseModel):
     transaction_ids: list[str] = Field(default_factory=list)
 
 
+class EvidenceChangesRequest(BaseModel):
+    entry_ids: list[UUID] = Field(default_factory=list)
+
+
 class EntryLinkCreateRequest(BaseModel):
     expected_version: int = Field(ge=1)
     link: EntryLinkInput
@@ -441,6 +445,20 @@ def _link_names(db: Session, case_id: UUID, target_type: str, ids: set[str]) -> 
     else:
         return {}
     return {str(row[0]): row[1] for row in rows.all() if row[1]}
+
+
+@router.post("/{case_id}/financial-evidence-changes", dependencies=[Depends(require_case_view)])
+def financial_evidence_changes(
+    case_id: UUID,
+    request: EvidenceChangesRequest,
+    db: Session = Depends(get_db),
+):
+    """What changed in these findings' cited payments since they were cited. Reads only."""
+    from services.financial.finding_evidence_changes import EvidenceChangeError, finding_evidence_changes
+    try:
+        return finding_evidence_changes(db, case_id=case_id, entry_ids=[str(value) for value in request.entry_ids])
+    except EvidenceChangeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
 
 @router.post("/{case_id}/report", dependencies=[Depends(require_case_view)])

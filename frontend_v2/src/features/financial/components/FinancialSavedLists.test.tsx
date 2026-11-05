@@ -7,7 +7,10 @@ import { FinancialFindings } from "./FinancialFindings"
 import { FinancialReportsList } from "./FinancialReportsList"
 
 const list = vi.hoisted(() => vi.fn())
-vi.mock("@/features/workspace/casework-api", () => ({ caseworkAPI: { list } }))
+const financialEvidenceChanges = vi.hoisted(() => vi.fn())
+vi.mock("@/features/workspace/casework-api", () => ({
+  caseworkAPI: { list, financialEvidenceChanges },
+}))
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true }),
 }))
@@ -58,6 +61,7 @@ function setup(kind: "findings" | "reports", caseId = "case-one") {
 beforeEach(() => {
   useFinancialDraftStore.setState({ drafts: {} })
   useAuthStore.setState({ user: null })
+  financialEvidenceChanges.mockReset().mockResolvedValue({ entries: {} })
   list
     .mockReset()
     .mockImplementation(async (caseId, params) => result(caseId, params))
@@ -217,4 +221,60 @@ it("renders existing saved narrative as formatted text and omits empty follow-up
   expect(screen.queryByText(/##/)).toBeNull()
   expect(screen.queryByText("Next action")).toBeNull()
   expect(screen.queryByText("Assigned to")).toBeNull()
+})
+
+it("marks a finding whose cited payment changed, and keeps the value it cited in view", async () => {
+  const data = result("case-one", { tag: "financial" })
+  const entry = data.entries[0] as unknown as Record<string, unknown>
+  entry.tags = ["financial", "financial-workspace"]
+  entry.links = [
+    {
+      id: "link",
+      target_type: "evidence",
+      target_id: "file",
+      target_label: "statement.pdf",
+      source_anchor: {
+        financial_transaction_ids: ["cited"],
+        financial_ref_ids: ["R1"],
+      },
+      metadata: { transactions: [] },
+    },
+  ]
+  list.mockResolvedValue(data)
+  financialEvidenceChanges.mockResolvedValue({
+    case_id: "case-one",
+    entries: {
+      [data.entries[0].id]: {
+        cited: 1,
+        not_compared: 0,
+        changed: [
+          {
+            transaction_id: "cited",
+            ref_id: "R1",
+            state: "corrected",
+            current_id: "new",
+            currency: "USD",
+            changes: [
+              { field: "amount_minor", label: "Amount", cited: "10000", current: "12500" },
+              {
+                field: "description",
+                label: "Description",
+                cited: "OLD",
+                current: "NEW",
+                reading: "Read by a model · not confirmed",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  })
+  setup("findings")
+  await screen.findByText("1 cited payment changed since cited")
+  fireEvent.click(screen.getByRole("button", { name: "Saved item 0" }))
+  const changes = screen.getByRole("region", { name: "Changes to cited evidence" })
+  expect(changes).toHaveTextContent("R1: Corrected by a later version")
+  expect(changes).toHaveTextContent("Amount: cited 100.00 USD, now 125.00 USD")
+  expect(changes).toHaveTextContent("cited OLD, now NEW (Read by a model · not confirmed)")
+  expect(screen.getByText("Open transaction R1")).toBeVisible()
 })
