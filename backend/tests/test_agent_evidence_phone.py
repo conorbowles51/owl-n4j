@@ -301,6 +301,7 @@ def apps(directory):  # noqa: F811
         p.simple("InstalledApplication", Identifier="com.apspy.app", Name="System Service")
         p.simple("InstalledApplication", Identifier="test.harmless.app", Name="Calculator")
         p.simple("InstalledApplication", Identifier="test.case.added", Name="Tracker")
+        p.simple("InstalledApplication", Name="An app with no identifier")
         p.notification("test.synthbank.mobile", "Synthetic Bank: a new payee was added to your account",
                        when=datetime(2023, 5, 1, 9, tzinfo=timezone.utc))
         p.notification("test.other.app", "Your game password was changed",
@@ -323,6 +324,7 @@ def test_a_listed_app_is_an_indicator_with_its_basis_and_the_limits_of_what_it_s
     assert "no person has reviewed" in item["basis"] and "stalkerware-indicators" in item["basis"]
     assert item["label"] == "Indicator, not a finding" and "who installed it" in item["limits"]
     assert "not a finding" in out["label"].lower()
+    assert out["coverage"].startswith("Compared 3 of the 4 installed-application records")  # one has no identifier
 
 
 def test_a_bank_control_notice_sits_in_the_same_lane_and_others_do_not(apps):

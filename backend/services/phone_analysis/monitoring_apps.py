@@ -167,7 +167,9 @@ def _installed(conn, case_id) -> tuple[list, dict]:
     records, coverage = [], {}
     for ext, label in phones.items():
         found = FV.field_values(conn, ext, ("InstalledApplication",), ("Identifier", "Name", "Version"))
-        coverage[ext] = dict(phone=label, apps_read=len(found))
+        coverage[ext] = dict(phone=label, apps_read=sum(1 for r in found.values() if r["values"].get("Identifier")),
+                             apps_on_phone=FV.type_counts(conn, ext, ("InstalledApplication",)).get(
+                                 "InstalledApplication", 0))
         times = FV.times_for(conn, ext, list(found))
         for uid, r in found.items():
             ident = (r["values"].get("Identifier") or [None])[0]
@@ -258,8 +260,12 @@ def indicators(conn, session, case_id, *, start=None, end=None) -> dict:
     for x in lane:
         del x["_at"]
     doc = load()
-    compared = ("Compared every installed application on %d phones (%d apps) with the list" % (
-        len(coverage), sum(c["apps_read"] for c in coverage.values()))) if listed else (
+    apps_read = sum(c["apps_read"] for c in coverage.values())
+    apps_on_phones = sum(c.get("apps_on_phone", c["apps_read"]) for c in coverage.values())
+    unread = apps_on_phones - apps_read
+    compared = ("Compared %d of the %d installed-application records on %d phones with the list%s" % (
+        apps_read, apps_on_phones, len(coverage),
+        " (%d carry no identifier, so they cannot be compared)" % unread if unread else "")) if listed else (
         "No monitoring-app list is installed and this case adds no identifier, so installed applications were not "
         "compared")
     return dict(label=LABEL, limits=LIMITS, list=dict(version=doc.get("version"), source=doc.get("source")),
