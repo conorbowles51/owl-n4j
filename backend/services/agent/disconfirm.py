@@ -52,6 +52,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable, Optional
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from services.agent.proposals import MAX_RECORD_CITATIONS, ProposalError, _uuid
@@ -61,7 +62,6 @@ log = logging.getLogger(__name__)
 SCHEMA = 'loupe.agent.disconfirm/1'
 OUTPUT_TYPE = 'disconfirm_sweep'
 PROPOSAL_TYPE = 'counter_argument'
-ACTIVE_STAGES = ('planning', 'reading')
 
 MAX_READ_CHARS = 30000      # one model call's candidates; a read of about 8 000 tokens (estimate, not measured)
 MAX_ITEM_CHARS = 1200       # the text of one candidate; the rest is one open away on the cited source
@@ -71,7 +71,7 @@ PAGE = 100
 PARALLEL_READS = 4
 READ_TIMEOUT = 420
 TICK_SECONDS = 2
-STALE_AFTER = 60            # a running sweep whose heartbeat is older than this was stopped by a restart
+STALE_AFTER = 90            # a sweep whose heartbeat is older than this was stopped by a restart; it beats every 10 s
 SLOW_READ_SECONDS = 180
 SURFACES = ('ledger', 'phones', 'documents', 'graph')
 NEED_KINDS = ('statement_period', 'account', 'phone', 'call_records')
@@ -428,13 +428,18 @@ class Tools:
         self.case_id = str(case_id)
         self.context = AgentToolContext(case_id=self.case_id)
         self.tools = {t.name: t for t in make_agent_tools(self.context)}
+        self.answers: dict = {}
 
     def call(self, name, **kwargs) -> dict:
-        out = self.tools[name].func(**kwargs)
-        self.context.result_store.clear()
-        if out.get('status') == 'error':
-            raise SearchFailed(str(out.get('error') or out.get('summary') or 'could not be read'))
-        return out.get('data') or {}
+        """Expectations share their words, so one plan asks the same thing many times: each is read once."""
+        key = (name, json.dumps(kwargs, sort_keys=True, default=str))
+        if key not in self.answers:
+            out = self.tools[name].func(**kwargs)
+            self.context.result_store.clear()
+            if out.get('status') == 'error':
+                raise SearchFailed(str(out.get('error') or out.get('summary') or 'could not be read'))
+            self.answers[key] = out.get('data') or {}
+        return self.answers[key]
 
 
 class SearchFailed(RuntimeError):
@@ -955,14 +960,18 @@ def plan(session, *, sweep_id, reader: Optional[Reader] = None, tools=None) -> d
                 raise ProposalError('Stopped by a person during the searches. No read was started.')
             content['step'] = f'Searching the case for expectation {i} of {len(expectations)}: {exp["claim"][:120]}'
             _save(session, item, content, progress=min(90, 5 + int(85 * (i - 1) / len(expectations))))
-            items, coverage = search_all(tools, exp, census, files)
+            items, coverage = _beating(session, item, content, lambda: search_all(tools, exp, census, files))
             candidates[exp['id']] = items
             content['searches'][exp['id']] = coverage
         content['step'] = 'Checking what the theory needs against the statements, phones and account leads'
         _save(session, item, content, progress=92)
-        content['absences'] = absences(session, tools, item.case_id, expectations, accounts, census,
-                                       f'{theory.title or ""} {theory.body or ""}')
-        session.rollback()
+        words = f'{theory.title or ""} {theory.body or ""}'
+
+        def lacks():
+            with Session(bind=session.get_bind()) as own:  # on its own thread, so its own session
+                return absences(own, tools, item_case, expectations, accounts, census, words)
+        item_case = item.case_id
+        content['absences'] = _beating(session, item, content, lacks)
         content['reads'] = split_reads(expectations, candidates)
         content['stage'] = 'planned'
         content['step'] = (f"Ready: {len(content['reads'])} model reads of "

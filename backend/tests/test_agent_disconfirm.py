@@ -275,6 +275,47 @@ def test_a_stop_during_the_searches_is_said(db):
     assert plan['job_status'] == 'failed' and 'Stopped by a person during the searches' in plan['error']
 
 
+def test_a_slow_search_keeps_the_heartbeat_going(db, monkeypatch):
+    """Live 5 Nov: a search of 60 s between heartbeats read as a restart, and the page said the service had stopped."""
+    import time
+    monkeypatch.setattr(D, 'TICK_SECONDS', 0.02)
+    beats = []
+    real = D._save
+
+    def counted(session, item, content, **fields):
+        beats.append(content.get('step'))
+        real(session, item, content, **fields)
+    monkeypatch.setattr(D, '_save', counted)
+    tools = FakeTools(db.info['doc'])
+    original = tools.call
+
+    def slow(name, **kw):
+        time.sleep(0.15)
+        return original(name, **kw)
+    tools.call = slow
+    made = D.create(db, case_id=db.info['case'].id, theory_id=db.info['theory'].id, requested_by=db.info['owner'])
+    D.plan(db, sweep_id=made['id'], reader=reader_of({}), tools=tools)
+    during = [b for b in beats if b and b.startswith('Searching the case for expectation 1')]
+    assert len(during) >= 3, 'the heartbeat stops while a search runs'
+
+
+def test_one_plan_asks_each_thing_once():
+    tools = D.Tools.__new__(D.Tools)
+    tools.answers, calls = {}, []
+
+    class Fake:
+        def func(self, **kw):
+            calls.append(kw)
+            return dict(data=dict(ok=True))
+
+    class Context:
+        result_store: dict = {}
+    tools.tools, tools.context = dict(t=Fake()), Context()
+    assert tools.call('t', query='a') == tools.call('t', query='a') == dict(ok=True)
+    tools.call('t', query='b')
+    assert len(calls) == 2
+
+
 def test_a_live_heartbeat_is_not_a_restart(db):
     plan = planned(db, reader_of({}))
     D.start(db, case_id=db.info['case'].id, sweep_id=plan['id'])
