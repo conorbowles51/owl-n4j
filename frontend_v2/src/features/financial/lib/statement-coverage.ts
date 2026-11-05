@@ -65,8 +65,7 @@ export type StatementCoverageAccount = z.infer<
 >["items"][number]
 
 /**
- * The Overview's statement coverage query (key and fetcher), shared by OverviewStatementCoverage and the start-up
- * prefetch (route-data.ts).
+ * The Overview's statement coverage query (key and fetcher), of OverviewStatementCoverage.
  */
 export function overviewCoverageQuery(caseId: string, offset: number) {
   return {

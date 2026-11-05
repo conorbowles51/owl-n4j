@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { FILE_PAGE_SIZE, foldersAPI, type FolderContentsParams } from "../folders.api"
 import type { EvidenceSort } from "../utils/preferences"
 
-/** The file list's page request for the list's state (FileListPanel and the start-up prefetch). */
+/** The file list's page request for the list's state (FileListPanel). */
 export function folderContentsParams(state: {
   filePage: number
   statusFilter: string
@@ -20,7 +20,6 @@ export function folderContentsParams(state: {
   }
 }
 
-/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
 export const folderContentsQuery = (
   caseId: string | undefined,
   folderId: string | null,

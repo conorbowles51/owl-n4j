@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { casesAPI } from "@/features/cases/api"
 
-/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
 export const caseProcessingProfileQuery = (caseId: string | undefined) => ({
   queryKey: ["case-processing-profile", caseId],
   queryFn: () => casesAPI.getProcessingProfile(caseId!),

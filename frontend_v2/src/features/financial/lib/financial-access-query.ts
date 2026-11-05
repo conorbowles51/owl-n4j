@@ -12,8 +12,7 @@ const accessSchema = lazySchema(() => z.object({
 type Owner = { id?: string | null; username?: string | null } | null | undefined
 
 /**
- * The case access check (key and fetcher), shared by FinancialAccessProvider and the start-up prefetch
- * (route-data.ts). Keyed on the signed-in person, so it is only built once the sign-in check has answered.
+ * The case access check (key and fetcher), of FinancialAccessProvider. Keyed on the signed-in person, so it is only built once the sign-in check has answered.
  */
 export function financialCaseAccessQuery(caseId: string | undefined, user: Owner) {
   const owner = user?.id || user?.username

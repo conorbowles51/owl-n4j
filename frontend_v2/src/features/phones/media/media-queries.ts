@@ -10,7 +10,7 @@ export const EVERY_PHONE = "*"
 
 /**
  * The grid's filter: the phone (or EVERY_PHONE), plus the thread, category and state chosen and, in `more`, only the
- * app, person and date filters that are set (MediaPage and the start-up prefetch, which share one cache entry).
+ * app, person and date filters that are set (MediaPage).
  */
 export function mediaFilter(caseId: string, extraction: string, thread: string | null, category: string, state: string,
   more: Pick<MediaFilter, "apps" | "participants" | "from_instant" | "to_instant" | "significant_only" | "has_position"> = {}): MediaFilter {
@@ -24,7 +24,6 @@ export function mediaFilter(caseId: string, extraction: string, thread: string |
   }
 }
 
-/** Keys and fetchers shared by MediaPage and the start-up prefetch (route-data.ts). */
 export const mediaIndexQuery = (filter: MediaFilter) => ({
   queryKey: ["phone-media-index", filter],
   queryFn: () => getMediaIndex(filter),

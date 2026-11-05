@@ -37,7 +37,6 @@ export function useFinancialVolume(caseId: string | undefined, mode: FinancialDa
   })
 }
 
-/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
 export const financialEntitiesQuery = (caseId: string | undefined) => ({
   queryKey: ["financial", "entities", caseId],
   queryFn: () => financialAPI.getEntities(caseId!),
@@ -47,7 +46,6 @@ export function useFinancialEntities(caseId: string | undefined) {
   return useQuery({ ...financialEntitiesQuery(caseId), enabled: !!caseId })
 }
 
-/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
 export const financialCategoriesQuery = (caseId: string | undefined, mode: FinancialDatasetMode = "transactions") => ({
   queryKey: ["financial", "categories", caseId, mode],
   queryFn: () => financialAPI.getCategories(caseId!, mode),

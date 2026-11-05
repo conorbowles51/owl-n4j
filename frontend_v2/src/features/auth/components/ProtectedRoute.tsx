@@ -3,7 +3,6 @@ import { useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuthStore } from "../hooks/use-auth"
 import { authAPI } from "../api"
-import { takeSignInCheck } from "../sign-in-check"
 import { Button } from "@/components/ui/button"
 import { ApiError } from "@/lib/api-client"
 
@@ -19,7 +18,8 @@ export function ProtectedRoute() {
     if (isAuthenticated && !user) {
       const token = localStorage.getItem("authToken")
       let active = true
-      ;(takeSignInCheck(token) ?? authAPI.me())
+      authAPI
+        .me()
         .then((u) => {
           if (active && localStorage.getItem("authToken") === token) setUser(u)
         })

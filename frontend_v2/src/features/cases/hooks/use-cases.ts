@@ -3,7 +3,6 @@ import { casesAPI } from "../api"
 import type { CaseListViewMode } from "../api"
 import type { CaseMetadataUpdate } from "@/types/case.types"
 
-/** Keys and fetchers shared by the hooks and the start-up prefetch (route-data.ts). */
 export const casesListQuery = (viewMode?: CaseListViewMode, includeArchived = false) => ({
   queryKey: ["cases", viewMode ?? "default", includeArchived],
   queryFn: () => casesAPI.list(viewMode, includeArchived),

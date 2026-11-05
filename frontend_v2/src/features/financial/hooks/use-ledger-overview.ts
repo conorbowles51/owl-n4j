@@ -13,8 +13,7 @@ import { figureKeys, orderOverviewPanels, type PanelFigure } from "../lib/overvi
 type OverviewScope = ReturnType<typeof useInvestigationScope>[0]
 
 /**
- * The Overview's headline figures query (key and fetcher), shared by the page's hook and the start-up prefetch
- * (route-data.ts), so a prefetched answer is the one the page reads.
+ * The Overview's headline figures query (key and fetcher), of the page's hook.
  */
 export function ledgerOverviewQuery(caseId: string, params: OverviewScope | null | undefined, categories: string[]) {
   return {
@@ -35,7 +34,7 @@ export function ledgerOverviewQuery(caseId: string, params: OverviewScope | null
   }
 }
 
-/** The Overview's lower panels query (key and fetcher), shared by the page's hook and the start-up prefetch. */
+/** The Overview's lower panels query (key and fetcher), of the page's hook. */
 export function ledgerOverviewPanelsQuery(caseId: string, params: OverviewScope | null | undefined, categories: string[]) {
   return {
     queryKey: ["financial-ledger", caseId, "overview-panel-figures", params ?? null, categories] as QueryKey,

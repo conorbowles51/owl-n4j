@@ -50,7 +50,6 @@ export function useJudgementRowMap(caseId: string | undefined) {
   })
 }
 
-/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
 export const judgementCountsQuery = (caseId: string) => ({
   queryKey: judgementKeys.counts(caseId),
   queryFn: () => judgementCounts(caseId),

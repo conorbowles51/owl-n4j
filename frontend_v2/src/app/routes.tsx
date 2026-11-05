@@ -2,7 +2,6 @@ import { Suspense } from "react"
 import { timedLazy as lazy } from "@/lib/timed-lazy"
 import { Routes, Route, Navigate } from "react-router-dom"
 import { PageLoading } from "./page-loading"
-import type { RouteDataLoader } from "@/lib/route-preload"
 import { LoginPage } from "@/features/auth/components/LoginPage"
 import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute"
 import { AppLayout } from "./layouts/AppLayout"
@@ -176,26 +175,14 @@ const AISettingsPage = lazy(() =>
   }))
 )
 
-// A page's first data, started at start-up alongside its code (lib/route-preload.ts, app/route-table.ts): each module
-// asks for the page's first requests with the page's own query keys and fetchers.
-const casesData: RouteDataLoader = () => import("@/features/cases/route-data")
-const financialData: RouteDataLoader = () => import("@/features/financial/route-data")
-const evidenceData: RouteDataLoader = () => import("@/features/evidence/route-data")
-const phonesData: RouteDataLoader = () => import("@/features/phones/route-data").then((m) => ({ prefetch: m.prefetchPhones }))
-const analysesData: RouteDataLoader = () => import("@/features/phones/route-data").then((m) => ({ prefetch: m.prefetchAnalyses }))
-const summaryData: RouteDataLoader = () => import("@/features/phones/route-data").then((m) => ({ prefetch: m.prefetchSummary }))
-const mediaData: RouteDataLoader = () => import("@/features/phones/route-data").then((m) => ({ prefetch: m.prefetchMedia }))
-const conversationsData: RouteDataLoader = () =>
-  import("@/features/phones/route-data").then((m) => ({ prefetch: m.prefetchConversations }))
-
-/** A route page behind the loading panel. `data` is read by the start-up prefetch, never at render. */
-function LazyPage({ children }: { children: React.ReactNode; data?: RouteDataLoader }) {
+/** A route page behind the loading panel. */
+function LazyPage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoading />}>{children}</Suspense>
 }
 
 /**
- * The app's route table. app/route-table.ts reads this same tree (react-router's matcher) to start the opened
- * page's code and first data before React renders, so AppRoutes must stay free of hooks.
+ * The app's route table. app/route-table.ts reads this same tree (react-router's matcher) to start a page's code
+ * when its link is pointed at, so AppRoutes must stay free of hooks.
  */
 export function AppRoutes() {
   return (
@@ -207,7 +194,7 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/cases" replace />} />
-          <Route path="/cases" element={<LazyPage data={casesData}><CaseManagementPage /></LazyPage>} />
+          <Route path="/cases" element={<LazyPage><CaseManagementPage /></LazyPage>} />
           <Route path="/triage" element={<LazyPage><TriagePage /></LazyPage>} />
 
           {/* Case routes */}
@@ -217,15 +204,15 @@ export function AppRoutes() {
             <Route path="timeline" element={<LazyPage><TimelinePage /></LazyPage>} />
             <Route path="map" element={<LazyPage><MapPage /></LazyPage>} />
             <Route path="table" element={<LazyPage><TablePage /></LazyPage>} />
-            <Route path="financial" element={<LazyPage data={financialData}><FinancialPage /></LazyPage>} />
+            <Route path="financial" element={<LazyPage><FinancialPage /></LazyPage>} />
             <Route path="cellebrite" element={<Navigate to="../phones" replace />} />
             <Route path="phones-prototype/:view?" element={<LazyPage><PhonePrototypePage /></LazyPage>} />
             <Route path="phone-review" element={<LazyPage><PhoneReviewPage /></LazyPage>} />
-            <Route path="conversations" element={<LazyPage data={conversationsData}><ConversationsPage /></LazyPage>} />
-            <Route path="phones" element={<LazyPage data={phonesData}><PhonesIndexPage /></LazyPage>} />
-            <Route path="phones/:extraction" element={<LazyPage data={summaryData}><PhoneSummaryPage /></LazyPage>} />
-            <Route path="phones/:extraction/records/conversations" element={<LazyPage data={conversationsData}><ConversationsPage /></LazyPage>} />
-            <Route path="phones/:extraction/records/media" element={<LazyPage data={mediaData}><MediaPage /></LazyPage>} />
+            <Route path="conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
+            <Route path="phones" element={<LazyPage><PhonesIndexPage /></LazyPage>} />
+            <Route path="phones/:extraction" element={<LazyPage><PhoneSummaryPage /></LazyPage>} />
+            <Route path="phones/:extraction/records/conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
+            <Route path="phones/:extraction/records/media" element={<LazyPage><MediaPage /></LazyPage>} />
             <Route path="phones/:extraction/records/media/spread" element={<LazyPage><MediaSpreadPage /></LazyPage>} />
             <Route path="phones/:extraction/records/:recordType" element={<LazyPage><PhoneRecordsRoute /></LazyPage>} />
             <Route path="records/:recordUid" element={<LazyPage><RecordByIdRoute /></LazyPage>} />
@@ -249,10 +236,10 @@ export function AppRoutes() {
             <Route path="phone-analyses/read-again" element={<LazyPage><ReparsePage /></LazyPage>} />
             <Route path="phone-analyses/messages" element={<LazyPage><MessagesAcrossPhonesPage /></LazyPage>} />
             <Route path="phone-analyses/incident-window" element={<LazyPage><IncidentWindowPage /></LazyPage>} />
-            <Route path="phone-analyses" element={<LazyPage data={analysesData}><AnalysesPage /></LazyPage>} />
+            <Route path="phone-analyses" element={<LazyPage><AnalysesPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
-            <Route path="evidence" element={<LazyPage data={evidenceData}><EvidenceExplorer /></LazyPage>} />
+            <Route path="evidence" element={<LazyPage><EvidenceExplorer /></LazyPage>} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
             <Route path="agent" element={<LazyPage><AgentPage /></LazyPage>} />
             <Route path="workspace" element={<LazyPage><WorkspacePage /></LazyPage>} />

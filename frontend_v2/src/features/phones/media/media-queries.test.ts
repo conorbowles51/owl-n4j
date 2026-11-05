@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { EVERY_PHONE, mediaFilter, NONE } from "./media-queries"
 
 describe("mediaFilter", () => {
-  it("stays the start-up prefetch's filter when no extra filter is set, so the page reuses that cache entry", () => {
+  it("keeps the bare filter when no extra filter is set", () => {
     expect(mediaFilter("c", "e", null, "", "", {})).toEqual(mediaFilter("c", "e", null, "", ""))
     expect(mediaFilter("c", "e", "t", "", "")).toEqual({ case_id: "c", phones: ["e"], thread_key: "t" })
   })

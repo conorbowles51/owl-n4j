@@ -11,7 +11,6 @@ export function useCollectTargets(caseId: string | undefined) {
   return useQuery({ ...collectTargetsQuery(caseId), enabled: !!caseId, staleTime: 30_000 })
 }
 
-/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
 export function collectTargetsQuery(caseId: string | undefined) {
   return {
     queryKey: ["collect-targets", caseId],

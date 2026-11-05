@@ -6,14 +6,8 @@ import { useSyncExternalStore } from "react"
  * ?<name>=off). It needs no release to flip, so a moderated session can turn it on for one participant's browser
  * only. Storage failures leave every switch off (07 4.2 item 13).
  */
-export type SwitchName = "phone-prototype" | OpenSwitch
-/**
- * A fresh page load's start-up steps (app/route-table.ts), each off until measured faster for people
- * (LX-ROUTEPRELOAD-STATUS.md E): send the sign-in check before rendering; start the page's first data when it
- * answers; start the page's code then, and a page's code when its sidebar link is pointed at.
- */
-export type OpenSwitch = "open-sign-in-first" | "open-data-first" | "open-code-first"
-const KNOWN: SwitchName[] = ["phone-prototype", "open-sign-in-first", "open-data-first", "open-code-first"]
+export type SwitchName = "phone-prototype"
+const KNOWN: SwitchName[] = ["phone-prototype"]
 const key = (name: SwitchName) => `loupe.switch.${name}`
 const listeners = new Set<() => void>()
 

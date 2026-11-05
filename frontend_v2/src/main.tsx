@@ -2,24 +2,16 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import "@/styles/globals.css"
 import App from "@/app/App"
-import { preloadCurrentRoute } from "@/app/route-table"
-import { startSignInCheck } from "@/features/auth/sign-in-check"
+import { appRouteTree } from "@/app/route-table"
 import { startBuildVersionGuard } from "@/lib/build-version"
-import { applySwitchesAtStart, isSwitchOn } from "@/lib/ui-switches"
+import { registerRouteTree } from "@/lib/route-preload"
+import { applySwitchesAtStart } from "@/lib/ui-switches"
 
 // Before routing: a redirect (e.g. /cases/:id to its workspace) drops the query, so ?phone-prototype=on is read here.
 applySwitchesAtStart()
 
-// Then, before anything else runs, each behind its switch (off until measured faster, lib/ui-switches.ts): the
-// sign-in check is sent, and the page being opened starts its first data and its code as soon as it answers,
-// instead of after the shell has rendered and the page's code has mounted (features/auth/sign-in-check.ts,
-// app/route-table.ts).
-preloadCurrentRoute(
-  window.location.pathname,
-  window.location.search,
-  isSwitchOn("open-sign-in-first") ? startSignInCheck() : null,
-  { data: isSwitchOn("open-data-first"), code: isSwitchOn("open-code-first") }
-)
+// Links start a page's code when pointed at (lib/route-preload.ts).
+registerRouteTree(appRouteTree)
 
 startBuildVersionGuard()
 

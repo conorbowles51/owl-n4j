@@ -8,7 +8,6 @@ export function useLedgerAccountDirectory(caseId: string | undefined) {
   return useQuery({ ...ledgerAccountDirectoryQuery(caseId), enabled: !!caseId })
 }
 
-/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
 export function ledgerAccountDirectoryQuery(caseId: string | undefined) {
   return {
     queryKey: ["financial-ledger", caseId, "account-filter-directory"],
