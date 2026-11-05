@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest"
 const api = vi.hoisted(() => ({ fetchAPI: vi.fn() }))
 vi.mock("@/lib/api-client", async (orig) => ({ ...(await orig<object>()), ...api }))
 
-import { MAX_FILE_BYTES, uploadFolderOrArchive } from "./resumable-upload-groups"
+import { uploadFingerprint } from "./resumable-upload"
+import { MAX_FILE_BYTES, resumeUploadGroup, uploadFolderOrArchive } from "./resumable-upload-groups"
+import { describeUploadProgress, type UploadProgress } from "./upload-progress"
 
 const fake = (name: string, size: number) => ({ name, size, slice: vi.fn(), webkitRelativePath: "" }) as unknown as File
 
@@ -75,5 +77,130 @@ describe("small files in batches", () => {
     expect(takeBatch(big).map((m: { id: string }) => m.id)).toEqual(["m-0"])
     expect(isBatchable(member(0, BATCH_FILE_BYTES))).toBe(true)
     expect(isBatchable(member(0, BATCH_FILE_BYTES + 1))).toBe(false)
+  })
+})
+
+describe("picking a folder again", () => {
+  const SAVED = 5000
+  const LEFT = 30
+  const sha = (seed: number) => seed.toString(16).padStart(64, "0")
+  type Picked = File & { slice: ReturnType<typeof vi.fn> }
+  const picked = (i: number, lastModified = 1000): Picked => {
+    const bytes = `file ${i}`
+    return {
+      name: `${i}.bin`,
+      size: bytes.length,
+      lastModified,
+      webkitRelativePath: `r/${i}.bin`,
+      slice: vi.fn(() => new Blob([bytes])),
+    } as unknown as Picked
+  }
+  const hashOf = async (file: File) => (await uploadFingerprint(file)).sha256
+  const selection = async (
+    files: Picked[],
+    { saved, modified = 1000 }: { saved: number; modified?: number | null },
+  ) => {
+    const members = await Promise.all(
+      files.map(async (file, i) => ({
+        id: `m-${i}`, path: file.webkitRelativePath, size: file.size, sha256: await hashOf(file),
+        chunk_size: 4 * 1024 * 1024, received: [], status: i < saved ? "staged" : "uploading", modified,
+      })),
+    )
+    for (const file of files) file.slice.mockClear()
+    return {
+      id: "g-1", case_id: "case-1", folder_id: null, name: "r", kind: "folder", status: "uploading",
+      replace_existing: false, file_count: files.length, staged_count: saved, size: 1, received_bytes: 0, receipt: null,
+      members,
+    }
+  }
+  /** Answers as the server does and stops at the first send: what was read before it is what is measured. */
+  const server = (group: Awaited<ReturnType<typeof selection>>) => {
+    api.fetchAPI.mockReset()
+    api.fetchAPI.mockImplementation(async (url: string, init?: { method?: string; body?: BodyInit }) => {
+      if (url.startsWith("/api/evidence-upload-groups?")) return [group]
+      if (url === "/api/evidence-upload-groups/g-1" && !init) return group
+      if (url === "/api/evidence-upload-groups" && init?.method === "POST") throw new Error("started a new selection")
+      if (init?.method === "PUT") throw new Error("first send")
+      throw new Error(`unexpected ${url}`)
+    })
+  }
+  const reads = (files: Picked[]) => files.filter((file) => file.slice.mock.calls.length).length
+  const firstSend = (files: Picked[], seen: UploadProgress[] = []) =>
+    uploadFolderOrArchive("case-1", files, { isFolder: true, onProgress: (p) => seen.push(p) })
+
+  it("reads only the files still to send and says what it matched and on what", async () => {
+    const files = Array.from({ length: SAVED + LEFT }, (_, i) => picked(i))
+    server(await selection(files, { saved: SAVED }))
+    const seen: UploadProgress[] = []
+    await expect(firstSend(files, seen)).rejects.toThrow()
+    expect(reads(files)).toBe(LEFT)
+    expect(reads(files.slice(0, SAVED))).toBe(0)
+    const checking = seen.find((p) => p.phase === "hashing")!
+    expect(checking.filesTotal).toBe(LEFT)
+    expect(describeUploadProgress(checking, 0)).toContain(
+      "5,000 saved files matched by name, size and modified time. Checking files before upload: 0 of 30",
+    )
+    const sending = seen.find((p) => p.phase === "sending")!
+    expect(sending.filesDone).toBe(SAVED)
+    expect(describeUploadProgress(sending, 0)).toContain(
+      "5,000 saved files matched by name, size and modified time, not read again.",
+    )
+  })
+
+  it("matches a selection begun before modified times were kept on name and size, and says only that", async () => {
+    const files = Array.from({ length: 12 }, (_, i) => picked(i, 5000 + i))
+    server(await selection(files, { saved: 10, modified: null }))
+    const seen: UploadProgress[] = []
+    await expect(firstSend(files, seen)).rejects.toThrow()
+    expect(reads(files)).toBe(2)
+    expect(describeUploadProgress(seen.find((p) => p.phase === "sending")!, 0)).toContain(
+      "10 saved files matched by name and size, not read again.",
+    )
+  })
+
+  it("reads a saved file whose modified time moved, and carries on when its bytes are the same", async () => {
+    const files = Array.from({ length: 4 }, (_, i) => picked(i))
+    const group = await selection(files, { saved: 3 })
+    group.members[1].modified = 999
+    server(group)
+    await expect(firstSend(files)).rejects.toThrow("first send")
+    expect(files.map((file) => file.slice.mock.calls.length > 0)).toEqual([false, true, false, true])
+  })
+
+  it("starts a new selection when a saved file with a moved time holds other bytes, reading each file once", async () => {
+    const files = Array.from({ length: 4 }, (_, i) => picked(i))
+    const group = await selection(files, { saved: 3 })
+    group.members[1].modified = 999
+    group.members[1].sha256 = sha(1)
+    server(group)
+    await expect(firstSend(files)).rejects.toThrow("started a new selection")
+    for (const file of files) expect(file.slice).toHaveBeenCalledTimes(1)
+  })
+
+  it("reads nothing against a selection the folder cannot be: a file of another size", async () => {
+    const files = Array.from({ length: 4 }, (_, i) => picked(i))
+    const group = await selection(files, { saved: 3 })
+    group.members[2].size += 1
+    server(group)
+    await expect(firstSend(files)).rejects.toThrow("started a new selection")
+    const body = api.fetchAPI.mock.calls.find(([url, init]) => url === "/api/evidence-upload-groups" && init?.method)
+    expect(body?.[1].body.members.map((m: { modified: number }) => m.modified)).toEqual([1000, 1000, 1000, 1000])
+  })
+
+  it("the Reselect path reads a chosen saved file that no longer matches and refuses it when its bytes differ", async () => {
+    const files = Array.from({ length: 3 }, (_, i) => picked(i))
+    const group = await selection(files, { saved: 2 })
+    group.members[0].modified = 999
+    group.members[0].sha256 = sha(1)
+    server(group)
+    await expect(resumeUploadGroup("g-1", files)).rejects.toThrow("The original file r/0.bin is missing or has changed.")
+    expect(files.map((file) => file.slice.mock.calls.length > 0)).toEqual([true, false, true])
+  })
+
+  it("the Reselect path needs no saved file in the selection and reads only the files still to send", async () => {
+    const files = Array.from({ length: 3 }, (_, i) => picked(i))
+    server(await selection(files, { saved: 2 }))
+    await expect(resumeUploadGroup("g-1", files.slice(2))).rejects.toThrow("first send")
+    expect(reads(files)).toBe(1)
   })
 })

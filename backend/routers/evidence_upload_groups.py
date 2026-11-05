@@ -52,6 +52,9 @@ class Member(BaseModel):
     size: int = Field(ge=0, le=8 * 1024**3)
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
     chunks: list[str] = Field(max_length=2048)
+    # The file's modified time when it was fingerprinted (ms since 1970, as the browser reports it). A later pick of
+    # the same folder reads a saved file again only when this differs; selections begun before it was kept have none.
+    modified: int | None = None
 
 
 class StartGroup(BaseModel):
@@ -108,8 +111,9 @@ def members(db, group):
 
 def snapshot(db, group, *, include_members=True):
     rows = members(db, group)
-    paths = {str(uuid5(group.id, m['path'])): m['path'] for m in group.manifest}
-    states = [dict(**uploads.snapshot(row), path=paths[str(row.id)]) for row in rows]
+    manifest = {str(uuid5(group.id, m['path'])): m for m in group.manifest}
+    states = [dict(**uploads.snapshot(row), path=manifest[str(row.id)]['path'],
+                   modified=manifest[str(row.id)].get('modified')) for row in rows]
     received = sum(min(row['chunk_size'], row['size'] - index * row['chunk_size'])
         for row in states for index in row['received'])
     result = dict(id=str(group.id), case_id=str(group.case_id), name=group.name,
@@ -175,7 +179,7 @@ def start_group(body: StartGroup, user: User = Depends(get_current_db_user), db:
         folder = db.get(EvidenceFolder, body.folder_id)
         if folder is None or folder.case_id != body.case_id:
             raise HTTPException(404, 'Destination folder not found')
-    manifest = sorted([member.model_dump() for member in body.members], key=lambda m: m['path'])
+    manifest = sorted([member.model_dump(exclude_none=True) for member in body.members], key=lambda m: m['path'])
     seen = set()
     for member in manifest:
         path = safe_path(member['path'])

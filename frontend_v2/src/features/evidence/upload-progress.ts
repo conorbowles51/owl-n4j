@@ -4,6 +4,14 @@
  */
 export type UploadPhase = "hashing" | "sending" | "registering"
 
+/** Saved files a resumed selection matched without reading them. ``byTime``: the modified time matched too (a selection
+ * begun before it was kept has only name and size to go on). */
+export interface MatchedFiles {
+  files: number
+  bytes: number
+  byTime: boolean
+}
+
 export interface UploadProgress {
   phase: UploadPhase
   filesDone: number
@@ -18,6 +26,8 @@ export interface UploadProgress {
   fit?: FileCostFit
   /** While registering: the server's step (checking each file, looking for phone reports, saving the rows). */
   registrationPhase?: "starting" | "checking" | "phones" | "saving" | "queueing"
+  /** A resumed selection: what it did not read again. */
+  matched?: MatchedFiles
 }
 
 /**
@@ -96,13 +106,27 @@ export function secondsLeft(p: UploadProgress, now: number): number | null {
   return Math.max(0, p.bytesTotal - p.bytesDone) / rate
 }
 
+/** The sentence a resumed selection owes the reader: how many files were not read, and on what they were matched. */
+export function matchedWords(m: MatchedFiles) {
+  return `${matchedFiles(m)}, not read again.`
+}
+
+/** While the files still to send are read the selection may yet prove another one (a file's fingerprint differs), and
+ * then the matched files are read too: until it is settled the words do not say they will not be. */
+function matchedFiles(m: MatchedFiles) {
+  const files = m.files === 1 ? "1 saved file" : `${n(m.files)} saved files`
+  return `${files} matched by ${m.byTime ? "name, size and modified time" : "name and size"}`
+}
+
 export function describeUploadProgress(p: UploadProgress, now: number): string {
   const left = secondsLeft(p, now)
   const time = left === null ? FIRST_RUN_INLINE : formatTimeLeft(left)
+  const lead = p.matched?.files ? `${matchedWords(p.matched)} ` : ""
+  const before = p.matched?.files ? `${matchedFiles(p.matched)}. ` : ""
   if (p.phase === "hashing")
     return p.filesTotal > 1
-      ? `Checking files before upload: ${n(p.filesDone)} of ${n(p.filesTotal)}, ${time}`
-      : `Checking the file before upload: ${formatBytesOf(p.bytesDone, p.bytesTotal)}, ${time}`
+      ? `${before}Checking files before upload: ${n(p.filesDone)} of ${n(p.filesTotal)}, ${time}`
+      : `${before}Checking the file before upload: ${formatBytesOf(p.bytesDone, p.bytesTotal)}, ${time}`
   if (p.phase === "sending") {
     const again =
       p.kind === "folder"
@@ -110,7 +134,7 @@ export function describeUploadProgress(p: UploadProgress, now: number): string {
         : p.kind === "archive"
           ? "choose the same file again to continue"
           : "choose the same files again to continue"
-    return `Sending ${formatBytesOf(p.bytesDone, p.bytesTotal)}, ${time}. If this tab closes, ${again}.`
+    return `${lead}Sending ${formatBytesOf(p.bytesDone, p.bytesTotal)}, ${time}. If this tab closes, ${again}.`
   }
   return describeRegistration(p)
 }

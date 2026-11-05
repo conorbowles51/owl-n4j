@@ -1,6 +1,6 @@
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import type { EvidenceUploadOptions, UploadResponse } from "./api"
-import { addFileCost, type UploadProgress } from "./upload-progress"
+import { addFileCost, matchedWords, type MatchedFiles, type UploadProgress } from "./upload-progress"
 import {
   randomUUID,
   setLocalUploadPaused,
@@ -22,7 +22,7 @@ export interface UploadGroup {
   staged_count: number
   size: number
   received_bytes: number
-  members?: (UploadSession & { path: string })[]
+  members?: Member[]
   receipt: { file_ids: string[]; job_ids: string[]; message: string } | null
   /** While the server registers the selection (it answers ``complete`` before it is done for a large one). */
   registration?: Registration
@@ -73,7 +73,8 @@ export const BATCH_MAX_FILES = 500
 export const BATCH_MAX_BYTES = 4 * 1024 * 1024
 const STAGED = new Set(["staged", "completed"])
 
-type Member = UploadSession & { path: string }
+/** ``modified``: the file's modified time when it was fingerprinted; a selection begun before it was kept has none. */
+type Member = UploadSession & { path: string; modified?: number | null }
 export const isBatchable = (member: Member) =>
   member.size <= BATCH_FILE_BYTES && member.size <= member.chunk_size
 
@@ -185,13 +186,80 @@ export async function pauseUploadGroup(id: string) {
   }
 }
 
+const isSaved = (member: Member) => STAGED.has(member.status)
+
+/** A member the server holds and verified, and a chosen file that is the same one by name and size, with the same
+ * modified time where the selection kept it. Only such a file goes without being read: the member keeps the hash its
+ * bytes were saved and verified with, and this file gets no hash at all. A file with another modified time is read. */
+const matchesSaved = (member: Member, file: File) =>
+  isSaved(member) &&
+  file.size === member.size &&
+  (member.modified == null || member.modified === file.lastModified)
+
+/** What a pick of ``files`` needs against a selection's members: the saved ones it matches without reading them, and
+ * those that must be read (the files still to send, and any saved file that no longer matches). */
+function planResume(members: Member[], files: File[], kind: UploadGroup["kind"]) {
+  const byPath = new Map(members.map((member) => [member.path, member]))
+  const matched: MatchedFiles = { files: 0, bytes: 0, byTime: true }
+  const toRead: File[] = []
+  for (const file of files) {
+    const member = byPath.get(relativePath(file, kind))
+    if (member && matchesSaved(member, file)) {
+      matched.files++
+      matched.bytes += member.size
+      if (member.modified == null) matched.byTime = false
+    } else toRead.push(file)
+  }
+  return { byPath, matched, toRead }
+}
+
+type Fingerprint = Awaited<ReturnType<typeof uploadFingerprint>>
+
+/** Reads ``files`` once each into ``read`` (path to fingerprint), telling ``onProgress`` how far it has come. */
+async function readFiles(
+  files: File[],
+  kind: UploadGroup["kind"],
+  read: Map<string, Fingerprint>,
+  onProgress?: (progress: UploadProgress) => void,
+  matched?: MatchedFiles
+) {
+  if (!files.length) return
+  const hashed: UploadProgress = {
+    phase: "hashing",
+    filesDone: 0,
+    filesTotal: files.length,
+    bytesDone: 0,
+    bytesTotal: files.reduce((sum, file) => sum + file.size, 0),
+    startedAt: Date.now(),
+    bytesAtStart: 0,
+    kind,
+    matched,
+  }
+  onProgress?.({ ...hashed })
+  for (const file of files) {
+    const began = performance.now()
+    read.set(
+      relativePath(file, kind),
+      await uploadFingerprint(file, (bytes) => {
+        hashed.bytesDone += bytes
+        onProgress?.({ ...hashed })
+      })
+    )
+    hashed.fit = addFileCost(hashed.fit, file.size, (performance.now() - began) / 1000)
+    hashed.filesDone++
+    onProgress?.({ ...hashed })
+  }
+}
+
 /** ``verified``: path to SHA-256 of files the caller fingerprinted in this same selection and matched against this
- *  group's members; those are not read a second time. */
+ *  group's members; those are not read a second time. ``matched``: the saved files the caller matched without
+ *  reading them. */
 export async function resumeUploadGroup(
   id: string,
   files?: File[],
   onProgress?: (progress: UploadProgress) => void,
-  verified?: ReadonlyMap<string, string>
+  verified?: ReadonlyMap<string, string>,
+  matched?: MatchedFiles
 ): Promise<UploadGroup> {
   const checkSession = uploadSessionGuard()
   const state = await fetchAPI<UploadGroup>(`${endpoint}/${id}`)
@@ -204,41 +272,46 @@ export async function resumeUploadGroup(
     setPaused(attached, false)
     return attached.promise
   }
-  const needed = (state.members || []).filter(
-    (m) => m.status !== "staged" && m.status !== "completed"
-  )
-  if (needed.length) {
-    if (!files?.length)
-      throw new Error(
-        "Reselect the original files, folder or archive. Uploaded files and chunks are already saved."
-      )
-    const selected = new Map(
-      files.map((file) => [relativePath(file, state.kind), file])
+  const members = state.members || []
+  const needed = members.filter((member) => !isSaved(member))
+  const plan = planResume(members, files || [], state.kind)
+  if (needed.length && !files?.length)
+    throw new Error(
+      "Reselect the original files, folder or archive. Uploaded files and chunks are already saved."
     )
-    // Validate the remaining selection before resuming any bytes. Already
-    // verified members can be absent: they do not have to be uploaded again.
-    for (const member of needed) {
-      const file = selected.get(member.path)
-      if (
-        !file ||
-        file.size !== member.size ||
-        (verified?.get(member.path) ?? (await uploadFingerprint(file)).sha256) !== member.sha256
-      )
-        throw new Error(
-          `The original file ${member.path} is missing or has changed. Saved upload data has not changed.`
-        )
-    }
-  }
+  const shown = matched ?? (files?.length && !verified ? plan.matched : undefined)
+  // Validate the remaining selection before resuming any bytes. Already verified members can be absent: they do not
+  // have to be uploaded again. A saved file that was chosen and no longer matches is read like the rest.
+  const selected = new Map((files || []).map((file) => [relativePath(file, state.kind), file]))
+  const changed = (member: Member) =>
+    new Error(`The original file ${member.path} is missing or has changed. Saved upload data has not changed.`)
+  const toCheck = members.filter((member) => {
+    const file = selected.get(member.path)
+    return !(isSaved(member) && (!file || matchesSaved(member, file)))
+  })
+  for (const member of toCheck)
+    if (selected.get(member.path)?.size !== member.size) throw changed(member)
+  const read = new Map<string, Fingerprint>()
+  await readFiles(
+    toCheck.filter((member) => !verified?.has(member.path)).map((member) => selected.get(member.path)!),
+    state.kind,
+    read,
+    onProgress,
+    shown
+  )
+  for (const member of toCheck)
+    if ((verified?.get(member.path) ?? read.get(member.path)?.sha256) !== member.sha256) throw changed(member)
   checkSession()
   if (state.status === "paused")
     await fetchAPI(`${endpoint}/${id}/resume`, { method: "POST" })
-  return runGroup(state, files || [], onProgress)
+  return runGroup(state, files || [], onProgress, shown)
 }
 
 function runGroup(
   state: UploadGroup,
   files: File[],
-  onProgress?: (progress: UploadProgress) => void
+  onProgress?: (progress: UploadProgress) => void,
+  matched?: MatchedFiles
 ) {
   const checkSession = uploadSessionGuard()
   const prior = active.get(state.id)
@@ -265,13 +338,14 @@ function runGroup(
       startedAt: Date.now(),
       bytesAtStart: state.received_bytes,
       kind: state.kind,
+      matched,
     }
-    onProgress?.({ ...sent })
     const queue = (state.members || []).filter((member) => {
-      if (member.status !== "staged" && member.status !== "completed") return true
+      if (!isSaved(member)) return true
       sent.filesDone++
       return false
     })
+    onProgress?.({ ...sent })
     // Small files of one part go many to a request; larger files go in resumable chunks as before.
     const small = queue.filter((member) => isBatchable(member))
     const large = queue.filter((member) => !isBatchable(member))
@@ -461,61 +535,61 @@ export async function uploadFolderOrArchive(
   if (tooLarge) throw new Error(tooLargeMessage(tooLarge, options.isArchive && !selectionKind))
   const kind = selectionKind || (options.isArchive ? "archive" : "folder")
   const onProgress = options.onProgress
-  const hashed: UploadProgress = {
-    phase: "hashing",
-    filesDone: 0,
-    filesTotal: files.length,
-    bytesDone: 0,
-    bytesTotal: files.reduce((sum, file) => sum + file.size, 0),
-    startedAt: Date.now(),
-    bytesAtStart: 0,
-    kind,
-  }
-  onProgress?.({ ...hashed })
-  const manifest = []
-  for (const file of files) {
-    const began = performance.now()
-    manifest.push({
-      path: relativePath(file, kind),
-      size: file.size,
-      ...(await uploadFingerprint(file, (bytes) => {
-        hashed.bytesDone += bytes
-        onProgress?.({ ...hashed })
-      })),
-    })
-    hashed.fit = addFileCost(hashed.fit, file.size, (performance.now() - began) / 1000)
-    hashed.filesDone++
-    onProgress?.({ ...hashed })
-  }
   const name =
     kind === "files"
       ? `Selected files (${files.length})`
       : kind === "archive"
         ? files[0].name
         : relativePath(files[0], kind).split("/")[0]
-  const pending = await listUploadGroups(caseId)
+  const sameSelection = (groups: UploadGroup[]) =>
+    groups.filter(
+      (group) =>
+        group.kind === kind &&
+        group.name === name &&
+        group.folder_id === (options.folderId || null) &&
+        !group.replace_existing &&
+        group.file_count === files.length
+    )
+  const fetchGroup = (id: string) => fetchAPI<UploadGroup>(`${endpoint}/${id}`)
+  const read = new Map<string, Fingerprint>()
+  const unread = (list: File[]) => list.filter((file) => !read.has(relativePath(file, kind)))
   let prior: UploadGroup | undefined
-  for (const candidate of pending.filter(
-    (group) =>
-      group.kind === kind &&
-      group.name === name &&
-      group.folder_id === (options.folderId || null) &&
-      !group.replace_existing &&
-      group.file_count === files.length
-  )) {
-    const full = await fetchAPI<UploadGroup>(`${endpoint}/${candidate.id}`)
-    if (
-      manifest.every((item) =>
-        full.members?.some(
-          (m) =>
-            m.path === item.path &&
-            m.sha256 === item.sha256 &&
-            m.size === item.size
-        )
-      )
-    ) {
+  let matched: MatchedFiles | undefined
+  // Carrying on a selection: its saved files are matched by name and size before anything is read (a fresh page read
+  // every file of a phone folder first: 5 h 52 min on 81,820 files, 54,018 of them already saved and verified). Only
+  // the files still to send are read, and they must be the ones this selection was fingerprinted from.
+  for (const candidate of sameSelection(await listUploadGroups(caseId))) {
+    const full = await fetchGroup(candidate.id)
+    const plan = planResume(full.members || [], files, kind)
+    const member = (file: File) => plan.byPath.get(relativePath(file, kind))
+    if (!files.every((file) => member(file)?.size === file.size)) continue
+    await readFiles(unread(plan.toRead), kind, read, onProgress, plan.matched)
+    if (plan.toRead.every((file) => read.get(relativePath(file, kind))?.sha256 === member(file)?.sha256)) {
       prior = full
+      matched = plan.matched
       break
+    }
+  }
+  let manifest: (Fingerprint & { path: string; size: number; modified: number })[] = []
+  if (!prior) {
+    await readFiles(unread(files), kind, read, onProgress)
+    manifest = files.map((file) => {
+      const path = relativePath(file, kind)
+      return { path, size: file.size, modified: file.lastModified, ...read.get(path)! }
+    })
+    // Every file is read now, so a selection begun meanwhile (another tab) is known by its fingerprints.
+    for (const candidate of sameSelection(await listUploadGroups(caseId))) {
+      const full = await fetchGroup(candidate.id)
+      const members = new Map((full.members || []).map((member) => [member.path, member]))
+      if (
+        manifest.every((item) => {
+          const member = members.get(item.path)
+          return member?.sha256 === item.sha256 && member?.size === item.size
+        })
+      ) {
+        prior = full
+        break
+      }
     }
   }
   checkSession()
@@ -536,8 +610,14 @@ export async function uploadFolderOrArchive(
     }))
   checkSession()
   const result = prior
-    ? // every file was fingerprinted above and matched this group's members: do not read them all again
-      await resumeUploadGroup(group.id, files, onProgress, new Map(manifest.map((item) => [item.path, item.sha256])))
+    ? // the files read above matched this group's members: do not read them again
+      await resumeUploadGroup(
+        group.id,
+        files,
+        onProgress,
+        new Map([...read].map(([path, fingerprint]) => [path, fingerprint.sha256])),
+        matched
+      )
     : await runGroup(group, files, onProgress)
   if (!result.receipt)
     throw new Error(
@@ -549,6 +629,6 @@ export async function uploadFolderOrArchive(
     files: [],
     file_ids: result.receipt.file_ids,
     job_ids: result.receipt.job_ids,
-    message: result.receipt.message,
+    message: matched?.files ? `${result.receipt.message} ${matchedWords(matched)}` : result.receipt.message,
   }
 }

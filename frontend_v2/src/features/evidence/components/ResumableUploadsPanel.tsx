@@ -21,6 +21,12 @@ import {
   resumeUploadGroup,
   type UploadGroup,
 } from "../resumable-upload-groups"
+import {
+  describeUploadProgress,
+  matchedWords,
+  type MatchedFiles,
+  type UploadProgress,
+} from "../upload-progress"
 import { toast } from "sonner"
 
 const megabytes = (bytes: number) =>
@@ -31,6 +37,7 @@ function GroupRow({ group }: { group: UploadGroup }) {
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [step, setStep] = useState("")
   const client = useQueryClient()
   const attached = hasLocalUploadGroup(group.id)
   const completing = isCompletingUploadGroup(group.id)
@@ -53,13 +60,24 @@ function GroupRow({ group }: { group: UploadGroup }) {
     setError("")
     setBusy(true)
     try {
-      const result = await resumeUploadGroup(group.id, files)
-      toast.success(result.receipt?.message || "Upload complete")
+      let matched: MatchedFiles | undefined
+      let shown = 0
+      const onProgress = (progress: UploadProgress) => {
+        matched = progress.matched
+        const now = Date.now()
+        if (now - shown < 500) return
+        shown = now
+        setStep(describeUploadProgress(progress, now))
+      }
+      const result = await resumeUploadGroup(group.id, files, onProgress)
+      const message = result.receipt?.message || "Upload complete"
+      toast.success(matched?.files ? `${message} ${matchedWords(matched)}` : message)
       refresh()
     } catch (cause) {
       setError((cause as Error).message)
     } finally {
       setBusy(false)
+      setStep("")
     }
   }
   return (
@@ -106,6 +124,11 @@ function GroupRow({ group }: { group: UploadGroup }) {
           ? "The archive is unpacked after upload."
           : "Files appear in Evidence when the complete selection is registered."}
       </p>
+      {step && (
+        <p role="status" className="text-xs break-words">
+          {step}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-xs text-destructive break-words">
           {error}

@@ -127,6 +127,19 @@ def test_partial_folder_pause_return_and_lost_receipt_keep_paths_and_one_registr
     assert f.client.get('/api/evidence-upload-groups', params={'case_id': str(f.case)}).json() == []
 
 
+def test_a_files_modified_time_is_kept_with_its_selection_and_a_selection_without_one_reads_as_none(groups):
+    f = groups
+    state, body = start(f, {'Bundle/a.txt': b'a' * 40, 'Bundle/b.txt': b'b' * 40})
+    assert [member['modified'] for member in state['members']] == [None, None]
+    body = dict(body, id=str(uuid4()), members=[dict(member, modified=1793906993123 + i)
+                                                for i, member in enumerate(body['members'])])
+    response = f.client.post('/api/evidence-upload-groups', json=body)
+    assert response.status_code == 200, response.text
+    assert [member['modified'] for member in response.json()['members']] == [1793906993123, 1793906993124]
+    assert [member['modified'] for member in f.client.get(
+        f"/api/evidence-upload-groups/{body['id']}").json()['members']] == [1793906993123, 1793906993124]
+
+
 def test_final_registration_failure_rolls_back_and_same_named_later_upload_preserves_original_bytes(groups, monkeypatch):
     f = groups
     content = {'Folder/one.txt': b'original', 'Folder/two.txt': b'other'}
