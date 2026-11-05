@@ -102,7 +102,7 @@ class RegenerabilityTests(unittest.TestCase):
             env=environment,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=600,  # hang guard: the import alone passed 120 s at load 62-77; nothing asserts wall time
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(
