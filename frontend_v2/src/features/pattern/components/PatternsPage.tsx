@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
 import { patternAPI, type Snapshot, type Subject, type SubjectList } from "../api"
 import { Lanes } from "./Lanes"
-import { errorWords, laneRowsOf, setApartWords, snapshotView, usualLast } from "../lanes-lib"
+import { errorWords, laneRowsOf, setApartWords, snapshotView, stillReading, usualLast } from "../lanes-lib"
 import { StatementCheckPanel } from "./StatementCheckPanel"
 import { KeepResult } from "./CollectBar"
 import { KeyDatesBar } from "./KeyDates"
@@ -27,6 +27,8 @@ export const VIEWS = [
   { id: "check", label: "Check a statement" },
 ] as const
 type ViewId = (typeof VIEWS)[number]["id"]
+
+const SUBJECTS_POLL_MS = 30_000
 
 function subjectKey(s: Subject) {
   return s.kind === "extraction" ? `e:${s.extraction_id}` : `d:${s.dossier_id}`
@@ -53,6 +55,15 @@ function lastDay(list: SubjectList | undefined, s: Subject | null): string {
   return days.pop() || new Date().toISOString().slice(0, 10)
 }
 
+/** Words for a subject none of whose phones has a dated event, so the views can only open on today. */
+function noDaysWords(list: SubjectList | undefined, s: Subject | null): string | null {
+  const mine = phonesOf(list, s)
+  if (!mine.length || mine.some((e) => usualLast(e))) return null
+  return stillReading({ ...list!, extractions: mine })
+    ? "This phone is still being read, so its dates are not known yet. The views show today until it is read, then move to its last day."
+    : "This phone has no dated activity, so the views open on today. Any date can be chosen."
+}
+
 function snapshotSubject(s: Snapshot | undefined): Subject | null {
   const subj = s?.snapshot.subject
   return subj && (subj.kind === "extraction" || subj.kind === "dossier") ? subj : null
@@ -61,7 +72,8 @@ function snapshotSubject(s: Snapshot | undefined): Subject | null {
 export function PatternsPage() {
   const { id: caseId = "" } = useParams()
   const [params, setParams] = useSearchParams()
-  const subjects = useQuery({ queryKey: ["pattern-subjects", caseId], queryFn: () => patternAPI.subjects(caseId) })
+  const subjects = useQuery({ queryKey: ["pattern-subjects", caseId], queryFn: () => patternAPI.subjects(caseId),
+    refetchInterval: (q) => (stillReading(q.state.data) ? SUBJECTS_POLL_MS : false) })
   // Saved links (lx-collect phone-links.ts): ?check=<evaluation id> opens that statement check; ?analysis=<kind>&
   // snapshot=<id> opens that frozen result. The subject and view come from what was saved unless the address names them.
   const checkId = params.get("check")
@@ -108,6 +120,7 @@ export function PatternsPage() {
       {phonesOf(subjects.data, subject).map((e) => setApartWords(e.label, e.usual_span)).filter(Boolean).map((w) => (
         <p key={w} className="text-xs text-muted-foreground">{w}</p>
       ))}
+      {noDaysWords(subjects.data, subject) && <p className="text-xs text-muted-foreground">{noDaysWords(subjects.data, subject)}</p>}
       <KeyDatesBar caseId={caseId} />
       <nav aria-label="Pattern views" className="flex flex-wrap gap-1">
         {VIEWS.map((v) => (
@@ -132,7 +145,7 @@ export function PatternsPage() {
           initial={/^\d{4}-\d{2}-\d{2}$/.test(params.get("day") ?? "") ? params.get("day")! : last(subject)} />
       )}
       {!opening && subject && subjects.data && view === "grid" && <GridView caseId={caseId} subject={subject} last={last(subject)} />}
-      {!opening && subject && subjects.data && view === "places" && <PlacesView key={subjectKey(subject)} caseId={caseId} subject={subject} last={last(subject)} />}
+      {!opening && subject && subjects.data && view === "places" && <PlacesView key={`${subjectKey(subject)}:${last(subject)}`} caseId={caseId} subject={subject} last={last(subject)} />}
       {!opening && subject && view === "places" && <TextPlaces caseId={caseId} extractionIds={phonesOf(subjects.data, subject).map((e) => e.extraction_id)} />}
       {!opening && subject && view === "together" && subjects.data && <TogetherView caseId={caseId} subject={subject} list={subjects.data} />}
       {!opening && subject && view === "check" && <StatementCheckPanel caseId={caseId} subject={subject}

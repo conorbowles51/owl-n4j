@@ -100,6 +100,11 @@ export function usualLast(p: { last: string | null; usual_span?: { last: string 
   return p?.usual_span?.last || (p?.last ? p.last.slice(0, 10) : null)
 }
 
+/** Whether a phone's days can still arrive: a phone being read has no last day yet, so the list is asked again. */
+export function stillReading(list: { extractions: { projection_status: string }[] } | undefined): boolean {
+  return !!list?.extractions.some((e) => ["waiting", "not_interpreted", "building"].includes(e.projection_status))
+}
+
 /** Words for the events a phone holds on dates set apart from the rest, or null when there are none. */
 export function setApartWords(label: string, span: { first: string | null; last: string | null; set_apart: number;
   set_apart_first: string | null; set_apart_last: string | null } | null | undefined): string | null {

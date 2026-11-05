@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { patternAPI, type PlacesResponse, type RoutineResponse, type SubjectList } from "./api"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { PatternsPage, PlacesView } from "./components/PatternsPage"
+import { stillReading } from "./lanes-lib"
 import { TogetherView } from "./components/PlacesViews"
 
 // MapLibre needs WebGL; the map's layers are checked in places-geo.test.ts. Here the map is a stand-in that shows
@@ -41,6 +42,32 @@ function wrap(node: React.ReactNode) {
 }
 
 describe("Places over time", () => {
+  it("moves to the phone's own last days when a phone still being read finishes, and says why it showed today", async () => {
+    const reading = { extraction_id: "e1", label: "Phone 8", first: null, last: null, usual_span: null, projection_status: "building" }
+    const read = { ...reading, last: "2024-04-26T04:11:15+00:00", projection_status: "ready" }
+    const list = (e: unknown) => ({ extractions: [e], dossiers: [], total_extractions: 1, total_dossiers: 0 }) as unknown as SubjectList
+    const subjects = vi.spyOn(patternAPI, "subjects").mockResolvedValue(list(reading))
+    vi.spyOn(patternAPI, "keyDates").mockResolvedValue({ items: [] } as never)
+    const places = vi.spyOn(patternAPI, "places").mockResolvedValue({ ...body, total: 0, returned: 0, next_cursor: null, observations: [], positions_no_time: 0 })
+    vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
+    vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: 2, days_scored: 0, label: "x", flagged: [] })
+    const client = new QueryClient()
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/cases/c/phone-patterns?view=places&subject=e:e1"]}><Routes>
+      <Route path="/cases/:id/phone-patterns" element={<PatternsPage />} /></Routes></MemoryRouter></QueryClientProvider>)
+    expect(await screen.findByText(/still being read/)).toBeTruthy()
+    subjects.mockResolvedValue(list(read))
+    await client.invalidateQueries({ queryKey: ["pattern-subjects"] })
+    await waitFor(() => expect(places.mock.lastCall?.slice(2, 4)).toEqual(["2024-04-20T00:00:00Z", "2024-04-27T00:00:00Z"]))
+    expect(screen.queryByText(/still being read/)).toBeNull()
+    vi.restoreAllMocks()
+  })
+
+  it("asks for the list of phones again only while one is still being read", () => {
+    const list = (projection_status: string) => ({ extractions: [{ projection_status }] }) as unknown as SubjectList
+    expect(["waiting", "not_interpreted", "building"].every((s) => stillReading(list(s)))).toBe(true)
+    expect(stillReading(list("ready")) || stillReading(list("failed")) || stillReading(undefined)).toBe(false)
+  })
+
   it("opens on the phone's own last days on a direct link, not on today, once the list of phones is in", async () => {
     let answer: (v: SubjectList) => void = () => undefined
     vi.spyOn(patternAPI, "subjects").mockReturnValue(new Promise<SubjectList>((ok) => { answer = ok }))
