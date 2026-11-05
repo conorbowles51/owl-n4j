@@ -11,6 +11,16 @@ from services import job_status_subscriber as module
 from services.job_status_subscriber import JobStatusSubscriber
 
 
+def setUpModule():
+    # Off PostgreSQL there is no advisory lock to take: these doubles have no database behind them.
+    @contextmanager
+    def claimed(_merge_id):
+        yield True
+    patcher = patch.object(module, "_merge_claim", claimed)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class _Clock:
     def __init__(self):
         self.now = 1000.0
@@ -138,7 +148,7 @@ class RecoverInFlightTests(unittest.IsolatedAsyncioTestCase):
             MagicMock(all=MagicMock(return_value=merges)),
         ]
         rows = {row.id: row for row in files + merges}
-        self.db.get.side_effect = lambda model, row_id: rows.get(row_id)
+        self.db.get.side_effect = lambda model, row_id, **options: rows.get(row_id)
         self.open_sessions = 0
 
         @contextmanager
@@ -301,3 +311,148 @@ class QuietSweepMissingJobTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TwoBackendsSettleOneJobOnceTests(unittest.IsolatedAsyncioTestCase):
+    """A second backend watches the same engine jobs as the first (its start recovers every job in flight); both hear
+    the one terminal message. The side effects of settling must happen once."""
+
+    @staticmethod
+    def _db(rows):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = rows.get("merge")
+        return db
+
+    async def _settle_from_two_backends(self, db, job_id, status, detail=None):
+        @contextmanager
+        def session():
+            yield db
+        first, second = JobStatusSubscriber(), JobStatusSubscriber()
+        for subscriber in (first, second):
+            subscriber._pubsub = AsyncMock()
+            subscriber._tracked[job_id] = "case-1"
+        message = {"job_id": job_id, "status": status}
+        with patch("postgres.session.get_background_session", session), \
+                patch("services.evidence_engine_client.get_job", AsyncMock(return_value=detail or {})):
+            await first._settle(job_id, message, status)
+            await second._settle(job_id, message, status)
+        self.assertNotIn(job_id, first._tracked)
+        self.assertNotIn(job_id, second._tracked)
+
+    async def test_a_merge_is_completed_once_by_two_backends(self):
+        merge = _merge("merge-1")
+        db = self._db({"merge": merge})
+        calls = []
+
+        def complete(subscriber, db_, row, data, status, case_id):
+            calls.append(row)
+            row.status = "completed"
+
+        with patch.object(JobStatusSubscriber, "_handle_merge_completion", complete):
+            await self._settle_from_two_backends(db, "merge-1", "completed")
+        self.assertEqual(len(calls), 1)
+
+    async def test_a_file_gets_one_completed_line_from_two_backends(self):
+        file = SimpleNamespace(id="file-1", case_id="case-1", original_filename="a.pdf", status="processing",
+                               summary=None, entity_count=None, relationship_count=None)
+        db = self._db({})
+        extras = []
+        db.scalars.return_value.all.side_effect = lambda: list(extras)
+
+        def processed(db_, ids, error=None):
+            file.status = "failed" if error else "processed"
+
+        with patch("services.evidence_db_storage.EvidenceDBStorage.find_by_engine_job_id", return_value=file), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed", processed), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.add_log",
+                      lambda db_, **line: extras.append(line["extra"])):
+            await self._settle_from_two_backends(db, "file-job", "completed", {"entity_count": 3})
+        self.assertEqual(extras, [{"engine_job_id": "file-job"}])
+
+    async def test_the_log_line_is_written_when_the_jobs_poll_settled_the_row_first(self):
+        file = SimpleNamespace(id="file-4", case_id="case-1", original_filename="d.pdf", status="processed",
+                               summary="from the poll", entity_count=3, relationship_count=1)
+        db = self._db({})
+        db.scalars.return_value.all.side_effect = lambda: []
+        lines = []
+        with patch("services.evidence_db_storage.EvidenceDBStorage.find_by_engine_job_id", return_value=file), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed") as written, \
+                patch("services.evidence_db_storage.EvidenceDBStorage.add_log",
+                      lambda db_, **line: lines.append(line["message"])):
+            @contextmanager
+            def session():
+                yield db
+            with patch("postgres.session.get_background_session", session):
+                JobStatusSubscriber()._write_terminal("file-job-4", {}, {"entity_count": 3}, "completed", "case-1")
+        written.assert_not_called()
+        self.assertEqual(file.summary, "from the poll")
+        self.assertEqual(len(lines), 1)
+
+    async def test_a_merge_another_backend_is_settling_is_left_to_it(self):
+        merge = _merge("merge-2")
+        db = self._db({"merge": merge})
+
+        @contextmanager
+        def taken(_merge_id):
+            yield False
+
+        with patch.object(module, "_merge_claim", taken), \
+                patch.object(JobStatusSubscriber, "_handle_merge_completion") as handle:
+            settled = JobStatusSubscriber()._settle_merge(db, merge, {}, "completed", "case-1")
+        self.assertFalse(settled)
+        handle.assert_not_called()
+
+    async def test_recovery_leaves_a_row_held_elsewhere_and_watches_it(self):
+        file = SimpleNamespace(id="file-5", engine_job_id="job-5", status="processing")
+        db = MagicMock()
+        # The plain read finds the row; the locked read skips it.
+        db.get.side_effect = lambda model, row_id, **options: None if options else file
+
+        @contextmanager
+        def session():
+            yield db
+
+        with patch("postgres.session.get_background_session", session):
+            subscribe = JobStatusSubscriber()._apply_in_flight(
+                [("file", "file-5", "job-5", "case-1", {"status": "completed"}, None)])
+        self.assertEqual(subscribe, [("job-5", "case-1", None)])
+
+    async def test_recovery_commits_each_row_before_locking_the_next(self):
+        rows = {i: SimpleNamespace(id=i, engine_job_id=f"job-{i}", status="processing", summary=None) for i in (1, 2)}
+        db = MagicMock()
+        order = []
+        db.get.side_effect = lambda model, row_id, **options: (order.append("lock") if options else None, rows[row_id])[1]
+        db.commit.side_effect = lambda: order.append("commit")
+
+        @contextmanager
+        def session():
+            yield db
+
+        with patch("postgres.session.get_background_session", session), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed"):
+            JobStatusSubscriber()._apply_in_flight(
+                [("file", i, f"job-{i}", "case-1", {"status": "completed"}, None) for i in rows])
+        first, second = [i for i, step in enumerate(order) if step == "lock"]
+        self.assertIn("commit", order[first:second])
+
+    async def test_a_failed_file_whose_job_completes_is_still_written(self):
+        # What settled means must not swallow a state that disagrees with the row.
+        file = SimpleNamespace(id="file-2", case_id="case-1", original_filename="b.pdf", status="failed",
+                               summary=None, entity_count=None, relationship_count=None)
+        written = []
+        with patch("services.evidence_db_storage.EvidenceDBStorage.find_by_engine_job_id", return_value=file), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed",
+                      lambda db_, ids, error=None: written.append(ids)), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.add_log", lambda db_, **line: None):
+            await self._settle_from_two_backends(self._db({}), "file-job-2", "completed")
+        self.assertEqual(len(written), 2)  # no row state to read in this double: each backend still tries
+
+    async def test_a_new_transcript_of_a_published_file_is_not_taken_for_settled(self):
+        file = SimpleNamespace(id="file-3", case_id="case-1", original_filename="c.mp3", status="processed",
+                               summary=None, entity_count=None, relationship_count=None)
+        synced = []
+        with patch("services.evidence_db_storage.EvidenceDBStorage.find_by_engine_job_id", return_value=file), \
+                patch("services.evidence_job_sync._sync_db_record_from_job", lambda *a, **k: synced.append(a)), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.add_log", lambda db_, **line: None):
+            await self._settle_from_two_backends(self._db({}), "audio-job", "completed", {"job_type": "audio_review"})
+        self.assertTrue(synced)

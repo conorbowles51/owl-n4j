@@ -6,6 +6,7 @@ Replaces the old _track_engine_jobs() polling daemon thread.
 """
 
 import asyncio
+from contextlib import contextmanager
 import json
 import logging
 import time
@@ -87,6 +88,53 @@ def _merged_entity_key(payload: dict) -> str | None:
     return None
 
 
+# The row states that already record each terminal state. A state that disagrees is still written, as before: a file
+# marked failed (the reaper, a lost engine) whose job then completes becomes processed.
+_FILE_SETTLED = {"completed": ("processed",), "failed": ("failed",)}
+_MERGE_SETTLED = {"completed": ("completed", "partial"), "failed": ("failed",)}
+
+
+def _already_settled(row_status, engine_status, settled) -> bool:
+    return row_status in settled.get(engine_status, ())
+
+
+def _log_once(db, row, job_id, level, message):
+    """The file's line for this engine job, unless a backend wrote it first (the caller holds the row's lock)."""
+    from sqlalchemy import select
+    from postgres.models.evidence import IngestionLog
+    from services.evidence_db_storage import EvidenceDBStorage
+    extras = db.scalars(select(IngestionLog.extra).where(IngestionLog.evidence_file_id == row.id,
+                                                         IngestionLog.message == message)).all()
+    if any((extra or {}).get("engine_job_id") == job_id for extra in extras):
+        return
+    EvidenceDBStorage.add_log(db, case_id=row.case_id, evidence_file_id=row.id, filename=row.original_filename,
+                              level=level, message=message, extra={"engine_job_id": job_id})
+
+
+@contextmanager
+def _merge_claim(merge_id):
+    """True while this process settles the merge. A session-level advisory lock on a connection of its own: settling
+    commits as it goes (each source entity archived), which ends any row lock while the row is still 'processing'.
+    Closing the connection releases it, if this worker dies mid-way."""
+    from sqlalchemy import text
+    from postgres.session import _get_background_engine
+    engine = _get_background_engine()
+    if engine.dialect.name != "postgresql":
+        yield True
+        return
+    key = "hashtextextended('loupe.merge_job:' || CAST(:id AS text), 0)"
+    with engine.connect() as connection:
+        held = False
+        try:
+            held = bool(connection.execute(text(f"SELECT pg_try_advisory_lock({key})"), dict(id=str(merge_id))).scalar())
+            connection.commit()
+            yield held
+        finally:
+            if held:
+                connection.execute(text(f"SELECT pg_advisory_unlock({key})"), dict(id=str(merge_id)))
+                connection.commit()
+
+
 class JobStatusSubscriber:
     """
     Async background task that subscribes to Redis channels for active
@@ -137,6 +185,10 @@ class JobStatusSubscriber:
             channel = f"job:{jid}:progress"
             await self._pubsub.subscribe(channel)
             logger.debug("Subscribed to %s", channel)
+
+    async def recover_after_handover(self):
+        """A release ran this backend beside the old one: pick up what the old one started after this one's start."""
+        await self._recover_in_flight()
 
     async def _recover_in_flight(self):
         """On startup, find EvidenceFiles and MergeJobs stuck in 'processing'
@@ -214,26 +266,44 @@ class JobStatusSubscriber:
             # A job of a file or case in Deleted items still lands on its row, so a restore shows the true state.
             db.info[SHOW_DELETED] = True
             for kind, row_id, jid, case_id, job, error in answers:
-                row = db.get(EvidenceFile if kind == "file" else MergeJob, row_id)
+                model = EvidenceFile if kind == "file" else MergeJob
+                row = db.get(model, row_id)
                 if row is None or row.status != "processing" or row.engine_job_id != jid:
                     continue  # changed while the engine was asked; its own path settles it
+                terminal = job is not None and job.get("status", "") in ("completed", "failed")
+                if terminal or (error is not None and _engine_job_missing(error)):
+                    # This row is about to be written. One row at a time, never waiting while holding another: a row
+                    # held elsewhere (a save, the other workers and backends recovering the same rows) is left to the
+                    # quiet sweep, and the commit below ends this row's lock before the next one.
+                    db.commit()
+                    row = db.get(model, row_id, with_for_update=dict(skip_locked=True), populate_existing=True)
+                    if row is None:
+                        to_subscribe.append((jid, case_id, None))
+                        continue
+                    if row.status != "processing" or row.engine_job_id != jid:
+                        db.rollback()
+                        continue
                 if error is not None:
                     if not _engine_job_missing(error):
                         to_subscribe.append((jid, case_id, error))
                     elif kind == "file":
                         self._fail_missing_file(db, row)
                         logger.info("Engine no longer has job %s; file marked failed", jid)
-                    else:
-                        self._handle_merge_completion(db, row, _missing_job(jid), "failed", case_id)
+                        db.commit()
+                    elif self._settle_merge(db, row, _missing_job(jid), "failed", case_id):
                         logger.info("Engine no longer has merge job %s; merge marked failed", jid)
+                    else:
+                        to_subscribe.append((jid, case_id, None))
                     continue
                 engine_status = job.get("status", "")
                 if engine_status not in ("completed", "failed"):
                     to_subscribe.append((jid, case_id, None))
                     continue
                 if kind == "merge":
-                    self._handle_merge_completion(db, row, job, engine_status, case_id)
-                    logger.info("Recovered merge job %s: %s", jid, engine_status)
+                    if self._settle_merge(db, row, job, engine_status, case_id):
+                        logger.info("Recovered merge job %s: %s", jid, engine_status)
+                    else:
+                        to_subscribe.append((jid, case_id, None))
                     continue
                 if job.get('job_type') == 'audio_review' or (job.get('pipeline_state') or {}).get('transcript_revision_id'):
                     from services.evidence_job_sync import _sync_db_record_from_job
@@ -259,6 +329,7 @@ class JobStatusSubscriber:
                             ef.entity_count = ec
                         if rc is not None:
                             ef.relationship_count = rc
+                db.commit()
                 logger.info("Recovered job %s: %s", jid, engine_status)
             db.commit()
         return to_subscribe
@@ -431,8 +502,7 @@ class JobStatusSubscriber:
                 MergeJob.engine_job_id == job_id
             ).first()
             if merge_job:
-                self._handle_merge_completion(db, merge_job, job_detail, status, case_id)
-                return True
+                return self._settle_merge(db, merge_job, job_detail, status, case_id)
 
             db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
             if not db_rec:
@@ -440,12 +510,21 @@ class JobStatusSubscriber:
                 # No matching row will ever exist — drop the subscription.
                 return True
 
+            db.refresh(db_rec, with_for_update=True)
+            audio = job_detail.get('job_type') == 'audio_review' or bool(
+                (job_detail.get('pipeline_state') or {}).get('transcript_revision_id'))
+            # Every worker of every backend may watch the same job (the recovery at start subscribes to all of them),
+            # and the jobs poll settles the row too: the row's lock decides, and whoever comes second leaves the row
+            # alone. Its log line is still written once. Audio stays out: a new transcript of a published file
+            # finishes with the row already 'processed'.
+            settled = not audio and _already_settled(db_rec.status, status, _FILE_SETTLED)
+
             err = _failure_reason(data, _MISSING_FILE_REASON) if status == "failed" else None
             from services.evidence_job_sync import _sync_db_record_from_job
-            if job_detail.get('job_type') == 'audio_review' or (job_detail.get('pipeline_state') or {}).get('transcript_revision_id'):
+            if audio:
                 _sync_db_record_from_job(db_rec, {**job_detail, 'id': job_id, 'status': status,
                     **({'error_message': err} if err else {})}, db=db)
-            else:
+            elif not settled:
                 EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
                 if status == 'completed':
                     for field in ('transcription', 'transcription_segments'):
@@ -457,37 +536,38 @@ class JobStatusSubscriber:
                     filename=db_rec.original_filename, level='info',
                     message=f'Transcript ready for review: {db_rec.original_filename}. Graph processing has not started.')
             elif status == "completed":
-                doc_summary = job_detail.get("document_summary")
-                if doc_summary:
-                    db_rec.summary = doc_summary
-
                 entity_count = job_detail.get("entity_count")
                 rel_count = job_detail.get("relationship_count")
-                if entity_count is not None:
-                    db_rec.entity_count = entity_count
-                if rel_count is not None:
-                    db_rec.relationship_count = rel_count
+                if not settled:
+                    doc_summary = job_detail.get("document_summary")
+                    if doc_summary:
+                        db_rec.summary = doc_summary
+                    if entity_count is not None:
+                        db_rec.entity_count = entity_count
+                    if rel_count is not None:
+                        db_rec.relationship_count = rel_count
 
-                EvidenceDBStorage.add_log(
-                    db,
-                    case_id=db_rec.case_id,
-                    evidence_file_id=db_rec.id,
-                    filename=db_rec.original_filename,
-                    level="info",
-                    message=f"Completed: {db_rec.original_filename} ({entity_count or 0} entities, {rel_count or 0} relationships)",
-                )
+                _log_once(db, db_rec, job_id, "info",
+                          f"Completed: {db_rec.original_filename} ({entity_count or 0} entities, {rel_count or 0} relationships)")
             else:
-                EvidenceDBStorage.add_log(
-                    db,
-                    case_id=db_rec.case_id,
-                    evidence_file_id=db_rec.id,
-                    filename=db_rec.original_filename,
-                    level="error",
-                    message=f"Failed: {db_rec.original_filename}: {err or 'Unknown error'}",
-                )
+                _log_once(db, db_rec, job_id, "error", f"Failed: {db_rec.original_filename}: {err or 'Unknown error'}")
 
             db.commit()
             logger.info("Synced job %s → %s", job_id, status)
+            return True
+
+    def _settle_merge(self, db, merge_job, data: dict, status: str, case_id: str | None) -> bool:
+        """Once, whichever worker of whichever backend gets here. False: another is settling it now; the quiet sweep
+        looks again and finds it settled."""
+        with _merge_claim(merge_job.id) as claimed:
+            if not claimed:
+                db.rollback()
+                return False
+            db.refresh(merge_job)
+            if _already_settled(merge_job.status, status, _MERGE_SETTLED):
+                db.rollback()
+                return True
+            self._handle_merge_completion(db, merge_job, data, status, case_id)
             return True
 
     def _handle_merge_completion(self, db, merge_job, data: dict, status: str, case_id: str | None):

@@ -171,6 +171,11 @@ async def lifespan(app: FastAPI):
     from services.casebin_purge import run_purge_forever
     casebin_purge_task = asyncio.create_task(run_purge_forever(), name="deleted-items-purge")
 
+    # Jobs the old backend started after this one's start are recovered once it has stopped (services.backend_handover).
+    from services.backend_handover import after_old_backend_stopped
+    handover_task = asyncio.create_task(after_old_backend_stopped(job_subscriber.recover_after_handover),
+                                        name="backend-handover-recovery")
+
     # The application loaded so far lives as long as the process: keep it out
     # of every later garbage-collector pass (services.process_memory).
     from services.process_memory import freeze_startup_objects
@@ -186,7 +191,7 @@ async def lifespan(app: FastAPI):
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, address_lookup_task, phone_interpretation_task, financial_batches_task,
          view_warmup_task, view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task,
-         casebin_purge_task],
+         casebin_purge_task, handover_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 
@@ -399,12 +404,18 @@ async def health():
         "nodes": node_count,
         "evidence_engine": evidence_engine_status,
         **_started_commit(),
+        "process": _process_identity(),
     }
 
 
 def _started_commit():
     from services.runtime_version import started_commit
     return started_commit()
+
+
+def _process_identity():
+    from services.backend_handover import process_identity
+    return process_identity()
 
 
 if __name__ == "__main__":
