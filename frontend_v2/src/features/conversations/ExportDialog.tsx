@@ -119,7 +119,10 @@ export function ExportDialog(props: {
             {preview.data && (
               <figure className="flex flex-col gap-1">
                 <img src={`data:image/png;base64,${preview.data.image}`} alt={`First page of the PDF: ${preview.data.text}`} className="max-h-96 w-fit rounded border object-contain object-top" data-testid="export-preview" />
-                <figcaption className="text-muted-foreground">Page 1, drawn as the export will draw it. The export id and time are set when the PDF is made.</figcaption>
+                <figcaption className="text-muted-foreground">
+                  Page 1, drawn as the export will draw it. The export id, the time and the page count are set when the PDF is made.
+                  {includeSensitive ? " Sensitive fields are never drawn in a preview; the PDF will print them." : ""}
+                </figcaption>
               </figure>
             )}
           </div>

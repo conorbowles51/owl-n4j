@@ -235,8 +235,11 @@ def build_html(*, title, case_name, generated, export_id, contains, days, partic
     cover.append("</ul>")
     body = cover + review_html + body
     page_css = "A4" if page == "a4" else "letter"
+    css = CSS % {"page": page_css, "chain": FAMILY_CHAIN}
+    if clipped:  # how many pages the PDF runs to is known only when all of it is laid out
+        css = css.replace(' " of " counter(pages)', "")
     doc = ("<!doctype html><html><head><meta charset='utf-8'><style>%s\n%s</style></head><body>%s</body></html>"
-           % (font_faces(), CSS % {"page": page_css, "chain": FAMILY_CHAIN}, "".join(body)))
+           % (font_faces(), css, "".join(body)))
     return doc, missing
 
 
@@ -315,6 +318,9 @@ def build_sections_html(*, title, case_name, generated, export_id, sections, pag
             body.append("<tr><td>%s</td><td>%s</td></tr>" % (token, "{:,}".format(k)))
         body.append("</table>")
     page_css = "A4" if page == "a4" else "letter"
+    css = CSS % {"page": page_css, "chain": FAMILY_CHAIN}
+    if clipped:  # how many pages the PDF runs to is known only when all of it is laid out
+        css = css.replace(' " of " counter(pages)', "")
     doc = ("<!doctype html><html><head><meta charset='utf-8'><style>%s\n%s</style></head><body>%s</body></html>"
-           % (font_faces(), CSS % {"page": page_css, "chain": FAMILY_CHAIN}, "".join(body)))
+           % (font_faces(), css, "".join(body)))
     return doc, missing

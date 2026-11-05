@@ -83,3 +83,27 @@ describe("Record panel: the captured record in full (05 section 17.1)", () => {
     expect(document.body.textContent).not.toMatch(/—/)
   })
 })
+
+describe("Record panel: copies from another source (02 decision 39)", () => {
+  const show = (over: object) =>
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <RecordDetailView detail={{ ...detail, ...over } as RecordDetail} caseId="case-1" />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+
+  it("marks a copy and says it is not a second source", () => {
+    show({ is_copy: true, copy_of: { record_uid: "o", model_type: "VisitedPage", title: "owner" }, state: { ...detail.state, source_index: "2" } })
+    expect(screen.getByTestId("record-copy")).toHaveTextContent("A copy from another source (source index 2)")
+    expect(screen.getByTestId("record-copy")).toHaveTextContent("it is not a second source of the same fact")
+  })
+
+  it("lists an owner's copies, and marks nothing on a record with none", () => {
+    show({ is_copy: false, related_copies: [{ record_uid: "c", model_type: "VisitedPage", title: "VisitedPage a", source_index: "3" }] })
+    expect(screen.getByRole("heading", { name: "Copies from another source (1)" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "VisitedPage a, source index 3" })).toBeInTheDocument()
+    expect(screen.queryByTestId("record-copy")).toBeNull()
+  })
+})

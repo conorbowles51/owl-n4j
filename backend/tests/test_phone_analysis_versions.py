@@ -14,14 +14,14 @@ import inspect
 from services.phone_analysis.approaches import BUILT
 
 RECORDED = {
-    "money_signals": ("1a.2", "aee34a2699bbb0f2"),
+    "money_signals": ("1a.3", "53fb4a35cf1c7682"),
     "message_reconciliation": ("2.3", "a53b042ce1e90307"),
     "deletion_timeline": ("3.3", "24a4e51aa9a12535"),
-    "relationships": ("11.2", "d2415dadbd83d048"),
+    "relationships": ("11.2", "3f16eaa4ddbdc0c1"),
     "awareness": ("4.2-aware", "6fa3a12d0cdd5709"),
     "device_users": ("5.4-graded-use", "7b73667105388270"),
     "typed_words": ("7.3", "e323b05b2b998e4a"),
-    "intent": ("9.3", "1eb9c37ead0b9301"),
+    "intent": ("9.4", "fea034deb1e463be"),
     "common_contacts": ("14.1", "46ee93fe71781001"),
     "reparse_comparison": ("17.3-3", "d48da93ea48deb92"),
     "contact_matrix": ("15.1", "49cad534aa52a2bf"),

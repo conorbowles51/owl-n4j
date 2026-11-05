@@ -436,7 +436,9 @@ PREVIEW_DPI = 110
 def preview(engine, case_id, user_id, source, filter_body, options) -> dict:
     """The first page of the PDF this export would make (07 J-14 step 4, test E-8): the same rows, the same cover and the
     same formatter as ``draw``, nothing stored and nothing queued. Only the first rows are laid out, so a long export
-    previews in the time one page takes; the cover's counts still come from every row."""
+    previews in the time one page takes; the cover's counts still come from every row. Sensitive values stay out of a
+    preview even when the export will print them: a preview leaves no record, and a value is shown only on the record of
+    a Reveal or of the export (05 section 3.8, 03 section 3.10)."""
     import fitz
 
     from services.phone.exports import pdf
@@ -446,6 +448,7 @@ def preview(engine, case_id, user_id, source, filter_body, options) -> dict:
     if source not in ("stream", "timeline_lens") and not f.selection:
         raise ExportError("A %s is exported through the selection of its phone records." % source.replace("_", " "))
     stored = json.loads(f.model_dump_json())
+    options = {k: v for k, v in (options or {}).items() if k != "include_sensitive"}
     with engine.connect() as conn:
         who = conn.execute(text("SELECT c.title AS case_title, u.name AS who FROM cases c LEFT JOIN users u ON u.id = :u "
                                 "WHERE c.id = :c"), {"c": str(case_id), "u": str(user_id)}).one()

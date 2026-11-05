@@ -30,7 +30,7 @@ from services.phone_analysis import fields as FV
 from services.phone_analysis import vocabulary as V
 
 CODE = "intent"
-VERSION = "9.3"  # 9.3: case entities, ledger amounts and places; 9.2: investigator terms
+VERSION = "9.4"  # 9.4: a copy from another source repeating its owner is one hit (02 decision 39); 9.3: case entities, ledger amounts and places; 9.2: investigator terms
 PARAMETERS: dict = {}
 KINDS = ("search_hit", "page_hit")
 SUPPORTS = ("vocabulary_match", "searched_at", "last_visited")

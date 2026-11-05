@@ -43,7 +43,7 @@ from services.phone_analysis import money_parse as P
 
 log = logging.getLogger(__name__)
 CODE = "money_signals"
-VERSION = "1a.2"
+VERSION = "1a.3"  # 1a.3: a copy from another source repeating its owner is one reading (02 decision 39)
 # the pairing strengths (05 4.3.8) live in money_pairings: a change there is a change of this approach
 VERSION_SOURCES = ("money_pairings",)
 PARAMETERS = {

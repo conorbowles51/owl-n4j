@@ -204,13 +204,14 @@ def _cells(conn, rows, model_type, cols, zone):
     for t in conn.execute(text(
             "SELECT record_uid, field_path, value_index, instant, local_wall_time, instant_basis FROM pv_time WHERE "
             "record_uid = ANY(CAST(:u AS uuid[]))"), {"u": uids}):
-        times[(str(t.record_uid), t.field_path, t.value_index)] = t
+        # a nested record's path carries its place in its parent; the cell is read by the field's own name
+        times[(str(t.record_uid), t.field_path.rsplit(".", 1)[-1], t.value_index)] = t
     fixed = {}
     for c in conn.execute(text(
             "SELECT record_uid, field_path, value_index, machine_text, corrected_text FROM phone_value_corrections "
             "WHERE record_uid = ANY(CAST(:u AS uuid[])) AND superseded_by_id IS NULL AND corrected_text IS DISTINCT "
             "FROM machine_text"), {"u": uids}):
-        fixed[(str(c.record_uid), c.field_path, c.value_index)] = c
+        fixed[(str(c.record_uid), c.field_path.rsplit(".", 1)[-1], c.value_index)] = c
     children, wanted_uids = {}, set()
     out = {}
     for r in rows:
