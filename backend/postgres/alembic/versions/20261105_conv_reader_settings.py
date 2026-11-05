@@ -12,7 +12,7 @@ for it, readers do not; the release pauses that work first.
 from alembic import op
 
 revision = "20261105_conv_reader_settings"
-down_revision = "20261104_phone_original_bundles"
+down_revision = "20261105_pv_identity_seen"
 branch_labels = None
 depends_on = None
 
