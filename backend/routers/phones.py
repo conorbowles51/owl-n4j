@@ -2366,6 +2366,26 @@ def person_linked_identities(case_id: UUID = Query(...), key: str = Query(..., m
             "accounts": len(others) - numbers}
 
 
+@router.get("/people/{dossier_id}/phones")
+def person_on_the_phones(dossier_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    """A dossier's "On the phones" panel (03 10.2, 07 XF-5): every count equals the Conversations total it opens."""
+    from services.phone import people
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return people.dossier_phones(db.connection(), case_id, dossier_id)
+    except people.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/scope-presets")
+def scope_presets(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Who a scope can start from (07 4.5): each linked person's own phones and the phones they appear on."""
+    from services.phone import people
+    authorize_case(db, case_id, user, ("case", "view"))
+    return people.scope_presets(db.connection(), case_id)
+
+
 class SelectionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filter: dict
@@ -2913,50 +2933,11 @@ def reveal_sensitive(record_uid: UUID, body: RevealBody, db: Session = Depends(g
 
 
 @router.get("/identities")
-def identity_picker(case_id: UUID = Query(...), q: str = Query("", max_length=200), limit: int = Query(50, ge=1, le=200),
-                    cursor: int = Query(0, ge=0), db: Session = Depends(get_db),
-                    user: User = Depends(get_current_db_user)):
-    """The identity picker (4.4): search as you type over every identity by value or any phone's name, with each
-    phone's names and the event count; ``total`` is exact."""
+def identity_registry(case_id: UUID = Query(...), q: str = Query("", max_length=200), limit: int = Query(50, ge=1, le=200),
+                      cursor: int = Query(0, ge=0), phone: Optional[UUID] = Query(None), linked: Optional[bool] = Query(None),
+                      db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The Phone identities list and the identity picker (03 10.4, 4.4): search over every identity by value or any
+    phone's name, with each phone's names, events per phone and the linked person; ``total`` is exact."""
+    from services.phone import people
     authorize_case(db, case_id, user, ("case", "view"))
-    from sqlalchemy import text as sql
-    from services.phone import fold as phone_fold
-    conn = db.connection()
-    folded = phone_fold.fold(q.strip()) if q.strip() else ""
-    digits = "".join(ch for ch in q if ch.isdigit())
-    idents = conn.execute(sql(
-        "SELECT i.identity_id, i.identity_key, i.kind, i.value_display, i.value_normalised, i.person_id, "
-        "p.display_name AS person_name FROM pv_identity i LEFT JOIN case_profiles p ON p.id = i.person_id "
-        "WHERE i.case_id = :c"), {"c": case_id}).fetchall()
-    names = {}
-    for n in conn.execute(sql("SELECT identity_id, extraction_id, name, basis, is_phone_name FROM pv_identity_name "
-                              "WHERE case_id = :c ORDER BY extraction_id"), {"c": case_id}):
-        names.setdefault(n.identity_id, []).append(n)
-
-    def matches(r):
-        # Folded as Search folds (11.3): "jose" finds "José"; three or more digits match the number's digits.
-        if not q.strip():
-            return True
-        if not folded:
-            return False  # punctuation only: nothing to match
-        hay = [r.value_display, r.identity_key] + [n.name for n in names.get(r.identity_id, [])]
-        if any(folded in phone_fold.fold(h) for h in hay if h):
-            return True
-        return len(digits) >= 3 and digits in "".join(ch for ch in (r.value_normalised or "") if ch.isdigit())
-
-    hits = [r for r in idents if matches(r)]
-    counts = {k: int(n) for k, n in conn.execute(sql(
-        "SELECT identity_key, count(DISTINCT event_uid) FROM pv_comm_party WHERE case_id = :c AND identity_key = "
-        "ANY(CAST(:k AS text[])) GROUP BY identity_key"), {"c": case_id, "k": [r.identity_key for r in hits]})}
-    hits.sort(key=lambda r: (-counts.get(r.identity_key, 0), r.value_display or "", r.identity_key))
-    total = len(hits)
-    labels = readings.phone_labels(conn, case_id)
-    items = []
-    for r in hits[cursor:cursor + limit]:
-        items.append({"identity_key": r.identity_key, "kind": r.kind, "value_display": r.value_display,
-                      "names": [{"phone_label": labels.get(str(n.extraction_id)), "name": n.name, "basis": n.basis}
-                                for n in names.get(r.identity_id, []) if n.is_phone_name],
-                      "person": {"id": str(r.person_id), "display_name": r.person_name} if r.person_id else None,
-                      "event_count": counts.get(r.identity_key, 0)})
-    nxt = cursor + len(items)
-    return {"case_id": str(case_id), "items": items, "total": int(total), "next_cursor": nxt if nxt < total else None}
+    return people.registry(db.connection(), case_id, q=q, phone=phone, linked=linked, cursor=cursor, limit=limit)
