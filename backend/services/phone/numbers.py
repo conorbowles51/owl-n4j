@@ -6,6 +6,8 @@ E.164 form (PN-3); its display is the library's INTERNATIONAL format (PN-4).
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 import phonenumbers
 
 PINNED = "9.0.31"
@@ -16,11 +18,18 @@ def regions() -> frozenset:
     return frozenset(phonenumbers.SUPPORTED_REGIONS)
 
 
+@lru_cache(maxsize=None)
 def region_name(region) -> str:
     """The country's name in words, from the library's own data; the code when it has none."""
     from phonenumbers import geocoder
     example = phonenumbers.example_number(region)
     return (geocoder.country_name_for_number(example, "en") if example else "") or region
+
+
+@lru_cache(maxsize=1)
+def region_list() -> list:
+    """Every region with its name, by name."""
+    return sorted(({"code": c, "name": region_name(c)} for c in regions()), key=lambda r: r["name"])
 
 
 def parse(text, region="US", region_basis="assumed_default"):

@@ -235,7 +235,7 @@ export function PhoneSummaryPage() {
         <SetOwner caseId={caseId} extraction={extraction} owner={p.owner} />
         <NamePhone caseId={caseId} extraction={extraction} label={p.phone.label} />
         {p.zone.device_zone ? (
-          <p className="text-xs">Time zone recorded by the phone: {p.zone.device_zone}</p>
+          <p className="text-xs">{p.zone.basis === "decided" ? "Time zone set by decision" : "Time zone recorded by the phone"}: {p.zone.device_zone}</p>
         ) : (
           <p className="text-xs">This phone did not record its time zone. Times show in the case zone ({p.zone.case_zone}).</p>
         )}

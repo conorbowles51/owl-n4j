@@ -109,8 +109,7 @@ def state(conn, case_id, extraction_id) -> dict:
     return {"extraction_id": str(extraction_id), "region": region_state(conn, extraction_id),
             "zone": zone_state(conn, extraction_id), "offsetless": offsetless_state(conn, extraction_id),
             "clock": clock_state(conn, extraction_id),
-            "regions": sorted(({"code": c, "name": numbers.region_name(c)} for c in numbers.regions()),
-                              key=lambda r: r["name"])}
+            "regions": numbers.region_list()}
 
 
 # ---- what a change would do ---------------------------------------------------------------------------------------

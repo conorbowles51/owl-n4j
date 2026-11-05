@@ -6,7 +6,7 @@ Blur is a per-person setting: the choice follows the person to any browser, and 
 from alembic import op
 
 revision = "20261105_phone_person_settings"
-down_revision = "20261104_case_media_blur"
+down_revision = "20261104_casebin"
 branch_labels = None
 depends_on = None
 
