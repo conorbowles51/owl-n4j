@@ -65,11 +65,15 @@ def service_settings(run=_run):
     return settings
 
 
+def _release_folder():
+    return os.environ.get('LOUPE_PREPARE_BACKEND_DIR') or ''
+
+
 def service_settings_for_release(run=_run):
     """The service's settings with the folder of the code being released: the backend runs from a tree that moves only
     at its restart, so the release's code is in the tree deploy/backend-tree.sh staged (LOUPE_PREPARE_BACKEND_DIR)."""
     settings = service_settings(run)
-    settings['workingdirectory'] = os.environ.get('LOUPE_PREPARE_BACKEND_DIR') or settings['workingdirectory']
+    settings['workingdirectory'] = _release_folder() or settings['workingdirectory']
     return settings
 
 
@@ -123,7 +127,7 @@ def start(log=None, run=_run, state=STATE):
             raise RuntimeError((result.stderr or result.stdout).strip()[:300])
         commit = _checkout_commit(run)
         with open(state, 'w') as out:
-            json.dump(dict(started=started, commit=commit), out)
+            json.dump(dict(started=started, commit=commit, folder=_release_folder()), out)
         _say(log, 'prepare: started for %s' % (commit or 'unknown commit')[:8])
     except Exception as error:  # noqa: BLE001 - the release goes on without it
         _say(log, 'prepare: not started (%s)' % error)
@@ -132,7 +136,7 @@ def start(log=None, run=_run, state=STATE):
 
 def _checkout_commit(run):
     """The commit of the code the prepare runs: the staged tree, else the tree this file belongs to; or None."""
-    root = os.path.dirname(os.environ.get('LOUPE_PREPARE_BACKEND_DIR') or os.path.dirname(os.path.dirname(os.path.dirname(
+    root = os.path.dirname(_release_folder() or os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__)))))
     result = run(['git', '-c', 'safe.directory=*', '-C', root, 'rev-parse', 'HEAD'])
     commit = (result.stdout or '').strip()
@@ -146,11 +150,12 @@ def follow(log=None, run=_run, state=STATE):
     Nothing when no prepare was started or the code is the same. Returns 0 always."""
     try:
         with open(state) as saved:
-            prepared = json.load(saved).get('commit')
+            saved = json.load(saved)
     except (OSError, ValueError):
         return 0
     current = _checkout_commit(run)
-    if current is None or current == prepared:
+    # Same commit in another folder: a release script that started before the backend trees prepared the running tree.
+    if current is None or (current == saved.get('commit') and saved.get('folder', '') == _release_folder()):
         return 0
     _say(log, 'prepare: code changed to %s since the prepare started; starting it again' % current[:8])
     return start(log, run=run, state=state)

@@ -63,6 +63,19 @@ def test_the_prepare_runs_the_code_being_released_not_the_tree_the_backend_runs(
     assert [call for call in system.calls if call[0] == 'git'][0][:5] == ['git', '-c', 'safe.directory=*', '-C', '/trees/green']
 
 
+def test_a_prepare_started_in_the_wrong_folder_starts_again_in_the_staged_tree(monkeypatch, tmp_path):
+    """A release script already waiting when the trees arrived starts the prepare with no folder."""
+    state = tmp_path / 'state'
+    system = FakeSystem()
+    view_prepare.start(run=system, state=str(state))
+    monkeypatch.setenv('LOUPE_PREPARE_BACKEND_DIR', '/trees/green/backend')
+    view_prepare.follow(run=system, state=str(state))
+    assert '--property=WorkingDirectory=/trees/green/backend' in [call for call in system.calls if call[0] == 'systemd-run'][-1]
+    calls = len(system.calls)
+    view_prepare.follow(run=system, state=str(state))  # now in the right folder: left alone
+    assert not [call for call in system.calls[calls:] if call[0] == 'systemd-run']
+
+
 def test_unreadable_service_settings_start_nothing(tmp_path):
     system = FakeSystem(shown='User=\n')
     state = tmp_path / 'state.json'
