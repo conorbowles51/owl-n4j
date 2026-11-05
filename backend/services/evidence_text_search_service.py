@@ -38,8 +38,8 @@ def _clean_boundary(content: str, proposed: int, *, left: bool) -> int:
     if left:
         following_space = re.search(r"\s", content[proposed:])
         return proposed + following_space.end() if following_space else proposed
-    preceding_space = list(re.finditer(r"\s", content[:proposed]))
-    return preceding_space[-1].start() if preceding_space else proposed
+    # walked back from here, not listed from the start: this runs per hit, on texts of millions of characters
+    return next((index for index in range(proposed - 1, -1, -1) if content[index].isspace()), proposed)
 
 
 def _snippet(content: str, match_start: int, match_end: int,

@@ -18,6 +18,14 @@ TABLES = [
 ]
 
 
+class CleanBoundaryTests(unittest.TestCase):
+    def test_a_right_boundary_falls_back_to_the_last_space_before_it(self) -> None:
+        from services.evidence_text_search_service import _clean_boundary
+        self.assertEqual(_clean_boundary("one two three", 10, left=False), 7)
+        self.assertEqual(_clean_boundary("onetwothree", 5, left=False), 5)
+        self.assertEqual(_clean_boundary("one\ntwothree", 9, left=False), 3)
+
+
 class EvidenceTextSearchServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
