@@ -62,6 +62,8 @@ vi.mock("@/features/phones/components/StreamList", async () => {
 })
 vi.mock("@/lib/ux-events", () => ({ trackUx: vi.fn() }))
 
+import { StaleSnapshotError } from "@/features/phones/api"
+import { ApiError } from "@/lib/api-client"
 import ConversationsPage from "./ConversationsPage"
 
 const label = (name: string) => ({ identity_key: `phone:${name}`, name, name_basis: "contact_on_this_phone", identifier: null, is_owner: false, owner_basis: null, case_names: [] })
@@ -178,12 +180,37 @@ describe("Conversations", () => {
     await act(async () => listProps.last!.onGoToOriginal!({ event_uid: "v9", thread_key: "t2" }, row))
     await waitFor(() => expect(listProps.last?.jumpTo).toMatchObject({ day: "2023-03-14", offset: 2 }))
     expect(seen.search).toContain("thread=t1")
-    api.streamLocate.mockRejectedValue(new Error("not in this list"))
+    api.streamLocate.mockRejectedValue(new ApiError("not in this list", 404))
     await act(async () => listProps.last!.onGoToOriginal!({ event_uid: "v9", thread_key: "t2" }, row))
     await waitFor(() => expect(seen.search).toContain("thread=t2"))
     expect(seen.search).toContain("at=v9")
     expect(seen.search).not.toContain("directions")
     expect(screen.getByTestId("original-note")).toHaveTextContent("shown in its own conversation with the filters cleared")
+  })
+
+  it("arrives at the message once the new list's index is in, and again after going Back", async () => {
+    streamState.index = { snapshot: "old", zone: { label: "UTC" }, items: [], counts: {} }
+    api.streamLocate.mockRejectedValueOnce(new StaleSnapshotError())
+    api.streamLocate.mockResolvedValue({ day: "2023-03-14", offset: 2 })
+    const view = page("/cases/case-1/conversations?thread=t1&at=v9")
+    await waitFor(() => expect(api.streamLocate).toHaveBeenCalledTimes(1))
+    streamState.index = { snapshot: "new", zone: { label: "UTC" }, items: [], counts: {} }
+    fireEvent.click((await threadOptions())[0])
+    await waitFor(() => expect(api.streamLocate).toHaveBeenLastCalledWith(expect.anything(), "new", "v9"))
+    await waitFor(() => expect(listProps.last?.jumpTo).toMatchObject({ offset: 2 }))
+    view.unmount()
+  })
+
+  it("keeps the view and every filter when finding the original fails for another reason", async () => {
+    streamState.index = { snapshot: "s", zone: { label: "UTC" }, items: [], counts: {} }
+    api.streamIndex.mockResolvedValue({ snapshot: "s", counts: { events: 1 }, no_time_count: 0, items: [], zone: { label: "UTC" } })
+    api.streamLocate.mockRejectedValue(new Error("the network failed"))
+    page("/cases/case-1/conversations?thread=t1&directions=outgoing")
+    await threadOptions()
+    await act(async () => listProps.last!.onGoToOriginal!({ event_uid: "v9", thread_key: "t2" }, { phone: { extraction_id: "e1", label: "C1" } }))
+    expect(seen.search).toContain("directions=outgoing")
+    expect(seen.search).toContain("thread=t1")
+    expect(screen.getByTestId("original-note")).toBeInTheDocument()
   })
 
   it("a search hit shows the whole thread, says how many messages matched, marks them and steps through them (S-8)", async () => {

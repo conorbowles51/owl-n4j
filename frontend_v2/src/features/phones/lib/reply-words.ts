@@ -17,7 +17,7 @@ export function replyWhere(r: ReplyLink): string {
 }
 
 export function replyWords(r: ReplyLink): string {
-  if (r.target) return `${replyVerb(r)} ${labelText(r.target.from)}, ${r.target.time}${replyWhere(r)}: ${r.target.excerpt ?? "(no text)"}`
+  if (r.target) return `${replyVerb(r)} ${labelText(r.target.from)}, ${r.target.time}${replyWhere(r)}: ${r.target.excerpt ?? "(no text)"}${r.target.chars > (r.target.excerpt?.length ?? 0) ? "…" : ""}`
   if (r.state === "not_in_extraction") return `${replyVerb(r)} a message that is not in this extraction (the report's id: ${r.original_id})`
   return "Marked as a reply; the report does not say to which message"
 }

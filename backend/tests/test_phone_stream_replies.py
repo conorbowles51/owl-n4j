@@ -180,3 +180,13 @@ def test_rows_read_the_links_in_a_fixed_number_of_queries(db):
         return len(seen)
 
     assert statements(2) == statements(40)
+
+
+def test_the_pdf_states_a_reply_to_a_message_with_no_sender_and_a_long_original():
+    """One such row must not fail a whole export; an excerpt says it is one."""
+    from services.phone.exports.pdf import _reply_words
+    target = {"from": None, "time": "Tue, Mar 14, 2023", "excerpt": "x" * 280, "chars": 900}
+    got = _reply_words({"replies": [{"kind": "reply", "state": "found", "target": target}]})
+    assert got[0].startswith("Replying to (sender not recorded), Tue, Mar 14, 2023: xxx") and got[0].endswith("…")
+    full = dict(target, excerpt="short", chars=5)
+    assert _reply_words({"replies": [{"kind": "quote", "state": "found", "target": full}]})[0].endswith(": short")

@@ -221,19 +221,26 @@ export function filterChips(v: ConversationView): FilterChip[] {
   if (v.unreadable !== null) out.push({ key: "unreadable", text: v.unreadable ? "Unreadable only" : "Without unreadable", clear: { unreadable: null } })
   if (v.attachment !== null) out.push({ key: "attachment", text: v.attachment ? "Has an attachment" : "No attachment", clear: { attachment: null } })
   if (v.text.trim()) out.push({ key: "text", text: `Contains "${v.text.trim()}"${v.exact ? ", exact characters" : ""}`, clear: { text: "", exact: false } })
+  if (!v.noTime) out.push({ key: "notime", text: "Only those with a time", clear: { noTime: true } })
   return out
 }
 
 /** Every narrowing the filter bar sets, cleared at once. People, phones and the open thread are left alone. */
 export const NO_FILTERS: Partial<ConversationView> = {
-  from: null, to: null, kinds: [], apps: [], directions: [], deleted: null, oneDeletion: null, unreadable: null, attachment: null, text: "", exact: false,
+  from: null, to: null, kinds: [], apps: [], directions: [], deleted: null, oneDeletion: null, unreadable: null, attachment: null, text: "", exact: false, noTime: true,
 }
 
 export function hasFilters(v: ConversationView): boolean {
   return filterChips(v).length > 0 || v.kinds.length > 0 || !!(v.from && v.to)
 }
 
-/** The filters in words, for what a person keeps or sends on: a copy's footer, a saved view, a frozen selection. */
+/** The chips here in words: what the scope bar's own words (window, kinds) leave out. */
 export function filterChipWords(v: ConversationView): string {
   return filterChips(v).map((c) => c.text).join(", ")
+}
+
+/** The whole narrowing in words, for what a person keeps or sends on: a copy's footer, an export, a saved view. */
+export function filterWordsOf(v: ConversationView): string {
+  const window = v.from && v.to ? [`${v.from} to ${v.to}`] : []
+  return [...window, ...v.kinds, ...filterChips(v).map((c) => c.text)].join(", ")
 }

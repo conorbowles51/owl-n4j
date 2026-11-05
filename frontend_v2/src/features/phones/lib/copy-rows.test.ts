@@ -34,6 +34,7 @@ describe("copy rows (03 3.7, A13, A2)", () => {
     expect(rowText(row({ replies: [{ kind: "reply", original_id: "AB12", state: "not_in_extraction", target: null }] }))).toContain("[Replying to a message that is not in this extraction (the report's id: AB12)]")
     const target = { event_uid: "e0", record_uid: "r0", thread_key: "t", thread_title: "Family", same_thread: false, kind: "message", from: maria, time: "Tue, Mar 14", excerpt: "first", chars: 5, subject: null, flags: [] }
     expect(rowText(row({ replies: [{ kind: "quote", original_id: "AB12", state: "found", target }] }))).toContain("[Quoting Maria Lopez (+1 202-555-0143), Tue, Mar 14 in Family: first]")
+    expect(rowText(row({ replies: [{ kind: "reply", original_id: "AB12", state: "found", target: { ...target, chars: 900 } }] }))).toContain("in Family: first…]")
   })
 
   it("writes one line per event with day, 12-hour time, zone, phone, app, both labels and the full body", () => {

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { ApiError } from "@/lib/api-client"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { installKeymap, register } from "@/lib/keymap"
@@ -19,6 +20,7 @@ import {
   translateThread,
   undoReviewed,
   type ThreadSort,
+  StaleSnapshotError,
   streamLocate,
   streamIndex,
 } from "@/features/phones/api"
@@ -42,7 +44,7 @@ import { ConversationFilters } from "./ConversationFilters"
 import { useStreamDensity } from "@/features/phones/hooks/use-stream-density"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useThreadMatches } from "./use-thread-matches"
-import { dayZoneOf, filterChipWords, hasFilters, NO_FILTERS, viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
+import { dayZoneOf, filterChipWords, filterWordsOf, hasFilters, NO_FILTERS, viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
 import { rememberSpot } from "@/features/phones/lib/continue-reading"
 import { translateWords } from "@/features/phones/lib/translate-words"
 import { labelText } from "@/features/phones/lib/labels"
@@ -204,20 +206,22 @@ export function ConversationsPage() {
   const matches = useThreadMatches(view.hl && view.thread ? streamFilter : null, view.hl, view.hlExact)
   const [matchAt, setMatchAt] = useState(0)
   const goTo = useCallback(
-    async (eventUid: string) => {
-      if (!streamFilter || !stream.index) return
+    async (eventUid: string): Promise<boolean> => {
+      if (!streamFilter || !stream.index) return false
       try {
         const loc = await streamLocate(streamFilter, stream.index.snapshot, eventUid)
         setJump({ day: loc.day, offset: loc.offset, seq: Date.now() })
+        return true
       } catch {
         /* the message left the list (a stale snapshot re-reads it); the list stays where it is */
+        return false
       }
     },
     [streamFilter, stream.index],
   )
   // A reply's original: in place when this list holds it, else in its own conversation with the filters cleared, and
   // the list says so. Back returns to the reply.
-  const [originalNote, setOriginalNote] = useState<string | null>(null)
+  const [originalNote, setOriginalNote] = useState<{ at: string | null; text: string } | null>(null)
   const goToOriginal = useCallback(
     async (target: ReplyTarget, row: StreamRow) => {
       setOriginalNote(null)
@@ -226,21 +230,36 @@ export function ConversationsPage() {
           const loc = await streamLocate(streamFilter, stream.index.snapshot, target.event_uid)
           setJump({ day: loc.day, offset: loc.offset, seq: Date.now() })
           return
-        } catch {
-          /* not in this list: its own conversation, below */
+        } catch (e) {
+          // Only "not in this list" moves the reader; any other failure leaves the view and every filter as it is.
+          if (e instanceof StaleSnapshotError) {
+            stream.reload()
+            setOriginalNote({ at: view.at, text: "The list changed while that was being found. It has been read again, so try once more." })
+            return
+          }
+          if (!(e instanceof ApiError && e.status === 404)) {
+            setOriginalNote({ at: view.at, text: failureText(e, "That message could not be found just now. Nothing was changed.") })
+            return
+          }
         }
       }
-      setOriginalNote(`That message is not in this list, so it is shown in its own conversation${narrowed ? " with the filters cleared" : ""}. Back returns you here.`)
-      setView({ ...NO_FILTERS, tab: "threads", people: [], record: null, selection: null, thread: target.thread_key ?? `none:${row.phone.extraction_id}`, at: target.event_uid })
+      const cleared = narrowed || view.significant
+      setOriginalNote({ at: target.event_uid, text: `That message is not in this list, so it is shown in its own conversation${cleared ? " with the filters cleared" : ""}. Back returns you here.` })
+      setView({ ...NO_FILTERS, significant: false, tab: "threads", people: [], record: null, selection: null, thread: target.thread_key ?? `none:${row.phone.extraction_id}`, at: target.event_uid })
     },
-    [streamFilter, stream.index, narrowed, setView],
+    [streamFilter, stream, narrowed, view.at, view.significant, setView],
   )
   const arrivedAt = useRef<string | null>(null)
   useEffect(() => {
-    // open at the hit's message once the list is ready
+    // open at the hit's message once the list is ready; going Back and to the same message again arrives again
+    if (!view.at) arrivedAt.current = null
     if (!view.at || !streamFilter || !stream.index || arrivedAt.current === view.at) return
-    arrivedAt.current = view.at
-    void goTo(view.at)
+    const at = view.at
+    // Right after a change of thread the index is still the last filter's and the server refuses it: this runs again
+    // when the new index arrives, so only an answered ask counts as arrived.
+    void goTo(at).then((ok) => {
+      if (ok) arrivedAt.current = at
+    })
   }, [view.at, streamFilter, stream.index, goTo])
   useEffect(() => {
     if (view.at && matches.data) setMatchAt(Math.max(0, matches.data.events.indexOf(view.at)))
@@ -271,7 +290,8 @@ export function ConversationsPage() {
   const { usedIn, refresh: refreshUsedIn } = useUsedIn(caseId, marked.ids, marked.complete)
   const across = useAcrossBadges(caseId, stream)
   const chipWords = filterChipWords(view)
-  const filterWords = `${current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"}${view.significant ? ", significant phone identities only" : ""}${chipWords ? `, ${chipWords}` : ""}`
+  const narrowWords = filterWordsOf(view)
+  const filterWords = `${current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"}${view.significant ? ", significant phone identities only" : ""}${narrowWords ? `, ${narrowWords}` : ""}`
   const freeze = useQuery({
     queryKey: ["phone-selection", streamFilter, selection.all],
     queryFn: () => freezeSelection(streamFilter!, `${filterWords}, every message`),
@@ -529,7 +549,7 @@ export function ConversationsPage() {
             Split for review…
           </Button>
         )}
-        <SplitForReview caseId={caseId} filter={listFilter} scopeWords={scopeWords(scope)} open={splitting} onClose={() => setSplitting(false)} />
+        <SplitForReview caseId={caseId} filter={listFilter} scopeWords={chipWords ? `${scopeWords(scope)}, ${chipWords}` : scopeWords(scope)} open={splitting} onClose={() => setSplitting(false)} />
         {reviewNote && (
           <p role="status" className="text-sm">
             {reviewNote.text}{" "}
@@ -769,9 +789,9 @@ export function ConversationsPage() {
                 </button>
               </p>
             )}
-            {originalNote && (
+            {originalNote && originalNote.at === view.at && (
               <p role="status" className="w-full text-xs" data-testid="original-note">
-                {originalNote}
+                {originalNote.text}
               </p>
             )}
             {translateNote && translateNote.thread === view.thread && (

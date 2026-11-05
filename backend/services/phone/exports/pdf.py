@@ -125,8 +125,10 @@ def _reply_words(r) -> list:
         verb = "Quoting" if link["kind"] == "quote" else "Replying to"
         target = link.get("target")
         if target:
-            out.append("%s %s, %s: %s" % (verb, label_text(target.get("from")), target["time"],
-                                          target.get("excerpt") or "(no text)"))
+            who = target.get("from")
+            text = target.get("excerpt") or "(no text)"
+            out.append("%s %s, %s: %s%s" % (verb, label_text(who) if who else "(sender not recorded)", target["time"],
+                                            text, "…" if target.get("chars", 0) > len(target.get("excerpt") or "") else ""))
         elif link["state"] == "not_in_extraction":
             out.append("%s a message that is not in this extraction (the report's id: %s)." % (verb, link["original_id"]))
         else:

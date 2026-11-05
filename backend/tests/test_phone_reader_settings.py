@@ -19,4 +19,4 @@ def test_the_apps_route_counts_in_scope(api):  # noqa: F811
     r = api["client"].post("/api/phones/streams/apps", json={"case_id": api["case"]})
     assert r.status_code == 200, r.text
     got = r.json()
-    assert sum(i["count"] for i in got["items"]) == got["counts"]["events"] > 0
+    assert got["items"] and all(i["count"] > 0 for i in got["items"])

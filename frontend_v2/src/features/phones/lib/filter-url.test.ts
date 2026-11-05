@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DEFAULT_VIEW, filterChips, filterChipWords, hasFilters, NO_APP, NO_FILTERS, PHONE_OWNER, viewFromSearch, viewToFilter, viewToSearch } from "./filter-url"
+import { DEFAULT_VIEW, filterChips, filterChipWords, filterWordsOf, hasFilters, NO_APP, NO_FILTERS, PHONE_OWNER, viewFromSearch, viewToFilter, viewToSearch } from "./filter-url"
 
 describe("Conversations filters (03 6.4)", () => {
   it("offers one deletion state and keeps the Phone summary's deleted=only link meaning both", () => {
@@ -29,6 +29,17 @@ describe("Conversations filters (03 6.4)", () => {
     expect(hasFilters({ ...v, ...NO_FILTERS })).toBe(false)
     expect(hasFilters(viewFromSearch("from=2023-03-01&to=2023-03-02"))).toBe(true)
     expect(hasFilters(viewFromSearch("kinds=call"))).toBe(true)
+  })
+
+  it("shows the only-with-a-time filter as a chip that Clear filters removes", () => {
+    const v = viewFromSearch("from=2023-03-01&to=2023-03-02&notime=0")
+    expect(filterChips(v).map((c) => c.text)).toEqual(["Only those with a time"])
+    expect({ ...v, ...NO_FILTERS }.noTime).toBe(true)
+    expect(hasFilters(viewFromSearch("notime=0"))).toBe(true)
+  })
+
+  it("names every narrowing in the words kept with a copy, an export or a saved view", () => {
+    expect(filterWordsOf(viewFromSearch("from=2023-03-01&to=2023-03-02&kinds=call&directions=outgoing"))).toBe("2023-03-01 to 2023-03-02, call, Outgoing")
   })
 
   it("makes a date range days in the stated zone", () => {

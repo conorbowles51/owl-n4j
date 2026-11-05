@@ -249,10 +249,16 @@ class Query:
                            "AND s.generation = ev.generation AND s.model_type = 'ScrambledMessageData')")
         tri(fl.synced, "EXISTS (SELECT 1 FROM phone_record_summaries s WHERE s.record_uid = ev.record_uid AND "
                        "s.generation = ev.generation AND lower(coalesce(s.user_mapping, '')) LIKE 'sync%')")
-        tri(fl.has_attachment, "EXISTS (SELECT 1 FROM phone_file_references r WHERE r.extraction_id = ev.extraction_id "
-                               "AND r.document_index = ev.document_index AND (r.record_ordinal = ev.ordinal OR "
-                               "r.record_ordinal IN (SELECT s.ordinal FROM phone_record_summaries s WHERE "
-                               "s.parent_record_uid = ev.record_uid AND s.generation = ev.generation)))")
+        # Two lookups by key: as one OR, Postgres compared each event with the phone's every file reference and did
+        # not finish in 120 s on 4,902 events and 17,203 references (measured 5 Nov). A jump target to another record
+        # is not a file (media.thread_attachments): 15,666 of those references, on calls and messages with nothing
+        # attached.
+        tri(fl.has_attachment, "(EXISTS (SELECT 1 FROM phone_file_references r WHERE r.extraction_id = ev.extraction_id "
+                               "AND r.document_index = ev.document_index AND r.record_ordinal = ev.ordinal AND "
+                               "r.resolution <> 'model') OR EXISTS (SELECT 1 FROM phone_record_summaries s JOIN "
+                               "phone_file_references r ON r.extraction_id = ev.extraction_id AND r.document_index = "
+                               "ev.document_index AND r.record_ordinal = s.ordinal WHERE s.parent_record_uid = "
+                               "ev.record_uid AND s.generation = ev.generation AND r.resolution <> 'model'))")
 
     def _participants(self):
         f = self.f
@@ -409,11 +415,14 @@ def app_counts(conn, f: StreamFilter) -> dict:
     choosing one app leaves the others on offer. ``app`` null is the events whose report names no app."""
     g = f.model_copy(update={"apps": [], "threads": []})
     q, _ = _query(conn, g)
-    rows = conn.execute(text("WITH m AS (%s) SELECT app, count(*) AS n FROM m WHERE %s GROUP BY app ORDER BY 2 DESC, 1"
-                             % (q.matched_sql(), _shown(g))), q.params).fetchall()
+    # Each app's count is what choosing that app alone lists. Copies are ranked across apps, so an SMS and its app copy
+    # count once in each app they sit in, not under whichever copy ranked first. The total comes from the index.
+    n = ("count(DISTINCT coalesce(extraction_id::text || ':' || dup_group_uid, event_uid::text))" if g.collapse_copies
+         else "count(*)")
+    rows = conn.execute(text("WITH m AS (%s) SELECT app, %s AS n FROM m GROUP BY app ORDER BY 2 DESC, 1"
+                             % (q.matched_sql(), n)), q.params).fetchall()
     return envelope(conn, g, items=[{"app": r.app, "count": int(r.n)} for r in rows],
-                    counts={"apps": sum(1 for r in rows if r.app is not None),
-                            "events": sum(int(r.n) for r in rows)})
+                    counts={"apps": sum(1 for r in rows if r.app is not None)})
 
 
 def envelope(conn, f, *, counts=None, items=(), limits=None) -> dict:
@@ -573,8 +582,9 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
             "ON s.record_uid = a.record_uid AND s.record_uid <> ALL(:u) AND s.parent_record_uid = ANY(:u) "
             "LEFT JOIN pv_file f ON f.file_uid = a.file_uid "
             # one IN list of the rows and their child records: as an OR, Postgres read every record summary
-            "WHERE a.record_uid IN (SELECT unnest(CAST(:u AS uuid[])) UNION ALL SELECT s2.record_uid FROM "
-            "phone_record_summaries s2 JOIN "
+            # a jump target to another record is not a file, so it is not listed as an attachment
+            "WHERE a.resolution <> 'model' AND a.record_uid IN (SELECT unnest(CAST(:u AS uuid[])) UNION ALL SELECT "
+            "s2.record_uid FROM phone_record_summaries s2 JOIN "
             "phone_interpretation_state st2 ON st2.extraction_id = s2.extraction_id AND st2.generation = s2.generation "
             "WHERE s2.parent_record_uid = ANY(:u))"), {"u": uids}):
         path = a.local_path or a.reference_text or ""

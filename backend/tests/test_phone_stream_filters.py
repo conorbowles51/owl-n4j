@@ -52,7 +52,18 @@ def test_the_apps_on_offer_are_counted_under_the_other_filters_only(scene):
     c, case, _, _ = scene
     got = S.app_counts(c, StreamFilter(case_id=str(case), apps=["Signal"], directions=["incoming"]))
     assert got["items"] == [{"app": "WhatsApp", "count": 2}, {"app": "Signal", "count": 1}, {"app": None, "count": 1}]
-    assert got["counts"] == {"apps": 2, "events": 4}
+    assert got["counts"] == {"apps": 2}
+
+
+def test_an_apps_count_is_what_choosing_that_app_lists_when_copies_sit_in_two_apps():
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            phone(c, case, events=[msg(at(2023, 3, 10), ANA, [OWNER], body="same words", app="SMS", dup="g1"),
+                                   msg(at(2023, 3, 10), ANA, [OWNER], body="same words", app="Signal", dup="g1")])
+            got = {i["app"]: i["count"] for i in S.app_counts(c, StreamFilter(case_id=str(case)))["items"]}
+            assert got == {"SMS": 1, "Signal": 1}
+            assert total(c, case) == 1 and total(c, case, apps=["SMS"]) == 1 and total(c, case, apps=["Signal"]) == 1
 
 
 def test_direction(scene):
@@ -98,6 +109,29 @@ def test_unreadable_and_has_attachment(scene):
         {"e": ext})
     assert total(c, case, flags=Flags(has_attachment=True)) == 1
     assert total(c, case, flags=Flags(has_attachment=False)) == 4
+    # a child record's reference counts for its message, and only for that message
+    c.execute(text(
+        "INSERT INTO phone_record_summaries (case_id, extraction_id, document_index, ordinal, record_uid, "
+        "root_record_uid, parent_record_uid, locator, model_type, generation, is_top_level, title, has_time, has_point) "
+        "VALUES (:c, :e, 0, 91, md5('att')::uuid, :p, :p, 'y', 'Attachment', :g, false, 's', false, false)"),
+        {"c": case, "e": ext, "p": evs[2]["record_uid"], "g": GEN})
+    c.execute(text(
+        "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, mechanism, "
+        "reference_text, resolution, ambiguous) VALUES (:e, 0, 91, 'jumptargets', 'jumptarget', 'y.jpg', 'unresolved', "
+        "false)"), {"e": ext})
+    assert total(c, case, flags=Flags(has_attachment=True)) == 2
+    assert total(c, case, flags=Flags(has_attachment=False)) == 3
+    # a jump target to another record is not a file: not an attachment on the filter or on the row
+    c.execute(text(
+        "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, mechanism, "
+        "reference_text, resolution, ambiguous) VALUES (:e, 0, 3, 'jumptargets', 'jumptarget', 'a-record-id', 'model', "
+        "false)"), {"e": ext})
+    assert total(c, case, flags=Flags(has_attachment=True)) == 2
+    f = StreamFilter(case_id=str(case), flags=Flags(has_attachment=False))
+    idx = S.index_comm_events(c, f)
+    rows = [r for d in idx["items"] for r in S.window_comm_events(c, f, snapshot_token=idx["snapshot"], day=d["day"],
+                                                                  offset=0, limit=50)["items"]]
+    assert [r["attachments"] for r in rows if r["body"] == "a fig"] == [[]]
 
 
 def test_filters_narrow_the_thread_list_with_the_true_total(scene):
