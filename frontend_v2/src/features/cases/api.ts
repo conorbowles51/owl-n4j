@@ -115,22 +115,25 @@ export interface DeletedCasesResponse {
   retention_days: number | null
 }
 
-/** Plain words for the counted tables, in the order a person reads them. */
-export const CASE_COUNT_LABELS: [string, string][] = [
-  ["evidence_files", "evidence files"],
-  ["financial_accounts", "accounts"],
-  ["financial_statement_periods", "statement periods"],
-  ["financial_transactions", "ledger rows"],
-  ["adjudications", "review decisions"],
-  ["financial_judgements", "judgement calls"],
-  ["phone_extractions", "phone reports"],
-  ["phone_comm_events", "phone messages and calls"],
-  ["workspace_entries", "notes and workspace entries"],
-  ["case_memberships", "members"],
+/** Plain words for the counted tables, in the order a person reads them: [key, one, more than one]. */
+export const CASE_COUNT_LABELS: [string, string, string][] = [
+  ["evidence_files", "evidence file", "evidence files"],
+  ["financial_accounts", "account", "accounts"],
+  ["financial_statement_periods", "statement period", "statement periods"],
+  ["financial_transactions", "ledger row", "ledger rows"],
+  ["adjudications", "review decision", "review decisions"],
+  ["financial_judgements", "judgement call", "judgement calls"],
+  ["phone_extractions", "phone report", "phone reports"],
+  ["phone_comm_events", "phone message or call", "phone messages and calls"],
+  ["workspace_entries", "note or workspace entry", "notes and workspace entries"],
+  ["case_memberships", "member", "members"],
 ]
 
 export function describeCaseCounts(holds: CaseRecordCounts): string[] {
   return CASE_COUNT_LABELS.filter(([key]) => typeof holds[key] === "number" && (holds[key] as number) > 0).map(
-    ([key, label]) => `${(holds[key] as number).toLocaleString()} ${label}`
+    ([key, one, many]) => {
+      const count = holds[key] as number
+      return `${count.toLocaleString()} ${count === 1 ? one : many}`
+    }
   )
 }

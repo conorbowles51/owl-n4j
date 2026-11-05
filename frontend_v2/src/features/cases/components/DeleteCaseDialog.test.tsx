@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { Case } from "@/types/case.types"
 import { DeleteCaseDialog } from "./DeleteCaseDialog"
+import { describeCaseCounts } from "../api"
 
 const hooks = vi.hoisted(() => ({
   mutate: vi.fn(),
@@ -88,5 +89,13 @@ describe("DeleteCaseDialog", () => {
     } finally {
       hooks.preview = { ...hooks.preview, data: on }
     }
+  })
+
+  it("counts one of a kind in the singular", () => {
+    expect(describeCaseCounts({ evidence_files: 1, case_memberships: 1, workspace_entries: 7, adjudications: 0 })).toEqual([
+      "1 evidence file",
+      "7 notes and workspace entries",
+      "1 member",
+    ])
   })
 })
