@@ -111,6 +111,9 @@ class PhoneSpec:
     # extra invented typed and searched values (cb-vocab, 05 approaches 7 and 9): ``(model_type, field, text)`` for
     # DictionaryWord Word, Autofill Value or SearchedItem Value, written last. Empty leaves every fixture as before.
     typed_values: tuple = ()
+    # Location records of Type Harvested (Apple's cached positions of networks and towers the phone heard, 04 decision
+    # 53), with a bare Precision and no GPS accuracy, as on P04. 0 leaves every fixture as before.
+    harvested: int = 0
     report_name: str = "Report.xml"
 
 
@@ -509,6 +512,18 @@ class PhoneBuild:
                 co.f("Longitude", "Double", f"{lon:.6f}").f("Latitude", "Double", f"{lat:.6f}")
                 loc.nest("modelField", "Position", [co])
                 self.count.fact("locations_positioned")
+            out.append(loc.xml())
+        for i in range(self.spec.harvested):
+            loc = Model(self, "Location", False)
+            loc.f("Source", "String", "Synthetic Maps")
+            loc.t("TimeStamp", self.instant())
+            loc.f("Type", "String", "Harvested")
+            loc.f("Category", "String", "Wireless Networks")
+            loc.f("Precision", "String", str(40 + i))
+            co = Model(self, "Coordinate", True)
+            co.f("Longitude", "Double", f"{CENTRE[1] + 0.001 * i:.6f}").f("Latitude", "Double", f"{CENTRE[0]:.6f}")
+            loc.nest("modelField", "Position", [co])
+            self.count.fact("locations_positioned")
             out.append(loc.xml())
         return out
 
@@ -990,6 +1005,7 @@ def main(argv=None) -> int:
     ap.add_argument("--scale", type=float, default=0.02)
     ap.add_argument("--like", default="P06")
     ap.add_argument("--label", default="S1")
+    ap.add_argument("--harvested", type=int, default=0, help="Location records of Type Harvested (phone shape only)")
     ap.add_argument("--typed", action="append", default=[],
                     help="MODEL_TYPE:FIELD:TEXT, an extra invented typed or searched value (phone shape only)")
     a = ap.parse_args(argv)
@@ -1006,7 +1022,7 @@ def main(argv=None) -> int:
         people = invent_people(40, seed=31)
         case = CaseSpec(f"Synthetic {a.like} at scale {a.scale}", people,
                         [PhoneSpec(a.label, like=a.like, scale=a.scale, contacts=[p.key for p in people[1:]], seed=301,
-                                   typed_values=tuple(tuple(t.split(":", 2)) for t in a.typed))])
+                                   harvested=a.harvested, typed_values=tuple(tuple(t.split(":", 2)) for t in a.typed))])
     m = build_case(case, a.out)
     print(json.dumps({"case": m["case"], "phones": [{"label": p["label"], "top_level_total": p["top_level_total"],
                                                       "messages": p["facts"].get("messages", 0)} for p in m["phones"]],
