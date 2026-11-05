@@ -36,7 +36,7 @@ from services.phone.sensitive import MASK
 # the most values one link lists on screen; the counts are always the true totals and a clipped list says so
 LIST_MAX = 50
 COLLECTING_TYPES = ("phone_record", "phone_selection", "phone_thread")
-FIELD_WORDS = {"sender": "Sender", "recipients": "Recipients", "direction": "Direction", "time": "Time"}
+FIELD_WORDS = {"sender": "Sender was", "recipients": "Recipients were", "direction": "Direction was", "time": "Time was"}
 SET_ASIDE = "Set aside as a duplicate: this is a copy of an event the lists show once, as another record."
 OWNER_WORDS = "the phone's owner"
 NOT_RECORDED = "not recorded"
@@ -301,6 +301,10 @@ def _after_collection(link, row) -> bool:
     return bool(link.created_at and row.changed_at > link.created_at)
 
 
+def _item_order(item):
+    return (item["record_uid"], list(FIELD_WORDS).index(item["field"]))
+
+
 def _reading_items(link, rows) -> dict:
     """``{(record, field): item}``: from the reading at collection to the reading now. A change undone by a later one
     leaves nothing."""
@@ -318,7 +322,7 @@ def _reading_items(link, rows) -> dict:
             "when the phone was read again on %s" % _day(last.changed_at))
         out[key] = {"record_uid": key[0], "field": key[1], "was": first.was_text, "now": last.now_text, "by": by,
                     "at": last.changed_at.isoformat(), "seq": last.seq,
-                    "words": "%s was %s, now %s, %s." % (FIELD_WORDS[key[1]], first.was_text or NOT_RECORDED,
+                    "words": "%s %s, now %s, %s." % (FIELD_WORDS[key[1]], first.was_text or NOT_RECORDED,
                                                          last.now_text or NOT_RECORDED, tail)}
     return out
 
@@ -405,7 +409,7 @@ def _set_aside(conn, case_id, records) -> dict:
 
 def _state_of(link, bulk, viewer_id) -> dict:
     changes = [r for u in link.records for r in bulk["changes"].get(u, ())]
-    items = sorted(_reading_items(link, changes).values(), key=lambda i: (i["record_uid"], i["field"]))
+    items = sorted(_reading_items(link, changes).values(), key=_item_order)
     corrected = [c for u in link.records for c in _corrected_items(link, bulk["corrections"].get(u, ()), bulk["masked"])]
     aside = None
     if link.target_type == "phone_record":
@@ -587,7 +591,7 @@ def export_notes(conn, case_id, selection_id) -> dict:
     notes = defaultdict(list)
     for link in links:
         changes = [r for u in link.records for r in bulk["changes"].get(u, ())]
-        reading = sorted(_reading_items(link, changes).values(), key=lambda i: (i["record_uid"], i["field"]))
+        reading = sorted(_reading_items(link, changes).values(), key=_item_order)
         for item in reading:
             notes[item["record_uid"]].append("Reading changed since collected. " + item["words"])
         for uid in link.records:

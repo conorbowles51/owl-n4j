@@ -83,6 +83,9 @@ def test_co15_correcting_a_sender_mapping_flags_every_link_and_changes_no_stored
                 sender = next(i for i in state["reading_changed"]["items"] if i["field"] == "sender")
                 assert sender["was"] == "+12025550100" and sender["now"] is None
                 assert sender["words"].startswith("Sender was +12025550100, now not recorded, by Synthetic Reviewer on ")
+                assert state["reading_changed"]["items"][0] == sender  # the sender leads, the attention item says it
+                other = next(i for i in state["reading_changed"]["items"] if i["field"] == "recipients")
+                assert other["words"].startswith("Recipients were ")
             assert [_stored(c, lid) for lid in links] == before  # 6.3: the stored link is never rewritten
             # the third call is collected by nothing: no change row, however many records the correction touched
             assert c.execute(text("SELECT count(DISTINCT record_uid) FROM phone_reading_changes")).scalar() == 2
