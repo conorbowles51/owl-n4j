@@ -11,6 +11,13 @@ for s in db-backup neo4j-backup chroma-backup keys-bundle restore-drill evidence
         "${test_root}" "$s" "$s" "$s" > "${test_root}/$s.sh"
 done
 status="${test_root}/status.tsv"; dest="${test_root}/copy"; mkdir "${dest}"
+export REACH_STATE="${test_root}/reach.txt" REACH_TOOL="${test_root}/reach.py" REACH_KNOWN="${test_root}/known"
+cat > "${REACH_TOOL}" <<EOF
+import pathlib, sys
+if pathlib.Path("${test_root}/break-reach").exists():
+    print("chunks: 9 of 10 found at depth whole case, 1 searched records unreached"); sys.exit(1)
+print("chunks: 10 of 10 found at depth whole case, 0 searched records unreached")
+EOF
 run() { env STATUS_FILE="${status}" NOW_EPOCH="$(date -u -d '2026-11-05 12:00' +%s)" BACKUP_ALERT_CMD="${test_root}/alert" "$@" bash "${test_root}/backup-check.sh"; }
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> %q\n' "${test_root}/alerts" > "${test_root}/alert"; chmod +x "${test_root}/alert"
 fail() { echo "FAIL: $*"; cat "${status}" 2>/dev/null; exit 1; }
@@ -69,4 +76,20 @@ mkdir -p "${test_root}/bk/scheduled"; : > "${test_root}/bk/scheduled/owl_db-2026
 if run BACKUP_ROOT="${test_root}/bk"; then fail "an unsealed newest dump passed"; fi
 [[ "$(state encryption)" == FAILED ]] || fail "unsealed newest dump shown as ok"
 grep -q 'owl_db-20261105-0130Z.dump is not sealed' "${status}" || fail "the unsealed dump is not named"
+
+# The daily sweep: a record search cannot reach fails the line and alerts once; inside the day the verdict is reused.
+[[ "$(state chroma-reach)" == ok ]] || fail "a clean sweep was not ok"
+touch "${test_root}/break-reach"; rm -f "${test_root}/alerts"
+touch -d "2026-11-05 12:00" "${REACH_STATE}"
+run A=1 || true
+[[ "$(state chroma-reach)" == ok ]] || fail "the verdict inside the day was not reused"
+touch -d "2026-11-03 12:00" "${REACH_STATE}"
+run A=1 || true
+[[ "$(state chroma-reach)" == FAILED ]] || fail "an unreached record did not fail"
+grep -q "cannot reach" "${status}" || fail "the reason is not said"
+grep -q "cannot reach" "${test_root}/alerts" || fail "no alert"
+touch -d "2026-11-05 12:00" "${REACH_STATE}"; rm -f "${test_root}/alerts"
+run A=1 || true
+[[ "$(state chroma-reach)" == FAILED ]] || fail "the day dropped the verdict"
+! grep -qs "cannot reach" "${test_root}/alerts" || fail "the day repeated the alert"
 echo "test-backup-check: all passed"

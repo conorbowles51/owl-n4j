@@ -17,6 +17,11 @@ STATUS_FILE="${STATUS_FILE:-/mnt/owl-data/backups/status.tsv}"
 EVIDENCE_COPY_DEST="${EVIDENCE_COPY_DEST:-}"
 EVIDENCE_COPY_MAX_AGE_HOURS="${EVIDENCE_COPY_MAX_AGE_HOURS:-73}"
 PY="${PY:-python3}"
+CHROMA_LIVE_URL="${CHROMA_LIVE_URL:-http://127.0.0.1:8101}"
+REACH_TOOL="${REACH_TOOL:-${HERE}/../backend/scripts/chroma_reach.py}"
+REACH_STATE="${REACH_STATE:-/mnt/owl-data/backups/chroma-reach.txt}"
+REACH_KNOWN="${REACH_KNOWN:-/mnt/owl-data/backups/chroma-relink/known.ids}"
+REACH_EVERY_HOURS="${REACH_EVERY_HOURS:-24}"
 
 tmp="$(mktemp "${STATUS_FILE}.XXXXXX")" || exit 1
 failed=0
@@ -32,6 +37,28 @@ store() {  # <label> <command...>
         record "${label}" FAILED "$(printf '%s\n' "${out}" | grep -m1 'ALERT:' | sed 's/.*ALERT: //' | cut -c1-240)"
         failed=$(( failed + 1 ))
     fi
+}
+
+# Every stored passage findable: one search per case against the live server, once a day (4 to 5 minutes at load 60).
+chroma_reach() {
+    local age=$(( REACH_EVERY_HOURS * 3600 ))
+    if [[ -f "${REACH_STATE}" ]] && (( $(now) - $(stat -c %Y "${REACH_STATE}") < age )); then
+        cat "${REACH_STATE}"
+        [[ "$(head -c 6 "${REACH_STATE}")" != ALERT: ]]
+        return
+    fi
+    local out
+    if out="$("${PY}" -I "${REACH_TOOL}" sweep --url "${CHROMA_LIVE_URL}" \
+              --known "${REACH_KNOWN}" --out "${REACH_STATE}.json" 2>&1)"; then
+        printf '%s\n' "${out//$'\n'/; }" > "${REACH_STATE}"
+    else
+        printf 'ALERT: stored records search cannot reach, listed in %s.json: %s\n' "${REACH_STATE}" \
+            "${out//$'\n'/; }" > "${REACH_STATE}"
+        alert "$(cut -d' ' -f2- "${REACH_STATE}" | cut -c1-200)"
+        return 1
+    fi
+    cat "${REACH_STATE}"
+    [[ "$(head -c 6 "${REACH_STATE}")" != ALERT: ]]
 }
 
 evidence_copy() {
@@ -100,6 +127,7 @@ store chroma bash "${HERE}/chroma-backup.sh" check
 store keys bash "${HERE}/keys-bundle.sh" check
 store restore-drill bash "${HERE}/restore-drill.sh" check
 store evidence-files bash "${HERE}/evidence-file-check.sh"
+store chroma-reach chroma_reach
 evidence_copy
 encryption
 chmod 644 "${tmp}"

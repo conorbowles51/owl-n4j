@@ -93,6 +93,11 @@ docker compose up -d chromadb
 ```
 
 Chroma brings each index forward from its own queue on start. Check it: records per collection equal `counts.tsv`.
+The search setting comes back with the copy; `backend/scripts/chroma_reach.py settings --url http://127.0.0.1:8101` shows it.
+Then check that every stored record can be found: `python3 -I backend/scripts/chroma_reach.py check --url http://127.0.0.1:8101 --out reach.json`.
+The drill runs this every week and alerts on any record it misses. To repair records nothing links to, put their ids in
+`/mnt/owl-data/backups/chroma-relink/<collection>.ids` (mode 600, one id per line, those with `any_depth` false in
+`reach.json`): the next backend release re-adds them from their stored copy during its pause.
 
 ## 6. Evidence files
 

@@ -78,4 +78,36 @@ grep -q 'FAIL x.dump: only sealed, and no private key here' "${report}" || fail 
 printf 'x' | dd of="${store}/x.dump.gpg" bs=1 seek=100 conv=notrunc 2>/dev/null
 [[ "$(reads "${test_root}/private.asc")" == locked ]] || fail "changed ciphertext was read"
 grep -q 'does not match its hash' "${report}" || fail "changed ciphertext did not fail the drill"
+# The reach verdict, from a scratch tool: every outcome reaches the report and an unreached record fails the drill.
+reach_drill() {  # <exit code> <line printed>
+    : > "${report}"
+    mkdir -p "${test_root}/drills" "${test_root}/backend/scripts" "${test_root}/deploy"
+    sed -n "/^drill_chroma_reach() {/,/^}/p" "${source_dir}/restore-drill.sh" > "${test_root}/fn"
+    cat > "${test_root}/backend/scripts/chroma_reach.py" <<EOF
+import sys
+args = sys.argv
+if "--out" in args: open(args[args.index("--out") + 1], "w").write("[]")
+print("$2")
+sys.exit($1)
+EOF
+    env REPORT="${report}" DRILLS="${test_root}/drills" ROOT="${test_root}" bash -c '
+        set -uo pipefail
+        source "${ROOT}/fn"
+        report="${REPORT}"; failures=0; BACKUP_DIR="${DRILLS}"; HERE="${ROOT}/deploy"
+        note() { printf "%s\n" "$*" >> "${report}"; }
+        pass() { note "PASS $*"; }
+        fail() { note "FAIL $*"; failures=$(( failures + 1 )); }
+        elapsed() { echo 0; }
+        stamp() { echo now; }
+        drill_chroma_reach http://scratch'
+}
+reach_drill 0 "chunks: 10 of 10 found at depth 250, 0 searched records unreached"
+grep -q 'PASS chroma: every stored record' "${report}" || fail "a clean reach did not pass"
+[[ -z "$(ls -A "${test_root}/drills")" ]] || fail "a clean reach left a list behind"
+reach_drill 1 "chunks: 9 of 10 found at depth 250, 1 searched records unreached (1 at any depth)"
+grep -q 'FAIL chroma: stored records search cannot reach' "${report}" || fail "an unreached record did not fail"
+[[ -s "${test_root}/drills/reach-now.json" ]] || fail "the list of unreached records was not kept"
+rm -f "${test_root}/drills/"*
+reach_drill 2 "Traceback"
+grep -q 'FAIL chroma: the reach check did not finish' "${report}" || fail "a broken check did not fail"
 echo "test-restore-drill: all passed"

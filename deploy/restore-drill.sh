@@ -9,8 +9,9 @@
 # Neo4j: the newest dump is loaded into a scratch neo4j of the live image, started, and nodes and relationships per
 #   case must equal the set's counts file; neo4j-admin's consistency check runs on the loaded store.
 # Chroma: the newest copy starts in a scratch chroma of the live image; records per collection must equal the set's
-#   counts file, and a sample of stored vectors must find themselves through the restored index at least as often as
-#   through the live one.
+#   counts file, a sample of stored vectors must find themselves through the restored index at least as often as
+#   through the live one, and every record must find itself inside its case at the app's depth
+#   (backend/scripts/chroma_reach.py). The list of any it misses is kept in the drill folder.
 # Evidence: every file the RESTORED database names must be on disk, and a random sample is hashed at its live path (and
 #   in the copy, when EVIDENCE_COPY_DEST is set) against the hash the restored database holds.
 # Keys: the newest bundle opens with the passphrase and each file equals its line in files.tsv.
@@ -379,8 +380,26 @@ PY
     else
         fail "chroma: the restored server did not answer: ${out:-no output}"
     fi
+    drill_chroma_reach "http://${ip}:8000"
     "${DOCKER}" rm -f "${SCRATCH_CHROMA}" >/dev/null 2>&1
     rm -rf -- "${WORK}/chroma"
+}
+
+drill_chroma_reach() {  # <url of the restored server>
+    local t0 out reach
+    t0="$(date -u +%s)"
+    reach="${BACKUP_DIR}/.reach-$(stamp).json"
+    # Every record, not a sample: an unreached passage is about 1 in 300, and a sample of 25 does not see it.
+    if out="$(python3 -I "${HERE}/../backend/scripts/chroma_reach.py" check --url "$1" --out "${reach}" \
+              --known "${REACH_KNOWN:-/mnt/owl-data/backups/chroma-relink/known.ids}" 2>&1)"; then
+        pass "chroma: every stored record found by its own vector in $(elapsed "${t0}") s: ${out//$'\n'/; }"
+        rm -f -- "${reach}"
+    elif grep -q 'searched records unreached' <<< "${out}"; then
+        mv -f -- "${reach}" "${reach/.reach-/reach-}"
+        fail "chroma: stored records search cannot reach, listed in ${reach/.reach-/reach-}: ${out//$'\n'/; }"
+    else
+        fail "chroma: the reach check did not finish: ${out:-no output}"
+    fi
 }
 
 do_run() {

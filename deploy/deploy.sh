@@ -543,6 +543,9 @@ if [ "${STEP_BACKEND}" = run ]; then
         configure_backend_allocator
     fi
     check_ingestion_idle
+    step "Chroma search settings"
+    bash "${PROJECT_DIR}/deploy/chroma-settings.sh"
+    success "Chroma search settings in place"
     BACKEND_RESTART_AT="$(date +%s)"
     if ! backend_tree_apply; then
         # Restarting would bring the old code back up and the release would still report healthy.
