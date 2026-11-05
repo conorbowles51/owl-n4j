@@ -13,7 +13,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20261101_phone_capture"
-down_revision = ("20261101_ui_problem_reports", "20261101_timeline_view_instants")
+down_revision = "20261101_timeline_view_instants"  # 20261101_ui_problem_reports is its ancestor since 61ac6ff4; naming both left two rows that refused a later upgrade
 branch_labels = None
 depends_on = None
 

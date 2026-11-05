@@ -25,14 +25,34 @@ def _alembic(url, *args):
                           capture_output=True, text=True, timeout=900)
 
 
-def test_one_alembic_head():
+def _scripts():
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "postgres" / "alembic"))
-    heads = ScriptDirectory.from_config(cfg).get_heads()
+    return ScriptDirectory.from_config(cfg)
+
+
+def _head():
+    return _scripts().get_heads()[0]
+
+
+def test_one_alembic_head():
+    heads = _scripts().get_heads()
     assert len(heads) == 1, heads
+
+
+def test_no_merge_names_a_parent_that_is_an_ancestor_of_its_other_parent():
+    """Such a merge downgrades to two version rows, one above the other, and the next upgrade is refused ("overlaps
+    with other requested revisions"); no database is needed to see it."""
+    scripts = _scripts()
+    for rev in scripts.walk_revisions():
+        parents = rev.down_revision if isinstance(rev.down_revision, tuple) else ()
+        for parent in parents:
+            older = {r.revision for other in parents if other != parent
+                     for r in scripts.revision_map.iterate_revisions(other, "base")}
+            assert parent not in older, (rev.revision, parent)
 
 
 def test_capture_models_cover_every_migration_table():
@@ -64,7 +84,7 @@ def test_upgrade_downgrade_upgrade_and_one_row_per_table():
             assert r.returncode == 0, r.stderr[-3000:]
         eng = create_engine(url)
         with eng.begin() as c:
-            assert c.scalar(text("SELECT version_num FROM alembic_version")) == "20261101_phone_supersede_decision"
+            assert c.scalars(text("SELECT version_num FROM alembic_version")).all() == [_head()]
             assert {"verifying_source", "capturing", "reconciling", "interpreting", "building_views"} <= set(c.scalars(text(
                 "SELECT unnest(enum_range(NULL::jobstatus))::text")))
         case_id, user_id = uuid.uuid4(), uuid.uuid4()

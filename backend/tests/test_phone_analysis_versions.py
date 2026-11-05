@@ -17,7 +17,7 @@ RECORDED = {
     "money_signals": ("1a.3", "53fb4a35cf1c7682"),
     "message_reconciliation": ("2.4", "b1a454ab3f40990c"),
     "deletion_timeline": ("3.3", "a20035b3cefc95f2"),
-    "relationships": ("11.2", "3f16eaa4ddbdc0c1"),
+    "relationships": ("11.3", "99a53d9d7ded8624"),
     "awareness": ("4.2-aware", "6fa3a12d0cdd5709"),
     "device_users": ("5.4-graded-use", "7b73667105388270"),
     "typed_words": ("7.3", "e323b05b2b998e4a"),

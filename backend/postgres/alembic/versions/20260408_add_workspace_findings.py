@@ -14,11 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "20260408_add_workspace_findings"
-down_revision: Union[str, Sequence[str], None] = (
-    "20260407_add_chat_tables",
-    "20260324_add_entity_counts",
-    "20260407_processing_profiles",
-)
+down_revision: Union[str, Sequence[str], None] = "20260407_add_chat_tables"  # the other two parents are its ancestors
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
