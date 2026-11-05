@@ -87,6 +87,11 @@ try {
   const scope = (stage) => (["hashing", "sending"].includes(stage) ? page : card)
   const deadline = Date.now() + minutes * 60_000
   let last = ""
+  // A selection left paused with nobody to resume it shows a frozen line for ever (P07, 4 Nov: 6 h 8 min silent until
+  // a scheduled check found it). A release pause moves on within minutes; a stall ends the run, and the next try's
+  // fresh page resumes the selection through the app's own path.
+  const stallMinutes = 90
+  let moved = { line: "", at: Date.now() }
   while (Date.now() < deadline) {
     for (const [stage, re] of watch) {
       if (seen.some((s) => s.stage === stage)) continue
@@ -104,6 +109,12 @@ try {
     const line = (await card.count())
       ? await card.locator('[aria-live="polite"]').first().textContent({ timeout: 1000 }).catch(() => "")
       : await page.getByText(watch[0][1]).or(page.getByText(watch[1][1])).first().textContent({ timeout: 1000 }).catch(() => "")
+    if (line && line !== moved.line) moved = { line, at: Date.now() }
+    if (seen.at(-1)?.stage === "sending" && Date.now() - moved.at > stallMinutes * 60_000) {
+      failed = `no change on the page for ${stallMinutes} min while sending`
+      console.log(`${secs()} s ${failed}`)
+      break
+    }
     // a changed line counts as shown only once printed, so the log never stays on a line the page has left
     if (line && line !== last && /\d/.test(line)) {
       if (!seen.length || Number(secs()) - (seen.at(-1).printed || 0) >= 30) {
