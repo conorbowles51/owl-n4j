@@ -330,7 +330,7 @@ def test_a_projection_in_the_child_wakes_the_workers_identity_sweep(tmp_path, mo
     script = tmp_path / 'child_stamp.py'
     script.write_text(CHILD_STAMP)
     subprocess.run([sys.executable, str(script), str(directory), case], cwd=str(BACKEND), check=True,
-                   env=dict(os.environ, PYTHONPATH=str(BACKEND)), timeout=300)
+                   env=dict(os.environ, PYTHONPATH=str(BACKEND)), timeout=600)  # hang guard: the child's import passed 300 s at load 110; nothing asserts wall time
     assert (directory / 'projected' / case).exists()
 
     identity_graph.sync_saved_identities()          # the child's stamp moved: the case is retried now

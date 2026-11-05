@@ -3,8 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
-import { BackgroundTasksPage, TASKS_SHOWN } from "./BackgroundTasksPage"
-import { logMatches, SystemLogsPage } from "./SystemLogsPage"
+import { logMatches, TASKS_SHOWN } from "../admin-rows"
+import { BackgroundTasksPage } from "./BackgroundTasksPage"
+import { SystemLogsPage } from "./SystemLogsPage"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 

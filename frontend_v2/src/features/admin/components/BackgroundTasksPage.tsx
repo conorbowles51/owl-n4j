@@ -6,27 +6,7 @@ import { Progress } from "@/components/ui/progress"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
-
-/** The server's row (routers/background_tasks.py TaskResponse). */
-interface BackgroundTask {
-  id: string
-  task_type: string
-  task_name: string
-  owner?: string | null
-  status: string
-  created_at: string
-  started_at?: string | null
-  progress: { total?: number; completed?: number; failed?: number }
-  error?: string | null
-}
-
-/** Rows asked for; the server keeps the newest this many. */
-export const TASKS_SHOWN = 200
-
-export function taskPercent(progress: BackgroundTask["progress"]): number | null {
-  if (!progress.total) return null
-  return Math.min(100, Math.floor(((progress.completed ?? 0) / progress.total) * 100))
-}
+import { TASKS_SHOWN, taskPercent, type BackgroundTask } from "../admin-rows"
 
 export function BackgroundTasksPage() {
   const { data, isLoading, isError, error, refetch } = useQuery({

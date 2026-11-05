@@ -13,33 +13,9 @@ import {
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import { cn } from "@/lib/cn"
-
-/** The server's row (routers/system_logs.py LogEntry). */
-interface LogEntry {
-  timestamp: string
-  type: string
-  origin: string
-  action: string
-  user?: string | null
-  success: boolean
-  error?: string | null
-}
-
-interface LogsResponse {
-  logs: LogEntry[]
-  total: number
-}
-
-/** Rows asked for; the server's own limit is 1,000. */
-export const LOGS_SHOWN = 500
+import { LOGS_SHOWN, logMatches, type LogsResponse } from "../admin-rows"
 
 const words = (value: string) => value.replace(/_/g, " ")
-
-export function logMatches(log: LogEntry, search: string): boolean {
-  const needle = search.trim().toLowerCase()
-  if (!needle) return true
-  return [log.action, log.user, log.error, log.type, log.origin].some((v) => v?.toLowerCase().includes(needle))
-}
 
 export function SystemLogsPage() {
   const [outcome, setOutcome] = useState("all")
