@@ -1913,14 +1913,24 @@ async def control_engine_job(job_id: str, action: str,
         if not job or job.get("job_type") != "phone_capture":
             raise HTTPException(status_code=404, detail="Evidence job not found")
         case_id = UUID(str(job["case_id"]))
-    if action == "cancel" and (record is not None):
-        raise HTTPException(status_code=409, detail="Only phone report readings can be cancelled")
     await run_in_threadpool(authorize_case, db, case_id, current_user, ("evidence", "upload"))
     try:
-        return await evidence_engine_client.control_job(job_id, str(case_id), action)
+        outcome = await evidence_engine_client.control_job(job_id, str(case_id), action)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code,
             detail=exc.response.json().get("detail", "Could not change processing state")) from exc
+    if action == "cancel" and record is not None and outcome.get("affected_jobs"):
+        def note():
+            EvidenceDBStorage.add_log(db, case_id=record.case_id, evidence_file_id=record.id,
+                filename=record.original_filename, level="info",
+                message=f"Cancel of {outcome['affected_jobs']} file(s) requested by {current_user.email}")
+            db.commit()
+        try:
+            await run_in_threadpool(note)
+        except Exception:  # the engine has accepted the cancel: answering 500 here would say it had not
+            logger.exception("Could not record who cancelled job %s", job_id)
+            await run_in_threadpool(db.rollback)
+    return outcome
 
 
 @router.delete("/engine/jobs")

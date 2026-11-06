@@ -447,6 +447,22 @@ class TwoBackendsSettleOneJobOnceTests(unittest.IsolatedAsyncioTestCase):
             await self._settle_from_two_backends(self._db({}), "file-job-2", "completed")
         self.assertEqual(len(written), 2)  # no row state to read in this double: each backend still tries
 
+    async def test_a_cancelled_job_does_not_mark_its_file_failed(self):
+        """Fails on the old code: every status 'failed' went through mark_processed(error=...)."""
+        file = SimpleNamespace(id="file-4", case_id="case-1", original_filename="d.pdf", status="processing",
+                               summary=None, entity_count=None, relationship_count=None)
+        synced, failed, lines = [], [], []
+        with patch("services.evidence_db_storage.EvidenceDBStorage.find_by_engine_job_id", return_value=file), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed",
+                      lambda db_, ids, error=None: failed.append(ids)), \
+                patch("services.evidence_job_sync._sync_db_record_from_job", lambda *a, **k: synced.append(a)), \
+                patch.object(module, "_log_once", lambda db_, rec, job, level, text: lines.append((level, text))):
+            await self._settle_from_two_backends(self._db({}), "cancelled-job", "failed",
+                                                 {"cancelled_at": "2026-11-05T23:00:00"})
+        self.assertTrue(synced)
+        self.assertEqual(failed, [])
+        self.assertTrue(all(level == "info" and text.startswith("Cancelled:") for level, text in lines))
+
     async def test_a_new_transcript_of_a_published_file_is_not_taken_for_settled(self):
         file = SimpleNamespace(id="file-3", case_id="case-1", original_filename="c.mp3", status="processed",
                                summary=None, entity_count=None, relationship_count=None)

@@ -29,6 +29,30 @@ _ACTIVE_JOB_STATUSES = {
 }
 
 
+# The engine's words on a cancelled job (evidence-engine app/services/ingestion_control.py).
+CANCELLED_PREFIX = "Cancelled on request."
+
+
+def file_was_cancelled(record) -> bool:
+    """A cancel is not a failure: the file is unprocessed (or keeps an earlier run) and last_error says what happened."""
+    return (getattr(record, "last_error", None) or "").startswith(CANCELLED_PREFIX)
+
+
+def reading_cancelled(record) -> bool:
+    """No reading will arrive from this file's last run. A file that kept an earlier run still has that one."""
+    return file_was_cancelled(record) and record.status != "processed"
+
+
+def _keep_cancelled_file(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
+    """The file stays in the case. An earlier finished run is still what the case holds, so it keeps that state."""
+    state = "processed" if db_rec.processed_at is not None else "unprocessed"
+    message = str(job.get("error_message") or CANCELLED_PREFIX).strip()
+    changed = db_rec.status != state or db_rec.last_error != message
+    db_rec.status = state
+    db_rec.last_error = message
+    return changed
+
+
 def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None, *, request_checked=False) -> bool:
     """request_checked: the caller already matched the job to the file's accepted ingestion request (the jobs poll
     reads that one JSON field in SQL), so the whole profile snapshot is not loaded again here."""
@@ -41,6 +65,8 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None,
         snapshot = getattr(db_rec, 'last_processed_profile_snapshot', None) or {}
         if snapshot.get('ingestion_request_id') and incoming.get('ingestion_request_id') and incoming['ingestion_request_id'] != snapshot['ingestion_request_id']:
             return False
+    if status == 'failed' and job.get('cancelled_at'):
+        return _keep_cancelled_file(db_rec, job)
     if job.get('job_type') == 'audio_review' and status in ('completed', 'failed'):
         from services.transcript_review import capture_source, summary
         if status == 'completed':

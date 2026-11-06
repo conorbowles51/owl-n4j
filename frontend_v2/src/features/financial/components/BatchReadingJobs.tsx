@@ -35,7 +35,7 @@ export function BatchReadingJobs({
       action,
     }: {
       job: EvidenceJob
-      action: "pause" | "resume"
+      action: "pause" | "resume" | "cancel"
     }) =>
       fetchAPI(
         `/api/evidence/engine/jobs/${job.id}/${action}?case_id=${caseId}`,
@@ -63,12 +63,13 @@ export function BatchReadingJobs({
       (job) => jobIds.includes(job.id) && job.job_type === "pdf_review"
     ) ?? []
   return (
-    <Disclosure className="rounded border p-3" label={<>PDF reading jobs · pause or resume a reading</>}>
+    <Disclosure className="rounded border p-3" label={<>PDF reading jobs · pause, resume or cancel a reading</>}>
       <p className="my-2 text-sm text-muted-foreground">
         These readings have their own saved progress. Pausing batch preparation
         stops new statements and imports after the current statement finishes.
         Readings already running continue until you pause them here. A reading
-        may be used by another financial batch; its pause applies there too. AI
+        may be used by another financial batch; its pause or cancel applies
+        there too. Cancelling keeps the PDF and saved reviews and payments. AI
         ingestion is separate.
       </p>
       {jobs.isError && (
@@ -111,6 +112,12 @@ export function BatchReadingJobs({
                 canEdit
                   ? (selected) =>
                       control.mutate({ job: selected, action: "resume" })
+                  : undefined
+              }
+              onCancel={
+                canEdit
+                  ? (selected) =>
+                      control.mutate({ job: selected, action: "cancel" })
                   : undefined
               }
             />

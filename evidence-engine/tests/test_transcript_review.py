@@ -101,9 +101,11 @@ async def test_audio_preparation_stops_after_source_storage(monkeypatch):
     monkeypatch.setattr(audio_review, 'load_ai_model_policy', policy)
     monkeypatch.setattr(audio_review, 'extract_text', extract)
     monkeypatch.setattr(audio_review, 'save_machine_document', save)
+    async def enter(_ids): events.append('enter')
+    monkeypatch.setattr(audio_review, 'begin_publication', enter)
     await audio_review.prepare_audio_review(SimpleNamespace(id=uuid.uuid4(), source_evidence_file_id=uuid.uuid4(),
         case_id=str(uuid.uuid4()), file_path='/synthetic.wav', file_name='synthetic.wav'), status)
-    assert events == [JobStatus.EXTRACTING_TEXT, ('saved', True), JobStatus.COMPLETED]
+    assert events == [JobStatus.EXTRACTING_TEXT, 'enter', ('saved', True), JobStatus.COMPLETED]
 
 
 @pytest.mark.asyncio

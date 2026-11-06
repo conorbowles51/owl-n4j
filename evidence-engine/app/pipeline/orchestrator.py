@@ -42,6 +42,7 @@ from app.services.pipeline_run_state import (
     transition_pipeline_state,
 )
 from app.services.chunk_publication import publish_chunk_revision
+from app.services.ingestion_control import begin_publication
 from app.services.embedding_refusal import chunk_progress_message, start_collecting_skipped
 from app.services.claim_ledger import (
     attach_claim_ids,
@@ -332,6 +333,8 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
             await _update_job(job, JobStatus.GENERATING_SUMMARIES, 0.85, db, "Summaries generated")
 
             # Stage 7: Write to Neo4j + embed for RAG -> 85-100%
+            await begin_publication([job.id])
+            await db.refresh(job)  # it wrote pipeline_state in its own session; _update_job rewrites the whole value
             await _update_job(job, JobStatus.WRITING_GRAPH, 0.85, db, "Writing graph...")
             await write_graph(resolved_ents, resolved_rels, job.case_id, str(job.id), **replacement)
             if skipped_steps:
@@ -389,15 +392,15 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
         # it and the row would otherwise stay in its last intermediate status
         # (the "zombie ingestion" failure mode). Mark failed, then re-raise to
         # honor cooperative cancellation.
-        logger.warning("Pipeline cancelled for job %s at %s", job_id, job.status)
+        logger.warning("Pipeline interrupted for job %s at %s", job_id, job.status)
         try:
             await _update_job(
                 job,
                 JobStatus.FAILED,
                 job.progress,
                 db,
-                "Cancelled (worker timeout or shutdown)",
-                error_message=f"Job cancelled (worker timeout or shutdown) during '{job.status.value}'.",
+                "Interrupted (worker timeout or shutdown)",
+                error_message=f"Job interrupted (worker timeout or shutdown) during '{job.status.value}'.",
             )
         except Exception:
             logger.exception("Failed to mark job %s as failed during cancellation", job_id)

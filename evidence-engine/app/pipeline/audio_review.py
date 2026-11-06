@@ -7,6 +7,7 @@ from app.models.job import JobStatus
 from app.pipeline.extract_text import extract_text, ExtractedDocument, get_transcription, get_transcription_segments
 from app.services.ai_model_policy import load_ai_model_policy
 from app.services.ingestion_checkpoints import pause_boundary
+from app.services.ingestion_control import begin_publication
 from postgres.models.evidence import EvidenceFile
 from postgres.models.transcript import TranscriptRevision, TranscriptSource
 from services.transcript_review import capture_source, render_revision, feature_enabled
@@ -63,6 +64,7 @@ async def prepare_audio_review(job, update_status):
     doc = await extract_text(job.file_path, job.file_name, progress_callback=progress)
     if doc.metadata.get('file_type') != 'audio':
         raise ValueError('Transcript review requires an audio recording')
+    await begin_publication([job.id])  # the last stop before the transcript is saved
     await save_machine_document(job.id, job.source_evidence_file_id, job.case_id, doc, review_required=True)
     await update_status(job.id, JobStatus.COMPLETED, 1.0, 'Transcript ready for review; graph processing has not started',
         transcription=get_transcription(doc), transcription_segments=get_transcription_segments(doc))

@@ -9,6 +9,7 @@ import uuid
 import httpx
 import openai
 import pytest
+from unittest.mock import AsyncMock
 
 from app.models.job import JobStatus
 from app.pipeline import batch_orchestrator, chunk_embed, orchestrator, resolve_entities, write_graph
@@ -192,6 +193,9 @@ async def test_429_at_stage_2_completes_the_job_with_entities(monkeypatch: pytes
         async def execute(self, _query: object) -> FakeResult:
             return FakeResult()
 
+        async def refresh(self, _row: object) -> None:
+            return None
+
         async def commit(self) -> None:
             return None
 
@@ -254,6 +258,7 @@ async def test_429_at_stage_2_completes_the_job_with_entities(monkeypatch: pytes
     monkeypatch.setattr(orchestrator, "link_transaction_parties", lambda _e, relationships: relationships)
     monkeypatch.setattr(orchestrator, "generate_summaries", first)
     monkeypatch.setattr(orchestrator, "write_graph", no_op)
+    monkeypatch.setattr(orchestrator, "begin_publication", AsyncMock())
     monkeypatch.setattr(orchestrator, "publish_chunk_revision", publish)
     monkeypatch.setattr(orchestrator.settings, "claim_verification_enabled", False)
 
@@ -296,6 +301,7 @@ def _batch_harness(monkeypatch: pytest.MonkeyPatch, jobs: list[SimpleNamespace],
     monkeypatch.setattr(batch_orchestrator, "get_ai_runtime_snapshot", lambda: {})
     monkeypatch.setattr(graph_identity, "ensure_identity_indexes", no_op)
     monkeypatch.setattr(batch_orchestrator, "_update_job_status", status)
+    monkeypatch.setattr(batch_orchestrator, "begin_publication", AsyncMock())
     monkeypatch.setattr(batch_orchestrator, "_extract_file", extract)
     monkeypatch.setattr(batch_orchestrator, "_activate_chunk_revisions", lambda *_a: value(set()))
     monkeypatch.setattr(batch_orchestrator, "load_retired_claims", no_op, raising=False)

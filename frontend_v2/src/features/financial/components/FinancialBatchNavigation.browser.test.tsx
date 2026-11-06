@@ -179,7 +179,7 @@ it("retries the exact retained reading from its job card, shows progress and ret
   })
   mount(`/cases/case/financial?view=statements&batch=${batch.id}`)
   await page
-    .getByText("PDF reading jobs · pause or resume a reading", { exact: true })
+    .getByText("PDF reading jobs · pause, resume or cancel a reading", { exact: true })
     .click()
   const reading = await screen.findByRole("group", {
     name: `Financial statement reading: ${file.original_filename}`,

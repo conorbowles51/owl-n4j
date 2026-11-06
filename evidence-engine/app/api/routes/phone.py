@@ -97,12 +97,19 @@ async def create_phone_job(case_id: str, body: PhoneJobRequest, request: Request
 
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_phone_job(job_id: uuid.UUID, case_id: str = Query(...), db: AsyncSession = Depends(get_db)):
-    """01 section 10.6. Only a ``pending`` extraction's rows are removed; an active one is never cancelled away."""
-    job = (await db.execute(select(Job).where(Job.id == job_id).with_for_update())).scalar_one_or_none()
+    """01 section 10.6. Only a ``pending`` extraction's rows are removed; an active one is never cancelled away.
+    Every other kind of job cancels by batch (app/services/ingestion_control.py)."""
+    job = (await db.execute(select(Job).where(Job.id == job_id))).scalar_one_or_none()
     if job is None or job.case_id != case_id:
         raise HTTPException(404, "Job not found in this case")
     if job.job_type != "phone_capture":
-        raise HTTPException(409, "Only phone report readings can be cancelled")
+        from app.services.ingestion_control import CancelRefused, cancel_job
+        try:
+            return await cancel_job(db, job)
+        except CancelRefused as refused:
+            raise HTTPException(409, str(refused))
+    job = (await db.execute(select(Job).where(Job.id == job_id).with_for_update()
+                            .execution_options(populate_existing=True))).scalar_one_or_none()
     standing = await _standing(db, job.id)
     if standing in ("active", "superseded"):
         raise HTTPException(409, "This phone report is already in the case and cannot be cancelled. Use Replace or "

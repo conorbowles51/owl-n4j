@@ -115,7 +115,7 @@ it("retains a paused import across navigation and separately pauses a PDF readin
     await screen.findByRole("button", { name: "Resume batch preparation" })
     expect(screen.getByRole("button", { name: /Import 12/ })).toBeDisabled()
     fireEvent.click(
-      screen.getByText("PDF reading jobs · pause or resume a reading")
+      screen.getByText("PDF reading jobs · pause, resume or cancel a reading")
     )
     const pdf = within(
       await screen.findByRole("group", {
@@ -129,7 +129,7 @@ it("retains a paused import across navigation and separately pauses a PDF readin
     mount()
     await screen.findByRole("button", { name: "Resume batch preparation" })
     fireEvent.click(
-      screen.getByText("PDF reading jobs · pause or resume a reading")
+      screen.getByText("PDF reading jobs · pause, resume or cancel a reading")
     )
     fireEvent.click(
       within(

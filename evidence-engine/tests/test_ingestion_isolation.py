@@ -17,7 +17,7 @@ from app.services import graph_identity, ingestion_control
 @pytest.mark.parametrize('batch', [True, False])
 async def test_pdf_worker_runs_when_graph_is_unavailable(monkeypatch, batch):
     job = SimpleNamespace(id=uuid4(), case_id=str(uuid4()), job_type='pdf_review',
-                          status=JobStatus.PENDING)
+                          status=JobStatus.PENDING, cancel_requested=False)
     db = SimpleNamespace(
         get=AsyncMock(return_value=job), commit=AsyncMock(),
         execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [job]))))

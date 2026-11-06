@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import uuid
 
 import pytest
+from unittest.mock import AsyncMock
 
 from app.pipeline import chunk_embed
 from app.pipeline import batch_orchestrator
@@ -198,6 +199,9 @@ async def test_single_file_pipeline_activates_chunks_only_after_graph_publicatio
         async def execute(self, _query: object) -> FakeResult:
             return FakeResult()
 
+        async def refresh(self, _row: object) -> None:
+            return None
+
         async def commit(self) -> None:
             return None
 
@@ -241,6 +245,7 @@ async def test_single_file_pipeline_activates_chunks_only_after_graph_publicatio
     monkeypatch.setattr(orchestrator, "resolve_relationships", return_first)
     monkeypatch.setattr(orchestrator, "generate_summaries", return_first)
     monkeypatch.setattr(orchestrator, "write_graph", fake_write_graph)
+    monkeypatch.setattr(orchestrator, "begin_publication", AsyncMock())
     monkeypatch.setattr(orchestrator, "publish_chunk_revision", fake_publish)
 
     await orchestrator.run_pipeline(str(job_id), FakeDb())  # type: ignore[arg-type]
@@ -317,6 +322,7 @@ async def test_batch_activates_successful_text_only_documents_with_no_entities(
 
     monkeypatch.setattr(batch_orchestrator, "_extract_file", fake_extract_file)
     monkeypatch.setattr(batch_orchestrator, "_update_job_status", fake_status)
+    monkeypatch.setattr(batch_orchestrator, "begin_publication", AsyncMock())
     monkeypatch.setattr(
         batch_orchestrator,
         "activate_chunk_revision",

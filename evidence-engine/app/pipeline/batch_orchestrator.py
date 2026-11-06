@@ -53,6 +53,7 @@ from app.services.claim_ledger import (
 )
 from app.pipeline.verify_claims import verify_grounded_claims
 from app.services.ingestion_checkpoints import checkpointed, pause_boundary, IngestionPaused
+from app.services.ingestion_control import begin_publication
 from app.services.db_retry import retry_transient
 from app.services.embedding_refusal import chunk_progress_message, start_collecting_skipped
 
@@ -427,13 +428,15 @@ async def _force_fail_unfinished_batch_rows(batch_id: str, reason: str) -> None:
 
     Called from the cancellation/crash handlers in run_batch_pipeline so users
     aren't left looking at a "still ingesting" UI when the parent task died.
-    Idempotent — only touches non-terminal rows.
+    Idempotent — only touches non-terminal rows. A row being cancelled is left for the
+    cancel to finish (run_controlled, the janitor): it did not fail.
     """
     async with async_session() as db:
         result = await db.execute(
             select(Job).where(
                 Job.batch_id == batch_id,
                 Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED]),
+                Job.cancel_requested.is_(False),
             )
         )
         unfinished = list(result.scalars().all())
@@ -614,6 +617,7 @@ async def run_batch_pipeline(
             for revision in staged_chunk_revisions if feature_enabled() and Path(revision.file_name).suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS})
         replacement = {'retired_claims': retired_claims} if retired_claims else {}
         if not all_raw_entities:
+            await begin_publication(active_job_ids)
             if retired_claims:
                 await write_graph([], [], case_id, batch_id, **replacement)
             logger.warning("No entities extracted from any file in batch %s", batch_id)
@@ -706,6 +710,7 @@ async def run_batch_pipeline(
             for jid in active_job_ids:
                 await _update_job_status(jid, JobStatus.GENERATING_SUMMARIES, 0.85, "Summaries generated")
 
+            await begin_publication(active_job_ids)
             for jid in active_job_ids:
                 await _update_job_status(jid, JobStatus.WRITING_GRAPH, 0.85, "Writing graph...")
 
@@ -752,11 +757,11 @@ async def run_batch_pipeline(
         # BaseException, so the broader Exception handler below misses it.
         # Force-fail every non-terminal row in this batch so the UI doesn't
         # keep showing "still ingesting" forever.
-        logger.warning("Batch %s cancelled (worker timeout or shutdown)", batch_id)
+        logger.warning("Batch %s interrupted (worker timeout or shutdown)", batch_id)
         try:
             await _force_fail_unfinished_batch_rows(
                 batch_id,
-                "Batch task cancelled (worker timeout or shutdown). Safe to retry.",
+                "Batch task interrupted (worker timeout or shutdown). Safe to retry.",
             )
         except Exception:
             logger.exception("Failed to force-fail unfinished rows in batch %s on cancel", batch_id)

@@ -66,7 +66,7 @@ async def audio_review_capabilities():
 
 
 async def control_job(job_id: str, case_id: str, action: str):
-    """pause, resume, or cancel (phone readings only; the engine refuses it for an extraction already in the case)."""
+    """pause, resume, or cancel. The engine says why when it refuses (work already in the case, or a kind it cannot stop)."""
     if action not in {"pause", "resume", "cancel"}:
         raise ValueError("Invalid ingestion action")
     response = await _get_client().post(f"/jobs/{job_id}/{action}", params={"case_id": case_id})

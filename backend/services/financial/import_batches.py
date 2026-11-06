@@ -2610,7 +2610,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     target=db.get(EvidenceFile,UUID(file['file_id']))
                     if target is not None and target.case_id != case_id:
                         raise PdfMappingError('The prepared reading is not available in this case. Retry from the original PDF.', 409)
-                    if not target or target.status=='failed': raise PdfMappingError(
+                    if _reading_stopped(target): raise PdfMappingError(
                         (target.last_error if target else None) or 'The PDF reading failed. Retry resumes this reading; existing saved payments and reviews are retained.',422)
                     _reading_progress(file, 'checking_statements' if target.status == 'processed' else 'reading',
                         'Reading finished; preparing the statement reviews.' if target.status == 'processed' else 'The reading is queued or running; existing saved work is retained.',
@@ -2717,6 +2717,12 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         heartbeat.cancel()
         await asyncio.gather(heartbeat,return_exceptions=True)
         await asyncio.shield(asyncio.to_thread(release, interrupted))
+
+
+def _reading_stopped(target):
+    """No reading will arrive. A cancelled one counts: its file is not 'failed', and the batch would wait for ever."""
+    from services.evidence_job_sync import reading_cancelled
+    return not target or target.status == 'failed' or reading_cancelled(target)
 
 
 def _record_page_identity(factory, case_id, file_id, resolve_path):

@@ -6,6 +6,7 @@ from app.pipeline.extract_text import extract_text
 from app.services.evidence_document_text import upsert_evidence_document_text
 from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.ingestion_checkpoints import pause_boundary
+from app.services.ingestion_control import begin_publication
 from app.services.db_retry import is_transient_db_error, retry_transient
 
 async def prepare_pdf_review(job, update_status):
@@ -28,6 +29,7 @@ async def prepare_pdf_review(job, update_status):
     # extract_text's PDF branch uses the native text layer and local Tesseract.
     document = await extract_text(job.file_path, job.file_name, progress_callback=progress,
         pdf_reading_mode=reading_mode)
+    await begin_publication([job.id])  # the last stop before this reading replaces the file's stored text
     async def store():
         async with async_session() as db:
             # One source generation must become visible together. A cancellation,

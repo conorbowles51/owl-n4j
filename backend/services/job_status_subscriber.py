@@ -305,7 +305,8 @@ class JobStatusSubscriber:
                     else:
                         to_subscribe.append((jid, case_id, None))
                     continue
-                if job.get('job_type') == 'audio_review' or (job.get('pipeline_state') or {}).get('transcript_revision_id'):
+                if job.get('job_type') == 'audio_review' or job.get('cancelled_at') or (
+                        job.get('pipeline_state') or {}).get('transcript_revision_id'):
                     from services.evidence_job_sync import _sync_db_record_from_job
                     _sync_db_record_from_job(row, job, db=db)
                 else:
@@ -517,11 +518,12 @@ class JobStatusSubscriber:
             # and the jobs poll settles the row too: the row's lock decides, and whoever comes second leaves the row
             # alone. Its log line is still written once. Audio stays out: a new transcript of a published file
             # finishes with the row already 'processed'.
-            settled = not audio and _already_settled(db_rec.status, status, _FILE_SETTLED)
+            cancelled = bool(job_detail.get('cancelled_at'))  # a cancel is not a failure: the file is not marked failed
+            settled = not audio and not cancelled and _already_settled(db_rec.status, status, _FILE_SETTLED)
 
             err = _failure_reason(data, _MISSING_FILE_REASON) if status == "failed" else None
             from services.evidence_job_sync import _sync_db_record_from_job
-            if audio:
+            if audio or cancelled:
                 _sync_db_record_from_job(db_rec, {**job_detail, 'id': job_id, 'status': status,
                     **({'error_message': err} if err else {})}, db=db)
             elif not settled:
@@ -549,6 +551,8 @@ class JobStatusSubscriber:
 
                 _log_once(db, db_rec, job_id, "info",
                           f"Completed: {db_rec.original_filename} ({entity_count or 0} entities, {rel_count or 0} relationships)")
+            elif cancelled:
+                _log_once(db, db_rec, job_id, "info", f"Cancelled: {db_rec.original_filename}: {err}")
             else:
                 _log_once(db, db_rec, job_id, "error", f"Failed: {db_rec.original_filename}: {err or 'Unknown error'}")
 

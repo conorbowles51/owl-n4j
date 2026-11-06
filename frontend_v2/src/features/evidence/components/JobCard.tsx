@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -24,6 +24,7 @@ interface JobCardProps {
   clearing?: boolean
   onPause?: (job: EvidenceJob) => void
   onResume?: (job: EvidenceJob) => void
+  onCancel?: (job: EvidenceJob) => void
   controlScope?: string
   controlling?: boolean
 }
@@ -71,6 +72,13 @@ const STAGE_COLORS: Record<PipelineStage, string> = {
   failed: "bg-red-500/10 text-red-600 border-red-500/20",
 }
 
+// The engine's lists (app/api/routes/jobs.py, app/services/ingestion_control.py). An old row has no job_type: ingestion.
+const PAUSABLE_TYPES = new Set(["ingestion", "pdf_review", "audio_review", "phone_capture"])
+const CANCELLABLE_TYPES = new Set(["ingestion", "pdf_review", "audio_review"])
+
+export const CANCEL_JOB_KEEPS =
+  "This stops after the step it is on. Files that finished stay in the case. The others stay as uploaded files, and nothing from them is added to the case graph."
+
 function formatDuration(startStr: string, endStr?: string): string {
   const start = new Date(startStr).getTime()
   const end = endStr ? new Date(endStr).getTime() : Date.now()
@@ -92,6 +100,7 @@ export function JobCard({
   onClear,
   onPause,
   onResume,
+  onCancel,
   controlScope,
   controlling = false,
   retrying = false,
@@ -99,30 +108,45 @@ export function JobCard({
   clearing = false,
 }: JobCardProps) {
   const isActive = job.status !== "completed" && job.status !== "failed"
-  const isFailed = job.status === "failed"
+  const isCancelled = !!job.cancelled_at
+  const isCancelling = isActive && !!job.cancel_requested
+  // A cancelled job is stored as finished-with-status-failed; it is not a failure and never reads as one.
+  const isFailed = job.status === "failed" && !isCancelled
   const isCompleted = job.status === "completed"
+  const jobType = job.job_type || "ingestion"
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const isStatementReading = job.job_type === "pdf_review"
   // A release flags every unfinished job as paused while it runs; a job that finished meanwhile is finished.
   const paused = isActive && !!job.paused
-  const canResume = !!job.resumable && (paused || isFailed)
+  const canResume =
+    !!job.resumable && (paused || isFailed) && PAUSABLE_TYPES.has(jobType) && !job.cancel_requested
   const isAudioReview = job.job_type === "audio_review"
-  const canRetry = isFailed && !!job.evidence_file_id && !canResume && !!onRetry
-  const canClear = (isFailed || isCompleted) && !!onClear
-  const canControl = canResume ? !!onResume : !!onPause
+  const canRetry = (isFailed || isCancelled) && !!job.evidence_file_id && !canResume && !!onRetry
+  const canClear = (isFailed || isCancelled || isCompleted) && !!onClear
+  const canControl = (canResume ? !!onResume : !!onPause) && PAUSABLE_TYPES.has(jobType) && !isCancelling
+  const writingToCase = isActive && !!job.pipeline_state?.publication_begun
+  const canCancel =
+    isActive && !!onCancel && CANCELLABLE_TYPES.has(jobType) && !job.cancel_requested && !writingToCase
 
   const duration = useMemo(
     () => formatDuration(job.created_at, isActive ? undefined : job.updated_at),
     [job.created_at, job.updated_at, isActive]
   )
 
-  const stageLabel = paused
+  const stageLabel = isCancelled
+    ? "Cancelled"
+    : isCancelling
+      ? "Cancelling"
+      : paused
     ? "Paused"
     : job.pause_requested
       ? "Pausing"
       : (isStatementReading || isAudioReview) && isCompleted
         ? "Ready for review"
         : (STAGE_LABELS[job.status] ?? job.status)
-  const stageColor = STAGE_COLORS[job.status] ?? STAGE_COLORS.pending
+  const stageColor = isCancelled
+    ? STAGE_COLORS.pending
+    : (STAGE_COLORS[job.status] ?? STAGE_COLORS.pending)
   const displayName = job.file_name
 
   return (
@@ -234,7 +258,25 @@ export function JobCard({
         </div>
       )}
 
-      {job.pause_requested && (
+      {isCancelled && job.error_message && (
+        <p className="mt-2 rounded-md bg-muted px-2 py-1.5 text-[11px] text-muted-foreground break-words">
+          {job.error_message}
+        </p>
+      )}
+
+      {isCancelling && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Cancelling after the step it is on. Finished files stay in the case.
+        </p>
+      )}
+
+      {writingToCase && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Writing to the case. This can no longer be cancelled.
+        </p>
+      )}
+
+      {job.pause_requested && !isCancelled && !isCancelling && (
         <p className="mt-2 text-xs text-muted-foreground">
           {paused
             ? "Paused. Completed work is saved; this job is not using a processing slot."
@@ -272,6 +314,52 @@ export function JobCard({
                 : "Controls all unfinished files in this batch. Other batches continue independently."}
             </p>
           )}
+        </div>
+      )}
+
+      {canCancel && !confirmCancel && (
+        <div className="mt-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-[11px]"
+            disabled={controlling}
+            onClick={() => setConfirmCancel(true)}
+          >
+            Cancel
+            {controlScope ? ` ${controlScope}` : job.batch_id ? " batch" : ""}
+          </Button>
+        </div>
+      )}
+      {canCancel && confirmCancel && (
+        <div
+          role="alertdialog"
+          aria-label="Cancel this processing"
+          className="mt-2 rounded-md border p-2 text-[11px]"
+        >
+          <p>{CANCEL_JOB_KEEPS}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 text-[11px]"
+              disabled={controlling}
+              onClick={() => {
+                setConfirmCancel(false)
+                onCancel?.(job)
+              }}
+            >
+              Cancel processing
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px]"
+              onClick={() => setConfirmCancel(false)}
+            >
+              Keep going
+            </Button>
+          </div>
         </div>
       )}
 

@@ -132,10 +132,12 @@ def _pdf_pages(path: Path | None) -> int | None:
 def absent_reason(record: EvidenceFile) -> str:
     """Why a document has no stored text, in words shown on the page. Never an empty panel."""
     if record.status == "unprocessed":
+        if (record.last_error or "").startswith("Cancelled on request."):
+            return "Processing this file was cancelled before its text was stored, so Loupe holds no text for it."
         return "This file has not been processed yet, so Loupe holds no text for it."
     if record.status == "failed":
         error = (record.last_error or "").strip()
-        known = error.startswith(("Unsupported", "Batch task cancelled"))
+        known = error.startswith(("Unsupported", "Batch task interrupted", "Batch task cancelled"))  # older rows keep it
         return "Reading this file failed, so Loupe holds no text for it." + (f" {error}" if known else "")
     if record.transcription:
         return "This recording's transcript is kept with the recording: open it from Evidence."

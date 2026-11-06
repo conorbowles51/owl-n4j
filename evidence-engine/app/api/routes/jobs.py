@@ -25,9 +25,15 @@ async def control_job(job_id: uuid.UUID, action: str, request: Request,
     predicate = Job.batch_id == job.batch_id if job.batch_id else Job.id == job.id
     result = await db.execute(select(Job).where(predicate, Job.case_id == case_id)
                               .order_by(Job.id).with_for_update())
-    jobs = [item for item in result.scalars().all() if item.status != JobStatus.COMPLETED]
+    rows = result.scalars().all()
+    jobs = [item for item in rows if item.status != JobStatus.COMPLETED]
     if not jobs:
         return {"state": "completed", "affected_jobs": 0}
+    # Neither may undo a cancel: a run started now would pick up every row of the batch, the cancelled ones too.
+    if any(item.cancel_requested for item in jobs):
+        if all(item.status == JobStatus.FAILED for item in jobs):
+            raise HTTPException(409, "This processing was cancelled. Process the file again to start a new run.")
+        raise HTTPException(409, "This processing is being cancelled. It stops after the step it is on.")
     if action == "pause":
         queued = all(item.status == JobStatus.PENDING for item in jobs)
         for item in jobs:
@@ -37,7 +43,8 @@ async def control_job(job_id: uuid.UUID, action: str, request: Request,
                 item.resumable = True
         await db.commit()
         return {"state": "paused" if queued else "pausing", "affected_jobs": len(jobs)}
-    if any(item.pause_requested and not item.paused for item in jobs):
+    # A failed row has no worker: a pause asked of a worker that then died is not still "pausing".
+    if any(item.pause_requested and not item.paused and item.status != JobStatus.FAILED for item in jobs):
         raise HTTPException(409, "Pausing: the current work unit is still finishing. Resume will be available when it has stopped.")
     if not all(item.paused or item.status == JobStatus.FAILED for item in jobs):
         # Repeated Resume after a lost response does not create a new attempt.

@@ -32,6 +32,8 @@ class JobResponse(BaseModel):
     paused: bool = False
     resumable: bool = False
     resume_generation: int = 0
+    cancel_requested: bool = False
+    cancelled_at: datetime | None = None
     quality_report: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime

@@ -129,7 +129,7 @@ async def test_phone_jobs_pause_and_resume_on_the_phone_function():
     identity = uuid4()
     job = SimpleNamespace(id=identity, case_id="case", batch_id=None, job_type="phone_capture",
                           status=JobStatus.CAPTURING, pause_requested=False, paused=False, resumable=True,
-                          resume_generation=0, error_message=None,
+                          cancel_requested=False, cancelled_at=None, resume_generation=0, error_message=None,
                           pipeline_state={"processing_queue": "arq:phone-capture"})
     db = Db()
     db.rows[identity] = job

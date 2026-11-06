@@ -407,6 +407,8 @@ export interface EvidenceJob {
   paused?: boolean
   resumable?: boolean
   resume_generation?: number
+  cancel_requested?: boolean
+  cancelled_at?: string | null
   id: string
   case_id: string
   batch_id: string | null

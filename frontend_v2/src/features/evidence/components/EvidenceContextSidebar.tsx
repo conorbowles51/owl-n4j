@@ -467,6 +467,8 @@ function DetailsPanelContent({
   const isProcessed = file.status === "processed"
   const isProcessing = file.status === "processing"
   const isFailed = file.status === "failed"
+  // The engine's words for a cancelled run: the file is unprocessed, or keeps an earlier run; nothing went wrong.
+  const isCancelledNote = !!file.last_error?.startsWith("Cancelled on request.")
   const isUnprocessed = file.status === "unprocessed"
 
   // `isProcessing` above is this file's own status, so the gate's two busy
@@ -821,7 +823,12 @@ function DetailsPanelContent({
           )}
 
           {/* Non-failed error display for edge cases */}
-          {!isFailed && file.last_error && (
+          {!isFailed && isCancelledNote && (
+            <p className="rounded-lg border bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
+              {file.last_error}
+            </p>
+          )}
+          {!isFailed && file.last_error && !isCancelledNote && (
             <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/5">
               <div className="flex items-start gap-3 p-3">
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-red-500/10">

@@ -396,6 +396,11 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
     await load_ai_model_policy(db)
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one()
+    if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+        # ARQ runs a killed worker's job again once its 4 h mark expires. The janitor has failed this merge by then
+        # and the person told to run it again: this old run must not change the graph behind them.
+        logger.warning("Merge job %s is already %s; this retry does nothing", job_id, job.status.value)
+        return
     job.pipeline_state = dict(job.pipeline_state or {})
     job.pipeline_state["ai_runtime"] = get_ai_runtime_snapshot()
     await db.commit()

@@ -1069,7 +1069,7 @@ it.each(["unrelated", "ambiguous", "other-case"])(
     })
     mount()
     fireEvent.click(
-      await screen.findByText("PDF reading jobs · pause or resume a reading")
+      await screen.findByText("PDF reading jobs · pause, resume or cancel a reading")
     )
     const reading = await screen.findByRole("group", {
       name: "Financial statement reading: Checking.pdf",
@@ -1102,7 +1102,7 @@ it("keeps a paused batch reading Retry disabled with a visible explanation", asy
   })
   mount()
   fireEvent.click(
-    await screen.findByText("PDF reading jobs · pause or resume a reading")
+    await screen.findByText("PDF reading jobs · pause, resume or cancel a reading")
   )
   const reading = await screen.findByRole("group", {
     name: "Financial statement reading: Checking.pdf",
@@ -1134,7 +1134,7 @@ it("shows a reading Retry error beside its control and refreshes a possibly save
   })
   mount()
   const summary = await screen.findByText(
-    "PDF reading jobs · pause or resume a reading"
+    "PDF reading jobs · pause, resume or cancel a reading"
   )
   fireEvent.click(summary)
   const reading = await screen.findByRole("group", {

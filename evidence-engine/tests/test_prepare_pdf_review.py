@@ -4,6 +4,13 @@ import pytest
 from app.pipeline.prepare_pdf_review import prepare_pdf_review
 from app.models.job import JobStatus
 
+
+@pytest.fixture(autouse=True)
+def no_publication_lock(monkeypatch):
+    from app.pipeline import prepare_pdf_review as module
+    monkeypatch.setattr(module, 'begin_publication', AsyncMock())
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('reading_mode', ['automatic', 'page_images'])
 async def test_pdf_preparation_persists_sources_and_completes_without_ai(reading_mode):

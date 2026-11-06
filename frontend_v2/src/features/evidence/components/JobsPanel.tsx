@@ -332,15 +332,19 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
                 ? "Reading resumes from the last saved point."
                 : "Pausing after the step it is on saves."
         )
+      else if (result.state === "cancelled")
+        toast.success(`${result.affected_jobs ?? 0} file(s) cancelled. The files stay in the case.`)
+      else if (result.state === "cancelling")
+        toast.success(`Cancelling ${result.affected_jobs ?? 0} file(s) after the step they are on.`)
       else toast.success(`${result.affected_jobs ?? 0} file(s): ${result.state}`)
     },
     onError: (error) => toast.error(error.message),
   })
 
-  const retryFile = async (fileId: string) => {
+  const retryFile = async (fileId: string, reprocessCompleted = false) => {
     setRetryingFileId(fileId)
     try {
-      if ((await startProcess({ fileIds: [fileId] })) === "started") {
+      if ((await startProcess({ fileIds: [fileId], reprocessCompleted })) === "started") {
         toast.success("Retry started")
       }
     } finally {
@@ -610,6 +614,9 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
                 onResume={(selectedJob) =>
                   controlMutation.mutate({ job: selectedJob, action: "resume" })
                 }
+                onCancel={(selectedJob) =>
+                  controlMutation.mutate({ job: selectedJob, action: "cancel" })
+                }
                 controlling={controlMutation.isPending}
                 onRetry={(selectedJob: EvidenceJob) => {
                   if (!selectedJob.evidence_file_id) {
@@ -618,7 +625,8 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
                     )
                     return
                   }
-                  void retryFile(selectedJob.evidence_file_id)
+                  // A cancelled re-run leaves the file processed with its earlier run: only this asks for it again.
+                  void retryFile(selectedJob.evidence_file_id, !!selectedJob.cancelled_at)
                 }}
                 onClear={(selectedJob: EvidenceJob) => {
                   clearJobMutation.mutate(selectedJob.id)

@@ -304,6 +304,12 @@ def recover_one(factory, item_id, resolve_path):
                     _outcome(db, item, file, 'review', 'The retained recovery reading is unavailable. Open the original source.')
                     db.commit()
                     return
+                from services.evidence_job_sync import reading_cancelled
+                if reading_cancelled(target):
+                    # Unprocessed too, but a person stopped it: reading it again here would undo that.
+                    _outcome(db, item, file, 'review', 'The recovery reading was cancelled. Open the statement to inspect or retry it; saved work is unchanged.')
+                    db.commit()
+                    return
                 if target.status == 'unprocessed':
                     return dict(needs_reading=True, case_id=case_id, file_id=file.id, item_id=item.id)
                 if target.status == 'processing':
@@ -583,7 +589,8 @@ def retry_item(session, case_id, item_id):
         result = {**item.result, 'visibility_revision': visibility['financial_visibility_revision'],
             'message': 'Recovery queued again. Saved work remains protected.'}
         target = session.get(EvidenceFile, UUID(result['reading_file_id'])) if result.get('reading_file_id') else None
-        if target and target.status == 'failed':
+        from services.evidence_job_sync import reading_cancelled
+        if target and (target.status == 'failed' or reading_cancelled(target)):
             result.pop('reading_file_id', None)
         item.result = result
         run.status = 'running'

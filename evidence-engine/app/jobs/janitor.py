@@ -10,15 +10,19 @@ import os
 from datetime import datetime, timedelta
 
 from arq.constants import in_progress_key_prefix, job_key_prefix
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.dependencies import async_session
 from app.models.job import Job, JobStatus
+from app.services.ingestion_control import announce_cancelled, CANCELLABLE_JOB_TYPES, job_scope, locked_scope, stop_rows
 from app.services.redis_client import publish_progress
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_STALE_THRESHOLD_SECONDS = 7200  # 2 hours
+# A running job's heartbeat moves updated_at every 30 s. A cancel whose job has been quiet this long has no worker left
+# to finish it. Finishing one that does is harmless: the worker stops at its next check and changes nothing.
+CANCEL_QUIET_SECONDS = 300
 
 # Pending jobs are excluded here — they can sit in the queue legitimately without
 # updated_at advancing. Every other non-terminal status reflects an active
@@ -55,6 +59,64 @@ async def queue_holds(pool, identity: str) -> bool:
     return bool(await pool.exists(job_key_prefix + identity, in_progress_key_prefix + identity))
 
 
+async def batch_owners(db, jobs) -> dict:
+    batches = {(job.case_id, job.batch_id) for job in jobs if job.batch_id}
+    owners = {}
+    if batches:
+        for owner in (await db.execute(select(Job).where(
+                Job.batch_id.in_({batch for _, batch in batches}),
+                Job.pipeline_state.has_key("batch_dispatch")))).scalars().all():
+            if (owner.case_id, owner.batch_id) in batches:
+                owners[(owner.case_id, owner.batch_id)] = owner.pipeline_state["batch_dispatch"]
+    return owners
+
+
+async def recover_interrupted_work(pool, queue_name: str) -> int:
+    """Called once when a worker starts, before it takes any job: it is the only worker of its queue, so nothing here
+    is running and an in-progress mark in its queue was left by a worker that was killed. ARQ keeps that mark for the
+    4 h job timeout. Clearing it makes ARQ run the job again now, and the run resumes from its checkpoints. A job whose
+    queue entry is gone (Redis lost it) is the janitor's: it fails, with its reason, and Resume is offered."""
+    async with async_session() as db:
+        jobs = list((await db.execute(select(Job).where(
+            Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED]), Job.paused.is_(False),
+            Job.job_type.in_(CANCELLABLE_JOB_TYPES)))).scalars().all())
+        if not jobs:
+            return 0
+        owners = await batch_owners(db, jobs)
+    cleared = 0
+    for identity in {queue_identity(job, owners) for job in jobs} - {None}:
+        if await pool.zscore(queue_name, identity) is None:
+            continue  # another worker's queue
+        if await pool.delete(in_progress_key_prefix + identity):
+            cleared += 1
+            logger.warning("worker start: cleared the in-progress mark of %s left by a stopped worker", identity)
+    return cleared
+
+
+async def finish_abandoned_cancels() -> int:
+    """A cancel whose worker died: the job would otherwise read "Cancelling" until the stale threshold fails it."""
+    cutoff = datetime.utcnow() - timedelta(seconds=CANCEL_QUIET_SECONDS)
+    done = []
+    async with async_session() as db:
+        quiet = list((await db.execute(select(Job).where(
+            Job.cancel_requested.is_(True), Job.status != JobStatus.COMPLETED,
+            or_(Job.cancelled_at.is_(None), Job.status != JobStatus.FAILED),
+            Job.updated_at < cutoff))).scalars().all())
+        seen = set()
+        for job in quiet:
+            scope = job.batch_id or job.id
+            if scope in seen:
+                continue
+            seen.add(scope)
+            rows = list((await db.execute(locked_scope(job_scope(job), job.case_id))).scalars().all())
+            done += await stop_rows(db, rows)
+            await db.commit()
+    if done:
+        logger.warning("janitor: finished %d cancelled jobs whose worker had stopped", len(done))
+    await announce_cancelled(done)
+    return len(done)
+
+
 async def reap_orphaned_pending(ctx: dict) -> int:
     """Fail pending jobs whose dispatched queue job no longer exists.
 
@@ -73,14 +135,7 @@ async def reap_orphaned_pending(ctx: dict) -> int:
         ))).scalars().all())
         if not pending:
             return 0
-        batches = {(job.case_id, job.batch_id) for job in pending if job.batch_id}
-        owners = {}
-        if batches:
-            for owner in (await db.execute(select(Job).where(
-                    Job.batch_id.in_({batch for _, batch in batches}),
-                    Job.pipeline_state.has_key("batch_dispatch")))).scalars().all():
-                if (owner.case_id, owner.batch_id) in batches:
-                    owners[(owner.case_id, owner.batch_id)] = owner.pipeline_state["batch_dispatch"]
+        owners = await batch_owners(db, pending)
         alive: dict[str, bool] = {}
         orphans = []
         for job in pending:
@@ -118,6 +173,10 @@ async def reap_stale_jobs(ctx: dict) -> int:
 
     Returns the number of jobs reaped (for logging / tests).
     """
+    try:
+        await finish_abandoned_cancels()
+    except Exception:
+        logger.exception("janitor: could not finish abandoned cancels")  # never stops the reaping below
     cutoff = _cutoff()
 
     async with async_session() as db:

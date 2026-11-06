@@ -3,10 +3,11 @@ import logging
 
 from arq import cron
 from arq.connections import RedisSettings
+from arq.constants import default_queue_name
 
 from app.config import settings
 from app.dependencies import async_session
-from app.jobs.janitor import reap_stale_jobs
+from app.jobs.janitor import reap_stale_jobs, recover_interrupted_work
 from app.services.chunk_publication import recover_chunk_publications
 from app.services.pending_chunks import embed_pending_chunks
 from app.services.batch_dispatch import recover_batch_dispatches
@@ -98,7 +99,21 @@ async def process_phone_reparse(ctx: dict, run_id: str, case_id: str) -> None:
     logger.info("Re-parse run %s for case %s: %s", run_id, case_id, await asyncio.to_thread(go))
 
 
+def recovers(queue_name, then=None):
+    """An on_startup hook: ARQ runs it before this worker polls, so it can tell a dead run from one of its own."""
+    async def recover(ctx: dict) -> None:
+        try:
+            await recover_interrupted_work(ctx["redis"], queue_name)
+        except Exception:
+            # The janitor still catches the work. A worker must start without this.
+            logger.exception("Worker start recovery failed for %s", queue_name)
+        if then is not None:
+            await then(ctx)
+    return recover
+
+
 class WorkerSettings:
+    on_startup = recovers(default_queue_name)
     functions = [process_file, process_batch, process_merge]
     cron_jobs = [
         # Stale-job janitor: every 5 minutes, mark any non-terminal job whose
@@ -123,6 +138,7 @@ class PdfReviewWorkerSettings:
     """Financial PDF work keeps moving when all general ingestion slots are busy."""
     from app.services.processing_queues import PDF_REVIEW_QUEUE as queue_name
     from app.services.pdf_queue_recovery import recover_waiting_pdf_jobs
+    on_startup = recovers(queue_name)
     functions = [process_batch, process_file]
     cron_jobs = [cron(recover_waiting_pdf_jobs, minute=set(range(0, 60)), run_at_startup=True)]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
@@ -152,7 +168,7 @@ class PhoneCaptureWorkerSettings:
 class AudioReviewWorkerSettings(WorkerSettings):
     """Versioned queue: older ingestion workers cannot consume review jobs."""
     from app.services.processing_queues import AUDIO_REVIEW_QUEUE as queue_name, audio_worker_heartbeat
-    on_startup = audio_worker_heartbeat
+    on_startup = recovers(queue_name, audio_worker_heartbeat)
     functions = [process_file, process_batch]
     cron_jobs = WorkerSettings.cron_jobs + [cron(audio_worker_heartbeat, second={0, 30}, unique=True)]
     max_jobs = 2
