@@ -29,6 +29,7 @@ from services.chat_db_service import (
     require_case_access,
     summarize_title,
 )
+from services import ai_budget
 from services.ai_costs_service import CostOperationKind, ai_cost_context
 from services.ai_model_policy import get_workload_model
 from services.ai_provider_credentials import get_provider_api_key
@@ -285,11 +286,13 @@ def chat(
             success=True,
         )
 
+        ai_budget.check(db, request.case_id, "this question")
         with ai_cost_context(
             job_type=CostJobType.AI_ASSISTANT,
             case_id=request.case_id,
             user_id=current_user.id,
             description=f"AI Assistant Query: {question[:100]}",
+            meter_calls=True,
             extra_metadata={
                 "question": question,
                 "scope": request.scope,

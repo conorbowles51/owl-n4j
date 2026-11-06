@@ -31,6 +31,7 @@ from starlette.requests import ClientDisconnect
 from services.wiretap_tracking import list_processed_wiretaps, is_wiretap_processed, mark_wiretap_processed
 from services.wiretap_service import check_wiretap_suitable, process_wiretap_folder_async
 from services.background_task_storage import background_task_storage, TaskStatus
+from services.ai_budget import BudgetRefused
 from services.evidence_processing_service import process_db_files
 from services.neo4j_service import neo4j_service
 from services.cypher_generator import generate_cypher_from_graph
@@ -1496,6 +1497,8 @@ async def process_evidence_background(
             "message": "; ".join(messages) if messages else "No files to process",
             **({"copies": copies} if copies else {}),
         }
+    except BudgetRefused as e:
+        raise HTTPException(status_code=402, detail=e.reason)
     except UnadmittedFileError as e:
         # 409 and not 403.  The caller has the permission this route asks for
         # -- they passed ``evidence:upload`` above.  What is missing is not
@@ -1667,6 +1670,8 @@ async def process_evidence(
             skipped += engine_result.get("skipped_count", 0)
 
         return ProcessResponse(processed=processed, skipped=skipped, errors=errors)
+    except BudgetRefused as e:
+        raise HTTPException(status_code=402, detail=e.reason)
     except UnadmittedFileError as e:
         # Same refusal as ``/process/background``, for the same reason and in
         # the same shape.  Both routes reach ``process_db_files``, so a gate on
@@ -3124,8 +3129,16 @@ async def generate_folder_profile(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
+        from postgres.models.cost_record import CostJobType
+        from services import ai_budget
+        from services.ai_costs_service import ai_cost_context
         from services.llm_service import llm_service
-        
+
+        try:
+            await run_in_threadpool(ai_budget.check, db, UUID(request.case_id), "this folder profile")
+        except ai_budget.BudgetRefused as refused:
+            raise HTTPException(status_code=402, detail=refused.reason) from refused
+
         # Validate that we have files to work with
         if not request.file_list:
             raise HTTPException(status_code=400, detail="No files provided in file_list")
@@ -3182,13 +3195,15 @@ Respond with valid JSON only, matching this structure:
         
         try:
             # Run LLM call in thread pool to avoid blocking the event loop
-            llm_response = await run_in_threadpool(
-                llm_service.call,
-                prompt=prompt,
-                temperature=0.3,
-                json_mode=True,
-                timeout=llm_timeout
-            )
+            with ai_cost_context(job_type=CostJobType.INGESTION, case_id=UUID(request.case_id),
+                                 user_id=current_user.id, description="Folder profile", meter_calls=True):
+                llm_response = await run_in_threadpool(
+                    llm_service.call,
+                    prompt=prompt,
+                    temperature=0.3,
+                    json_mode=True,
+                    timeout=llm_timeout
+                )
             logger.info(f"LLM service responded (length: {len(llm_response) if llm_response else 0})")
         except Exception as llm_err:
             logger.error(f"LLM service call failed: {str(llm_err)}")

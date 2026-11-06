@@ -8,6 +8,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import (
@@ -69,6 +70,7 @@ from routers import (
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
 from services import evidence_engine_client
+from services.ai_budget import BudgetRefused
 from routers.snapshots import _cleanup_stale_chunks
 from routers.evidence_ws import router as evidence_ws_router, close_redis
 from services.job_status_subscriber import get_subscriber
@@ -301,6 +303,13 @@ app.include_router(agent_router)
 app.include_router(query_router)
 app.include_router(timeline_router)
 app.include_router(snapshots_router)
+
+
+@app.exception_handler(BudgetRefused)
+async def ai_budget_refused(_request, exc: BudgetRefused):
+    return JSONResponse(status_code=402, content={"detail": exc.reason, "budget": exc.payload})
+
+
 app.include_router(cases_router)
 app.include_router(case_members_router)
 app.include_router(case_exports_router)

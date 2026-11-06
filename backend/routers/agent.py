@@ -22,6 +22,7 @@ from services.agent.schemas import (
     AgentThreadSummary,
 )
 from services.agent.service import agent_service
+from services.ai_budget import BudgetRefused
 from services.case_service import CaseAccessDenied, CaseNotFound
 
 
@@ -101,6 +102,8 @@ def create_agent_message(
 ):
     try:
         return agent_service.handle_message(db=db, user=current_user, request=request)
+    except BudgetRefused as exc:
+        raise HTTPException(status_code=402, detail=exc.reason) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PermissionError as exc:
@@ -123,6 +126,8 @@ def stream_agent_message(
         events = agent_service.stream_message(db=db, user=current_user, request=request)
         event_iterator = iter(events)
         first_event = next(event_iterator)
+    except BudgetRefused as exc:
+        raise HTTPException(status_code=402, detail=exc.reason) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PermissionError as exc:

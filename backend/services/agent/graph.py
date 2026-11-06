@@ -1095,6 +1095,7 @@ class AgentGraphRunner:
         }
         config = {"configurable": {"thread_id": thread_id or f"agent_{uuid.uuid4().hex}"}}
         collected_messages: list[AnyMessage] = []
+        self.messages_so_far = collected_messages  # a run stopped part way still paid for these (spent_so_far)
         collected_trace: list[dict[str, Any]] = []
         collected_artifacts: list[dict[str, Any]] = []
         collected_clarifications: list[dict[str, Any]] = []
@@ -1176,6 +1177,9 @@ class AgentGraphRunner:
             **_cross_case_result(tool_context, case_id),
         }
         yield {"type": "final", "result": result}
+
+    def spent_so_far(self) -> dict[str, int] | None:
+        return self._extract_usage(getattr(self, "messages_so_far", None) or [])
 
     @staticmethod
     def _extract_usage(messages: list[AnyMessage]) -> dict[str, int] | None:

@@ -93,8 +93,8 @@ EVERY_CASE = '*'
 
 def approved(case_id):
     return EVERY_CASE in APPROVED_CASES or str(case_id).lower() in APPROVED_CASES
-# Spend cap per case for one worker run (process lifetime); readings already
-# stored are reused and cost nothing again.
+# Spend cap per case on page-image reading, over the case's recorded spend (cost_records, so a restart keeps it);
+# readings already stored are reused and cost nothing again.
 CASE_BUDGET_USD = _number('LOUPE_FINANCIAL_VISION_CASE_BUDGET_USD', 30)
 MAX_PAGES = int(_number('LOUPE_FINANCIAL_VISION_MAX_PAGES', 30))
 PAGE_TIMEOUT_SECONDS = int(_number('LOUPE_FINANCIAL_VISION_TIMEOUT_SECONDS', 180))
@@ -352,9 +352,27 @@ def cost_usd(model_id, usage):
     return round((usage.get('prompt_tokens') or 0) * rate_in / 1e6 + (usage.get('completion_tokens') or 0) * rate_out / 1e6, 6)
 
 
+def _ledger_spend(case_id):
+    """Page-image spend recorded for the case: what a restart keeps. Unreadable: 0, logged (the in-process count holds)."""
+    try:
+        import uuid
+        from sqlalchemy import func
+        from postgres.models.cost_record import CostRecord
+        from postgres.session import get_background_session
+        from services.ai_costs_service import CostOperationKind
+        with get_background_session() as db:
+            return float(db.scalar(select(func.coalesce(func.sum(CostRecord.cost_usd), 0)).where(
+                CostRecord.case_id == uuid.UUID(str(case_id)),
+                CostRecord.operation_kind == CostOperationKind.VISION)) or 0)
+    except Exception:  # noqa: BLE001 - the reading goes on under the in-process count
+        log.warning('Page-image spend of case %s could not be read from the cost records', str(case_id)[:8], exc_info=True)
+        return 0.0
+
+
 def spent(case_id):
+    ledger = _ledger_spend(case_id)
     with _spend_lock:
-        return _spend.get(str(case_id), 0.0)
+        return ledger + _spend.get(str(case_id), 0.0)
 
 
 def _add_spend(case_id, amount):
@@ -362,13 +380,58 @@ def _add_spend(case_id, amount):
         _spend[str(case_id)] = _spend.get(str(case_id), 0.0) + amount
 
 
+def _over_ai_budget(case_id):
+    """The case's or the month's AI limit is reached: reading waits, its statement saying the budget is used for now."""
+    try:
+        from postgres.session import get_background_session
+        from services import ai_budget
+        with get_background_session() as db:
+            return ai_budget.limit_in_force(db, case_id) is not None
+    except Exception:  # noqa: BLE001 - an unreadable limit is no limit (ai_budget.check)
+        return False
+
+
 def _reserve(case_id, amount):
     """Count ``amount`` against the case's budget; False (nothing counted) when it would pass the budget."""
+    if _over_ai_budget(case_id):
+        return False
+    ledger = _ledger_spend(case_id)  # outside the lock: a query must not hold up other readers
     with _spend_lock:
-        if _spend.get(str(case_id), 0.0) + amount > CASE_BUDGET_USD:
+        if ledger + _spend.get(str(case_id), 0.0) + amount > CASE_BUDGET_USD:
             return False
         _spend[str(case_id)] = _spend.get(str(case_id), 0.0) + amount
         return True
+
+
+def _record_reading_cost(case_id, cost, model, provider, usage, file_id):
+    """One cost record for one reading, at the price it was counted at; False when it could not be written."""
+    try:
+        import uuid
+        from postgres.models.cost_record import CostJobType
+        from postgres.session import get_background_session
+        from services.ai_costs_service import CostOperationKind, record_cost
+        usage = usage or {}
+        with get_background_session() as db:
+            record_cost(db=db, job_type=CostJobType.INGESTION, provider=provider, model_id=model,
+                        operation_kind=CostOperationKind.VISION, prompt_tokens=usage.get('prompt_tokens'),
+                        completion_tokens=usage.get('completion_tokens'), case_id=uuid.UUID(str(case_id)),
+                        evidence_file_id=uuid.UUID(str(file_id)) if file_id else None,
+                        description='Statement page-image reading', extra_metadata={'workload': WORKLOAD},
+                        priced_usd=cost, pricing_version=VERSION)
+            db.commit()
+        return True
+    except Exception:  # noqa: BLE001 - the reading is done and paid for; losing the record must not lose the reading
+        log.warning('The cost record of a page-image reading (case %s, $%.4f) was not written', str(case_id)[:8], cost,
+                    exc_info=True)
+        return False
+
+
+def settle(case_id, reserved, cost, model, *, provider=None, usage=None, file_id=None):
+    """A request is answered: its reservation becomes its cost, in the cost records. ``provider`` None (a test reader,
+    never a real request) or a record that could not be written: the cost stays in this process's count."""
+    _add_spend(case_id, cost - reserved)
+    if provider and _record_reading_cost(case_id, cost, model, provider, usage, file_id):
+        _add_spend(case_id, -cost)
 
 
 # ---------------------------------------------------------------------------
@@ -3113,7 +3176,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                         cost = cost_usd(reader.model, usage)
                         spent_now += cost
                         # A long statement read in parts can cost more than the one request reserved: the rest too.
-                        _add_spend(case_id, max(0.0, cost - reserved))
+                        settle(case_id, reserved, max(cost, reserved), reader.model, provider=reader.provider,
+                               usage=usage, file_id=file_id)
                         failed.update(cost_usd=round(cost, 6), prompt_tokens=usage.get('prompt_tokens'),
                                       completion_tokens=usage.get('completion_tokens'))
                         for number, _ in images:
@@ -3126,7 +3190,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     continue
                 took = round(time.monotonic() - started, 1)
                 cost = cost_usd(reader.model, usage)
-                _add_spend(case_id, cost - reserved)
+                settle(case_id, reserved, cost, reader.model, provider=reader.provider, usage=usage, file_id=file_id)
                 spent_now += cost
                 seconds += took
                 for number, _ in images:
@@ -3942,7 +4006,8 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                     if usage.get('completion_tokens'):
                         cost = cost_usd(reader.model, usage)  # billed though it failed (the reservation stays)
                         spent_now += cost
-                        _add_spend(case_id, max(0.0, cost - reserved))  # parts beyond the reservation
+                        settle(case_id, reserved, max(cost, reserved), reader.model, provider=reader.provider,
+                               usage=usage, file_id=file_id)  # parts beyond the reservation
                         failed['cost_usd'] = round(cost, 6)
                         for number, _ in images:
                             share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0,
@@ -3952,7 +4017,7 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                     continue
                 took = round(time.monotonic() - started, 1)
                 cost = cost_usd(reader.model, usage)
-                _add_spend(case_id, cost - reserved)
+                settle(case_id, reserved, cost, reader.model, provider=reader.provider, usage=usage, file_id=file_id)
                 spent_now, seconds = spent_now + cost, seconds + took
                 for number, _ in images:
                     share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0, completion_tokens=0, cost_usd=0.0))

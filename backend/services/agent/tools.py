@@ -1945,7 +1945,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             failure = ("not_configured", "the search service (OpenAI) is not configured")
         else:
             try:
-                embedding = embedding_service.generate_embedding(query)
+                from postgres.models.cost_record import CostJobType
+                from services.ai_costs_service import ai_cost_context
+                with ai_cost_context(job_type=CostJobType.AI_ASSISTANT, case_id=uuid.UUID(str(context.case_id)),
+                                     description="Agent document search"):
+                    embedding = embedding_service.generate_embedding(query)
                 chunks = vector_db.search_chunks(
                     embedding,
                     top_k=offset + limit,

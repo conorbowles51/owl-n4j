@@ -60,6 +60,25 @@ def _graph_case_permission(request: Request, _: dict) -> tuple[str, str]:
 _require_graph_case_access = case_access_dependency(_graph_case_permission)
 
 
+def _metered_case(case_id, description):
+    """Each model call inside writes a cost record for the case."""
+    from uuid import UUID
+
+    from postgres.models.cost_record import CostJobType
+    from services.ai_costs_service import ai_cost_context
+    return ai_cost_context(job_type=CostJobType.AI_ASSISTANT, case_id=UUID(str(case_id)), description=description,
+                           meter_calls=True)
+
+
+def check_ai_budget(case_id, what):
+    """Refuse a new model run at a limit, as HTTP 402 with the reason and the sum."""
+    from services import ai_budget
+    try:
+        ai_budget.check_new_session(case_id, what)
+    except ai_budget.BudgetRefused as refused:
+        raise HTTPException(status_code=402, detail=refused.reason) from refused
+
+
 router = APIRouter(
     prefix="/api/graph",
     tags=["graph"],
@@ -1150,6 +1169,7 @@ def analyze_node_relationships(
     Returns:
         Dict with success status and list of potential relationships
     """
+    check_ai_budget(request.case_id, "these relationship suggestions")
     try:
         # Get the node details
         node_details = neo4j_service.get_node_details(node_key, case_id=request.case_id)
@@ -1185,14 +1205,15 @@ def analyze_node_relationships(
             "message": f"Compared with {nodes_shown_note(nodes_considered, nodes_total)} in the case.",
         }
         
-        relationships = analyze_node_relationships(
-            node_name=node_details.get("name", ""),
-            node_type=node_details.get("type", ""),
-            node_key=node_key,
-            node_description=node_details.get("notes"),
-            node_summary=node_details.get("summary"),
-            existing_nodes=existing_nodes
-        )
+        with _metered_case(request.case_id, "Relationship suggestions"):
+            relationships = analyze_node_relationships(
+                node_name=node_details.get("name", ""),
+                node_type=node_details.get("type", ""),
+                node_key=node_key,
+                node_description=node_details.get("notes"),
+                node_summary=node_details.get("summary"),
+                existing_nodes=existing_nodes
+            )
         
         # Enhance relationships with node names for display
         enhanced_relationships = []
@@ -1583,6 +1604,7 @@ async def merge_entities(
             "requested_by_user_id": user.get("id"),
         }
 
+        check_ai_budget(request.case_id, "this merge")
         try:
             engine_response = await evidence_engine_client.merge_entities(
                 request.case_id, payload,
@@ -2145,6 +2167,7 @@ def generate_insights(
     user: dict = Depends(get_current_user),
 ):
     """Generate AI insights for top entities in a case."""
+    check_ai_budget(case_id, "these AI insights")
     try:
         llm = LLMService()
         entities = neo4j_service.get_entities_for_insights(case_id, max_entities)
@@ -2153,12 +2176,13 @@ def generate_insights(
         entities_processed = 0
 
         for entity in entities:
-            new_insights = generate_entity_insights(
-                entity_data={"name": entity["name"], "type": entity["type"], "summary": entity.get("summary")},
-                verified_facts=entity.get("verified_facts", []),
-                related_entities=entity.get("related_entities", []),
-                llm_call_fn=llm.call,
-            )
+            with _metered_case(case_id, "AI insights"):
+                new_insights = generate_entity_insights(
+                    entity_data={"name": entity["name"], "type": entity["type"], "summary": entity.get("summary")},
+                    verified_facts=entity.get("verified_facts", []),
+                    related_entities=entity.get("related_entities", []),
+                    llm_call_fn=llm.call,
+                )
             if new_insights:
                 neo4j_service.save_entity_insights(entity["key"], case_id, new_insights)
                 total_insights += len(new_insights)
@@ -2212,8 +2236,10 @@ def rescan_locations(
 
     Superseded by agentic ingestion-time geocoding and per-node geocoding.
     """
+    check_ai_budget(case_id, "this location rescan")
     try:
-        result = rescan_case_locations(case_id, force_regeocode=force_regeocode)
+        with _metered_case(case_id, "Location rescan"):
+            result = rescan_case_locations(case_id, force_regeocode=force_regeocode)
 
         if result.get("success"):
             system_log_service.log(

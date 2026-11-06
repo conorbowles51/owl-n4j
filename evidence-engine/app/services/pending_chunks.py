@@ -23,6 +23,7 @@ from app.config import settings
 from app.dependencies import async_session
 from app.models.job import PendingChunkVector
 from app.services.chroma_client import get_or_create_collection, upsert_embeddings
+from app.services.ai_budget import limit_reached
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.embedding_refusal import is_embedding_refusal
 from app.services.openai_client import embed_texts
@@ -209,6 +210,8 @@ async def _sweep(revisions: Sequence[Any], summary: dict[str, Any]) -> None:
         chunks = await _revision_chunk_ids(revision.document_id, revision.revision_id)
         if not chunks:
             continue
+        if await limit_reached(revision.case_id):
+            continue  # stays pending: the next sweep tries again
         async with ingestion_cost_context(
             case_id=revision.case_id,
             source_evidence_file_id=str(_as_uuid(revision.document_id) or "") or None,

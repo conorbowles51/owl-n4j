@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -13,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from postgres.models.ai_pricing_rate import AIPricingRate
 from postgres.models.cost_record import CostJobType, CostRecord
+
+logger = logging.getLogger(__name__)
 
 
 class CostOperationKind:
@@ -45,6 +48,8 @@ class AICostContext:
     engine_job_id: str | None = None
     evidence_file_id: uuid.UUID | None = None
     extra_metadata: dict[str, Any] | None = None
+    # Each completed model call under this context writes its own cost record (see record_metered_call).
+    meter_calls: bool = False
 
 
 _current_cost_context: ContextVar[AICostContext | None] = ContextVar(
@@ -93,6 +98,7 @@ def ai_cost_context(
     engine_job_id: str | None = None,
     evidence_file_id: uuid.UUID | None = None,
     extra_metadata: dict[str, Any] | None = None,
+    meter_calls: bool = False,
 ):
     previous = _current_cost_context.get()
     merged = AICostContext(
@@ -107,6 +113,7 @@ def ai_cost_context(
             **(extra_metadata or {}),
         }
         or None,
+        meter_calls=meter_calls or bool(previous and previous.meter_calls),
     )
     token = _current_cost_context.set(merged)
     try:
@@ -197,7 +204,11 @@ def record_cost(
     evidence_file_id: uuid.UUID | None = None,
     description: str | None = None,
     extra_metadata: dict[str, Any] | None = None,
+    priced_usd: float | None = None,
+    pricing_version: str | None = None,
 ) -> CostRecord:
+    """``priced_usd``: the caller's own price for this call, with its ``pricing_version``, for spend priced outside the
+    rate table (the statement page reader's). Without it the rate table prices the call."""
     usage = _normalize_usage(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
@@ -210,7 +221,7 @@ def record_cost(
         model_id=model_id,
         operation_kind=operation_kind,
     )
-    cost_usd = calculate_cost(rate, usage)
+    cost_usd = calculate_cost(rate, usage) if priced_usd is None else priced_usd
 
     payload = dict(extra_metadata or {})
     if usage.duration_seconds is not None:
@@ -227,7 +238,7 @@ def record_cost(
         operation_kind=operation_kind,
         engine_job_id=engine_job_id,
         evidence_file_id=evidence_file_id,
-        pricing_version=rate.pricing_version if rate else None,
+        pricing_version=pricing_version or (rate.pricing_version if rate else None),
         case_id=case_id,
         user_id=user_id,
         agent_run_id=agent_run_id,
@@ -238,6 +249,36 @@ def record_cost(
     db.flush()
     db.refresh(cost_record)
     return cost_record
+
+
+def record_metered_call(provider: str, model_id: str, usage: dict[str, Any] | None) -> None:
+    """Write one cost record for one model call made under ``ai_cost_context(meter_calls=True)``.
+
+    Before this, a model call wrote a record only if its caller remembered to: 16 kinds of call wrote none. The write
+    has its own session, so it never joins the caller's transaction, and a failure loses the record, never the answer."""
+    context = _current_cost_context.get()
+    if context is None or not context.meter_calls or not usage:
+        return
+    try:
+        from postgres.session import get_background_session
+
+        with get_background_session() as db:
+            record_cost(
+                db=db,
+                job_type=context.job_type,
+                provider=provider,
+                model_id=model_id,
+                operation_kind=CostOperationKind.CHAT_COMPLETION,
+                prompt_tokens=usage.get("prompt_tokens"),
+                completion_tokens=usage.get("completion_tokens"),
+                total_tokens=usage.get("total_tokens"),
+                case_id=context.case_id,
+                user_id=context.user_id,
+                description=context.description,
+                extra_metadata=context.extra_metadata,
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("Model call cost was not recorded (%s %s)", provider, model_id, exc_info=True)
 
 
 def normalize_openai_usage(usage: Any) -> UsageMetrics:

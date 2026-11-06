@@ -72,12 +72,15 @@ Return valid JSON:
                 description="triage_advisor_chat",
             )
 
-            response = llm_service.call(
-                prompt=prompt,
-                temperature=0.3,
-                json_mode=True,
-                timeout=120,
-            )
+            from postgres.models.cost_record import CostJobType
+            from services.ai_costs_service import ai_cost_context
+            with ai_cost_context(job_type=CostJobType.INGESTION, description="Triage advisor", meter_calls=True):
+                response = llm_service.call(
+                    prompt=prompt,
+                    temperature=0.3,
+                    json_mode=True,
+                    timeout=120,
+                )
 
             try:
                 result = llm_service.parse_json_response(response)

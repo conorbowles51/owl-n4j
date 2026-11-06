@@ -33,6 +33,7 @@ from services.agent.schemas import (
 import services.agent.storage as storage
 import services.agent.run_record as run_record
 import services.agent.run_settle as run_settle
+from services import ai_budget
 from services.ai_costs_service import CostOperationKind, record_cost
 from services.ai_model_policy import get_workload_model
 from services.ai_provider_credentials import get_provider_api_key
@@ -73,6 +74,7 @@ class AgentService:
             raise ValueError("Ephemeral agent runs are not supported yet")
 
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
+        ai_budget.check(db, request.case_id, "this agent question")
         if request.all_cases and request.case_layer == "significant":
             raise ValueError("All-cases mode reads whole cases; switch the case layer to All data to use it.")
         allowed_entity_keys = (
@@ -334,6 +336,8 @@ class AgentService:
             db.rollback()
             run = db.merge(run)
             self._record_stopped_run(db, run=run, trace=collected_trace)
+            self._record_usage(db=db, usage=runner.spent_so_far(), provider=provider, model_id=model.id,
+                               request=request, user=user, thread_id=thread.id, run_id=run.id)
             storage.finish_run(db, run=run, status="cancelled", error=str(exc))
             self._log_agent_event(
                 db,
@@ -356,6 +360,8 @@ class AgentService:
             try:
                 run = db.merge(run)
                 self._record_stopped_run(db, run=run, trace=collected_trace)
+                self._record_usage(db=db, usage=runner.spent_so_far(), provider=provider, model_id=model.id,
+                                   request=request, user=user, thread_id=thread.id, run_id=run.id)
                 storage.finish_run(db, run=run, status="failed", error=str(exc))
                 self._log_agent_event(
                     db,
@@ -390,6 +396,7 @@ class AgentService:
             raise ValueError("Ephemeral agent runs are not supported yet")
 
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
+        ai_budget.check(db, request.case_id, "this agent question")
         if request.all_cases and request.case_layer == "significant":
             raise ValueError("All-cases mode reads whole cases; switch the case layer to All data to use it.")
         allowed_entity_keys = (

@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from services.transcript_review import is_audio, summary, ensure_source, feature_enabled
 
 from postgres.models.evidence import EvidenceFile
-from services import evidence_engine_client, evidence_signature, phone_files
+from services import ai_budget, evidence_engine_client, evidence_signature, phone_files
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_job_sync import reconcile_case_jobs
 from services.financial.admission_gate import gate_document_processing
@@ -153,6 +153,10 @@ async def _send_files(
             'missing_on_disk': sum(result.get('missing_on_disk', 0) for result in results),
             'message': f'{processing_count} file(s) queued for processing; {len(preparations)} recording(s) queued for transcription; {len(deferred)} awaiting review'}
     ingestion_request_id = str(uuid.uuid4())
+
+    # At a limit nothing is prepared or queued: the files stay as they are, with the reason in the refusal (HTTP 402).
+    if preparation_mode != "pdf_review":  # PDF preparation reads the text layer and calls no model
+        await run_in_threadpool(ai_budget.check, db, case_id, "processing these files")
 
     prepared = await run_in_threadpool(
         _prepare_files,

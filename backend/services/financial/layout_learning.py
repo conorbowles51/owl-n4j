@@ -200,7 +200,8 @@ def read_file_images(db, case_id, file, pages, *, budget, resolve_path, page_rea
     cost = vr.cost_usd(model_id, usage)
     if not (usage or {}).get('completion_tokens'):
         cost = max(cost, reserved)  # an answer reporting no usage is charged what was reserved for it
-    vr._add_spend(case_id, cost - reserved)
+    vr.settle(case_id, reserved, cost, model_id, usage=usage, file_id=file.id,
+              provider='deepseek' if str(model_id).startswith('deepseek') else 'openai')
     reading = dict(raw=document, model=model_id, cost_usd=round(cost, 6), pages=list(pages), file_id=str(file.id),
                    case_id=str(case_id), read_at=datetime.now(timezone.utc).isoformat(), usage=usage,
                    seconds=round(time.monotonic() - started, 1), requested=True)

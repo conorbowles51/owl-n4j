@@ -33,6 +33,8 @@ async def process_file(ctx: dict, job_id: str) -> None:
             from app.pipeline.batch_orchestrator import _update_job_status
             from app.models.job import JobStatus
             async def operation():
+                from app.services.ai_budget import hold_if_reached
+                await hold_if_reached(job.case_id, Job.id == job.id)
                 try:
                     await prepare_audio_review(job, _update_job_status)
                 except Exception:

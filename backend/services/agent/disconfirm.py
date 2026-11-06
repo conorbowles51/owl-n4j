@@ -303,6 +303,8 @@ def create(session, *, case_id, theory_id, requested_by, run_id=None) -> dict:
         _settle(session, current)
         if current.job_status in ('queued', 'running'):
             return view(current)
+    from services import ai_budget
+    ai_budget.check(session, case_id, 'this theory sweep')
     model = _models(session)
     version = int(session.scalar(select(func.max(W.version)).where(
         W.case_id == case_id, W.target_type == 'theory', W.target_id == theory.id,
@@ -1070,6 +1072,8 @@ def start(session, *, case_id, sweep_id, limit=None) -> dict:
         raise ProposalError('Every read of this sweep is done.', 409)
     if limit is not None and int(limit) < 1:
         raise ProposalError('Give at least one read.')
+    from services import ai_budget
+    ai_budget.check(session, case_id, 'these reads')
     content['stage'] = 'reading'
     content['limited_to'] = int(limit) if limit is not None else None
     content['stopped'] = False

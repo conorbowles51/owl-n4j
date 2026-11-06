@@ -45,8 +45,12 @@ class Reject(BaseModel):
 
 def _call(db, fn):
     from services.agent.proposals import ProposalError
+    from services.ai_budget import BudgetRefused
     try:
         return fn()
+    except BudgetRefused as exc:
+        db.rollback()
+        raise HTTPException(status_code=402, detail=exc.reason) from exc
     except ProposalError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

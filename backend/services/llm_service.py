@@ -63,6 +63,8 @@ class LLMExecutionContext:
         self.last_usage: dict[str, Any] | None = None
         self.last_request_arguments: dict[str, Any] | None = None
         self.last_response_metadata: dict[str, str] = {}
+        # True while a caller writes this call's cost record itself (chat's answer: record linked to the conversation).
+        self.caller_records_cost = False
 
     def call(
         self,
@@ -80,16 +82,22 @@ class LLMExecutionContext:
         self.last_request_arguments = None
         self.last_response_metadata = {}
 
-        if self.provider == "openai":
-            result = self._call_openai(prompt, temperature, json_mode, timeout)
-        elif self.provider == "anthropic":
-            result = self._call_anthropic(prompt, temperature, json_mode, timeout)
-        elif self.provider == "gemini":
-            result = self._call_gemini(prompt, temperature, json_mode, timeout)
-        elif self.provider == "deepseek":
-            result = self._call_deepseek(prompt, temperature, json_mode, timeout, reasoning_effort=reasoning_effort)
-        else:
-            raise ValueError(f"Unknown provider: {self.provider}")
+        try:
+            if self.provider == "openai":
+                result = self._call_openai(prompt, temperature, json_mode, timeout)
+            elif self.provider == "anthropic":
+                result = self._call_anthropic(prompt, temperature, json_mode, timeout)
+            elif self.provider == "gemini":
+                result = self._call_gemini(prompt, temperature, json_mode, timeout)
+            elif self.provider == "deepseek":
+                result = self._call_deepseek(prompt, temperature, json_mode, timeout, reasoning_effort=reasoning_effort)
+            else:
+                raise ValueError(f"Unknown provider: {self.provider}")
+        finally:
+            # An answer refused afterwards (empty, cut short) was still billed.
+            if not self.caller_records_cost:
+                from services.ai_costs_service import record_metered_call
+                record_metered_call(self.provider, self.model_id, self.last_usage)
 
         self.last_raw_response = result
         return result
@@ -723,7 +731,11 @@ Guidelines:
 
 Answer:"""
 
-        answer = self.call(prompt, temperature=0.3)
+        self.caller_records_cost = True
+        try:
+            answer = self.call(prompt, temperature=0.3)
+        finally:
+            self.caller_records_cost = False
         if not answer or not answer.strip():
             raise ValueError("LLM returned empty answer")
         return answer, prompt

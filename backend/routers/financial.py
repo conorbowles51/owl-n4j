@@ -530,7 +530,16 @@ def auto_extract_from_to(
 
         from services.from_to_extraction_service import extract_from_to_for_case
 
-        result = extract_from_to_for_case(case_id=body.case_id, dry_run=body.dry_run)
+        from postgres.models.cost_record import CostJobType
+        from services import ai_budget
+        from services.ai_costs_service import ai_cost_context
+        try:
+            ai_budget.check(db, UUID(body.case_id), "this sender and beneficiary extraction")
+        except ai_budget.BudgetRefused as refused:
+            raise HTTPException(status_code=402, detail=refused.reason) from refused
+        with ai_cost_context(job_type=CostJobType.AI_ASSISTANT, case_id=UUID(body.case_id), user_id=current_user.id,
+                             description="Sender and beneficiary extraction", meter_calls=True):
+            result = extract_from_to_for_case(case_id=body.case_id, dry_run=body.dry_run)
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("message", "Extraction failed"))
         return result

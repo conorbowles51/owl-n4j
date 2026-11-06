@@ -29,6 +29,7 @@ from app.pipeline.link_transaction_parties import link_transaction_parties
 from app.pipeline.resolve_entities import resolve_entities
 from app.pipeline.resolve_relationships import resolve_relationships
 from app.pipeline.write_graph import write_graph
+from app.services.ai_budget import hold_if_reached
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.ai_model_policy import get_ai_runtime_snapshot, load_ai_model_policy
 from app.services.evidence_document_text import upsert_evidence_document_text
@@ -88,6 +89,7 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
     await load_ai_model_policy(db)
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one()
+    await hold_if_reached(job.case_id, Job.id == job.id)
     job.pipeline_state = dict(getattr(job, "pipeline_state", None) or {})
     job.pipeline_state["ai_runtime"] = get_ai_runtime_snapshot()
     await db.commit()

@@ -530,7 +530,7 @@ def read_saved_lines(factory, document_id, resolve_path, *, request_for=None):
     read = (request_for or description_request)(model, key, provider)
     found, _ = read_lines(read, images, items)
     cost = vr.cost_usd(model, found.get('usage') or {})
-    vr._add_spend(case_id, cost - reserved)
+    vr.settle(case_id, reserved, cost, model, provider=provider, usage=found.get('usage'))
     record.update(found, status='read', provider=provider, model=model, cost_usd=round(cost, 6), pages=pages)
     with factory() as db:
         document = db.scalar(select(FinancialSourceDocument).where(FinancialSourceDocument.id == UUID(str(document_id)))
@@ -599,7 +599,7 @@ def complete_request(factory, case_id, path, request, *, request_for=None, deadl
     record, found = read_lines(read, images, items, prompt_version=LINES_PROMPT_VERSION,
                                deadline=deadline)
     cost = vr.cost_usd(model, record.get('usage') or {})
-    vr._add_spend(case_id, cost - reserved)
+    vr.settle(case_id, reserved, cost, model, provider=provider, usage=record.get('usage'))
     by = vr.provider_name(provider)
     for row in rows:
         if row['id'] in found:

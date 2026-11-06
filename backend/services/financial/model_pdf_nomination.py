@@ -183,6 +183,10 @@ def run_pdf_model_nomination(session,*,case_id,evidence_file_id,request,actor,us
         raise PdfMappingError('This PDF review is finalized. New model nominations cannot add readings to it.',409)
     source=read_candidate_source(session,case_id=case_id,evidence_file_id=evidence_file_id,page_number=request.page_number,table_index=request.table_index)
     if source['source_revision']!=request.source_revision:raise PdfMappingError('Source changed. Reload before requesting model proposals.',409)
+    if call_model is None:
+        from services import ai_budget
+        try:ai_budget.check(session,case_id,'this model proposal')
+        except ai_budget.BudgetRefused as refused:raise PdfMappingError(refused.reason,402) from refused
     prompt=build_nomination_prompt(source)
     provider,model_id=get_workload_model(session,'ingestion_extraction')
     snapshot=dict(schema_version=PROMPT_VERSION,execution_mode='simulated_test' if call_model is not None else 'configured_provider',**request.model_dump(mode='json',exclude={'request_id'}),

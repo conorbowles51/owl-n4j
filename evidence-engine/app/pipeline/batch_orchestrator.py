@@ -52,6 +52,7 @@ from app.services.claim_ledger import (
     persist_grounded_claims,
 )
 from app.pipeline.verify_claims import verify_grounded_claims
+from app.services.ai_budget import hold_if_reached
 from app.services.ingestion_checkpoints import checkpointed, pause_boundary, IngestionPaused
 from app.services.ingestion_control import begin_publication
 from app.services.db_retry import retry_transient
@@ -499,6 +500,7 @@ async def run_batch_pipeline(
             raise
         return
 
+    await hold_if_reached(case_id, Job.batch_id == batch_id)
     await load_ai_model_policy(db)
     runtime_snapshot = get_ai_runtime_snapshot()
     for job in jobs:
@@ -541,6 +543,8 @@ async def run_batch_pipeline(
             StagedChunkRevision,
         ]:
             async with file_semaphore:
+                # Checked as each file starts: files being read finish, the next one waits (app.services.ai_budget).
+                await hold_if_reached(case_id, Job.batch_id == batch_id)
                 try:
                     return await _extract_file(
                         ji["id"],

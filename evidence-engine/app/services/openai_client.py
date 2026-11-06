@@ -103,40 +103,20 @@ async def chat_completion(
         provider=provider,
     )
     async with _semaphore:
-        if resolved_provider == "openai":
-            content, usage = await _openai_chat_completion(
-                messages,
-                model=resolved_model,
-                response_format=response_format,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            )
-        elif resolved_provider == "anthropic":
-            content, usage = await _anthropic_chat_completion(
-                messages,
-                model=resolved_model,
-                response_format=response_format,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            )
-        elif resolved_provider == "gemini":
-            content, usage = await _gemini_chat_completion(
-                messages,
-                model=resolved_model,
-                response_format=response_format,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            )
-        elif resolved_provider == "deepseek":
-            content, usage = await _deepseek_chat_completion(
-                messages,
-                model=resolved_model,
-                response_format=response_format,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            )
-        else:
-            raise ValueError(f"Unsupported ingestion AI provider: {resolved_provider}")
+        try:
+            content, usage = await _provider_completion(
+                resolved_provider, resolved_model, messages, response_format, temperature, max_output_tokens)
+        except Exception as exc:
+            billed = getattr(exc, "billed_usage", None)
+            if billed:
+                try:
+                    await record_ai_cost(provider=resolved_provider, model_id=resolved_model,
+                                         operation_kind=CostOperationKind.CHAT_COMPLETION, usage=billed,
+                                         extra_metadata={"workload": workload, "failed_call": True} if workload
+                                         else {"failed_call": True})
+                except Exception as cost_exc:
+                    logger.warning("Failed to record failed call cost: %s", cost_exc)
+            raise
     operation_kind = CostOperationKind.CHAT_COMPLETION
     if any(
         isinstance(message.get("content"), list)
@@ -157,6 +137,45 @@ async def chat_completion(
     except Exception as exc:
         logger.warning("Failed to record %s cost: %s", operation_kind, exc)
     return content
+
+
+async def _provider_completion(resolved_provider, resolved_model, messages, response_format, temperature,
+                               max_output_tokens):
+    if resolved_provider == "openai":
+        content, usage = await _openai_chat_completion(
+            messages,
+            model=resolved_model,
+            response_format=response_format,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+    elif resolved_provider == "anthropic":
+        content, usage = await _anthropic_chat_completion(
+            messages,
+            model=resolved_model,
+            response_format=response_format,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+    elif resolved_provider == "gemini":
+        content, usage = await _gemini_chat_completion(
+            messages,
+            model=resolved_model,
+            response_format=response_format,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+    elif resolved_provider == "deepseek":
+        content, usage = await _deepseek_chat_completion(
+            messages,
+            model=resolved_model,
+            response_format=response_format,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+    else:
+        raise ValueError(f"Unsupported ingestion AI provider: {resolved_provider}")
+    return content, usage
 
 
 def _json_schema_from_response_format(response_format: Any) -> dict[str, Any] | None:
@@ -540,9 +559,11 @@ async def _deepseek_chat_completion(
                     last_error,
                 )
 
-    raise ValueError(
+    failure = ValueError(
         f"DeepSeek failed to return valid structured JSON after {attempts} attempts: {last_error}"
     )
+    failure.billed_usage = total_usage  # every attempt was billed: chat_completion records it
+    raise failure
 
 
 def _embedding_batch_limits() -> tuple[int, int]:

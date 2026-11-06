@@ -13,6 +13,15 @@ from services.neo4j_service import neo4j_service
 from services.vector_db_service import vector_db_service
 from services.embedding_service import embedding_service
 from config import EVIDENCE_DATA_ROOT
+
+
+def _uuid_or_none(value):
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+
 from postgres.models.evidence import EvidenceFile
 from postgres.session import get_background_session
 from services.evidence_db_storage import EvidenceDBStorage
@@ -444,7 +453,11 @@ def backfill_documents_for_user(
         
         # Generate embedding
         try:
-            embedding = embedding_service.generate_embedding(text)
+            from postgres.models.cost_record import CostJobType
+            from services.ai_costs_service import ai_cost_context
+            with ai_cost_context(job_type=CostJobType.INGESTION, case_id=_uuid_or_none(doc_case_id),
+                                 description="Document search index"):
+                embedding = embedding_service.generate_embedding(text)
             if not embedding:
                 stats["embedding_failed"] += 1
                 continue

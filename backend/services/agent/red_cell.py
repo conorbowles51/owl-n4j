@@ -109,7 +109,7 @@ def _facts(session, case_id, theory) -> list[dict]:
     return facts
 
 
-def _reader(session, provider, model_id):
+def _reader(session, provider, model_id, case_id=None):
     from services.ai_provider_credentials import get_provider_api_key
     from services.llm_service import LLMExecutionContext
     api_key = get_provider_api_key(session, provider)
@@ -117,7 +117,11 @@ def _reader(session, provider, model_id):
         raise ProposalError(f'No {provider} key is configured for the red cell.', 409)
 
     def read(prompt):
-        return LLMExecutionContext(provider, model_id, api_key=api_key).call(prompt, temperature=0.4, json_mode=True,
+        from postgres.models.cost_record import CostJobType
+        from services.ai_costs_service import ai_cost_context
+        with ai_cost_context(job_type=CostJobType.AI_ASSISTANT, case_id=case_id, meter_calls=True,
+                             description='Red cell sweep'):
+            return LLMExecutionContext(provider, model_id, api_key=api_key).call(prompt, temperature=0.4, json_mode=True,
                                                                              timeout=180)
     return read
 
@@ -145,6 +149,8 @@ def sweep(session, *, case_id, theory_id, requested_by, reader=None, model=None,
     from services.agent.workspace_proposals import _store
     from services.agent.proposals import _checked_citations
     case_id = _uuid(case_id)
+    from services import ai_budget
+    ai_budget.check(session, case_id, 'this red cell sweep')
     theory = session.get(WorkspaceEntry, _uuid(theory_id)) if _uuid(theory_id) else None
     if theory is None or theory.case_id != case_id or theory.entry_type != 'theory' or theory.deleted_at:
         raise ProposalError('Not in this case.', 404)
@@ -161,7 +167,7 @@ def sweep(session, *, case_id, theory_id, requested_by, reader=None, model=None,
             raise ProposalError('No model other than the case agent\'s is configured, so the red cell cannot run.',
                                 409)
         model = chosen[:2]
-    reader = reader or _reader(session, *model)
+    reader = reader or _reader(session, *model, case_id=case_id)
     names = framing_names(theory.title or '', theory.body or '')
     lines = [f"{f['fact_id']} [{f['cite']}]: {neutralise(' '.join(f['text'].split()), names)}" for f in facts]
     prompt = PROMPT.format(limit=MAX_ALTERNATIVES, facts='\n'.join(lines))

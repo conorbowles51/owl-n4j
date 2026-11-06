@@ -158,12 +158,16 @@ class LLMProcessor(BaseTriageProcessor):
                 description=f"triage_llm_{template_name}",
             )
 
-            response = llm_service.call(
-                prompt=prompt,
-                temperature=0.2,
-                json_mode=template.get("json_mode", False),
-                timeout=120,
-            )
+            from postgres.models.cost_record import CostJobType
+            from services.ai_costs_service import ai_cost_context
+            with ai_cost_context(job_type=CostJobType.INGESTION, description=f"Triage {template_name}",
+                                 meter_calls=True):
+                response = llm_service.call(
+                    prompt=prompt,
+                    temperature=0.2,
+                    json_mode=template.get("json_mode", False),
+                    timeout=120,
+                )
 
             # Parse response
             artifact_type = f"llm_{template_name}"

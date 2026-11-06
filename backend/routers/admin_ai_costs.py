@@ -5,7 +5,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case as sql_case, func
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import require_admin
+from services import ai_budget
 
 
 router = APIRouter(prefix="/api/admin/ai-costs", tags=["admin-ai-costs"])
@@ -164,6 +165,25 @@ def _apply_filters(
     if end_dt:
         query = query.filter(CostRecord.created_at <= end_dt)
     return query
+
+
+class BudgetLimits(BaseModel):
+    """Dollars; null clears a limit: no cap."""
+    case_limit_usd: float | None = Field(default=None, ge=0)
+    month_limit_usd: float | None = Field(default=None, ge=0)
+
+
+@router.get("/budget")
+def get_ai_budget(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """The limits in force, spend beside them and the alerts. With nothing saved there is no cap and it says so."""
+    return ai_budget.overview(db)
+
+
+@router.put("/budget")
+def put_ai_budget(limits: BudgetLimits, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    ai_budget.set_limits(db, case_limit_usd=limits.case_limit_usd, month_limit_usd=limits.month_limit_usd,
+                         updated_by=user.email)
+    return ai_budget.overview(db)
 
 
 @router.get("/filters", response_model=AICostFiltersResponse)

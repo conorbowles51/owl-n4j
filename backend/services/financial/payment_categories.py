@@ -453,6 +453,18 @@ def model_reader(session):
     return model_id, read
 
 
+def _metered(case_id, reader):
+    """Every model call of the sweep writes a cost record for the case."""
+    from postgres.models.cost_record import CostJobType
+    from services.ai_costs_service import ai_cost_context
+
+    def read(prompt):
+        with ai_cost_context(job_type=CostJobType.INGESTION, case_id=case_id, meter_calls=True,
+                             description='Payment categories'):
+            return reader(prompt)
+    return read
+
+
 def _choices(session):
     from services.financial.category_library import category_library
     return [item['name'] for item in category_library(session) if item['name'] != 'Uncategorized']
@@ -496,7 +508,15 @@ def classify_with_model(session, case_id, *, reader=None, model_id=None, limit_g
         ask = ask[:limit_groups]
     if ask:
         if reader is None:
+            from services import ai_budget
+            try:
+                ai_budget.check(session, case_id, 'placing payments in categories')
+            except ai_budget.BudgetRefused as refused:
+                # Nothing lost: these payments stay uncategorized and the next sweep asks again.
+                log.warning('Category sweep held for case %s: %s', case_id, refused.reason)
+                return dict(placed=0, groups=len(groups), asked=0, judgements=0, held=refused.reason)
             model_id, reader = model_reader(session)
+            reader = _metered(case_id, reader)
         examples = _examples(session, case_id)
         for offset in range(0, len(ask), MODEL_BATCH):
             batch = ask[offset:offset + MODEL_BATCH]

@@ -23,6 +23,8 @@ from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from services.ai_model_policy import get_workload_model
 from services.ai_provider_credentials import get_provider_api_key
 from services.dossier_service import create_assessment
+from postgres.models.cost_record import CostJobType
+from services.ai_costs_service import ai_cost_context
 from services.llm_service import LLMExecutionContext
 from services.mandate_context_service import mandate_context_service
 from services import phone_files
@@ -961,7 +963,9 @@ def run_output(
         prompt = _prompt_for(item, mandate.block)
         if generator is None:
             workload = "statement_claim_drafting" if item.output_type == "statement_claims" else "workspace_analysis"
-            raw_content, model_metadata = _default_generator(db, prompt=prompt, workload=workload)
+            with ai_cost_context(job_type=CostJobType.AI_ASSISTANT, case_id=item.case_id, meter_calls=True,
+                                 description=f"Workspace AI: {item.output_type}"):
+                raw_content, model_metadata = _default_generator(db, prompt=prompt, workload=workload)
         else:
             generated = generator(prompt, sources, item)
             if isinstance(generated, tuple):

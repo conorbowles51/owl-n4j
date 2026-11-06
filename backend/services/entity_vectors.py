@@ -22,7 +22,11 @@ import json
 import logging
 import re
 import threading
+import uuid
 from typing import Any, Callable, Iterable
+
+from postgres.models.cost_record import CostJobType
+from services.ai_costs_service import ai_cost_context
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,13 @@ def is_stale(document: str | None, props: dict[str, Any]) -> bool:
 
 
 # ------------------------------------------------------------------------------------------------- graph reads
+
+def _case_uuid(case_id):
+    try:
+        return uuid.UUID(str(case_id))
+    except ValueError:
+        return None
+
 
 def _category(labels: Iterable[str], props: dict[str, Any]) -> str:
     labels = [label for label in labels or [] if label not in ("Entity", "RecycleBin", "RecycleBinItem")]
@@ -193,7 +204,9 @@ def refresh_entities(case_id: str, keys: Iterable[str], *, vector_db=None, embed
             continue
         text = embedding_text(category, props)
         try:
-            vector = embed(text)
+            with ai_cost_context(job_type=CostJobType.INGESTION, case_id=_case_uuid(case_id),
+                                 description="Entity search index"):
+                vector = embed(text)
             vector_db.add_entity(entity_key=key, text=text, embedding=vector, metadata={
                 "category": category, "specific_type": props.get("specific_type") or "",
                 "name": props.get("name") or "", "case_id": case_id,

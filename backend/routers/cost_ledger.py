@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, desc, text
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from postgres.models.cost_record import CostRecord, CostJobType
 from postgres.models.enums import GlobalRole
 from postgres.models.user import User
 from routers.users import get_current_db_user
+from services import ai_budget
 
 router = APIRouter(prefix="/api/cost-ledger", tags=["cost-ledger"])
 
@@ -315,6 +316,21 @@ def get_cost_summary(
             status_code=500,
             detail=f"Failed to load cost summary: {error_detail}. Please ensure the cost_records table exists (run database migrations)."
         )
+
+
+class CaseLimit(BaseModel):
+    limit_usd: Optional[float] = Field(default=None, ge=0)
+
+
+@router.put("/case-limit")
+def put_case_limit(body: CaseLimit, case_id: str = Query(...), user: User = Depends(get_current_db_user),
+                   db: Session = Depends(get_db)):
+    """A tighter AI limit for one case, by whoever may read its costs. It cannot pass the deployment's limit."""
+    authorize_costs(db, user, case_id)
+    ai_budget.set_case_limit(db, UUID(case_id), body.limit_usd, updated_by=user.email)
+    settings = ai_budget.get_settings(db)
+    return {"case_id": case_id, "limit_usd": ai_budget.case_limit(settings, case_id),
+            "spent_usd": round(ai_budget.case_spend(db, case_id), 2)}
 
 
 @router.get("/case-report")
