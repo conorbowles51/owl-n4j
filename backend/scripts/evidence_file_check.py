@@ -3,8 +3,9 @@
     python -m scripts.evidence_file_check check [--dry-run]
     python -m scripts.evidence_file_check restore <case id> --search <folder> [--search <folder>] [--apply]
 
-``check`` prints one line per finding and a summary last. Exit 0 nothing new, 1 rows newly missing or a file whose bytes
-are not the row's, 2 the check refused to mark (ALERT lines say why). ``restore`` is a dry run unless ``--apply``.
+``check`` prints one line per finding and a summary last. Exit 0 nothing new, 3 rows newly missing or a file whose bytes
+are not the row's, 2 the check refused to mark (ALERT lines say why); 1 is Python's own for a crash, so a finding never
+uses it. ``restore`` is a dry run unless ``--apply``.
 """
 from __future__ import annotations
 
@@ -20,6 +21,9 @@ from postgres.session import get_background_session  # noqa: E402
 from services.evidence_file_check import check_files, per_case, restore_files  # noqa: E402
 
 
+FOUND = 3
+
+
 def check(dry_run: bool) -> int:
     with get_background_session() as db:
         result = check_files(db, EVIDENCE_DATA_ROOT, apply=not dry_run)
@@ -30,11 +34,11 @@ def check(dry_run: bool) -> int:
     if result.new:
         print(f"ALERT: {len(result.new)} evidence rows newly have no file on disk: {per_case(result.new)}. "
               f"{'Dry run: not marked' if dry_run else 'They now show as missing in the app'}")
-        code = 1
+        code = FOUND
     if result.wrong_bytes:
         print(f"ALERT: {len(result.wrong_bytes)} missing evidence files are back with other bytes than the row's hash: "
               f"{per_case(result.wrong_bytes)}. They stay marked missing")
-        code = 1
+        code = FOUND
     for row in result.new:
         print(f"missing {row.case_id} {row.id} {row.original_filename}")
     for row in result.back:

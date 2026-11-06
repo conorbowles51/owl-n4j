@@ -2,7 +2,8 @@
 # Daily: every live evidence row that names a file still has it (backend/services/evidence_file_check.py). Called hourly
 # from backup-check.sh, whose board line and alerts it shares, and runs the real check once in EVIDENCE_CHECK_HOURS; in
 # between it repeats the last result. A newly missing row or a refused check alerts through BACKUP_ALERT_CMD and the
-# rows then show as missing in the app. A check that could not finish keeps no result, so the next hour tries again.
+# rows then show as missing in the app. Only a finished check (exit 0, or 3 for a finding) keeps a result: a crash or a
+# refusal keeps none, so the next hour tries again.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_NAME=evidence-file-check
@@ -20,7 +21,7 @@ fi
 out="$(cd "${BACKEND_DIR}" && PYTHONDONTWRITEBYTECODE=1 "${PY}" -m scripts.evidence_file_check check 2>&1)"
 rc=$?
 while IFS= read -r reason; do alert "${reason#ALERT: }"; done < <(printf '%s\n' "${out}" | grep '^ALERT: ')
-if (( rc == 0 || rc == 1 )); then
+if (( rc == 0 || rc == 3 )); then
     printf '%s\n' "${out}" | tail -n 1 > "${STATE_FILE}.tmp" && touch -d "@$(now)" "${STATE_FILE}.tmp" \
         && mv -f -- "${STATE_FILE}.tmp" "${STATE_FILE}"
 fi

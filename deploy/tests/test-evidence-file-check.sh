@@ -29,7 +29,7 @@ go > /dev/null || fail "repeat failed"
 # A day on, one row newly gone: one alert, and FAILED this hour with the reason on the board.
 now=$(( now + 86400 ))
 printf 'ALERT: 1 evidence rows newly have no file on disk: case abcd1234 (1). They now show as missing in the app\nok: 10 rows checked, 1 have no file, 1 new, 0 back\n' > "${test_root}/out"
-echo 1 > "${test_root}/rc"
+echo 3 > "${test_root}/rc"
 if out="$(go)"; then fail "new row exited 0"; fi
 grep -q 'ALERT: 1 evidence rows' <<<"${out}" || fail "the reason is not in the output backup-check reads"
 [[ "$(grep -c 'case abcd1234' "${test_root}/alerts")" == 1 ]] || fail "no single alert"
@@ -45,9 +45,12 @@ grep -q 'refused' "${test_root}/alerts" || fail "refusal not alerted"
 if go > /dev/null; then fail "refusal exited 0 on the retry"; fi
 [[ "$(runs)" == 4 ]] || fail "refusal was not retried: $(runs)"
 
-# A crash says it stopped.
+# A crash (Python exits 1: the release moved the code, say) says it stopped, keeps no result and is tried again.
 now=$(( now + 86400 ))
-printf 'Traceback\nboom\n' > "${test_root}/out"; echo 3 > "${test_root}/rc"; rm -f "${test_root}/alerts"
+printf 'Traceback\nNo module named scripts.evidence_file_check\n' > "${test_root}/out"; echo 1 > "${test_root}/rc"; rm -f "${test_root}/alerts"
+before="$(runs)"
 if go > /dev/null; then fail "crash exited 0"; fi
-grep -q 'stopped (exit 3): boom' "${test_root}/alerts" || fail "crash not alerted"
+grep -q 'stopped (exit 1): No module named' "${test_root}/alerts" || fail "crash not alerted"
+if go > /dev/null; then fail "a crash was remembered as a result"; fi
+[[ "$(runs)" == $(( before + 2 )) ]] || fail "crash was not retried"
 echo "test-evidence-file-check: all passed"
