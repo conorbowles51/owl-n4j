@@ -4908,7 +4908,7 @@ function EditableStatement({
               sourcePage
             }
             reviews={pageReviews}
-            canEdit={canEdit}
+            canEdit={caseCanEdit && !batchReview?.readOnly}
           />
         </Disclosure>
         {!excludedCopy &&

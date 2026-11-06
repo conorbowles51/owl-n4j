@@ -1759,6 +1759,31 @@ it("distinguishes a new reading's currency from saved corrections", async () => 
   ).toBeDisabled()
 })
 
+it("takes a page review on a statement already imported", async () => {
+  // A supporting page is usually found after the import; the saved payments stay locked, the page review does not.
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (String(url).includes("/page-reviews?"))
+      return { reviews: [], history: [] } as never
+    if (String(url).includes("/statement-import/") && !options?.method)
+      return {
+        ...data,
+        current_import: {
+          source_document_id: "imported",
+          evidence_file_id: "file",
+          revision: "b".repeat(64),
+          transaction_count: 1,
+          currency: "EUR",
+        },
+      } as never
+    return base(url, options)
+  })
+  mount()
+  await open(false)
+  fireEvent.click(screen.getByText("Inspect another page of the original PDF"))
+  expect(await screen.findByLabelText("What page 1 is")).toBeEnabled()
+})
+
 it("requires an explicit replacement decision and reason for an existing import", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
