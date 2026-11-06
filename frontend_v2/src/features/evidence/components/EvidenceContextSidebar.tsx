@@ -49,6 +49,7 @@ import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
+import { fileMissingText } from "../utils/file-missing"
 import { financialLine, uploadLine, useFileProvenance } from "../hooks/use-file-provenance"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { useEvidenceFile } from "../hooks/use-evidence-detail"
@@ -462,6 +463,7 @@ function DetailsPanelContent({
   const reviewedTranscript = useQuery({ queryKey: ['transcript', file.id], queryFn: () => transcriptsAPI.get(file.id),
     enabled: mediaType === 'audio' && !!file.transcript_review?.revision_id, retry: false })
 
+  const fileMissing = !!file.file_missing_since
   const isProcessed = file.status === "processed"
   const isProcessing = file.status === "processing"
   const isFailed = file.status === "failed"
@@ -569,11 +571,20 @@ function DetailsPanelContent({
             )}
           </div>
 
+          {/* The record outlives its file: say so before anything offers to open it */}
+          {file.file_missing_since && (
+            <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+              <p className="font-medium">File missing</p>
+              <p className="mt-1">{fileMissingText(file.file_missing_since)}</p>
+            </div>
+          )}
+
           {/* Action toolbar */}
           <div className="flex items-center gap-2">
             <Button
               variant="primary"
               size="sm"
+              disabled={fileMissing}
               onClick={() => setViewerOpen(true)}
             >
               <Eye className="size-3.5" />
@@ -582,24 +593,26 @@ function DetailsPanelContent({
             <Button asChild variant="outline" size="sm" title="The original beside its extracted text">
               <a href={textWorkbenchHref(caseId, file.id)} target="_blank" rel="noopener">Text</a>
             </Button>
-            <Button variant="ghost" size="icon-sm" title="Download" onClick={handleDownload}>
+            <Button variant="ghost" size="icon-sm" title="Download" disabled={fileMissing} onClick={handleDownload}>
               <Download className="size-3.5" />
             </Button>
           </div>
 
           {/* Smart thumbnail */}
-          <SmartThumbnail
-            file={file}
-            fileUrl={fileUrl}
-            onOpenViewer={() => setViewerOpen(true)}
-          />
+          {!fileMissing && (
+            <SmartThumbnail
+              file={file}
+              fileUrl={fileUrl}
+              onOpenViewer={() => setViewerOpen(true)}
+            />
+          )}
 
           {/* --- Unprocessed: prominent Process button --- */}
           {mediaType === 'audio' && file.transcript_review?.revision_id && <div className="space-y-2 rounded-lg border p-3 text-xs">
             <p>{canonicalName(file.transcript_review)}</p>
             <Button size="sm" variant="outline" onClick={() => setViewerOpen(true)}>Review transcript</Button>
           </div>}
-          {isUnprocessed && (
+          {isUnprocessed && !fileMissing && (
             <div className="overflow-hidden rounded-lg border border-amber-500/20 bg-amber-500/5">
               <div className="flex flex-col items-center gap-3 p-4">
                 <p className="text-xs text-muted-foreground text-center">
@@ -609,7 +622,7 @@ function DetailsPanelContent({
                   variant="primary"
                   size="sm"
                   onClick={handleProcess}
-                  disabled={processBusy}
+                  disabled={processBusy || fileMissing}
                 >
                   {processBusy ? (
                     <Loader2 className="size-3.5 animate-spin" />
@@ -658,7 +671,7 @@ function DetailsPanelContent({
                     size="sm"
                     className="mt-2"
                     onClick={handleProcess}
-                    disabled={processBusy}
+                    disabled={processBusy || fileMissing}
                   >
                     {processBusy ? (
                       <Loader2 className="size-3.5 animate-spin" />
