@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 
 import pytest
@@ -162,3 +163,46 @@ def test_the_bundled_schema_is_relativitys_unchanged():
     assert s["required"] == ["version", "participants", "conversations", "events"]
     assert s["properties"]["events"]["items"]["properties"]["type"]["enum"] == [
         "message", "disclaimer", "join", "leave", "history", "unknown"]
+
+
+def test_the_message_written_a_block_at_a_time_is_the_message_the_email_package_writes(tmp_path):
+    from email.message import EmailMessage
+    from email.policy import SMTP
+    payload = bytes(range(256)) * 400
+    source = tmp_path / "rsmf.zip"
+    source.write_bytes(payload)
+    def message():
+        msg = EmailMessage(policy=SMTP)
+        msg["Subject"] = "t"
+        msg.set_content("body")
+        return msg
+    whole = message()
+    whole.add_attachment(payload, maintype="application", subtype="zip", filename="rsmf.zip")
+    streamed = message()
+    written = io.BytesIO()
+    rsmf._write_message(streamed, str(source), written)
+    # add_attachment draws a random boundary; compare with each message's own boundary normalised
+    assert (written.getvalue().replace(streamed.get_boundary().encode(), b"B")
+            == whole.as_bytes().replace(whole.get_boundary().encode(), b"B"))
+
+
+def test_an_attachment_is_streamed_never_read_whole(tmp_path):
+    """On the old code every attachment was read whole; a stream that refuses a whole read fails it."""
+    class NoWholeRead(io.BytesIO):
+        def read(self, size=-1):
+            assert 0 < size <= rsmf.BLOCK, "read the whole attachment into memory"
+            return super().read(size)
+    body = b"v" * (3 * rsmf.BLOCK + 5)
+    row = {"record_uid": "00000000-0000-4000-8000-000000000001", "kind": "message", "app": "SyntheticChat",
+           "phone": {"extraction_id": "e1", "label": "C1"}, "thread": {"thread_key": "t1", "title": "Synthetic"},
+           "direction": "incoming", "time": {"instant": "2023-03-14T15:00:00+00:00"}, "body": "clip",
+           "from": {"identity_key": "k1", "name": "Synthetic Ana", "identifier": None, "is_owner": False},
+           "to": [], "flags": [], "copies": {"count": 1}, "attachments": [{"file_uid": "f1", "filename": "clip.mp4"}]}
+    target = tmp_path / "out.rsmf"
+    with open(target, "wb") as out:
+        none, counts = rsmf.build([row], title="t", contains=[], read_file=lambda uid: (lambda: NoWholeRead(body), None),
+                                  out=out, spool_dir=tmp_path)
+    assert none is None and counts["attachments_included"] == 1
+    assert [p.name for p in tmp_path.iterdir()] == ["out.rsmf"]
+    _, manifest, files = rsmf.read(target.read_bytes())
+    assert list(files.values()) == [body]

@@ -171,6 +171,10 @@ def _new_file(case_id, folder_id, fd, is_dup, dup_of_id, owner, created_by_id):
     # A PDF waits for the statement check (financial auto-read); a marker only.
     from services.financial.auto_read import mark_registered
     mark_registered(ef)
+    # The name's claim against the first bytes; executable content starts held from model reading.
+    from services import evidence_malware, evidence_signature
+    evidence_signature.stamp(ef, evidence_signature.signature_of_file(ef.original_filename, ef.stored_path))
+    evidence_malware.mark_waiting(ef)
     return ef
 
 
@@ -1100,6 +1104,7 @@ class EvidenceDBStorage:
     @staticmethod
     def _file_to_dict(ef: EvidenceFile) -> Dict[str, Any]:
         from services.evidence_file_check import file_missing_since
+        from services.evidence_signature import file_check_fields
         return {
             "id": str(ef.id),
             "case_id": str(ef.case_id),
@@ -1107,6 +1112,7 @@ class EvidenceDBStorage:
             "original_filename": ef.original_filename,
             "stored_path": ef.stored_path,
             "file_missing_since": file_missing_since(ef),
+            **file_check_fields(ef),
             "size": ef.size,
             "sha256": ef.sha256,
             "status": ef.status,

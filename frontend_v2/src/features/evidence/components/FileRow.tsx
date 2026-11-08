@@ -34,6 +34,7 @@ import { getFileTypeCategory } from "../utils/file-types"
 import { getDisplayStatus } from "../utils/display-status"
 import { fileMissingText } from "../utils/file-missing"
 import { canonicalName } from '../utils/transcript-status'
+import { FileCheckBadges } from "./FileCheckNotice"
 import { RouteBadge } from "./RouteBadge"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
@@ -278,6 +279,7 @@ export function FileRow({
             File missing
           </span>
         )}
+        <FileCheckBadges file={file} />
         {typeCategory === 'Audio' && <button className="mt-1 block text-left text-[10px] text-muted-foreground hover:underline"
           onClick={() => openDetail(file.id, { startSeconds: 0 })}>{file.transcript_review?.revision_id ? canonicalName(file.transcript_review) : file.status === 'processed' ? 'Processed · Transcript not reviewed' : 'Not transcribed'}</button>}
       </TableCell>

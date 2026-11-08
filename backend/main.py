@@ -182,6 +182,13 @@ async def lifespan(app: FastAPI):
     from services.agent.run_settle import settle_forever as settle_agent_runs_forever
     agent_run_settle_task = asyncio.create_task(settle_agent_runs_forever(), name="agent-run-settle")
 
+    # New evidence is scanned for malware in the background; the task ends at once while its switch is off.
+    from services.evidence_file_check import resolve_stored_path as _resolve_evidence_path
+    from services.evidence_malware import run_scans_forever
+    from config import EVIDENCE_DATA_ROOT as _evidence_root
+    malware_scan_task = asyncio.create_task(run_scans_forever(lambda path: _resolve_evidence_path(path, _evidence_root)),
+                                            name="evidence-malware-scan")
+
     # Jobs the old backend started after this one's start are recovered once it has stopped (services.backend_handover).
     from services.backend_handover import after_old_backend_stopped
     handover_task = asyncio.create_task(after_old_backend_stopped(job_subscriber.recover_after_handover),
@@ -202,7 +209,7 @@ async def lifespan(app: FastAPI):
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, address_lookup_task, phone_interpretation_task, financial_batches_task,
          view_warmup_task, view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task,
-         casebin_purge_task, handover_task, agent_run_settle_task, backfill_resume_task],
+         casebin_purge_task, malware_scan_task, handover_task, agent_run_settle_task, backfill_resume_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 

@@ -1,6 +1,18 @@
 name: owl-v2
 
 services:
+  # lx-filecheck: malware scanning, off. Holds 972 MB idle (services/evidence_malware.py), so it starts only with
+  # `--profile malware`, and the backend sends to it only with LOUPE_MALWARE_SCAN=1.
+  clamav:
+    image: clamav/clamav:1.5.4
+    container_name: owl-v2-clamav
+    restart: unless-stopped
+    profiles: [malware]
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - ./clamav-db:/var/lib/clamav
+
   neo4j:
     image: neo4j:5
     container_name: owl-v2-n4j

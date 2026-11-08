@@ -44,9 +44,13 @@ from services.evidence_page_text import (
     page_positions,
 )
 from services.evidence_text_search_service import search_case_text, search_document_text
+from services import evidence_archive
 from services import evidence_engine_client
+from services import evidence_signature
+from services.evidence_signature import file_check_fields
 from services.response_encoding import plain_or_encoded
 from services.financial import PageRenderError, UnadmittedFileError, render_page_png
+from services.financial.pdf_candidates import PdfMappingError
 from services import page_image_cache
 from .auth import get_current_user
 from routers.case_access import (
@@ -179,6 +183,7 @@ def _evidence_record_from_db(record) -> dict:
         "original_filename": record.original_filename,
         "stored_path": record.stored_path or "",
         "file_missing_since": file_missing_since(record),
+        **file_check_fields(record),
         "folder_id": str(record.folder_id) if record.folder_id else None,
         "size": record.size,
         "sha256": record.sha256,
@@ -354,82 +359,15 @@ def _keep_original_archive(case_id: str, upload: dict) -> Path:
 
 def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]:
     """
-    Extract a zip safely into staging and return upload metadata.
-
-    An ordinary zip posted as one multipart part is unpacked server side with
-    zip-slip protection. Phone reports never reach here: the upload refuses
-    them first and they go through the resumable group upload, which keeps the
-    container whole.
+    Unpack an ordinary zip posted as one multipart part into staging and return upload metadata
+    (``services/evidence_archive.py``). Phone reports never reach here: the upload refuses them first and they go
+    through the resumable group upload, which keeps the container whole.
     """
     extract_dir.mkdir(parents=True, exist_ok=True)
-    extract_root = extract_dir.resolve()
-    uploads: List[dict] = []
-    extracted: Dict[Path, str] = {}
-    copies_of: Dict[Path, set] = {}  # a path's first target -> the hashes of every copy kept for it
-
-    with zipfile.ZipFile(zip_path) as zf:
-        for info in zf.infolist():
-            if info.is_dir():
-                continue
-            normalized = (info.filename or "").replace("\\", "/").lstrip("/")
-            if not normalized:
-                continue
-            parts = normalized.split("/")
-            if any(part == "__MACOSX" or part.startswith("._") for part in parts):
-                continue
-            if parts[-1] in _ARCHIVE_SKIP_NAMES:
-                continue
-
-            relative_path = _safe_relative_path(normalized)
-            target = (extract_dir / relative_path).resolve()
-            try:
-                target.relative_to(extract_root)
-            except ValueError:
-                continue
-            # The same path twice in one archive: the second copy gets "name (n).ext" rather than overwriting the
-            # first (which would leave the first row's hash describing bytes no longer on disk). A copy with the
-            # same bytes as any earlier copy of that path is the same file and is kept once.
-            earlier_copies = copies_of.setdefault(target, set())
-            base, n = relative_path, 1
-            while target in extracted:
-                n += 1
-                relative_path = base.with_name(f"{base.stem} ({n}){base.suffix}")
-                target = (extract_dir / relative_path).resolve()
-
-            target.parent.mkdir(parents=True, exist_ok=True)
-            hasher = hashlib.sha256()
-            size = 0
-            try:
-                with zf.open(info) as src, target.open("wb") as dst:
-                    while True:
-                        chunk = src.read(_STAGE_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        hasher.update(chunk)
-                        dst.write(chunk)
-                        size += len(chunk)
-            except Exception:
-                try:
-                    target.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                raise
-
-            digest = hasher.hexdigest()
-            if digest in earlier_copies:
-                target.unlink(missing_ok=True)
-                continue
-            earlier_copies.add(digest)
-            extracted[target] = digest
-            uploads.append({
-                "original_filename": relative_path.name,
-                "staged_path": target,
-                "sha256": digest,
-                "size": size,
-                "relative_path": str(relative_path).replace("\\", "/"),
-            })
-
-    return uploads
+    return [{"original_filename": PurePosixPath(member["path"]).name, "staged_path": Path(member["stored_path"]),
+             "sha256": member["sha256"], "size": member["size"], "relative_path": member["path"]}
+            for member in evidence_archive.unpack(zip_path, extract_dir, path_of=_safe_relative_path,
+                                                  repeats="number", sync=False)]
 
 
 def _get_folder_parts(db: Session, folder_id: Optional[UUID]) -> List[str]:
@@ -627,6 +565,16 @@ class EvidenceRecord(BaseModel):
     original_filename: str
     stored_path: str = ""
     file_missing_since: Optional[str] = None  # when the daily check found the file gone (services/evidence_file_check)
+    file_type_stated: Optional[str] = None  # the name's claim against the first bytes (services/evidence_signature)
+    file_type_detected: Optional[str] = None
+    file_type_match: Optional[str] = None
+    file_type_words: Optional[str] = None
+    reading_hold: Optional[str] = None  # null, held or released
+    reading_hold_reason: Optional[str] = None
+    reading_hold_detail: Optional[str] = None
+    reading_released_by: Optional[str] = None
+    reading_released_at: Optional[str] = None
+    malware_scan: Optional[str] = None
     folder_id: Optional[str] = None
     size: int
     sha256: str
@@ -1410,10 +1358,14 @@ async def upload_evidence(
 
             records = await run_in_threadpool(register)
             upload_kind = "folder" if is_folder or is_archive else "file"
+            checked_words = evidence_signature.summary_words(dict(
+                mismatched=sum(record["file_type_match"] == "mismatch" for record in records),
+                held=sum(record["reading_hold"] == "held" for record in records)))
             return UploadResponse(
                 files=records,
                 job_ids=None,
-                message=f"Uploaded {len(records)} {upload_kind}{'' if len(records) == 1 else 's'}",
+                message=f"Uploaded {len(records)} {upload_kind}{'' if len(records) == 1 else 's'}"
+                        + (f". {checked_words}" if checked_words else ""),
             )
         finally:
             # On success every staged file has moved into the case and only empty directories remain; on failure
@@ -1423,6 +1375,36 @@ async def upload_evidence(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class HoldReleaseRequest(BaseModel):
+    case_id: str
+
+
+@router.post("/{evidence_id}/release-hold", response_model=EvidenceRecord)
+def release_reading_hold(
+    evidence_id: str,
+    body: HoldReleaseRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """A person lets a held file go to model reading. The hold, its reason and who released it stay on the row."""
+    from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+    try:
+        file_id, case_id = UUID(evidence_id), UUID(body.case_id)
+        check_case_access(db, case_id, current_user, required_permission=("evidence", "upload"))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    except (CaseNotFound, CaseAccessDenied) as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    record = EvidenceDBStorage.get(db, file_id)
+    if record is None or record.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    if record.reading_hold != "held":
+        raise HTTPException(status_code=409, detail="This file is not held from reading")
+    evidence_signature.release(db, record, current_user)
+    db.commit()
+    return _evidence_record_from_db(record)
 
 
 def _record_financial_read(db, user, case_id, file_ids, copies):
@@ -1528,6 +1510,8 @@ async def process_evidence_background(
         # this refusal was based on.
         #
         raise HTTPException(status_code=409, detail=e.as_dict())
+    except PdfMappingError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     except HTTPException:
         # A 403, 404 or 409 raised above stays what it is; only an unexpected failure is a 500.
         raise

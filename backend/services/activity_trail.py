@@ -55,6 +55,7 @@ ACTIONS = {
     'two_step_requirement_changed': 'Changed whether administrators must use two-step sign-in',
     'ai_credentials_rekeyed': 'Moved stored AI credentials to a new key',
     'evidence_upload': 'Uploaded evidence',
+    'evidence_hold_release': 'Released a held file for reading',
     'financial_send': 'Added files to Financial',
     'financial_auto_add': 'Added to Financial automatically',
     'phone_extraction_superseded': 'Replaced a phone report',

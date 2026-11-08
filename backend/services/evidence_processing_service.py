@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from services.transcript_review import is_audio, summary, ensure_source, feature_enabled
 
 from postgres.models.evidence import EvidenceFile
-from services import evidence_engine_client, phone_files
+from services import evidence_engine_client, evidence_signature, phone_files
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_job_sync import reconcile_case_jobs
 from services.financial.admission_gate import gate_document_processing
@@ -77,7 +77,26 @@ def _financial_processing_files(db: Session, case_id: uuid.UUID, file_ids: list[
     return files
 
 
-async def process_db_files(
+async def process_db_files(db: Session, *, case_id: uuid.UUID, file_ids: list[uuid.UUID], **options) -> dict[str, Any]:
+    """Send evidence files to the engine, leaving out any file held from model reading and saying so. Every send to
+    the engine passes here, so a held file reaches no model whichever route asked. A held file does not stop the rest
+    of a selection: a phone folder's programs would otherwise refuse its documents. Financial reading asks for one
+    named statement and waits for its reading, so there a held file is refused with the reason."""
+    sendable, held = await run_in_threadpool(evidence_signature.split_held, db, case_id, file_ids, _stored_path)
+    if held and options.get('preparation_mode') == 'pdf_review':
+        from services.financial.pdf_candidates import PdfMappingError
+        raise PdfMappingError(evidence_signature.held_words(len(held)), 409)
+    if not held:
+        return await _send_files(db, case_id=case_id, file_ids=file_ids, **options)
+    await run_in_threadpool(db.commit)  # a signature read here for the first time stays read
+    result = await _send_files(db, case_id=case_id, file_ids=sendable, **options) if sendable else dict(
+        job_ids=[], file_count=0, skipped_count=0, message='No files sent')
+    words = evidence_signature.held_words(len(held))
+    return {**result, 'held_ids': [str(file_id) for file_id in held], 'skipped_count': result.get('skipped_count', 0) + len(held),
+            'message': f"{result['message']}; {words}" if sendable else words}
+
+
+async def _send_files(
     db: Session,
     *,
     case_id: uuid.UUID,

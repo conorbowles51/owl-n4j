@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import EVIDENCE_DATA_ROOT  # noqa: E402
 from postgres.session import get_background_session  # noqa: E402
 from services.evidence_file_check import check_files, per_case, restore_files  # noqa: E402
+from services.evidence_signature import read_unread  # noqa: E402
 
 
 FOUND = 3
@@ -45,6 +46,9 @@ def check(dry_run: bool) -> int:
         print(f"back {row.case_id} {row.id} {row.original_filename}")
     print(f"ok: {result.rows} rows checked, {result.missing} have no file, {len(result.new)} new, "
           f"{len(result.back)} back")
+    with get_background_session() as db:
+        read = read_unread(db, EVIDENCE_DATA_ROOT, apply=not dry_run)
+    print(f"signatures: {dict(read)}")
     return code
 
 

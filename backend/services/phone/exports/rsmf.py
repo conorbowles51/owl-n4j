@@ -26,10 +26,13 @@ sent this copy, never a forward's first author.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
+import os
 import re
+import tempfile
 import zipfile
 from email.message import EmailMessage
 from email.policy import SMTP
@@ -41,6 +44,8 @@ from services.phone.replies import reply_words
 VERSION = "2.0.0"
 GENERATOR = "Loupe"
 SCHEMA_PATH = Path(__file__).parent / "rsmf_spec" / "rsmf_schema_2_0_0.json"
+BLOCK = 1024 * 1024
+BASE64_LINE = 57  # 76 characters once encoded, the line length of the email package
 RECOMMENDED_MAX_EVENTS = 10_000  # Relativity's recommended ceiling per file; above it the export says so
 
 
@@ -106,7 +111,46 @@ def _call_body(row) -> str:
     return c.get("words") or "Call"
 
 
-def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[bytes, dict]:
+def _spool(data, folder: str) -> tuple:
+    """An attachment on disk beside the export, read a block at a time. ``data`` is bytes or a callable that opens a
+    stream. Returns (path, size, sha256): a video of 2 GB costs 1 MB of memory here, not 2 GB."""
+    digest, size = hashlib.sha256(), 0
+    handle, path = tempfile.mkstemp(dir=folder)
+    with os.fdopen(handle, "wb") as out, (data() if callable(data) else io.BytesIO(data)) as source:
+        for block in iter(lambda: source.read(BLOCK), b""):
+            digest.update(block)
+            size += len(block)
+            out.write(block)
+    return path, size, digest.hexdigest()
+
+
+def _write_message(msg: EmailMessage, zip_path: str, out) -> None:
+    """``msg`` as ``as_bytes`` gives it with the zip as its attachment, encoded a block at a time."""
+    msg.add_attachment(b"", maintype="application", subtype="zip", filename="rsmf.zip")
+    head = msg.as_bytes()
+    closing = ("--%s--" % msg.get_boundary()).encode()
+    at = head.rindex(closing)
+    before = head[:at]
+    assert before.endswith(b"\r\n\r\n\r\n")  # headers, blank line, then the empty body's own line break
+    out.write(before[:-2])
+    with open(zip_path, "rb") as source:
+        for block in iter(lambda: source.read(BASE64_LINE * 1024), b""):
+            for start in range(0, len(block), BASE64_LINE):
+                out.write(base64.b64encode(block[start:start + BASE64_LINE]) + b"\r\n")
+    out.write(b"\r\n" + head[at:])
+
+
+def build(rows: list, *, title: str, contains: list, read_file=None, out=None, spool_dir=None) -> tuple:
+    """One RSMF file. ``read_file(file_uid)`` gives (bytes or a stream opener, reason). The attachments, the zip and
+    the message are written through files in ``spool_dir``, so memory does not grow with what the rows carry. With
+    ``out`` (a binary stream) the file goes there and the first value returned is None."""
+    with tempfile.TemporaryDirectory(dir=spool_dir, prefix=".rsmf-") as folder:
+        sink = out if out is not None else io.BytesIO()
+        counts = _build(rows, title, contains, read_file, sink, folder)
+        return (None if out is not None else sink.getvalue()), counts
+
+
+def _build(rows, title, contains, read_file, sink, spool) -> dict:
     """``rows``: the screen's rows in screen order. ``read_file(file_uid) -> (bytes, None) | (None, reason)``.
     Returns the ``.rsmf`` bytes and the counts (events, attachments included and not included)."""
     people = _Participants()
@@ -161,9 +205,12 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
                 data, reason = read_file(a["file_uid"])
             item = {"id": aid, "display": name}
             if data is not None:
-                files[aid] = data
-                item["size"] = len(data)
-                att_custom.append(("File %s SHA-256" % name, hashlib.sha256(data).hexdigest()))
+                try:
+                    files[aid], item["size"], digest = _spool(data, spool)
+                except OSError:
+                    data, reason = None, "The file could not be read from the production."
+            if data is not None:
+                att_custom.append(("File %s SHA-256" % name, digest))
             else:
                 missing += 1
                 att_custom.append(("File %s not included" % name, reason))
@@ -198,11 +245,12 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
     manifest = {"version": VERSION, "participants": people.items, "conversations": list(convs.values()),
                 "events": events}
     validate(manifest)
-    zbuf = io.BytesIO()
-    with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
+    zip_path = os.path.join(spool, "rsmf.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as z:
         z.writestr("rsmf_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
-        for aid, data in files.items():
-            z.writestr(aid, data)
+        for aid, path in files.items():
+            z.write(path, aid)
+            os.unlink(path)
     msg = EmailMessage(policy=SMTP)
     first = people.items[0]["display"] if people.items else "Loupe"
     msg["From"] = '"%s" <>' % first.replace('"', "'")
@@ -214,11 +262,10 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
         msg["X-RSMF-EndDate"] = max(times)
     msg["X-RSMF-EventCount"] = str(len(events))
     msg.set_content("\n".join([title, ""] + list(contains)))
-    msg.add_attachment(zbuf.getvalue(), maintype="application", subtype="zip", filename="rsmf.zip")
-    counts = {"events": len(events), "conversations": len(convs), "participants": len(people.items),
+    _write_message(msg, zip_path, sink)
+    return {"events": len(events), "conversations": len(convs), "participants": len(people.items),
               "attachments": attachments_total, "attachments_included": attachments_total - missing,
               "attachments_not_included": missing, "over_recommended_size": len(events) > RECOMMENDED_MAX_EVENTS}
-    return msg.as_bytes(), counts
 
 
 def read(data: bytes) -> tuple[dict, dict, dict]:

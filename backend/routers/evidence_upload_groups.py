@@ -13,14 +13,12 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
-import stat
 import tempfile
 import threading
 import time
 from types import SimpleNamespace
 from typing import Literal
 from uuid import UUID, uuid4, uuid5
-import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -36,6 +34,7 @@ from postgres.session import get_db
 from routers.case_access import authorize_case
 from routers.users import get_current_db_user
 from routers import evidence_uploads as uploads
+from services import evidence_archive, evidence_signature
 from services.evidence_db_storage import EvidenceDBStorage
 
 router = APIRouter(prefix='/api/evidence-upload-groups', tags=['evidence'])
@@ -44,10 +43,10 @@ MAX_MEMBERS = 200_000  # one request's page of a manifest (01 D9; a larger selec
 # 209,271 (P03), 204,426 (P08), 206,622 (P13) and 279,701 (P11) files, so the manifest is paged and the
 # selection cap is 1,000,000, 3.6 times the largest production measured. Reverse if a production exceeds it.
 MAX_MEMBERS_TOTAL = 1_000_000
-MAX_ARCHIVE_ENTRIES = 20_000  # an ordinary zip unpacked into evidence rows
+MAX_ARCHIVE_ENTRIES = evidence_archive.MAX_ENTRIES  # an ordinary zip unpacked into evidence rows
+MAX_EXPANDED_BYTES = evidence_archive.MAX_EXPANDED_BYTES  # one selection's total size, and an archive's expanded size
 PHONE_CONTAINER_SUFFIXES = ('.zip', '.ufdr')
-MAX_EXPANDED_BYTES = 64 * 1024**3
-SKIP_NAMES = {'.DS_Store', 'Thumbs.db', 'desktop.ini'}
+SKIP_NAMES = evidence_archive.SKIP_NAMES
 
 
 class Member(BaseModel):
@@ -393,50 +392,9 @@ def place_verified(source, target, expected_hash, expected_size):
 
 
 def extract_archive(source, root, keep=None):
-    """Unpack a verified zip into the payload root. ``keep(path)``, when given, limits which members are written;
-    every member is still checked, and an empty result is then not an error. The entry limit counts what is
-    unpacked: a phone zip's report files stay in the zip, so they do not count (a Mac zip of a 29,108-file report
-    holds 58,215 entries with its ``__MACOSX`` copies and was refused registration while only checking for files
-    beside the report)."""
-    result, seen, total = [], set(), 0
-    too_many = HTTPException(413, 'Archive has too many entries. Split it into smaller archives.')
-    try:
-        with zipfile.ZipFile(source) as archive:
-            infos = archive.infolist()
-            if keep is None and len(infos) > MAX_ARCHIVE_ENTRIES:
-                raise too_many
-            for info in infos:
-                if info.is_dir(): continue
-                path = safe_path(info.filename.replace('\\', '/'))
-                if any(p == '__MACOSX' or p.startswith('._') for p in path.parts) or path.name in SKIP_NAMES:
-                    continue
-                if stat.S_ISLNK(info.external_attr >> 16) or info.flag_bits & 1:
-                    raise HTTPException(400, 'Remove symbolic links or password protection from the archive before uploading.')
-                if str(path).casefold() in seen:
-                    raise HTTPException(400, 'Archive contains repeated file paths. No evidence was registered.')
-                seen.add(str(path).casefold())
-                if keep is not None and not keep(path.as_posix()):
-                    continue
-                if len(result) >= MAX_ARCHIVE_ENTRIES:
-                    raise too_many
-                total += info.file_size
-                if total > MAX_EXPANDED_BYTES:
-                    raise HTTPException(413, 'Expanded archive exceeds 64 GB. Split it into smaller archives.')
-                target = root / path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                digest, size = hashlib.sha256(), 0
-                with archive.open(info) as src, target.open('wb') as dst:
-                    for chunk in iter(lambda: src.read(1024 * 1024), b''):
-                        size += len(chunk)
-                        if size > info.file_size:
-                            raise HTTPException(400, 'Archive entry size failed verification')
-                        digest.update(chunk); dst.write(chunk)
-                    dst.flush(); os.fsync(dst.fileno())
-                if size != info.file_size:
-                    raise HTTPException(400, 'Archive entry is incomplete')
-                result.append(dict(path=str(path), size=size, sha256=digest.hexdigest(), stored_path=str(target)))
-    except (zipfile.BadZipFile, RuntimeError, OSError) as exc:
-        raise HTTPException(400, 'The ZIP archive could not be read. Original uploaded bytes are retained; no evidence was registered.') from exc
+    """Unpack a verified zip into the payload root (``services/evidence_archive.py``). ``keep(path)``, when given,
+    limits which members are written; every member is still checked, and an empty result is then not an error."""
+    result = evidence_archive.unpack(source, root, path_of=safe_path, keep=keep, max_entries=MAX_ARCHIVE_ENTRIES)
     if not result and keep is None:
         raise HTTPException(400, 'The archive contains no files to register')
     return result
@@ -568,6 +526,7 @@ def register_payload(db, group, user, prepared):
     records = EvidenceDBStorage.add_files_each(db, case_id=group.case_id, entries=entries, owner=user.email,
                                                created_by_id=user.id)
     files.extend(str(record.id) for record in records)
+    file_checks = evidence_signature.group_counts(records)
     payload = PurePosixPath('_upload_groups', str(group.id), 'payload')
     for phone in prepared['phones']:
         folder = folder_of(str(PurePosixPath(phone['path']).parent))
@@ -606,7 +565,10 @@ def register_payload(db, group, user, prepared):
         message += ' ' + ' '.join(notices)
     elif prepared['members']:
         message += ' Select Process to start ingestion.'
-    return dict(file_ids=files, job_ids=[], dispatch=dispatch, message=message)
+    checked_words = evidence_signature.summary_words(file_checks)
+    if checked_words:
+        message += ' ' + checked_words
+    return dict(file_ids=files, job_ids=[], dispatch=dispatch, message=message, file_checks=file_checks)
 
 
 def folder_for_path(db, group, user, relative_path):

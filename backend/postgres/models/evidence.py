@@ -112,6 +112,8 @@ class EvidenceFile(Base, TimestampMixin):
         ),
         Index("ix_evidence_files_case_cellebrite_file", "case_id", "cellebrite_file_id"),
         Index("ix_evidence_files_case_cellebrite_model", "case_id", "cellebrite_model_id"),
+        Index("ix_evidence_files_malware_waiting", "id", postgresql_where=text("malware_scan = 'waiting'"),
+              sqlite_where=text("malware_scan = 'waiting'")),
         Index(
             "ix_evidence_files_case_cellebrite_source_report",
             "case_id",
@@ -198,6 +200,19 @@ class EvidenceFile(Base, TimestampMixin):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     has_geotag: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # What the name claims and what the first bytes show (services/evidence_signature.py); null on a row not yet read.
+    file_type_stated: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    file_type_detected: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    file_type_match: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Held from model reading until a person releases it: null, 'held' or 'released'. The release keeps who and when.
+    reading_hold: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    reading_hold_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reading_hold_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reading_released_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reading_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The malware scan (services/evidence_malware.py): null, 'waiting', 'clean', 'found' or 'failed'.
+    malware_scan: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    malware_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     tags: Mapped[list] = mapped_column(_jsonb_column(), server_default="[]", nullable=False)
     linked_entity_ids: Mapped[list] = mapped_column(_jsonb_column(), server_default="[]", nullable=False)
     metadata_: Mapped[dict] = mapped_column("metadata", _jsonb_column(), server_default="{}", nullable=False)

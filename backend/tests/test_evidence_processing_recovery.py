@@ -14,6 +14,9 @@ class FakeDb:
     def commit(self) -> None:
         self.commit_count += 1
 
+    def scalars(self, statement):
+        return iter(())  # no file row is held
+
 
 class FakeSubscriber:
     def __init__(self) -> None:

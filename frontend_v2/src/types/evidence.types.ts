@@ -26,6 +26,18 @@ export interface EvidenceFile {
   stored_path: string
   /** When the daily check found the stored file gone; absent or null while it is there. */
   file_missing_since?: string | null
+  /** The name's claim against the first bytes: match, mismatch, unknown, empty, no_file, or null if not read yet. */
+  file_type_stated?: string | null
+  file_type_detected?: string | null
+  file_type_match?: string | null
+  file_type_words?: string | null
+  /** Held from model reading until a person releases it: null, "held" or "released". */
+  reading_hold?: string | null
+  reading_hold_reason?: string | null
+  reading_hold_detail?: string | null
+  reading_released_by?: string | null
+  reading_released_at?: string | null
+  malware_scan?: string | null
   size: number
   sha256: string
   status: string
@@ -317,6 +329,18 @@ export interface EvidenceFileRecord {
   stored_path: string
   /** When the daily check found the stored file gone; absent or null while it is there. */
   file_missing_since?: string | null
+  /** The name's claim against the first bytes: match, mismatch, unknown, empty, no_file, or null if not read yet. */
+  file_type_stated?: string | null
+  file_type_detected?: string | null
+  file_type_match?: string | null
+  file_type_words?: string | null
+  /** Held from model reading until a person releases it: null, "held" or "released". */
+  reading_hold?: string | null
+  reading_hold_reason?: string | null
+  reading_hold_detail?: string | null
+  reading_released_by?: string | null
+  reading_released_at?: string | null
+  malware_scan?: string | null
   size: number
   sha256: string
   status: "unprocessed" | "processing" | "processed" | "failed"

@@ -407,7 +407,7 @@ def draw(engine, export_id, claimed=None) -> dict:
     contains = _contains(e, options, g, fmt)
     extra = {}
     if fmt == "rsmf":
-        data, extra = _rsmf(engine, e, options, contains + ["Review coverage: " + " ".join(g.review), _generated(e),
+        data, extra = _rsmf(engine, e, export_id, options, contains + ["Review coverage: " + " ".join(g.review), _generated(e),
                                                             "Export %s." % export_id], g.out_days)
     else:
         doc, missing = pdf.build_html(
@@ -649,14 +649,26 @@ def sensitive_words(included: bool, n: int) -> str:
     return LEFT_OUT
 
 
-def _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, default_name):
-    """Write the file under a temporary name, move it into place, and mark the export done (nothing half-delivered)."""
-    sha = hashlib.sha256(data).hexdigest()
+def _part_path(e, export_id) -> Path:
     folder = export_dir() / str(e.case_id)
     folder.mkdir(parents=True, exist_ok=True)
-    final = folder / ("%s.%s" % (export_id, fmt))
-    tmp = folder / (".%s.part" % export_id)
-    tmp.write_bytes(data)
+    return folder / (".%s.part" % export_id)
+
+
+def _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, default_name):
+    """Write the file under a temporary name, move it into place, and mark the export done (nothing half-delivered).
+    ``data`` is the file's bytes, or the path of the part already written beside its final place."""
+    tmp = _part_path(e, export_id)
+    final = tmp.parent / ("%s.%s" % (export_id, fmt))
+    if isinstance(data, Path):
+        digest = hashlib.sha256()
+        with open(data, "rb") as written:
+            for block in iter(lambda: written.read(1024 * 1024), b""):
+                digest.update(block)
+        sha, size = digest.hexdigest(), data.stat().st_size
+    else:
+        sha, size = hashlib.sha256(data).hexdigest(), len(data)
+        tmp.write_bytes(data)
     os.replace(tmp, final)
     stem = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in (options.get("title") or ""))[:80]
     filename = "%s.%s" % (stem.strip(" _") and stem.strip() or default_name, fmt)
@@ -665,7 +677,7 @@ def _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, defa
             "UPDATE phone_exports SET state = 'done', progress = 1, counts = CAST(:k AS jsonb), filename = :n, "
             "size = :s, sha256 = :h, storage_path = :p, finished_at = now(), snapshot = :snap WHERE export_id = :i AND state = 'rendering' AND "
             "(CAST(:t AS timestamptz) IS NULL OR started_at = :t)"),
-            {"k": json.dumps(counts), "n": filename, "s": len(data), "h": sha, "p": str(final), "snap": snap,
+            {"k": json.dumps(counts), "n": filename, "s": size, "h": sha, "p": str(final), "snap": snap,
              "i": export_id, "t": claimed}).rowcount
     if not done:  # another worker holds the claim now; it records the result
         return {"export_id": str(export_id), "state": "lost", "counts": counts}
@@ -701,7 +713,7 @@ def place_words(lens_kinds) -> str | None:
     return None
 
 
-def _rsmf(engine, e, options, contains, out_days):
+def _rsmf(engine, e, export_id, options, contains, out_days):
     """One RSMF file for the whole filtered period (12.4): every row in screen order, attachments read in place.
     Its event count must equal the rows drawn (E-6, E-4)."""
     from services.phone import media
@@ -714,16 +726,14 @@ def _rsmf(engine, e, options, contains, out_days):
                 name, size, opener = media.content(c, e.case_id, file_uid)
             except media.ContentRefused as exc:
                 return None, str(exc)
-        try:
-            with opener() as fh:
-                return fh.read(), None
-        except OSError:
-            return None, "The file could not be read from the production."
-    data, counts = rsmf.build(rows, title=options.get("title") or "Phone messages", contains=contains,
-                              read_file=read_file)
+        return opener, None
+    part = _part_path(e, export_id)
+    with open(part, "wb") as out:
+        _, counts = rsmf.build(rows, title=options.get("title") or "Phone messages", contains=contains,
+                               read_file=read_file, out=out, spool_dir=part.parent)
     if counts["events"] != len(rows):
         raise RuntimeError("RSMF events %d differ from the rows %d" % (counts["events"], len(rows)))
-    return data, {"rsmf": counts}
+    return part, {"rsmf": counts}
 
 
 def _stale_words(messages: int, texts: int) -> str:

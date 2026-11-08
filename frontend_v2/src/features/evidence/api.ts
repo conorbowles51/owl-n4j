@@ -163,6 +163,12 @@ export const evidenceAPI = {
       },
     }),
 
+  releaseHold: (evidenceId: string, caseId: string) =>
+    fetchAPI<EvidenceFile>(`/api/evidence/${evidenceId}/release-hold`, {
+      method: "POST",
+      body: { case_id: caseId },
+    }),
+
   delete: (
     evidenceId: string,
     caseId: string,
