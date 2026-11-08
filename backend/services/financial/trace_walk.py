@@ -116,21 +116,18 @@ def movement_order(request, scoped, followed):
     raise LedgerSummaryError('The selected transfers cannot be placed in one forward order on their dates.')
 
 
-def trace_walk(capture, request):
-    """(summary, report): the bounded trace. ``report`` is the complete record of inputs and results."""
-    request = TraceWalkInput.model_validate(request)
-    result = ledger_transfer_candidates(capture, population=request.population, tolerance_days=request.tolerance_days, whole_case=True)
-    if snapshot_matches(capture, request.expected_snapshot_sha256) is None:
-        raise LedgerSummaryError('Captured ledger or date scope changed. Reload the comparison before tracing.')
-    document, stamp = view_capture(capture)
-    rows = {row['key']: row for row in result['rows'] if row['currency'] == request.currency}
-    candidates = {(pair['debit_id'], pair['credit_id']): pair for pair in result['candidates']}
+def walk_payload(request, rows, *, case_id, snapshot_sha256, digest_covers, candidates=None):
+    """(payload, stopped): the complete trace document from the rows the request is bound to.
+
+    ``candidates`` checks that each selected pair is a proposed transfer of the captured comparison; a replay has no
+    capture, so it passes None and recomputes the calculation from the report's own rows (its limitation says so)."""
     links, receiving, used = {}, set(), set()
     if request.pairs and not request.basis.strip():
         raise LedgerSummaryError('Record the basis for transfer pairings and movement order.')
     for pair in request.pairs:
         debit, credit = str(pair.debit_id), str(pair.credit_id)
-        if (debit, credit) not in candidates or debit not in rows or credit not in rows or debit in used or credit in used:
+        if ((candidates is not None and (debit, credit) not in candidates)
+                or debit not in rows or credit not in rows or debit in used or credit in used):
             raise LedgerSummaryError('Choose proposed transfer pairs in the selected currency without reusing postings.')
         used.update((debit, credit))
         receiving.add(credit)
@@ -168,21 +165,58 @@ def trace_walk(capture, request):
                               to_account_label=rows[credit].get('account_label'), date=rows[debit]['ordering_date'], amount_minor=rows[debit]['amount_minor'],
                               claim_shares_minor={claim: share['minor_units'] for claim, share in draws[debit]['by_claim'].items()} if debit in draws else {})
                          for debit, credit in stopped]
-    payload = dict(schema='loupe.financial.trace_walk/1', case_id=result['case_id'], applied=False, assumptions_verified=False,
-                   inputs=request.model_dump(mode='json'), snapshot_sha256=stamp['snapshot_sha256'], digest_covers=stamp['digest_covers'],
+    # The rows the request names beyond the reached accounts (a stopped pair's receiving side, a pair out of an
+    # account the trace never reaches): carried in the report so the reach and the stops recompute from the file.
+    referenced = {str(pair.debit_id) for pair in request.pairs} | {str(pair.credit_id) for pair in request.pairs}
+    from services.financial.version import code_version
+    payload = dict(schema='loupe.financial.trace_walk/1', case_id=case_id, applied=False, assumptions_verified=False,
+                   inputs=request.model_dump(mode='json'), snapshot_sha256=snapshot_sha256, digest_covers=digest_covers,
                    accounts=[dict(account_id=account, label=labels.get(account), steps_from_start=depth[account]) for account in sorted(accounts)],
                    readings=[scoped[key] for key in ordered], order=ordered, same_day_moves=moved, results=results, stopped=stops,
+                   pair_rows=[rows[key] for key in sorted(referenced - set(scoped))], code_version=code_version(),
                    limitations=['Conditional trace. Opening balances, root claims, transfer pairings and same-day order are investigator assumptions, not ledger facts.',
                                 'Only accounts reached from the start points by selected transfers are read: no other account can change these figures. Their postings are all included.',
                                 'Movement order is recorded date, then position on the statement; same-day order remains an assumption with the basis recorded.',
                                 'A transfer carries only the claim share allocated to its debit under that method. Selected methods are calculation rules, not a recommendation of which rule legally applies.'])
+    return payload, stopped
+
+
+def replay_walk(document):
+    """The same calculation from a captured step-trace report's own rows: (recalculated payload, encoded bytes).
+
+    The report carries every posting of the reached accounts and the rows its pairs name beyond them, so the reach,
+    the stops, the movement order and every method's figures recompute from the file alone. What needs the case is
+    not recomputed: membership of each pair in the captured comparison, and the snapshot digest binding, which stay
+    with the stored run and a ledger export."""
+    if 'pair_rows' not in document:
+        raise LedgerSummaryError('This step-trace report was saved before replay support and carries no pair rows. '
+                                 'Run the trace again to produce a replayable report.')
+    request = TraceWalkInput.model_validate(document['inputs'])
+    rows = {row['key']: row for row in list(document['pair_rows']) + list(document['readings'])}
+    payload, _ = walk_payload(request, rows, case_id=document['case_id'],
+                              snapshot_sha256=document['snapshot_sha256'], digest_covers=document['digest_covers'])
+    encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+    return payload, encoded
+
+
+def trace_walk(capture, request):
+    """(summary, report): the bounded trace. ``report`` is the complete record of inputs and results."""
+    request = TraceWalkInput.model_validate(request)
+    result = ledger_transfer_candidates(capture, population=request.population, tolerance_days=request.tolerance_days, whole_case=True)
+    if snapshot_matches(capture, request.expected_snapshot_sha256) is None:
+        raise LedgerSummaryError('Captured ledger or date scope changed. Reload the comparison before tracing.')
+    document, stamp = view_capture(capture)
+    rows = {row['key']: row for row in result['rows'] if row['currency'] == request.currency}
+    candidates = {(pair['debit_id'], pair['credit_id']) for pair in result['candidates']}
+    payload, stopped = walk_payload(request, rows, case_id=result['case_id'], snapshot_sha256=stamp['snapshot_sha256'],
+                                    digest_covers=stamp['digest_covers'], candidates=candidates)
     encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
     summary = dict(case_id=result['case_id'], applied=False, currency=request.currency, steps=request.steps, snapshot_sha256=stamp['snapshot_sha256'], digest_covers=stamp['digest_covers'],
-                   accounts=payload['accounts'], readings=len(ordered), same_day_moves=len(moved), candidates_in_scope=len(result['candidates']), not_followed=len(stopped),
+                   accounts=payload['accounts'], readings=len(payload['order']), same_day_moves=len(payload['same_day_moves']), candidates_in_scope=len(result['candidates']), not_followed=len(stopped),
                    stopped=bool(stopped), continue_with_steps=(request.steps + 1) if stopped and request.steps < MAX_STEPS else None,
                    stop_words=stop_words(stopped, rows, request.steps), scenario_sha256=hashlib.sha256(encoded).hexdigest(), scenario_byte_count=len(encoded),
                    methods={method: dict(claims=outcome['claims'], hops=len(outcome['hops']), unidentified_withdrawals_minor=outcome['unidentified_withdrawals_minor'],
-                                         stops=stops[method]) for method, outcome in results.items()})
+                                         stops=payload['stopped'][method]) for method, outcome in payload['results'].items()})
     return summary, encoded
 
 

@@ -43,29 +43,41 @@ provide an independent byte-integrity check. No supplied code is executed.
     try:
         original = json.loads(content.decode('utf-8'), object_pairs_hook=_unique_object, parse_constant=_invalid_constant)
         schema = original['schema']
-        if schema not in ('loupe.financial.conditional_trace/1', 'loupe.financial.network_trace/1'):
+        if schema not in ('loupe.financial.conditional_trace/1', 'loupe.financial.network_trace/1', 'loupe.financial.trace_walk/1'):
             raise ValueError('Unsupported scenario schema.')
         if original['applied'] is not False or original['assumptions_verified'] is not False:
             raise ValueError('Only unapplied, conditional scenarios can be replayed.')
-        snapshot = original['ledger_snapshot']
-        manifest = original['ledger_manifest']
-        case_id = snapshot['ledger']['case_id']
-        if original['case_id'] != case_id or manifest['case_id'] != case_id:
-            raise ValueError('Scenario case references differ.')
-        snapshot_text = _canonical(snapshot)
-        snapshot_bytes = snapshot_text.encode('utf-8')
-        snapshot_hash = hashlib.sha256(snapshot_bytes).hexdigest()
-        if (manifest['document_sha256'] != snapshot_hash
-                or type(manifest['byte_count']) is not int
-                or manifest['byte_count'] != len(snapshot_bytes)
-                or original['inputs']['expected_snapshot_sha256'] != snapshot_hash):
-            raise ValueError('Captured snapshot digest or size differs.')
-        export = LedgerExport(LedgerSnapshot(snapshot_text, snapshot_hash, len(snapshot_bytes)), _canonical(manifest))
-        if schema == 'loupe.financial.conditional_trace/1':
-            envelope = evaluate_ledger_trace(export, LedgerTraceInput.model_validate(original['inputs']))
+        if schema == 'loupe.financial.trace_walk/1':
+            # A whole-case step trace carries its own rows, not a full ledger snapshot: the reach, the stops and
+            # every method's figures recompute from the file; the snapshot binding stays with the stored run.
+            from services.financial.trace_walk import replay_walk
+            case_id = original['case_id']
+            snapshot_hash = original['snapshot_sha256']
+            captured_version = original.get('code_version')
+            recalculated, recalculated_bytes = replay_walk(original)
+            recalculated_hash = hashlib.sha256(recalculated_bytes).hexdigest()
         else:
-            envelope = evaluate_network_trace(export, original['inputs'])
-        recalculated = json.loads(envelope['scenario_json'])
+            snapshot = original['ledger_snapshot']
+            manifest = original['ledger_manifest']
+            case_id = snapshot['ledger']['case_id']
+            if original['case_id'] != case_id or manifest['case_id'] != case_id:
+                raise ValueError('Scenario case references differ.')
+            snapshot_text = _canonical(snapshot)
+            snapshot_bytes = snapshot_text.encode('utf-8')
+            snapshot_hash = hashlib.sha256(snapshot_bytes).hexdigest()
+            if (manifest['document_sha256'] != snapshot_hash
+                    or type(manifest['byte_count']) is not int
+                    or manifest['byte_count'] != len(snapshot_bytes)
+                    or original['inputs']['expected_snapshot_sha256'] != snapshot_hash):
+                raise ValueError('Captured snapshot digest or size differs.')
+            captured_version = manifest.get('code_version')
+            export = LedgerExport(LedgerSnapshot(snapshot_text, snapshot_hash, len(snapshot_bytes)), _canonical(manifest))
+            if schema == 'loupe.financial.conditional_trace/1':
+                envelope = evaluate_ledger_trace(export, LedgerTraceInput.model_validate(original['inputs']))
+            else:
+                envelope = evaluate_network_trace(export, original['inputs'])
+            recalculated = json.loads(envelope['scenario_json'])
+            recalculated_hash = envelope['scenario_sha256']
     except (KeyError, TypeError, ValueError, UnicodeError, RecursionError) as exc:
         raise LedgerSummaryError('Captured scenario is invalid or cannot be replayed: ' + str(exc)) from exc
 
@@ -105,8 +117,11 @@ provide an independent byte-integrity check. No supplied code is executed.
         original_sha256=original_hash, original_byte_count=len(content),
         independently_supplied_digest_checked=expected_sha256 is not None,
         canonical_original_sha256=hashlib.sha256(_canonical(original).encode('utf-8')).hexdigest(),
-        recalculated_sha256=envelope['scenario_sha256'], snapshot_sha256=snapshot_hash,
-        captured_code_version=manifest.get('code_version'), replay_code_version=code_version(),
+        recalculated_sha256=recalculated_hash, snapshot_sha256=snapshot_hash,
+        captured_code_version=captured_version, replay_code_version=code_version(),
         difference_count=count, difference_paths=paths, paths_truncated=count > len(paths),
         financial_writes=0, provider_calls=0,
-        limitation='Recomputed with the current installed calculation code from captured inputs only. Matching calculations do not authenticate the file, establish source accuracy, verify assumptions, or determine legal applicability. Original source bytes and historical custody are not checked.')
+        limitation='Recomputed with the current installed calculation code from captured inputs only. Matching calculations do not authenticate the file, establish source accuracy, verify assumptions, or determine legal applicability. Original source bytes and historical custody are not checked.'
+                   + (' A step-trace report carries the rows of its reached accounts and named pairs, not a full ledger snapshot:'
+                      ' the snapshot digest binding and each pair\'s membership in the captured comparison stay with the stored run and a ledger export.'
+                      if schema == 'loupe.financial.trace_walk/1' else ''))

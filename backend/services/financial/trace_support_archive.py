@@ -53,6 +53,10 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
         replay = replay_trace(content)
         if expected_case_id is not None and replay['case_id'] != str(expected_case_id):
             raise LedgerSummaryError('Selected scenario belongs to a different case.')
+        if json.loads(content).get('schema') == 'loupe.financial.trace_walk/1':
+            raise LedgerSummaryError('A whole-case step-trace report carries its own rows, not a full ledger '
+                                     'snapshot, so this archive cannot build source support for it. Attach a '
+                                     'ledger export of the case alongside it instead; nothing was assembled.')
         if replay['status'] != 'matching_calculations':
             raise LedgerSummaryError('A selected scenario differs from recalculation; inspect its replay report before assembling support.')
         if replay['original_sha256'] in digests:

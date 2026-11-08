@@ -338,6 +338,62 @@ class TraceWalk(_network.NetworkTracingTests):
         with self.assertRaises(LedgerSummaryError):
             trace_walk(export, self.walk_request(request, expected_snapshot_sha256='0' * 64))
 
+    def test_a_step_trace_report_replays_with_identical_figures(self):
+        from services.financial.trace_replay import replay_trace
+        from services.financial.trace_walk import trace_walk
+        export, request, _ = self.network()
+        # steps=1 stops the trace, so the report must carry the rows its pairs name beyond the reached accounts.
+        summary, report = trace_walk(export, self.walk_request(request, steps=1, ordered_transaction_ids=None))
+        self.assertTrue(summary['stopped'])
+        replay = replay_trace(report, expected_sha256=summary['scenario_sha256'])
+        self.assertEqual(replay['status'], 'matching_calculations')
+        self.assertEqual(replay['difference_count'], 0)
+        self.assertEqual(replay['recalculated_sha256'], summary['scenario_sha256'])
+        self.assertEqual(replay['snapshot_sha256'], summary['snapshot_sha256'])
+        self.assertTrue(replay['independently_supplied_digest_checked'])
+        whole, _ = trace_walk(export, self.walk_request(request))
+        self.assertFalse(whole['stopped'])
+
+    def test_a_complete_step_trace_report_also_replays(self):
+        from services.financial.trace_replay import replay_trace
+        from services.financial.trace_walk import trace_walk
+        export, request, _ = self.network()
+        summary, report = trace_walk(export, self.walk_request(request))
+        replay = replay_trace(report)
+        self.assertEqual(replay['status'], 'matching_calculations')
+        self.assertEqual(replay['recalculated_sha256'], summary['scenario_sha256'])
+
+    def test_a_tampered_step_trace_figure_is_reported_at_its_path(self):
+        from services.financial.trace_replay import replay_trace
+        from services.financial.trace_walk import trace_walk
+        export, request, _ = self.network()
+        _, report = trace_walk(export, self.walk_request(request))
+        captured = json.loads(report)
+        claim = sorted(captured['results']['first_in_first_out']['claims'])[0]
+        captured['results']['first_in_first_out']['claims'][claim]['reported_remaining_minor'] = '1'
+        replay = replay_trace(json.dumps(captured).encode())
+        self.assertEqual(replay['status'], 'different_replay_output')
+        self.assertEqual(replay['difference_paths'],
+                         ['/results/first_in_first_out/claims/%s/reported_remaining_minor' % claim])
+
+    def test_a_report_saved_before_replay_support_is_refused_in_words(self):
+        from services.financial.trace_replay import replay_trace
+        from services.financial.trace_walk import trace_walk
+        export, request, _ = self.network()
+        _, report = trace_walk(export, self.walk_request(request))
+        captured = json.loads(report)
+        del captured['pair_rows']
+        with self.assertRaisesRegex(LedgerSummaryError, 'before replay support'):
+            replay_trace(json.dumps(captured).encode())
+
+    def test_a_step_trace_report_is_not_a_support_archive_scenario_and_says_why(self):
+        from services.financial.trace_support_archive import build_trace_support_archive
+        from services.financial.trace_walk import trace_walk
+        export, request, _ = self.network()
+        _, report = trace_walk(export, self.walk_request(request))
+        with self.assertRaisesRegex(LedgerSummaryError, 'Attach a ledger export'):
+            build_trace_support_archive([report])
+
 
 class ComputeTraceRequest(TestCase):
     def test_the_run_ids_do_not_reach_the_trace_input(self):
