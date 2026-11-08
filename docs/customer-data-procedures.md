@@ -19,14 +19,26 @@ What a customer can take out of the app today, signed in as a member of the case
 | Agent run record and artefacts | Agent, Export | `GET /api/agent/runs/{id}/record/export` |
 
 1. List the customer's cases and agree the list with the customer in writing.
-2. For each case, take each export above as a member of the case.
+2. For each case, take the whole-case export below, or each export above as a member of the case.
 3. Record each file's name, size and `sha256sum` in a list that goes to the customer with the files.
 4. Hand the files over by the route agreed with the customer. Each exported file is one case's material, including anything
    privileged or restricted in it.
 
-**Missing: a whole-case export.** No single action gives one case's records, graph, vectors, evidence and audit log as one
-verified package. Step 2 gives each part on its own and does not include the graph, the vectors or the audit log. The roadmap
-item is "Portable, versioned case export/import".
+**Whole-case export.** The case owner or a super admin builds one verified package of the case: records, graph, vectors,
+evidence files and audit log. In the app: Case settings, Exports, Build the package (the page states what the package holds and
+leaves out); the package is kept 7 days and downloaded as a stream. Routes: `POST /api/cases/{id}/exports`,
+`GET /api/cases/{id}/exports/{export_id}/download` (supports `Range`, so an interrupted download resumes). Before any hand-over
+or import, run from `backend/`:
+
+    python -m services.caseport verify <package>
+
+It reads every part, checks every hash and count and says what is wrong (exit 1). The package's `.sha256` file beside it
+adds the whole-file hash. Import into a new case, never over an existing one:
+
+    python -m services.caseport import <package> --by <owner email> [--title "..."]
+
+It verifies first, refuses a package from a newer schema, and writes an audit entry saying who imported what from where.
+An operator's copy without the web application: `python -m services.caseport export <case id> <folder> --by <email>`.
 
 **Missing: a customer's whole instance as one export.** With one Google Cloud project per customer, a whole-instance hand-over
 is a recovery set (`bash deploy/backup-now.sh`) and the customer's evidence files, opened with `bash deploy/backup-crypt.sh open`.
