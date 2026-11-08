@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Disclosure } from "./Disclosure"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { correctionMoney } from "../lib/correction-contract"
 import type { StatementDeltaHints } from "../lib/statement-delta-hints"
@@ -38,7 +39,9 @@ export function StatementDeltaHintsPanel({
             {c.ref_id}: {correctionMoney(c.amount_minor, currency)}{" "}
             {c.direction}
           </p>
-          <p>{c.explanation}</p>
+          <Disclosure label="Details">
+            <p className="mt-2 text-xs text-muted-foreground">{c.explanation}</p>
+          </Disclosure>
           <Button onClick={() => setSource(c.transaction_id)}>
             Inspect lead {c.ref_id}
           </Button>
@@ -62,9 +65,15 @@ export function StatementDeltaHintsPanel({
           </Button>
         </div>
       )}
-      {hints.signatures.map((s) => (
-        <p key={s.kind}>{s.explanation}</p>
-      ))}
+      {hints.signatures.length > 0 && (
+        <Disclosure label="Details">
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {hints.signatures.map((s) => (
+              <p key={s.kind}>{s.explanation}</p>
+            ))}
+          </div>
+        </Disclosure>
+      )}
       {source && (
         <LedgerSourceDialog
           caseId={caseId}

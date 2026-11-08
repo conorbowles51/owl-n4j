@@ -3,6 +3,7 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { candidateUrl, assertCandidateScope } from "../lib/candidate-contract"
+import { Disclosure } from "./Disclosure"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { lazySchema } from "@/lib/lazy-schema"
 
@@ -139,7 +140,9 @@ export function CandidateDateAssessment({
                   transaction, booking or value date separately during review.
                 </p>
               )}
-              <p>{cell.assessment.explanation}</p>
+              <Disclosure label="Details">
+                <p className="mt-2 text-xs text-muted-foreground">{cell.assessment.explanation}</p>
+              </Disclosure>
               <p>{cell.assessment.glyph_limitation}</p>
               {cell.assessment.proposals.map((proposal, index) => (
                 <p key={index}>

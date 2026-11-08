@@ -43,6 +43,11 @@ it("shows a lead as an arithmetic possibility and opens its exact source", () =>
   )
   expect(screen.getByText(/Arithmetic leads only/)).toBeInTheDocument()
   expect(screen.getByText("TX-A: 20.00 GBP credit")).toBeInTheDocument()
+  // The caveat stays in view; the lead's explanation waits behind Details.
+  expect(screen.getByText(/Arithmetic leads only/).closest(".hidden")).toBeNull()
+  expect(screen.getByText(/close the difference arithmetically/).closest(".hidden")).not.toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Details" }))
+  expect(screen.getByText(/close the difference arithmetically/).closest(".hidden")).toBeNull()
   fireEvent.click(screen.getByRole("button", { name: "Inspect lead TX-A" }))
   expect(screen.getByText("Opened source row")).toBeInTheDocument()
 })

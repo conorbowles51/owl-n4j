@@ -61,6 +61,10 @@ it("assesses only on request and displays both date proposals with original sour
   expect(await screen.findByText(/2026-02-01/)).toBeInTheDocument()
   expect(screen.getByText(/2026-01-02/)).toBeInTheDocument()
   expect(screen.getByText("Original source highlight")).toBeInTheDocument()
+  expect(screen.getByText("Review original glyphs.").closest(".hidden")).toBeNull()
+  expect(screen.getByText("Both date orders are valid.").closest(".hidden")).not.toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Details" }))
+  expect(screen.getByText("Both date orders are valid.").closest(".hidden")).toBeNull()
   expect(fetch.mock.calls).toHaveLength(1)
   expect(fetch.mock.calls[0][1]?.method ?? "GET").toBe("GET")
   expect(
