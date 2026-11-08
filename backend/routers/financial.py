@@ -759,6 +759,7 @@ def export_financial_pdf(
     beneficiary_values: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, allow_inf_nan=False),
     max_amount: Optional[float] = Query(None, ge=0, allow_inf_nan=False),
+    db: Session = Depends(get_db),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -846,6 +847,9 @@ def export_financial_pdf(
             filters.append(f"Beneficiaries: {len(to_entity_values)} selected")
 
         filters_description = " | ".join(filters) if filters else ""
+
+        from services.production_numbers import annotate_transactions
+        annotate_transactions(db, UUID(case_id), transactions)
 
         # Collect entity notes for appendix
         entity_notes = []

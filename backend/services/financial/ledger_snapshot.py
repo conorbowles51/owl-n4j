@@ -314,6 +314,10 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                 document['processing_provenance']=capture_processing_provenance(session,case_id=case_id,readings=document['ledger']['readings'])
                 from services.financial.transaction_notes import capture_transaction_notes
                 document['investigation_notes']=capture_transaction_notes(session,case_id=case_id,readings=document['ledger']['readings'])
+                from services.production_numbers import numbers_by_file
+                registered_numbers = numbers_by_file(session, case_id, [f['id'] for f in (document['processing_provenance'] or {}).get('evidence_registrations', [])])
+                if registered_numbers:  # the production numbers that stood when this export was made, by source file
+                    document['production_numbers'] = registered_numbers
                 if packet_records:
                     from services.financial.expert_packet import capture_packet_records
                     capture_packet_records(session,document,case_id=case_id)
@@ -458,6 +462,12 @@ def render_ledger_report(snapshot, limit=None):
     ledger = document['ledger']
     from services.financial.account_correction_provenance import row_markers
     account_markers = row_markers(document.get('account_corrections'))
+    from services.production_numbers import reference_words
+    captured_numbers = document.get('production_numbers') or {}
+
+    def production_words(file_id):
+        """The production numbers the source file held when this export was captured, with each number's kind."""
+        return reference_words(captured_numbers.get(str(file_id)))
 
     def text(value):
         return escape('Not recorded' if value is None else str(value), quote=True)
@@ -684,7 +694,7 @@ def render_ledger_report(snapshot, limit=None):
                 if not section[key]:
                     continue
                 parts += ['<h4>' + title + '</h4><ul>' + ''.join('<li>' + text(v) + '</li>' for v in section[key]) + '</ul>']
-            parts += [table(['Source document', 'Evidence file', 'Recorded SHA-256', 'Disclosure recorded'], [[v['source_document_id'],v['evidence_file_id'],v['sha256_at_ingestion'],'No'] for v in section['sources']]),
+            parts += [table(['Source document', 'Evidence file', 'Production numbers', 'Recorded SHA-256', 'Disclosure recorded'], [[v['source_document_id'],v['evidence_file_id'],production_words(v['evidence_file_id']) or 'None recorded',v['sha256_at_ingestion'],'No'] for v in section['sources']]),
                       details('Complete assessed row references, in order',section['references'])]
     context = document.get('export_context')
     if context:
@@ -713,7 +723,8 @@ def render_ledger_report(snapshot, limit=None):
                 money_display(r['row']['running_balance_minor'], r['row']['currency'], exact=False) if r['row'].get('running_balance_minor') is not None else 'Not recorded',
                 'In verified totals' if r['included'] else exclusion_labels.get(r['exclusion_reason'], str(r['exclusion_reason'])),
                 str(r['row'].get('ref_id') or r['row']['key']) + ' / ' + source_names.get(r['source'].get('evidence_file_id'), r['source']['id'])
-                    + ' / PDF page ' + str((r['row'].get('locator') or {}).get('page') or 'Not recorded')]
+                    + ' / PDF page ' + str((r['row'].get('locator') or {}).get('page') or 'Not recorded')
+                    + ((' / ' + production_words(r['source'].get('evidence_file_id'))) if production_words(r['source'].get('evidence_file_id')) else '')]
                 for r in ordered_readings], widths=[5,12,14,18,10,10,11,9,11], row_ids=[r['row']['key'] for r in ordered_readings])]
     for reading in ([] if compact else ordered_readings):
         row = reading['row']
@@ -722,7 +733,9 @@ def render_ledger_report(snapshot, limit=None):
             table(['Included in verified totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
                   [['Yes' if reading['included'] else 'No: ' + {'proof_class_not_included':'Outside verified proof classes', 'superseded':'Superseded reading', 'quarantined':'Held for review', 'rejected':'Rejected reading', 'source_not_admitted':'Source is not admitted'}.get(reading['exclusion_reason'],str(reading['exclusion_reason'])),
                     row['ordering_date'] + (' (statement end; ordering only, transaction date unknown)' if row.get('ordering_date_context') == 'statement_end_ordering_only' else ''), row['description'], row['direction'], row['currency'], money_display(row['amount_minor'], row['currency'])]]),
-            '<p>Source document: ' + text(reading['source']['id']) + '; PDF page: ' + text((row.get('locator') or {}).get('page')) + '. Recorded ingestion SHA-256: <code>' + text(reading['source'].get('sha256_at_ingestion')) + '</code>.</p>',
+            '<p>Source document: ' + text(reading['source']['id']) + '; PDF page: ' + text((row.get('locator') or {}).get('page'))
+                + ((' ; production numbers: ' + text(production_words(reading['source'].get('evidence_file_id')))) if production_words(reading['source'].get('evidence_file_id')) else '')
+                + '. Recorded ingestion SHA-256: <code>' + text(reading['source'].get('sha256_at_ingestion')) + '</code>.</p>',
             details('Source reference and recorded ingestion digest', reading['source']),
             details('Original captured row, dates and source locator', row),
             details('Preserved transaction provenance', reading['provenance']), '</article>']

@@ -8,6 +8,7 @@ export const GROUP_NAMES: Record<string, string> = {
   documents: "Documents and transcripts",
   machine_text: "Machine-generated text",
   payments: "Payments",
+  production_numbers: "Production numbers",
 }
 
 /** The Conversations kinds behind each phone group, so "Show all" opens the same list the total counts. */

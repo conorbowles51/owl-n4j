@@ -286,7 +286,7 @@ def _production_numbers(conn, case_id, q, offset, limit):
     with Session(bind=conn) as session:
         found = find_number(session, uuid.UUID(str(case_id)), q)
     items = []
-    for hit in found["hits"][offset:offset + limit if limit else offset]:
+    for hit in (found["hits"][offset:offset + limit] if limit else []):
         items.append({"kind": "production_number", "title": hit["file_name"], "label": hit["label"],
                       "snippet": {"before": "", "match": hit["number"], "after": " · " + (hit["note"] or hit["label"])},
                       "page": hit["page"], "record_uid": None, "evidence_file_id": hit["evidence_file_id"],

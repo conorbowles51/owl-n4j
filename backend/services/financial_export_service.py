@@ -46,6 +46,8 @@ def _provenance_label(transaction: dict) -> str:
         parts.append(str(source_file))
     if page:
         parts.append(f"p.{page}")
+    if transaction.get("production_reference"):
+        parts.append(str(transaction["production_reference"]))
     return " | ".join(parts) if parts else "Source not recorded"
 
 

@@ -332,3 +332,25 @@ class Bounded(Fixture):
         counted.clear()
         P.case_numbers(self.db, self.case.id)
         self.assertLessEqual(len(counted), small)
+
+
+class Exports(Fixture):
+    """The number travels beside the citation into the CSV and the PDF provenance column, with its kind."""
+
+    def test_the_judgement_csv_carries_the_number_with_its_kind(self):
+        from services.financial import judgements as J
+        file = self.pdf("000010-000012 Statements.pdf", 3)
+        item = {"evidence_file_id": str(file.id), "page": "2", "priority": 1, "priority_label": "High", "status": "open",
+                "category_label": "c", "rule_label": "r", "summary": "s", "rule_id": "x", "origin": "rule", "strength": "proved", "filename": file.original_filename}
+        numbers = J.export_numbers(self.db, self.case.id, {"items": [item]})
+        self.assertIn("not confirmed", numbers[(str(file.id), 2)])
+        self.assertIn("Production number", J.EXPORT_COLUMNS)
+        row = J.export_csv({"items": [item]}, numbers=numbers).decode("utf-8-sig")
+        self.assertIn("000010-000012 (suggested", row)
+
+    def test_the_pdf_provenance_label_prints_the_reference(self):
+        from services.financial_export_service import _provenance_label
+        label = _provenance_label({"source_filename": "a.pdf", "source_page": 2,
+                                   "production_reference": "000011 (suggested from the file name, not confirmed)"})
+        self.assertIn("000011", label)
+        self.assertNotIn("000011", _provenance_label({"source_filename": "a.pdf", "source_page": 2}))

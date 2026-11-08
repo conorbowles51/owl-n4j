@@ -90,7 +90,8 @@ def export_judgement_calls(case_id: UUID = Query(...), q: str = Query('', max_le
                              origins=origin or (), categories=category or (), rule_ids=rule_id or (),
                              file_ids=file_id or (), account_ids=account_id or (), priorities=priority or (),
                              everything=True)
-    return Response(content=judgements.export_csv(page), media_type="text/csv; charset=utf-8",
+    return Response(content=judgements.export_csv(page, numbers=judgements.export_numbers(db, case_id, page)),
+                    media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition":
                              f'attachment; filename="judgement-calls-{str(case_id)[:8]}.csv"'})
 

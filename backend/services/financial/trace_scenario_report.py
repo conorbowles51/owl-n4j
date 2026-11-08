@@ -52,6 +52,8 @@ def render_scenario_report(scenario, *, scenario_sha256, preparation=None):
     accounts = {item['row']['account_id']: (item.get('account') or {}).get('label') for item in readings}
     registrations = (scenario['ledger_snapshot'].get('processing_provenance') or {}).get('evidence_registrations', [])
     filenames = {item['id']: item.get('original_filename') for item in registrations}
+    from services.production_numbers import reference_words
+    captured_numbers = scenario['ledger_snapshot'].get('production_numbers') or {}
 
     def account(key):
         return (accounts[key] + ' (' + key + ')') if accounts.get(key) else key
@@ -182,7 +184,10 @@ def render_scenario_report(scenario, *, scenario_sha256, preparation=None):
                 ['Date used for ordering', row['ordering_date']], ['Transaction date', row.get('transaction_date')],
                 ['Posting date', row.get('posted_date')], ['Value date', row.get('value_date')],
                 ['Source file', filenames.get(source.get('evidence_file_id')) or source.get('evidence_file_id') or source['id']],
-                ['PDF page', (row.get('locator') or {}).get('page')], ['Source SHA-256', source.get('sha256_at_ingestion')],
+                ['PDF page', (row.get('locator') or {}).get('page')]]
+                + ([['Production numbers', reference_words(captured_numbers.get(str(source.get('evidence_file_id'))))]]
+                   if captured_numbers.get(str(source.get('evidence_file_id'))) else [])
+                + [['Source SHA-256', source.get('sha256_at_ingestion')],
                 ['Payment ID', row['key']]]), '</section>']
     parts += ['<h2>Limits recorded with the calculation</h2><ul>' + ''.join('<li>' + text(note) + '</li>' for note in scenario['limitations']) + '</ul>',
         '<h2>Saved file reference</h2><p>Original scenario SHA-256: <code>' + text(scenario_sha256) + '</code>.</p>',

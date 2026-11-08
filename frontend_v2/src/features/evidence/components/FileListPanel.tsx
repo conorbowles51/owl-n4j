@@ -31,6 +31,7 @@ import { useEvidenceStore } from "../evidence.store"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useRouteChecks } from "../hooks/use-route-checks"
 import { useFileProvenance } from "../hooks/use-file-provenance"
+import { numbersLine, useProductionNumbers } from "../production-numbers.api"
 import { toast } from "sonner"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
@@ -196,6 +197,7 @@ export function FileListPanel({
   const { routes } = useRouteChecks(caseId, allFileIds)
   // Uploaded by / in Financial (added by whom, when): one request for the page.
   const provenance = useFileProvenance(caseId, allFileIds)
+  const productionNumbers = useProductionNumbers(caseId)
 
   const allSelected = allFileIds.length > 0 && selectedFileIds.size === allFileIds.length
   const someSelected = selectedFileIds.size > 0 && !allSelected
@@ -412,6 +414,7 @@ export function FileListPanel({
                   route={routes.get(file.id)}
                   maxEntities={maxEntities}
                   provenance={provenance.data?.[file.id]}
+                  productionLine={numbersLine(productionNumbers.data?.files[file.id])}
                   onDelete={onDeleteFile}
                   onAddToDossier={
                     canEdit

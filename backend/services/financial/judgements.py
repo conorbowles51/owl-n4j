@@ -1554,15 +1554,26 @@ def record_held_copy(session, *, case_id, file, statement_key, saved, agreement,
 
 
 EXPORT_COLUMNS = ('Priority', 'Why this priority', 'Status', 'Type', 'Call', 'Strength', 'Made by', 'File', 'Page',
-                  'Account', 'Period start', 'Period end', 'Payment', 'Amount', 'Sentence', 'Checked by',
-                  'Checked reason', 'Rule')
+                  'Production number', 'Account', 'Period start', 'Period end', 'Payment', 'Amount', 'Sentence',
+                  'Checked by', 'Checked reason', 'Rule')
 
 
-def export_csv(page):
+def export_numbers(session, case_id, page):
+    """The production number beside each exported call's file and page, in words with each number's kind."""
+    from services.production_numbers import _page_int, reference_words, references_for
+    items = {(item.get('evidence_file_id'), _page_int(item.get('page'))) for item in page['items']
+             if item.get('evidence_file_id')}
+    refs = references_for(session, case_id, sorted(items))
+    return {key: reference_words(found) for key, found in refs.items()}
+
+
+def export_csv(page, numbers=None):
     """The calls of one search, every one of them in focus-first order, as CSV (UTF-8 with a byte-order mark so a
     spreadsheet opens accents correctly). A cell a spreadsheet would run as a formula is kept as text."""
     import csv
     import io
+
+    from services.production_numbers import _page_int as _page
 
     def cell(value):
         value = '' if value is None else str(value)
@@ -1588,7 +1599,9 @@ def export_csv(page):
             f"{item['priority']} {item['priority_label']}", item.get('priority_reason'), statuses.get(item['status']),
             item['category_label'], item['rule_label'],
             strength, maker, item.get('filename'),
-            item.get('page'), item.get('account_label'), item.get('period_start'), item.get('period_end'),
+            item.get('page'),
+            (numbers or {}).get((item.get('evidence_file_id'), _page(item.get('page')))) or '',
+            item.get('account_label'), item.get('period_start'), item.get('period_end'),
             item.get('payment_description'), money(int(amount)) if amount is not None else '', item['summary'],
             item.get('resolved_by'), item.get('resolution_reason'), item['rule_id'])])
     return ('﻿' + out.getvalue()).encode('utf-8')

@@ -604,6 +604,44 @@ def reference_words(refs: Iterable[dict[str, Any]] | None) -> str:
     return "; ".join(f"{ref['number']} ({words[ref['kind']]})" for ref in refs or [])
 
 
+def _page_int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None and str(value).strip() else None
+    except (TypeError, ValueError):
+        return None
+
+
+def annotate_transactions(session, case_id, transactions: list[dict]) -> list[dict]:
+    """Set ``production_reference`` on each exported transaction row: the numbers of its source file at its cited
+    page, in words with each number's kind. Bounded queries however many rows; rows without a number are untouched."""
+    from postgres.models.financial import FinancialSourceDocument
+    doc_ids = {str(t.get("source_document_id")) for t in transactions if t.get("source_document_id")}
+    if not doc_ids:
+        return transactions
+    wanted = [uuid.UUID(value) for value in doc_ids]
+    file_of: dict[str, str] = {}
+    for start in range(0, len(wanted), 1000):
+        file_of.update({str(doc): str(file) for doc, file in session.execute(
+            select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id).where(
+                FinancialSourceDocument.id.in_(wanted[start:start + 1000]))).all() if file})
+    items = {(file_of.get(str(t.get("source_document_id"))), _page_int(t.get("source_page"))) for t in transactions}
+    refs = references_for(session, case_id, [(file_id, page) for file_id, page in items if file_id])
+    for t in transactions:
+        file_id = file_of.get(str(t.get("source_document_id")))
+        words = reference_words(refs.get((file_id, _page_int(t.get("source_page"))))) if file_id else ""
+        if words:
+            t["production_reference"] = words
+    return transactions
+
+
+def numbers_by_file(session, case_id, file_ids: Iterable[Any]) -> dict[str, list[dict[str, Any]]]:
+    """Each file's standing numbers (file level), for embedding in a captured export document: the numbers that stood
+    when the export was made, each with its kind and label."""
+    wanted = [(file_id, None) for file_id in file_ids]
+    found = references_for(session, case_id, wanted)
+    return {file_id: refs for (file_id, _), refs in found.items()}
+
+
 # ---- finding a number -----------------------------------------------------------------------------------------------
 
 def find_number(session, case_id, query: str | None) -> dict[str, Any]:

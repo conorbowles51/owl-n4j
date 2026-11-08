@@ -45,6 +45,7 @@ import { hasUnfinishedJobs, useJobs } from "../hooks/use-jobs"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
+import { ProductionNumbersPanel } from "./ProductionNumbersPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
@@ -731,6 +732,10 @@ function DetailsPanelContent({
                 </span>
               }
             />
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Production numbers">
+            <ProductionNumbersPanel caseId={caseId} fileId={file.id} />
           </CollapsibleSection>
 
           {/* --- Processed: AI Summary, Entities, Relationships, Processing Info --- */}

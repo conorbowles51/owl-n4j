@@ -63,6 +63,8 @@ interface FileRowProps {
   maxEntities?: number
   /** Uploaded by / added to Financial by (batch call by the list, like ``route``). */
   provenance?: FileProvenance
+  /** The file's production numbers with their kind, from the one case-wide read (null when it has none). */
+  productionLine?: string | null
   onDelete?: (file: EvidenceFile) => void
   onAddToDossier?: (file: EvidenceFile) => void
   isPinned?: boolean
@@ -107,6 +109,7 @@ export function FileRow({
   route,
   maxEntities = 0,
   provenance,
+  productionLine,
   file,
   caseId,
   onDelete,
@@ -202,6 +205,11 @@ export function FileRow({
               .join(" · ")}
           >
             {financialLine(provenance)}
+          </div>
+        )}
+        {productionLine && (
+          <div className="mt-1 truncate text-xs text-muted-foreground" title={productionLine} data-testid="file-production-numbers">
+            {productionLine}
           </div>
         )}
         {!!file.reading_versions?.length && <button className="block mt-1 text-xs text-muted-foreground underline"
