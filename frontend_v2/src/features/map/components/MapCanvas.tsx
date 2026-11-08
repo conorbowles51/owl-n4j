@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react"
+import "@/features/map/lib/maplibre-worker"
 import Map, { Source, Layer, NavigationControl } from "react-map-gl/maplibre"
 import * as maplibregl from "maplibre-gl"  // 6.x has no default export
 import "maplibre-gl/dist/maplibre-gl.css"

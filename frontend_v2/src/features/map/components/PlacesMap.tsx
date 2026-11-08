@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import "@/features/map/lib/maplibre-worker"
 import Map, { Layer, NavigationControl, Source } from "react-map-gl/maplibre"
 import "maplibre-gl/dist/maplibre-gl.css"
 import type { FeatureCollection, LineString, Point, Polygon } from "geojson"

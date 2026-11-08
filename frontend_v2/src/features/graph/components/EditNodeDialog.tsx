@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import "@/features/map/lib/maplibre-worker"
 import MapLibreMap, { Marker } from "react-map-gl/maplibre"
 import * as maplibregl from "maplibre-gl"  // 6.x has no default export
 import "maplibre-gl/dist/maplibre-gl.css"
