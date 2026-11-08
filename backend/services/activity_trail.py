@@ -63,6 +63,7 @@ ACTIONS = {
     'case_imported': 'Imported this case from a package',
     'evidence_upload': 'Uploaded evidence',
     'evidence_hold_release': 'Released a held file for reading',
+    'evidence_failed_rerun': 'Automated re-run of failed files (with the approval in the details)',
     'financial_send': 'Added files to Financial',
     'financial_auto_add': 'Added to Financial automatically',
     'phone_extraction_superseded': 'Replaced a phone report',

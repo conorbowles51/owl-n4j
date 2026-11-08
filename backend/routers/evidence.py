@@ -5,6 +5,7 @@ Handles uploading evidence files and triggering ingestion processing.
 File storage and AI processing are delegated to the evidence engine when enabled.
 """
 
+from services.evidence_failure_words import plain_failure
 import asyncio
 import hashlib
 import httpx
@@ -197,6 +198,7 @@ def _evidence_record_from_db(record) -> dict:
         "created_at": record.created_at.isoformat() if record.created_at else "",
         "processed_at": record.processed_at.isoformat() if record.processed_at else None,
         "last_error": record.last_error,
+        "failure_reason": plain_failure(record.last_error),
         "engine_job_id": record.engine_job_id,
         "legacy_id": record.legacy_id,
         "summary": record.summary,
@@ -596,6 +598,7 @@ class EvidenceRecord(BaseModel):
     created_at: str
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
+    failure_reason: Optional[str] = None  # last_error in plain words (services.evidence_failure_words)
     summary: Optional[str] = None  # Document summary if available
     transcription: Optional[str] = None  # Full audio transcript if available
     transcription_segments: List[dict] = Field(default_factory=list)

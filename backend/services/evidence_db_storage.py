@@ -7,6 +7,7 @@ Replaces the JSON-based evidence_storage.py and evidence_log_storage.py.
 
 from __future__ import annotations
 
+from services.evidence_failure_words import plain_failure
 import uuid
 from datetime import datetime
 from pathlib import PurePosixPath
@@ -1129,6 +1130,7 @@ class EvidenceDBStorage:
             "created_at": ef.created_at.isoformat() if ef.created_at else None,
             "processed_at": ef.processed_at.isoformat() if ef.processed_at else None,
             "last_error": ef.last_error,
+            "failure_reason": plain_failure(ef.last_error),
             "legacy_id": ef.legacy_id,
             "summary": ef.summary,
             "transcription": ef.transcription,
