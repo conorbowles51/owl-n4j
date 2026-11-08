@@ -4,6 +4,7 @@ import { Send, Bot, MessageSquare, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { ChatWaitingLine } from "./ChatWaitingLine"
 import { ChatMessage } from "./ChatMessage"
 import { cn } from "@/lib/cn"
 import { useChat } from "../hooks/use-chat"
@@ -196,11 +197,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
                   <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/10">
                     <Bot className="size-3.5 text-amber-500" />
                   </div>
-                  <div className="flex items-center gap-1 pt-1">
-                    <span className="size-1.5 rounded-full bg-amber-500 animate-bounce [animation-delay:0ms]" />
-                    <span className="size-1.5 rounded-full bg-amber-500 animate-bounce [animation-delay:150ms]" />
-                    <span className="size-1.5 rounded-full bg-amber-500 animate-bounce [animation-delay:300ms]" />
-                  </div>
+                  <ChatWaitingLine className="pt-0.5" />
                 </div>
               )}
             </div>

@@ -120,6 +120,15 @@ export const agentAPI = {
     }
   },
 
+  /** This person's runs still working in the case (they go on server-side when the page is left). */
+  activeRuns: (caseId: string) =>
+    fetchAPI<{ runs: import("./types").AgentLiveRun[] }>(
+      `/api/agent/runs/active?case_id=${encodeURIComponent(caseId)}`,
+    ),
+
+  getRun: (runId: string) =>
+    fetchAPI<import("./types").AgentLiveRun>(`/api/agent/runs/${encodeURIComponent(runId)}`),
+
   cancelRun: (runId: string) =>
     fetchAPI<AgentRunStatus>(`/api/agent/runs/${runId}:cancel`, {
       method: "POST",

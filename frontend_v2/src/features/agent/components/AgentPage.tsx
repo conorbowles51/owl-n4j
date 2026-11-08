@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import type { MutableRefObject, ReactNode } from "react"
-import { ThinkingBubble } from "./ThinkingBubble"
 import { useNavigate, useParams } from "react-router-dom"
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -86,7 +85,9 @@ import {
 } from "@/components/ui/resizable"
 import { cn } from "@/lib/cn"
 import { agentAPI } from "../api"
-import { useAgentRunStore } from "../stores/agent-run.store"
+import { localStartMs, useAgentRunStore } from "../stores/agent-run.store"
+import { AgentRunProgress } from "./AgentRunProgress"
+import { useFollowServerRun } from "../agent-run-progress"
 import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import { MandateUsageBanner } from "@/features/workspace/components/MandateUsageBanner"
 import { useCaseContext } from "@/features/workspace/hooks/use-workspace"
@@ -591,7 +592,7 @@ export function AgentPage() {
   )
   const isLoading = sharedRun?.isLoading ?? false
   const activeRunId = sharedRun?.runId ?? null
-  const runStatusText = sharedRun?.statusText ?? null
+  useFollowServerRun(caseId)
   const caseContext = useCaseContext(caseId ?? "")
 
   const selectedArtifact = useMemo(
@@ -771,7 +772,7 @@ export function AgentPage() {
     setInput("")
     if (requestMandateOverride) setMandateOverride("")
     setPendingClarification(null)
-    useAgentRunStore.getState().startRun(caseId, activeThreadId)
+    useAgentRunStore.getState().startRun(caseId, activeThreadId, prompt)
     setToolTrace([])
     setActivityTrail([])
     setMessages((current) => [
@@ -779,6 +780,8 @@ export function AgentPage() {
       { id: optimisticId, role: "user", content: prompt, pending: true },
     ])
 
+    let streamedRunId: string | null = null
+    let ended = false
     try {
       await agentAPI.streamMessage(
         {
@@ -792,10 +795,13 @@ export function AgentPage() {
         },
         (event) => {
           if (event.type === "run_started") {
+            streamedRunId = event.run_id
             setActiveThreadId(event.thread_id)
             useAgentRunStore.getState().updateRun(caseId, {
               threadId: event.thread_id,
               runId: event.run_id,
+              ...(event.started_at ? { startedAt: localStartMs(event.started_at, event.server_time) } : {}),
+              ...(event.progress ? { progress: event.progress } : {}),
             })
             useAgentRunStore.getState().updateRun(caseId, {
               statusText: "Investigating the case",
@@ -815,6 +821,10 @@ export function AgentPage() {
 
           if (event.type === "status") {
             useAgentRunStore.getState().updateRun(caseId, { statusText: event.message })
+          }
+
+          if (event.type === "progress") {
+            useAgentRunStore.getState().updateRun(caseId, { progress: event.progress, stale: false })
           }
 
           if (event.type === "activity") {
@@ -922,19 +932,30 @@ export function AgentPage() {
             }
             setToolTrace(response.tool_trace)
             setMandateUsage(response.mandate)
+            ended = true
             useAgentRunStore.getState().finishRun(caseId, "completed")
           }
 
           if (event.type === "cancelled") {
+            ended = true
             useAgentRunStore.getState().finishRun(caseId, "cancelled")
           }
 
           if (event.type === "error") {
+            ended = true
             throw new Error(event.message)
           }
         }
       )
+      if (!ended && streamedRunId) {
+        // The stream closed before the run said it ended (a dropped connection): the run goes on server-side.
+        useAgentRunStore.getState().updateRun(caseId, { source: "poll" })
+      }
     } catch (error) {
+      if (!ended && streamedRunId) {
+        useAgentRunStore.getState().updateRun(caseId, { source: "poll" })
+        return
+      }
       const message = error instanceof Error ? error.message : "Agent request failed"
       useAgentRunStore.getState().finishRun(caseId, "failed", message)
       toast.error(message, { duration: 12000 })
@@ -949,6 +970,26 @@ export function AgentPage() {
       toast.error(error instanceof Error ? error.message : "Could not adopt the current objective")
     }
   }
+
+  // A run whose worker stopped beating will not finish: Retry asks the same question again in its thread.
+  const [retryQuestion, setRetryQuestion] = useState<string | null>(null)
+  const dismissStoppedRun = () => {
+    if (caseId) useAgentRunStore.getState().clearRun(caseId)
+  }
+  const retryStoppedRun = () => {
+    if (!caseId || !sharedRun?.inputMessage) return
+    const question = sharedRun.inputMessage
+    if (sharedRun.threadId) setActiveThreadId(sharedRun.threadId)
+    useAgentRunStore.getState().clearRun(caseId)
+    setRetryQuestion(question)
+  }
+  useEffect(() => {
+    if (!retryQuestion || isLoading) return
+    setRetryQuestion(null)
+    void sendMessage(retryQuestion)
+    // sendMessage is re-created each render; the question is what triggers the retry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryQuestion, isLoading])
 
   const cancelActiveRun = async () => {
     if (!activeRunId) return
@@ -1155,12 +1196,12 @@ export function AgentPage() {
                       }
                     />
                   ))}
-                  {isLoading && (
-                    <ThinkingBubble
-                      status={runStatusText}
-                      startedAt={sharedRun?.startedAt ?? null}
-                      stepsDone={activityTrail.filter((step) => step.status !== "running").length}
-                      onCancel={activeRunId ? cancelActiveRun : undefined}
+                  {isLoading && sharedRun && (
+                    <AgentRunProgress
+                      run={sharedRun}
+                      onStop={activeRunId ? cancelActiveRun : undefined}
+                      onRetry={sharedRun.inputMessage ? retryStoppedRun : undefined}
+                      onDismiss={dismissStoppedRun}
                     />
                   )}
                   {isLoading && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0) && (

@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { ChatWaitingLine } from "./ChatWaitingLine"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ChatMessage } from "./ChatMessage"
 import { WithCitations } from "@/components/citations/citations"
@@ -29,9 +30,9 @@ export function ChatMessageList({
         ))}
         {isStreaming && (
           <div className="space-y-2 rounded-lg bg-muted/30 p-4">
+            <ChatWaitingLine />
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-4 w-1/2" />
-            <Skeleton className="h-4 w-2/3" />
           </div>
         )}
         <div ref={bottomRef} />

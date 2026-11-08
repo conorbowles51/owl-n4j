@@ -114,6 +114,16 @@ export type AgentStreamEvent =
       run_id: string
       user_message_id: string
       model_info: AgentModelInfo
+      started_at?: string
+      server_time?: string
+      progress?: import("./stores/agent-run.store").AgentRunProgress
+    }
+  | {
+      type: "progress"
+      run_id?: string | null
+      progress: import("./stores/agent-run.store").AgentRunProgress
+      elapsed_seconds?: number
+      server_time?: string
     }
   | {
       type: "status"
@@ -296,4 +306,18 @@ export interface AgentWorkflowCatalogue {
   counts: Record<string, number> | null
   workflows: AgentWorkflow[]
   total: number
+}
+
+/** A run still working in the case (GET /api/agent/runs/active), or one run's live state (GET /api/agent/runs/{id}). */
+export interface AgentLiveRun {
+  run_id: string
+  thread_id: string
+  status?: AgentRunStatus["status"]
+  input_message?: string | null
+  started_at?: string | null
+  progress?: import("./stores/agent-run.store").AgentRunProgress | null
+  heartbeat_at?: string | null
+  stale?: boolean
+  server_time?: string | null
+  error?: string | null
 }
