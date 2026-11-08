@@ -341,7 +341,7 @@ export function JobCard({
           <div className="mt-2 flex items-center gap-2">
             <Button
               size="sm"
-              variant="destructive"
+              variant="danger"
               className="h-7 text-[11px]"
               disabled={controlling}
               onClick={() => {
