@@ -157,3 +157,13 @@ describe("The theory read as a whole", () => {
     expect(screen.getByLabelText("Earlier versions").textContent).toContain("Model reading · gpt-x · not confirmed")
   })
 })
+
+describe("Where things open", () => {
+  it("opens a theory and a workspace entry in the casework view, where the workspace shows an entry", async () => {
+    const { theoryHref, memberHref } = await import("./source-links")
+    expect(theoryHref("c1", "t1")).toBe("/cases/c1/workspace?view=casework&kind=theory&entry=t1")
+    expect(memberHref("c1", "entry", "e1", {})).toBe("/cases/c1/workspace?view=casework&entry=e1")
+    expect(memberHref("c1", "financial_transaction", "p1", {})).toBe("/cases/c1/financial?view=transactions&payment=p1")
+    expect(memberHref("c1", "interview", "i1", { dossier_id: "d1" })).toBe("/cases/c1/dossiers?dossier=d1&tab=interviews")
+  })
+})

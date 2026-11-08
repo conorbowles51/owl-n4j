@@ -28,7 +28,8 @@ export function memberHref(caseId: string, type: string, id: string, anchor: Rec
     case "phone_record":
       return `${c(caseId)}/records/${encodeURIComponent(id)}`
     case "entry":
-      return `${c(caseId)}/workspace?entry=${encodeURIComponent(id)}`
+      // The workspace opens an entry only in its casework view.
+      return `${c(caseId)}/workspace?view=casework&entry=${encodeURIComponent(id)}`
     case "timeline_event":
       return `${c(caseId)}/timeline?event=${encodeURIComponent(id)}`
     case "interview":
@@ -44,7 +45,7 @@ export function memberHref(caseId: string, type: string, id: string, anchor: Rec
 }
 
 export function theoryHref(caseId: string, entryId: string): string {
-  return `${c(caseId)}/workspace?entry=${encodeURIComponent(entryId)}`
+  return `${c(caseId)}/workspace?view=casework&kind=theory&entry=${encodeURIComponent(entryId)}`
 }
 
 export interface OpenTarget {
