@@ -6,7 +6,7 @@ rows, source disposition/class and account ownership together. Credits/debits
 are account postings, not deduplicated transfers or an opening/closing balance.
 """
 from datetime import date
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import load_only
 from postgres.models.enums import ProofClass, LedgerStatus, DocumentStatus
 from postgres.models.financial import FinancialTransaction, FinancialSourceDocument, FinancialAccount
@@ -40,6 +40,33 @@ def _totals_row(row):
         superseded_by_id=str(row.superseded_by_id) if row.superseded_by_id is not None else None)
 
 
+def _scope_filter(query, session, *, case_id, account_id=None, account_ids=None, account_holders=None,
+                  start_date=None, end_date=None):
+    """The one statement of which payment rows a scope holds. The totals, the captured readings and
+    ``scope_reading_count`` all pass through it, so a count can never disagree with a capture of the same scope."""
+    query = query.where(FinancialTransaction.case_id == case_id)
+    if account_id is not None:
+        query = query.where(FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [account_id])))
+    from services.financial.account_selection import apply_account_selection
+    query = apply_account_selection(query, session, case_id, account_ids, account_holders)
+    if start_date is not None:
+        query = query.where(FinancialTransaction.ordering_date >= start_date)
+    if end_date is not None:
+        query = query.where(FinancialTransaction.ordering_date <= end_date)
+    return query
+
+
+def scope_reading_count(session, *, case_id, account_id=None, account_ids=None, account_holders=None,
+                        start_date=None, end_date=None):
+    """How many rows this scope holds, counted without reading them, through the same scope filter the summary
+    reads. Up to ``MAX_SUMMARY_ROWS`` every counted row becomes one captured reading; past that the summary
+    refuses and captures nothing, while this count still states the whole total."""
+    query = _scope_filter(select(func.count(FinancialTransaction.id)), session, case_id=case_id,
+                          account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+                          start_date=start_date, end_date=end_date)
+    return int(session.execute(query).scalar_one())
+
+
 def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False, account_ids=None, account_holders=None, totals_only_readings=False, case_accounts=None):
     """``totals_only_readings``: each captured reading's row carries only the stored fields that totals, groups and
     contributions read (see _totals_row), with no payment view, provenance or label history. Callers that never
@@ -65,7 +92,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         FinancialSourceDocument.parser_version, raiseload=True,
     )).outerjoin(
         FinancialSourceDocument, FinancialSourceDocument.id == FinancialTransaction.source_document_id
-    ).where(FinancialTransaction.case_id == case_id)
+    )
     if not capture_readings or totals_only_readings:
         # Totals read only these plain columns. The provenance and metadata JSON of every payment were fetched and
         # decoded for nothing; any other column raises rather than lazily loading once per payment.
@@ -73,14 +100,8 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         query = query.options(load_only(T.id, T.case_id, T.account_id, T.source_document_id, T.ref_id, T.amount_minor,
             T.currency, T.direction, T.ordering_date, T.proof_class, T.counterparty_raw, T.ledger_status,
             T.superseded_by_id, raiseload=True))
-    if account_id is not None:
-        query = query.where(FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [account_id])))
-    from services.financial.account_selection import apply_account_selection
-    query = apply_account_selection(query, session, case_id, account_ids, account_holders)
-    if start_date is not None:
-        query = query.where(FinancialTransaction.ordering_date >= start_date)
-    if end_date is not None:
-        query = query.where(FinancialTransaction.ordering_date <= end_date)
+    query = _scope_filter(query, session, case_id=case_id, account_id=account_id, account_ids=account_ids,
+                          account_holders=account_holders, start_date=start_date, end_date=end_date)
     pairs = list(session.execute(query.order_by(FinancialTransaction.id).limit(MAX_SUMMARY_ROWS + 1).execution_options(populate_existing=True)))
     # Accounts are read once each. Joined to every payment, each account's metadata JSON was decoded again for every
     # one of its payments. A payment whose account is missing pairs with None, as the outer join gave.

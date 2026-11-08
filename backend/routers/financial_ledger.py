@@ -235,6 +235,10 @@ def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID
         if include_case_financial_history:
             view_options['include_case_financial_history'] = True
         source_options = dict(include_source_files=True, resolve_path=_resolve_stored_path) if include_source_files else {}
+        if include_pdf:
+            from services.financial.ledger_pdf import refuse_over_limit_scope
+            refuse_over_limit_scope(db, case_id=case_id, account_id=account_id, account_ids=account_ids,
+                account_holders=account_holders, start_date=start_date, end_date=end_date)
         exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,
             start_date=start_date,end_date=end_date,privilege_marking=privilege_marking,packet_records=True,
             generated_by=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,**source_options,**view_options)

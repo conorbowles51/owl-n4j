@@ -3,13 +3,25 @@ import json
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
 MAX_PDF_READINGS = 2000
+PDF_READINGS_REFUSAL = 'PDF reports support up to 2,000 captured readings. Narrow the export scope; no partial report was generated.'
+
+
+def refuse_over_limit_scope(session, **scope):
+    """One PDF holds up to MAX_PDF_READINGS captured readings: a scope counted past that is refused before any
+    capture, in the render-time refusal's own words, so no caller pays a whole capture for a refusal a count
+    already knows. A scope past the summary's own row limit is left to the capture, whose refusal names that
+    larger bound; the render-time check still guards a scope that grows past the limit after this count."""
+    from services.financial.ledger_summary import MAX_SUMMARY_ROWS, scope_reading_count
+    count = scope_reading_count(session, **scope)
+    if MAX_PDF_READINGS < count <= MAX_SUMMARY_ROWS:
+        raise LedgerSummaryError(PDF_READINGS_REFUSAL)
 
 
 def render_ledger_pdf(snapshot, html, *, part_words=None):
     """``part_words``: one numbered part of a larger report (numbered_report_parts), stated on its first page. A part
     is bounded by readings, so the 16 MiB allowance of a synchronous download does not apply to it."""
     if len(json.loads(snapshot.content)['ledger']['readings']) > MAX_PDF_READINGS:
-        raise LedgerSummaryError('PDF reports support up to 2,000 captured readings. Narrow the export scope; no partial report was generated.')
+        raise LedgerSummaryError(PDF_READINGS_REFUSAL)
     from weasyprint import HTML, CSS
     def deny_resource(url, *args, **kwargs):
         raise ValueError('Ledger PDF reports cannot load external or local resources.')

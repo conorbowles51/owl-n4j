@@ -90,6 +90,17 @@ class LedgerSummaryTests(fixture.DuplicateTestCase):
         self.assertEqual(self.read(account_id=self.other_account.id)['included_rows'],0)
         self.assertEqual(self.read(case_id=self.other_case.id)['included_rows'],0)
 
+    def test_the_reading_count_matches_the_captured_readings_for_every_scope(self):
+        from services.financial.ledger_summary import scope_reading_count
+        row,_=self.add();row.ordering_date=date(2026,2,1)
+        other,_=self.add();other.ordering_date=date(2026,3,1)
+        self.db.commit()
+        for scope in (dict(), dict(start_date=date(2026,2,1),end_date=date(2026,2,1)),
+                      dict(account_id=self.other_account.id), dict(end_date=date(2026,1,31))):
+            captured=self.read(capture_readings=True,**scope)
+            self.assertEqual(scope_reading_count(self.db,case_id=self.case.id,**scope),
+                             len(captured['readings']),scope)
+
     def test_size_limit_never_returns_partial_money_or_counts(self):
         self.add();self.add()
         with patch('services.financial.ledger_summary.MAX_SUMMARY_ROWS',1):result=self.read()

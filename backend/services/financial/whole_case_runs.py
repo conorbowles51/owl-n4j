@@ -150,6 +150,16 @@ def _current(engine, state, case_id):
     return now is not None and json.loads(json.dumps(now)) == state['fingerprint']
 
 
+def _refuse_oversize_single_pdf(engine, case_id, params):
+    """A new export run embedding one PDF of more readings than one PDF holds is refused in the request, so the
+    page offers the numbered parts at once instead of after the whole capture (139.6 s on a 10,861-row case,
+    measured live). A stored answer or a run under way is still returned first: its reading was already paid for."""
+    from sqlalchemy.orm import Session
+    from services.financial.ledger_pdf import refuse_over_limit_scope
+    with Session(engine) as session:
+        refuse_over_limit_scope(session, **_scope(case_id, params))
+
+
 def start_run(engine, *, kind, case_id, params, fresh=False):
     """The run for these inputs: its stored answer if still current, one already under way, or a new one.
     ``fresh`` asks for a new reading even of unchanged rows; a run under way is still joined."""
@@ -170,6 +180,8 @@ def start_run(engine, *, kind, case_id, params, fresh=False):
             if seen['status'] == 'completed' and not fresh and _current(engine, state, case_id):
                 return seen
             shutil.rmtree(directory, ignore_errors=True)
+        if kind == 'export' and params.get('include_pdf'):
+            _refuse_oversize_single_pdf(engine, case_id, params)
         waiting = 0
         for other in base.iterdir():
             other_state = _read_state(other) if other.is_dir() else None
@@ -426,15 +438,21 @@ def _write_sections(directory, sections, run, step, steps):
     return counts, digest.hexdigest()
 
 
-def _capture(connection, case_id, params, kind, run):
-    from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope
+def _scope(case_id, params):
+    """The ledger scope a run's params name, in the capture's own types; the capture and any precheck read it the
+    same way or not at all."""
     def day(name):
         from datetime import date
         return date.fromisoformat(params[name]) if params.get(name) else None
     def ids(name):
         return [UUID(value) for value in params[name]] if params.get(name) else None
-    scope = dict(case_id=case_id, account_id=UUID(params['account_id']) if params.get('account_id') else None, account_ids=ids('account_ids'),
-                 account_holders=params.get('account_holders') or None, start_date=day('start_date'), end_date=day('end_date'))
+    return dict(case_id=case_id, account_id=UUID(params['account_id']) if params.get('account_id') else None, account_ids=ids('account_ids'),
+                account_holders=params.get('account_holders') or None, start_date=day('start_date'), end_date=day('end_date'))
+
+
+def _capture(connection, case_id, params, kind, run):
+    from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope
+    scope = _scope(case_id, params)
     if kind == 'pdf':
         return capture_ledger_export(connection, generated_by=params.get('generated_by'), privilege_marking=params.get('privilege_marking', 'unmarked'),
                                      size_limit=False, generated_at=_export_time(case_id, params), **scope)

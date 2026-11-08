@@ -138,7 +138,7 @@ function ExportForm({
   const numberedPdf = !tableView && includePdf && isPdfSizeRefusal(refusal)
   const result = (
     <>
-      {startError ? (
+      {startError && !numberedPdf ? (
         <p role="alert">{startError.message}</p>
       ) : run && !finished && !numberedPdf ? (
         <WholeCaseProgress
@@ -322,7 +322,13 @@ function ExportForm({
       </p>
       {result}
       {numberedPdf && (
-        <WholeCasePdf caseId={caseId} params={params} marking={marking} />
+        <>
+          <p className="text-sm" role="status">
+            One PDF holds up to 2,000 captured readings, so no export archive was produced. The numbered PDF
+            parts below cover every reading; untick the PDF report to download the export archive itself.
+          </p>
+          <WholeCasePdf caseId={caseId} params={params} marking={marking} />
+        </>
       )}
     </section>
   )

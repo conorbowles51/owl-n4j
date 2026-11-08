@@ -582,6 +582,48 @@ class ExportRun(Store):
                 W.compute_export(capture, dict(case_id=str(self.case)), run)
         self.assertFalse((directory / W.RESULT).exists())
 
+    def test_an_export_with_a_pdf_over_one_report_is_refused_before_a_child_starts(self):
+        from services.financial.ledger_pdf import PDF_READINGS_REFUSAL
+        with patch('services.financial.ledger_summary.scope_reading_count', return_value=2001) as count:
+            with self.assertRaises(LedgerSummaryError) as refused:
+                W.start_run(None, kind='export', case_id=self.case, params=dict(include_pdf=True))
+        self.assertEqual(str(refused.exception), PDF_READINGS_REFUSAL)
+        count.assert_called_once()
+        self.assertEqual([entry for entry in W.root().iterdir() if entry.is_dir()], [])
+
+    def test_an_export_with_a_pdf_within_one_report_is_not_prechecked_away(self):
+        with patch('services.financial.ledger_summary.scope_reading_count', return_value=2000):
+            W._refuse_oversize_single_pdf(None, self.case, dict(include_pdf=True))
+
+    def test_a_scope_past_the_summary_row_limit_is_left_to_the_captures_own_refusal(self):
+        from services.financial.ledger_summary import MAX_SUMMARY_ROWS
+        with patch('services.financial.ledger_summary.scope_reading_count', return_value=MAX_SUMMARY_ROWS + 1):
+            W._refuse_oversize_single_pdf(None, self.case, dict(include_pdf=True))
+
+    def test_a_pdf_export_under_way_is_joined_before_any_count(self):
+        params = dict(include_pdf=True)
+        identifier = W.run_id('export', self.case, params)
+        directory = W.root() / identifier
+        directory.mkdir()
+        W._write_state(directory, dict(id=identifier, kind='export', case_id=str(self.case), params=params,
+                                       status='running', pid=os.getpid(), heartbeat=time.time()))
+        with patch('services.financial.ledger_summary.scope_reading_count',
+                   side_effect=AssertionError('a run under way was counted')):
+            joined = W.start_run(None, kind='export', case_id=self.case, params=params)
+        self.assertEqual((joined['id'], joined['status']), (identifier, 'running'))
+
+    def test_the_pdf_precheck_counts_the_scope_the_capture_reads(self):
+        from datetime import date
+        account = uuid4()
+        params = dict(include_pdf=True, account_id=str(account), start_date='2026-01-02', end_date='2026-03-04',
+                      account_holders=['Erica Hopper'])
+        with patch('services.financial.ledger_summary.scope_reading_count', return_value=0) as count:
+            W._refuse_oversize_single_pdf(None, self.case, params)
+        scope = count.call_args.kwargs
+        self.assertEqual(
+            (scope['case_id'], scope['account_id'], scope['start_date'], scope['end_date'], scope['account_holders']),
+            (self.case, account, date(2026, 1, 2), date(2026, 3, 4), ['Erica Hopper']))
+
     def test_an_export_keeps_to_its_own_line_and_names_what_a_restart_keeps(self):
         self.assertIn('export', W.KINDS)
         self.assertIn('continues from them', W.RESTARTED[True])

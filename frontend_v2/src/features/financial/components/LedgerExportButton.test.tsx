@@ -220,6 +220,26 @@ it("a PDF over one report's size opens the numbered parts in place of the refusa
   expect(screen.queryByText(words)).toBeNull()
 })
 
+it("a start refused for a PDF over one report opens the numbered parts straight away, with their progress", async () => {
+  const words = "PDF reports support up to 2,000 captured readings. Narrow the export scope; no partial report was generated."
+  const calls: { method: string; body: Record<string, unknown> | null }[] = []
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+    const method = options?.method ?? "GET"
+    const body = options?.body ? JSON.parse(options.body as string) : null
+    calls.push({ method, body })
+    if (method === "POST" && body?.kind === "export")
+      return new Response(JSON.stringify({ detail: words }), { status: 422, headers: { "content-type": "application/json" } })
+    return new Response(JSON.stringify({ ...running, kind: "pdf" }), { headers: { "content-type": "application/json" } })
+  })
+  mount()
+  fireEvent.click(screen.getByLabelText("Include a paginated PDF report"))
+  download()
+  await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.body?.kind === "pdf").length).toBe(1))
+  expect(await screen.findByText(/Step 1 of 4: Checking and packing the audit events \(120,000 of 262,753\)/)).toBeTruthy()
+  expect(screen.getByText(/no export archive was produced/)).toBeTruthy()
+  expect(screen.queryByRole("alert")).toBeNull()
+})
+
 it("never asks for a run before it has one", async () => {
   const { calls } = server([completed])
   mount()
