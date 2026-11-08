@@ -172,12 +172,13 @@ async def _send_files(
     )
     if isinstance(prepared, dict):
         return prepared
-    file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk = prepared
+    file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk, prior = prepared
 
     accepted_files: list[EvidenceFile] = []
     accepted_jobs: list[dict[str, Any]] = []
     refused: list[tuple[EvidenceFile, str]] = []
     recovered = False
+    not_sent = 0
     chunks = _send_chunks(per_file_metadata)
     for position, chunk in enumerate(chunks):
         try:
@@ -192,11 +193,15 @@ async def _send_files(
                 accepted_jobs.extend(found)
                 recovered = True
                 continue
-            unsent = [valid_files[i] for later in chunks[position:] for i in later]
-            await run_in_threadpool(_record_upload_failed, db, unsent, str(exc))
+            # This request was tried and failed; a later one was never tried, so its files are not failed: they go
+            # back to what they were, with the reason they were not sent.
+            unsent = [valid_files[i] for later in chunks[position + 1:] for i in later]
+            await run_in_threadpool(_record_upload_failed, db, chunk_files, str(exc))
+            await run_in_threadpool(_record_not_sent, db, unsent, prior)
             if not accepted_files and not refused:
                 raise  # nothing went: the caller reports the failure as before
-            refused.extend((ef, str(exc)) for ef in unsent)
+            refused.extend((ef, str(exc)) for ef in chunk_files)
+            not_sent = len(unsent)
             break
         for index, job in done:
             accepted_files.append(valid_files[index])
@@ -219,6 +224,8 @@ async def _send_files(
     message = f"Processing {len(accepted_files)} file(s)"
     if refused:
         message += f"; {len(refused)} file(s) refused by the processing service, marked failed with the reason"
+    if not_sent:
+        message += f"; {not_sent} file(s) not sent because the processing service stopped answering"
     if missing_on_disk:
         message += f"; {missing_on_disk} file(s) not sent: {FILE_MISSING_DETAIL}"
     return {
@@ -372,7 +379,8 @@ def _prepare_files(
     processing_snapshots: dict[str, dict] | None = None,
 ):
     """Select, snapshot, gate and mark the files to send, and commit. Returns the early result dict when nothing is
-    sent, otherwise (file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk)."""
+    sent, otherwise (file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk, prior),
+    prior mapping each file id to its (status, last_error) before it was marked processing."""
     if isinstance(db, Session):
         from services.financial.audit_chain import lock_case_audit_chain
         lock_case_audit_chain(db, case_id)
@@ -554,6 +562,7 @@ def _prepare_files(
                 if state:
                     snapshot['transcript_revision_id'] = (transcript_revisions or {}).get(str(ef.id)) or str(state.working_revision_id)
 
+    prior = {ef.id: (ef.status, ef.last_error) for ef in valid_files}  # restored for a file that is never sent
     EvidenceDBStorage.mark_processing(
         db,
         [ef.id for ef in valid_files],
@@ -569,7 +578,7 @@ def _prepare_files(
     valid_ids = [str(ef.id) for ef in valid_files]  # read before the commit expires the rows
     db.commit()
     skipped = skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts + skipped_in_archive
-    return file_tuples, per_file_metadata, valid_files, valid_ids, skipped, missing_on_disk
+    return file_tuples, per_file_metadata, valid_files, valid_ids, skipped, missing_on_disk, prior
 
 
 def _record_recovered_jobs(db: Session, valid_files: list[EvidenceFile], recovered_jobs: list[dict[str, Any]]) -> list[str]:
@@ -589,6 +598,18 @@ def _record_upload_failed(db: Session, valid_files: list[EvidenceFile], error: s
         [ef.id for ef in valid_files],
         error=error,
     )
+    db.commit()
+
+
+NOT_SENT = "Not sent: the processing service stopped answering before this file's turn. You can process it again."
+
+
+def _record_not_sent(db: Session, files: list[EvidenceFile], prior: dict) -> None:
+    """Files of a selection that were never sent go back to the status they had, with the reason."""
+    for ef in files:
+        status, error = prior.get(ef.id, ("unprocessed", None))
+        ef.status = status if status != "processing" else "unprocessed"
+        ef.last_error = error if status == "processed" else NOT_SENT  # a processed file keeps its reading
     db.commit()
 
 

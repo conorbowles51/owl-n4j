@@ -116,3 +116,33 @@ async def test_engine_down_still_fails_the_request_as_before(tmp_path, monkeypat
     with pytest.raises(httpx.ConnectError):
         await processing.process_db_files(FakeDb(), case_id=case_id, file_ids=[f.id for f in files])
     assert sorted(failed) == ['a.pdf', 'b.pdf']
+
+
+@pytest.mark.asyncio
+async def test_files_never_sent_are_not_marked_failed(tmp_path, monkeypatch):
+    """60 files go as 3 requests; the engine stops answering on the second. The first 25 are processing, the second
+    25 failed with the error, and the last 10, never tried, are back to unprocessed with the reason."""
+    calls = []
+
+    async def engine(*, case_id, files, processing_metadata):
+        calls.append(len(files))
+        if len(calls) == 2:
+            raise httpx.ConnectError('refused')
+        return [{'id': str(uuid4())} for _ in files]
+
+    async def no_jobs(case):
+        return []
+
+    case_id, files, failed = _harness(tmp_path, monkeypatch, [f'{i:02}.pdf' for i in range(60)], engine)
+    monkeypatch.setattr(processing.evidence_engine_client, 'list_jobs', no_jobs)
+    monkeypatch.setattr(processing.EvidenceDBStorage, 'mark_processing',
+                        lambda db, ids, force=False: [setattr(f, 'status', 'processing') for f in files])
+    result = await processing.process_db_files(FakeDb(), case_id=case_id, file_ids=[f.id for f in files])
+
+    assert calls == [25, 25]
+    assert result['file_count'] == 25
+    assert sum(f.engine_job_id is not None for f in files) == 25
+    assert len(failed) == 25
+    untried = files[50:]
+    assert all(f.status == 'unprocessed' and f.last_error == processing.NOT_SENT for f in untried)
+    assert '10 file(s) not sent' in result['message']
