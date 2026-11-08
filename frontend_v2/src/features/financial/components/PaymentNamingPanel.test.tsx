@@ -154,7 +154,7 @@ it("marks the amount and date found on a page-only payment's page", async () => 
 it("saves the typed name for exactly this payment as read from the statement, then opens the next one", async () => {
   const rows = [payment("a", { label_version: 4 }), payment("named", { to_name: "ACME", label_sources: { to_name: { source: "description" } } }), payment("b")]
   const client = mount(rows)
-  const field = await screen.findByRole("combobox", { name: "Name who was paid" })
+  const field = await screen.findByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  })
   fireEvent.change(field, { target: { value: "  GRUAS   DEL NORTE " } })
   fireEvent.keyDown(field, { key: "Enter" })
   await waitFor(() => expect(screen.getByTestId("current").textContent).toBe("b"))
@@ -171,19 +171,19 @@ it("saves the typed name for exactly this payment as read from the statement, th
 
 it("moves with the arrow keys and S, and closes with Escape", async () => {
   mount([payment("a"), payment("b"), payment("c")])
-  const field = await screen.findByRole("combobox", { name: "Name who was paid" })
+  const field = await screen.findByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  })
   fireEvent.keyDown(field, { key: "ArrowRight" })
   expect(screen.getByTestId("current").textContent).toBe("b")
   fireEvent.keyDown(screen.getByRole("complementary", { name: "Name payments from the statement" }), { key: "s" })
   expect(screen.getByTestId("current").textContent).toBe("c")
-  fireEvent.keyDown(screen.getByRole("combobox", { name: "Name who was paid" }), { key: "ArrowLeft" })
+  fireEvent.keyDown(screen.getByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  }), { key: "ArrowLeft" })
   expect(screen.getByTestId("current").textContent).toBe("b")
   // While a name is being typed the arrows move the cursor, not the payment.
-  fireEvent.change(screen.getByRole("combobox", { name: "Name who was paid" }), { target: { value: "AB" } })
-  fireEvent.keyDown(screen.getByRole("combobox", { name: "Name who was paid" }), { key: "ArrowLeft" })
+  fireEvent.change(screen.getByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  }), { target: { value: "AB" } })
+  fireEvent.keyDown(screen.getByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  }), { key: "ArrowLeft" })
   expect(screen.getByTestId("current").textContent).toBe("b")
   expect(puts()).toHaveLength(0)
-  fireEvent.keyDown(screen.getByRole("combobox", { name: "Name who was paid" }), { key: "Escape" })
+  fireEvent.keyDown(screen.getByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  }), { key: "Escape" })
   expect(screen.getByText("panel closed")).toBeTruthy()
 })
 
@@ -198,7 +198,7 @@ it("offers similar payments with checkboxes and applies only the ticked ones aft
   expect(descriptionPattern(rows[0].description)).toBe(descriptionPattern(rows[1].description))
   expect(similarPayments(rows[0], rows).flatMap((group) => group.rows.map((row) => row.key))).toEqual(["b", "c"])
   mount(rows)
-  const field = await screen.findByRole("combobox", { name: "Name who was paid" })
+  const field = await screen.findByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  })
   fireEvent.change(field, { target: { value: "INMOBILIARIA SOL" } })
   fireEvent.keyDown(field, { key: "Enter" })
   const offer = await screen.findByRole("region", { name: "Similar payments" })
@@ -217,7 +217,7 @@ it("offers similar payments with checkboxes and applies only the ticked ones aft
 
 it("undoes a saved name through the audited remove path", async () => {
   mount([payment("a", { label_version: 1 }), payment("b")])
-  const field = await screen.findByRole("combobox", { name: "Name who was paid" })
+  const field = await screen.findByRole("combobox", { name: /Who did .* pay\? \(the payee\)/  })
   fireEvent.change(field, { target: { value: "ACME" } })
   fireEvent.keyDown(field, { key: "Enter" })
   fireEvent.click(await screen.findByRole("button", { name: "Undo" }))

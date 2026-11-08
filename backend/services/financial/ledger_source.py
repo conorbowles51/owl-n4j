@@ -4,6 +4,7 @@ Stored locators are retained, not inferred from an amount or row number. Hash
 comparison checks recorded provenance; it does not reread evidence bytes.
 """
 import re
+import uuid
 from sqlalchemy import null, select
 from sqlalchemy.orm import joinedload, load_only
 
@@ -30,7 +31,57 @@ def ledger_source(session, *, case_id, transaction_id):
                FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id)).one_or_none()
     if source is None:
         raise LedgerSourceError("Ledger source not found in this case.", 404)
-    return _source_view(case_id, source)
+    view = _source_view(case_id, source)
+    history = corrected_from(session, source[0])
+    if history:
+        view["corrected_from"] = history
+    return view
+
+
+# The values a person may correct on a payment (services.financial.corrections), shown beside the corrected ones.
+CORRECTED_VALUES = ("amount_minor", "direction", "currency", "transaction_date", "posted_date", "value_date",
+                    "effective_date", "ordering_date", "description", "counterparty_raw", "bank_reference",
+                    "transaction_type", "running_balance_minor")
+
+
+def _plain(value):
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def corrected_from(session, row, limit=50):
+    """A corrected payment's statement reading and who corrected it, oldest first, or None when never corrected.
+
+    A correction replaces the row and keeps the old one (superseded), so the chain is walked back through
+    ``provenance.correction.previous_transaction_id`` to the row read from the statement. One query per correction
+    (a payment is rarely corrected more than once); only the single-payment source read calls this."""
+    from postgres.models.financial import AdjudicationEvent
+    steps = []
+    current = row
+    for _ in range(limit):
+        previous_id = ((current.provenance or {}).get("correction") or {}).get("previous_transaction_id")
+        if not previous_id:
+            break
+        try:
+            previous = session.get(FinancialTransaction, uuid.UUID(str(previous_id)))
+        except ValueError:
+            break
+        if previous is None or previous.case_id != row.case_id:
+            break
+        event = session.scalars(select(AdjudicationEvent).where(
+            AdjudicationEvent.case_id == row.case_id, AdjudicationEvent.subject_id == previous.id,
+            AdjudicationEvent.decision == "correct_transaction").order_by(AdjudicationEvent.created_at.desc())).first()
+        steps.append(dict(previous_id=str(previous.id), previous_ref_id=previous.ref_id,
+                          actor_name=event.actor_name if event else None,
+                          at=event.created_at.isoformat() if event and event.created_at else None,
+                          reason=event.reason if event else None,
+                          by_model=bool(event and event.actor_origin)))
+        current = previous
+    if not steps:
+        return None
+    return dict(statement_read={key: _plain(getattr(current, key, None)) for key in CORRECTED_VALUES},
+                statement_ref_id=current.ref_id, corrections=list(reversed(steps)))
 
 
 def ledger_sources(session, *, case_id, transaction_ids):

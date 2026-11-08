@@ -9,6 +9,9 @@ import { evidenceAPI } from "@/features/evidence/api"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
+import { correctedLine, type CorrectedFrom } from "../lib/card-edit"
+import { patchLedger } from "../lib/patch-ledger"
+import { PaymentCardEdit } from "./PaymentCardEdit"
 import {
   caseNames,
   cropWindow,
@@ -17,6 +20,7 @@ import {
   modelReadingField,
   needsName,
   otherSide,
+  payerPayeeQuestion,
   showNextPageTop,
   similarPayments,
   withConfirmedName,
@@ -50,14 +54,6 @@ const pageQuery = (caseId: string, id: string) => ({
   retry: false,
   queryFn: ({ signal }: { signal?: AbortSignal }) => fetchAPI<StatementPage>(statementPageUrl(caseId, id), { signal }),
 })
-
-/** Replace rows in every cached ledger read of this case, so the table and counts follow a save at once. */
-function patchLedger(client: ReturnType<typeof useQueryClient>, caseId: string, replacements: LedgerTransaction[]) {
-  const byId = new Map(replacements.map((row) => [row.key, row]))
-  client.setQueriesData<{ transactions: LedgerTransaction[] }>({ queryKey: ["financial-ledger", caseId] }, (data) =>
-    data?.transactions ? { ...data, transactions: data.transactions.map((row) => byId.get(row.key) ?? row) } : data
-  )
-}
 
 /**
  * Name the other side of a payment while its statement line is on screen, beside the Transactions table.
@@ -106,6 +102,20 @@ export function PaymentNamingPanel({
   const readField = row && confirming ? modelReadingField(row) : null
   const reading = row && readField ? row.label_sources?.[readField] : undefined
   const [name, setName] = useState("")
+  // The card's edit mode (every field a person may correct), opened with Edit; editors only.
+  const [editing, setEditing] = useState(false)
+  const history = useQuery({
+    queryKey: ["ledger-source", caseId, currentId, "corrected-from"],
+    enabled: !!row,
+    staleTime: 60_000,
+    retry: false,
+    queryFn: ({ signal }) =>
+      fetchAPI<{ corrected_from?: CorrectedFrom }>(
+        `/api/financial/ledger/${encodeURIComponent(currentId)}/source?${new URLSearchParams({ case_id: caseId })}`,
+        { signal }
+      ),
+  })
+  const corrected = row && history.data?.corrected_from ? correctedLine(row, history.data.corrected_from) : null
   // Set when a changed reading on the account's own side is submitted: that side is confirmed here, not renamed.
   const [ownSideNote, setOwnSideNote] = useState(false)
   const [offer, setOffer] = useState<{ source: LedgerTransaction; name: string; groups: SimilarGroup[]; ticked: Set<string> } | null>(null)
@@ -147,6 +157,7 @@ export function PaymentNamingPanel({
     // In confirm mode the model's reading is filled in: Enter on it unchanged confirms it.
     setName(readField && row ? (row[readField] ?? "") : "")
     setOwnSideNote(false)
+    setEditing(false)
     // A viewer has no name field; the panel itself takes the keys.
     ;(readOnly ? panel.current : input.current)?.focus({ preventScroll: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -292,6 +303,7 @@ export function PaymentNamingPanel({
   const names = caseNames(rows)
   const reason = row ? missingNameReason(row) : null
   const incoming = row?.direction === "credit"
+  const sideQuestion = payerPayeeQuestion(row)
   return (
     <aside
       ref={panel}
@@ -320,9 +332,16 @@ export function PaymentNamingPanel({
                 : `${queue.length} ${confirming ? "not confirmed" : "without a name"} in view`}
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Close (Esc)
-        </Button>
+        <div className="flex flex-wrap justify-end gap-1">
+          {row && !readOnly && !editing && (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close (Esc)
+          </Button>
+        </div>
       </header>
       {!row ? (
         <p role="status">This payment is not in the current view. Choose another payment or close this panel.</p>
@@ -365,6 +384,11 @@ export function PaymentNamingPanel({
             </p>
             <p className="text-xs text-muted-foreground">{row.account_label || row.account_holder || row.account_id}</p>
             <p className="break-words font-mono text-[13px]">{row.description || "No description recorded"}</p>
+            {corrected && (
+              <p className="text-xs text-muted-foreground" data-testid="card-corrected">
+                {corrected}
+              </p>
+            )}
             {reading?.source === "model_reading" ? (
               <p className="rounded border border-[#e7c66b] bg-[#fdf6dd] p-2 text-xs text-[#5c3d00] dark:bg-status-warning-soft dark:text-status-warning" data-testid="model-reading">
                 <span className="font-semibold">{reading.label || "Read by Claude · not confirmed"}: </span>
@@ -383,7 +407,22 @@ export function PaymentNamingPanel({
             )}
           </section>
           <StatementView key={row.key} caseId={caseId} row={row} />
-          {readOnly ? (
+          {editing && !readOnly ? (
+            <PaymentCardEdit
+              key={row.key}
+              caseId={caseId}
+              row={row}
+              onCancel={() => {
+                setEditing(false)
+                panel.current?.focus({ preventScroll: true })
+              }}
+              onSaved={(id) => {
+                setEditing(false)
+                if (id !== row.key) onMove(id)
+                else panel.current?.focus({ preventScroll: true })
+              }}
+            />
+          ) : readOnly ? (
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" disabled={!previous} onClick={() => previous && onMove(previous)}>
@@ -412,11 +451,11 @@ export function PaymentNamingPanel({
             }}
           >
             <label className="block text-sm font-medium">
-              {incoming ? "Who paid this account" : "Who was paid"}
+              {sideQuestion}
               <input
                 ref={input}
                 autoFocus
-                aria-label={incoming ? "Name who paid this account" : "Name who was paid"}
+                aria-label={sideQuestion}
                 list="payment-naming-names"
                 maxLength={512}
                 className="mt-1 block w-full rounded border bg-background p-2"
@@ -568,15 +607,47 @@ function SimilarOffer({
 }
 
 /** The payment's line on its statement page, highlighted and zoomed, with the next page's top when it may continue. */
-function StatementView({ caseId, row }: { caseId: string; row: LedgerTransaction }) {
+export function StatementView({ caseId, row }: { caseId: string; row: LedgerTransaction }) {
   const meta = useQuery(pageQuery(caseId, row.key))
   const [viewFile, setViewFile] = useState(false)
   const [zoom, setZoom] = useState(200)
+  // The page being looked at; null is the payment's own page, with its line highlighted.
+  const [looking, setLooking] = useState<number | null>(null)
   const data = meta.data
   const band = data ? lineBand(data.locator) : null
   const page = data?.page ?? null
+  const fileId = data?.evidence_file_id ?? null
+  const [rotation, setRotation] = useState(0)
+  useEffect(() => {
+    setRotation(fileId ? readRotation(fileId) : 0)
+    setLooking(null)
+  }, [fileId, row.key])
+  const turn = (by: number) => {
+    const next = (((rotation + by) % 360) + 360) % 360
+    setRotation(next)
+    if (fileId) writeRotation(fileId, next)
+  }
+  const count = data?.page_count ?? null
+  const shown = looking ?? page
+  const goTo = (target: number) => {
+    if (page === null) return
+    const clamped = Math.max(1, count ? Math.min(count, target) : target)
+    setLooking(clamped === page ? null : clamped)
+  }
+  const keys = (event: KeyboardEvent<HTMLElement>) => {
+    if (page === null || shown === null) return
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+    if (event.key === "r" || event.key === "R") turn(event.shiftKey ? -90 : 90)
+    else if (event.key === "PageDown") goTo(shown + 1)
+    else if (event.key === "PageUp") goTo(shown - 1)
+    else if (event.key === "Home") setLooking(null)
+    else return
+    event.preventDefault()
+    event.stopPropagation()
+  }
   return (
-    <section aria-label="Statement line" className="space-y-2">
+    <section aria-label="Statement line" className="space-y-2" onKeyDown={keys}>
       {meta.isPending && <p role="status" className="text-xs">Loading the statement page…</p>}
       {meta.isError && (
         <p role="alert" className="text-xs">
@@ -589,13 +660,25 @@ function StatementView({ caseId, row }: { caseId: string; row: LedgerTransaction
       {data && page === null && (
         <p className="text-xs">No page is stored for this payment. Open the statement file to find it.</p>
       )}
-      {data && page !== null && (
+      {data && page !== null && shown !== null && (
         <>
-          <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Statement zoom">
+          <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Statement viewer controls">
             <span>
-              Page {page}
-              {data.page_count ? ` of ${data.page_count}` : ""} · {data.filename}
+              Page {shown}
+              {count ? ` of ${count}` : ""} · {data.filename}
             </span>
+            <Button size="sm" variant="outline" aria-label="Previous page" disabled={shown <= 1} onClick={() => goTo(shown - 1)}>
+              ‹ Prev
+            </Button>
+            <Button size="sm" variant="outline" aria-label="Next page" disabled={!!count && shown >= count} onClick={() => goTo(shown + 1)}>
+              Next ›
+            </Button>
+            <Button size="sm" variant="outline" aria-label="Rotate statement left" onClick={() => turn(-90)}>
+              ⟲
+            </Button>
+            <Button size="sm" variant="outline" aria-label="Rotate statement right" onClick={() => turn(90)}>
+              ⟳
+            </Button>
             <Button size="sm" variant="outline" aria-label="Zoom statement out" disabled={zoom <= 100} onClick={() => setZoom((z) => Math.max(100, z - 50))}>
               −
             </Button>
@@ -603,14 +686,22 @@ function StatementView({ caseId, row }: { caseId: string; row: LedgerTransaction
             <Button size="sm" variant="outline" aria-label="Zoom statement in" disabled={zoom >= 400} onClick={() => setZoom((z) => Math.min(400, z + 50))}>
               +
             </Button>
+            {looking !== null && (
+              <Button size="sm" onClick={() => setLooking(null)}>
+                Back to this payment
+              </Button>
+            )}
           </div>
-          {band ? (
+          <p className="text-xs text-muted-foreground">R rotates · PageUp / PageDown change page · Home returns to this payment</p>
+          {looking !== null ? (
+            <PageImage key={looking} caseId={caseId} id={row.key} page={looking} zoom={Math.max(100, zoom - 100)} height={480} rotation={rotation} label={`Statement page ${looking}`} />
+          ) : band ? (
             <>
-              <PageImage caseId={caseId} id={row.key} page={page} zoom={zoom} band={band} height={300} label={`Statement page ${page}, this payment highlighted`} />
+              <PageImage caseId={caseId} id={row.key} page={page} zoom={zoom} band={band} height={300} rotation={rotation} label={`Statement page ${page}, this payment highlighted`} />
               {showNextPageTop(band, data.last_on_page, data.page_count) && (
                 <div className="space-y-1">
                   <p className="text-xs font-medium">Top of page {page + 1}: the line may continue here</p>
-                  <PageImage caseId={caseId} id={row.key} page={page + 1} zoom={zoom} height={170} left={band.left} label={`Top of statement page ${page + 1}`} />
+                  <PageImage caseId={caseId} id={row.key} page={page + 1} zoom={zoom} height={170} left={band.left} rotation={rotation} label={`Top of statement page ${page + 1}`} />
                 </div>
               )}
             </>
@@ -623,7 +714,7 @@ function StatementView({ caseId, row }: { caseId: string; row: LedgerTransaction
                     ? "The exact line was not stored and this page is a scanned image, so the amount could not be searched. The whole page is shown."
                     : "The exact line was not stored and the amount was not found printed on this page. The whole page is shown."}
               </p>
-              <PageImage caseId={caseId} id={row.key} page={page} zoom={Math.max(100, zoom - 100)} found={data.found} height={480} label={`Statement page ${page}`} />
+              <PageImage caseId={caseId} id={row.key} page={page} zoom={Math.max(100, zoom - 100)} found={data.found} height={480} rotation={rotation} label={`Statement page ${page}`} />
             </>
           )}
           <Button size="sm" variant="outline" onClick={() => setViewFile(true)}>
@@ -636,13 +727,31 @@ function StatementView({ caseId, row }: { caseId: string; row: LedgerTransaction
             onOpenChange={setViewFile}
             documentUrl={evidenceAPI.getFileUrl(data.evidence_file_id)}
             documentName={data.filename}
-            initialPage={page}
+            initialPage={shown}
             navigationKey={`${caseId}:${row.key}:naming`}
           />
         </>
       )}
     </section>
   )
+}
+
+const ROTATION_KEY = "statement-viewer-rotation:"
+function readRotation(fileId: string) {
+  try {
+    const value = Number(localStorage.getItem(ROTATION_KEY + fileId))
+    return [90, 180, 270].includes(value) ? value : 0
+  } catch {
+    return 0
+  }
+}
+function writeRotation(fileId: string, value: number) {
+  try {
+    if (value) localStorage.setItem(ROTATION_KEY + fileId, String(value))
+    else localStorage.removeItem(ROTATION_KEY + fileId)
+  } catch {
+    /* storage unavailable: the turn lasts for this view only */
+  }
 }
 
 /** One rendered page in a scrolling window, scrolled to the highlighted line (or the first found amount). */
@@ -656,6 +765,7 @@ export function PageImage({
   band,
   left,
   found = [],
+  rotation = 0,
 }: {
   caseId: string
   id: string
@@ -666,8 +776,14 @@ export function PageImage({
   band?: LineBand
   left?: number
   found?: StatementPage["found"]
+  /** Quarter turns in degrees (0, 90, 180, 270); the highlight turns with the page. */
+  rotation?: number
 }) {
   const image = useProtectedObjectUrl(statementImageUrl(caseId, id, page))
+  // Height over width of the page as printed, known once the image has loaded.
+  const [ratio, setRatio] = useState(1.414)
+  const turned = rotation % 180 !== 0
+  const boxRatio = turned ? 1 / ratio : ratio
   const viewport = useRef<HTMLDivElement>(null)
   const amount = found.find((f) => f.kind === "amount")
   const focusBox = band ?? (amount ? { top: amount.rect[1], bottom: amount.rect[3] } : null)
@@ -675,12 +791,17 @@ export function PageImage({
     const node = viewport.current
     const content = node?.firstElementChild as HTMLElement | null
     if (!node || !content) return
+    if (rotation) {
+      node.scrollLeft = 0
+      node.scrollTop = 0
+      return
+    }
     node.scrollLeft = Math.max(0, content.offsetWidth * ((band?.left ?? left ?? 0) - 0.01))
     node.scrollTop = focusBox ? Math.max(0, content.offsetHeight * ((focusBox.top + focusBox.bottom) / 2) - node.clientHeight * 0.4) : 0
   }
   // Scroll to the line when the page arrives or the zoom changes, not on every keystroke in the name field.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(focus, [zoom, image.objectUrl])
+  useLayoutEffect(focus, [zoom, image.objectUrl, rotation])
   if (image.error)
     return (
       <p role="alert" className="text-xs">
@@ -698,8 +819,26 @@ export function PageImage({
       style={{ height }}
     >
       <div className="relative" style={{ width: `${zoom}%` }}>
+      {rotation ? <div style={{ paddingTop: `${boxRatio * 100}%` }} /> : null}
+      <div
+        className={rotation ? "absolute" : "relative"}
+        style={
+          rotation
+            ? { left: "50%", top: "50%", width: turned ? `${boxRatio * 100}%` : "100%", transform: `translate(-50%, -50%) rotate(${rotation}deg)` }
+            : undefined
+        }
+      >
         {image.objectUrl ? (
-          <img src={image.objectUrl} alt={label} className="block w-full" onLoad={focus} />
+          <img
+            src={image.objectUrl}
+            alt={label}
+            className="block w-full"
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget
+              if (naturalWidth && naturalHeight) setRatio(naturalHeight / naturalWidth)
+              focus()
+            }}
+          />
         ) : (
           <p role="status" className="p-3 text-xs text-muted-foreground">
             Loading page {page}…
@@ -738,6 +877,7 @@ export function PageImage({
               }}
             />
           ))}
+      </div>
       </div>
     </div>
   )

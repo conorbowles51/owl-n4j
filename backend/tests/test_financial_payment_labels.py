@@ -144,3 +144,22 @@ class NamedFromStatementExportTests(PaymentLabelsTests):
         snapshot = json.loads(capture_ledger_snapshot(self.f.db, case_id=self.f.case.id).content)
         captured = next(r for r in snapshot['ledger']['readings'] if r['row']['key'] == str(row.id))
         self.assertEqual(captured['investigation_label_history'][-1]['via'], 'statement')
+
+    def test_a_note_typed_in_the_card_stays_with_the_saved_name_and_category(self):
+        row = self.rows[0]
+        self.save([row], counterparty_name='GRUAS DEL NORTE', category='Travel', named_from='statement',
+                  reason='Checked against page 4: the printed name is cut off.')
+        self.f.db.expire_all()
+        row = self.f.db.get(FinancialTransaction, row.id)
+        entry = row.metadata_['investigation_label_history'][-1]
+        self.assertEqual(entry['note'], 'Checked against page 4: the printed name is cut off.')
+        self.assertNotIn('reason', entry['after'])
+        view = to_view(row, account=row.account).to_json()
+        side = 'from_name' if row.direction == 'credit' else 'to_name'
+        self.assertEqual(view[side], 'GRUAS DEL NORTE')
+        self.assertIn('Note: Checked against page 4', view['label_sources'][side]['explanation'])
+        self.assertIn('Note: Checked against page 4', view['label_sources']['category']['explanation'])
+
+    def test_a_note_alone_changes_nothing(self):
+        with self.assertRaises(PaymentLabelsError):
+            self.save([self.rows[0]], reason='only a note')

@@ -235,3 +235,17 @@ class CorrectionTests(DuplicateTestCase):
         self.db.refresh(self.row)
         self.assertIsNone(self.row.superseded_by_id)
         self.assertEqual(list(self.db.scalars(select(AdjudicationEvent))), [])
+
+    def test_a_corrected_payment_names_its_statement_reading_and_who_corrected_it(self):
+        from services.financial.ledger_source import corrected_from
+        self.assertIsNone(corrected_from(self.db, self.row))
+        self.correct()
+        first = self.db.get(FinancialTransaction, self.row.superseded_by_id)
+        self.correct(first, amount_minor=42000, reason="Second look")
+        latest = self.db.get(FinancialTransaction, first.superseded_by_id)
+        history = corrected_from(self.db, latest)
+        self.assertEqual(history["statement_read"]["amount_minor"], "40000")
+        self.assertEqual(history["statement_ref_id"], self.row.ref_id)
+        self.assertEqual([step["reason"] for step in history["corrections"]], ["Checked the source amount", "Second look"])
+        self.assertEqual({step["actor_name"] for step in history["corrections"]}, {self.actor.name})
+        self.assertTrue(all(step["at"] for step in history["corrections"]))

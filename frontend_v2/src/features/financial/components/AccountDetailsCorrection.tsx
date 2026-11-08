@@ -224,8 +224,10 @@ function MergedHistory({
                 ) : item.origin && !item.undone_at ? (
                   <>
                     <p>
-                      <strong>Corrected by {item.origin.model} · not confirmed.</strong> A person confirms it after
-                      checking the statement.
+                      <strong>Corrected by {item.origin.model} · not confirmed.</strong>{" "}
+                      {canEdit
+                        ? "Check the statement, write what you checked below, then confirm it."
+                        : "An editor of this case can confirm this after checking the statement."}
                     </p>
                     {canEdit && (
                       <div className="flex flex-col gap-1">
@@ -579,8 +581,10 @@ export function AccountDetailsCorrection({
                 </>
               ) : (
                 <p>
-                  <strong>Corrected by {item.origin!.model} · not confirmed.</strong> A person confirms it after
-                  checking the statement.
+                  <strong>Corrected by {item.origin!.model} · not confirmed.</strong>{" "}
+                  {canEdit
+                    ? "Check the statement, write what you checked below, then confirm it."
+                    : "An editor of this case can confirm this after checking the statement."}
                 </p>
               )}
               {canEdit && !item.confirmed && (

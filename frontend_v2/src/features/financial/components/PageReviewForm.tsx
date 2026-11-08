@@ -20,10 +20,12 @@ function ReviewAuthor({
   saved_by,
   saved_at,
   origin,
+  canEdit,
 }: {
   saved_by: string | null
   saved_at: string
   origin: Record<string, unknown> | null
+  canEdit?: boolean
 }) {
   return (
     <>
@@ -31,6 +33,10 @@ function ReviewAuthor({
         ? `Read by ${String(origin.model || "a model")} · not confirmed`
         : `Saved by ${saved_by || "someone not recorded"}`}{" "}
       on {new Date(saved_at).toLocaleString()}
+      {origin &&
+        (canEdit
+          ? ". Check the page, then save your own review below to confirm or replace it; this one stays in the history."
+          : ". An editor of this case can confirm this.")}
     </>
   )
 }
@@ -104,7 +110,7 @@ export function PageReviewForm({
             {current.label}: {current.reason}
           </p>
           <p className="text-muted-foreground">
-            <ReviewAuthor {...current} />
+            <ReviewAuthor {...current} canEdit={canEdit} />
           </p>
           {!current.same_file_bytes && (
             <p>This review was saved against a different copy of the file.</p>
@@ -172,7 +178,7 @@ export function PageReviewForm({
           {earlier.map((item) => (
             <li key={item.id}>
               Earlier: {item.label}: {item.reason} (
-              <ReviewAuthor {...item} />
+              <ReviewAuthor {...item} canEdit={canEdit} />
               {item.undone_at
                 ? `; undone by ${item.undone_by || "someone not recorded"}`
                 : ""}

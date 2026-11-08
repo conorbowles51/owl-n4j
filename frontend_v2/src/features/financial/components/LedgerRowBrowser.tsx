@@ -91,6 +91,7 @@ import { LedgerTable } from "./LedgerTable"
 import { paymentFilterKey } from "../lib/payment-table-draft"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import { PaymentNamingPanel } from "./PaymentNamingPanel"
+import { ReadingCheckContext, showReadingRow } from "../hooks/reading-check-context"
 import { needsConfirm, needsName } from "../lib/payment-naming"
 import type { LedgerTransaction } from "../api"
 const TABLE_VIEW_KEY = "financial-transactions-table-view"
@@ -618,6 +619,21 @@ export function LedgerRowBrowser({
     if (at >= 0 && Math.floor(at / pageSize) !== index)
       setView((previous) => ({ ...previous, page: Math.floor(at / pageSize) }))
   }
+  // A reading checked inline and opened in the panel: the row it came from, so closing the panel lands back on it.
+  const checkedRow = useRef<string | null>(null)
+  const showRow = showReadingRow
+  const openFromReading = (id: string) => {
+    checkedRow.current = id
+    const row = rows.find((item) => item.key === id)
+    openNaming(id, canEdit && row && needsConfirm(row) ? "confirm" : "name")
+    showRow(id, false)
+  }
+  const closeNaming = () => {
+    setNaming(null)
+    showRow(checkedRow.current, true)
+    checkedRow.current = null
+  }
+  const readingCheck = useMemo(() => (exportContext ? { openPanel: openFromReading } : {}), [exportContext, rows, canEdit, index, pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
   const [sectionEl, setSectionEl] = useState<HTMLElement | null>(null)
   // The naming panel opens beside the table on the right: the control panel steps back to its tab.
   const [namingSeen, setNamingSeen] = useState(naming)
@@ -1922,6 +1938,7 @@ export function LedgerRowBrowser({
         }
       >
       <div className="min-w-0">
+      <ReadingCheckContext.Provider value={readingCheck}>
       <RowJudgements.Provider value={tintedContext}>
       {waiting ? null : !total ? (
         <p>
@@ -2025,6 +2042,7 @@ export function LedgerRowBrowser({
         />
       )}
       </RowJudgements.Provider>
+      </ReadingCheckContext.Provider>
       </div>
       {naming && exportContext && (
         // Beside the table (xl) the panel sticks just below the sticky tools bar; above it, it scrolls with the page.
@@ -2037,7 +2055,7 @@ export function LedgerRowBrowser({
             mode={namingMode}
             currentId={naming}
             onMove={openNaming}
-            onClose={() => setNaming(null)}
+            onClose={closeNaming}
             onOpenDetails={actions.onSource}
             readOnly={!canEdit}
             stickyTop={toolbarHeight}

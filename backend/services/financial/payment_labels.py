@@ -36,6 +36,9 @@ class PaymentLabelsRequest(BaseModel):
     named_from: Literal['statement'] | None = None
     # The payment whose name this one was given, when a person applied it to payments like it after reviewing them.
     same_as: UUID | None = None
+    # A person's note on this change (the payment card's edit mode): kept in the label history, shown with the label
+    # ("Saved by <person> on <date>. Note: ..."), and recorded as the manual change's reason.
+    reason: str | None = Field(default=None, max_length=4000)
 
     @field_validator('category', 'from_name', 'to_name', 'counterparty_name')
     @classmethod
@@ -52,7 +55,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
     """``reason``: why the value was set (where it was read), kept in the label history and shown with the label.
     ``proposed_by``: {origin, judgement_id} when a person accepted a case agent's proposal (services.agent.proposals);
     kept in the label history so the record shows a model proposed what the person accepted."""
-    changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library', 'named_from', 'same_as'})
+    changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library', 'named_from', 'same_as', 'reason'})
     if request.named_from == 'statement':
         reason = reason or 'Named from the statement.'
         if request.same_as is not None:
@@ -133,6 +136,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
                 actor_email=actor.email, actor_id=str(actor.user_id) if actor.user_id else None,
                 before=before, after=row_changes, version=current['version'], **({'reason': reason} if reason else {}),
                 **({'via': 'statement'} if request.named_from == 'statement' else {}),
+                **({'note': request.reason.strip()} if (request.reason or '').strip() else {}),
                 **({'same_as': str(request.same_as)} if request.same_as is not None else {}),
                 **({'origin': dict(actor.origin)} if model else {}),
                 **({'proposed_by': dict(proposed_by)} if proposed_by else {}),
@@ -382,9 +386,11 @@ def _saved_by(row, field):
     when = str(entry.get('at') or '')[:10]
     if entry.get('via') == 'statement':
         same = ' (the same name as a payment like it)' if entry.get('same_as') else ''
-        return f"Named by {entry['actor_name']} from the statement" + (f' on {when}' if when else '') + same + '.'
+        note = f" Note: {entry['note']}" if entry.get('note') else ''
+        return f"Named by {entry['actor_name']} from the statement" + (f' on {when}' if when else '') + same + '.' + note
     text = f"Saved by {entry['actor_name']}" + (f' on {when}' if when else '') + '.'
-    return text + (' ' + entry['reason'] if entry.get('reason') else '')
+    text += ' ' + entry['reason'] if entry.get('reason') else ''
+    return text + (f" Note: {entry['note']}" if entry.get('note') else '')
 
 
 def _missing(reason):

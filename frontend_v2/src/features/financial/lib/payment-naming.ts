@@ -208,3 +208,9 @@ export function withConfirmedName(row: LedgerTransaction, field: NameField, expl
     },
   }
 }
+
+/** Says which side is asked, with the account holder named so the payer/payee cannot be mistaken for them. */
+export function payerPayeeQuestion(row?: Pick<LedgerTransaction, "direction" | "account_holder" | "account_label"> | null) {
+  const holder = row?.account_holder || row?.account_label || "the account holder"
+  return row?.direction === "credit" ? `Who sent this money to ${holder}? (the payer)` : `Who did ${holder} pay? (the payee)`
+}

@@ -110,9 +110,13 @@ it("finds names a model read that no person has confirmed, and never treats them
 })
 
 it("shows the reading as Claude's with its citation, never as a person's name", () => {
-  render(<PaymentLabelOrigin row={read("a")} field="to_name" />)
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <PaymentLabelOrigin row={read("a")} field="to_name" />
+    </QueryClientProvider>
+  )
   const mark = screen.getByTestId("model-reading-mark")
-  expect(mark.textContent).toBe("Read by Claude · not confirmed")
+  expect(mark.textContent).toBe("Read by Claude · not confirmed — click to check")
   expect(mark.getAttribute("title")).toContain("page 4")
   expect(screen.queryByText(/Read from bbva-dic-2024.pdf, page 4/)).toBeNull()
   fireEvent.click(mark)
@@ -121,7 +125,7 @@ it("shows the reading as Claude's with its citation, never as a person's name", 
 
 it("Enter on the reading as read confirms it with one call and opens the next one", async () => {
   mount([read("a"), read("b", "OTRA PERSONA")])
-  const field = (await screen.findByLabelText("Name who was paid")) as HTMLInputElement
+  const field = (await screen.findByLabelText(/Who did .* pay\? \(the payee\)/ )) as HTMLInputElement
   expect(field.value).toBe("EUGENIO HERNANDEZ ROMERO")
   expect(screen.getByTestId("model-reading").textContent).toContain("Read by Claude · not confirmed")
   expect(screen.getByRole("button", { name: "Confirm and next (Enter)" })).toBeTruthy()
@@ -135,7 +139,7 @@ it("Enter on the reading as read confirms it with one call and opens the next on
 
 it("a changed name is saved as the person's correction, not a confirmation", async () => {
   mount([read("a"), read("b")])
-  const field = (await screen.findByLabelText("Name who was paid")) as HTMLInputElement
+  const field = (await screen.findByLabelText(/Who did .* pay\? \(the payee\)/ )) as HTMLInputElement
   fireEvent.change(field, { target: { value: "EUGENIO HERNANDEZ ROMERO SA" } })
   expect(screen.getByRole("button", { name: "Save and next (Enter)" })).toBeTruthy()
   fireEvent.keyDown(field, { key: "Enter" })
