@@ -1,12 +1,12 @@
 """Deleted items: kept copies for deleted evidence folders, entry links, pins, deadlines and chats (lx-deletebin B).
 
 Revision ID: 20261108_deleted_items_kinds
-Revises: 20261106_vision_spend_recorded
+Revises: 20261108_case_selections
 """
 from alembic import op
 
 revision = "20261108_deleted_items_kinds"
-down_revision = "20261106_vision_spend_recorded"
+down_revision = "20261108_case_selections"
 branch_labels = None
 depends_on = None
 
