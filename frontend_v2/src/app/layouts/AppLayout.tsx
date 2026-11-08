@@ -12,6 +12,7 @@ import { LazyPanel } from "@/components/ui/lazy-panel"
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts"
 import { useRouteSpeed } from "@/lib/route-speed"
 import { FinancialViewUpdatingNotice } from "@/components/FinancialViewUpdatingNotice"
+import { AppStartWaiting } from "@/app/app-start-waiting"
 
 // The app-level chat panel opens only on request; its code (chat, document viewer, markdown) loads then, not with
 // the shell.
@@ -77,12 +78,14 @@ export function AppLayout() {
       <AppSidebar />
       <ResizablePanelGroup orientation="horizontal" className="flex-1">
         <ResizablePanel id="main-content" order={1} defaultSize="100" minSize="40">
-          <main className="h-full overflow-hidden">
+          <main className="relative h-full overflow-hidden">
             <ErrorBoundary level="page">
               <Outlet />
             </ErrorBoundary>
             {/* Figures answered from a previous copy while they are recomputed are never shown as current. */}
             <FinancialViewUpdatingNotice />
+            {/* A painted document whose page has asked for nothing after 2 s says so (app start under load). */}
+            <AppStartWaiting />
           </main>
         </ResizablePanel>
         {showAppChat && (
