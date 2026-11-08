@@ -180,9 +180,10 @@ def test_has_position_keeps_only_files_whose_metadata_names_a_place(world):
         rows = media.window(c, case, {"phones": [ext], "has_position": True})["items"]
     assert placed == 1 and whole == placed + rest and len(rows) == 1
     # batch reading of the same scope takes the filter too: the Media page sends it (live 422 on the first release)
-    from routers.phones import BatchScope
+    from routers.phones import MediaScope, _batch_scope
     from services.phone import derive_batch
-    scope = BatchScope(has_position=True).model_dump(mode="json", exclude_defaults=True)
+    scope = _batch_scope(case, MediaScope(has_position=True))
+    assert scope == {"has_position": True}
     with engine.connect() as c:
         assert derive_batch.describe(c, case, "ocr", scope)["in_scope"] <= placed
 
