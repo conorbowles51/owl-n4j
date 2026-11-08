@@ -13,10 +13,11 @@ class Permissions(TypedDict):
     ai: dict
 
 
+# A case owner deletes evidence files and folders in their own case (Neil 2026-11-08: "case owner can delete").
 OWNER_PERMISSIONS: Permissions = {
     "case": {"view": True, "edit": True, "delete": True},
     "collaborators": {"invite": True, "remove": True},
-    "evidence": {"upload": True},
+    "evidence": {"upload": True, "delete": True},
 }
 
 EDITOR_PERMISSIONS: Permissions = {

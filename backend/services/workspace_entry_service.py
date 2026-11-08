@@ -1883,6 +1883,16 @@ def update_entry_link(
     return get_entry(db, case_id=case_id, entry_id=entry_id)
 
 
+def _keep_links(db: Session, entry, links, current_user) -> None:
+    """Deleted items (lx-deletebin): a kept copy of removed links, restorable by the case owner or an admin."""
+    from services import removed_records
+    count = len(links)
+    title = getattr(entry, "title", None) or entry.entry_type
+    label = (f"{count:,} links on '{title}'" if count != 1 else f"Link on '{title}'")
+    removed_records.keep(db, kind="entry_link", case_id=entry.case_id, subject_id=entry.id, label=label,
+                         rows=links, user=current_user)
+
+
 def remove_entry_links(
     db: Session,
     *,
@@ -1915,6 +1925,7 @@ def remove_entry_links(
             f"{len(missing):,} of these links are no longer on this entry; nothing was removed."
         )
     before = {"links": [_link_to_dict(held[link_id]) for link_id in wanted]}
+    _keep_links(db, entry, [held[link_id] for link_id in wanted], current_user)
     for link_id in wanted:
         db.delete(held[link_id])
     entry.version += 1
@@ -1946,6 +1957,7 @@ def remove_entry_link(
     if not link:
         raise WorkspaceEntryNotFound(f"Workspace entry link {link_id} not found")
     before = _link_to_dict(link)
+    _keep_links(db, entry, [link], current_user)
     db.delete(link)
     entry.version += 1
     entry.updated_by_user_id = current_user.id

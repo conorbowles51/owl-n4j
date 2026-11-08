@@ -247,6 +247,6 @@ def delete_chat_history(
     except (CaseNotFound, CaseAccessDenied) as exc:
         raise HTTPException(status_code=404, detail="Chat history not found") from exc
 
-    delete_conversation(db, conversation)
+    delete_conversation(db, conversation, current_user)
     db.commit()
     return {"status": "deleted", "id": str(chat_id)}

@@ -36,9 +36,10 @@ def world(tmp_path):
     from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
     from postgres.models.financial_import_batches import FinancialImportBatch
     # The delete asks Financial whether it still holds the file.
+    from postgres.models.removed_record import RemovedRecord
     Base.metadata.create_all(engine, tables=[EvidenceFolder.__table__, EvidenceFile.__table__,
                                              FinancialImportBatch.__table__, FinancialSourceDocument.__table__,
-                                             FinancialTransaction.__table__])
+                                             FinancialTransaction.__table__, RemovedRecord.__table__])
     db = Session(engine)
     case_id = uuid4()
     path = tmp_path / "statement.pdf"

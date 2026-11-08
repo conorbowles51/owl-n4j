@@ -77,7 +77,7 @@ describe("Delete Folder", () => {
     api.fetchAPI.mockResolvedValue({ file_count: 3, listed_file_count: 3, subfolder_count: 1 })
     show({ deletedItems: true })
     expect(await screen.findByText(
-      "3 files in this folder and its 1 subfolder will be moved to Deleted items (the case owner or an admin can restore them for 30 days, then they are removed for good). The folder itself is removed; a restored file goes back to the top of Evidence unless its folder is made again.",
+      "The folder and 3 files in this folder and its 1 subfolder will be moved to Deleted items (the case owner or an admin can restore them for 30 days, then they are removed for good). Restoring the folder brings back its subfolders and every file in its place.",
     )).toBeTruthy()
     expect(screen.queryByText(/permanently deleted/)).toBeNull()
     expect(screen.getByText(/hidden with them and comes back with a restore/)).toBeTruthy()

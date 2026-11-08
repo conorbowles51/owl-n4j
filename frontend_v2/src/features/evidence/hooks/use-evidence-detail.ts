@@ -69,6 +69,29 @@ export function useRestoreEvidence(caseId: string) {
   })
 }
 
+export function useDeletedItems(caseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["deleted-items", caseId],
+    queryFn: () => evidenceAPI.listDeletedItems(caseId),
+    enabled: enabled && !!caseId,
+    staleTime: 0,
+  })
+}
+
+/** Restore or remove for good: either can change any screen of the case, so every query is read again. */
+export function useDeletedItemAction(caseId: string, action: "restore" | "purge") {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ kind, id }: { kind: string; id: string }): Promise<unknown> =>
+      action === "restore"
+        ? evidenceAPI.restoreDeletedItem(caseId, kind, id)
+        : evidenceAPI.purgeDeletedItem(caseId, kind, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries()
+    },
+  })
+}
+
 export function useSyncFilesystem(caseId: string) {
   const queryClient = useQueryClient()
   return useMutation({

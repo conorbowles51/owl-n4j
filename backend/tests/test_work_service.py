@@ -32,6 +32,8 @@ from services.work_service import (
 )
 
 
+from postgres.models.removed_record import RemovedRecord  # noqa: E402
+
 TABLES = [
     User.__table__,
     Case.__table__,
@@ -44,6 +46,7 @@ TABLES = [
     CaseTask.__table__,
     CaseTaskLink.__table__,
     SharedEvidencePin.__table__,
+    RemovedRecord.__table__,  # an unpinned pin is kept in Deleted items
 ]
 
 

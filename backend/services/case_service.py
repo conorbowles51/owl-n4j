@@ -93,6 +93,11 @@ def has_permission(membership: CaseMembership | None, category: str, action: str
 
     permissions = membership.permissions or {}
     category_perms = permissions.get(category, {})
+    if getattr(membership, "membership_role", None) == CaseMembershipRole.owner:
+        # An owner has every owner right, whatever was stored when the membership was made: rights added to
+        # OWNER_PERMISSIONS later (evidence.delete, 2026-11-08) reach existing owners without rewriting rows.
+        # Collaborators keep exactly what their stored permissions say.
+        return bool(OWNER_PERMISSIONS.get(category, {}).get(action, False) or category_perms.get(action, False))
     return category_perms.get(action, False)
 
 

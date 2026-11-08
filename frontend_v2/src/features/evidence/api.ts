@@ -191,6 +191,22 @@ export const evidenceAPI = {
       { method: "POST" }
     ),
 
+  /** Every deleted item of the case (files, folders, casework, links, ...): services/deleted_items.py. */
+  listDeletedItems: (caseId: string) =>
+    fetchAPI<DeletedItemsResponse>(`/api/cases/${caseId}/deleted-items`),
+
+  restoreDeletedItem: (caseId: string, kind: string, id: string) =>
+    fetchAPI<Record<string, unknown>>(
+      `/api/cases/${caseId}/deleted-items/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/restore`,
+      { method: "POST" }
+    ),
+
+  purgeDeletedItem: (caseId: string, kind: string, id: string) =>
+    fetchAPI<PurgeResult>(
+      `/api/cases/${caseId}/deleted-items/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/purge`,
+      { method: "POST" }
+    ),
+
   logs: async (caseId: string, limit = 50) => {
     const res = await fetchAPI<{ logs: IngestionLog[] }>(
       `/api/evidence/logs?case_id=${caseId}&limit=${limit}`
@@ -337,4 +353,34 @@ export interface DeletedEvidenceResponse {
   files: DeletedEvidenceFile[]
   retention_days: number | null
   can_restore: boolean
+}
+
+export interface DeletedItem {
+  kind: string
+  kind_label: string
+  id: string
+  label: string | null
+  deleted_at: string | null
+  deleted_by: { id: string | null; name: string | null; email: string | null } | null
+  detail: string | null
+  purge_at: string | null
+  days_left: number | null
+  can_restore: boolean
+  files?: number
+  size?: number
+}
+
+export interface DeletedItemsResponse {
+  enabled: boolean
+  items: DeletedItem[]
+  retention_days: number | null
+  can_manage: boolean
+}
+
+export interface PurgeResult {
+  kind: string
+  id: string
+  label: string | null
+  purged: boolean
+  counts: Record<string, number>
 }

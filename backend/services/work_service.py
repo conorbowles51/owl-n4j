@@ -643,6 +643,11 @@ def unpin_evidence(db: Session, *, case_id: UUID, pin_id: UUID, user: User) -> N
     )
     if not pin:
         raise PinNotFound("Pinned evidence not found")
+    from services import removed_records  # Deleted items (lx-deletebin): a kept copy, restorable
+    removed_records.keep(db, kind="evidence_pin", case_id=case_id, subject_id=pin.id,
+                         label="Pin: " + (db.scalar(select(EvidenceFile.original_filename).where(
+                             EvidenceFile.id == pin.evidence_file_id)) or str(pin.evidence_file_id)),
+                         rows=[pin], user=user)
     db.delete(pin)
     db.commit()
 

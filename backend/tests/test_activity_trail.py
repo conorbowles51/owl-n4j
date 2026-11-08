@@ -126,10 +126,14 @@ class RecordingTests(TrailBase):
 
 class CaseDeletionTests(TrailBase):
     """A deleted case leaves a row saying who deleted it, when, from where, and what it held (2026-11-03: a real
-    case was deleted through the app and only the server journal showed it)."""
+    case was deleted through the app and only the server journal showed it). These run the immediate delete
+    (DELETED_ITEMS_ENABLED off); DeletedItemsCaseDeletionTests below switches it on."""
 
     def setUp(self):
         super().setUp()
+        off = patch('config.DELETED_ITEMS_ENABLED', False)
+        off.start()
+        self.addCleanup(off.stop)
         from postgres.models.case_membership import CaseMembership
         from postgres.models.enums import CaseMembershipRole
         from postgres.permissions import OWNER_PERMISSIONS

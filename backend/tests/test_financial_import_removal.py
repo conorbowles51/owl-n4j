@@ -243,7 +243,9 @@ class EvidenceDeleteKeepsFinancialWholeTests(TestCase):
         from routers import evidence as router
         graph = MagicMock()
         graph.find_document_node.return_value = None
-        with patch('services.case_service.check_case_access'), patch.object(router, 'neo4j_service', graph), \
+        # The immediate delete (DELETED_ITEMS_ENABLED off), whose graph clean-up is faked here.
+        with patch('config.DELETED_ITEMS_ENABLED', False), \
+                patch('services.case_service.check_case_access'), patch.object(router, 'neo4j_service', graph), \
                 patch('services.vector_db_service.get_vector_db_service', return_value=None), \
                 patch.object(router.evidence_engine_client, 'delete_file', new=AsyncMock()):
             return asyncio.run(router.delete_evidence_file(str(evidence_id), case_id=str(self.f.case.id),

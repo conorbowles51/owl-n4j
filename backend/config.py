@@ -211,11 +211,12 @@ PLATFORM_UPDATE_REPO_DIR = (
     else DATA_HOME / _PLATFORM_UPDATE_REPO_DIR
 )
 
-# Deleted items (lx-casebin): when on, deleting a case or an evidence file moves it to Deleted items for 30 days,
-# restorable by the case owner or an admin, then purged. Off by default (Neil 2026-11-04: deletions by users are
-# intended; an undo window needs his own decision): a delete is immediate, through the delete code used before.
-# Switching it off again later: restore or wait out what is in Deleted items first (with it off they show again).
-DELETED_ITEMS_ENABLED = os.getenv("DELETED_ITEMS_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+# Deleted items (lx-casebin, lx-deletebin): on, deleting a case, an evidence file or folder or other work moves it to
+# Deleted items for 30 days, restorable by the case owner or an admin, then purged. On by default (Neil 2026-11-08:
+# "yes create deleted items bin so any deleted work can be undone"). DELETED_ITEMS_ENABLED=false gives immediate
+# deletes through the delete code used before; restore or wait out what is in Deleted items first (off, it shows
+# again).
+DELETED_ITEMS_ENABLED = os.getenv("DELETED_ITEMS_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 
 
 try:  # noqa: E402

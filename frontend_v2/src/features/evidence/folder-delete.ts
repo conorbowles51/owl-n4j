@@ -15,9 +15,9 @@ export function describeFolderDelete(summary: FolderDeleteSummary, deletedItems 
   const hidden = summary.file_count - summary.listed_file_count
   return (
     (deletedItems
-      ? `${files(summary.file_count)} ${where} will be moved to Deleted items (the case owner or an admin can restore ` +
-        "them for 30 days, then they are removed for good). The folder itself is removed; a restored file goes back " +
-        "to the top of Evidence unless its folder is made again."
+      ? `The folder and ${files(summary.file_count)} ${where} will be moved to Deleted items (the case owner or an ` +
+        "admin can restore them for 30 days, then they are removed for good). Restoring the folder brings back its " +
+        "subfolders and every file in its place."
       : `${files(summary.file_count)} ${where} will be permanently deleted from disk and database.`) +
     (hidden > 0
       ? ` ${n(hidden)} of them ${hidden === 1 ? "is an internal copy or phone thread document" : "are internal copies or phone thread documents"} not listed in Evidence.`

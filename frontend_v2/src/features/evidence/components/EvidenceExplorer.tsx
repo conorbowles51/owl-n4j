@@ -156,7 +156,7 @@ export function EvidenceExplorer() {
         setDeleteFolderTarget(null)
         toast.success(
           deletedItems
-            ? `Folder "${deleteFolderTarget.name}" deleted; its files are in Deleted items for 30 days`
+            ? `Folder "${deleteFolderTarget.name}" moved to Deleted items, with its files, for 30 days`
             : `Folder "${deleteFolderTarget.name}" deleted`
         )
       },

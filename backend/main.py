@@ -35,6 +35,7 @@ from routers import (
     chat_history_router,
     system_logs_router,
     removed_records_router,
+    deleted_items_router,
     backfill_router,
     database_router,
     llm_config_router,
@@ -329,6 +330,7 @@ app.include_router(filesystem_router)
 app.include_router(chat_history_router)
 app.include_router(system_logs_router)
 app.include_router(removed_records_router)
+app.include_router(deleted_items_router)
 app.include_router(backfill_router)
 app.include_router(database_router)
 app.include_router(llm_config_router)

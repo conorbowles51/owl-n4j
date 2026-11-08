@@ -312,7 +312,14 @@ def replace_conversation_messages(
     return conversation
 
 
-def delete_conversation(db: Session, conversation: ChatConversation) -> None:
+def delete_conversation(db: Session, conversation: ChatConversation, user=None) -> None:
+    # Deleted items (lx-deletebin): the conversation and its messages are kept, restorable by the person whose chat
+    # it is (or an admin) until the purge.
+    from services import removed_records
+    removed_records.keep(db, kind="chat", case_id=conversation.case_id, subject_id=conversation.id,
+                         label=conversation.title, rows=[conversation, *sorted(conversation.messages or [],
+                                                                               key=lambda m: str(m.id))],
+                         user=user)
     db.delete(conversation)
     db.flush()
 

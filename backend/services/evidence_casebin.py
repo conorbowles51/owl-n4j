@@ -457,12 +457,13 @@ def list_deleted(db: Session, case_id: UUID) -> list[dict]:
     now = datetime.now(timezone.utc)
     rows = []
     for r in records:
-        purge_at = r.deleted_at + timedelta(days=DELETED_RETENTION_DAYS)
+        deleted_at = r.deleted_at if r.deleted_at.tzinfo else r.deleted_at.replace(tzinfo=timezone.utc)  # SQLite
+        purge_at = deleted_at + timedelta(days=DELETED_RETENTION_DAYS)
         state = r.deleted_state or {}
         who = people.get(r.deleted_by_user_id)
         rows.append(dict(
             id=str(r.id), filename=r.original_filename, size=int(r.size or 0), folder_id=str(r.folder_id) if r.folder_id else None,
-            deleted_at=r.deleted_at.isoformat(), purge_at=purge_at.isoformat(),
+            deleted_at=deleted_at.isoformat(), purge_at=purge_at.isoformat(),
             days_left=max(0, (purge_at - now).days),
             deleted_by=dict(id=str(who.id), name=who.name, email=who.email) if who else None,
             holds=dict(graph_nodes=state.get("hidden_nodes", 0), entities_only_in_this_file=len(state.get("exclusive_entities") or []),

@@ -16,7 +16,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from postgres.base import Base
 
 KINDS = ('dossier_assessment', 'dossier_interview', 'dossier_media', 'dossier_link', 'dossier_evidence_link',
-         'snapshot')
+         'snapshot',
+         # Deleted items (lx-deletebin, 2026-11-08): the folder rows of a deleted evidence folder (its files wait in
+         # evidence_files with deleted_at), and hard deletes that used to leave nothing to restore.
+         'evidence_folder', 'entry_link', 'evidence_pin', 'case_deadline', 'chat')
 
 
 class RemovedRecord(Base):

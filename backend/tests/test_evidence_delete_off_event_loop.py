@@ -20,6 +20,14 @@ from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from routers import evidence as router
 
 
+@pytest.fixture(autouse=True)
+def _deleted_items_off():
+    """These cover the immediate delete (DELETED_ITEMS_ENABLED off); the Deleted items path is
+    tests/test_evidence_delete_deleted_items.py."""
+    with patch("config.DELETED_ITEMS_ENABLED", False):
+        yield
+
+
 @pytest.fixture()
 def world(tmp_path):
     engine = create_engine("sqlite+pysqlite:///:memory:", poolclass=StaticPool,

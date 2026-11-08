@@ -408,21 +408,39 @@ def _move_folder_to_deleted_items(folder_id: str, case_id: str, current_user: Us
             raise HTTPException(status_code=409, detail="A Financial import is still preparing files in this "
                                 "folder. Wait for it to finish, or remove the import, then delete the folder.")
         moved = 0
+        moved_ids = []
         for f in files:
             if f.deleted_at is None:
                 evidence_casebin.delete_file(db, f, current_user)
                 moved += 1
+                moved_ids.append(f.id)
+        # The folder tree itself is one item in Deleted items (lx-deletebin): its rows are kept, parents first, with
+        # the files it took, so Restore puts back the folders and then every file in its own folder.
+        from services import removed_records
+        folders = {fid: db.get(EvidenceFolder, fid) for fid in tree}
+        bin_item = removed_records.keep(
+            db, kind="evidence_folder", case_id=root.case_id, subject_id=root.id, label=root.name,
+            rows=[folders[fid] for fid in tree], user=current_user)
+        bin_item.data = dict(bin_item.data, file_ids=[str(i) for i in moved_ids])
         with showing_deleted(db):
             for f in db.query(EvidenceFile).filter(EvidenceFile.id.in_([f.id for f in files])).all():
-                f.deleted_state = dict(f.deleted_state or {}, folder_id=str(f.folder_id),
-                                       folder_name=names.get(f.folder_id))
+                state = dict(f.deleted_state or {}, folder_id=str(f.folder_id), folder_name=names.get(f.folder_id))
+                if f.id in set(moved_ids):
+                    state["folder_item_id"] = str(bin_item.id)
+                f.deleted_state = state
                 f.folder_id = None
             db.flush()
+        from services import activity_trail
+        activity_trail.record("evidence_folder_moved_to_deleted_items", db=db, user=current_user,
+                              case_id=root.case_id, details=dict(folder_id=str(root.id), folder_name=root.name,
+                                                                 folders=len(tree), files=moved,
+                                                                 deleted_item_id=str(bin_item.id)))
         db.delete(root)
         db.commit()
         return {
             "deleted_files": moved,
             "deleted_folders": len(tree),
+            "deleted_item_id": str(bin_item.id),
             "restorable_days": evidence_casebin.DELETED_RETENTION_DAYS,
         }
     except HTTPException:
