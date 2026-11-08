@@ -39,6 +39,10 @@ def _harness(tmp_path, monkeypatch, names, engine):
     async def no_reconcile(db, case):
         return 0
 
+    async def closed(case, batch):  # a press of several requests closes its engine batch; never the live engine
+        return {'closed': True}
+    monkeypatch.setattr(processing.evidence_engine_client, 'close_batch', closed)
+
     async def tracked(job_ids, case):
         return None
 
@@ -67,7 +71,7 @@ def _harness(tmp_path, monkeypatch, names, engine):
 async def test_one_refused_file_in_three_leaves_two_queued(tmp_path, monkeypatch):
     requests = []
 
-    async def engine(*, case_id, files, processing_metadata):
+    async def engine(*, case_id, files, processing_metadata, batch_id=None):
         requests.append([name for name, _, _ in files])
         if any(name == 'bad.pdf' for name, _, _ in files):
             raise _refusal('Invalid upload filename')
@@ -90,7 +94,7 @@ async def test_requests_stay_under_the_engine_field_limit(tmp_path, monkeypatch)
     """Each file's metadata lists its folder's other files; 250 of them in one request was 11.3 MB."""
     sizes = []
 
-    async def engine(*, case_id, files, processing_metadata):
+    async def engine(*, case_id, files, processing_metadata, batch_id=None):
         sizes.append((len(files), len(json.dumps(processing_metadata))))
         return [{'id': str(uuid4())} for _ in files]
 
@@ -105,7 +109,7 @@ async def test_requests_stay_under_the_engine_field_limit(tmp_path, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_engine_down_still_fails_the_request_as_before(tmp_path, monkeypatch):
-    async def engine(*, case_id, files, processing_metadata):
+    async def engine(*, case_id, files, processing_metadata, batch_id=None):
         raise httpx.ConnectError('refused')
 
     async def no_jobs(case):
@@ -124,7 +128,7 @@ async def test_files_never_sent_are_not_marked_failed(tmp_path, monkeypatch):
     25 failed with the error, and the last 10, never tried, are back to unprocessed with the reason."""
     calls = []
 
-    async def engine(*, case_id, files, processing_metadata):
+    async def engine(*, case_id, files, processing_metadata, batch_id=None):
         calls.append(len(files))
         if len(calls) == 2:
             raise httpx.ConnectError('refused')

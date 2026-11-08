@@ -142,14 +142,21 @@ async def upload_file_paths_batch(
     case_id: str,
     files: List[tuple[str, Path, str]],
     processing_metadata: Optional[List[Dict[str, Any]]] = None,
+    batch_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Stream evidence files from disk to the engine without buffering them in RAM."""
+    """Stream evidence files from disk to the engine without buffering them in RAM.
+
+    With ``batch_id`` the files join that open engine batch and wait for :func:`close_batch`: one chunk of a press
+    too large for one request (services.evidence_chunking)."""
     client = _get_client()
     data = {}
     if processing_metadata is not None:
         import json
 
         data["processing_metadata"] = json.dumps(processing_metadata)
+    if batch_id:
+        data["batch_id"] = str(batch_id)
+        data["batch_open"] = "true"
 
     with ExitStack() as opened:
         multipart_files = [
@@ -166,6 +173,13 @@ async def upload_file_paths_batch(
         )
         response.raise_for_status()
         return response.json()
+
+
+async def close_batch(case_id: str, batch_id: str) -> Dict[str, Any]:
+    """Queue an open batch sent in chunks, as one batch. Idempotent."""
+    response = await _get_client().post(f"/cases/{case_id}/batches/{batch_id}/close")
+    response.raise_for_status()
+    return response.json()
 
 
 async def detect_phone_container(case_id: str, path: str) -> Dict[str, Any]:

@@ -11,7 +11,7 @@ from app.config import settings
 from app.dependencies import get_db
 from app.models.job import Job
 from app.schemas.job import JobResponse
-from app.services.batch_dispatch import dispatch_ingestion_batch
+from app.services.batch_dispatch import close_open_batch, dispatch_ingestion_batch, refuse_closed_or_foreign_batch
 from app.services.pipeline_run_state import transition_batch_dispatch
 
 router = APIRouter()
@@ -55,16 +55,37 @@ async def upload_files(
     folder_context: str | None = Form(None),
     sibling_files: str | None = Form(None),
     processing_metadata: str | None = Form(None),
+    batch_id: str | None = Form(None),
+    batch_open: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload one or more files for processing.
 
     All files in a single request are processed as a batch: extracted in
     parallel, then deduplicated together in a single unified pass.
+
+    A sender whose files do not fit one request (each form part is limited to
+    1 MiB) sends them in chunks under one ``batch_id`` with ``batch_open=true``:
+    the jobs wait undispatched until ``POST /cases/{case_id}/batches/{batch_id}/close``
+    (or the worker's idle-batch close), and the whole batch is then read in the
+    same single pass, so cross-file deduplication is not lost to chunking.
     """
     if not files:
         raise HTTPException(status_code=400, detail="At least one file is required")
-    batch_id = uuid.uuid4()
+    batch_id = batch_id if isinstance(batch_id, str) and batch_id.strip() else None  # a direct call passes Form(None)
+    batch_open = batch_open if isinstance(batch_open, str) else None
+    joining = bool(batch_id)
+    open_batch = str(batch_open or "").strip().lower() in {"1", "true", "yes"}
+    if open_batch and not joining:
+        raise HTTPException(status_code=400, detail="An open batch needs a batch_id")
+    if joining:
+        try:
+            batch_id = uuid.UUID(str(batch_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="batch_id must be a UUID") from exc
+        await refuse_closed_or_foreign_batch(db, case_id, batch_id)
+    else:
+        batch_id = uuid.uuid4()
     jobs: list[Job] = []
     created_files: list[Path] = []
     created_directories: list[Path] = []
@@ -178,8 +199,18 @@ async def upload_files(
             jobs.append(job)
         from app.services.processing_queues import batch_queue
         if any(job.job_type == 'audio_review' for job in jobs):
-            if len(jobs) != 1:
+            if len(jobs) != 1 or joining:
                 raise HTTPException(400, 'Audio preparation is dispatched per recording')
+        if joining:
+            # Held for the close: no dispatch record yet, so no worker reads part of the batch.
+            for job in jobs:
+                job.pipeline_state = {**(job.pipeline_state or {}), "batch_open": {"case_id": case_id}}
+            await db.commit()
+            for job in jobs:
+                await db.refresh(job)
+            if not open_batch:
+                await close_open_batch(db, case_id, batch_id, request.app.state.arq_pool)
+            return jobs
         jobs[0].pipeline_state = transition_batch_dispatch(
             jobs[0].pipeline_state,
             dispatch_state="ready",
@@ -215,3 +246,12 @@ async def upload_files(
     await dispatch_ingestion_batch(jobs[0], db, pool)
 
     return jobs
+
+
+@router.post("/cases/{case_id}/batches/{batch_id}/close")
+async def close_batch(case_id: str, batch_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
+    """Dispatch a batch sent in chunks. Idempotent: a closed batch answers as closed again."""
+    try:
+        return await close_open_batch(db, case_id, batch_id, request.app.state.arq_pool)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

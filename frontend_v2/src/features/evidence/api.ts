@@ -37,6 +37,9 @@ export interface EvidenceUploadOptions {
 
 export const evidenceAPI = {
   createProcessingPlan: transcriptsAPI.plan,
+  processingPlan: (planId: string) =>
+    fetchAPI<{ id: string; execution?: { progress?: { sent: number; total: number } } | null }>(
+      `/api/evidence/processing-plans/${planId}`, { read: true }),
   executeProcessingPlan: (planId: string, mode: import('./transcripts.api').AudioMode | undefined, requestKey: string) =>
     fetchAPI<{ job_ids: string[]; missing_on_disk?: number; message?: string }>(`/api/evidence/processing-plans/${planId}/executions`, {
       method: 'POST', body: { request_key: requestKey, audio_mode: mode },

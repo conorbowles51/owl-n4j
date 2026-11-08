@@ -30,6 +30,7 @@
 import { useCallback, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { randomRequestId } from "@/lib/browser-crypto"
 
 import { financialAPI } from "@/features/financial/api"
 import {
@@ -52,6 +53,8 @@ export interface ProcessRequest {
   reprocessCompleted?: boolean
   planId?: string
   requestKey?: string
+  /** Files the plan will send, for the press progress line. */
+  planFileCount?: number
   audioMode?: AudioMode
   fileIds: string[]
   profile?: string
@@ -261,7 +264,8 @@ export function useGuardedProcess(caseId: string) {
         if (!request.planId && evidenceAPI.createProcessingPlan) {
           try {
             const plan = await evidenceAPI.createProcessingPlan({ case_id: caseId, file_ids: request.fileIds, reprocess_completed: request.reprocessCompleted })
-            request = { ...request, planId: plan.id, requestKey: crypto.randomUUID() }
+            // crypto.randomUUID does not exist on the plain-http site; this throws nowhere.
+            request = { ...request, planId: plan.id, requestKey: randomRequestId(), planFileCount: plan.eligible_count }
             if (plan.unreviewed_audio_count > 0 && !request.audioMode) {
               setAudioChoice({ plan, request })
               return 'held'
@@ -272,7 +276,9 @@ export function useGuardedProcess(caseId: string) {
             if (!(error instanceof ApiError) || error.status !== 404) throw error
           }
         }
-        const result = await processMutation.mutateAsync({ request, requestCaseId: caseId })
+        const result = await withPressProgress(request, () =>
+          processMutation.mutateAsync({ request, requestCaseId: caseId }))
+        reportPressOutcome(result as PressResult)
         // A file with nothing on disk is not sent. When nothing went there is nothing to announce; when
         // some went, this stands beside whatever the screen says about the rest.
         if (result?.missing_on_disk) {
@@ -630,3 +636,62 @@ export function useGuardedProcess(caseId: string) {
  * prop is either present or it is not, and the scanner test can see which.
  */
 export type ProcessGate = ReturnType<typeof useGuardedProcess>
+
+
+type PressResult = {
+  message?: string
+  sent_count?: number
+  total_count?: number
+  request_count?: number
+  refused?: { name: string; reason: string | null }[]
+  not_sent?: { name: string }[]
+} | null | undefined
+
+const PRESS_TOAST = "process-press-progress"
+
+/**
+ * One progress line for a press: "N of M sent", read from the processing plan while the press is sent in pieces
+ * (backend services/evidence_chunking.py). A press of one file shows nothing extra.
+ */
+async function withPressProgress<T>(
+  request: { planId?: string; planFileCount?: number; fileIds: string[] },
+  send: () => Promise<T>
+): Promise<T> {
+  const total = request.planFileCount ?? request.fileIds.length
+  if (!request.planId || total < 2 || !evidenceAPI.processingPlan) return send()
+  const planId = request.planId
+  toast.loading(`Sending ${total} files for processing: 0 of ${total} sent`, { id: PRESS_TOAST })
+  let stopped = false
+  const timer = setInterval(() => {
+    void evidenceAPI.processingPlan!(planId).then((plan) => {
+      const progress = plan.execution?.progress
+      if (!stopped && progress)
+        toast.loading(`Sending ${progress.total} files for processing: ${progress.sent} of ${progress.total} sent`,
+          { id: PRESS_TOAST })
+    }).catch(() => undefined)
+  }, 2000)
+  try {
+    return await send()
+  } finally {
+    stopped = true
+    clearInterval(timer)
+    toast.dismiss(PRESS_TOAST)
+  }
+}
+
+/** Say what a press did when it was sent in pieces or a file was refused: how many were queued, and why not the rest. */
+function reportPressOutcome(result: PressResult) {
+  if (!result) return
+  const refused = result.refused ?? []
+  const notSent = result.not_sent ?? []
+  if (refused.length || notSent.length) {
+    const first = refused[0]
+    toast.warning(result.message ?? "Some files were not sent", {
+      description: first ? `${first.name}: ${first.reason ?? "refused"}` +
+        (refused.length > 1 ? ` (and ${refused.length - 1} more; each file shows its reason)` : "") : undefined,
+      duration: 15000,
+    })
+  } else if ((result.request_count ?? 1) > 1 && result.message) {
+    toast.success(result.message)
+  }
+}

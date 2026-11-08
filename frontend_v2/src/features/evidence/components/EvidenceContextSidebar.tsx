@@ -669,6 +669,11 @@ function DetailsPanelContent({
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground" data-testid="failure-reason">
                     {file.failure_reason || file.last_error}
                   </p>
+                  {file.failure_reason && file.last_error && file.failure_reason !== file.last_error && (
+                    <p className="mt-1 break-words text-[10px] leading-relaxed text-muted-foreground/80">
+                      Recorded error: {file.last_error}
+                    </p>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"

@@ -180,9 +180,15 @@ async def _send_files(
     recovered = False
     not_sent = 0
     chunks = _send_chunks(per_file_metadata)
+    # More than one request joins one open engine batch, closed once at the end, so the engine still reads and
+    # deduplicates the whole press in one pass (engine upload.py; the trap of splitting a press).
+    batch = {"id": str(uuid.uuid4()) if len(chunks) > 1 else None}
     for position, chunk in enumerate(chunks):
+        if position and len(chunks) > 1:
+            await run_in_threadpool(_record_progress, db, execution_plan_id,
+                                    len(accepted_files) + len(refused), len(valid_files))
         try:
-            done, refused_here = await _upload_isolating(case_id, file_tuples, per_file_metadata, chunk)
+            done, refused_here = await _upload_isolating(case_id, file_tuples, per_file_metadata, chunk, batch)
         except Exception as exc:
             # Not a refusal of particular files (the engine is unreachable, timed out or failed): the files of this
             # request may still have been accepted, so look for their jobs before calling anything failed.
@@ -210,6 +216,15 @@ async def _send_files(
         for index, reason in refused_here:
             await run_in_threadpool(_record_upload_failed, db, [valid_files[index]], reason)
 
+    if batch["id"] and accepted_files:
+        try:
+            await evidence_engine_client.close_batch(str(case_id), batch["id"])
+        except Exception:
+            # The engine closes an open batch 15 minutes after its last request (close_idle_open_batches).
+            logger.exception("Could not close engine batch %s; the engine closes it within 15 minutes", batch["id"])
+    if len(chunks) > 1:
+        await run_in_threadpool(_record_progress, db, execution_plan_id, len(valid_files), len(valid_files))
+
     if recovered:
         job_ids_out = await run_in_threadpool(_record_recovered_jobs, db, accepted_files, accepted_jobs)
         await reconcile_case_jobs(db, str(case_id))
@@ -234,6 +249,9 @@ async def _send_files(
         "skipped_count": skipped_processing,
         "missing_on_disk": missing_on_disk,
         "message": message,
+        "sent_count": len(accepted_files),
+        "total_count": len(valid_files),
+        "request_count": len(chunks),
         **({"refused": [{"file_id": str(ef.id), "name": ef.original_filename, "reason": reason}
                         for ef, reason in refused]} if refused else {}),
         **({"recovered_after_response_error": True} if recovered else {}),
@@ -282,14 +300,20 @@ def _refusal_reason(exc: Exception) -> str | None:
     return f"The processing service refused this file ({detail[:300]})"
 
 
-async def _upload_isolating(case_id, file_tuples, per_file_metadata, indexes):
+async def _upload_isolating(case_id, file_tuples, per_file_metadata, indexes, batch=None):
     """Send these files in one request. A refusal is split until each refused file is alone, so one bad file fails
-    by itself with the engine's reason and the others are processed. Returns ([(index, job)], [(index, reason)])."""
+    by itself with the engine's reason and the others are processed. Returns ([(index, job)], [(index, reason)]).
+
+    ``batch["id"]``, when set, is the open engine batch the request joins; a split sets it (the refused request
+    created nothing), so the halves are still one batch."""
+    batch = batch if batch is not None else {"id": None}
+    kwargs = {"batch_id": batch["id"]} if batch["id"] else {}
     try:
         jobs = await evidence_engine_client.upload_file_paths_batch(
             case_id=str(case_id),
             files=[file_tuples[i] for i in indexes],
             processing_metadata=[per_file_metadata[i] for i in indexes],
+            **kwargs,
         )
     except Exception as exc:
         reason = _refusal_reason(exc)
@@ -298,9 +322,10 @@ async def _upload_isolating(case_id, file_tuples, per_file_metadata, indexes):
         if len(indexes) == 1:
             logger.warning("Engine refused one file: %s", reason)
             return [], [(indexes[0], reason)]
+        batch["id"] = batch["id"] or str(uuid.uuid4())
         middle = len(indexes) // 2
-        left_done, left_refused = await _upload_isolating(case_id, file_tuples, per_file_metadata, indexes[:middle])
-        right_done, right_refused = await _upload_isolating(case_id, file_tuples, per_file_metadata, indexes[middle:])
+        left_done, left_refused = await _upload_isolating(case_id, file_tuples, per_file_metadata, indexes[:middle], batch)
+        right_done, right_refused = await _upload_isolating(case_id, file_tuples, per_file_metadata, indexes[middle:], batch)
         return left_done + right_done, left_refused + right_refused
     return list(zip(indexes, jobs)), []
 
@@ -611,6 +636,20 @@ def _record_not_sent(db: Session, files: list[EvidenceFile], prior: dict) -> Non
         ef.status = status if status != "processing" else "unprocessed"
         ef.last_error = error if status == "processed" else NOT_SENT  # a processed file keeps its reading
     db.commit()
+
+
+def _record_progress(db, execution_plan_id, sent: int, total: int) -> None:
+    """The press's one progress line ("N of M sent"), read by the screen from its processing plan."""
+    if not execution_plan_id or not isinstance(db, Session):
+        return
+    from postgres.models.transcript import EvidenceProcessingPlan
+    try:
+        plan = db.get(EvidenceProcessingPlan, uuid.UUID(str(execution_plan_id)))
+    except ValueError:
+        return
+    if plan is not None:
+        plan.execution = {**(plan.execution or {}), "progress": {"sent": sent, "total": total}}
+        db.commit()
 
 
 def _record_engine_jobs(db: Session, valid_files: list[EvidenceFile], jobs: list[dict[str, Any]]) -> list[str]:
