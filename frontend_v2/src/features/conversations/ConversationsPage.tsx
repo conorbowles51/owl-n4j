@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { ApiError } from "@/lib/api-client"
@@ -28,14 +28,11 @@ import { liveCollectClient, undoCollect, type CollectLink, type CollectResult, t
 import { MessageTranslation } from "@/features/phones/components/MessageTranslation"
 import { AcrossBadges, AcrossBadgesSource } from "@/features/phones/AcrossBadges"
 import { useAcrossBadges } from "@/features/phones/across-badges"
-import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
 import { FindInResults } from "@/features/phones/components/FindInResults"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
-import { ExportDialog } from "./ExportDialog"
 import { phoneSettingsQuery, phoneThreadsQuery } from "@/features/phones/phone-queries"
-import { SplitForReview } from "./SplitForReview"
 import { ThreadList } from "./ThreadList"
 import { ThreadReviewBar } from "./ThreadReviewBar"
 import type { ReadRow } from "./use-reading-position"
@@ -62,6 +59,12 @@ import { useUIStore } from "@/stores/ui.store"
 import { TimeStrip, type StripDay } from "@/features/phones/ui/TimeStrip"
 import { GoToDate } from "@/features/phones/components/GoToDate"
 import { useNotebookStore } from "@/features/notebook/notebook.store"
+
+// Opened by a press, so their code is not in the page's first-paint path (lx-convcost: 61 scripts vs 44 on the
+// old build). Each mounts only once its surface is asked for.
+const PhoneRecordPanel = lazy(() => import("@/features/phones/components/RecordPanel").then((m) => ({ default: m.PhoneRecordPanel })))
+const ExportDialog = lazy(() => import("./ExportDialog").then((m) => ({ default: m.ExportDialog })))
+const SplitForReview = lazy(() => import("./SplitForReview").then((m) => ({ default: m.SplitForReview })))
 
 /**
  * Conversations (03 section 6; 07 sections 5 and 6.1): the threads of the case's phones, or the people in them, on
@@ -568,7 +571,11 @@ export function ConversationsPage() {
             Split for review…
           </Button>
         )}
-        <SplitForReview caseId={caseId} filter={listFilter} scopeWords={chipWords ? `${scopeWords(scope)}, ${chipWords}` : scopeWords(scope)} open={splitting} onClose={() => setSplitting(false)} />
+        {splitting && (
+          <Suspense fallback={null}>
+            <SplitForReview caseId={caseId} filter={listFilter} scopeWords={chipWords ? `${scopeWords(scope)}, ${chipWords}` : scopeWords(scope)} open={splitting} onClose={() => setSplitting(false)} />
+          </Suspense>
+        )}
         {reviewNote && (
           <p role="status" className="text-sm">
             {reviewNote.text}{" "}
@@ -918,9 +925,17 @@ export function ConversationsPage() {
             )}
           </aside>
         )}
-        <PhoneRecordPanel caseId={caseId} recordUid={recordUid} zone={stream.index?.zone.name} onClose={() => setRecordUid(null)} />
+        {recordUid != null && (
+          <Suspense fallback={null}>
+            <PhoneRecordPanel caseId={caseId} recordUid={recordUid} zone={stream.index?.zone.name} onClose={() => setRecordUid(null)} />
+          </Suspense>
+        )}
       </div>
-      {streamFilter && exporting && <ExportDialog caseId={caseId} filter={streamFilter} words={filterWords} open={exporting} onOpenChange={setExporting} />}
+      {streamFilter && exporting && (
+        <Suspense fallback={null}>
+          <ExportDialog caseId={caseId} filter={streamFilter} words={filterWords} open={exporting} onOpenChange={setExporting} />
+        </Suspense>
+      )}
       <Dialog open={!!copyRow} onOpenChange={(v) => !v && (setCopyRow(null), notCopy.reset())}>
         <DialogContent>
           <DialogHeader>

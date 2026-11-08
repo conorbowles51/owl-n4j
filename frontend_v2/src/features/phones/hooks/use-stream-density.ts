@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useAfterFirstPaint } from "@/lib/after-first-paint"
 import { getReaderSettings, saveReaderSettings, type StreamDensity } from "../api"
 
 const KEY = ["phone-reader-settings"]
@@ -7,7 +8,8 @@ const KEY = ["phone-reader-settings"]
  * a save that fails says so and the list goes back to what is saved. */
 export function useStreamDensity() {
   const qc = useQueryClient()
-  const q = useQuery({ queryKey: KEY, queryFn: getReaderSettings, staleTime: 5 * 60_000, retry: false })
+  const painted = useAfterFirstPaint()
+  const q = useQuery({ queryKey: KEY, queryFn: getReaderSettings, staleTime: 5 * 60_000, retry: false, enabled: painted })
   const save = useMutation({
     mutationFn: saveReaderSettings,
     onMutate: (density: StreamDensity) => {

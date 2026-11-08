@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { JobTray } from "@/components/ui/job-tray"
 import { useTick } from "@/components/ui/progress-time"
+import { useAfterFirstPaint } from "@/lib/after-first-paint"
 import { JOB_STARTED_EVENT } from "@/lib/job-started"
 import { installKeymap } from "@/lib/keymap"
 import { getJobs, JOB_FRESH_MS, JOB_POLL_MS, jobsQueryKey, justFinished, trayJob } from "@/features/phones/job-list"
@@ -25,11 +26,13 @@ function HeaderJobs({ caseId, onList }: { caseId: string; onList: (jobs: number)
   const client = useQueryClient()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const painted = useAfterFirstPaint()
   const q = useQuery({
     queryKey: jobsQueryKey(caseId),
     queryFn: () => getJobs(caseId),
     staleTime: JOB_FRESH_MS,
     refetchOnWindowFocus: true,
+    enabled: painted, // the shell paints before the first jobs read; a job started in this tab invalidates below
     // one request per tab while something runs, none when idle and none from a hidden tab
     refetchInterval: (query) => (query.state.data?.active ? JOB_POLL_MS : false),
   })

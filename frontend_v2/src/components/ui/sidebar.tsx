@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState, type ReactNode } from "react"
 import { Link, useLocation, useParams } from "react-router-dom"
+import { useAfterFirstPaint } from "@/lib/after-first-paint"
 import { preloadRouteIntent } from "@/lib/route-preload"
 import { phonesQuery } from "@/features/phones/phones-query"
 import { HELP_PARAM, hideNewMarks, marksQuery, newMarksUntil } from "@/features/phones/marks"
@@ -309,7 +310,9 @@ export function AppSidebar() {
   const [renderedAt] = useState(() => Date.now())
   const markWindow = newMarksUntil(phones.data?.phones.map((p) => p.ingested_at) ?? [])
   const inWindow = hasPhones && renderedAt < markWindow
-  const marks = useQuery({ ...marksQuery, enabled: inWindow })
+  const painted = useAfterFirstPaint()
+  // deferred past the first paint only; the mark still arrives (late) on a first visit, which first-run tests cover
+  const marks = useQuery({ ...marksQuery, enabled: inWindow && painted })
   const showNew = inWindow && !!marks.data && !marks.data.marks.phones_new_hidden
   const hideNew = useMutation({ mutationFn: hideNewMarks, onSuccess: (data) => client.setQueryData(marksQuery.queryKey, data) })
 

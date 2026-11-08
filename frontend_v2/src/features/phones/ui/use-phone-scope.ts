@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useSearchParams } from "react-router-dom"
+import { useAfterFirstPaint } from "@/lib/after-first-paint"
 import { phonesQuery } from "../phones-query"
 import { peopleAPI } from "../people.api"
 import { EMPTY_SCOPE, SCOPE_PARAMS, paramsToScopeIds, recallScope, rememberScope, scopeToParams, scopeToSearch } from "./scope"
@@ -11,7 +12,8 @@ export const keyWords = (key: string) => key.replace(/^[a-z_]+:/, "")
 
 /** "Phones of <dossier>" (owner-linked) and "Phones where <person> appears" (07 4.5), from the case's identity links. */
 export function useScopePresets(caseId: string) {
-  const people = useQuery({ queryKey: ["phone-scope-presets", caseId], queryFn: () => peopleAPI.scopePresets(caseId), enabled: !!caseId, staleTime: 60_000 })
+  const painted = useAfterFirstPaint()
+  const people = useQuery({ queryKey: ["phone-scope-presets", caseId], queryFn: () => peopleAPI.scopePresets(caseId), enabled: !!caseId && painted, staleTime: 60_000 })
   const phones = useQuery({ ...phonesQuery(caseId), enabled: !!caseId })
   return useMemo(() => {
     const list = phones.data?.phones ?? []
