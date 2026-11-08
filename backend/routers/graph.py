@@ -5,6 +5,7 @@ Graph Router - endpoints for graph visualization data.
 from typing import Optional, List, Dict, Any, Literal
 from uuid import UUID
 import hashlib
+import logging
 import json
 import asyncio
 from services.manual_changes import records
@@ -1691,6 +1692,15 @@ def get_merge_job(
     except (CaseNotFound, CaseAccessDenied) as e:
         raise HTTPException(status_code=403, detail=str(e))
 
+    # A merge finishes even while the embedding service refuses; the merged record then waits for the gap backfill
+    # and is missing from meaning search and duplicate checks until it is filled in. The merge page says so.
+    search_pending = False
+    if job.status in ("completed", "partial") and job.merged_entity_key:
+        try:
+            search_pending = entity_vectors.is_pending(str(job.case_id), job.merged_entity_key)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Could not read the search mark of merged entity %s: %s", job.merged_entity_key, exc)
+            search_pending = None
     return {
         "id": str(job.id),
         "status": job.status,
@@ -1698,6 +1708,7 @@ def get_merge_job(
         "recycled_source_keys": job.recycled_source_keys,
         "source_entity_keys": job.source_entity_keys,
         "error_message": job.error_message,
+        "search_pending": search_pending,
     }
 
 

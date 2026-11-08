@@ -258,6 +258,18 @@ def pending_keys(case_id: str, *, session_factory: Callable | None = None) -> li
             "MATCH (n) WHERE n.case_id = $case_id AND n.vector_pending = true RETURN n.key AS key", case_id=case_id)]
 
 
+def is_pending(case_id: str, key: str, *, session_factory: Callable | None = None) -> bool:
+    """True while this entity waits for its first vector (a merge kept while embedding was refused): it is missing
+    from meaning search and duplicate checks until the gap backfill embeds it and removes the mark."""
+    if session_factory is None:
+        from services.neo4j.driver import driver
+        session_factory = driver.session
+    with session_factory() as session:
+        row = session.run("MATCH (n {key: $key}) WHERE n.case_id = $case_id AND n.vector_pending = true "
+                          "RETURN count(n) AS c", key=key, case_id=case_id).single()
+        return bool(row and row["c"])
+
+
 def clear_pending(case_id: str, keys: list[str], *, session_factory: Callable | None = None) -> None:
     if session_factory is None:
         from services.neo4j.driver import driver

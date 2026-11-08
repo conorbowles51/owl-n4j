@@ -49,3 +49,24 @@ it("keeps the dialog on screen with 25 entities: the body and the entity list sc
   expect(screen.getByTestId("merge-body").className).toContain("overflow-y-auto")
   expect(screen.getByTestId("merge-entities").className).toContain("overflow-y-auto")
 })
+
+const done = (searchPending: boolean | undefined) =>
+  render(
+    <MergeEntitiesDialog open onOpenChange={() => {}} entities={[node(1), node(2)]} caseId="case-1"
+      activeJob={{ engineJobId: "e1", mergeJobId: "m1", sourceEntityKeys: ["k1", "k2"], status: "completed",
+        progress: 100, message: "Merge complete!", searchPending }}
+      onStartTracking={() => {}} onClearJob={() => {}} />
+  )
+
+it("a merge finished while search was down says the merged record is not in search yet", () => {
+  done(true)
+  expect(screen.getAllByText("Merge complete!").length).toBeGreaterThan(0)
+  expect(screen.getByRole("note").textContent).toContain("not in search yet")
+  expect(screen.getByRole("note").textContent).toContain("duplicate checks may miss it")
+})
+
+it("a merge with its search record in place says nothing more", () => {
+  done(false)
+  expect(screen.getAllByText("Merge complete!").length).toBeGreaterThan(0)
+  expect(screen.queryByRole("note")).toBeNull()
+})

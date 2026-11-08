@@ -7,7 +7,7 @@ import { Progress } from "@/components/ui/progress"
 import type { GraphNode } from "@/types/graph.types"
 import { graphAPI } from "../api"
 import { MAX_MERGE_ENTITIES } from "../lib/merge-limit"
-import type { MergeTrackerJob } from "../hooks/use-merge-tracker"
+import { SEARCH_PENDING_NOTE, type MergeTrackerJob } from "../hooks/use-merge-tracker"
 import { GitMerge, AlertTriangle, Loader2, CheckCircle2, XCircle } from "lucide-react"
 
 /* ── Props ── */
@@ -230,6 +230,9 @@ export function MergeEntitiesDialog({
               <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <p className="text-xs text-emerald-700 dark:text-emerald-400">Merge complete!</p>
             </div>
+          )}
+          {(isComplete || isPartial) && activeJob?.searchPending && (
+            <p role="note" className="text-xs text-muted-foreground">{SEARCH_PENDING_NOTE}</p>
           )}
 
           {/* Partial success warning */}

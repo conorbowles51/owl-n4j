@@ -295,6 +295,7 @@ export const graphAPI = {
       recycled_source_keys: string[] | null
       source_entity_keys: string[]
       error_message: string | null
+      search_pending?: boolean | null
     }>(`/api/graph/merge-jobs/${encodeURIComponent(mergeJobId)}`),
 
   findSimilarEntities: (

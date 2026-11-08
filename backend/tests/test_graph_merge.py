@@ -242,6 +242,58 @@ class GraphMergeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(ctx.exception.status_code, 403)
 
+    async def test_get_merge_job_says_when_the_merged_record_is_not_searchable_yet(self):
+        # A merge kept while the embedding service refused: the merged record waits for the gap backfill.
+        job = SimpleNamespace(
+            id=uuid4(), case_id=uuid4(), status="completed", merged_entity_key="merged-1",
+            recycled_source_keys=["source-1", "source-2"], source_entity_keys=["source-1", "source-2"],
+            error_message=None,
+        )
+        with patch("routers.graph.check_case_access"), \
+                patch("routers.graph.entity_vectors.is_pending", return_value=True) as is_pending:
+            result = graph.get_merge_job(str(job.id), current_user=SimpleNamespace(id=uuid4()), db=_FakeDb(job=job))
+        is_pending.assert_called_once_with(str(job.case_id), "merged-1")
+        self.assertIs(result["search_pending"], True)
+        self.assertEqual(result["status"], "completed")
+
+        with patch("routers.graph.check_case_access"), \
+                patch("routers.graph.entity_vectors.is_pending", return_value=False):
+            result = graph.get_merge_job(str(job.id), current_user=SimpleNamespace(id=uuid4()), db=_FakeDb(job=job))
+        self.assertIs(result["search_pending"], False)
+
+    async def test_get_merge_job_search_mark_unknown_when_the_graph_cannot_be_read(self):
+        job = SimpleNamespace(
+            id=uuid4(), case_id=uuid4(), status="completed", merged_entity_key="merged-1",
+            recycled_source_keys=[], source_entity_keys=["a", "b"], error_message=None,
+        )
+        with patch("routers.graph.check_case_access"), \
+                patch("routers.graph.entity_vectors.is_pending", side_effect=RuntimeError("graph down")):
+            result = graph.get_merge_job(str(job.id), current_user=SimpleNamespace(id=uuid4()), db=_FakeDb(job=job))
+        self.assertIsNone(result["search_pending"])
+        self.assertEqual(result["status"], "completed")
+
+    def test_is_pending_reads_the_engine_mark_on_the_merged_record(self):
+        from services import entity_vectors
+        calls = []
+
+        class _Row(dict):
+            pass
+
+        class _Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def run(self, query, **params):
+                calls.append((query, params))
+                return SimpleNamespace(single=lambda: _Row(c=1))
+
+        self.assertTrue(entity_vectors.is_pending("case-1", "merged-1", session_factory=_Session))
+        self.assertIn("vector_pending = true", calls[0][0])
+        self.assertEqual(calls[0][1], {"key": "merged-1", "case_id": "case-1"})
+
 
 if __name__ == "__main__":
     unittest.main()

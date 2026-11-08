@@ -11,7 +11,12 @@ export interface MergeTrackerJob {
   progress: number
   message: string
   error?: string
+  /** The merged record is not in meaning search or duplicate checks yet; the backfill fills it in. */
+  searchPending?: boolean
 }
+
+export const SEARCH_PENDING_NOTE =
+  "The merged record is not in search yet. It is added automatically when the search service is back; until then, duplicate checks may miss it."
 
 interface UseMergeTrackerOptions {
   onCompleted?: () => void
@@ -44,15 +49,17 @@ export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptio
   }, [])
 
   const handleMergeJobUpdate = useCallback(
-    (data: { status: string; error_message?: string | null }, sourceKeys: string[]) => {
+    (data: { status: string; error_message?: string | null; search_pending?: boolean | null }, sourceKeys: string[]) => {
+      const searchPending = data.search_pending === true
       if (data.status === "completed") {
         stopTracking()
         setActiveJob((prev) =>
-          prev ? { ...prev, status: "completed", progress: 100, message: "Merge complete!" } : null
+          prev ? { ...prev, status: "completed", progress: 100, message: "Merge complete!", searchPending } : null
         )
         callbacksRef.current.onCompleted?.()
         if (!dialogOpenRef.current) {
-          toast.success("Merge complete")
+          if (searchPending) toast.success("Merge complete", { description: SEARCH_PENDING_NOTE })
+          else toast.success("Merge complete")
         }
       } else if (data.status === "partial") {
         stopTracking()
@@ -68,6 +75,7 @@ export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptio
                 progress: 100,
                 message: "Merge completed with warnings",
                 error: data.error_message || "Some source entities could not be removed.",
+                searchPending,
               }
             : null
         )
