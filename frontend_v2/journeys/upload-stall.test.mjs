@@ -7,11 +7,16 @@ import { setTimeout as wait } from "node:timers/promises"
 import { test } from "node:test"
 import { releaseRunning, stalled } from "./upload-stall.mjs"
 
-test("only a sending page past the limit is stalled", () => {
+test("a page quiet past the limit is stalled in every stage, not only sending", () => {
   const now = 100 * 60_000
   assert.equal(stalled("sending", now - 91 * 60_000, 90, now), true)
   assert.equal(stalled("sending", now - 89 * 60_000, 90, now), false)
-  assert.equal(stalled("hashing", now - 91 * 60_000, 90, now), false)
+  // P03, 6-8 Nov: the server refused the upload group, the page stayed in the hashing phase saying nothing, and the
+  // old sending-only rule let three tries sit for 24 h each
+  assert.equal(stalled("hashing", now - 91 * 60_000, 90, now), true)
+  assert.equal(stalled("hashing", now - 89 * 60_000, 90, now), false)
+  // before any stage is seen the page is still being handed the selection, which has no moving line to watch
+  assert.equal(stalled(undefined, now - 91 * 60_000, 90, now), false)
 })
 
 test("a held release lock reads as a release running, a free one does not", async () => {

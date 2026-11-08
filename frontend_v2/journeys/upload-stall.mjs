@@ -9,5 +9,8 @@ export function releaseRunning(lock = RELEASE_LOCK) {
 }
 
 export function stalled(stage, movedAt, minutes, now = Date.now()) {
-  return stage === "sending" && now - movedAt > minutes * 60_000
+  // any stage once the page is working: every phase prints moving counts, so a line unchanged for the limit is a
+  // dead page or a refusal the page did not voice (P03, 6-8 Nov: a refused upload left the page quiet in the
+  // hashing phase for 24 h, three tries in a row, because this rule read "sending" only)
+  return Boolean(stage) && now - movedAt > minutes * 60_000
 }

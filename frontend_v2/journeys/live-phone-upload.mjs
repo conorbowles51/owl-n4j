@@ -132,10 +132,12 @@ try {
       ? await card.locator('[aria-live="polite"]').first().textContent({ timeout: 1000 }).catch(() => "")
       : await page.getByText(watch[0][1]).or(page.getByText(watch[1][1])).first().textContent({ timeout: 1000 }).catch(() => "")
     if (line && line !== moved.line) moved = { line, at: Date.now() }
-    if (seen.at(-1)?.stage === "sending" && Date.now() - moved.at > stallMinutes * 60_000 && releaseRunning())
+    if (seen.at(-1)?.stage && Date.now() - moved.at > stallMinutes * 60_000 && releaseRunning())
       moved.at = Date.now()
     if (stalled(seen.at(-1)?.stage, moved.at, stallMinutes)) {
-      failed = `no change on the page for ${stallMinutes} min while sending`
+      const quietAlert = await page.getByRole("alert").first().textContent({ timeout: 500 }).catch(() => "")
+      failed = `no change on the page for ${stallMinutes} min during ${seen.at(-1)?.stage}` +
+        (quietAlert ? `; the page says: ${quietAlert.replace(name, "[report]").slice(0, 200)}` : "")
       console.log(`${secs()} s ${failed}`)
       break
     }
@@ -150,7 +152,7 @@ try {
     // an error on the page ends the watch with its words (the run would otherwise wait out --minutes)
     const alert = (await page.getByRole("alert").first().textContent({ timeout: 500 }).catch(() => "")) ||
       (await page.getByText(/so it was not uploaded|so nothing was uploaded/).first().textContent({ timeout: 500 }).catch(() => ""))
-    if (alert && /could not|failed|error|refused|not uploaded|nothing was uploaded/i.test(alert)) {
+    if (alert && /could not|failed|error|refused|not uploaded|nothing was uploaded|at most|too many|too large/i.test(alert)) {
       failed = `page error: ${alert.replace(name, "[report]").slice(0, 300)}`
       console.log(`${secs()} s ${failed}`)
       await snap("page-error", page.getByRole("alert").first())
