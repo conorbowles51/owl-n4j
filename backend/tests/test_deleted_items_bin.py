@@ -258,7 +258,8 @@ def test_the_30_day_purge_takes_kept_copies_and_folders_only_when_due(world):
     db, case_id = world["db"], world["case"].id
     out = _delete_folder(world, world["owner"])
     now = datetime.now(timezone.utc)
-    with _Fakes():
+    # Copies deleted before Deleted items were switched on are never purged; this one counts as after.
+    with _Fakes(), patch.object(deleted_items, "ROW_PURGE_FROM", now - timedelta(days=365)):
         assert deleted_items.purge_due_rows(db, now - timedelta(days=30), engine_delete=lambda *a: None) == []
         record = db.get(RemovedRecord, uuid.UUID(out["deleted_item_id"]))
         record.removed_at = now - timedelta(days=31)
@@ -271,27 +272,37 @@ def test_the_30_day_purge_takes_kept_copies_and_folders_only_when_due(world):
 
 
 def test_deleted_case_folders_dry_run_then_apply_keeps_referenced_and_live_ones(tmp_path):
-    """Postgres-only SQL (information_schema, ~): the folder purge's selection logic is tested with the reference
-    lookup faked; the refusal on a missing or empty root needs no database."""
+    """Postgres-only SQL (information_schema, ~): the folder purge's selection is tested with the reference lookup
+    faked. History rows do not hold a folder; the engine's own job rows are removed through the engine first; any
+    other row keeps it. The refusal on a missing or empty root needs no database."""
     from services import casebin_purge
     root = tmp_path / "evidence-data"
     root.mkdir()
-    live, gone, referenced = (str(uuid.uuid4()) for _ in range(3))
-    for name in (live, gone, referenced, "not-a-case"):
+    live, gone, engine_held, referenced = (str(uuid.uuid4()) for _ in range(4))
+    for name in (live, gone, engine_held, referenced, "not-a-case"):
         (root / name).mkdir()
         (root / name / "f.bin").write_bytes(b"12345")
     db = MagicMock()
     db.execute.return_value.scalars.return_value = [live]
-    with patch.object(casebin_purge, "_references",
-                      return_value={gone: [], referenced: ["evidence_files.stored_path"]}), \
+    before = {gone: ["activity_events.case_id"], engine_held: ["jobs.case_id", "jobs.file_path"],
+              referenced: ["evidence_files.stored_path"]}
+    after = {gone: ["activity_events.case_id"], engine_held: [], referenced: ["evidence_files.stored_path"]}
+    removed_jobs = []
+    with patch.object(casebin_purge, "_references", side_effect=[before, before, after]), \
+            patch.object(casebin_purge, "_engine_jobs", return_value=[("job-1", True)]), \
             patch("services.activity_trail.record") as audit:
         dry = casebin_purge.purge_deleted_case_folders(db, [root])
-        assert [e["case_id"] for e in dry["remove"]] == [gone] and (root / gone).exists()
+        assert sorted(e["case_id"] for e in dry["remove"]) == sorted([gone, engine_held])
+        assert [e["engine_jobs"] for e in dry["remove"] if e["case_id"] == engine_held] == [1]
         assert [e["case_id"] for e in dry["kept"]] == [referenced]
-        done = casebin_purge.purge_deleted_case_folders(db, [root], apply=True, user_email="jobs@x.test")
-    assert not (root / gone).exists() and (root / live).exists() and (root / referenced).exists()
-    assert (root / "not-a-case").exists()
-    assert (done["files_removed"], done["bytes_freed"]) == (1, 5)
+        assert all((root / n).exists() for n in (gone, engine_held, referenced))
+        done = casebin_purge.purge_deleted_case_folders(
+            db, [root], apply=True, user_email="jobs@x.test",
+            engine_remove=lambda case_id, job_id, has_file: removed_jobs.append((case_id, job_id, has_file)))
+    assert removed_jobs == [(engine_held, "job-1", True)]  # only the case nothing else holds
+    assert not (root / gone).exists() and not (root / engine_held).exists()
+    assert (root / live).exists() and (root / referenced).exists() and (root / "not-a-case").exists()
+    assert (done["files_removed"], done["bytes_freed"], done["engine_jobs_removed"]) == (2, 10, 1)
     assert audit.call_args.args[0] == "deleted_case_folders_purged"
     empty = tmp_path / "unmounted"
     empty.mkdir()
@@ -299,3 +310,58 @@ def test_deleted_case_folders_dry_run_then_apply_keeps_referenced_and_live_ones(
         casebin_purge.purge_deleted_case_folders(db, [empty])
     with pytest.raises(RuntimeError, match="missing or empty"):
         casebin_purge.purge_deleted_case_folders(db, [tmp_path / "absent"])
+
+
+# --------------------------------------------------------------------------------------------- review fixes
+
+
+def test_a_file_restored_then_deleted_on_its_own_is_not_taken_by_its_old_folder(world):
+    from services import deleted_items, evidence_casebin
+    db, case_id, owner = world["db"], world["case"].id, world["owner"]
+    out = _delete_folder(world, owner)
+    a = world["files"]["a.bin"].id
+    with _Fakes():
+        evidence_casebin.restore_file(db, case_id, str(a), owner)
+        evidence_casebin.delete_file(db, db.get(EvidenceFile, a), owner)
+        listed = deleted_items.list_items(db, case_id, owner)["items"]
+        assert [i["id"] for i in listed if i["kind"] == "evidence_file"] == [str(a)]  # its own item
+        result = deleted_items.purge(db, case_id, "evidence_folder", out["deleted_item_id"], owner,
+                                     engine_delete=lambda *x: None)
+    assert result["counts"]["rows_removed"] == 2  # b.bin and shared.bin only
+    assert world["paths"]["a.bin"].exists()
+    assert [i["id"] for i in deleted_items.list_items(db, case_id, owner)["items"]] == [str(a)]
+
+
+def test_kept_copies_from_before_the_switch_are_never_purged(world):
+    from services import deleted_items, removed_records
+    db, case_id = world["db"], world["case"].id
+    old = removed_records.keep(db, kind="dossier_link", case_id=case_id, subject_id="x", label="old link",
+                               rows=[], user=world["owner"])
+    old.removed_at = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    db.commit()
+    assert deleted_items.purge_due_rows(db, datetime.now(timezone.utc) - timedelta(days=30)) == []
+    [item] = deleted_items.list_items(db, case_id, world["owner"])["items"]
+    assert item["label"] == "old link" and item["days_left"] is None  # restorable, no purge date
+
+
+def test_graph_recycle_bin_entities_are_listed_and_a_snapshot_is_private(world):
+    from postgres.models.graph_recycle_bin import GraphRecycleBinItem
+    from services import deleted_items, removed_records
+    db, case_id = world["db"], world["case"].id
+    now = datetime.now(timezone.utc)
+    db.add(GraphRecycleBinItem(case_id=case_id, recycle_key="rb-1", original_key="p-1", original_name="J. Doe",
+                               reason="file_delete:a.bin", deleted_at=now, status="active", relationship_count=2))
+    db.add(GraphRecycleBinItem(case_id=case_id, recycle_key="rb-2", original_key="p-2", original_name="stuck",
+                               reason="x", deleted_at=now, status="pending_delete", relationship_count=0))
+    removed_records.keep(db, kind="snapshot", case_id=case_id, subject_id="s1", label="My snapshot", rows=[],
+                         user=world["editor"])
+    record = db.query(RemovedRecord).filter(RemovedRecord.kind == "snapshot").one()
+    record.data = {"rows": [{"table": "snapshots", "values": {"owner": "editor@x.test"}}]}
+    db.commit()
+    owner_sees = {(i["kind"], i["label"]) for i in deleted_items.list_items(db, case_id, world["owner"])["items"]}
+    assert owner_sees == {("graph_entity", "J. Doe")}
+    editor_sees = {(i["kind"], i["label"]) for i in deleted_items.list_items(db, case_id, world["editor"])["items"]}
+    assert ("snapshot", "My snapshot") in editor_sees
+    with pytest.raises(deleted_items.DeletedItemError) as refused:
+        deleted_items.purge(db, case_id, "snapshot", str(record.id), world["owner"])
+    assert refused.value.status_code == 403

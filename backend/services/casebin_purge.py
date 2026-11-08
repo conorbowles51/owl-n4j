@@ -146,9 +146,27 @@ def purge_file(db, file_id, *, engine_delete=None, graph_session=None, vector_db
     return details
 
 
+def _engine_request(method: str, path: str, *, missing_ok: bool = False) -> int:
+    """One call to the evidence engine on a client of its own. The purge runs outside the request event loop
+    (asyncio.run in a worker thread or a script, once per file), and the app's shared client belongs to the loop that
+    first used it, so it is not reused here."""
+    import httpx
+    from config import EVIDENCE_ENGINE_API_KEY, EVIDENCE_ENGINE_TIMEOUT, EVIDENCE_ENGINE_URL
+
+    async def call():
+        headers = {"X-Evidence-Engine-Key": EVIDENCE_ENGINE_API_KEY} if EVIDENCE_ENGINE_API_KEY else None
+        async with httpx.AsyncClient(base_url=EVIDENCE_ENGINE_URL, headers=headers,
+                                     timeout=httpx.Timeout(EVIDENCE_ENGINE_TIMEOUT, connect=10.0)) as client:
+            response = await client.request(method, path)
+            if missing_ok and response.status_code == 404:
+                return 404
+            response.raise_for_status()
+            return response.status_code
+    return asyncio.run(call())
+
+
 def _engine_delete(case_id, job_id):
-    from services import evidence_engine_client
-    asyncio.run(evidence_engine_client.delete_file(case_id, job_id))
+    _engine_request("DELETE", f"/cases/{case_id}/files/{job_id}")
 
 
 async def run_purge_forever():
@@ -218,18 +236,48 @@ def _references(db, ids: list[str]) -> dict[str, list[str]]:
     return found
 
 
-def purge_deleted_case_folders(db, roots, *, apply: bool = False, user_email: str | None = None) -> dict:
+# Tables that record what happened (audit trails, request timings): they name a case id as history and use no file,
+# so they keep their rows and do not hold a deleted case's folder.
+HISTORY_TABLES = frozenset({"activity_events", "financial_audit_events", "manual_changes", "system_logs",
+                            "request_speed_hourly", "request_speed_slow", "request_speed_pages"})
+# The evidence engine's job rows of a deleted case are removed through the engine's own delete (its file and its
+# row; evidence_engine_client.delete_file / delete_job), the call purge_file uses for one file.
+ENGINE_TABLE = "jobs"
+
+
+def _blocking(refs: list[str]) -> list[str]:
+    return sorted({r for r in refs if r.split(".")[0] not in HISTORY_TABLES})
+
+
+def _engine_jobs(db, case_id: str) -> list[tuple[str, bool]]:
+    from sqlalchemy import text
+    return [(str(i), p is not None) for i, p in db.execute(
+        text("SELECT id, file_path FROM jobs WHERE case_id::text = :c ORDER BY id"), {"c": case_id}).all()]
+
+
+def _engine_remove(case_id: str, job_id: str, has_file: bool):
+    """The engine's own delete: its file and job row (or the row alone when it has no file). Already gone is fine."""
+    if has_file:
+        _engine_request("DELETE", f"/cases/{case_id}/files/{job_id}", missing_ok=True)
+    else:
+        _engine_request("DELETE", f"/jobs/{job_id}", missing_ok=True)
+
+
+def purge_deleted_case_folders(db, roots, *, apply: bool = False, user_email: str | None = None,
+                               engine_remove=None) -> dict:
     """The folders left on disk by cases whose rows are gone (deleted before Deleted items existed).
 
     Only a folder named as a case id, directly under one of ``roots``, with no row in ``cases`` (a case waiting in
-    Deleted items has its row and is kept), and no row anywhere in the database that names that case id or points a
-    stored path inside it. A root that is missing or empty is refused (an unmounted disk). Dry run unless ``apply``;
-    returns what is (or was) removed, with file counts and bytes, and what is kept and why."""
+    Deleted items has its row and is kept). Every row in the database that names the case id or points a path inside
+    its folder is counted: history rows (HISTORY_TABLES) stay and do not hold it; the evidence engine's own job rows
+    of that case are removed first through the engine's delete; any other row keeps the folder (listed with why). A
+    root that is missing or empty is refused (an unmounted disk). Dry run unless ``apply``; returns what is (or was)
+    removed, with file counts and bytes, and what is kept and why."""
     import re
     import shutil
     from pathlib import Path
     from sqlalchemy import text
-    out = dict(applied=apply, roots=[], remove=[], kept=[], files_removed=0, bytes_freed=0)
+    out = dict(applied=apply, roots=[], remove=[], kept=[], engine_jobs_removed=0, files_removed=0, bytes_freed=0)
     candidates = []
     for root in roots:
         root = Path(root)
@@ -243,14 +291,30 @@ def purge_deleted_case_folders(db, roots, *, apply: bool = False, user_email: st
     live = set(db.execute(text("SELECT id::text FROM cases WHERE id::text = ANY(:ids)"), {"ids": ids}).scalars())
     orphan_ids = [i for i in ids if i not in live]
     refs = _references(db, orphan_ids)
+    engine_jobs = {i: (_engine_jobs(db, i) if any(r.startswith(ENGINE_TABLE + ".") for r in refs.get(i, [])) else [])
+                   for i in orphan_ids}
     db.rollback()
+    held = {i: [r for r in _blocking(refs.get(i, [])) if not r.startswith(ENGINE_TABLE + ".")] for i in orphan_ids}
+    if apply:
+        for case_id in orphan_ids:
+            if held[case_id]:
+                continue
+            for job_id, has_file in engine_jobs[case_id]:
+                (engine_remove or _engine_remove)(case_id, job_id, has_file)
+                out["engine_jobs_removed"] += 1
+        refs = _references(db, orphan_ids)  # read again: what the engine removal left
+        db.rollback()
+        held = {i: _blocking(refs.get(i, [])) for i in orphan_ids}
     for folder in candidates:
         if folder.name in live:
             continue
         files, size = _dir_size(folder)
-        entry = dict(path=str(folder), case_id=folder.name, files=files, bytes=size)
-        if refs.get(folder.name):
-            out["kept"].append(dict(entry, why="still referenced by " + ", ".join(sorted(set(refs[folder.name])))))
+        entry = dict(path=str(folder), case_id=folder.name, files=files, bytes=size,
+                     engine_jobs=len(engine_jobs.get(folder.name) or []),
+                     history_rows_kept_in=sorted({r.split(".")[0] for r in refs.get(folder.name, [])
+                                                  if r.split(".")[0] in HISTORY_TABLES}))
+        if held.get(folder.name):
+            out["kept"].append(dict(entry, why="still referenced by " + ", ".join(held[folder.name])))
             continue
         out["remove"].append(entry)
     if apply:
@@ -258,14 +322,16 @@ def purge_deleted_case_folders(db, roots, *, apply: bool = False, user_email: st
             folder = Path(entry["path"])
             if str(folder.parent) not in out["roots"]:
                 raise RuntimeError(f"Refused: {folder} is not directly under a named root")
+            files, size = _dir_size(folder)  # what is left after the engine removed its own files
             shutil.rmtree(folder)
-            out["files_removed"] += entry["files"]
-            out["bytes_freed"] += entry["bytes"]
+            out["files_removed"] += files
+            out["bytes_freed"] += size
         from services import activity_trail
         activity_trail.record("deleted_case_folders_purged", db=db, system=True, details=dict(
             by=user_email, roots=out["roots"], folders=[dict(case_id=e["case_id"], path=e["path"], files=e["files"],
                                                              bytes=e["bytes"]) for e in out["remove"]],
-            kept=out["kept"], files_removed=out["files_removed"], bytes_freed=out["bytes_freed"]))
+            kept=out["kept"], engine_jobs_removed=out["engine_jobs_removed"], files_removed=out["files_removed"],
+            bytes_freed=out["bytes_freed"]))
         db.commit()
     return out
 

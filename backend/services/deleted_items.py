@@ -41,8 +41,9 @@ KIND_LABELS = {
     "dossier_evidence_link": "Dossier evidence link", "entry_link": "Casework link", "evidence_pin": "Pinned evidence",
     "case_deadline": "Deadline", "chat": "Chat", "snapshot": "Snapshot", "graph_entity": "Graph entity",
 }
-# Soft-deleted rows of these kinds were kept forever before Deleted items were switched on; only rows deleted from
-# this moment on are purged 30 days later (the older ones stay restorable, as they were). Reverse: lower this date.
+# Soft-deleted rows (entries, tasks, timeline views) and kept copies (removed_records) were kept forever before
+# Deleted items were switched on; only those deleted from this moment on are purged 30 days later (the older ones
+# stay restorable, as they were). Reverse: lower this date.
 ROW_PURGE_FROM = datetime(2026, 11, 8, tzinfo=timezone.utc)
 
 
@@ -133,15 +134,16 @@ def list_items(db: Session, case_id, user) -> dict[str, Any]:
                                files=len(held), size=sum(f["size"] for f in held),
                                detail=f"{len(held):,} files in {folders:,} folder{'s' if folders != 1 else ''}"))
             continue
-        if r.kind == "chat":
-            owner = ((r.data or {}).get("rows") or [{}])[0].get("values", {}).get("owner_user_id")
-            if not (admin or str(owner) == str(user.id)):
-                continue  # a chat is private to the person whose chat it is
-            items.append(_item("chat", r.id, r.label, r.removed_at, who, can_restore=True,
-                               detail=f"{len(r.data.get('rows') or []) - 1} messages"))
+        if r.kind in ("chat", "snapshot"):
+            if not _private_to(r, user):
+                continue  # private to the person whose chat or snapshot it is
+            detail = (f"{len(r.data.get('rows') or []) - 1} messages" if r.kind == "chat" else None)
+            items.append(_item(r.kind, r.id, r.label, r.removed_at, who, can_restore=True, detail=detail,
+                               purge=_aware(r.removed_at) >= ROW_PURGE_FROM))
             continue
         items.append(_item(r.kind, r.id, r.label, r.removed_at, who, can_restore=manage,
-                           detail=f"{len((r.data or {}).get('rows') or []):,} kept rows"))
+                           detail=f"{len((r.data or {}).get('rows') or []):,} kept rows",
+                           purge=_aware(r.removed_at) >= ROW_PURGE_FROM))
     entries = list(db.scalars(select(WorkspaceEntry).where(WorkspaceEntry.case_id == case_uuid,
                                                          WorkspaceEntry.deleted_at.is_not(None))))
     tasks = list(db.scalars(select(CaseTask).where(CaseTask.case_id == case_uuid, CaseTask.deleted_at.is_not(None))))
@@ -160,7 +162,7 @@ def list_items(db: Session, case_id, user) -> dict[str, Any]:
                            dict(id=None, name=v.owner_name, email=None) if v.owner_name else None,
                            can_restore=manage, purge=_aware(v.deleted_at) >= ROW_PURGE_FROM))
     for g in db.scalars(select(GraphRecycleBinItem).where(GraphRecycleBinItem.case_id == case_uuid,
-                                                         GraphRecycleBinItem.status == "pending_delete")):
+                                                         GraphRecycleBinItem.status == "active")):
         items.append(_item("graph_entity", g.recycle_key, g.original_name or g.original_key, g.deleted_at,
                            dict(id=None, name=g.deleted_by, email=g.deleted_by) if g.deleted_by else None,
                            can_restore=manage, purge=False,
@@ -187,11 +189,10 @@ def _record(db, case_uuid, item_id, kinds):
 
 
 def _allowed(db, case_uuid, user, kind, record=None):
-    if kind == "chat":
-        owner = ((record.data or {}).get("rows") or [{}])[0].get("values", {}).get("owner_user_id")
-        if _is_admin(user) or str(owner) == str(user.id):
+    if kind in ("chat", "snapshot"):
+        if _private_to(record, user):
             return
-        raise DeletedItemError("Only the person whose chat it is, or an admin, can restore or remove it.", 403)
+        raise DeletedItemError(f"Only the person whose {kind} it is, or an admin, can restore or remove it.", 403)
     if not can_manage(db, case_uuid, user):
         raise DeletedItemError("Only the case owner or an admin can restore or remove deleted items.", 403)
 
@@ -210,6 +211,36 @@ def _row(db, kind, case_uuid, item_id):
     if row.deleted_at is None:
         raise DeletedItemError("This item is not in Deleted items.", 409)
     return row
+
+
+def _folder_files(db, record) -> list[str]:
+    """The files still waiting as part of this folder item: not restored on their own since, not deleted again on
+    their own (that is an item of its own with its own 30 days), not purged."""
+    from postgres.models.evidence import EvidenceFile
+    ids = [uuid.UUID(i) for i in (record.data or {}).get("file_ids") or []]
+    if not ids:
+        return []
+    with soft_delete.showing_deleted(db):
+        rows = db.query(EvidenceFile.id, EvidenceFile.deleted_at, EvidenceFile.deleted_state).filter(
+            EvidenceFile.id.in_(ids)).all()
+    return sorted(str(i) for i, at, state in rows
+                  if at is not None and (state or {}).get("folder_item_id") == str(record.id))
+
+
+def _owner_of(record) -> tuple[str | None, str | None]:
+    """(owner user id, owner username) of a private kept copy: a chat or a saved snapshot."""
+    values = ((record.data or {}).get("rows") or [{}])[0].get("values", {})
+    return values.get("owner_user_id"), values.get("owner")
+
+
+def _private_to(record, user) -> bool:
+    """A chat or a snapshot is seen, restored and removed only by its owner (or an admin)."""
+    if _is_admin(user):
+        return True
+    owner_id, owner_name = _owner_of(record)
+    if record.kind == "chat":
+        return str(owner_id) == str(user.id)
+    return owner_name is not None and owner_name in {getattr(user, "email", None), getattr(user, "name", None)}
 
 
 def restore(db: Session, case_id, kind: str, item_id: str, user) -> dict[str, Any]:
@@ -233,7 +264,7 @@ def restore(db: Session, case_id, kind: str, item_id: str, user) -> dict[str, An
             kind=kind, id=str(record.id), label=record.label, folders=len(record.data.get("rows") or [])))
         db.commit()
         restored = failed = 0
-        for file_id in (record.data or {}).get("file_ids") or []:
+        for file_id in _folder_files(db, record):
             try:
                 evidence_casebin.restore_file(db, case_uuid, file_id, user)
                 restored += 1
@@ -252,6 +283,11 @@ def restore(db: Session, case_id, kind: str, item_id: str, user) -> dict[str, An
         except removed_records.RemovedRecordError as exc:
             db.rollback()
             raise DeletedItemError(str(exc), exc.status_code) from exc
+        if kind == "case_deadline" and record.data.get("linked_task_ids"):
+            from postgres.models.work import CaseTask
+            db.query(CaseTask).filter(CaseTask.id.in_([uuid.UUID(t) for t in record.data["linked_task_ids"]]),
+                                      CaseTask.case_id == case_uuid, CaseTask.deadline_id.is_(None)).update(
+                {CaseTask.deadline_id: uuid.UUID(record.subject_id)}, synchronize_session=False)
         activity_trail.record("deleted_item_restored", db=db, user=user, case_id=case_uuid, details=dict(
             kind=kind, id=str(record.id), label=record.label, rows=len(record.data.get("rows") or [])))
         db.commit()
@@ -274,7 +310,11 @@ def restore(db: Session, case_id, kind: str, item_id: str, user) -> dict[str, An
     if kind == "graph_entity":
         _allowed(db, case_uuid, user, kind)
         from services.neo4j_service import neo4j_service
-        result = neo4j_service.restore_recycled_entity(item_id, str(case_uuid), db=db, restored_by=user.email)
+        try:
+            result = neo4j_service.restore_recycled_entity(item_id, str(case_uuid), db=db, restored_by=user.email)
+        except ValueError as exc:
+            db.rollback()
+            raise DeletedItemError(str(exc), 409 if "already exists" in str(exc) else 404) from exc
         restored_key = (result.get("restored_entity") or {}).get("key")
         if restored_key:  # as the graph recycle-bin route does (routers/graph.py restore_recycled_entity)
             from services.dossier_service import restore_dossier_after_entity_restore
@@ -334,11 +374,11 @@ def purge(db: Session, case_id, kind: str, item_id: str, user, *, system: bool =
             _allowed(db, case_uuid, user, kind)
         label = record.label
         from postgres.models.evidence import EvidenceFile
-        for file_id in (record.data or {}).get("file_ids") or []:
+        for file_id in _folder_files(db, record):
             with soft_delete.showing_deleted(db):
                 row = db.get(EvidenceFile, uuid.UUID(file_id))
             if row is None or row.deleted_at is None:
-                continue  # restored on its own since, or already purged
+                continue
             try:
                 _add(counts, _file_counts(purge_file(db, row.id, engine_delete=engine_delete)))
             except evidence_casebin.EvidenceNotDeleted:
@@ -366,8 +406,12 @@ def purge(db: Session, case_id, kind: str, item_id: str, user, *, system: bool =
         if not system:
             _allowed(db, case_uuid, user, kind)
         from services.neo4j_service import neo4j_service
-        neo4j_service.permanently_delete_recycled(item_id, str(case_uuid), db=db,
-                                                  purged_by=getattr(user, "email", None) or "deleted-items")
+        try:
+            neo4j_service.permanently_delete_recycled(item_id, str(case_uuid), db=db,
+                                                      purged_by=getattr(user, "email", None) or "deleted-items")
+        except ValueError as exc:
+            db.rollback()
+            raise DeletedItemError(str(exc), 404) from exc
         label = item_id
         _add(counts, dict(graph_entities_removed=1))
     else:
@@ -388,6 +432,7 @@ def purge_due_rows(db: Session, cutoff: datetime, *, engine_delete=None) -> list
     from postgres.models.workspace_entry import WorkspaceEntry
     due = [(r.case_id, r.kind, str(r.id)) for r in db.scalars(select(RemovedRecord).where(
         RemovedRecord.restored_at.is_(None), RemovedRecord.removed_at < cutoff, RemovedRecord.case_id.is_not(None),
+        RemovedRecord.removed_at >= ROW_PURGE_FROM,
         RemovedRecord.kind.in_(RECORD_KINDS + ("evidence_folder",))))]
     for model, kind_of in ((WorkspaceEntry, lambda r: r.entry_type), (CaseTask, lambda r: "task"),
                            (TimelineView, lambda r: "timeline_view")):

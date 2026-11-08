@@ -97,10 +97,13 @@ def delete_deadline(db: Session, deadline_id: UUID, case_id: UUID, user: User) -
     if not deadline:
         raise DeadlineNotFound(f"Deadline {deadline_id} not found in case {case_id}")
 
+    from postgres.models.work import CaseTask
     from services import removed_records  # Deleted items (lx-deletebin): a kept copy, restorable
-    removed_records.keep(db, kind="case_deadline", case_id=case_id, subject_id=deadline.id,
-                         label=getattr(deadline, "name", None) or getattr(deadline, "title", None) or "Deadline",
-                         rows=[deadline], user=user)
+    kept = removed_records.keep(db, kind="case_deadline", case_id=case_id, subject_id=deadline.id,
+                                label=getattr(deadline, "name", None) or "Deadline", rows=[deadline], user=user)
+    # Tasks lose their deadline link with it (ON DELETE SET NULL); a restore links them again.
+    kept.data = dict(kept.data, linked_task_ids=[str(t) for (t,) in db.query(CaseTask.id).filter(
+        CaseTask.deadline_id == deadline.id)])
     db.delete(deadline)
     db.commit()
 
