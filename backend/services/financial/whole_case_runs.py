@@ -38,7 +38,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 
 logger = logging.getLogger(__name__)
 
-KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'sources', 'pdf', 'export')
+KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'sources', 'flow', 'pdf', 'export')
 PAGE_LIMIT = 200
 HEARTBEAT_SECONDS = 5
 STALE_HEARTBEAT_SECONDS = 180  # for a run whose child never recorded itself
@@ -505,8 +505,13 @@ def compute_transfers(capture, params, run):
         reference_evidence=[(item, None, None) for item in result['reference_evidence']])
     summary = {key: result[key] for key in ('case_id', 'start_date', 'end_date', 'population', 'tolerance_days', 'snapshot_sha256',
                                             'digest_covers', 'currencies', 'excluded_rows', 'limitation', 'applied')}
+    accounts = {}
+    for row in result['rows']:
+        entry = accounts.setdefault(row['account_id'], dict(account_id=row['account_id'], label=row.get('account_label'), rows=0))
+        entry['rows'] += 1
     summary.update(by_level=graded['by_level'], left_out=graded['left_out'], left_out_words=graded['left_out_words'], rule=graded['rule'],
-                   date_unavailable_count=len(result['date_unavailable_ids']), unscoped_reference_count=len(result['unscoped_reference_ids']))
+                   date_unavailable_count=len(result['date_unavailable_ids']), unscoped_reference_count=len(result['unscoped_reference_ids']),
+                   accounts=[accounts[key] for key in sorted(accounts)])
     return summary, sections
 
 
@@ -558,6 +563,12 @@ def compute_trace(capture, params, run):
     request = {key: value for key, value in params.items() if key not in ('case_id', 'run_id')}
     summary, report = trace_walk(capture, request)
     return summary, dict(files={'trace-report.json': report})
+
+
+def compute_flow(capture, params, run):
+    from services.financial.account_flow import whole_case_account_flow
+    request = {key: value for key, value in params.items() if key not in ('case_id', 'run_id')}
+    return whole_case_account_flow(capture, request)
 
 
 def compute_sources(capture, params, run):
@@ -675,10 +686,11 @@ def compute_export(capture, params, run):
 SOURCES_SHOWN = 50
 EXPORT_FILE = 'ledger-export.zip'
 COMPUTE = dict(transfers=compute_transfers, timeline=compute_timeline, patterns=compute_patterns, trace=compute_trace,
-               sources=compute_sources, pdf=compute_pdf, export=compute_export)
+               sources=compute_sources, flow=compute_flow, pdf=compute_pdf, export=compute_export)
 COMPUTE_LABEL = dict(transfers='Comparing every payment by amount and date', timeline='Putting the payments in date order',
                      patterns='Screening the payments for patterns', trace='Following the selected transfers from the start point',
                      sources='Walking the selected transfers back to where the money came in',
+                     flow='Classifying every payment from the selected accounts',
                      pdf='Writing the PDF parts', export='Writing the report, the manifest and the archive')
 
 

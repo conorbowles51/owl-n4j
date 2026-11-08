@@ -201,6 +201,14 @@ class WholeCaseTransfers(_transfers._test_financial_ledger_summary.LedgerSummary
         self.assertEqual(summary['by_level'], plain['graded']['by_level'])
         self.assertEqual(summary['snapshot_sha256'], plain['snapshot_sha256'])
 
+    def test_the_comparison_summary_names_every_account_with_its_row_count(self):
+        self.pair()
+        summary, sections = W.compute_transfers(self.capture(), dict(population='working', tolerance_days=3), None)
+        rows = [item[0] for item in sections['rows']]
+        self.assertEqual({entry['account_id'] for entry in summary['accounts']}, {row['account_id'] for row in rows})
+        self.assertEqual(sum(entry['rows'] for entry in summary['accounts']), len(rows))
+        self.assertTrue(all(entry['label'] for entry in summary['accounts']))
+
 
 class PathWorkLimit(TestCase):
     def test_a_stopped_path_search_states_what_it_did_not_search(self):

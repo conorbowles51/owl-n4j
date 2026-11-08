@@ -1594,6 +1594,13 @@ def start_whole_case_trace_sources(body: TraceSourcesInput, case_id: UUID = Quer
     return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind='sources', case_id=case_id, params=body.model_dump(mode='json')))
 
 
+from services.financial.account_flow import AccountFlowInput
+
+@router.post('/whole-case-runs/flow')
+def start_whole_case_flow(body: AccountFlowInput, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind='flow', case_id=case_id, params=body.model_dump(mode='json')))
+
+
 @router.get('/whole-case-runs/{run_id}')
 def get_whole_case_run(run_id: str, case_id: UUID = Query(...)):
     return _whole_case(lambda: whole_case_runs.read_run(case_id, run_id))
