@@ -139,9 +139,9 @@ export function patternTheory(
     byFile.set(file, [...(byFile.get(file) ?? []), source])
   }
   const link = (file: string, sources: typeof h.sources, kept = sources.length) => ({
-    target_type: "evidence",
+    target_type: "evidence" as const,
     target_id: file,
-    relationship: "context",
+    relationship: "context" as const,
     source_anchor: {
       financial_transaction_ids: sources.map((s) => s.row.key),
     },
