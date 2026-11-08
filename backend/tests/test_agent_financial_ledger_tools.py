@@ -168,6 +168,23 @@ class FinancialAgentLedgerTests(LedgerToolFixture):
         with self.assertRaisesRegex(FinancialLedgerToolError, 'payment-specific'):
             self.read(view='incomplete', filters={'search': 'synthetic'})
 
+    def test_unverified_rows_say_why_with_how_many_sit_in_balanced_periods(self):
+        # Live 8 Nov 2026 an empty verified population was read as "nothing was checked", though every period balanced.
+        document, period, rows = self.source(rows=3)
+        for row in rows:
+            row.proof_class = 'p3'
+        period.reconciliation_status = 'balanced'
+        _, other_period, other_rows = self.source(rows=1)
+        other_rows[0].proof_class = 'p3'
+        other_period.reconciliation_status = 'unavailable'
+        self.db.commit()
+        verified = self.read(population='verified')
+        self.assertEqual(verified['total_matching'], 0)
+        why = verified['coverage']['why_not_verified']
+        self.assertIn('4 payments in this scope are not counted as verified. 3 of them sit in statement periods', why)
+        self.assertIn('printed opening and closing balances', why)
+        self.assertIn('1 sit in periods that did not balance', why)
+
     def test_canonical_accounts_months_counterparties_and_category_groups(self):
         _, _, rows = self.source(rows=3)
         alias = self._account(self.case.id, identity_key='synthetic-alias')

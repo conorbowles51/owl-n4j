@@ -481,6 +481,27 @@ def _row_citations(row, source):
                 statement_cite=doc_href(file_id, page) if file_id else None)
 
 
+def _why_not_verified(session, readings) -> str:
+    """Plain words on why payments in scope are outside verified totals, with how many sit in statement periods that
+    balance against their printed balances. Without it an answer read the empty verified population as "nothing was
+    checked" (live 8 Nov 2026, BNB2: 27,930 of 27,930 payments in documents whose every period balances)."""
+    period_ids = {r['row']['statement_period_id'] for r in readings if r['row'].get('statement_period_id')}
+    status = {}
+    for chunk in [list(period_ids)[i:i + 5000] for i in range(0, len(period_ids), 5000)]:
+        status.update(session.execute(select(FinancialStatementPeriod.id, FinancialStatementPeriod.reconciliation_status)
+                                      .where(FinancialStatementPeriod.id.in_([UUID(str(x)) for x in chunk]))).all())
+    status = {str(k): str(getattr(v, 'value', v)) for k, v in status.items()}
+    balanced = sum(status.get(str(r['row'].get('statement_period_id'))) == 'balanced' for r in readings)
+    other = len(readings) - balanced
+    text = (f"{len(readings):,} payments in this scope are not counted as verified. {balanced:,} of them sit in "
+            "statement periods whose rows add up to the statement's printed opening and closing balances; rows "
+            "imported from a statement reading count as verified only once a person confirms the reading.")
+    if other:
+        text += (f" {other:,} sit in periods that did not balance, could not be checked against printed balances, "
+                 "or have no statement period.")
+    return text
+
+
 def read_financial_ledger(session, *, case_id, account_ids=None, account_holders=None,
         start_date=None, end_date=None, filters=None, population='working', view='transactions',
         group_by='account', offset=0, limit=50, expected_revision=None, expected_ledger_revision=None):
@@ -596,6 +617,10 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         incomplete_records=len(incomplete),
         pending_records_without_missing_fields=sum(not r['missing_fields'] for r in incomplete),
         limitation='Exclusions cover the captured account/date scope before payment filters. Registered periods and incomplete records use account/date/currency/source scope only; their unknown dates remain explicit. Directory accounts without any saved period appear only without date/source filters and are not evidence of imported statements, payments or inactivity. These are not missing-transaction counts.')
+    unverified = [by_id[key] for key in captured_view['row_ids']
+                  if by_id[key]['exclusion_reason'] == 'proof_class_not_included']
+    if unverified:
+        scope_coverage['why_not_verified'] = _why_not_verified(session, unverified)
     counts = Counter(r['row'].get('canonical_account_id') or r['row']['account_id'] for r in matching)
     for account in context:
         account['matching_payments_for_canonical_account'] = counts[account['canonical_account_id']]
