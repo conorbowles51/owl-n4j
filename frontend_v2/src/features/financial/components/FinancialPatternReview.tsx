@@ -396,13 +396,13 @@ export function PatternCard({
       {h.transfer_pairs && (
         <p>
           {h.transfer_pairs.length} candidate transfers, supported by{" "}
-          {h.sources.length} postings. The amount above is the equal amount per
+          {payments.toLocaleString("en-US")} postings. The amount above is the equal amount per
           transfer; it is not a sum or a traced allocation.
         </p>
       )}
       {h.kind === "split_payment_threshold" && (
         <p>
-          {h.sources.length} payments; combined amount shown above. Selected
+          {payments.toLocaleString("en-US")} payments; combined amount shown above. Selected
           threshold: {correctionMoney(scope.threshold_minor!, h.currency)}.
         </p>
       )}

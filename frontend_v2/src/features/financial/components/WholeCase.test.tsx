@@ -156,6 +156,31 @@ it("pages patterns by kind and opens a group above fifty to every payment", asyn
   expect(saved[0]!.links!.flatMap((l) => l.metadata.sources).length).toBe(147)
 })
 
+it("a threshold group above fifty states its true payment count, not the fifty shown inline", async () => {
+  // Live 8 Nov (Verification case): a 60-payment threshold group read "50 payments; combined amount shown above".
+  const source = (n: number) => ({ row: { key: "k" + n, account_label: "A", chronology_date: "2026-03-02", direction: "credit", amount_minor: "10000", currency: "USD", description: "d" + n }, source: { evidence_file_id: "f" }, provenance: {} })
+  const sources = Array.from({ length: 60 }, (_, i) => source(i))
+  const hypothesis = { id: "t", kind: "split_payment_threshold", transaction_ids: sources.map((s) => s.row.key), gap_days: 4, account_id: "a", account_label: "A", currency: "USD", amount_minor: "600000", sources: sources.slice(0, 50), sources_total: 60, sources_start: 0, explanation: "E", limitation: "L" }
+  const run = {
+    id: "9".repeat(32), kind: "patterns", status: "completed", phase: "Finished", step: 3, steps: 3, done: 1, total: 1, created_at: "",
+    counts: { hypotheses: 1 },
+    summary: { case_id: "case", reviewed_rows: 98, date_unavailable_count: 0, limitation: "L", threshold_minor: "20000", threshold_currency: "USD", by_kind: { split_payment_threshold: 1 } },
+  }
+  const pages: Record<string, unknown[]> = { hypotheses: [hypothesis], sources }
+  api.fetchAPI.mockImplementation(async (url: string, options?: { method?: string }) => {
+    if (options?.method === "POST") return run
+    const section = decodeURIComponent(String(url).match(/pages\/([^?]+)/)?.[1] ?? "")
+    if (!section) return run
+    const offset = Number(new URL(url, "http://x").searchParams.get("offset"))
+    const limit = Number(new URL(url, "http://x").searchParams.get("limit"))
+    const items = pages[section] ?? []
+    return { total: items.length, offset, limit, items: items.slice(offset, offset + limit) }
+  })
+  wrap(<WholeCasePatterns caseId="case" request={{ population: "working", window_days: 7, threshold_minor: "20000", threshold_currency: "USD" } as never} onSource={() => undefined} />)
+  expect(await screen.findByText(/60 payments; combined amount shown above/)).toBeTruthy()
+  expect(screen.queryByText(/50 payments; combined amount shown above/)).toBeNull()
+})
+
 it("lists every numbered PDF part and the download", async () => {
   routes(
     {
