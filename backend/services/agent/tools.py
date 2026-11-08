@@ -2253,6 +2253,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         summary = (
             f"Read {data.get('returned', 0)} of {data.get('total_matching', 0)} matching {view}; "
             "totals cover the complete matching payment population, separated by currency and account type."
+            + (" " + data["coverage"]["why_not_verified"]
+               if not data.get("totals") and (data.get("coverage") or {}).get("why_not_verified") else "")
             if available else str(data.get("reason") or "The complete financial scope is unavailable.")
         )
         return context.result(tool_name, data, summary=summary,

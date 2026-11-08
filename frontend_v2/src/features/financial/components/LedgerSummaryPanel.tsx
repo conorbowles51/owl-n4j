@@ -351,10 +351,12 @@ export function LedgerSummaryPanel({
                 query.data.included_rows === 0 &&
                 query.data.excluded_rows > 0 && (
                   <p data-testid="none-verified">
-                    No payment in this scope counts as verified yet. Rows read
-                    from a statement count once a person confirms the reading,
-                    even when the statement's balances agree. Working totals
-                    show every admitted payment.
+                    No payment in this scope counts as verified. Payments read
+                    from a PDF statement stay out of verified totals by rule,
+                    even after a person confirms the reading and even when the
+                    statement's balances agree. Working totals show every
+                    admitted payment. Payments from the bank's own electronic
+                    statement files count as verified.
                   </p>
                 )}
               <p>

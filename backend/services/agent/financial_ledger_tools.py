@@ -484,7 +484,9 @@ def _row_citations(row, source):
 def _why_not_verified(session, readings) -> str:
     """Plain words on why payments in scope are outside verified totals, with how many sit in statement periods that
     balance against their printed balances. Without it an answer read the empty verified population as "nothing was
-    checked" (live 8 Nov 2026, BNB2: 27,930 of 27,930 payments in documents whose every period balances)."""
+    checked" (live 8 Nov 2026, BNB2: 27,930 of 27,930 payments in documents whose every period balances).
+    Totals count by proof class alone and a reviewed statement import is p3 whatever its balance check says, so a
+    person's confirmation does not admit a row: all 27,673 usable BNB2 rows were confirmed by review and stayed out."""
     period_ids = {r['row']['statement_period_id'] for r in readings if r['row'].get('statement_period_id')}
     status = {}
     for chunk in [list(period_ids)[i:i + 5000] for i in range(0, len(period_ids), 5000)]:
@@ -494,8 +496,10 @@ def _why_not_verified(session, readings) -> str:
     balanced = sum(status.get(str(r['row'].get('statement_period_id'))) == 'balanced' for r in readings)
     other = len(readings) - balanced
     text = (f"{len(readings):,} payments in this scope are not counted as verified. {balanced:,} of them sit in "
-            "statement periods whose rows add up to the statement's printed opening and closing balances; rows "
-            "imported from a statement reading count as verified only once a person confirms the reading.")
+            "statement periods whose rows add up to the statement's printed opening and closing balances. Payments read "
+            "from a PDF statement stay out of verified totals by rule, even after a person confirms the reading and "
+            "even when the statement balances; working totals count them. Payments from the bank's own electronic "
+            "statement files count as verified.")
     if other:
         text += (f" {other:,} sit in periods that did not balance, could not be checked against printed balances, "
                  "or have no statement period.")
