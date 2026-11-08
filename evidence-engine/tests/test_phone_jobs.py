@@ -180,7 +180,8 @@ def test_phone_worker_settings():
     from app.worker import PdfReviewWorkerSettings, PhoneCaptureWorkerSettings, WorkerSettings
     s = PhoneCaptureWorkerSettings
     assert s.queue_name == "arq:phone-capture" and s.max_jobs == 1
-    assert [f.__name__ for f in s.functions] == ["process_phone_capture"]
+    # Re-parse (05 section 17.3) shares the phone worker's slot and memory cap: one phone job at a time.
+    assert [f.__name__ for f in s.functions] == ["process_phone_capture", "process_phone_reparse"]
     assert s.job_timeout >= 292 * 60  # v1's longest phone ingest (01 section 1.7)
     assert "process_phone_capture" not in [f.__name__ for f in PdfReviewWorkerSettings.functions]
     assert getattr(WorkerSettings, "queue_name", None) is None
