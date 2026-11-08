@@ -392,14 +392,72 @@ async def test_a_member_row_finds_its_owners_queue_entry(world):
     assert await janitor.recover_interrupted_work(queue, "arq:queue") == 1
 
 
-async def test_another_queues_work_and_paused_work_are_left_alone(world):
+async def test_another_queues_work_is_left_alone(world):
     dispatch = {"batch_dispatch": {"state": "dispatched", "queue_job_id": "evidence:two"}}
     await make(world, [JobStatus.EXTRACTING_TEXT], pipeline_state=dispatch)
-    paused = {"batch_dispatch": {"state": "dispatched", "queue_job_id": "evidence:three"}}
-    await make(world, [JobStatus.EXTRACTING_TEXT], pipeline_state=paused, paused=True)
-    queue = Queue({"evidence:three"}, {in_progress_key_prefix + "evidence:two", in_progress_key_prefix + "evidence:three"})
+    queue = Queue(set(), {in_progress_key_prefix + "evidence:two"})
     assert await janitor.recover_interrupted_work(queue, "arq:queue") == 0
-    assert len(queue.marks) == 2
+    assert len(queue.marks) == 1
+
+
+async def test_work_a_release_paused_restarts_when_a_worker_starts(world):
+    """Fails on the old code: a release flagged the rows paused and stopped the worker with them in hand; the new
+    worker skipped them, and after the release's resume nothing ran them until the janitor failed them (SB4, 8 Nov)."""
+    paused = {"batch_dispatch": {"state": "dispatched", "queue_job_id": "evidence:three"}}
+    await make(world, [JobStatus.RESOLVING_ENTITIES], pipeline_state=paused, paused=True)
+    queue = Queue({"evidence:three"}, {in_progress_key_prefix + "evidence:three"})
+    assert await janitor.recover_interrupted_work(queue, "arq:queue") == 1
+    assert not queue.marks
+
+
+async def test_the_heartbeat_moves_rows_a_release_paused_while_the_worker_runs_them(world):
+    """Fails on the old code: the heartbeat skipped paused rows, so work going on under a release hold read as quiet."""
+    case, batch, rows = await make(world, [JobStatus.EXTRACTING_ENTITIES, JobStatus.COMPLETED], paused=True)
+    old = datetime.utcnow() - timedelta(hours=3)
+    async with world.engine.begin() as conn:
+        await conn.execute(text("update jobs set updated_at = :t"), {"t": old})
+    await control.beat(control.scope_filter(batch, True), case)
+    running, finished = await read(world, rows)
+    assert running.updated_at > old + timedelta(hours=2) and finished.updated_at == old
+
+
+class Redis:
+    """The keys the janitor keeps of paused jobs."""
+
+    def __init__(self):
+        self.values = {}
+
+    async def set(self, key, value, ex=None):
+        self.values[key] = value
+
+    async def mget(self, *keys):
+        return [self.values.get(key) for key in keys]
+
+
+async def test_time_paused_by_a_release_is_not_counted_as_no_progress(world):
+    """Fails on the old code: the job was failed as crashed on the first pass after the release resumed it."""
+    _, _, rows = await make(world, [JobStatus.EXTRACTING_ENTITIES], paused=True)
+    async with world.engine.begin() as conn:
+        await conn.execute(text("update jobs set updated_at = :t"), {"t": datetime.utcnow() - timedelta(hours=3)})
+    redis = Redis()
+    assert await janitor.reap_stale_jobs({"redis": redis}) == 0  # paused: never reaped
+    async with world.engine.begin() as conn:  # wcontrol's resume
+        await conn.execute(text("update jobs set paused = false where id = :i"), {"i": rows[0].id})
+    assert await janitor.reap_stale_jobs({"redis": redis}) == 0
+    row = (await read(world, rows))[0]
+    assert row.status == JobStatus.EXTRACTING_ENTITIES and row.error_message is None
+
+
+async def test_work_never_taken_up_after_a_release_is_reaped_with_that_reason(world):
+    _, _, rows = await make(world, [JobStatus.EXTRACTING_ENTITIES])
+    async with world.engine.begin() as conn:
+        await conn.execute(text("update jobs set updated_at = :t"), {"t": datetime.utcnow() - timedelta(hours=5)})
+    redis = Redis()
+    redis.values[janitor.PAUSED_SEEN_PREFIX + str(rows[0].id)] = (datetime.utcnow() - timedelta(hours=3)).isoformat()
+    assert await janitor.reap_stale_jobs({"redis": redis}) == 1
+    row = (await read(world, rows))[0]
+    assert row.status == JobStatus.FAILED and "after a release paused and resumed it" in row.error_message
+    assert "No progress for 180 minutes" in row.error_message and world.sent[-1][1]["error_message"] == row.error_message
 
 
 async def test_resume_works_after_a_worker_died_while_pausing(world, monkeypatch):

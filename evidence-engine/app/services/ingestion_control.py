@@ -33,17 +33,23 @@ _KEPT = {
 _KEPT_INGESTION = "This file stays in the case; nothing from it was added to the case graph."
 
 
+async def beat(predicate, case_id):
+    """One heartbeat of a running batch. A release pauses rows by flag (jobs.paused) and lets the work in hand finish,
+    so a paused row a worker is running gets its heartbeat too: without it, work that went on under a release hold read
+    as hours of no progress and the janitor failed it as crashed (SB4, 8 Nov: 50 files)."""
+    async with async_session() as db:
+        await db.execute(update(Job).where(predicate, Job.case_id == case_id,
+            Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED])).values(updated_at=datetime.utcnow()))
+        await db.commit()
+
+
 async def _keep_alive(predicate, case_id):
     # The janitor detects dead workers, not a quiet but active provider call.
     # Normal work-unit timeouts still bound stalled network operations.
     while True:
         await asyncio.sleep(30)
         try:
-            async with async_session() as db:
-                await db.execute(update(Job).where(predicate, Job.case_id == case_id,
-                    Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED]), Job.paused.is_(False))
-                    .values(updated_at=datetime.utcnow()))
-                await db.commit()
+            await beat(predicate, case_id)
         except Exception:
             logger.warning('Unable to record ingestion worker heartbeat', exc_info=True)
 

@@ -74,11 +74,14 @@ async def batch_owners(db, jobs) -> dict:
 async def recover_interrupted_work(pool, queue_name: str) -> int:
     """Called once when a worker starts, before it takes any job: it is the only worker of its queue, so nothing here
     is running and an in-progress mark in its queue was left by a worker that was killed. ARQ keeps that mark for the
-    4 h job timeout. Clearing it makes ARQ run the job again now, and the run resumes from its checkpoints. A job whose
-    queue entry is gone (Redis lost it) is the janitor's: it fails, with its reason, and Resume is offered."""
+    4 h job timeout. Clearing it makes ARQ run the job again now, and the run resumes from its checkpoints. Work a release paused
+    is restarted as well. A job whose queue entry is gone (Redis lost it) is the janitor's: it fails, with its reason, and Resume is offered."""
     async with async_session() as db:
+        # A release pauses rows by flag and stops the worker with the work in hand: those rows are paused but not
+        # pending, and their run must restart here too, or after the release's resume nothing runs them (SB4, 8 Nov).
+        # A person's pause ends at pending; its queued job finds the pause and stops at once.
         jobs = list((await db.execute(select(Job).where(
-            Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED]), Job.paused.is_(False),
+            Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED]),
             Job.job_type.in_(CANCELLABLE_JOB_TYPES)))).scalars().all())
         if not jobs:
             return 0
@@ -167,6 +170,41 @@ async def reap_orphaned_pending(ctx: dict) -> int:
     return len(snapshots)
 
 
+PAUSED_SEEN_PREFIX = "janitor:paused-seen:"
+
+
+async def note_paused(pool) -> int:
+    """Remember, each pass, which unfinished jobs are paused. A release pauses by flag (jobs.paused) and resumes by
+    clearing it, and neither moves updated_at, so a job resumed after a long hold read as hours of no progress the
+    moment it was resumed (SB4, 8 Nov: 50 files failed as crashed at 19:50 and 19:55). The quiet time is counted from
+    the last pass that saw the job paused; without Redis it counts from updated_at, as before."""
+    if pool is None:
+        return 0
+    async with async_session() as db:
+        ids = [str(i) for i in (await db.execute(select(Job.id).where(
+            Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED]), Job.paused.is_(True)))).scalars().all()]
+    now = datetime.utcnow().isoformat()
+    keep = int(os.getenv("JANITOR_STALE_THRESHOLD_SECONDS", str(DEFAULT_STALE_THRESHOLD_SECONDS))) + 86400
+    for job_id in ids:
+        await pool.set(PAUSED_SEEN_PREFIX + job_id, now, ex=keep)
+    return len(ids)
+
+
+async def paused_seen(pool, jobs) -> dict:
+    if pool is None or not jobs:
+        return {}
+    values = await pool.mget(*[PAUSED_SEEN_PREFIX + str(job.id) for job in jobs])
+    seen = {}
+    for job, value in zip(jobs, values):
+        if value:
+            seen[str(job.id)] = datetime.fromisoformat(value.decode() if isinstance(value, bytes) else value)
+    return seen
+
+
+def quiet_since(job, seen: dict) -> datetime:
+    return max(job.updated_at, seen.get(str(job.id), job.updated_at))
+
+
 async def reap_stale_jobs(ctx: dict) -> int:
     """Mark any non-terminal job whose updated_at is older than the threshold as failed,
     then any pending job whose queued work no longer exists.
@@ -178,6 +216,11 @@ async def reap_stale_jobs(ctx: dict) -> int:
     except Exception:
         logger.exception("janitor: could not finish abandoned cancels")  # never stops the reaping below
     cutoff = _cutoff()
+    pool = ctx.get("redis")
+    try:
+        await note_paused(pool)
+    except Exception:
+        logger.exception("janitor: could not record paused jobs")  # paused time then counts, as before
 
     async with async_session() as db:
         result = await db.execute(
@@ -187,27 +230,41 @@ async def reap_stale_jobs(ctx: dict) -> int:
                 Job.updated_at < cutoff,
             )
         )
-        stale = list(result.scalars().all())
+        candidates = list(result.scalars().all())
+        try:
+            seen = await paused_seen(pool, candidates)
+        except Exception:
+            logger.exception("janitor: could not read when jobs were last paused")
+            seen = {}
+        stale = [job for job in candidates if quiet_since(job, seen) < cutoff]
         if not stale:
             return await reap_orphaned_pending(ctx)
 
-        snapshots: list[tuple[str, JobStatus, float, int]] = []
+        snapshots: list[tuple[str, JobStatus, float, int, str]] = []
         for job in stale:
-            stale_minutes = int((datetime.utcnow() - job.updated_at).total_seconds() // 60)
+            since = quiet_since(job, seen)
+            stale_minutes = int((datetime.utcnow() - since).total_seconds() // 60)
             prior_status = job.status.value
-            reason = (
-                f"[janitor] No progress for {stale_minutes} minutes at '{prior_status}'; "
-                "worker likely crashed or hung."
-            )
+            if since > job.updated_at:
+                reason = (
+                    f"[janitor] No progress for {stale_minutes} minutes at '{prior_status}' after a release paused "
+                    f"and resumed it (last seen paused {since:%d %b %H:%M} UTC; the paused time is not counted); "
+                    "no worker took it up again. Safe to resume."
+                )
+            else:
+                reason = (
+                    f"[janitor] No progress for {stale_minutes} minutes at '{prior_status}'; "
+                    "worker likely crashed or hung."
+                )
             existing = job.error_message or ""
             job.error_message = (existing + " | " + reason) if existing else reason
             job.status = JobStatus.FAILED
-            snapshots.append((str(job.id), job.status, job.progress or 0.0, stale_minutes))
+            snapshots.append((str(job.id), job.status, job.progress or 0.0, stale_minutes, reason))
         await db.commit()
 
     logger.warning("janitor: marked %d stale jobs as failed", len(snapshots))
 
-    for job_id, status, progress, stale_minutes in snapshots:
+    for job_id, status, progress, stale_minutes, reason in snapshots:
         try:
             await publish_progress(
                 job_id,
@@ -216,9 +273,7 @@ async def reap_stale_jobs(ctx: dict) -> int:
                     "status": status.value,
                     "progress": progress,
                     "message": f"Reaped by janitor after {stale_minutes} minutes of no progress",
-                    "error_message": (
-                        f"[janitor] No progress for {stale_minutes} minutes; worker likely crashed."
-                    ),
+                    "error_message": reason,
                 },
             )
         except Exception:
