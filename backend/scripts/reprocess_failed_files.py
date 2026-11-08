@@ -31,9 +31,7 @@ def main(argv=None) -> int:
                                               file_ids=[uuid.UUID(i) for i in found["file_ids"]]))
         print(result.get("message"))
         for item in result.get("refused") or []:
-            print(f"  refused: {item['file_name']}: {item['reason']}")
-        for item in result.get("not_sent") or []:
-            print(f"  not sent: {item['file_name']}")
+            print(f"  refused: {item['name']}: {item['reason']}")
     return 0
 
 

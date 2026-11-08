@@ -177,14 +177,24 @@ class JobStatusSubscriber:
             await self._redis.close()
         logger.info("Job status subscriber stopped")
 
-    async def track_jobs(self, job_ids: list[str], case_id: str):
-        """Add job IDs to the subscriber's watch list."""
+    @property
+    def running(self) -> bool:
+        """True inside the backend once start() ran; a script outside it has no subscription to add to."""
+        return self._pubsub is not None
+
+    async def track_jobs(self, job_ids: list[str], case_id: str) -> bool:
+        """Add job IDs to the subscriber's watch list. Returns False, tracking nothing, when the subscriber is not
+        running (a script outside the backend): the jobs' files settle when the case's jobs are next synced."""
+        if not self.running:
+            logger.info("Job status subscriber not running; %d job(s) settle on the next sync", len(job_ids))
+            return False
         for jid in job_ids:
             self._tracked[jid] = case_id
             self._last_seen[jid] = time.monotonic()
             channel = f"job:{jid}:progress"
             await self._pubsub.subscribe(channel)
             logger.debug("Subscribed to %s", channel)
+        return True
 
     async def recover_after_handover(self):
         """A release ran this backend beside the old one: pick up what the old one started after this one's start."""

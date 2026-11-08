@@ -20,6 +20,10 @@ from services.folder_context_service import build_processing_snapshot
 from services.evidence_file_check import FILE_MISSING_DETAIL
 from services.job_status_subscriber import get_subscriber
 
+# Said when the files were sent from outside the backend (a script): nothing there follows their jobs live.
+NOT_TRACKED_DETAIL = ("statuses settle when the case's jobs are synced (opening the case's files, or the next "
+                      "backend start)")
+
 logger = logging.getLogger(__name__)
 
 
@@ -232,9 +236,10 @@ async def _send_files(
     else:
         job_ids_out = await run_in_threadpool(_record_engine_jobs, db, accepted_files, accepted_jobs)
 
+    live_tracking = True
     if job_ids_out:
         subscriber = get_subscriber()
-        await subscriber.track_jobs(job_ids_out, str(case_id))
+        live_tracking = await subscriber.track_jobs(job_ids_out, str(case_id)) is not False
 
     message = f"Processing {len(accepted_files)} file(s)"
     if refused:
@@ -243,6 +248,8 @@ async def _send_files(
         message += f"; {not_sent} file(s) not sent because the processing service stopped answering"
     if missing_on_disk:
         message += f"; {missing_on_disk} file(s) not sent: {FILE_MISSING_DETAIL}"
+    if not live_tracking:
+        message += f"; {NOT_TRACKED_DETAIL}"
     return {
         "job_ids": job_ids_out,
         "file_count": len(accepted_files),
@@ -255,6 +262,7 @@ async def _send_files(
         **({"refused": [{"file_id": str(ef.id), "name": ef.original_filename, "reason": reason}
                         for ef, reason in refused]} if refused else {}),
         **({"recovered_after_response_error": True} if recovered else {}),
+        **({"live_tracking": False} if not live_tracking else {}),
     }
 
 
