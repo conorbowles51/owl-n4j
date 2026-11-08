@@ -102,7 +102,6 @@ def list_items(db: Session, case_id, user) -> dict[str, Any]:
     from services import evidence_casebin
     case_uuid = uuid.UUID(str(case_id))
     manage = can_manage(db, case_uuid, user)
-    admin = _is_admin(user)
     items = []
     records = list(db.scalars(select(RemovedRecord).where(
         RemovedRecord.case_id == case_uuid, RemovedRecord.restored_at.is_(None),
@@ -227,6 +226,124 @@ def _folder_files(db, record) -> list[str]:
                   if at is not None and (state or {}).get("folder_item_id") == str(record.id))
 
 
+def _graphless(state: dict) -> bool:
+    """A deleted file whose delete hid nothing in the graph (no Document node, no entities): restore and purge
+    need no graph call for it."""
+    return not state.get("doc_key") and not state.get("hidden_nodes") and not state.get("exclusive_entities")
+
+
+def _restore_folder_files(db, case_uuid, record, user) -> tuple[int, int]:
+    """Restore the folder item's files: graphless ones together in one transaction (chunks put back in one call),
+    the others one by one through evidence_casebin.restore_file. Returns (restored, not restored)."""
+    from postgres.models.evidence import EvidenceFile, EvidenceFolder
+    from services import activity_trail, evidence_casebin
+    ids = _folder_files(db, record)
+    restored = failed = 0
+    with soft_delete.showing_deleted(db):
+        rows = db.query(EvidenceFile).filter(EvidenceFile.id.in_([uuid.UUID(i) for i in ids])).all() if ids else []
+    folders = {f.id for f in db.query(EvidenceFolder.id).filter(EvidenceFolder.case_id == case_uuid)}
+    quick = [r for r in rows if _graphless(r.deleted_state or {}) and r.source_type != "phone_file"]
+    slow = [r for r in rows if r not in quick]
+    chunk_states: dict = {}
+    for r in quick:
+        state = r.deleted_state or {}
+        chunk_states.update(state.get("chunk_states") or {})
+        folder_id = uuid.UUID(state["folder_id"]) if state.get("folder_id") else None
+        if folder_id in folders and r.folder_id is None:
+            r.folder_id = folder_id
+        deleted_at, deleted_by = r.deleted_at, r.deleted_by_user_id
+        r.deleted_at = r.deleted_by_user_id = r.deleted_state = None
+        activity_trail.record("evidence_restored", db=db, user=user, case_id=case_uuid, details=dict(
+            evidence_id=str(r.id), filename=r.original_filename, deleted_at=_aware(deleted_at).isoformat(),
+            deleted_by_user_id=str(deleted_by) if deleted_by else None, restored_graph_nodes=0,
+            restored_graph_relationships=0, merged_entities=[], restored_chunks=len(state.get("chunk_states") or {}),
+            with_folder=str(record.id)))
+        restored += 1
+    if chunk_states:
+        vdb = evidence_casebin._vector_db()
+        if vdb is not None:
+            evidence_casebin.restore_chunks(vdb, chunk_states)
+    db.commit()
+    soft_delete.forget()
+    for r in slow:
+        try:
+            evidence_casebin.restore_file(db, case_uuid, str(r.id), user)
+            restored += 1
+        except (evidence_casebin.EvidenceNotDeleted, evidence_casebin.EvidenceNotFound):
+            db.rollback()
+            failed += 1
+    return restored, failed
+
+
+def _purge_folder_files(db, record, engine_delete=None) -> dict:
+    """Purge the folder item's files: graphless ones together (one search delete, one shared-file check, one
+    commit), the others one by one through casebin_purge.purge_file. A file another row still uses stays."""
+    from pathlib import Path
+    from postgres.models.evidence import EvidenceFile
+    from services import activity_trail, evidence_casebin
+    from services.casebin_purge import _engine_delete, purge_file
+    from services.evidence_db_storage import EvidenceDBStorage
+    counts: dict = {}
+    ids = _folder_files(db, record)
+    with soft_delete.showing_deleted(db):
+        rows = db.query(EvidenceFile).filter(EvidenceFile.id.in_([uuid.UUID(i) for i in ids])).all() if ids else []
+    quick = [r for r in rows if _graphless(r.deleted_state or {})]
+    slow = [r for r in rows if r not in quick]
+    for r in slow:
+        try:
+            _add(counts, _file_counts(purge_file(db, r.id, engine_delete=engine_delete)))
+        except evidence_casebin.EvidenceNotDeleted:
+            db.rollback()
+    if not quick:
+        return counts
+    chunk_ids = sorted({c for r in quick for c in ((r.deleted_state or {}).get("chunk_states") or {})})
+    vdb = evidence_casebin._vector_db()
+    if vdb is not None:
+        known = set(chunk_ids)
+        known.update(c for ids_ in evidence_casebin._chunk_owners(vdb, case_id=str(record.case_id), records=quick,
+                                                                  doc_keys={}).values() for c in ids_)
+        known = sorted(known)
+        for start in range(0, len(known), 1000):
+            vdb.chunk_collection.delete(ids=known[start:start + 1000])
+        counts["search_cleaned"] = counts.get("search_cleaned", 0) + len(quick)
+    quick_ids = [r.id for r in quick]
+    paths = [r.stored_path for r in quick if r.stored_path]
+    in_use = set()
+    for start in range(0, len(paths), 1000):
+        in_use |= EvidenceDBStorage.stored_paths_in_use(db, paths[start:start + 1000], quick_ids)
+    from routers.evidence import _resolve_stored_path
+    removed_paths = set()
+    for r in quick:
+        details = dict(evidence_id=str(r.id), filename=r.original_filename, size=r.size, sha256=r.sha256,
+                       deleted_at=_aware(r.deleted_at).isoformat(), with_folder=str(record.id),
+                       deleted_by_user_id=str(r.deleted_by_user_id) if r.deleted_by_user_id else None)
+        if r.stored_path and EvidenceDBStorage.keeps_file_on_delete(r.source_type):
+            details["file_kept_production"] = True
+        elif r.stored_path and r.stored_path in in_use:
+            details["file_kept_shared"] = True
+        elif r.stored_path and r.stored_path not in removed_paths:
+            path = _resolve_stored_path(r.stored_path) or Path(r.stored_path)
+            if path.exists():
+                try:
+                    path.unlink()
+                    details["file_deleted"] = True
+                    removed_paths.add(r.stored_path)
+                except OSError as exc:
+                    details["file_error"] = str(exc)[:200]
+        if r.engine_job_id:
+            try:
+                (engine_delete or _engine_delete)(str(r.case_id), r.engine_job_id)
+                details["engine_copy_removed"] = True
+            except Exception as exc:
+                details["engine_copy_error"] = str(exc)[:200]
+        _add(counts, _file_counts(details))
+        activity_trail.record("evidence_purged", db=db, system=True, case_id=r.case_id, details=details)
+        db.delete(r)
+    db.commit()
+    soft_delete.forget()
+    return counts
+
+
 def _owner_of(record) -> tuple[str | None, str | None]:
     """(owner user id, owner username) of a private kept copy: a chat or a saved snapshot."""
     values = ((record.data or {}).get("rows") or [{}])[0].get("values", {})
@@ -263,14 +380,7 @@ def restore(db: Session, case_id, kind: str, item_id: str, user) -> dict[str, An
         activity_trail.record("deleted_item_restored", db=db, user=user, case_id=case_uuid, details=dict(
             kind=kind, id=str(record.id), label=record.label, folders=len(record.data.get("rows") or [])))
         db.commit()
-        restored = failed = 0
-        for file_id in _folder_files(db, record):
-            try:
-                evidence_casebin.restore_file(db, case_uuid, file_id, user)
-                restored += 1
-            except (evidence_casebin.EvidenceNotDeleted, evidence_casebin.EvidenceNotFound):
-                db.rollback()
-                failed += 1
+        restored, failed = _restore_folder_files(db, case_uuid, record, user)
         return dict(out, label=record.label, folders=len(record.data.get("rows") or []), files=restored,
                     files_not_restored=failed)
     if kind in RECORD_KINDS:
@@ -350,7 +460,7 @@ def purge(db: Session, case_id, kind: str, item_id: str, user, *, system: bool =
           engine_delete=None) -> dict[str, Any]:
     """Remove a deleted item for good now and return what went: rows, files (and files kept because another row
     still uses them), graph and search entries. ``system``: the 30-day purge (no person)."""
-    from services import activity_trail, evidence_casebin
+    from services import activity_trail
     from services.casebin_purge import purge_file
     case_uuid = uuid.UUID(str(case_id))
     counts: dict[str, int] = {}
@@ -373,16 +483,7 @@ def purge(db: Session, case_id, kind: str, item_id: str, user, *, system: bool =
         if not system:
             _allowed(db, case_uuid, user, kind)
         label = record.label
-        from postgres.models.evidence import EvidenceFile
-        for file_id in _folder_files(db, record):
-            with soft_delete.showing_deleted(db):
-                row = db.get(EvidenceFile, uuid.UUID(file_id))
-            if row is None or row.deleted_at is None:
-                continue
-            try:
-                _add(counts, _file_counts(purge_file(db, row.id, engine_delete=engine_delete)))
-            except evidence_casebin.EvidenceNotDeleted:
-                db.rollback()
+        _add(counts, _purge_folder_files(db, record, engine_delete=engine_delete))
         record = _record(db, case_uuid, item_id, ("evidence_folder",))
         _add(counts, dict(folders_removed=len(record.data.get("rows") or [])))
         db.delete(record)

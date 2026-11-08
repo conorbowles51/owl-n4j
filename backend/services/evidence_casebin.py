@@ -378,6 +378,121 @@ def delete_file(db: Session, record: EvidenceFile, user: User, *, delete_exclusi
                 exclusive_entities_hidden=details["hidden_graph_nodes"] - (1 if doc_key else 0))
 
 
+BATCH_LOOKUP = 500  # names / ids per graph or search lookup when a folder's files are moved together
+
+
+def find_document_keys(graph_session, filenames, case_id: str) -> dict:
+    """{filename: Document key} for many files at once, matched as find_document_key matches one (name or key)."""
+    out: dict = {}
+    names = sorted({n for n in filenames if n})
+    for start in range(0, len(names), BATCH_LOOKUP):
+        part = names[start:start + BATCH_LOOKUP]
+        for row in graph_session.run(
+                "MATCH (d:Document {case_id: $case_id}) WHERE d.name IN $names OR d.key IN $names "
+                "RETURN d.name AS name, d.key AS key", names=part, case_id=case_id):
+            for name in (row["name"], row["key"]):
+                if name in part and name not in out:
+                    out[name] = row["key"]
+    return out
+
+
+def _chunk_owners(vector_db, *, case_id, records, doc_keys) -> dict:
+    """{file id: [chunk ids]} for many files, by the same selectors as _document_chunk_ids, in batched lookups."""
+    by_value: dict = {}
+    for r in records:
+        fid = str(r.id)
+        for field, value in (("evidence_file_id", fid), ("doc_id", fid), ("doc_id", r.original_filename),
+                             ("file_name", r.original_filename), ("doc_key", doc_keys.get(r.original_filename)),
+                             ("doc_id", doc_keys.get(r.original_filename))):
+            if value:
+                by_value.setdefault((field, value), set()).add(fid)
+    owners: dict = {}
+    fields: dict = {}
+    for field, value in by_value:
+        fields.setdefault(field, []).append(value)
+    for field, values in fields.items():
+        values = sorted(set(values))
+        for start in range(0, len(values), BATCH_LOOKUP):
+            part = values[start:start + BATCH_LOOKUP]
+            found = vector_db.chunk_collection.get(
+                where={"$and": [{"case_id": case_id}, {field: {"$in": part}}]}, include=["metadatas"])
+            for chunk_id, metadata in zip(found.get("ids") or [], found.get("metadatas") or []):
+                for fid in by_value.get((field, (metadata or {}).get(field)), ()):
+                    owners.setdefault(fid, set()).add(str(chunk_id))
+    return {fid: sorted(ids) for fid, ids in owners.items()}
+
+
+def delete_files(db: Session, records, user: User, *, delete_exclusive_entities: bool = True, graph_session=None,
+                 vector_db=None) -> tuple[list, dict]:
+    """Move many evidence files of one case to Deleted items in one transaction (a folder delete). The same steps as
+    delete_file, looked up in batches: a file with no Document node has nothing in the graph to hide, so only files
+    that have one run the per-file graph step. Returns (moved file ids, {chunk id: previous state} hidden) so the
+    caller can put them back if its own commit fails. On any failure the graph and chunks hidden
+    so far are put back and nothing is committed."""
+    from services import activity_trail
+    records = [r for r in records if r.deleted_at is None]
+    if not records:
+        return [], {}
+    case_id = str(records[0].case_id)
+    own_session = graph_session is None
+    gs = graph_session or _graph_session()
+    vdb = vector_db if vector_db is not None else _vector_db()
+    hidden_graph, hidden_chunks = [], {}
+    now = datetime.now(timezone.utc)
+    try:
+        doc_keys = find_document_keys(gs, [r.original_filename for r in records], case_id)
+        chunk_ids = _chunk_owners(vdb, case_id=case_id, records=records, doc_keys=doc_keys) if vdb is not None else {}
+        for record in records:
+            if str(record.case_id) != case_id:
+                raise ValueError("delete_files takes files of one case")
+            doc_key = doc_keys.get(record.original_filename)
+            exclusive = find_exclusive_entities(gs, doc_key, case_id) if (doc_key and delete_exclusive_entities) else []
+            graph = (hide_graph(gs, case_id=case_id, file_id=record.id, doc_key=doc_key, entities=exclusive)
+                     if doc_key else dict(nodes=0, relationships=0))
+            if doc_key:
+                hidden_graph.append(record.id)
+            chunks = {}
+            ids = chunk_ids.get(str(record.id)) or []
+            if ids and vdb is not None:
+                found = vdb.chunk_collection.get(ids=ids, include=["metadatas"])
+                metadatas = []
+                for chunk_id, metadata in zip(found["ids"], found["metadatas"]):
+                    metadata = dict(metadata or {})
+                    chunks[str(chunk_id)] = metadata.get("ingestion_state")
+                    metadata["ingestion_state"] = "deleted"
+                    metadatas.append(metadata)
+                if found["ids"]:
+                    vdb.chunk_collection.update(ids=list(found["ids"]), metadatas=metadatas)
+                hidden_chunks.update(chunks)
+            record.deleted_at = now
+            record.deleted_by_user_id = user.id
+            record.deleted_state = dict(doc_key=doc_key, hidden_nodes=graph["nodes"],
+                                        hidden_relationships=graph["relationships"],
+                                        exclusive_entities=[dict(key=e["key"], name=e.get("name"), type=e.get("type"))
+                                                            for e in exclusive],
+                                        delete_exclusive_entities=delete_exclusive_entities, chunk_states=chunks,
+                                        deleted_by_email=user.email)
+            activity_trail.record("evidence_moved_to_deleted_items", db=db, user=user, case_id=record.case_id,
+                                  details=dict(evidence_id=str(record.id), filename=record.original_filename,
+                                               size=record.size, sha256=record.sha256,
+                                               hidden_graph_nodes=graph["nodes"],
+                                               hidden_graph_relationships=graph["relationships"],
+                                               hidden_chunks=len(chunks),
+                                               purge_after=(now + timedelta(days=DELETED_RETENTION_DAYS)).isoformat()))
+        db.flush()
+    except Exception:
+        db.rollback()
+        for file_id in hidden_graph:
+            _undo_graph(case_id, file_id, gs)
+        if vdb is not None and hidden_chunks:
+            restore_chunks(vdb, hidden_chunks)
+        raise
+    finally:
+        if own_session:
+            gs.close()
+    return [r.id for r in records], hidden_chunks
+
+
 def _undo_graph(case_id, file_id, graph_session=None):
     own = graph_session is None
     gs = graph_session or _graph_session()

@@ -365,3 +365,64 @@ def test_graph_recycle_bin_entities_are_listed_and_a_snapshot_is_private(world):
     with pytest.raises(deleted_items.DeletedItemError) as refused:
         deleted_items.purge(db, case_id, "snapshot", str(record.id), world["owner"])
     assert refused.value.status_code == 403
+
+
+class _Chunks:
+    """ChromaDB collection calls used by the batched move: get by ids or by where ($and of equalities / $in)."""
+
+    def __init__(self, rows):
+        self.rows = {k: dict(v) for k, v in rows.items()}
+
+    def _match(self, metadata, where):
+        if "$and" in where:
+            return all(self._match(metadata, w) for w in where["$and"])
+        for key, value in where.items():
+            if isinstance(value, dict) and "$in" in value:
+                if metadata.get(key) not in value["$in"]:
+                    return False
+            elif metadata.get(key) != value:
+                return False
+        return True
+
+    def get(self, ids=None, where=None, include=None):
+        keys = [i for i in (ids or self.rows) if i in self.rows and (where is None or self._match(self.rows[i], where))]
+        return {"ids": keys, "metadatas": [dict(self.rows[k]) for k in keys]}
+
+    def update(self, ids, metadatas):
+        for i, m in zip(ids, metadatas):
+            self.rows[i] = dict(m)
+
+
+def test_a_folder_move_hides_graph_and_search_entries_of_exactly_the_files_that_have_them(world):
+    from services import deleted_items, evidence_casebin
+    db, case_id, owner, files = world["db"], str(world["case"].id), world["owner"], world["files"]
+    a, b = files["a.bin"], files["b.bin"]
+    chunks = _Chunks({"c1": {"case_id": case_id, "evidence_file_id": str(a.id)},
+                      "c2": {"case_id": case_id, "file_name": "b.bin", "ingestion_state": "active"},
+                      "c3": {"case_id": case_id, "evidence_file_id": "someone-else"}})
+    graph = MagicMock()
+    graph.run.return_value = [{"name": "a.bin", "key": "doc-a"}]
+    vdb = MagicMock(chunk_collection=chunks)
+    hidden = []
+    from routers import evidence_folders
+    with patch("services.evidence_casebin._graph_session", return_value=graph), \
+            patch("services.evidence_casebin._vector_db", return_value=vdb), \
+            patch("services.evidence_casebin.find_exclusive_entities", return_value=[]), \
+            patch("services.evidence_casebin.hide_graph",
+                  side_effect=lambda gs, **kw: hidden.append(kw["doc_key"]) or {"nodes": 1, "relationships": 0}):
+        out = evidence_folders.delete_folder(folder_id=str(world["top"].id), case_id=case_id, current_user=owner,
+                                             db=db)
+    assert out["deleted_files"] == 3 and hidden == ["doc-a"]  # one Document; the other files had none
+    assert graph.run.call_count == 1  # one lookup for every name, not one per file
+    assert {k: v.get("ingestion_state") for k, v in chunks.rows.items()} == {"c1": "deleted", "c2": "deleted",
+                                                                             "c3": None}
+    db.expire_all()
+    assert db.get(EvidenceFile, a.id).deleted_state["chunk_states"] == {"c1": None}
+    assert db.get(EvidenceFile, b.id).deleted_state["chunk_states"] == {"c2": "active"}
+    with patch("services.evidence_casebin._graph_session", return_value=graph), \
+            patch("services.evidence_casebin._vector_db", return_value=vdb), \
+            patch("services.evidence_casebin.restore_graph",
+                  return_value={"nodes": 1, "relationships": 0, "merged_keys": []}):
+        deleted_items.restore(db, case_id, "evidence_folder", out["deleted_item_id"], owner)
+    assert {k: v.get("ingestion_state") for k, v in chunks.rows.items()} == {"c1": "active", "c2": "active",
+                                                                             "c3": None}

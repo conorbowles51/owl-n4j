@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import { LONG_REQUEST_MS } from "./deleted-items"
 import { transcriptsAPI } from './transcripts.api'
 import { uploadOrdinaryFiles } from "./resumable-upload"
 import { uploadFolderOrArchive } from "./resumable-upload-groups"
@@ -198,13 +199,13 @@ export const evidenceAPI = {
   restoreDeletedItem: (caseId: string, kind: string, id: string) =>
     fetchAPI<Record<string, unknown>>(
       `/api/cases/${caseId}/deleted-items/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/restore`,
-      { method: "POST" }
+      { method: "POST", timeout: LONG_REQUEST_MS }
     ),
 
   purgeDeletedItem: (caseId: string, kind: string, id: string) =>
     fetchAPI<PurgeResult>(
       `/api/cases/${caseId}/deleted-items/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/purge`,
-      { method: "POST" }
+      { method: "POST", timeout: LONG_REQUEST_MS }
     ),
 
   logs: async (caseId: string, limit = 50) => {

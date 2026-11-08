@@ -1,5 +1,6 @@
 import type { EvidenceSort } from "./utils/preferences"
 import { fetchAPI } from "@/lib/api-client"
+import { LONG_REQUEST_MS } from "./deleted-items"
 import type {
   FolderTreeNode,
   FolderContentsResponse,
@@ -102,7 +103,8 @@ export const foldersAPI = {
   delete: (folderId: string, caseId: string) =>
     fetchAPI<{ deleted_files: number; deleted_folders: number }>(
       `/api/evidence-folders/${folderId}?case_id=${caseId}`,
-      { method: "DELETE" }
+      // A folder of thousands of files takes minutes; the server allows an hour (nginx /api), so the app waits too.
+      { method: "DELETE", timeout: LONG_REQUEST_MS }
     ),
 
   move: (folderId: string, newParentId: string | null) =>

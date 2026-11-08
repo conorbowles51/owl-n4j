@@ -407,13 +407,10 @@ def _move_folder_to_deleted_items(folder_id: str, case_id: str, current_user: Us
         if evidence_casebin.import_in_progress(db, root.case_id, [f.id for f in files if f.deleted_at is None]):
             raise HTTPException(status_code=409, detail="A Financial import is still preparing files in this "
                                 "folder. Wait for it to finish, or remove the import, then delete the folder.")
-        moved = 0
-        moved_ids = []
-        for f in files:
-            if f.deleted_at is None:
-                evidence_casebin.delete_file(db, f, current_user)
-                moved += 1
-                moved_ids.append(f.id)
+        # One transaction for the whole tree (a 2,000-file folder took 412 s file by file, past the app's 300 s
+        # request limit): the files, the folder item and the folders go together or not at all.
+        moved_ids, hidden_chunks = evidence_casebin.delete_files(db, files, current_user)
+        moved = len(moved_ids)
         # The folder tree itself is one item in Deleted items (lx-deletebin): its rows are kept, parents first, with
         # the files it took, so Restore puts back the folders and then every file in its own folder.
         from services import removed_records
@@ -436,7 +433,18 @@ def _move_folder_to_deleted_items(folder_id: str, case_id: str, current_user: Us
                                                                  folders=len(tree), files=moved,
                                                                  deleted_item_id=str(bin_item.id)))
         db.delete(root)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            for file_id in moved_ids:  # nothing was committed: put back the graph and chunks the move hid
+                evidence_casebin._undo_graph(case_id, file_id)
+            vdb = evidence_casebin._vector_db()
+            if vdb is not None and hidden_chunks:
+                evidence_casebin.restore_chunks(vdb, hidden_chunks)
+            raise
+        from postgres import soft_delete
+        soft_delete.forget()
         return {
             "deleted_files": moved,
             "deleted_folders": len(tree),

@@ -1,5 +1,8 @@
 /** Words for Deleted items (components/DeletedEvidenceDialog.tsx). */
 
+/** A folder delete, restore or removal for good of thousands of files takes minutes; nginx allows /api an hour. */
+export const LONG_REQUEST_MS = 3_600_000
+
 export function size(bytes: number) {
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
