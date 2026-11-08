@@ -5,10 +5,10 @@ Description=Loupe (parent of the live slice)
 [Slice]
 CPUWeight=1000
 IOWeight=1000
-MemoryLow=15G
-# Hard floors: Neo4j 5G (heap max 3G + page cache 2G) + backend 6G = 11G. memory.low alone was overridden under host
+MemoryLow=17G
+# Hard floors: Neo4j 5G (heap max 3G + page cache 2G) + backend 8G = 13G (Neil 8 Nov: the app memory guarantee). memory.low alone was overridden under host
 # pressure: 31 Oct 76,145 low events and 242 MB of Neo4j swapped 01:04-01:07; 1 Nov 00:16 a fleet test burst swapped
 # 1.4 GB of the backend out while it used 3.6 GB, under its 6G memory.low (host_load_minute), and request threads stalled
 # 5-6 s on swap-in. A child's memory.min is capped by its parents', so both slices carry the sum. The Neo4j scope gets
 # its floor from headless/hostpolicy-sweep.sh, since a docker scope is transient.
-MemoryMin=11G
+MemoryMin=13G

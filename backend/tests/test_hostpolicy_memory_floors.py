@@ -60,11 +60,13 @@ class InstallAppliesToRunningUnits(unittest.TestCase):
         self.assertIn('daemon-reload', lines)
         backend = [l for l in lines if l.startswith('set-property --runtime owl-backend-v2.service ')]
         self.assertEqual(len(backend), 1, lines)
-        self.assertIn('MemoryMin=6G', backend[0].split())
+        self.assertIn('MemoryMin=8G', backend[0].split())  # Neil 8 Nov: the app memory guarantee
+        self.assertIn('MemoryLow=8G', backend[0].split())
         for unit in ('loupe.slice', 'loupe-live.slice'):
             line = [l for l in lines if l.startswith('set-property --runtime %s ' % unit)]
             self.assertEqual(len(line), 1, lines)
-            self.assertIn('MemoryMin=11G', line[0].split())
+            self.assertIn('MemoryMin=13G', line[0].split())
+            self.assertIn('MemoryLow=17G', line[0].split())
 
 
     def test_a_drop_in_without_resource_lines_does_not_stop_the_install(self):
