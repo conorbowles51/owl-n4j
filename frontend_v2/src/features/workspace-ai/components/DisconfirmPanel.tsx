@@ -182,6 +182,17 @@ function Result({ sweep }: { sweep: DisconfirmSweep }) {
           so {sweep.repeats.length === 1 ? "it was" : "they were"} not asked again.
         </p>
       )}
+      {(sweep.fold?.folded ?? 0) > 0 && (
+        <p className="text-xs text-muted-foreground" data-testid="disconfirm-fold">
+          {plural(sweep.fold!.folded, "further finding")} stated a fact already listed above and
+          {sweep.fold!.folded === 1 ? " was" : " were"} folded into it, every citation kept.
+        </p>
+      )}
+      {sweep.fold?.error && (
+        <p className="text-xs text-muted-foreground" data-testid="disconfirm-fold-error">
+          Findings stating one fact could not be folded this run: {sweep.fold.error}. Each stands on its own above.
+        </p>
+      )}
       <AbsenceList title="What the theory needs and the case lacks" items={named} />
       <AbsenceList title="Accounts seen in the case with no statement" items={seen} />
       {!!sweep.absences?.not_checked?.length && (

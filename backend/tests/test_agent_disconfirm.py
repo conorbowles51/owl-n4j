@@ -616,3 +616,108 @@ def test_the_ledger_line_says_every_row_was_searched():
     """The agent read '15 searches of 49 rows, 38 matched' as a sweep that reached 38 of 49 rows."""
     did, _ = D._surface_words('ledger', dict(reachable=True, searches=15, rows_found=38), dict(ledger=49))
     assert did == 'ledger: 15 searches over all 49 rows, 38 rows matched the words'
+
+
+# ---------------------------------------------------------------------------
+# Folding: one fact, one proposal (lx-agentruns). Measured 8 Nov 2026: 8 proposals on one sweep all said Arrendo
+# held BBVA account 0038, across different expectations, because only an identical citation set counted as a repeat.
+# ---------------------------------------------------------------------------
+
+ONE_FACT = {
+    'Transfer To Dorian Ashdown': {'findings': [{'title': 'A payment to Ashdown', 'why': 'The row shows 108.72 paid.',
+                                                 'items': ['I1'], 'strength': 'contradicts'}]},
+    'repay you Friday': {'findings': [{'title': 'Ashdown was repaid', 'why': 'The message says the money came.',
+                                       'items': ['I1'], 'strength': 'contradicts'}]},
+}
+FOLD_WORDS = 'tidying the counter-argument proposals'
+
+
+def test_two_findings_stating_one_fact_fold_into_one_keeping_both_citations(db):
+    reader = reader_of(dict(ONE_FACT, **{FOLD_WORDS: {'groups': [['P2', 'P1']]}}))
+    done = ran(db, reader)
+    rows = db.scalars(select(WorkspaceAIOutput).where(WorkspaceAIOutput.output_type == 'counter_argument')).all()
+    assert len(rows) == 1, 'one fact is one question for a person'
+    kept = rows[0]
+    titles = {'A payment to Ashdown': ['txn://t1'], 'Ashdown was repaid': ['rec://m1']}
+    other = next(t for t in titles if t != kept.content['title'])
+    assert set(kept.content['citations']) == {'txn://t1', 'rec://m1'}, 'every citation of the fact is kept'
+    assert {c['cite'] for c in kept.citations} == {'txn://t1', 'rec://m1'}
+    assert kept.content['folded'][0]['title'] == other, 'the folded wording stays visible on the kept proposal'
+    assert kept.content['folded'][0]['citations'] == titles[other]
+    assert kept.model_metadata['origin'], 'still marked as the model reading it is'
+    assert [dict(p, citations=p['citations']) for p in done['proposals']] == [
+        dict(id=str(kept.id), title=kept.content['title'], expectation=kept.content['expectation_id'],
+             strength='contradicts', citations=2, folded=1)]
+    assert done['fold']['calls'] == 1 and done['fold']['groups'] == 1 and done['fold']['folded'] == 1
+    assert done['calls_stated'] == 4 and len(reader.calls) == 4, 'the fold call is stated and spent once'
+    tally = D.tally(db, db.info['case'].id, db.info['theory'].id)
+    assert tally['counter_arguments']['total'] == 1, 'precision counts count a folded fact once'
+    # A rerun treats the folded original's sources as already put to a person.
+    prior = D._prior_sources(db, db.info['case'].id, db.info['theory'].id)
+    assert frozenset(['txn://t1', 'rec://m1']) in prior
+    assert frozenset(titles[other]) in prior
+
+
+def test_two_facts_are_not_folded_and_the_prompt_keeps_a_shared_page_apart(db):
+    reader = reader_of(dict(ONE_FACT, **{FOLD_WORDS: {'groups': []}}))
+    done = ran(db, reader)
+    rows = db.scalars(select(WorkspaceAIOutput).where(WorkspaceAIOutput.output_type == 'counter_argument')).all()
+    assert len(rows) == 2 and len(done['proposals']) == 2, 'the test is the fact, never the citation set'
+    assert done['fold'] == dict(calls=1, groups=0, folded=0, skipped=[], error=None)
+    prompt_words = ' '.join(D.FOLD_PROMPT.split())
+    assert 'Different facts are never grouped, even when they cite the same page or the same document' in prompt_words
+    assert 'one page can hold two facts' in prompt_words
+    assert 'When unsure, leave them apart' in prompt_words
+
+
+def sweep_row(db):
+    from postgres.models.workspace_ai import WorkspaceAIOutput as W
+    return db.scalar(select(W).where(W.output_type == D.OUTPUT_TYPE))
+
+
+def test_a_proposal_a_person_decided_is_never_folded_or_re_ranked(db):
+    done = ran(db, reader_of(dict(ONE_FACT, **{FOLD_WORDS: {'groups': []}})))
+    first = db.get(WorkspaceAIOutput, uuid.UUID(done['proposals'][0]['id']))
+    first.review_status = 'accepted'
+    db.commit()
+    item = sweep_row(db)
+    content = dict(item.content)
+    D.fold_same_fact(db, item, content, db.info['theory'], reader_of({FOLD_WORDS: {'groups': [['P1', 'P2']]}}))
+    rows = db.scalars(select(WorkspaceAIOutput).where(WorkspaceAIOutput.output_type == 'counter_argument')).all()
+    assert len(rows) == 2, 'nothing a person acted on is deleted'
+    assert db.get(WorkspaceAIOutput, first.id).review_status == 'accepted'
+    assert content['fold']['skipped'] == [dict(id=str(first.id), why='a person already decided it')]
+    assert content['fold']['calls'] == 1, 'one pending proposal leaves nothing to group, so no second call'
+
+
+def test_a_proposal_a_person_opened_a_source_from_is_never_folded(db):
+    done = ran(db, reader_of(dict(ONE_FACT, **{FOLD_WORDS: {'groups': []}})))
+    opened = done['proposals'][1]['id']
+    db.add(AgentProposalSourceOpen(case_id=db.info['case'].id, proposal_type='workspace_ai',
+                                   proposal_id=uuid.UUID(opened), citation='rec://m1',
+                                   user_id=db.info['owner'].id, user_email='alex@example.test'))
+    db.commit()
+    item = sweep_row(db)
+    content = dict(item.content)
+    fold_reader = reader_of({FOLD_WORDS: {'groups': [['P1', 'P2']]}})
+    D.fold_same_fact(db, item, content, db.info['theory'], fold_reader)
+    assert len(db.scalars(select(WorkspaceAIOutput).where(
+        WorkspaceAIOutput.output_type == 'counter_argument')).all()) == 2
+    assert content['fold']['skipped'] == [dict(id=opened, why='a person opened a source from it')]
+    assert fold_reader.calls == [], 'one pending proposal leaves nothing to group'
+
+
+def test_a_failed_fold_is_named_and_each_finding_stands_on_its_own(db):
+    done = ran(db, reader_of(dict(ONE_FACT, **{FOLD_WORDS: RuntimeError('model down')})))
+    assert done['job_status'] == 'completed' and done['stage'] == 'done'
+    assert 'model down' in done['fold']['error']
+    assert len(done['proposals']) == 2, 'unfolded, never dropped'
+    assert len(db.scalars(select(WorkspaceAIOutput).where(
+        WorkspaceAIOutput.output_type == 'counter_argument')).all()) == 2
+
+
+def test_one_finding_makes_no_fold_call(db):
+    reader = reader_of({'Transfer To Dorian Ashdown': AGAINST})
+    done = ran(db, reader)
+    assert done['fold'] is None or done['fold']['calls'] == 0
+    assert len(reader.calls) == 3 and done['calls_stated'] == 3

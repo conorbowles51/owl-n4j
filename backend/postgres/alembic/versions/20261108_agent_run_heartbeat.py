@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "20261108_agent_run_heartbeat"
-down_revision = "20261105_two_step"
+down_revision = "20261108_page_start_marks"
 branch_labels = None
 depends_on = None
 

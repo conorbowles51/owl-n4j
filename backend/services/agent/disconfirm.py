@@ -144,6 +144,23 @@ Items:
 {items}
 """
 
+FOLD_PROMPT = """You help an investigator by tidying the counter-argument proposals one sweep produced. Several reads
+of one case often report the same fact in different words, and a person should be asked about each fact once.
+
+Theory title: {title}
+
+Below are the proposals, each with an id. Group the ids that state the same fact: the same thing said of the same
+person, account, record or event, however it is worded. Different facts are never grouped, even when they cite the
+same page or the same document: one page can hold two facts. A proposal about a different person, account, amount,
+period or event is a different fact. When unsure, leave them apart.
+
+Answer with JSON only: {{"groups": [["P1", "P4"], ...]}} — only groups of two or more; an id not listed stays as it
+is. With nothing to group: {{"groups": []}}
+
+Proposals:
+{items}
+"""
+
 Reader = Callable[[str], tuple]
 
 
@@ -365,7 +382,7 @@ def view(item) -> dict:
     running_for = None
     if oldest:
         running_for = int((_now() - datetime.fromisoformat(min(oldest))).total_seconds())
-    stated = 1 + len(reads) if reads else None
+    stated = (1 + len(reads) + int((content.get('fold') or {}).get('calls') or 0)) if reads else None
     out = dict(content, id=str(item.id), case_id=str(item.case_id), job_status=item.job_status, progress=item.progress, error=item.error_message,
                cancel_requested=bool(item.cancel_requested), started_at=_iso(item.started_at),
                completed_at=_iso(item.completed_at),
@@ -1078,11 +1095,19 @@ def _read_prompt(theory, exp, read) -> tuple[str, dict]:
 
 
 def _prior_sources(session, case_id, theory_id) -> set[frozenset]:
-    """Source sets already put to a person for this theory: a rerun does not ask twice."""
+    """Source sets already put to a person for this theory: a rerun does not ask twice. A folded proposal counts
+    with its own citations and with each original's, so folding never re-opens a question."""
     from postgres.models.workspace_ai import WorkspaceAIOutput as W
     rows = session.scalars(select(W).where(W.case_id == case_id, W.output_type == PROPOSAL_TYPE)).all()
-    return {frozenset((r.content or {}).get('citations') or []) for r in rows
-            if (r.content or {}).get('theory_id') == str(theory_id)}
+    out = set()
+    for r in rows:
+        content = r.content or {}
+        if content.get('theory_id') != str(theory_id):
+            continue
+        out.add(frozenset(content.get('citations') or []))
+        for folded in content.get('folded') or []:
+            out.add(frozenset(folded.get('citations') or []))
+    return out
 
 
 def record_findings(session, item, content, theory, exp, read, labels, findings, prior, model_origin) -> None:
@@ -1125,6 +1150,92 @@ def record_findings(session, item, content, theory, exp, read, labels, findings,
         read['findings'] += 1
         content['proposals'].append(dict(id=stored['id'], title=title, expectation=exp['id'], strength=strength,
                                          citations=len(cites)))
+
+
+def _opened_from(session, case_id, ids) -> set[str]:
+    """Proposals a person opened a source from: opening is acting, so they are never folded away."""
+    from postgres.models.agent_proposals import AgentProposalSourceOpen as O
+    if not ids:
+        return set()
+    rows = session.scalars(select(O.proposal_id).where(O.case_id == case_id, O.proposal_type == 'workspace_ai',
+                                                       O.proposal_id.in_([_uuid(i) for i in ids]))).all()
+    return {str(r) for r in rows}
+
+
+def fold_same_fact(session, item, content, theory, reader) -> None:
+    """Proposals of this sweep that state one fact are folded into one, carrying every citation.
+
+    The test is the fact, never the citation set: one model call (stated on the sweep) groups the sweep's pending
+    proposals by the fact they state, and the prompt keeps two facts apart even when they cite the same page. Code
+    does the folding: the earliest proposal of a group is kept, its citations become the union of the group's (each
+    checked against the case again), and every folded wording stays visible on the kept proposal and the sweep. A
+    proposal a person already acted on (decided, or opened a source from) is never folded or re-ranked; it is named
+    under ``skipped``. A fold that cannot be made is named under ``not_folded``, never dropped unsaid."""
+    from postgres.models.workspace_ai import WorkspaceAIOutput as W
+    from services.agent.proposals import _checked_citations
+    mine = list(content.get('proposals') or [])
+    fold = content.setdefault('fold', dict(calls=0, groups=0, folded=0, skipped=[], error=None))
+    if len(mine) < 2:
+        return
+    order = {entry['id']: i for i, entry in enumerate(mine)}
+    rows, skipped = {}, []
+    for entry in mine:
+        row = session.get(W, _uuid(entry['id']))
+        if row is None or row.review_status != 'pending_review':
+            skipped.append(dict(id=entry['id'], why='a person already decided it'))
+            continue
+        rows[entry['id']] = row
+    for pid in _opened_from(session, item.case_id, list(rows)):
+        rows.pop(pid, None)
+        skipped.append(dict(id=pid, why='a person opened a source from it'))
+    fold['skipped'] = skipped
+    if len(rows) < 2:
+        return
+    labels = {f'P{i}': pid for i, pid in enumerate(rows, 1)}
+    lines = '\n'.join(f"{label}: {rows[pid].content.get('title')} — {_clean(rows[pid].content.get('body'), 300)}"
+                      for label, pid in labels.items())
+    content['step'] = 'Folding findings that state one fact (one model call)'
+    _save(session, item, content)
+    prompt = FOLD_PROMPT.format(title=theory.title or '', items=lines)
+    text, usage = _beating(session, item, content, lambda: reader(prompt))
+    _spend(session, item, content, usage, f'{theory.title}: fold'[:90])
+    fold['calls'] += 1
+    groups = _json(text).get('groups')
+    seen: set[str] = set()
+    for group in groups if isinstance(groups, list) else []:
+        ids = [labels[g] for g in group if g in labels and labels[g] not in seen] if isinstance(group, list) else []
+        ids.sort(key=order.get)
+        if len(ids) < 2:
+            continue
+        seen.update(ids)
+        keep = rows[ids[0]]
+        cites = list(dict.fromkeys(c for pid in ids for c in (rows[pid].content.get('citations') or [])))
+        try:
+            checked = _checked_citations(session, item.case_id, cites, limit=MAX_RECORD_CITATIONS)
+        except ProposalError as exc:
+            session.rollback()
+            fold.setdefault('not_folded', []).append(dict(ids=ids, why=str(exc)[:300]))
+            continue
+        folded = [dict(title=rows[pid].content.get('title'), expectation_id=rows[pid].content.get('expectation_id'),
+                       citations=list(rows[pid].content.get('citations') or [])) for pid in ids[1:]]
+        keep.content = dict(keep.content, citations=[c['citation'] for c in checked],
+                            folded=(keep.content.get('folded') or []) + folded)
+        keep.citations = [dict(source_id=c['citation'], cite=c['citation'], label=c['label'], status=c['status'])
+                          for c in checked]
+        flag_modified(keep, 'content')
+        flag_modified(keep, 'citations')
+        for pid in ids[1:]:
+            session.delete(rows[pid])
+        gone = set(ids[1:])
+        for entry in mine:
+            if entry['id'] == ids[0]:
+                entry['citations'] = len(checked)
+                entry['folded'] = int(entry.get('folded') or 0) + len(folded)
+        mine = [e for e in mine if e['id'] not in gone]
+        fold['groups'] += 1
+        fold['folded'] += len(folded)
+    content['proposals'] = mine
+    session.commit()
 
 
 def read(session, *, sweep_id, reader: Optional[Reader] = None, requested_by=None) -> dict:
@@ -1192,6 +1303,13 @@ def read(session, *, sweep_id, reader: Optional[Reader] = None, requested_by=Non
                 _save(session, item, content, progress=int(100 * finished / max(1, total)))
         session.refresh(item, attribute_names=['cancel_requested'])
         content['stopped'] = bool(item.cancel_requested)
+        try:
+            fold_same_fact(session, item, content, theory, reader)
+        except Exception as exc:  # noqa: BLE001 - the sweep still ends; the unfolded state is named, never silent
+            session.rollback()
+            log.warning('Disconfirm fold failed for %s: %s', sweep_id, exc)
+            content.setdefault('fold', dict(calls=0, groups=0, folded=0, skipped=[]))['error'] = (
+                _clean(f'{type(exc).__name__}: {exc}', 300))
         content['stage'] = 'done'
         out = outcome(content, content['reads'], 'completed')
         content['step'] = out['headline']
@@ -1375,5 +1493,6 @@ def agent_summary(result: dict) -> dict:
                                    searched=e['searched'], out_of_reach=e['out_of_reach'], sentence=e['sentence'])
                               for e in out.get('expectations') or []],
                 proposals=result.get('proposals'), refused=result.get('refused'), repeats=result.get('repeats'),
+                fold=result.get('fold'),
                 absences=result.get('absences'), cost=result.get('cost'), headline=out.get('headline'),
                 not_support=out.get('not_support'))

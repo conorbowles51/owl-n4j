@@ -160,6 +160,38 @@ describe("DisconfirmPanel", () => {
     expect(screen.getByTestId("disconfirm-absences").textContent).toContain("A phone of Ashdown")
   })
 
+  it("says when findings stating one fact were folded, and when they could not be", async () => {
+    show({
+      sweep: sweep({
+        stage: "done",
+        proposals: [{ id: "p1", title: "Arrendo held the account", expectation: "E1", strength: "contradicts",
+                      citations: 5, folded: 2 }],
+        fold: { calls: 1, groups: 1, folded: 2, skipped: [] },
+      }),
+    })
+    expect((await screen.findByTestId("disconfirm-fold")).textContent).toContain(
+      "2 further findings stated a fact already listed above and were folded into it, every citation kept."
+    )
+    expect(screen.queryByTestId("disconfirm-fold-error")).toBeNull()
+  })
+
+  it("names a fold that could not run, and each finding stands on its own", async () => {
+    show({
+      sweep: sweep({
+        stage: "done",
+        proposals: [
+          { id: "p1", title: "Arrendo held the account", expectation: "E1", strength: "contradicts", citations: 3 },
+          { id: "p2", title: "ARRENDO account at BBVA", expectation: "E2", strength: "contradicts", citations: 2 },
+        ],
+        fold: { calls: 1, groups: 0, folded: 0, skipped: [], error: "ReadTimeout: the model could not be reached" },
+      }),
+    })
+    expect((await screen.findByTestId("disconfirm-fold-error")).textContent).toContain(
+      "could not be folded this run"
+    )
+    expect(screen.queryByTestId("disconfirm-fold")).toBeNull()
+  })
+
   it("shows an accepted counter-argument under the model that wrote it", async () => {
     show({
       counter_arguments: [{

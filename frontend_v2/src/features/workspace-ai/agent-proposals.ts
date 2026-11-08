@@ -161,9 +161,18 @@ export interface DisconfirmSweep {
   calls_stated: number | null
   time_left: { seconds: number; label: string } | null
   cost: { usd: number; tokens: number; calls: number }
-  proposals: { id: string; title: string; expectation: string; strength: string; citations: number }[]
+  proposals: { id: string; title: string; expectation: string; strength: string; citations: number; folded?: number }[]
   refused: { title: string | null; expectation: string; why: string }[]
   repeats: { title: string; expectation: string }[]
+  /** Findings of this sweep that stated one fact, folded into one proposal each, every citation kept. */
+  fold?: {
+    calls: number
+    groups: number
+    folded: number
+    skipped: { id: string; why: string }[]
+    not_folded?: { ids: string[]; why: string }[]
+    error?: string | null
+  } | null
   absences: { items: DisconfirmAbsence[]; not_checked: string[]; needs: number; limitation: string } | null
   outcome: {
     headline: string

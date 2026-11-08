@@ -219,7 +219,7 @@ def run_one(api, theory, state, out, lock, reads=True):
         sweep = wait(api, t['entry'], lambda s: s['stage'] == 'done' and s['job_status'] not in ('queued', 'running'))
         t['read_seconds'] = round(time.time() - began, 1)
     t['sweep'] = {k: sweep.get(k) for k in ('id', 'stage', 'expectations', 'cost', 'absences', 'refused', 'repeats', 'proposals',
-                                            'model', 'calls_stated', 'census')}
+                                            'fold', 'model', 'calls_stated', 'census')}
     t['reads'] = sweep['reads']
     t['outcome'] = sweep['outcome']
     return t
