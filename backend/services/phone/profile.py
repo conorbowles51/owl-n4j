@@ -42,6 +42,46 @@ class NotFound(LookupError):
     pass
 
 
+# Every table a profile() answer is built from, reduced to a cheap aggregate. A row here must move whenever a change
+# to that table could change profile()'s output for the phone; generation-scoped capture tables (phone_record_summaries,
+# pv_comm_event, phone_time_values, phone_extraction_documents) are covered by the interpretation state's generation and
+# interpreted_at, person decisions (owner, zone applied, reading confirms, reconciliation accepts, identity links,
+# value corrections) by the case's adjudications, and names shown on labels by case_profiles, phone_identities and the
+# two link tables.
+_STAMP_READS = (
+    ("interpretation", "SELECT generation, interpreted_at, updated_at FROM phone_interpretation_state "
+                       "WHERE extraction_id::text = :e"),
+    ("zone_setting", "SELECT time_zone, updated_at FROM case_display_settings WHERE case_id = :c"),
+    ("case_device_zones", "SELECT count(*), min(device_zone), max(device_zone) FROM pv_extraction "
+                          "WHERE case_id = :c AND standing = 'active'"),
+    ("adjudications", "SELECT count(*), max(created_at) FROM adjudications WHERE case_id = :c"),
+    ("workspace_links", "SELECT count(*), max(created_at) FROM workspace_entry_links WHERE case_id = :c"),
+    ("dossier_links", "SELECT count(*), max(created_at) FROM dossier_links WHERE case_id = :c"),
+    ("people", "SELECT count(*), max(updated_at) FROM case_profiles WHERE case_id = :c"),
+    ("identities", "SELECT count(*), max(updated_at) FROM phone_identities WHERE case_id = :c"),
+    ("reconciliations", "SELECT count(*), max(ran_at) FROM phone_reconciliations WHERE extraction_id::text = :e"),
+    ("files", "SELECT count(*), max(verified_at) FROM phone_files WHERE extraction_id::text = :e"),
+    ("registry_flags", "SELECT count(*), max(raised_at), count(*) FILTER (WHERE state = 'mapping_needed') "
+                       "FROM phone_schema_flags"),
+)
+
+
+def change_stamp(conn, case_id, extraction_id) -> str:
+    """A short opaque value that changes whenever ``profile`` could answer differently for this phone, from aggregate
+    reads that cost a few milliseconds together. Raises ``NotFound`` for a phone not in the case, as ``profile``
+    does. Serves the summary route's ETag, so a poller pays for the full build only when something changed."""
+    import hashlib
+    ext = str(extraction_id)
+    x = conn.execute(text("SELECT * FROM pv_extraction WHERE case_id = :c AND extraction_id::text = :e"),
+                     {"c": case_id, "e": ext}).first()
+    if x is None:
+        raise NotFound(ext)
+    parts = [repr(tuple(x))]
+    for _, sql in _STAMP_READS:
+        parts.append(repr([tuple(r) for r in conn.execute(text(sql), {"c": case_id, "e": ext})]))
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:32]
+
+
 def _verdict_word(x) -> str:
     if x.state == "failed":
         return "Failed"

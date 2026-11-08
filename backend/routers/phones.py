@@ -10,7 +10,7 @@ from datetime import date, datetime
 from typing import List, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
@@ -1562,17 +1562,41 @@ def identity_decision(body: IdentityDecision, db: Session = Depends(get_db), use
     return out
 
 
+# The last profile built per phone, kept per process and keyed by its change stamp, so polling the route costs the
+# stamp reads alone while nothing changes. Bounded; entries are correct for as long as their stamp still matches.
+_PROFILE_CACHE: dict = {}
+_PROFILE_CACHE_LIMIT = 32
+
+
 @router.get("/{extraction_id}/profile")
-def phone_profile(extraction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
-                  user: User = Depends(get_current_db_user)):
+def phone_profile(request: Request, response: Response, extraction_id: UUID, case_id: UUID = Query(...),
+                  db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """Phone summary (03 section 7): every number a count over the read views, each with the list it opens. A phone
-    of another case is 404."""
+    of another case is 404. Answers 304 to a matching ``If-None-Match``: the ETag is a stamp over every table the
+    summary is built from, read for a few milliseconds, so repeat reads skip the full build while nothing changed."""
     from services.phone import profile as phone_profile_service
     authorize_case(db, case_id, user, ("case", "view"))
     try:
-        return phone_profile_service.profile(db.connection(), case_id, extraction_id)
+        stamp = phone_profile_service.change_stamp(db.connection(), case_id, extraction_id)
     except phone_profile_service.NotFound:
         raise HTTPException(status_code=404, detail="This phone is not in this case.")
+    etag = '"%s"' % stamp
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if etag in (request.headers.get("if-none-match") or ""):
+        return Response(status_code=304, headers=headers)
+    key = (str(case_id), str(extraction_id))
+    hit = _PROFILE_CACHE.get(key)
+    if hit is None or hit[0] != stamp:
+        try:
+            body = phone_profile_service.profile(db.connection(), case_id, extraction_id)
+        except phone_profile_service.NotFound:
+            raise HTTPException(status_code=404, detail="This phone is not in this case.")
+        while len(_PROFILE_CACHE) >= _PROFILE_CACHE_LIMIT:
+            _PROFILE_CACHE.pop(next(iter(_PROFILE_CACHE)))
+        _PROFILE_CACHE[key] = hit = (stamp, body)
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = headers["Cache-Control"]
+    return hit[1]
 
 
 @router.get("/{extraction_id}/since")
