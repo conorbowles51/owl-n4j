@@ -348,6 +348,16 @@ class Exports(Fixture):
         row = J.export_csv({"items": [item]}, numbers=numbers).decode("utf-8-sig")
         self.assertIn("000010-000012 (suggested", row)
 
+    def test_the_export_survives_calls_with_and_without_a_page_on_one_file(self):
+        from services.financial import judgements as J
+        file = self.pdf("000010-000012 Statements.pdf", 3)
+        base = {"evidence_file_id": str(file.id), "priority": 1, "priority_label": "High", "status": "open",
+                "category_label": "c", "rule_label": "r", "summary": "s", "rule_id": "x", "origin": "rule",
+                "strength": "proved", "filename": file.original_filename}
+        items = [dict(base, page=None), dict(base, page="2")]
+        numbers = J.export_numbers(self.db, self.case.id, {"items": items})
+        self.assertIn((str(file.id), 2), numbers)
+
     def test_the_pdf_provenance_label_prints_the_reference(self):
         from services.financial_export_service import _provenance_label
         label = _provenance_label({"source_filename": "a.pdf", "source_page": 2,

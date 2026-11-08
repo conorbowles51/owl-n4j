@@ -1563,7 +1563,7 @@ def export_numbers(session, case_id, page):
     from services.production_numbers import _page_int, reference_words, references_for
     items = {(item.get('evidence_file_id'), _page_int(item.get('page'))) for item in page['items']
              if item.get('evidence_file_id')}
-    refs = references_for(session, case_id, sorted(items))
+    refs = references_for(session, case_id, sorted(items, key=lambda pair: (str(pair[0]), pair[1] is not None, pair[1] or 0)))
     return {key: reference_words(found) for key, found in refs.items()}
 
 
