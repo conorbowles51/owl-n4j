@@ -233,3 +233,13 @@ def test_active_runs_lists_only_the_persons_running_runs_in_the_case(db, monkeyp
     db.commit()
     assert storage.active_runs(db, user=owner, case_id=db.info["case"].id) == []
     assert uuid.UUID(out[0]["thread_id"])
+
+
+def test_text_shown_while_the_run_works_is_in_plain_words_too():
+    """The streamed answer and a clarification question go through the same plain-words check as the stored one."""
+    from services.agent.service import AgentService
+    question = AgentService._clarification_from_runner(
+        {"question": "Should I widen get_financial_coverage to p3 rows?",
+         "options": [{"id": "a", "label": "Yes"}, {"id": "b", "label": "No"}]},
+        thread_id="t", run_id="r", original_message="q").question
+    assert "get_financial_coverage" not in question and "p3" not in question

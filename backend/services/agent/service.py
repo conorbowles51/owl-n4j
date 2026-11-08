@@ -215,6 +215,14 @@ class AgentService:
                     collected_trace.append(event["tool"])
                     self._store_call_now(db, run=run, sequence=len(collected_trace), item=event["tool"])
                     event = {**event, "tool": {k: v for k, v in event["tool"].items() if k != "record"}}
+                if event.get("type") in ("answer", "assistant_draft") and isinstance(event.get("answer"), str):
+                    # Text shown while the run works is in plain words too, as the stored answer is.
+                    event = {**event, "answer": plain_answer.checked(event["answer"])[0]}
+                if event.get("type") == "clarification" and isinstance(event.get("clarification"), dict):
+                    question = event["clarification"].get("question")
+                    if isinstance(question, str):
+                        event = {**event, "clarification": {**event["clarification"],
+                                                            "question": plain_answer.checked(question)[0]}}
                 yield event
 
             if is_cancelled(run_id):
@@ -1041,7 +1049,8 @@ class AgentService:
         if len(normalized_options) < 2:
             return None
         return AgentClarification(
-            question=str(payload.get("question") or "Can you clarify how you want me to proceed?"),
+            question=plain_answer.checked(
+                str(payload.get("question") or "Can you clarify how you want me to proceed?"))[0],
             options=normalized_options,
             allow_free_text=bool(payload.get("allow_free_text", True)),
             pending_run_id=run_id,
