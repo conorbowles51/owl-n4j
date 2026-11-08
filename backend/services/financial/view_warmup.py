@@ -508,7 +508,7 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
     from routers.evidence import list_evidence, list_statement_register
     from routers.financial_ledger import get_account_consolidations, get_account_parties
     from routers.financial_statement_import import account_types as get_account_types
-    from routers.financial_statement_import import list_financial_batches
+    from routers.financial_statement_import import list_financial_batches, warm_large_batches
     from services.financial.review_queue import warm as warm_review_queue
     from services.financial.batch_import_history import warm as warm_batch_receipts
     from services.financial import view_cache
@@ -581,6 +581,9 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
         ('batch receipts', warm_batch_receipts, {}),
         # Every call recomputed it: d5b330d1 10-39 s live (request_speed, 6 h to 19:00 2026-10-30), 49494305 ~5 s.
         ('batch list', list_financial_batches, {}),
+        # The review page of each batch of LARGE_BATCH_STATEMENTS or more (its kept part, batch-detail): first open after
+        # the 14:25 release 2026-11-08 computed it, 30231f0a 34.2 s and f6f7cd42 10.0 s, neither opened in the day before.
+        ('large batches', warm_large_batches, {}),
         # The summary panel of the Ledger, Trends and People tabs (LedgerSummaryPanel, include_contributions); the
         # Ledger tab opens with the working summary. Computed for the first visitor before: 1.9-4.1 s (journal,
         # 2026-10-30 19:42) and 4.2-4.7 s live (22:11).

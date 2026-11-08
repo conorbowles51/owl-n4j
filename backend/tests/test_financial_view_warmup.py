@@ -22,7 +22,7 @@ SUMMARY_VIEWS = (('get_ledger_summary', 'summary'), ('get_working_ledger_summary
 FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
-PER_CASE = 29  # views warmed for each case
+PER_CASE = 30  # views warmed for each case
 GRAPH = {}  # the graph database's last commit as the tests set it (never a real graph database)
 
 
@@ -49,6 +49,8 @@ def _stub_every_view(monkeypatch, calls):
                         lambda **kw: calls.append(dict(kw, view='consolidations')))
     monkeypatch.setattr(routers.financial_statement_import, 'list_financial_batches',
                         lambda **kw: calls.append(dict(kw, view='batches')))
+    monkeypatch.setattr(routers.financial_statement_import, 'warm_large_batches',
+                        lambda **kw: calls.append(dict(kw, view='large-batches')))
     from services.financial import review_queue
     monkeypatch.setattr(review_queue, 'warm', lambda **kw: calls.append(dict(kw, view='queue')))
     from services.financial import batch_import_history
@@ -128,13 +130,13 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(large), None), (str(large), 'transactions'), (str(large), 'overview'), (str(large), 'panels'), (str(large), 'panel-figures'),
         (str(large), 'first-view'), (str(large), 'trends'), (str(large), 'files'), (str(large), 'evidence'), (str(large), 'register'),
         (str(large), 'parties'), (str(large), 'people'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'), (str(large), 'receipts'),
-        (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
+        (str(large), 'batches'), (str(large), 'large-batches'), (str(large), 'summary'), (str(large), 'working-summary'),
         (str(large), 'graph-transactions'), (str(large), 'graph-intelligence'),
         (str(large), 'graph-page'), (str(large), 'timeline-page'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'overview'), (str(small), 'panels'), (str(small), 'panel-figures'),
         (str(small), 'first-view'), (str(small), 'trends'), (str(small), 'files'), (str(small), 'evidence'), (str(small), 'register'),
         (str(small), 'parties'), (str(small), 'people'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'), (str(small), 'receipts'),
-        (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
+        (str(small), 'batches'), (str(small), 'large-batches'), (str(small), 'summary'), (str(small), 'working-summary'),
         (str(small), 'graph-transactions'), (str(small), 'graph-intelligence'),
         (str(small), 'graph-page'), (str(small), 'timeline-page'),
         # The full-range analyses in a second pass, after every case's views above (the release warm-up's cap).
@@ -144,16 +146,17 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(small), 'transfers'), (str(small), 'patterns')]
     # The batch list takes only the case, as a UUID (FastAPI's type for it): the same cached-view key.
     assert {key: value for key, value in calls[16].items() if key != 'db'} == dict(case_id=large, view='batches')
+    assert {key: value for key, value in calls[17].items() if key != 'db'} == dict(case_id=large, view='large-batches')
     # The three account views take only the case: the same cached-view key as a first visit.
     assert {key for key in calls[10] if key != 'db'} == {'case_id', 'view'}
     assert calls[8]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
     assert {key: value for key, value in calls[9].items() if key != 'db'} == dict(case_id=str(large), view='register')
     # The graph records as a first visit asks for them (case as text, every filter unset): the same cached-view key.
-    assert {key: value for key, value in calls[19].items() if key != 'db'} == dict(
+    assert {key: value for key, value in calls[20].items() if key != 'db'} == dict(
         case_id=str(large), mode='transactions', types=None, start_date=None, end_date=None, categories=None,
         view='graph-transactions')
     # The Graph and Timeline pages' reads take only the case; each builds the route's own key (routers.graph/timeline).
-    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (21, 22)] == [
+    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (22, 23)] == [
         dict(case_id=large, view='graph-page'), dict(case_id=large, view='timeline-page')]
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)
@@ -789,6 +792,8 @@ def test_the_stubs_and_the_count_cover_every_view_the_warm_up_computes(tmp_path,
     monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
     assert view_warmup._warm_cases() == (PER_CASE, 0)
     assert len(calls) == PER_CASE
+    # Each large batch's review page (first open after a release: 30231f0a 34.2 s, live 2026-11-08).
+    assert [c['case_id'] for c in calls if c.get('view') == 'large-batches'] == ['case']
 
 
 def test_view_reuse_and_warm_up_lines_reach_the_service_journal():

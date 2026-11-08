@@ -1297,6 +1297,52 @@ def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int 
     return response
 
 
+# A batch with at least this many statements has its review page's kept part computed by the warm-up (view_warmup),
+# so the first open after a release or a change to its rows does not compute it. Measured live 2026-11-08 14:41-14:42,
+# first open after a release: 30231f0a (2,254 statements) 33.2-34.2 s, f6f7cd42 (1,320) 9.5-10.0 s, against a
+# browser limit of 60 s (50.3 s on 5 Nov at heavier load). The warm-up's visited list missed both: neither had been
+# opened in the day before.
+LARGE_BATCH_STATEMENTS = 500
+
+
+def large_batches(db: Session, case_id: UUID) -> list[UUID]:
+    """The case's batches (any but removed) with at least LARGE_BATCH_STATEMENTS statements, largest first."""
+    from sqlalchemy import func, select
+    from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
+    count = func.count(FinancialImportBatchItem.id)
+    return list(db.scalars(
+        select(FinancialImportBatch.id)
+        .join(FinancialImportBatchItem, FinancialImportBatchItem.batch_id == FinancialImportBatch.id)
+        .where(FinancialImportBatch.case_id == case_id, FinancialImportBatch.status != 'removed')
+        .group_by(FinancialImportBatch.id)
+        .having(count >= LARGE_BATCH_STATEMENTS)
+        .order_by(count.desc(), FinancialImportBatch.id)))
+
+
+def warm_large_batches(*, case_id, db: Session):
+    """Compute the kept part of each large batch's review page (view_warmup), with the parameters the page's route
+    passes, so a first open reads it. A batch that fails is logged and the next one continues."""
+    case_id = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
+    batches = large_batches(db, case_id)
+    db.rollback()
+    failed = []
+    for batch_id in batches:
+        try:
+            batch_without_queue_lists(batch_id=batch_id, case_id=case_id, db=db)
+        except HTTPException as refusal:
+            if refusal.status_code != 422:  # a 422 is the view's own answer, kept like a result
+                failed.append(batch_id)
+                logger.warning('Batch %s warm-up failed (%s: %s)', batch_id, refusal.status_code, refusal.detail)
+        except Exception:  # noqa: BLE001 - one batch must not stop the others
+            failed.append(batch_id)
+            logger.warning('Batch %s warm-up failed', batch_id, exc_info=True)
+        finally:
+            db.rollback()
+    if failed:
+        raise RuntimeError('%d of %d large batches not warmed: %s' % (len(failed), len(batches),
+                                                                     ', '.join(map(str, failed))))
+
+
 @router.post('/batches/{batch_id}/control/{action}', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
 def control_financial_batch(batch_id: UUID, action: str, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
