@@ -95,8 +95,11 @@ def prepare_command(settings, started=None):
         argv += ['--property=Environment=LOUPE_PREPARE_STARTED=%.3f' % started]
     # The backend's ExecStart is a login shell (bash -lc), which can set more of the environment.
     # The packages are the released tree's (deploy/backend-tree.sh); a folder without its own runs on the service's.
-    argv += ['/bin/bash', '-lc', '[ -x ../.venv/bin/python ] && PATH="$PWD/../.venv/bin:$PATH"; '
-             'exec python -m services.financial.view_warmup --prepare']
+    # Its interpreter is named by path and PATH stays the service's: PATH is part of the code identity, and a tree's
+    # venv put in front of it gave every prepare an identity the started service never had (live 2026-11-08: prepare
+    # 1f6445aa, service 555a625e, the same files and packages; 249 prepared views unused, first opens computed again).
+    argv += ['/bin/bash', '-lc', '[ -x ../.venv/bin/python ] && exec ../.venv/bin/python -m services.financial.view_warmup '
+             '--prepare; exec python -m services.financial.view_warmup --prepare']
     return argv
 
 

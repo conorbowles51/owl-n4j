@@ -52,7 +52,38 @@ def test_the_prepare_unit_carries_every_service_setting_the_identity_reads():
     assert 'RuntimeMaxSec=%d' % view_prepare.PREPARE_CAP_SECONDS in properties
     assert argv[-3:-1] == ['/bin/bash', '-lc']
     assert argv[-1].endswith('exec python -m services.financial.view_warmup --prepare')
-    assert '../.venv/bin' in argv[-1]
+    assert '../.venv/bin/python' in argv[-1]
+
+
+def _run_prepare_shell(tmp_path, with_venv):
+    """The unit's shell line run for real, with stand-in interpreters that print the PATH they were started with."""
+    import stat
+    tmp_path = tmp_path / ('with-venv' if with_venv else 'without-venv')
+    backend = tmp_path / 'tree' / 'backend'
+    backend.mkdir(parents=True)
+    service_bin = tmp_path / 'service-bin'
+    service_bin.mkdir()
+    stand_ins = [(service_bin / 'python', 'service')]
+    if with_venv:
+        (tmp_path / 'tree' / '.venv' / 'bin').mkdir(parents=True)
+        stand_ins.append((tmp_path / 'tree' / '.venv' / 'bin' / 'python', 'tree'))
+    for path, name in stand_ins:
+        path.write_text('#!/bin/sh\necho "%s $PATH"\n' % name)
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    line = view_prepare.prepare_command(view_prepare.service_settings(FakeSystem()))[-1]
+    path = '%s:/usr/bin:/bin' % service_bin
+    # bash without -l: a login profile on the test host may change PATH for both the service and the prepare alike.
+    out = subprocess.run(['/bin/bash', '-c', line], cwd=backend, env=dict(PATH=path), capture_output=True, text=True)
+    return out.stdout.split(), path
+
+
+def test_the_prepare_keeps_the_services_path_so_its_code_identity_is_the_services(tmp_path):
+    """PATH is hashed into the code identity: the tree's venv put in front of it gave every prepare an identity the
+    started service never had (live 2026-11-08, prepare 1f6445aa against service 555a625e; recomputed both)."""
+    (name, seen), path = _run_prepare_shell(tmp_path, with_venv=True)
+    assert name == 'tree' and seen == path  # the released tree's interpreter, the service's PATH
+    (name, seen), path = _run_prepare_shell(tmp_path, with_venv=False)
+    assert name == 'service' and seen == path
 
 
 def test_the_prepare_runs_the_code_being_released_not_the_tree_the_backend_runs(monkeypatch, tmp_path):
