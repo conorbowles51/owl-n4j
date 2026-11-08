@@ -283,10 +283,10 @@ export function InvestigationTransactionTable({
             <th className="p-2">
               <span className="sr-only">Select</span>
             </th>
-            <th className="p-2">Date</th>
-            <th className="p-2">Description</th>
             <th className="p-2">From</th>
             <th className="p-2">To</th>
+            <th className="p-2">Date</th>
+            <th className="p-2">Description</th>
             <th className="p-2">Category</th>
             <th className="p-2 text-right">{cards ? "Credit" : "Money in"}</th>
             <th className="p-2 text-right">{cards ? "Debit" : "Money out"}</th>
@@ -307,6 +307,32 @@ export function InvestigationTransactionTable({
                   checked={selectedIds.has(row.key)}
                   onChange={(event) => onToggle(row, event.target.checked)}
                 />
+              </td>
+              <td className="p-2 min-w-40 max-w-64 break-words text-base font-semibold">
+                <button
+                  className="text-left underline underline-offset-2 decoration-muted-foreground/40"
+                  onClick={() => openPaymentParty(row.case_id, row, "from")}
+                >
+                  {(row.from_name ??
+                    (row.direction === "debit"
+                      ? row.account_label
+                      : row.counterparty_raw)) ||
+                    unnamedParty(row, "from_name")}
+                </button>
+                <PaymentLabelOrigin row={row} field="from_name" />
+              </td>
+              <td className="p-2 min-w-40 max-w-64 break-words text-base font-semibold">
+                <button
+                  className="text-left underline underline-offset-2 decoration-muted-foreground/40"
+                  onClick={() => openPaymentParty(row.case_id, row, "to")}
+                >
+                  {(row.to_name ??
+                    (row.direction === "credit"
+                      ? row.account_label
+                      : row.counterparty_raw)) ||
+                    unnamedParty(row, "to_name")}
+                </button>
+                <PaymentLabelOrigin row={row} field="to_name" />
               </td>
               <td className="p-2 whitespace-nowrap">
                 {row.ordering_date_context === "statement_end_ordering_only"
@@ -378,32 +404,6 @@ export function InvestigationTransactionTable({
                     )}
                   </div>
                 )}
-              </td>
-              <td className="p-2 max-w-44 break-words">
-                <button
-                  className="text-left underline underline-offset-2 decoration-muted-foreground/40"
-                  onClick={() => openPaymentParty(row.case_id, row, "from")}
-                >
-                  {(row.from_name ??
-                    (row.direction === "debit"
-                      ? row.account_label
-                      : row.counterparty_raw)) ||
-                    unnamedParty(row, "from_name")}
-                </button>
-                <PaymentLabelOrigin row={row} field="from_name" />
-              </td>
-              <td className="p-2 max-w-44 break-words">
-                <button
-                  className="text-left underline underline-offset-2 decoration-muted-foreground/40"
-                  onClick={() => openPaymentParty(row.case_id, row, "to")}
-                >
-                  {(row.to_name ??
-                    (row.direction === "credit"
-                      ? row.account_label
-                      : row.counterparty_raw)) ||
-                    unnamedParty(row, "to_name")}
-                </button>
-                <PaymentLabelOrigin row={row} field="to_name" />
               </td>
               <td className="p-2">
                 <button

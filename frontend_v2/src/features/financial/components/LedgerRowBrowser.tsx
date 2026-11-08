@@ -1174,7 +1174,7 @@ export function LedgerRowBrowser({
   const searchBar = (
     <div
       ref={toolbarRef}
-      className="sticky top-0 z-20 rounded border bg-background px-3 py-2 shadow-sm"
+      className="sticky top-0 z-20 rounded-b border bg-background px-3 py-2 shadow-sm"
       role="region"
       aria-label="Transaction tools and filters"
     >

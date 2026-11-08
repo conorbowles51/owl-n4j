@@ -147,7 +147,56 @@ export function PaymentCardList({
                       {initials(other.name)}
                     </span>
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-baseline gap-x-2">
+                      {/* From and To are the first two lines, in the row's largest text: money out = the account holder pays the other side; money in = the reverse. */}
+                      {([
+                        { side: "from" as const, isOther: incoming },
+                        { side: "to" as const, isOther: !incoming },
+                      ]).map(({ side, isOther }) => {
+                        const p = isOther ? other : own
+                        const unnamed = p.name === "Not identified" || p.key.startsWith("unknown:")
+                        return (
+                          <div
+                            key={side}
+                            data-testid={`payment-${side}`}
+                            className="flex flex-wrap items-baseline gap-x-2 break-words"
+                          >
+                            <span className="w-11 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {side === "from" ? "From" : "To"}
+                            </span>
+                            <button
+                              type="button"
+                              className={`min-w-0 break-words text-left text-[17px] font-semibold leading-snug hover:underline ${unnamed ? "text-muted-foreground" : ""}`}
+                              title={
+                                isOther && onName && needsName(row)
+                                  ? `${nameAction}: open the statement line beside the table`
+                                  : `Filter ${side}: ${p.name}`
+                              }
+                              onClick={() =>
+                                isOther && onName && needsName(row) ? onName(row) : onParty(side, p.key)
+                              }
+                            >
+                              {p.name}
+                            </button>
+                            <PaymentLabelOrigin row={row} field={side === "from" ? "from_name" : "to_name"} />
+                            {!isOther && (
+                              <SourceTag sourceKey={row.account_id} title={row.account_label || row.account_id}>
+                                {row.account_label || row.account_holder || row.account_id}
+                              </SourceTag>
+                            )}
+                            {isOther && onName && needsName(row) && (
+                              <button
+                                type="button"
+                                className="text-[12px] font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
+                                aria-label={`${nameAction} ${incoming ? "who paid" : "who was paid"}: ${label} on ${row.ordering_date}`}
+                                onClick={() => onName(row)}
+                              >
+                                {nameAction}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
                         {row.txn_number != null && (
                           <span
                             className="font-mono text-[12px] font-semibold tabular-nums text-muted-foreground"
@@ -159,54 +208,13 @@ export function PaymentCardList({
                         )}
                         <button
                           type="button"
-                          className="truncate text-left text-[15px] font-semibold hover:underline"
-                          title={
-                            onName && needsName(row)
-                              ? `${nameAction}: open the statement line beside the table`
-                              : `Filter ${incoming ? "from" : "to"}: ${other.name}`
-                          }
-                          onClick={() =>
-                            onName && needsName(row) ? onName(row) : onParty(incoming ? "from" : "to", other.key)
-                          }
+                          className="block min-w-0 max-w-full truncate text-left text-[13px] text-muted-foreground hover:text-foreground hover:underline"
+                          title={row.description ? `${row.description}. Open the original statement.` : "Open the original statement"}
+                          onClick={() => onOpen?.(row)}
                         >
-                          {other.name}
+                          {row.description || "Open transaction"}
                         </button>
-                        <PaymentLabelOrigin row={row} field={incoming ? "from_name" : "to_name"} />
-                        {onName && needsName(row) && (
-                          <button
-                            type="button"
-                            className="text-[12px] font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
-                            aria-label={`${nameAction} ${incoming ? "who paid" : "who was paid"}: ${label} on ${row.ordering_date}`}
-                            onClick={() => onName(row)}
-                          >
-                            {nameAction}
-                          </button>
-                        )}
                       </div>
-                      <button
-                        type="button"
-                        className="block max-w-full truncate text-left text-[13px] text-muted-foreground hover:text-foreground hover:underline"
-                        title={row.description ? `${row.description}. Open the original statement.` : "Open the original statement"}
-                        onClick={() => onOpen?.(row)}
-                      >
-                        {row.description || "Open transaction"}
-                      </button>
-                      <span className="block truncate text-[12px] text-muted-foreground">
-                        {incoming ? "Into " : "From "}
-                        <button
-                          type="button"
-                          className="hover:underline"
-                          title={`Filter ${incoming ? "to" : "from"}: ${own.name}`}
-                          onClick={() => onParty(incoming ? "to" : "from", own.key)}
-                        >
-                          {own.name}
-                        </button>
-                        <PaymentLabelOrigin row={row} field={incoming ? "to_name" : "from_name"} />
-                        {" · "}
-                        <SourceTag sourceKey={row.account_id} title={row.account_label || row.account_id}>
-                          {row.account_label || row.account_holder || row.account_id}
-                        </SourceTag>
-                      </span>
                       <RowJudgementMarkers transaction={row} />
                     </div>
                     <div className="col-start-3 flex flex-wrap items-center gap-1.5 sm:col-start-auto">

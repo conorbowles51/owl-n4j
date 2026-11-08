@@ -1190,11 +1190,12 @@ function FinancialPageContent() {
             aside={<FinancialAccessNotice inline view="transactions" />}
           />
           <div
-            className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
+            className="min-h-0 flex-1 space-y-4 overflow-auto px-4 pb-4"
             style={!isTransactionsMode ? { display: "none" } : undefined}
           >
+            {/* No top padding on this scroller: a sticky bar sticks inside it, so padding would leave a gap above the bar with rows showing. The header carries the space instead. */}
             {/* Buttons follow the title on its line, clear of the Controls tab at the right edge. */}
-            <header className="flex flex-wrap items-center gap-3">
+            <header className="flex pt-4 flex-wrap items-center gap-3">
               <h2 className="text-lg font-semibold">
                 Transactions
                 <InfoTip text="All imported payments are available here. Filter by account or account holder, then open a payment to inspect its statement." />

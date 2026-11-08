@@ -147,11 +147,11 @@ export function TransactionExplorerTable({
       >
         <colgroup>
           <col style={{ width: 32 }} />
+          <col style={{ width: "30%" }} />
           <col style={{ width: 56 }} />
           <col style={{ width: 96 }} />
-          <col style={{ width: "32%" }} />
-          <col style={{ width: "24%" }} />
-          <col style={{ width: "17%" }} />
+          <col style={{ width: "26%" }} />
+          <col style={{ width: "14%" }} />
           <col style={{ width: 136 }} />
           {columns.map((key) => (
             <col key={key} style={{ width: 120 }} />
@@ -162,14 +162,14 @@ export function TransactionExplorerTable({
             <th className="p-2">
               <span className="sr-only">Select</span>
             </th>
+            <th className="p-2">
+              {header("From", "from-asc", "from-desc")} →{" "}
+              {header("To", "to-asc", "to-desc")}
+            </th>
             <th className="p-2" title="Payment number in this case: the same in printouts, exports and after a correction">No.</th>
             <th className="p-2">{header("Date", "oldest", "newest")}</th>
             <th className="p-2">
               {header("Description", "description-asc", "description-desc")}
-            </th>
-            <th className="p-2">
-              {header("From", "from-asc", "from-desc")} →{" "}
-              {header("To", "to-asc", "to-desc")}
             </th>
             <th className="p-2">
               {header("Category", "category-asc", "category-desc")}
@@ -206,6 +206,43 @@ export function TransactionExplorerTable({
                       checked={selectedIds.has(row.key)}
                       onChange={(e) => onToggle(row, e.target.checked)}
                     />
+                  </td>
+                  <td className="p-2 break-words text-base font-semibold" data-testid="payment-from-to">
+                    {(["from", "to"] as const).map((side) => (
+                      <div key={side} className="mb-1">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {side === "from" ? "From: " : "To: "}
+                        </span>
+                        <button
+                          className="text-left hover:underline"
+                          title={
+                            onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name")
+                              ? `${nameAction}: open the statement line beside the table`
+                              : `Filter ${side}: ${party(row, side).name}`
+                          }
+                          onClick={() =>
+                            onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name")
+                              ? onName(row)
+                              : onParty(side, party(row, side).key)
+                          }
+                        >
+                          {party(row, side).name}
+                        </button>
+                        <PaymentLabelOrigin
+                          row={row}
+                          field={side === "from" ? "from_name" : "to_name"}
+                        />
+                        {onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name") && (
+                          <button
+                            className="ml-1 text-xs font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
+                            aria-label={`${nameAction} ${side === "from" ? "who paid" : "who was paid"}: ${row.description || row.ref_id} on ${row.ordering_date}`}
+                            onClick={() => onName(row)}
+                          >
+                            {nameAction}
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </td>
                   <td className="p-2 font-mono tabular-nums text-muted-foreground" data-testid="payment-number">
                     {row.txn_number ?? "—"}
@@ -272,43 +309,6 @@ export function TransactionExplorerTable({
                           : ""}
                       </button>
                     )}
-                  </td>
-                  <td className="p-2 break-words">
-                    {(["from", "to"] as const).map((side) => (
-                      <div key={side} className="mb-1">
-                        <span className="text-muted-foreground">
-                          {side === "from" ? "From " : "→ "}
-                        </span>
-                        <button
-                          className="text-left hover:underline"
-                          title={
-                            onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name")
-                              ? `${nameAction}: open the statement line beside the table`
-                              : `Filter ${side}: ${party(row, side).name}`
-                          }
-                          onClick={() =>
-                            onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name")
-                              ? onName(row)
-                              : onParty(side, party(row, side).key)
-                          }
-                        >
-                          {party(row, side).name}
-                        </button>
-                        <PaymentLabelOrigin
-                          row={row}
-                          field={side === "from" ? "from_name" : "to_name"}
-                        />
-                        {onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name") && (
-                          <button
-                            className="ml-1 text-xs font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
-                            aria-label={`${nameAction} ${side === "from" ? "who paid" : "who was paid"}: ${row.description || row.ref_id} on ${row.ordering_date}`}
-                            onClick={() => onName(row)}
-                          >
-                            {nameAction}
-                          </button>
-                        )}
-                      </div>
-                    ))}
                   </td>
                   <td className="p-2 break-words">
                     <button
