@@ -223,7 +223,7 @@ it("a PDF over one report's size opens the numbered parts in place of the refusa
 it("a start refused for a PDF over one report opens the numbered parts straight away, with their progress", async () => {
   const words = "PDF reports support up to 2,000 captured readings. Narrow the export scope; no partial report was generated."
   const calls: { method: string; body: Record<string, unknown> | null }[] = []
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, options) => {
     const method = options?.method ?? "GET"
     const body = options?.body ? JSON.parse(options.body as string) : null
     calls.push({ method, body })
