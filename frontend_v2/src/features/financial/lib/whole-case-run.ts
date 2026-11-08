@@ -113,8 +113,26 @@ export interface ExportRunSummary {
  * A run a person starts: nothing starts on opening the page. The run's id stays in this browser, so leaving the page
  * and coming back finds the same run, whichever way it went.
  */
+/** Browser storage may be refused (privacy settings, some plain-http setups): the run then lives only in this page. */
+function storedRunId(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function keepRunId(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Refused storage: the id is kept in memory for this page only.
+  }
+}
+
 export function useStartedRun<Summary>(caseId: string, request: Record<string, unknown>, storageKey: string) {
-  const [id, setId] = useState(() => localStorage.getItem(storageKey))
+  const [id, setId] = useState(() => storedRunId(storageKey))
   const [startError, setStartError] = useState<Error | null>(null)
   const [starting, setStarting] = useState(false)
   const query = useQuery({
@@ -130,7 +148,7 @@ export function useStartedRun<Summary>(caseId: string, request: Record<string, u
       } catch (error) {
         // A run past its keeping time is gone: the page goes back to offering a new one.
         if ((error as { status?: number })?.status === 404) {
-          localStorage.removeItem(storageKey)
+          keepRunId(storageKey, null)
           setId(null)
         }
         throw error
@@ -148,7 +166,7 @@ export function useStartedRun<Summary>(caseId: string, request: Record<string, u
           body: { ...request, fresh },
           read: true,
         })
-        localStorage.setItem(storageKey, run.id)
+        keepRunId(storageKey, run.id)
         setId(run.id)
         // A new id starts its own read; only the same id has to be read again, and never the empty one.
         if (run.id === id) query.refetch().catch(() => undefined)
