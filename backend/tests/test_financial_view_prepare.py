@@ -294,3 +294,70 @@ def test_an_unwritable_release_log_does_not_skip_the_prepare_after_migrations(tm
     view_prepare.after_migrations(log=str(tmp_path / 'no-such-dir' / 'log'), run=system, state=str(state),
                                   marker=str(marker), clock=lambda: 1100.0, sleep=lambda s: None)
     assert any(call[:1] == ['systemd-run'] for call in system.calls)
+
+
+def test_a_release_whose_prepare_ran_prepares_again_with_the_work_paused(tmp_path):
+    # Release 0a0a969e (2026-11-08): prepared 18:29, work in hand finished 18:58, restart 19:18; batch 30231f0a changed
+    # at 18:39:56, so its first open after the restart was computed again (45.0 s) though the code identity matched.
+    state, prepared = tmp_path / 'state.json', tmp_path / 'prepared'
+    state.write_text(json.dumps(dict(started=1000.0)))
+    view_prepare.wait(run=FakeSystem(journal='prepare: 254 views warmed in 176 s (0 failed, code 7f62)\n'),
+                      state=str(state), clock=lambda: 1100.0, sleep=lambda s: None,
+                      after_migrations_marker=str(tmp_path / 'am'), prepared_marker=str(prepared))
+    assert prepared.exists()
+
+    system = FakeSystem(active_polls=1, journal='prepare: 254 views warmed in 61 s (0 failed, code 7f62)\n')
+    now = iter(range(2000, 3000))
+    assert view_prepare.refresh(log=str(tmp_path / 'log'), run=system, state=str(state), marker=str(prepared),
+                                clock=lambda: next(now), sleep=lambda s: None) == 0
+    logged = (tmp_path / 'log').read_text()
+    assert 'prepare: work paused; preparing again the views it changed' in logged
+    assert 'prepare: 254 views warmed in 61 s' in logged
+    assert any(call[:1] == ['systemd-run'] for call in system.calls)
+    assert not prepared.exists() and not state.exists()
+
+
+def test_refresh_is_capped_shorter_than_the_first_prepare(tmp_path):
+    prepared, state = tmp_path / 'prepared', tmp_path / 'state.json'
+    import itertools
+    import time
+    now = int(time.time())  # start() records the real start time; the cap counts from it
+    prepared.write_text(json.dumps(dict(at=float(now))) + '\n')
+    system = FakeSystem(active_polls=10 ** 6)
+    clock = itertools.count(now, 10)
+    view_prepare.refresh(log=str(tmp_path / 'log'), run=system, state=str(state), marker=str(prepared),
+                         clock=lambda: next(clock), sleep=lambda s: None)
+    assert ['systemctl', 'stop', view_prepare.UNIT] in system.calls
+    capped = [line for line in (tmp_path / 'log').read_text().splitlines() if 'capped after' in line]
+    assert capped and int(capped[0].split('capped after ')[1].split()[0]) <= view_prepare.REFRESH_CAP_SECONDS + 20
+
+
+def test_no_refresh_without_a_prepare_for_this_release(tmp_path):
+    system = FakeSystem()
+    assert view_prepare.refresh(run=system, state=str(tmp_path / 'state.json'), marker=str(tmp_path / 'absent')) == 0
+    assert system.calls == []
+
+    # Skipped for migrations: after-migrations prepares, not refresh.
+    state = tmp_path / 'state.json'
+    state.write_text(json.dumps(dict(started=1000.0)))
+    view_prepare.wait(run=FakeSystem(journal='prepare: skipped, database migrations pending (x)\n'), state=str(state),
+                      clock=lambda: 1100.0, sleep=lambda s: None, after_migrations_marker=str(tmp_path / 'am'),
+                      prepared_marker=str(tmp_path / 'prepared'))
+    assert not (tmp_path / 'prepared').exists()
+
+
+def test_a_prepared_marker_left_by_an_earlier_release_starts_nothing(tmp_path):
+    prepared = tmp_path / 'prepared'
+    prepared.write_text(json.dumps(dict(at=1000.0)) + '\n')
+    system = FakeSystem()
+    assert view_prepare.refresh(run=system, state=str(tmp_path / 'state.json'), marker=str(prepared),
+                                clock=lambda: 1000.0 + 86400) == 0
+    assert system.calls == [] and not prepared.exists()
+
+
+def test_the_release_prepares_again_with_the_work_paused_right_before_the_restart():
+    script = (Path(__file__).resolve().parents[2] / 'deploy' / 'deploy.sh').read_text()
+    refresh = script.index('"${PREPARE_VIEWS}" refresh')
+    assert script.index('release_work_pause uploads') < refresh
+    assert script.rindex('run_migrations', 0, refresh) > script.index('release_work_pause uploads')
+    assert refresh < script.index('step "Restarting services"') < script.index('restart_backend_bounded; then')

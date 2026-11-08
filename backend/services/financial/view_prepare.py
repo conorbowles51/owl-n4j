@@ -10,10 +10,17 @@ by a process with the service's own environment.
     python3 services/financial/view_prepare.py follow  (deploy/deploy.sh, right after its own fetch: other code -> again)
     python3 services/financial/view_prepare.py wait    (deploy/deploy.sh, before the frontend stops)
     python3 services/financial/view_prepare.py after-migrations  (deploy/deploy.sh, right after its migrations)
+    python3 services/financial/view_prepare.py refresh  (deploy/deploy.sh, with work paused, right before the restart)
 
 A prepare is skipped while the database is behind the release's migrations (views computed against the old schema
 must not be saved under the new code), so a release that migrates used to start cold. ``wait`` notes that skip;
 ``after-migrations`` then runs the prepare again once deploy.sh has migrated, before the restart, under the same cap.
+
+A release waits for the work in hand before it restarts (21 min for 0a0a969e, 2026-11-08 18:36-18:58), and that work
+writes the rows the prepared views were computed from: batch 30231f0a changed at 18:39:56, so its prepared copy no
+longer matched and the first open after the restart was computed again (45.0 s). ``refresh`` runs the prepare once
+more after the pause, before the restart: an unchanged copy costs only its fingerprint check, so it computes just
+the views the held work changed, under REFRESH_CAP_SECONDS. Only for a release whose prepare ran.
 
 ``start`` runs ``python -m services.financial.view_warmup --prepare`` as a unit of its own with the backend unit's
 user, group, working directory, environment file and environment settings (drop-ins included, read from systemd)
@@ -37,6 +44,10 @@ STATE = '/run/loupe-financial-prepare.json'
 # Left by ``wait`` when the prepare was skipped for pending migrations; ``after-migrations`` prepares again.
 AFTER_MIGRATIONS = '/run/loupe-financial-prepare-after-migrations'
 MIGRATIONS_SKIP = 'prepare: skipped, database migrations pending'
+# Left by ``wait`` when this release's prepare ran; ``refresh`` prepares again what changed while work finished.
+PREPARED = '/run/loupe-financial-prepared'
+REFRESH_CAP_SECONDS = 300
+REFRESH_MAX_AGE_SECONDS = 3 * 3600
 SUMMARY_PREFIX = 'prepare: '
 
 
@@ -167,7 +178,7 @@ def follow(log=None, run=_run, state=STATE):
 
 
 def wait(log=None, run=_run, state=STATE, cap=PREPARE_CAP_SECONDS, poll=2.0, clock=time.time, sleep=time.sleep,
-         after_migrations_marker=AFTER_MIGRATIONS):
+         after_migrations_marker=AFTER_MIGRATIONS, prepared_marker=PREPARED):
     """Wait for the prepare unit, at most ``cap`` seconds from its start; returns 0 always."""
     try:
         os.unlink(after_migrations_marker)  # left by a release that stopped before migrating
@@ -203,6 +214,12 @@ def wait(log=None, run=_run, state=STATE, cap=PREPARE_CAP_SECONDS, poll=2.0, clo
                 out.write(summary[-1] + '\n')
         except OSError:
             pass
+    elif summary and prepared_marker:
+        try:
+            with open(prepared_marker, 'w') as out:
+                out.write(json.dumps(dict(at=clock())) + '\n')
+        except OSError:
+            pass
     return 0
 
 
@@ -218,6 +235,25 @@ def after_migrations(log=None, run=_run, state=STATE, marker=AFTER_MIGRATIONS, *
     return wait(log, run=run, state=state, after_migrations_marker=marker + '.again', **wait_options)
 
 
+def refresh(log=None, run=_run, state=STATE, marker=PREPARED, cap=REFRESH_CAP_SECONDS, clock=time.time,
+            max_age=REFRESH_MAX_AGE_SECONDS, **wait_options):
+    """deploy.sh has paused the work and is about to restart the backend: when this release's prepare ran, run it
+    again so the views the held work changed are saved for the new code too (the unchanged ones are only checked),
+    and wait for it at most ``cap`` seconds. Nothing otherwise. Returns 0 always."""
+    try:
+        with open(marker) as saved:
+            at = json.loads(saved.readline() or '{}').get('at')
+        os.unlink(marker)
+    except (OSError, ValueError, AttributeError):
+        return 0
+    if not isinstance(at, (int, float)) or clock() - at > max_age:
+        return 0  # left by a release that stopped before its restart
+    _say(log, 'prepare: work paused; preparing again the views it changed')
+    start(log, run=run, state=state)
+    return wait(log, run=run, state=state, cap=cap, clock=clock, after_migrations_marker=marker + '.after-migrations',
+                prepared_marker=None, **wait_options)
+
+
 if __name__ == '__main__':
     action = sys.argv[1] if len(sys.argv) > 1 else ''
     log = os.environ.get('LOUPE_PREPARE_LOG') or None
@@ -229,5 +265,7 @@ if __name__ == '__main__':
         sys.exit(follow(log))
     if action == 'after-migrations':
         sys.exit(after_migrations(log))
+    if action == 'refresh':
+        sys.exit(refresh(log))
     print(__doc__)
     sys.exit(2)

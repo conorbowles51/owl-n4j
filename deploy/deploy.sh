@@ -546,6 +546,14 @@ else
     success "Evidence engine inputs unchanged; docker build and refresh skipped"
 fi
 
+# The work in hand ran on through the hold and wrote rows the release's views were computed from (2026-11-08: batch
+# 30231f0a changed at 18:39, 21 min before the restart, and its first open was computed again, 45 s). With the work
+# paused, prepare again: only the changed views are computed (view_prepare.py refresh). Never fails the release.
+if [ "${STEP_BACKEND}" = run ] && [ -f "${PREPARE_VIEWS}" ] && [ "$(id -u)" -eq 0 ]; then
+    step "Preparing again the Financial views the held work changed"
+    python3 "${PREPARE_VIEWS}" refresh || warn "Financial view prepare refresh failed; release continues"
+fi
+
 step "Restarting services"
 if [ "${STEP_BACKEND}" = run ]; then
     configure_ingestion_shutdown
