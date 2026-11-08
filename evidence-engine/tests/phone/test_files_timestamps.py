@@ -46,9 +46,11 @@ def test_parse_rules():
     assert (v["parse_rule"], v["instant"], v["local_wall_time"]) == ("iso8601_no_offset", None,
                                                                      dt.datetime(2021, 3, 4, 5, 6, 7))
     v = parse("1/18/2023 4:05:06 PM -05:00")
-    assert v["parse_rule"] == "us_ampm_offset" and v["instant"].hour == 16 and v["original_offset_minutes"] == -300
+    assert v["parse_rule"] == "us_ampm_offset" and v["original_offset_minutes"] == -300
+    assert v["instant"] == dt.datetime(2023, 1, 18, 21, 5, 6, tzinfo=dt.timezone.utc)
     v = parse("1/18/2023 12:05:06 AM(UTC-5)")
-    assert v["parse_rule"] == "us_ampm_utc_label" and v["instant"].hour == 0 and v["original_offset_minutes"] == -300
+    assert v["parse_rule"] == "us_ampm_utc_label" and v["original_offset_minutes"] == -300
+    assert v["instant"] == dt.datetime(2023, 1, 18, 5, 5, 6, tzinfo=dt.timezone.utc)
     assert parse("1/18/2023 4:05:06 PM")["parse_rule"] == "us_ampm_no_offset"
     assert parse("2023:01:18 16:05:06")["parse_rule"] == "exif"
     v = parse("13/01/2023 16:05:06")
@@ -58,6 +60,22 @@ def test_parse_rules():
     v = parse("0.004")
     assert (v["parse_rule"], v["offset_state"], v["instant"]) == ("unparsed", "unparsed", None)
     assert parse("2021-02-30T00:00:00+00:00")["parse_rule"] == "unparsed"
+
+
+def test_instants_are_stored_in_utc_so_postgres_accepts_any_report_offset():
+    """P07 carries '2021-05-18 00:41:50-16:00'-shaped values; PostgreSQL timestamptz takes offsets only to
+    +/-15:59, so an instant written with the report's own offset is refused (psycopg
+    InvalidTimeZoneDisplacementValue, live 6 Nov). The instant is written in UTC; the offset and the original
+    text are kept beside it, so nothing of the source is lost."""
+    v = parse("2021-05-18T00:41:50-16:00")
+    assert v["parse_rule"] == "iso8601_offset" and v["offset_state"] == "explicit"
+    assert v["original_offset_minutes"] == -960
+    assert v["instant"].utcoffset() == dt.timedelta(0)  # fails on old code: it kept tzinfo -16:00
+    assert v["instant"] == dt.datetime(2021, 5, 18, 16, 41, 50, tzinfo=dt.timezone.utc)
+    # every explicit-offset rule writes UTC
+    for text in ("2021-03-04T05:06:07+13:45", "1/18/2023 4:05:06 PM -16:00", "1/18/2023 4:05:06 PM(UTC+16)"):
+        got = parse(text)
+        assert got["instant"].utcoffset() == dt.timedelta(0), text
 
 
 def test_record_timestamp_rows_carry_field_type_and_formatted_text():

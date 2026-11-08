@@ -42,6 +42,12 @@ def _offset(text):
     return sign * (int(h) * 60 + int(m))
 
 
+def _instant(wall, minutes):
+    # Stored in UTC: PostgreSQL timestamptz refuses an offset beyond +/-15:59 and a server report carries -16:00
+    # (P07). The offset itself is kept in original_offset_minutes and the text in original_text.
+    return wall.replace(tzinfo=dt.timezone(dt.timedelta(minutes=minutes))).astimezone(dt.timezone.utc)
+
+
 def parse(text: str) -> dict:
     """``{instant, local_wall_time, original_offset_minutes, offset_state, parse_rule}`` per 01 section 9.2."""
     t = (text or "").strip()
@@ -54,7 +60,7 @@ def parse(text: str) -> dict:
             wall = dt.datetime(int(y), int(mo), int(d), int(h), int(mi), int(s), _micro(frac))
             if off:
                 minutes = _offset(off)
-                out.update(instant=wall.replace(tzinfo=dt.timezone(dt.timedelta(minutes=minutes))),
+                out.update(instant=_instant(wall, minutes),
                            original_offset_minutes=minutes, offset_state="explicit", parse_rule="iso8601_offset")
             else:
                 out.update(local_wall_time=wall, offset_state="absent", parse_rule="iso8601_no_offset")
@@ -72,7 +78,7 @@ def parse(text: str) -> dict:
                     sign = -1 if utc_h.startswith("-") else 1
                     minutes = sign * (abs(int(utc_h)) * 60 + int(utc_m or 0))
                     rule = "us_ampm_utc_label"
-                out.update(instant=wall.replace(tzinfo=dt.timezone(dt.timedelta(minutes=minutes))),
+                out.update(instant=_instant(wall, minutes),
                            original_offset_minutes=minutes, offset_state="explicit", parse_rule=rule)
             else:
                 out.update(local_wall_time=wall, offset_state="absent", parse_rule="us_ampm_no_offset")

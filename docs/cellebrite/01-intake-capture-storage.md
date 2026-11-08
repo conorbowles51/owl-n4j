@@ -1123,7 +1123,9 @@ text and the `formattedTimestamp` attribute are always kept, and remain in the b
 | `unparsed` | anything else | `offset_state='unparsed'`, text kept |
 
 Fractional seconds are kept to microseconds (Postgres `timestamptz` precision); the original text
-holds the rest.
+holds the rest. `instant` is written in UTC whatever the value's own offset, which lives in
+`original_offset_minutes`: Postgres `timestamptz` takes offsets only to ±15:59 and the server P07
+carries `-16:00` values (decision D40).
 
 ### 9.3 Device zone
 
@@ -1575,6 +1577,7 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
 | D37 | Replace and Retire are recorded in the case decision ledger as `supersede_phone_extraction` on subject `phone_extraction` (the retired report), with the typed reason; it has no reversal member | 10.7 step 3 requires the reason through the ledger; nothing can undo a supersede yet, so a reversal name would record an action that does not exist | a restore action is specified |
 | D38 | A `nodeInfo` that matches no tagged file by id or path is matched by its path without its first segment, when exactly one tagged file has that form (resolution `tagged_file_subpath`) | measured on the server P01: every `nodeInfo` path starts with one of 3 source names no file path carries; 19,940 of 46,686 nodes then match exactly one file, and all 19,940 name that file; the other 26,746 name no tagged file. On P02 the rule matches nothing new and changes nothing | a report where the dropped segment is not a source name |
 | D39 | An archive's entries record the member's local header offset, compressed size, method, CRC-32 and the container they were listed from; a member is read by seeking to that offset with its CRC checked, falling back to the archive directory when no position is recorded or the method is not stored or deflated. A file kept inside an archive has the evidence `stored_path` `phone-file:<file_uid>`, served only through the phone file reader, never opened as a path, and not sent for processing (cb-media item F) | measured on live C9.zip (58,215 entries): reading the directory costs 310-480 ms on every open; a zip-kept file had no path of its own, so collecting it into a dossier was refused | the evidence store gains a general archive-member reference, or zip uploads are expanded on intake |
+| D40 | `instant` is written in UTC; the value's own offset lives only in `original_offset_minutes` and `original_text` | PostgreSQL `timestamptz` takes offsets only to ±15:59 and the server P07 carries `-16:00` values, which failed its capture COPY (6 Nov); UTC keeps the same instant for any offset and the original stays whole beside it | never |
 
 ---
 
