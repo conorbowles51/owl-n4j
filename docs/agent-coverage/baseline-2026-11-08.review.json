@@ -1,0 +1,22 @@
+{
+ "v-doc-2": {
+  "answer_ok": false,
+  "note": "Names 3 of the 5 lxfw-feat002-cost files that mention Northgate Holdings."
+ },
+ "v-dj-3": {
+  "answer_ok": false,
+  "note": "Counts judgement calls as decisions and says 3 were drafted by a model; 2 of the 86 recorded decisions were drafted by a model (Claude for Loupe jobs)."
+ },
+ "v-th-2": {
+  "answer_ok": false,
+  "note": "Calls the agent answer added to the theory its narrative; the theory carries two narratives (one by a model, confirmed by a person; one by a person), which it never read."
+ },
+ "v-rep-3": {
+  "answer_ok": false,
+  "note": "Says no saved financial report (right) because 'the casework is empty: 0 findings, notes and theories', which is wrong: the case holds 24 casework entries."
+ },
+ "v-rep-1": {
+  "answer_ok": false,
+  "note": "Lists casework entries as saved reports; says nothing of saved financial reports (there are none) or the casework report."
+ }
+}

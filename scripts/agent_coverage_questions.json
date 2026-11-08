@@ -1,0 +1,857 @@
+{
+ "schema": "loupe.agent.coverage_questions/1",
+ "derived_on": "2026-11-08",
+ "note": "Verification case questions (synthetic material). Questions on a real case are case material and are kept outside the repository (default /mnt/owl-data/agent-coverage/questions-real.json, or LOUPE_AGENT_COVERAGE_REAL); the script reads both when the second exists. A graph entity has no page link an answer can cite, so the Significant layer questions do not require a citation. Expected answers were read from the live data read-only (SQL through the read-only psql helper and the app's GET endpoints) on the date above. The Verification case is written to by automated checks; counts of theories, notes and evidence there can move.",
+ "cases": {
+  "verification": "cded78d0-e659-44cc-940d-d8f8c8012760"
+ },
+ "case_titles": {
+  "verification": "Verification (automated checks)"
+ },
+ "questions": [
+  {
+   "id": "v-fin-1",
+   "case": "verification",
+   "type": "financials",
+   "layer": "all",
+   "question": "How many payments are in the ledger for the BBVA Mexico USD account 0110280038 held by ARRENDO SERV SA DE CV?",
+   "expect_all": [
+    [
+     "16"
+    ]
+   ],
+   "expected": "16 payments",
+   "derived_from": "financial_transactions admitted, account identifier 0110280038 (2026-11-08)",
+   "cite_required": true
+  },
+  {
+   "id": "v-fin-2",
+   "case": "verification",
+   "type": "financials",
+   "layer": "all",
+   "question": "What is the largest single outgoing payment in this case's bank statements? Give the amount, date and account.",
+   "expect_all": [
+    [
+     "7540",
+     "7 540"
+    ],
+    [
+     "2022"
+    ]
+   ],
+   "expected": "USD 7,540.00 debit on 30 Nov 2022 from the BBVA USD account ...0038 (W01 TRASPASO A TERCEROS)",
+   "derived_from": "max amount_minor of admitted debits",
+   "cite_required": true
+  },
+  {
+   "id": "v-fin-3",
+   "case": "verification",
+   "type": "financials",
+   "layer": "all",
+   "question": "Which bank accounts have imported statements in this case, and which of them have no payments?",
+   "expect_all": [
+    [
+     "65504624034",
+     "4034"
+    ],
+    [
+     "0110280038",
+     "0038"
+    ],
+    [
+     "intercam"
+    ]
+   ],
+   "expected": "Santander MXN 65504624034 (22 payments), BBVA USD 0110280038 (16), GB33BUKB20201555555555 (60); Intercam 00022008 has none",
+   "derived_from": "financial_accounts left join admitted transactions",
+   "cite_required": true
+  },
+  {
+   "id": "v-ph-msg",
+   "case": "verification",
+   "type": "phones",
+   "layer": "all",
+   "question": "How many messages and how many calls are on the phones in this case?",
+   "expect_all": [
+    [
+     "172"
+    ],
+    [
+     "70"
+    ]
+   ],
+   "expected": "172 messages and 70 calls (242)",
+   "derived_from": "pv_comm_event by kind",
+   "cite_required": true
+  },
+  {
+   "id": "v-ph-contact",
+   "case": "verification",
+   "type": "phones",
+   "layer": "all",
+   "question": "Who is the most frequent contact on the phone, and how many messages and calls do they have?",
+   "expect_all": [
+    [
+     "yarrow juniper",
+     "0102"
+    ]
+   ],
+   "expected": "Yarrow Juniper, +1 201-555-0102: 97 messages and calls",
+   "derived_from": "pv_comm_party non-owner identities by distinct events",
+   "cite_required": true
+  },
+  {
+   "id": "v-ph-places",
+   "case": "verification",
+   "type": "phones",
+   "layer": "all",
+   "question": "Where did the phone record its own location? How many location points are there?",
+   "expect_all": [
+    [
+     "5",
+     "five"
+    ]
+   ],
+   "expected": "5 location points around Baltimore, Maryland (39.30-39.37 N, 76.54-76.73 W), Jan to Apr 2024",
+   "derived_from": "pv_location_point",
+   "cite_required": true
+  },
+  {
+   "id": "v-ph-money",
+   "case": "verification",
+   "type": "phones",
+   "layer": "all",
+   "question": "Do the phones record any money (payment alerts or amounts) and do any match the bank statements?",
+   "expect_all": [
+    [
+     "0",
+     "no ",
+     "none",
+     "not "
+    ]
+   ],
+   "expected": "Money on the phones ran and found 0 readings",
+   "derived_from": "phone_analysis_runs money_signals completed, results 0",
+   "cite_required": false
+  },
+  {
+   "id": "v-ph-coloc",
+   "case": "verification",
+   "type": "phones",
+   "layer": "all",
+   "question": "Were any of the phone's people together at the same place? Are there together-and-apart results?",
+   "expect_all": [
+    [
+     "no ",
+     "none",
+     "not ",
+     "0"
+    ]
+   ],
+   "expected": "No together-and-apart run in this case",
+   "derived_from": "pol_colocation_run count 0",
+   "cite_required": false
+  },
+  {
+   "id": "v-gr-1",
+   "case": "verification",
+   "type": "graph",
+   "layer": "all",
+   "question": "Who are the directors of Northgate Holdings Ltd according to the case graph?",
+   "expect_all": [
+    [
+     "tanase"
+    ],
+    [
+     "lindqvist"
+    ],
+    [
+     "hoek"
+    ],
+    [
+     "reyes"
+    ]
+   ],
+   "expected": "Mirela Tanase, Oskar Lindqvist, Pieter Hoek, Dana Reyes",
+   "derived_from": "/api/graph DIRECTOR_OF into Northgate Holdings Ltd",
+   "cite_required": true
+  },
+  {
+   "id": "v-gr-2",
+   "case": "verification",
+   "type": "graph",
+   "layer": "all",
+   "question": "Which companies is Arlen Voss a shareholder of?",
+   "expect_all": [
+    [
+     "tessel"
+    ],
+    [
+     "northgate"
+    ],
+    [
+     "corvid"
+    ],
+    [
+     "blue heron"
+    ]
+   ],
+   "expected": "Tessel Marine Partners, Northgate Holdings Ltd, Corvid Trading SA, Blue Heron Logistics",
+   "derived_from": "/api/graph SHAREHOLDER_OF from Arlen Voss",
+   "cite_required": true
+  },
+  {
+   "id": "v-gr-3",
+   "case": "verification",
+   "type": "graph",
+   "layer": "all",
+   "question": "How many people (Person entities) are in the case graph?",
+   "expect_all": [
+    [
+     "14",
+     "15"
+    ]
+   ],
+   "expected": "14 Person entities (15 counting one labelled 'person')",
+   "derived_from": "/api/graph/summary entity_types",
+   "cite_required": false
+  },
+  {
+   "id": "v-tl-1",
+   "case": "verification",
+   "type": "timeline",
+   "layer": "all",
+   "question": "What happened on 7 July 2023 according to the timeline?",
+   "expect_all": [
+    [
+     "nominee"
+    ],
+    [
+     "blue heron"
+    ]
+   ],
+   "expected": "Arlen Voss appointed nominee shareholder of Northgate; meeting at Blue Heron Logistics; transfer Northgate to Tessel",
+   "derived_from": "/api/timeline date 2023-07-07",
+   "cite_required": true
+  },
+  {
+   "id": "v-tl-2",
+   "case": "verification",
+   "type": "timeline",
+   "layer": "all",
+   "question": "What is the earliest event on the case timeline?",
+   "expect_all": [
+    [
+     "2021-01-04",
+     "4 jan",
+     "january 4",
+     "04/01/2021",
+     "4 january"
+    ]
+   ],
+   "expected": "4 January 2021 (email, invoice, loan agreement, meeting at Northgate)",
+   "derived_from": "/api/timeline min ISO date",
+   "cite_required": true
+  },
+  {
+   "id": "v-tl-3",
+   "case": "verification",
+   "type": "timeline",
+   "layer": "all",
+   "question": "How many events are on the case timeline?",
+   "expect_all": [
+    [
+     "620"
+    ]
+   ],
+   "expected": "620",
+   "derived_from": "/api/timeline total",
+   "cite_required": false
+  },
+  {
+   "id": "v-map-1",
+   "case": "verification",
+   "type": "map",
+   "layer": "all",
+   "question": "How many places are on the case map, and where are they?",
+   "expect_all": [
+    [
+     "6",
+     "six"
+    ],
+    [
+     "galway"
+    ]
+   ],
+   "expected": "6: Galway (x2), Washington DC, London, Cupertino, New York",
+   "derived_from": "/api/graph/locations",
+   "cite_required": true
+  },
+  {
+   "id": "v-map-2",
+   "case": "verification",
+   "type": "map",
+   "layer": "all",
+   "question": "Which mapped place is in Ireland, and what happened there?",
+   "expect_all": [
+    [
+     "galway"
+    ],
+    [
+     "orla",
+     "brightwater"
+    ]
+   ],
+   "expected": "Galway: meeting between Orla TestA and Brightwater TestA Ltd",
+   "derived_from": "/api/graph/locations",
+   "cite_required": true
+  },
+  {
+   "id": "v-map-3",
+   "case": "verification",
+   "type": "map",
+   "layer": "all",
+   "question": "Is anything mapped in London? What is it?",
+   "expect_all": [
+    [
+     "downing",
+     "lx-tiles lookup check c"
+    ]
+   ],
+   "expected": "lx-tiles lookup check C, 10 Downing Street",
+   "derived_from": "/api/graph/locations",
+   "cite_required": true
+  },
+  {
+   "id": "v-doc-1",
+   "case": "verification",
+   "type": "documents",
+   "layer": "all",
+   "question": "Which documents contain the exact words 'TRASPASO A TERCEROS'?",
+   "expect_all": [
+    [
+     "11 arrendo bbva usd nov 2022"
+    ],
+    [
+     "verify-reviewgaps"
+    ]
+   ],
+   "expected": "11 ARRENDO BBVA USD NOV 2022.pdf and VERIFY-reviewgaps-new-number-copy.pdf (3 times each)",
+   "derived_from": "evidence_document_texts ilike",
+   "cite_required": true
+  },
+  {
+   "id": "v-doc-2",
+   "case": "verification",
+   "type": "documents",
+   "layer": "all",
+   "question": "Which documents mention Northgate Holdings?",
+   "expect_all": [
+    [
+     "lxfw-feat002-cost"
+    ]
+   ],
+   "expected": "the five lxfw-feat002-cost-*.txt files",
+   "derived_from": "evidence_document_texts ilike",
+   "cite_required": true
+  },
+  {
+   "id": "v-doc-3",
+   "case": "verification",
+   "type": "documents",
+   "layer": "all",
+   "question": "According to the November 2022 BBVA USD statement for Arrendo, what was the final balance?",
+   "expect_all": [
+    [
+     "2064.51",
+     "2 064.51"
+    ]
+   ],
+   "expected": "2,064.51 (opening 4,192.05)",
+   "derived_from": "document text 'Saldo Final'",
+   "cite_required": true,
+   "tools": [
+    "search_documents",
+    "search_exact_words",
+    "search_case",
+    "get_statement_continuity",
+    "get_financial_coverage"
+   ]
+  },
+  {
+   "id": "v-int-1",
+   "case": "verification",
+   "type": "interviews",
+   "layer": "all",
+   "question": "What interviews are recorded in this case, who was interviewed and are they complete?",
+   "expect_all": [
+    [
+     "jane roe"
+    ],
+    [
+     "3",
+     "three"
+    ]
+   ],
+   "expected": "3 completed interviews of Jane Roe, on the dossier 'lx-collect release check dossier'",
+   "derived_from": "dossier_interviews",
+   "cite_required": true
+  },
+  {
+   "id": "v-int-2",
+   "case": "verification",
+   "type": "interviews",
+   "layer": "all",
+   "question": "What evidence file is attached to the interviews?",
+   "expect_all": [
+    [
+     "lxfd-upload-c"
+    ]
+   ],
+   "expected": "lxfd-upload-C.txt (all three)",
+   "derived_from": "dossier_interview_evidence_links",
+   "cite_required": true
+  },
+  {
+   "id": "v-int-3",
+   "case": "verification",
+   "type": "interviews",
+   "layer": "all",
+   "question": "Are there any transcripts of audio or video recordings in this case?",
+   "expect_all": [
+    [
+     "no ",
+     "none",
+     "not ",
+     "zero",
+     "0 ",
+     "isn't",
+     "aren't",
+     "there are no",
+     "nothing"
+    ]
+   ],
+   "expected": "None",
+   "derived_from": "evidence_files.transcription and evidence_transcription_sources: 0",
+   "cite_required": false
+  },
+  {
+   "id": "v-ev-1",
+   "case": "verification",
+   "type": "evidence_files",
+   "layer": "all",
+   "question": "How many evidence files are in this case and how many have been processed?",
+   "expect_all": [
+    [
+     "26129",
+     "26 129",
+     "26118",
+     "26 118"
+    ],
+    [
+     "89",
+     "78"
+    ]
+   ],
+   "expected": "26,118 files on the Evidence page (78 processed, 26,040 waiting), plus 11 phone conversation documents: 26,129 in all, 89 processed",
+   "derived_from": "evidence_files deleted_at null by status and source_type",
+   "cite_required": false
+  },
+  {
+   "id": "v-ev-2",
+   "case": "verification",
+   "type": "evidence_files",
+   "layer": "all",
+   "question": "Have any evidence files failed processing?",
+   "expect_all": [
+    [
+     "no ",
+     "none",
+     "not ",
+     "zero",
+     "0 ",
+     "isn't",
+     "aren't",
+     "there are no",
+     "nothing"
+    ]
+   ],
+   "expected": "None failed",
+   "derived_from": "status failed 0",
+   "cite_required": false
+  },
+  {
+   "id": "v-ev-3",
+   "case": "verification",
+   "type": "evidence_files",
+   "layer": "all",
+   "question": "Has the file '11 ARRENDO BBVA USD NOV 2022.pdf' been processed?",
+   "expect_all": [
+    [
+     "processed"
+    ]
+   ],
+   "expected": "Yes, processed",
+   "derived_from": "evidence_files.status",
+   "cite_required": true
+  },
+  {
+   "id": "v-dos-1",
+   "case": "verification",
+   "type": "dossiers",
+   "layer": "all",
+   "question": "Which dossiers are there in this case?",
+   "expect_all": [
+    [
+     "lx-collect release check dossier"
+    ]
+   ],
+   "expected": "1: lx-collect release check dossier (person)",
+   "derived_from": "case_profiles",
+   "cite_required": true
+  },
+  {
+   "id": "v-dos-2",
+   "case": "verification",
+   "type": "dossiers",
+   "layer": "all",
+   "question": "What is linked to the lx-collect release check dossier?",
+   "expect_all": [
+    [
+     "11 arrendo bbva usd nov 2022"
+    ]
+   ],
+   "expected": "1 linked evidence file: 11 ARRENDO BBVA USD NOV 2022.pdf",
+   "derived_from": "dossier_links",
+   "cite_required": true
+  },
+  {
+   "id": "v-dos-3",
+   "case": "verification",
+   "type": "dossiers",
+   "layer": "all",
+   "question": "What assessments does the lx-collect release check dossier hold?",
+   "expect_all": [
+    [
+     "no ",
+     "none",
+     "not ",
+     "zero",
+     "0 ",
+     "isn't",
+     "aren't",
+     "there are no",
+     "nothing"
+    ]
+   ],
+   "expected": "None (0 assessments)",
+   "derived_from": "dossier_assessments 0",
+   "cite_required": false
+  },
+  {
+   "id": "v-th-1",
+   "case": "verification",
+   "type": "theories",
+   "layer": "all",
+   "question": "What has been added to the theory 'Live check theory 2026-11-08T20:17'?",
+   "expect_all": [
+    [
+     "49"
+    ],
+    [
+     "lxc-note-35"
+    ],
+    [
+     "4 payments",
+     "4 items from the ledger",
+     "four payments",
+     "4 payment"
+    ]
+   ],
+   "expected": "6 additions: an agent answer, 3 graph entities, a graph entity, 49 timeline items, lxc-note-35.txt, 4 ledger payments",
+   "derived_from": "workspace_entry_links",
+   "cite_required": true
+  },
+  {
+   "id": "v-th-2",
+   "case": "verification",
+   "type": "theories",
+   "layer": "all",
+   "question": "Which narrative on the theory 'Live check theory 2026-11-08T20:17' was written by a model, and has a person confirmed it?",
+   "expect_all": [
+    [
+     "model",
+     "gpt",
+     "agent"
+    ],
+    [
+     "confirmed"
+    ]
+   ],
+   "expected": "One narrative by the agent (gpt-5.6-sol), confirmed by a person; one by a person, not confirmed",
+   "derived_from": "theory_narratives",
+   "cite_required": true
+  },
+  {
+   "id": "v-th-3",
+   "case": "verification",
+   "type": "theories",
+   "layer": "all",
+   "question": "Which theory has evidence linked that contradicts it?",
+   "expect_all": [
+    [
+     "disconfirm check 2",
+     "only ever banked"
+    ]
+   ],
+   "expected": "[Disconfirm check 2] Arrendo only ever banked with ...",
+   "derived_from": "workspace_entry_links relationship contradicts",
+   "cite_required": true
+  },
+  {
+   "id": "v-sig-1",
+   "case": "verification",
+   "type": "significant",
+   "layer": "all",
+   "question": "What is in the Significant layer of this case?",
+   "expect_all": [
+    [
+     "231"
+    ],
+    [
+     "northgate"
+    ]
+   ],
+   "expected": "1 entity: Transfer of USD 231,000 to Northgate Holdings Ltd account (added by hand)",
+   "derived_from": "significant_entities + graph node",
+   "cite_required": false
+  },
+  {
+   "id": "v-sig-2",
+   "case": "verification",
+   "type": "significant",
+   "layer": "significant",
+   "question": "Which transactions are in this layer, and what are they?",
+   "expect_all": [
+    [
+     "231"
+    ]
+   ],
+   "expected": "Transfer of USD 231,000 to Northgate Holdings Ltd account",
+   "derived_from": "significant_entities",
+   "cite_required": false,
+   "tools": [
+    "get_significant_layer",
+    "get_case_overview",
+    "search_graph_entities",
+    "get_entity_details",
+    "get_entity_neighborhood",
+    "run_readonly_cypher",
+    "inspect_graph_schema"
+   ]
+  },
+  {
+   "id": "v-sig-3",
+   "case": "verification",
+   "type": "significant",
+   "layer": "all",
+   "question": "How was the item in the Significant layer added, and when?",
+   "expect_all": [
+    [
+     "manual",
+     "by hand",
+     "manually",
+     "person"
+    ],
+    [
+     "2026"
+    ]
+   ],
+   "expected": "Added manually on 8 Nov 2026",
+   "derived_from": "significant_entities.addition_source/created_at",
+   "cite_required": false
+  },
+  {
+   "id": "v-fo-1",
+   "case": "verification",
+   "type": "findings",
+   "layer": "all",
+   "question": "What findings are recorded in this case?",
+   "expect_all": [
+    [
+     "7540",
+     "largest outbound"
+    ],
+    [
+     "lx-collect release check finding"
+    ],
+    [
+     "citation check"
+    ]
+   ],
+   "expected": "3: Largest outbound payment USD 7,540.00 BBVA; lx-collect release check finding; Citation check (automated)",
+   "derived_from": "workspace_entries finding",
+   "cite_required": true
+  },
+  {
+   "id": "v-fo-2",
+   "case": "verification",
+   "type": "findings",
+   "layer": "all",
+   "question": "What does the finding about the largest outbound payment say, and what is linked to it?",
+   "expect_all": [
+    [
+     "7540"
+    ],
+    [
+     "30 november 2022",
+     "2022-11-30",
+     "nov 30, 2022",
+     "30 nov 2022",
+     "november 30, 2022"
+    ]
+   ],
+   "expected": "USD 7,540.00 debit from ARRENDO's BBVA USD account on 30 Nov 2022; one evidence file linked as context",
+   "derived_from": "workspace_entries + links",
+   "cite_required": true
+  },
+  {
+   "id": "v-fo-3",
+   "case": "verification",
+   "type": "findings",
+   "layer": "all",
+   "question": "Which financial observations are still open?",
+   "expect_all": [
+    [
+     "reviewgaps"
+    ]
+   ],
+   "expected": "VERIFY reviewgaps 2026-11-05T23:10",
+   "derived_from": "workspace_entries tag financial-observation-open",
+   "cite_required": true
+  },
+  {
+   "id": "v-dj-1",
+   "case": "verification",
+   "type": "decisions",
+   "layer": "all",
+   "question": "How many judgement calls are there in this case and how were they resolved?",
+   "expect_all": [
+    [
+     "5"
+    ],
+    [
+     "confirmed"
+    ],
+    [
+     "corrected"
+    ]
+   ],
+   "expected": "8: 5 confirmed, 2 corrected, 1 rejected; none open",
+   "derived_from": "financial_judgements by status",
+   "cite_required": true
+  },
+  {
+   "id": "v-dj-2",
+   "case": "verification",
+   "type": "decisions",
+   "layer": "all",
+   "question": "How many decisions have been recorded in this case, and by whom?",
+   "expect_all": [
+    [
+     "86"
+    ]
+   ],
+   "expected": "86: 83 by Loupe jobs, 2 drafted by Claude for Loupe jobs, 1 by the reconciliation stage",
+   "derived_from": "adjudications by actor",
+   "cite_required": true
+  },
+  {
+   "id": "v-dj-3",
+   "case": "verification",
+   "type": "decisions",
+   "layer": "all",
+   "question": "Were any recorded decisions drafted by a model rather than made by a person?",
+   "expect_all": [
+    [
+     "2",
+     "two"
+    ],
+    [
+     "claude",
+     "model"
+    ]
+   ],
+   "expected": "Yes, 2, drafted by Claude for Loupe jobs",
+   "derived_from": "adjudications actor_origin kind model",
+   "cite_required": true
+  },
+  {
+   "id": "v-rep-1",
+   "case": "verification",
+   "type": "reports",
+   "layer": "all",
+   "question": "What saved reports are there in this case?",
+   "expect_all": [
+    [
+     "no ",
+     "none",
+     "not ",
+     "zero",
+     "0 ",
+     "isn't",
+     "aren't",
+     "there are no",
+     "nothing"
+    ]
+   ],
+   "expected": "No saved financial reports; the casework report can be produced from 3 findings, 16 theories and 5 notes",
+   "derived_from": "workspace_entries tag financial-report: 0",
+   "cite_required": false
+  },
+  {
+   "id": "v-rep-2",
+   "case": "verification",
+   "type": "reports",
+   "layer": "all",
+   "question": "If I export the casework report now, what would it contain?",
+   "expect_all": [
+    [
+     "finding"
+    ],
+    [
+     "theor"
+    ],
+    [
+     "note"
+    ]
+   ],
+   "expected": "Findings (3), Theories (16), Notes (5)",
+   "derived_from": "workspace_entries by type",
+   "cite_required": false
+  },
+  {
+   "id": "v-rep-3",
+   "case": "verification",
+   "type": "reports",
+   "layer": "all",
+   "question": "Is there a saved financial report in this case?",
+   "expect_all": [
+    [
+     "no ",
+     "none",
+     "not ",
+     "zero",
+     "0 ",
+     "isn't",
+     "aren't",
+     "there are no",
+     "nothing"
+    ]
+   ],
+   "expected": "No",
+   "derived_from": "tag financial-report 0",
+   "cite_required": false
+  }
+ ]
+}
