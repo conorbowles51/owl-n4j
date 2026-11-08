@@ -2,7 +2,8 @@
 # Keeps every stored passage findable by document search; deploy.sh runs it with the backend paused.
 #   1. Search settings (backend/scripts/chroma_reach.py settings). The server reads them when it loads an index, so a
 #      changed setting takes a restart of the Chroma container, about 10 s, inside the release's pause.
-#   2. Records nothing links to, when CHROMA_RELINK_LISTS holds a list (<collection>.ids, from `chroma_reach.py check`):
+#   2. Records nothing links to, when CHROMA_RELINK_LISTS holds a list (<collection>.ids, from `chroma_reach.py check`;
+#      known.ids beside them is the sweep's explained list and is never relinked):
 #      each is re-added from its stored copy, and the list is kept as <collection>.ids.done with the result beside it.
 #      A record still unreached is in the result and the printed line; it does not stop the release. A changed count does.
 # A server that cannot be set or restarted stops the release.
@@ -39,6 +40,9 @@ fi
 for list in "${CHROMA_RELINK_LISTS}"/*.ids; do
     [[ -f "${list}" ]] || continue
     collection="$(basename "${list}" .ids)"
+    # known.ids is the reach sweep's list of records already explained (backup-check.sh REACH_KNOWN), not a relink
+    # list: read as one it named a collection "known" and stopped every release (8 Nov 12:46-14:12).
+    [[ "${collection}" == known ]] && continue
     python3 -I "${TOOL}" relink --url "${CHROMA_URL}" --collection "${collection}" --ids "${list}" \
         --keep "${list}.records.jsonl" --apply \
         > "${list}.result" || { echo "chroma: relink of ${collection} failed: $(cat "${list}.result")" >&2; exit 1; }

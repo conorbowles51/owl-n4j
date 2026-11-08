@@ -291,6 +291,16 @@ def test_release_step_restarts_only_on_a_change_and_uses_a_list_once(chroma, tmp
     assert (tmp_path / "docker.calls").read_text().count("restart") == 1
 
 
+def test_release_step_leaves_the_sweeps_known_list_alone(chroma, tmp_path):
+    """8 Nov: known.ids (backup-check.sh REACH_KNOWN) sits beside the relink lists; read as one it named a
+    collection 'known' and stopped every release."""
+    store, url = chroma
+    (tmp_path / "known.ids").write_text("a2\tan outlier its neighbours prune\n")
+    done = release_step(url, tmp_path)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (tmp_path / "known.ids").exists() and not (tmp_path / "known.ids.done").exists()
+
+
 def test_release_step_stops_when_chroma_does_not_answer(tmp_path):
     done = release_step("http://127.0.0.1:9", tmp_path)
     assert done.returncode != 0
