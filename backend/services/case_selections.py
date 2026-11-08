@@ -37,7 +37,7 @@ SURFACE_WORDS = {
 GROUP_MEMBER_TYPES: dict[str, tuple[str, ...]] = {
     "graph_selection": ("graph_entity",),
     "significant_set": ("graph_entity",),
-    "timeline_range": ("timeline_event", "financial_transaction", "evidence", "phone_record", "graph_entity"),
+    "timeline_range": ("timeline_event", "financial_transaction", "evidence", "phone_record", "graph_entity", "entry"),
     "financial_selection": ("financial_transaction", "financial_account", "financial_party"),
     "evidence_selection": ("evidence",),
     "map_selection": ("graph_entity", "phone_record"),
@@ -102,12 +102,33 @@ def _evidence(db, case_id, ids):
 
 
 def _timeline_events(db, case_id, ids):
+    """A timeline event of this case: one added to the timeline (``timeline-entry:<id>``), one kept in a saved view,
+    or a dated node of the case's graph (matched by key and case together)."""
+    from postgres.models.timeline_entry import TimelineEntry
     from postgres.models.timeline_view import TimelineViewEvent
+    from services.timeline_entries import PREFIX
     found: set[str] = set()
-    for start in range(0, len(ids), 1000):
+    entry_ids = {key: _uuid(key[len(PREFIX):]) for key in ids if key.startswith(PREFIX)}
+    wanted = [u for u in entry_ids.values() if u]
+    if wanted:
+        kept = {str(v) for v in db.scalars(select(TimelineEntry.id).where(
+            TimelineEntry.case_id == case_id, TimelineEntry.id.in_(wanted)))}
+        found.update(key for key, u in entry_ids.items() if u and str(u) in kept)
+    rest = [key for key in ids if key not in entry_ids]
+    for start in range(0, len(rest), 1000):
         found.update(db.scalars(select(TimelineViewEvent.event_key).where(
-            TimelineViewEvent.case_id == case_id, TimelineViewEvent.event_key.in_(ids[start:start + 1000]))))
+            TimelineViewEvent.case_id == case_id, TimelineViewEvent.event_key.in_(rest[start:start + 1000]))))
+    unknown = [key for key in rest if key not in found]
+    if unknown:
+        found.update(graph_keys_in_case(str(case_id), unknown))
     return found
+
+
+def _entries(db, case_id, ids):
+    from postgres.models.workspace_entry import WorkspaceEntry
+    wanted = [u for u in (_uuid(i) for i in ids) if u]
+    return {str(v) for v in db.scalars(select(WorkspaceEntry.id).where(
+        WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None), WorkspaceEntry.id.in_(wanted)))} if wanted else set()
 
 
 def _phone_records(db, case_id, ids):
@@ -129,6 +150,7 @@ MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "evidence": _evidence,
     "timeline_event": _timeline_events,
     "phone_record": _phone_records,
+    "entry": _entries,
 }
 
 
@@ -228,9 +250,14 @@ def _member_states(db, case_id, members: list[dict]) -> dict[tuple[str, str], di
     ev = [_uuid(m["id"]) for m in members if m["type"] == "evidence" and _uuid(m["id"])]
     if ev:
         from postgres.models.evidence import EvidenceFile
-        for fid, name, deleted in db.execute(select(EvidenceFile.id, EvidenceFile.original_filename,
-                                                    EvidenceFile.deleted_at).where(
-                EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ev))):
+        from postgres.soft_delete import showing_deleted
+        for fid in ev:
+            states[("evidence", str(fid))] = {"state": "gone"}
+        # A file in Deleted items is read on purpose here, so it shows as deleted (and comes back on restore).
+        with showing_deleted(db):
+            rows = db.execute(select(EvidenceFile.id, EvidenceFile.original_filename, EvidenceFile.deleted_at).where(
+                EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ev))).all()
+        for fid, name, deleted in rows:
             states[("evidence", str(fid))] = {"label": name, "state": "deleted" if deleted else "present"}
     tx = [_uuid(m["id"]) for m in members if m["type"] == "financial_transaction" and _uuid(m["id"])]
     if tx:

@@ -43,6 +43,7 @@ from routers import (
     work_router,
     workspace_overview_router,
     workspace_entries_router,
+    theory_additions_router,
     workspace_ai_router,
     agent_proposals_router,
     phone_monitoring_router,
@@ -336,6 +337,7 @@ app.include_router(work_router)
 app.include_router(workspace_overview_router)
 app.include_router(workspace_router)
 app.include_router(workspace_entries_router)
+app.include_router(theory_additions_router)
 app.include_router(workspace_ai_router)
 app.include_router(agent_proposals_router)
 app.include_router(phone_monitoring_router)

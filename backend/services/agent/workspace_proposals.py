@@ -581,6 +581,10 @@ def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
                                              relationship=action['relationship'])],
                                  rationale=f'Proposed by {model} (case agent), accepted by {reviewer.name}',
                                  ignore_existing=True, commit=False)
+        # The addition says the model chose it and why, and who accepted it (lx-theorybuild D).
+        from services.theory_additions import mark_agent_addition
+        mark_agent_addition(session, result['added_link_ids'], model=model, why=content.get('why'),
+                            proposal_id=str(item.id), accepted_by=reviewer)
         return [dict(target_type='workspace_entry_link', target_id=i) for i in result['added_link_ids']]
     if kind == 'timeline_addition':
         from postgres.models.timeline_entry import TimelineEntry

@@ -575,6 +575,9 @@ def _sanitize_link(
         raise WorkspaceEntryValidationError("source_anchor must be an object")
     if metadata is not None and not isinstance(metadata, dict):
         raise WorkspaceEntryValidationError("metadata must be an object")
+    if metadata and "addition" in metadata:
+        # Who added it (a person, or a model whose proposal a person accepted) and why is written by the server only.
+        metadata = {key: value for key, value in metadata.items() if key != "addition"}
     phone = None
     group_members: tuple[str, ...] = ()
     if link_types.is_phone_type(target_type):
@@ -729,7 +732,11 @@ def _replace_links(
             _append_link(db, entry, user, data, prepared=True)
             continue
         current.relationship_type = data["relationship"]
-        current.link_metadata = data["metadata"]
+        metadata = dict(data["metadata"] or {})
+        if "addition" in (current.link_metadata or {}):
+            # Why it was chosen, where from and by whom (person or model) is written once, when it is added.
+            metadata["addition"] = current.link_metadata["addition"]
+        current.link_metadata = metadata
         if current.target_type == "evidence_passage":
             continue
         current.target_label = data["target_label"]
@@ -1623,6 +1630,7 @@ def batch_add_entry_links(
     links: list[dict[str, Any]],
     rationale: str,
     expected_version: int | None = None,
+    commit: bool = True,
 ) -> dict[str, Any]:
     """Add links a person chose, with their own rationale ("Added from Conversations"). Idempotent.
 
@@ -1676,7 +1684,10 @@ def batch_add_entry_links(
             },
             rationale=rationale,
         )
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return {
         "entry_id": str(entry.id),
         "version": entry.version,
