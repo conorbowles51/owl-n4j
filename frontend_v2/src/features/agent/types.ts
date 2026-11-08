@@ -321,3 +321,18 @@ export interface AgentLiveRun {
   server_time?: string | null
   error?: string | null
 }
+
+/** What the agent can work with (GET /api/agent/capabilities): plain labels, descriptions and example questions. */
+export interface AgentCapabilityType {
+  id: string
+  label: string
+  description: string
+  examples: string[]
+}
+
+export interface AgentCapabilities {
+  schema: string
+  types: AgentCapabilityType[]
+  total: number
+  note: string
+}

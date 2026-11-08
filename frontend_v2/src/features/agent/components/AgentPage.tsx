@@ -69,6 +69,7 @@ import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { AllCasesSwitch } from "./AllCasesSwitch"
+import { AgentCapabilitiesHelp } from "./AgentCapabilitiesHelp"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-context"
@@ -1084,6 +1085,7 @@ export function AgentPage() {
                     Significant only
                   </Badge>
                 ) : null}
+                <AgentCapabilitiesHelp onPick={setInput} />
                 <AllCasesSwitch
                   checked={allCases && caseLayer !== "significant"}
                   disabled={caseLayer === "significant" || isLoading}

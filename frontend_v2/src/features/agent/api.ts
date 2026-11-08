@@ -29,6 +29,8 @@ export const agentAPI = {
   listThreads: (caseId: string) =>
     fetchAPI<AgentThreadSummary[]>(`/api/agent/threads?case_id=${caseId}`),
 
+  getCapabilities: () => fetchAPI<import("./types").AgentCapabilities>("/api/agent/capabilities"),
+
   listWorkflows: (caseId: string) =>
     fetchAPI<AgentWorkflowCatalogue>(`/api/agent/workflows?case_id=${encodeURIComponent(caseId)}`),
 
