@@ -27,6 +27,10 @@ import { useStatementUploads } from "@/features/financial/stores/statement-uploa
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { ResumableUploadsPanel } from "./ResumableUploadsPanel"
 
+// Load budget (as the FinancialPage journey's, TEST-BASELINE): the first send waited 10 s and missed it at load 80;
+// all passed with 170 s waits. Nothing here asserts time.
+const LOAD_WAIT_MS = 170_000
+
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
   fetchAPI: vi.fn(),
@@ -141,7 +145,7 @@ function mount(client: QueryClient) {
 }
 
 it.each(["folder", "statements"] as const)(
-  "pauses %s, returns to saved progress and registers once after a lost response",
+  "pauses %s, returns to saved progress and registers once after a lost response", { timeout: 180_000 },
   async (journey) => {
     const financial = journey === "statements"
     useAuthStore.setState({ user: null })
@@ -315,7 +319,7 @@ it.each(["folder", "statements"] as const)(
         })
       else task = uploadFolderOrArchive("case", files, { isFolder: true })
       await waitFor(() => expect(release).toBeTypeOf("function"), {
-        timeout: 10000,
+        timeout: LOAD_WAIT_MS,
       })
       await refresh()
       fireEvent.click(
@@ -358,7 +362,7 @@ it.each(["folder", "statements"] as const)(
   }
 )
 
-it("reselects remaining folder files after reopening, refuses changed bytes and retains completed members", async () => {
+it("reselects remaining folder files after reopening, refuses changed bytes and retains completed members", { timeout: 180_000 }, async () => {
   await page.viewport(390, 844)
   const original = file("Folder/sub/b.txt", CHUNK + 10, 19)
   const fingerprint = await uploadFingerprint(original)
@@ -455,7 +459,7 @@ it("reselects remaining folder files after reopening, refuses changed bytes and 
     expect(bounds.right).toBeLessThanOrEqual(390)
     fireEvent.change(picker, { target: { files: [original] } })
     await waitFor(() => expect(group.status).toBe("completed"), {
-      timeout: 10000,
+      timeout: LOAD_WAIT_MS,
     })
     expect(sent).toEqual([1])
     await waitFor(() =>

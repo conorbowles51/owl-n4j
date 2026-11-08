@@ -17,6 +17,10 @@ import {
 } from "../resumable-upload"
 import { JobsPanel } from "./JobsPanel"
 
+// Load budget (as the FinancialPage journey's, TEST-BASELINE): the first send waited 10 s and missed it at load 80;
+// all passed with 170 s waits. Nothing here asserts time.
+const LOAD_WAIT_MS = 170_000
+
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
   fetchAPI: vi.fn(),
@@ -27,7 +31,7 @@ vi.mock("../hooks/use-guarded-process", () => ({
 }))
 vi.mock("./ProcessHoldDialog", () => ({ ProcessHoldDialog: () => null }))
 
-it("pauses an upload, retains saved bytes after leaving, and recovers a lost completion receipt", async () => {
+it("pauses an upload, retains saved bytes after leaving, and recovers a lost completion receipt", { timeout: 180_000 }, async () => {
   await page.viewport(1280, 900)
   const file = new File(
     [new Uint8Array(4 * 1024 * 1024 + 100).fill(42)],
@@ -109,7 +113,7 @@ it("pauses an upload, retains saved bytes after leaving, and recovers a lost com
     mount()
     transfer = uploadOrdinaryFiles("case", [file])
     await waitFor(() => expect(release).toBeTypeOf("function"), {
-      timeout: 10000,
+      timeout: LOAD_WAIT_MS,
     })
     await refresh()
     await screen.findByText("Uploading")
@@ -138,7 +142,7 @@ it("pauses an upload, retains saved bytes after leaving, and recovers a lost com
   }
 })
 
-it("reselects after a fresh browser session, rejects a different file, and sends only missing chunks", async () => {
+it("reselects after a fresh browser session, rejects a different file, and sends only missing chunks", { timeout: 180_000 }, async () => {
   await page.viewport(1280, 900)
   const file = new File(
     [new Uint8Array(4 * 1024 * 1024 + 200).fill(19)],
@@ -203,7 +207,7 @@ it("reselects after a fresh browser session, rejects a different file, and sends
     expect(sent).toEqual([])
     fireEvent.change(picker, { target: { files: [file] } })
     await waitFor(() => expect(stored.status).toBe("completed"), {
-      timeout: 10000,
+      timeout: LOAD_WAIT_MS,
     })
     expect(sent).toEqual([1])
     await waitFor(() =>
