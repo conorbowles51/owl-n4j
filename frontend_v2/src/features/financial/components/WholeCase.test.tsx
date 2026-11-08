@@ -165,3 +165,86 @@ it("new inputs start their own run and never read the run of the last inputs", a
   rerender({ steps: 1 })
   await waitFor(() => expect(result.current.run?.id).toBe("run-1"))
 })
+
+
+const whole = (re: RegExp) => (_: string, element: Element | null) =>
+  re.test(element?.textContent ?? "") &&
+  Array.from(element?.children ?? []).every((child) => !re.test(child.textContent ?? ""))
+
+it("shows the account flow from selected accounts as a stored run with reconciled totals", async () => {
+  const transfers = {
+    id: "e".repeat(32), kind: "transfers", status: "completed", phase: "Finished", step: 3, steps: 3, done: 1, total: 1, created_at: "",
+    counts: { rows: 9804, candidates: 0, graded: 0, reference_evidence: 0 },
+    summary: {
+      snapshot_sha256: "0".repeat(64), excluded_rows: 0, limitation: "L", rule: "R", by_level: {}, left_out_words: null, date_unavailable_count: 0,
+      accounts: [{ account_id: "acct-1", label: "Main account", rows: 9000 }, { account_id: "acct-2", label: "Second account", rows: 804 }],
+    },
+  }
+  const flow = {
+    id: "f".repeat(32), kind: "flow", status: "completed", phase: "Finished", step: 3, steps: 3, done: 1, total: 1, created_at: "",
+    counts: { movements: 9000, "movements@incoming": 5000, "movements@outgoing": 3999, "movements@internal": 1, groups: 240 },
+    summary: {
+      totals: [{ currency: "USD", incoming_minor: "700000", outgoing_minor: "300000", internal_minor: "50000", net_minor: "400000", internal_count: 1, movement_count: 9000 }],
+      movements: 9000, groups: 240, selected_accounts: [{ account_id: "acct-1", label: "Main account" }], limitation: "Flow limits.",
+    },
+  }
+  api.fetchAPI.mockImplementation(async (url: string, options?: { method?: string }) => {
+    if (options?.method === "POST") return String(url).includes("whole-case-runs/flow") ? flow : transfers
+    const section = decodeURIComponent(String(url).match(/pages\/([^?]+)/)?.[1] ?? "")
+    if (section === "groups")
+      return { total: 240, offset: 0, limit: 25, items: [{ id: "g1", label: "ACME LTD", currency: "USD", credits_minor: "100", debits_minor: "40", net_minor: "60", transaction_ids: ["t1", "t2"] }] }
+    if (section.startsWith("movements"))
+      return { total: 9000, offset: 0, limit: 25, items: [{ kind: "incoming", currency: "USD", amount_minor: "100", transaction_ids: ["t1"], label: "Main account · unpaired source label: ACME" }] }
+    return section ? { total: 0, offset: 0, limit: 25, items: [] } : transfers
+  })
+  wrap(<WholeCaseTransfers caseId="case" start="" end="" population="working" tolerance={3} onSource={() => undefined} />)
+  fireEvent.click(await screen.findByLabelText("Flow account Main account"))
+  fireEvent.click(screen.getByRole("button", { name: "Show account flow" }))
+  expect(await screen.findByText(whole(/net 4000\.00 USD over 9,000 movements/))).toBeTruthy()
+  expect(await screen.findByText(whole(/Counterparties \(240\)/))).toBeTruthy()
+  expect(await screen.findByText(whole(/ACME LTD · in 1\.00 USD · out 0\.40 USD · net 0\.60 USD · 2 payments/))).toBeTruthy()
+  expect(screen.getByText(whole(/Every movement \(9,000\)/))).toBeTruthy()
+  expect(screen.getByText("Incoming (5,000)")).toBeTruthy()
+  const body = api.fetchAPI.mock.calls.find(([url, options]) => String(url).includes("whole-case-runs/flow") && (options as { method?: string })?.method === "POST")?.[1] as { body?: { account_ids?: string[] } }
+  expect(body?.body?.account_ids).toEqual(["acct-1"])
+})
+
+it("walks the selected transfers back and states what it did not follow", async () => {
+  const { WholeCaseTrace } = await import("./WholeCaseTrace")
+  const transfers = {
+    id: "1".repeat(32), kind: "transfers", status: "completed", phase: "Finished", step: 3, steps: 3, done: 1, total: 1, created_at: "",
+    counts: { rows: 9804, candidates: 2 },
+    summary: {
+      snapshot_sha256: "0".repeat(64), currencies: [{ currency: "USD", rows: 9804 }],
+      accounts: [{ account_id: "acct-1", label: "Main account", rows: 9000 }, { account_id: "acct-2", label: "Second account", rows: 804 }],
+    },
+  }
+  const sources = {
+    id: "2".repeat(32), kind: "sources", status: "completed", phase: "Finished", step: 3, steps: 3, done: 1, total: 1, created_at: "",
+    counts: { sources: 2, transfers: 1 },
+    summary: {
+      currency: "USD", steps: 1,
+      accounts: [{ account_id: "acct-1", label: "Main account", steps_back: 0, outside_credits: 2, outside_credits_minor: "3000", transfers_in: 1, transfers_in_minor: "1000", not_followed: 1, not_followed_minor: "500" }],
+      outside_credits: 2, transfers_in: 1, not_followed: 1, stopped: true,
+      stop_words: "Stopped after 1 step back: 1 selected transfer into Main account, the first received on 2024-01-02, was not followed to the paying account. Add one step to continue.",
+      continue_with_steps: 2, limitations: ["A backward walk over the selected transfers only."],
+    },
+  }
+  api.fetchAPI.mockImplementation(async (url: string, options?: { method?: string }) => {
+    if (options?.method === "POST") return String(url).includes("trace-sources") ? sources : transfers
+    const section = decodeURIComponent(String(url).match(/pages\/([^?]+)/)?.[1] ?? "")
+    if (section === "transfers")
+      return { total: 1, offset: 0, limit: 25, items: [{ debit_id: "d1", credit_id: "c1", amount_minor: "1000", currency: "USD", from_account_label: "Second account", to_account_label: "Main account", debit_date: "2024-01-01", credit_date: "2024-01-02", steps_back: 1 }] }
+    if (section === "sources")
+      return { total: 2, offset: 0, limit: 25, items: [{ key: "s1", account_id: "acct-1", account_label: "Main account", ordering_date: "2024-01-03", amount_minor: "2000", currency: "USD", description: "Salary" }] }
+    return section ? { total: 0, offset: 0, limit: 25, items: [] } : transfers
+  })
+  wrap(<WholeCaseTrace caseId="case" start={null} end={null} population="working" />)
+  fireEvent.click(await screen.findByLabelText("Sources account Main account"))
+  fireEvent.click(screen.getByRole("button", { name: /Walk back 3 steps/ }))
+  expect(await screen.findByText(whole(/was not followed to the paying account/))).toBeTruthy()
+  expect(screen.getByText(whole(/1 transfers followed in · 2 outside sources · 1 transfers not followed/))).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Continue one more step" })).toBeTruthy()
+  expect(await screen.findByText(whole(/2024-01-03 · Main account · 20\.00 USD · Salary/))).toBeTruthy()
+  expect(screen.getByText(whole(/10\.00 USD · Second account \(2024-01-01\) → Main account \(2024-01-02\) · 1 step back/))).toBeTruthy()
+})

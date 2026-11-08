@@ -15,6 +15,7 @@ import {
 } from "../lib/whole-case-run"
 import { Disclosure } from "./Disclosure"
 import { SavePaymentSelection } from "./SavePaymentSelection"
+import { WholeCaseFlow } from "./WholeCaseFlow"
 import { WholeCasePager, WholeCaseProgress } from "./WholeCaseProgress"
 
 const PAGE = 25
@@ -52,6 +53,7 @@ interface Summary {
   by_level: Record<string, number>
   left_out_words: string | null
   date_unavailable_count: number
+  accounts?: { account_id: string; label: string | null; rows: number }[]
 }
 /** The comparison of every payment in a scope above one answer's size: stored, paged, with true counts. */
 export function WholeCaseTransfers({
@@ -184,6 +186,19 @@ export function WholeCaseTransfers({
         onOffset={setOffset}
       />
       <GradedList caseId={caseId} run={run} summary={summary} onSource={onSource} />
+      {(summary.accounts?.length ?? 0) > 0 && (
+        <WholeCaseFlow
+          caseId={caseId}
+          accounts={summary.accounts!}
+          snapshot={summary.snapshot_sha256}
+          start={start}
+          end={end}
+          population={population}
+          tolerance={tolerance}
+          pairs={chosen}
+          onSource={onSource}
+        />
+      )}
       {(counts.candidates ?? 0) > 0 && (
         <fieldset className="space-y-2 rounded border p-3">
           <legend>Explain your selected transfers</legend>
