@@ -318,18 +318,13 @@ def get_cost_summary(
         )
 
 
-class CaseLimit(BaseModel):
-    limit_usd: Optional[float] = Field(default=None, ge=0)
-
-
-@router.put("/case-limit")
-def put_case_limit(body: CaseLimit, case_id: str = Query(...), user: User = Depends(get_current_db_user),
-                   db: Session = Depends(get_db)):
-    """A tighter AI limit for one case, by whoever may read its costs. It cannot pass the deployment's limit."""
+@router.get("/case-limit")
+def get_case_limit(case_id: str = Query(...), user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """The AI limit in force for one case and its spend, read-only. An administrator sets it on the AI costs page."""
     authorize_costs(db, user, case_id)
-    ai_budget.set_case_limit(db, UUID(case_id), body.limit_usd, updated_by=user.email)
     settings = ai_budget.get_settings(db)
     return {"case_id": case_id, "limit_usd": ai_budget.case_limit(settings, case_id),
+            "own_limit": case_id.lower() in settings["case_limits"],
             "spent_usd": round(ai_budget.case_spend(db, case_id), 2)}
 
 

@@ -73,14 +73,21 @@ def test_month_limit_counts_every_case_and_uncased_work_this_month_only(db):
     assert refused.value.scope == "month"
 
 
-def test_a_case_limit_only_tightens_and_clearing_it_leaves_the_deployment_limit(db):
+def test_a_case_limit_replaces_the_default_and_clearing_it_brings_the_default_back(db):
     ai_budget.set_limits(db, case_limit_usd=10, month_limit_usd=None, updated_by="n")
     ai_budget.set_case_limit(db, CASE, 50, updated_by="owner")
-    assert ai_budget.case_limit(ai_budget.get_settings(db), CASE) == 10
+    assert ai_budget.case_limit(ai_budget.get_settings(db), CASE) == 50
     ai_budget.set_case_limit(db, CASE, 1, updated_by="owner")
     assert ai_budget.case_limit(ai_budget.get_settings(db), CASE) == 1
     ai_budget.set_case_limit(db, CASE, None, updated_by="owner")
     assert ai_budget.case_limit(ai_budget.get_settings(db), CASE) == 10
+
+
+def test_a_case_with_its_own_limit_and_no_default_is_capped_and_one_with_neither_is_not(db):
+    ai_budget.set_limits(db, case_limit_usd=None, month_limit_usd=None, updated_by="n")
+    ai_budget.set_case_limit(db, CASE, 3, updated_by="owner")
+    assert ai_budget.case_limit(ai_budget.get_settings(db), CASE) == 3
+    assert ai_budget.case_limit(ai_budget.get_settings(db), uuid.uuid4()) is None
 
 
 def test_an_unreadable_limit_stops_no_work(db):
@@ -178,3 +185,27 @@ def test_vision_reader_waits_at_the_ai_limit():
     from services.financial import vision_reader as vr
     with patch.object(vr, "_over_ai_budget", return_value=True), patch.object(vr, "_ledger_spend", return_value=0.0):
         assert vr._reserve(str(uuid.uuid4()), 0.01) is False
+
+
+def test_the_admin_route_sets_and_clears_one_cases_own_limit(db):
+    from types import SimpleNamespace
+
+    from routers.admin_ai_costs import CaseBudgetLimit, put_ai_case_budget
+    user = SimpleNamespace(email="admin@example.test")
+    put_ai_case_budget(CASE, CaseBudgetLimit(limit_usd=5), db=db, user=user)
+    assert ai_budget.case_limit(ai_budget.get_settings(db), CASE) == 5
+    view = put_ai_case_budget(CASE, CaseBudgetLimit(limit_usd=None), db=db, user=user)
+    assert ai_budget.case_limit(ai_budget.get_settings(db), CASE) is None
+    assert view["capped"] is False
+
+
+def test_a_case_limit_above_the_default_lets_a_run_start_that_the_default_refuses(db):
+    ai_budget.set_limits(db, case_limit_usd=10, month_limit_usd=None, updated_by="n")
+    spend(db, 12, CASE)
+    with pytest.raises(ai_budget.BudgetRefused):
+        ai_budget.check(db, CASE, "this agent question")
+    ai_budget.set_case_limit(db, CASE, 50, updated_by="owner")
+    ai_budget.check(db, CASE, "this agent question")
+    ai_budget.set_case_limit(db, CASE, None, updated_by="owner")
+    with pytest.raises(ai_budget.BudgetRefused):
+        ai_budget.check(db, CASE, "this agent question")

@@ -3,6 +3,27 @@ import type { ProcessingProfile } from "@/types/evidence.types"
 
 export type Profile = ProcessingProfile
 
+export interface AIBudget {
+  capped: boolean
+  case_limit_usd: number | null
+  month_limit_usd: number | null
+  case_limits?: Record<string, number>
+  case_choices: { id: string; title: string }[]
+  month: string
+  month_spent_usd: number
+  month_percent: number | null
+  cases: {
+    case_id: string
+    title: string
+    calls: number
+    spent_usd: number
+    limit_usd: number | null
+    own_limit: boolean
+    percent: number | null
+  }[]
+  alerts: { key: string; level: number; at: string; message: string }[]
+}
+
 export interface SetupStatus {
   needs_setup: boolean
 }
@@ -175,6 +196,19 @@ export const aiCostsAPI = {
     fetchAPI<AICostRecordsResponse>(
       `/api/admin/ai-costs/records?${buildAIQuery(params)}`
     ),
+
+  getBudget: () => fetchAPI<AIBudget>("/api/admin/ai-costs/budget"),
+
+  saveBudget: (limits: { case_limit_usd: number | null; month_limit_usd: number | null }) =>
+    fetchAPI<AIBudget>("/api/admin/ai-costs/budget", {
+      method: "PUT",
+      body: limits,
+    }),
+}
+
+export const aiCaseLimitAPI = {
+  save: (caseId: string, limit_usd: number | null) =>
+    fetchAPI<AIBudget>(`/api/admin/ai-costs/budget/case/${caseId}`, { method: "PUT", body: { limit_usd } }),
 }
 
 export const platformUpdateAPI = {

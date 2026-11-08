@@ -6,7 +6,7 @@ so every process and the evidence engine read the same value at the moment a run
 
     {"case_limit_usd": number | null,       each case, its whole recorded spend
      "month_limit_usd": number | null,      all cases and uncased work, this calendar month (UTC)
-     "case_limits": {"<case id>": number},  a tighter limit for one case, set by the person managing it
+     "case_limits": {"<case id>": number},  one case's own limit; it replaces case_limit_usd for that case
      "alerts": [...]}                       each crossing of 80 % and of the limit, once
 
 Spend is what cost_records holds, so it survives a restart and matches the admin page and the case's cost report.
@@ -109,7 +109,7 @@ def set_limits(db: Session, *, case_limit_usd: float | None, month_limit_usd: fl
 
 
 def set_case_limit(db: Session, case_id: Any, limit_usd: float | None, *, updated_by: str | None) -> None:
-    """A tighter limit for one case. It can only lower what applies: the deployment's limit still holds."""
+    """A limit for one case. It replaces the default per-case limit, higher or lower; None returns the case to the default."""
     if limit_usd is not None and (isinstance(limit_usd, bool) or float(limit_usd) < 0):
         raise ValueError("A limit is a number of dollars, zero or more.")
     limits = dict(get_settings(db)["case_limits"])
@@ -140,10 +140,9 @@ def month_spend(db: Session, now: datetime | None = None) -> float:
 
 
 def case_limit(settings: dict[str, Any], case_id: Any) -> float | None:
-    """The limit in force for one case: the tighter of the deployment's and the case's own."""
-    limits = [settings.get("case_limit_usd"), settings.get("case_limits", {}).get(str(case_id).lower())]
-    limits = [limit for limit in limits if limit is not None]
-    return min(limits) if limits else None
+    """The limit in force for one case: its own when it has one (higher or lower), else the deployment's default."""
+    own = (settings.get("case_limits") or {}).get(str(case_id).lower())
+    return own if own is not None else settings.get("case_limit_usd")
 
 
 def limit_in_force(db: Session, case_id: Any = None, *, settings: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -269,10 +268,16 @@ def overview(db: Session) -> dict[str, Any]:
                       .where(CostRecord.case_id.is_not(None)).group_by(CostRecord.case_id)).all()
     titles = dict(db.execute(select(Case.id, Case.title).where(Case.id.in_([row[0] for row in rows]))).all()) if rows else {}
     cases = []
+    listed = {str(row[0]) for row in rows}
+    extra = [u for u in (_uuid(k) for k in settings["case_limits"]) if u and str(u) not in listed]
+    if extra:
+        titles.update(db.execute(select(Case.id, Case.title).where(Case.id.in_(extra))).all())
+        rows = list(rows) + [(case_id, 0, 0) for case_id in extra]
     for case_id, spent, calls in rows:
         limit = case_limit(settings, case_id)
         cases.append({"case_id": str(case_id), "title": titles.get(case_id) or str(case_id)[:8], "calls": calls,
                       "spent_usd": round(float(spent or 0), 2), "limit_usd": limit,
+                      "own_limit": str(case_id).lower() in settings["case_limits"],
                       "percent": round(float(spent or 0) / limit * 100, 1) if limit else None})
     cases.sort(key=lambda row: row["spent_usd"], reverse=True)
     alerts = [dict(alert, message=alert_sentence(alert, titles.get(_uuid(alert.get("case_id")))))
@@ -286,6 +291,8 @@ def overview(db: Session) -> dict[str, Any]:
         "month_spent_usd": round(month_spent, 2),
         "month_percent": round(month_spent / month_limit * 100, 1) if month_limit else None,
         "cases": cases,
+        "case_choices": [{"id": str(i), "title": t} for i, t in
+                         db.execute(select(Case.id, Case.title).order_by(Case.title)).all()],
         "alerts": alerts[-20:][::-1],
         "updated_by": settings["updated_by"],
     }

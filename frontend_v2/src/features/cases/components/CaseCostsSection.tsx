@@ -25,6 +25,7 @@ export function CaseCostsSection({ caseId, caseTitle }: { caseId: string; caseTi
     queryFn: () => caseCostsAPI.report(caseId, start || undefined, end || undefined),
   })
   const data = report.data
+  const limit = useQuery({ queryKey: ["case-ai-limit", caseId], queryFn: () => caseCostsAPI.limit(caseId) }).data
   return (
     <Card className="mt-6 gap-4 p-5" aria-labelledby="case-costs-title">
       <CardHeader className="grid-cols-[auto_1fr] grid-rows-[auto_auto] gap-x-3">
@@ -40,6 +41,15 @@ export function CaseCostsSection({ caseId, caseTitle }: { caseId: string; caseTi
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {limit && typeof limit.spent_usd === "number" && (
+          <p className="text-sm" data-testid="case-ai-limit">
+            {limit.limit_usd === null || limit.limit_usd === undefined
+              ? `No AI spending limit is set for this case. ${money(limit.spent_usd)} spent.`
+              : `${money(limit.spent_usd)} spent of this case's ${money(limit.limit_usd)} AI limit (${
+                  limit.own_limit ? "set for this case" : "the default for all cases"
+                }). An administrator can change it on the AI costs page.`}
+          </p>
+        )}
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="case-costs-start">From</Label>

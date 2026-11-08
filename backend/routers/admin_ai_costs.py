@@ -186,6 +186,18 @@ def put_ai_budget(limits: BudgetLimits, db: Session = Depends(get_db), user: Use
     return ai_budget.overview(db)
 
 
+class CaseBudgetLimit(BaseModel):
+    """Dollars; null clears this case's own limit. It replaces the default per-case limit for this case."""
+    limit_usd: float | None = Field(default=None, ge=0)
+
+
+@router.put("/budget/case/{case_id}")
+def put_ai_case_budget(case_id: UUID, limit: CaseBudgetLimit, db: Session = Depends(get_db),
+                       user: User = Depends(require_admin)):
+    ai_budget.set_case_limit(db, case_id, limit.limit_usd, updated_by=user.email)
+    return ai_budget.overview(db)
+
+
 @router.get("/filters", response_model=AICostFiltersResponse)
 def get_ai_cost_filters(
     source: SourceParam | None = Query(None),

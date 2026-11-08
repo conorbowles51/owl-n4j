@@ -31,7 +31,16 @@ export interface CaseCostReport {
 const query = (caseId: string, start?: string, end?: string) =>
   new URLSearchParams({ case_id: caseId, ...(start ? { start_date: start } : {}), ...(end ? { end_date: end } : {}) })
 
+export interface CaseAILimit {
+  case_id: string
+  limit_usd: number | null
+  own_limit: boolean
+  spent_usd: number
+}
+
 export const caseCostsAPI = {
+  limit: (caseId: string) => fetchAPI<CaseAILimit>(`/api/cost-ledger/case-limit?case_id=${encodeURIComponent(caseId)}`),
+
   report: (caseId: string, start?: string, end?: string) =>
     fetchAPI<CaseCostReport>(`/api/cost-ledger/case-report?${query(caseId, start, end)}`),
 

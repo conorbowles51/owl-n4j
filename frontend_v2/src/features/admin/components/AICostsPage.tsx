@@ -15,6 +15,7 @@ import {
 import { Bot, DollarSign, Filter, MessageSquare, RefreshCw } from "lucide-react"
 
 import { aiCostsAPI } from "@/features/admin/api"
+import { AIBudgetCard } from "@/features/admin/components/AIBudgetCard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CostBadge } from "@/components/ui/cost-badge"
@@ -131,6 +132,8 @@ export function AICostsPage() {
           </Button>
         </div>
       </div>
+
+      <AIBudgetCard />
 
       <Card>
         <CardHeader className="pb-3">
