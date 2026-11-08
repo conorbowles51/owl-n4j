@@ -204,3 +204,70 @@ describe("picking a folder again", () => {
     expect(reads(files)).toBe(1)
   })
 })
+
+describe("whole-selection caps, before hashing (01 D41)", () => {
+  it("refuses a selection of more files than an upload takes, in words, reading nothing", async () => {
+    const { selectionRefusal, MAX_SELECTION_FILES } = await import("./resumable-upload-groups")
+    api.fetchAPI.mockReset()
+    const small = fake("a.db", 10)
+    const over = Array.from({ length: MAX_SELECTION_FILES + 1 }, () => small)
+    await expect(uploadFolderOrArchive("case-1", over, {} as never)).rejects.toThrow(
+      "This selection holds 1,000,001 files and an upload takes up to 1,000,000. Nothing was read or sent. " +
+        "Upload it in parts, for example one folder at a time."
+    )
+    expect(small.slice).not.toHaveBeenCalled()
+    expect(api.fetchAPI).not.toHaveBeenCalled()
+    expect(selectionRefusal([{ size: 10 }])).toBeNull()
+  })
+
+  it("refuses a selection over 64 GB before hashing, naming its size", async () => {
+    api.fetchAPI.mockReset()
+    const eightGB = 8 * 1024 ** 3
+    const files = Array.from({ length: 9 }, (_, i) => fake(`${i}.bin`, eightGB))
+    await expect(uploadFolderOrArchive("case-1", files, {} as never)).rejects.toThrow(
+      "This selection is 72.0 GB and an upload can hold up to 64 GB. Nothing was read or sent. " +
+        "Split it into smaller selections."
+    )
+    expect(files[0].slice).not.toHaveBeenCalled()
+    expect(api.fetchAPI).not.toHaveBeenCalled()
+  })
+})
+
+describe("a file list larger than one page (01 D41)", () => {
+  const item = (i: number) => ({ path: `P/${i}`, size: 1, sha256: "a".repeat(64), chunks: ["a".repeat(64)] })
+  const meta = { id: "g-9", case_id: "case-1", folder_id: null, name: "P", kind: "folder" as const, replace_existing: false }
+
+  it("declares the whole size, sends the rest in pages, and resolves with the full list", async () => {
+    const { registerByPages } = await import("./resumable-upload-groups")
+    const manifest = Array.from({ length: 5 }, (_, i) => item(i))
+    api.fetchAPI.mockReset()
+    api.fetchAPI.mockImplementation(async (url: string, init?: { method?: string; body?: unknown }) => {
+      if (init?.method === "POST" && url === "/api/evidence-upload-groups") return { id: "g-9" }
+      if (init?.method === "POST" && url === "/api/evidence-upload-groups/g-9/members") return { id: "g-9" }
+      if (url === "/api/evidence-upload-groups/g-9") return { id: "g-9", members: manifest }
+      throw new Error(`unexpected ${url}`)
+    })
+    await expect(registerByPages(meta, manifest, 2)).resolves.toMatchObject({ id: "g-9" })
+    const posts = api.fetchAPI.mock.calls.filter(([, init]) => (init as { method?: string })?.method === "POST")
+    expect(posts[0][1].body).toMatchObject({ members_total: 5, members: manifest.slice(0, 2) })
+    expect(posts.map(([url]) => url)).toEqual([
+      "/api/evidence-upload-groups",
+      "/api/evidence-upload-groups/g-9/members",
+      "/api/evidence-upload-groups/g-9/members",
+    ])
+    expect(posts[1][1].body).toMatchObject({ members: manifest.slice(2, 4) })
+    expect(posts[2][1].body).toMatchObject({ members: manifest.slice(4) })
+  })
+
+  it("says so when the list did not finish arriving", async () => {
+    const { registerByPages } = await import("./resumable-upload-groups")
+    const manifest = Array.from({ length: 3 }, (_, i) => item(i))
+    api.fetchAPI.mockReset()
+    api.fetchAPI.mockImplementation(async (url: string) =>
+      url === "/api/evidence-upload-groups/g-9" ? { id: "g-9", members: manifest.slice(0, 2) } : { id: "g-9" }
+    )
+    await expect(registerByPages(meta, manifest, 2)).rejects.toThrow(
+      "The selection's file list did not finish arriving. Try the upload again; the files already listed are kept."
+    )
+  })
+})

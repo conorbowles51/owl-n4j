@@ -39,7 +39,11 @@ from routers import evidence_uploads as uploads
 from services.evidence_db_storage import EvidenceDBStorage
 
 router = APIRouter(prefix='/api/evidence-upload-groups', tags=['evidence'])
-MAX_MEMBERS = 200_000  # folder groups; the largest phone folder measured holds 93,150 files (01 D9)
+MAX_MEMBERS = 200_000  # one request's page of a manifest (01 D9; a larger selection declares members_total and pages)
+# The whole-selection cap (01 D41). D9's reversal condition was met on 8 Nov: real productions measured
+# 209,271 (P03), 204,426 (P08), 206,622 (P13) and 279,701 (P11) files, so the manifest is paged and the
+# selection cap is 1,000,000, 3.6 times the largest production measured. Reverse if a production exceeds it.
+MAX_MEMBERS_TOTAL = 1_000_000
 MAX_ARCHIVE_ENTRIES = 20_000  # an ordinary zip unpacked into evidence rows
 PHONE_CONTAINER_SUFFIXES = ('.zip', '.ufdr')
 MAX_EXPANDED_BYTES = 64 * 1024**3
@@ -65,6 +69,14 @@ class StartGroup(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     kind: Literal['folder', 'archive', 'files']
     replace_existing: bool = False
+    members: list[Member] = Field(min_length=1, max_length=MAX_MEMBERS)
+    # A selection larger than one request declares its whole size and sends the rest of its manifest in pages
+    # (POST /{id}/members) before any file is sent (01 D41).
+    members_total: int | None = Field(default=None, ge=1, le=MAX_MEMBERS_TOTAL)
+
+
+class AddMembers(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     members: list[Member] = Field(min_length=1, max_length=MAX_MEMBERS)
 
 
@@ -120,7 +132,8 @@ def snapshot(db, group, *, include_members=True):
         folder_id=str(group.folder_id) if group.folder_id else None,
         kind=group.kind, status=group.status, replace_existing=group.replace_existing,
         file_count=len(rows), staged_count=sum(row.status in ('staged', 'completed') for row in rows),
-        size=sum(row.size for row in rows), received_bytes=received, receipt=group.receipt)
+        size=sum(row.size for row in rows), received_bytes=received, receipt=group.receipt,
+        members_total=group.members_total)
     if include_members:
         result['members'] = states
     return result
@@ -169,7 +182,28 @@ def summary(db, group):
         folder_id=str(group.folder_id) if group.folder_id else None,
         kind=group.kind, status=group.status, replace_existing=group.replace_existing,
         file_count=int(file_count), staged_count=int(staged_count), size=int(size), received_bytes=received,
-        receipt=group.receipt)
+        receipt=group.receipt, members_total=group.members_total)
+
+
+def _checked_page(page, kind, seen):
+    """Each member's path, fingerprint shape and uniqueness, as one page of a manifest."""
+    for member in page:
+        path = safe_path(member['path'])
+        if str(path).casefold() in seen:
+            raise HTTPException(400, 'Two selected files have the same path. Choose a folder without ambiguous names.')
+        seen.add(str(path).casefold())
+        if (len(member['chunks']) != math.ceil(member['size'] / uploads.CHUNK_SIZE)
+                or any(not re.fullmatch(r'[a-f0-9]{64}', h) for h in member['chunks'])):
+            raise HTTPException(400, 'The upload manifest does not match its file sizes')
+        if kind == 'files' and '/' in member['path']:
+            raise HTTPException(400, 'Use folder upload to retain nested file paths')
+
+
+def _session_row(group_id, case_id, user_id, folder_id, member, status='uploading'):
+    return EvidenceUploadSession(id=uuid5(group_id, member['path']), group_id=group_id,
+        case_id=case_id, user_id=user_id, folder_id=folder_id,
+        filename=PurePosixPath(member['path']).name, size=member['size'],
+        sha256=member['sha256'], chunks=member['chunks'], chunk_size=uploads.CHUNK_SIZE, status=status)
 
 
 @router.post('')
@@ -180,22 +214,17 @@ def start_group(body: StartGroup, user: User = Depends(get_current_db_user), db:
         if folder is None or folder.case_id != body.case_id:
             raise HTTPException(404, 'Destination folder not found')
     manifest = sorted([member.model_dump(exclude_none=True) for member in body.members], key=lambda m: m['path'])
-    seen = set()
-    for member in manifest:
-        path = safe_path(member['path'])
-        if str(path).casefold() in seen:
-            raise HTTPException(400, 'Two selected files have the same path. Choose a folder without ambiguous names.')
-        seen.add(str(path).casefold())
-        if (len(member['chunks']) != math.ceil(member['size'] / uploads.CHUNK_SIZE)
-                or any(not re.fullmatch(r'[a-f0-9]{64}', h) for h in member['chunks'])):
-            raise HTTPException(400, 'The upload manifest does not match its file sizes')
+    _checked_page(manifest, body.kind, set())
     if sum(m['size'] for m in manifest) > MAX_EXPANDED_BYTES:
         raise HTTPException(413, 'This selection exceeds the 64 GB upload limit. Split it into smaller selections.')
     if body.kind == 'archive' and (len(manifest) != 1
                                    or not manifest[0]['path'].lower().endswith(PHONE_CONTAINER_SUFFIXES)):
         raise HTTPException(400, 'Select one ZIP or UFDR file')
-    if body.kind == 'files' and any('/' in m['path'] for m in manifest):
-        raise HTTPException(400, 'Use folder upload to retain nested file paths')
+    if body.members_total is not None:
+        if body.members_total < len(manifest):
+            raise HTTPException(400, 'This selection declares fewer files than this request carries')
+        if body.kind == 'archive' and body.members_total != 1:
+            raise HTTPException(400, 'Select one ZIP or UFDR file')
     values = body.model_dump(exclude={'members'})
     values['manifest'] = manifest
     group = db.get(EvidenceUploadGroup, body.id)
@@ -205,17 +234,59 @@ def start_group(body: StartGroup, user: User = Depends(get_current_db_user), db:
             db.add(group)
             db.flush()
             for member in manifest:
-                db.add(EvidenceUploadSession(id=uuid5(body.id, member['path']), group_id=body.id,
-                    case_id=body.case_id, user_id=user.id, folder_id=body.folder_id,
-                    filename=PurePosixPath(member['path']).name, size=member['size'],
-                    sha256=member['sha256'], chunks=member['chunks'], chunk_size=uploads.CHUNK_SIZE, status='uploading'))
+                db.add(_session_row(body.id, body.case_id, user.id, body.folder_id, member))
             db.commit()
         except IntegrityError:
             db.rollback()
     group = get_group(db, body.id, user)
-    if any(getattr(group, key) != value for key, value in values.items()):
+    # A paged selection's stored manifest grows past the first page, so a retried start compares its page
+    # against the stored entries at those paths instead of the whole manifest.
+    paged = group.members_total is not None and body.members_total == group.members_total
+    if any(getattr(group, key) != value for key, value in values.items() if not (paged and key == 'manifest')):
         raise HTTPException(409, 'This upload selection belongs to different files or a different destination')
+    if paged and values['manifest'] != group.manifest:
+        stored = {m['path']: m for m in group.manifest}
+        if any(stored.get(member['path']) != member for member in values['manifest']):
+            raise HTTPException(409, 'This upload selection belongs to different files or a different destination')
     return snapshot(db, group)
+
+
+@router.post('/{identity}/members')
+def add_members(identity: UUID, body: AddMembers, user: User = Depends(get_current_db_user),
+                db: Session = Depends(get_db)):
+    """The next page of a selection that declared more files than one request carries (01 D41). A member already
+    declared is acknowledged unchanged, so a page retried after a lost answer is safe."""
+    group = get_group(db, identity, user, lock=True)
+    if group.members_total is None:
+        raise HTTPException(409, 'This selection arrived whole and takes no further files.')
+    if group.receipt or group.status in ('dispatching', 'completed'):
+        raise HTTPException(409, 'This selection is already registered.')
+    page = [member.model_dump(exclude_none=True) for member in body.members]
+    manifest = list(group.manifest)
+    stored = {m['path']: m for m in manifest}
+    seen = {m['path'].casefold() for m in manifest}
+    new = []
+    for member in page:
+        known = stored.get(member['path'])
+        if known is not None:
+            if known != member:
+                raise HTTPException(409, 'A file in this page differs from the one already declared at its path. '
+                                         'Discard this selection and start the upload again.')
+            continue
+        new.append(member)
+    _checked_page(new, group.kind, seen)
+    if len(manifest) + len(new) > group.members_total:
+        raise HTTPException(409, 'This page takes the selection past the %s files it declared. Discard this '
+                                 'selection and start the upload again.' % format(group.members_total, ','))
+    if sum(m['size'] for m in manifest) + sum(m['size'] for m in new) > MAX_EXPANDED_BYTES:
+        raise HTTPException(413, 'This selection exceeds the 64 GB upload limit. Split it into smaller selections.')
+    if new:
+        group.manifest = sorted(manifest + new, key=lambda m: m['path'])
+        status = group.status if group.status in ('uploading', 'paused') else 'uploading'
+        for member in new:
+            db.add(_session_row(group.id, group.case_id, user.id, group.folder_id, member, status))
+        db.commit()
+    return summary(db, group)
 
 
 @router.get('')
@@ -765,6 +836,12 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
         if group.status == 'paused':
             raise HTTPException(409, 'Resume this selection before completing it')
         S = EvidenceUploadSession
+        if group.members_total is not None and not group.receipt:
+            listed = db.scalar(select(func.count()).where(S.group_id == group.id))
+            if listed < group.members_total:
+                raise HTTPException(409, 'This selection declared %s files but only %s are listed so far. The rest '
+                                         'of the file list has to arrive before it can be completed.' % (
+                                         format(group.members_total, ','), format(listed, ',')))
         if not group.receipt and db.scalar(select(func.count()).where(S.group_id == group.id, S.status != 'staged')):
             raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
         stored = _stored_registration(db, identity)

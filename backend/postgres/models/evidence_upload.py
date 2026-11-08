@@ -18,6 +18,8 @@ class EvidenceUploadGroup(Base):
     kind: Mapped[str] = mapped_column(String(20))
     replace_existing: Mapped[bool] = mapped_column(Boolean, default=False)
     manifest: Mapped[list] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'))
+    # The declared size of a selection whose manifest arrives in pages (01 D41); NULL when it arrived whole.
+    members_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     receipt: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default='uploading')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,6 +1,6 @@
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import type { EvidenceUploadOptions, UploadResponse } from "./api"
-import { addFileCost, matchedWords, type MatchedFiles, type UploadProgress } from "./upload-progress"
+import { addFileCost, formatBytes, matchedWords, type MatchedFiles, type UploadProgress } from "./upload-progress"
 import {
   randomUUID,
   setLocalUploadPaused,
@@ -24,6 +24,9 @@ export interface UploadGroup {
   received_bytes: number
   members?: Member[]
   receipt: { file_ids: string[]; job_ids: string[]; message: string } | null
+  /** The declared size of a selection whose file list arrives in pages (01 D41); null when it arrived whole.
+   * While ``file_count`` is below it, part of the list has not arrived yet. */
+  members_total?: number | null
   /** While the server registers the selection (it answers ``complete`` before it is done for a large one). */
   registration?: Registration
 }
@@ -47,6 +50,31 @@ export function tooLargeMessage(file: File, isArchive?: boolean) {
   return isArchive
     ? `This ZIP file is ${size}; one file can be at most 8 GB, so it was not uploaded. Unpack it and upload the report folder instead.`
     : `${file.name} is ${size}; one file can be at most 8 GB, so nothing was uploaded.`
+}
+
+/** The whole-selection caps, the server's (backend/routers/evidence_upload_groups.py MAX_MEMBERS_TOTAL and
+ * MAX_EXPANDED_BYTES). Said before hashing, never after: hashing a refused production ran 96 minutes before the
+ * server's answer, and the answer was shown to nobody (01 D41). */
+export const MAX_SELECTION_FILES = 1_000_000
+export const MAX_SELECTION_BYTES = 64 * 1024 ** 3
+
+/** Why this selection cannot be uploaded, in words, or null when it can. Checked on counts and sizes alone. */
+export function selectionRefusal(
+  files: { size: number }[],
+  caps = { files: MAX_SELECTION_FILES, bytes: MAX_SELECTION_BYTES }
+): string | null {
+  if (files.length > caps.files)
+    return (
+      `This selection holds ${files.length.toLocaleString("en-US")} files and an upload takes up to ` +
+      `${caps.files.toLocaleString("en-US")}. Nothing was read or sent. Upload it in parts, for example one folder at a time.`
+    )
+  const total = files.reduce((sum, file) => sum + file.size, 0)
+  if (total > caps.bytes)
+    return (
+      `This selection is ${formatBytes(total)} and an upload can hold up to 64 GB. ` +
+      `Nothing was read or sent. Split it into smaller selections.`
+    )
+  return null
 }
 type Active = {
   files: File[]
@@ -521,6 +549,49 @@ export async function registerGroup(
   }
 }
 
+/** Files a manifest page carries. The server takes up to 200,000 a request; 20,000 keeps one page's JSON near
+ * 5 MB. A selection larger than one page declares its whole size at creation and sends the rest of its file list
+ * in pages before any file is sent (01 D41): real productions measured 8 Nov hold 209,271 to 279,701 files. */
+export const PAGE_MEMBERS = 20_000
+const PAGE_TIMEOUT_MS = 2 * 60 * 1000
+
+type GroupMeta = {
+  id: string
+  case_id: string
+  folder_id: string | null
+  name: string
+  kind: UploadGroup["kind"]
+  replace_existing: boolean
+}
+type ManifestItem = { path: string; size: number; sha256: string; chunks: string[]; modified?: number }
+
+/** Creates the selection with its first page and declared total, sends the remaining pages, and resolves with the
+ * fully listed selection. Safe to run again against a selection whose list stopped part way (a closed tab): a
+ * member already declared is acknowledged unchanged and only the missing ones are added. */
+export async function registerByPages(
+  meta: GroupMeta,
+  manifest: ManifestItem[],
+  pageMembers = PAGE_MEMBERS
+): Promise<UploadGroup> {
+  await fetchAPI<UploadGroup>(endpoint, {
+    method: "POST",
+    timeout: PAGE_TIMEOUT_MS,
+    body: { ...meta, members: manifest.slice(0, pageMembers), members_total: manifest.length },
+  })
+  for (let at = pageMembers; at < manifest.length; at += pageMembers)
+    await fetchAPI<UploadGroup>(`${endpoint}/${meta.id}/members`, {
+      method: "POST",
+      timeout: PAGE_TIMEOUT_MS,
+      body: { members: manifest.slice(at, at + pageMembers) },
+    })
+  const listed = await fetchAPI<UploadGroup>(`${endpoint}/${meta.id}`)
+  if ((listed.members || []).length !== manifest.length)
+    throw new Error(
+      "The selection's file list did not finish arriving. Try the upload again; the files already listed are kept."
+    )
+  return listed
+}
+
 export async function uploadFolderOrArchive(
   caseId: string,
   files: File[],
@@ -533,6 +604,8 @@ export async function uploadFolderOrArchive(
   // before the whole selection is hashed, never after
   const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
   if (tooLarge) throw new Error(tooLargeMessage(tooLarge, options.isArchive && !selectionKind))
+  const refused = selectionRefusal(files)
+  if (refused) throw new Error(refused)
   const kind = selectionKind || (options.isArchive ? "archive" : "folder")
   const onProgress = options.onProgress
   const name =
@@ -548,7 +621,8 @@ export async function uploadFolderOrArchive(
         group.name === name &&
         group.folder_id === (options.folderId || null) &&
         !group.replace_existing &&
-        group.file_count === files.length
+        // a selection whose file list stopped part way (01 D41) still names its whole size
+        (group.file_count === files.length || group.members_total === files.length)
     )
   const fetchGroup = (id: string) => fetchAPI<UploadGroup>(`${endpoint}/${id}`)
   const read = new Map<string, Fingerprint>()
@@ -578,36 +652,44 @@ export async function uploadFolderOrArchive(
       return { path, size: file.size, modified: file.lastModified, ...read.get(path)! }
     })
     // Every file is read now, so a selection begun meanwhile (another tab) is known by its fingerprints.
+    const byPath = new Map(manifest.map((item) => [item.path, item]))
     for (const candidate of sameSelection(await listUploadGroups(caseId))) {
       const full = await fetchGroup(candidate.id)
-      const members = new Map((full.members || []).map((member) => [member.path, member]))
-      if (
-        manifest.every((item) => {
-          const member = members.get(item.path)
-          return member?.sha256 === item.sha256 && member?.size === item.size
-        })
-      ) {
+      const members = full.members || []
+      const inManifest = members.every((member) => {
+        const item = byPath.get(member.path)
+        return item?.sha256 === member.sha256 && item?.size === member.size
+      })
+      if (!inManifest) continue
+      if (members.length === files.length) {
         prior = full
+        break
+      }
+      if (candidate.members_total === files.length && members.length < files.length) {
+        // This very selection's file list stopped part way (a closed tab): send the missing pages and carry on.
+        prior = await registerByPages(
+          { id: full.id, case_id: caseId, folder_id: options.folderId || null, name, kind, replace_existing: false },
+          manifest
+        )
         break
       }
     }
   }
   checkSession()
+  const meta: GroupMeta = {
+    id: randomUUID(),
+    case_id: caseId,
+    folder_id: options.folderId || null,
+    name,
+    kind,
+    // Replacing a phone report is an explicit action on its extraction, never part of an upload (01 4.2).
+    replace_existing: false,
+  }
   const group =
     prior ||
-    (await fetchAPI<UploadGroup>(endpoint, {
-      method: "POST",
-      body: {
-        id: randomUUID(),
-        case_id: caseId,
-        folder_id: options.folderId || null,
-        name,
-        kind,
-        // Replacing a phone report is an explicit action on its extraction, never part of an upload (01 4.2).
-        replace_existing: false,
-        members: manifest,
-      },
-    }))
+    (manifest.length > PAGE_MEMBERS
+      ? await registerByPages(meta, manifest)
+      : await fetchAPI<UploadGroup>(endpoint, { method: "POST", body: { ...meta, members: manifest } }))
   checkSession()
   const result = prior
     ? // the files read above matched this group's members: do not read them again

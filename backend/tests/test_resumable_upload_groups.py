@@ -457,3 +457,71 @@ def test_registration_uses_each_file_as_it_arrived_and_rebuilds_only_one_that_fa
     assert not os.path.samefile(rows['Bundle/c.txt'].stored_path, api.uploads.assembled_path(sessions['c.txt']))
     assert not list(api.payload_root(api.EvidenceUploadGroup(id=UUID(state['id']), case_id=f.case)).rglob(
         api.PARTIAL_PREFIX + '*'))
+
+
+def _page_manifest(content):
+    return [dict(path=path, size=len(value), sha256=hashlib.sha256(value).hexdigest(),
+                 chunks=[hashlib.sha256(value[i:i+32]).hexdigest() for i in range(0, len(value), 32)])
+            for path, value in sorted(content.items())]
+
+
+def test_a_selection_larger_than_one_request_declares_its_total_and_registers_by_pages(groups):
+    """01 D41. D9's reversal condition was met on 8 Nov: real productions hold 209,271 to 279,701 files, past
+    the 200,000 one-request manifest cap, and the page was refused with an unexplained 422 after hashing for
+    96 minutes. A larger selection now declares members_total at creation and sends the rest of its manifest
+    in pages. Fails on the old code: members_total was refused as an unknown field (422)."""
+    f = groups
+    content = {'Prod/%02d.txt' % i: bytes([65 + i]) * (i + 1) for i in range(5)}
+    manifest = _page_manifest(content)
+    identity = str(uuid4())
+    body = dict(id=identity, case_id=str(f.case), kind='folder', name='Prod',
+                members=manifest[:2], members_total=5)
+    first = f.client.post('/api/evidence-upload-groups', json=body)
+    assert first.status_code == 200, first.text
+    assert first.json()['file_count'] == 2 and first.json()['members_total'] == 5
+    refused = f.client.post(f'/api/evidence-upload-groups/{identity}/complete')
+    assert refused.status_code == 409 and 'declared 5 files but only 2 are listed' in refused.json()['detail']
+    page = f.client.post(f'/api/evidence-upload-groups/{identity}/members', json={'members': manifest[2:4]})
+    assert page.status_code == 200, page.text
+    assert page.json()['file_count'] == 4
+    # a page retried after a lost answer changes nothing
+    again = f.client.post(f'/api/evidence-upload-groups/{identity}/members', json={'members': manifest[2:4]})
+    assert again.status_code == 200 and again.json()['file_count'] == 4
+    # a retried start compares its page against the grown manifest instead of refusing
+    assert f.client.post('/api/evidence-upload-groups', json=body).status_code == 200
+    last = f.client.post(f'/api/evidence-upload-groups/{identity}/members', json={'members': manifest[4:]})
+    assert last.status_code == 200 and last.json()['file_count'] == 5
+    state = f.client.get(f'/api/evidence-upload-groups/{identity}').json()
+    assert sorted(m['path'] for m in state['members']) == sorted(content)
+    stage(f, state, content)
+    response = control(f, state, 'complete')
+    assert response.status_code == 200, response.text
+    assert len(response.json()['receipt']['file_ids']) == 5
+    with Session(f.engine) as db:
+        rows = list(db.scalars(select(EvidenceFile)))
+        assert {r.metadata_['relative_path']: Path(r.stored_path).read_bytes() for r in rows} == content
+
+
+def test_pages_past_the_total_a_changed_file_or_a_whole_selection_are_refused_in_words(groups):
+    f = groups
+    content = {'P/a.txt': b'aaa', 'P/b.txt': b'bbb', 'P/c.txt': b'ccc'}
+    manifest = _page_manifest(content)
+    identity = str(uuid4())
+    body = dict(id=identity, case_id=str(f.case), kind='folder', name='P',
+                members=manifest[:2], members_total=3)
+    assert f.client.post('/api/evidence-upload-groups', json=body).status_code == 200
+    changed = dict(manifest[0], sha256='0' * 64, chunks=['0' * 64])
+    differs = f.client.post(f'/api/evidence-upload-groups/{identity}/members', json={'members': [changed]})
+    assert differs.status_code == 409 and 'differs from the one already declared' in differs.json()['detail']
+    extra = dict(manifest[0], path='P/d.txt')
+    over = f.client.post(f'/api/evidence-upload-groups/{identity}/members',
+                         json={'members': [manifest[2], extra]})
+    assert over.status_code == 409 and 'past the 3 files it declared' in over.json()['detail']
+    # declaring fewer files than the request carries
+    short = dict(body, id=str(uuid4()), members_total=1)
+    assert f.client.post('/api/evidence-upload-groups', json=short).status_code == 400
+    # a selection that arrived whole takes no pages
+    plain, _ = start(f, {'Q/a.txt': b'zz'})
+    whole = f.client.post('/api/evidence-upload-groups/%s/members' % plain['id'],
+                          json={'members': manifest[2:]})
+    assert whole.status_code == 409 and 'arrived whole' in whole.json()['detail']
