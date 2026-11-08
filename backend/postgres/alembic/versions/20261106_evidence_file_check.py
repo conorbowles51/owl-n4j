@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "20261106_evidence_file_check"
-down_revision = "20261105_pending_chunk_vectors"
+down_revision = "20261105_job_cancel"
 branch_labels = None
 depends_on = None
 
