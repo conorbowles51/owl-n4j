@@ -16,7 +16,7 @@ ANCHOR = dict(kind="text_passage", quote="Wire", page_number=2, text_version="b"
 
 @pytest.fixture()
 def world():
-    for engine in fresh_engine():
+    with fresh_engine() as engine:
         with engine.begin() as conn:
             case_id = make_case(conn)
             owner = conn.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"), {"c": case_id}).scalar()
@@ -33,8 +33,8 @@ def world():
                 "VALUES (:e, :c, 'note', 'b', '[]', 'accepted', :u, 1, '{}', false)"),
                 {"e": entry_id, "c": case_id, "u": owner})
             conn.execute(text(
-                "INSERT INTO workspace_entry_links (id, entry_id, case_id, target_type, target_id, relationship_type, "
-                "source_anchor, link_metadata, created_by_user_id) VALUES (:l, :e, :c, 'evidence_passage', :t, "
+                "INSERT INTO workspace_entry_links (id, entry_id, case_id, target_type, target_id, relationship, "
+                "source_anchor, metadata, created_by_user_id) VALUES (:l, :e, :c, 'evidence_passage', :t, "
                 "'unclassified', CAST(:a AS jsonb), '{}', :u)"),
                 {"l": link_id, "e": entry_id, "c": case_id, "t": f"{file_id}:bbbb:18:22", "u": owner,
                  "a": json.dumps({**ANCHOR, "evidence_file_id": str(file_id)})})
