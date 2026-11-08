@@ -335,3 +335,16 @@ def test_a_seeded_case_survives_the_round_trip(tmp_path):
             assert hashes(package) == hashes(Path(again["path"]))
         finally:
             conn.close()
+
+
+def test_progress_line_is_not_swallowed_by_a_liveness_beat():
+    from services.caseport.jobs import make_heartbeat
+    seen, now = [], [100.0]
+    beat = make_heartbeat(lambda *a: seen.append(a), clock=lambda: now[0])
+    beat()                                   # liveness beat, as the cancel check does on every file
+    now[0] += 1
+    beat("Evidence files: 500", 3, 9)        # progress one second later must still be written
+    assert seen == [(None, None, None), ("Evidence files: 500", 3, 9)]
+    now[0] += 1
+    beat("Evidence files: 1000", 3, 9)       # throttled: same kind inside the interval
+    assert len(seen) == 2

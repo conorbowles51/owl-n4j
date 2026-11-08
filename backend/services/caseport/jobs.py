@@ -68,6 +68,21 @@ def _trail(conn, action, *, row, details):
                  (action, row["user_id"], row["name"], row["email"], row["case_id"], json.dumps(details, default=str)))
 
 
+def make_heartbeat(write, clock=time.monotonic):
+    """Throttled writer. A liveness beat (no phase) and a progress line each keep their own clock, so the many
+    liveness beats of a long evidence copy never swallow the progress the page shows."""
+    last = dict(at=-1e9, progress_at=-1e9)
+
+    def heartbeat(phase=None, done=None, total=None):
+        now = clock()
+        key = "progress_at" if phase is not None else "at"
+        if now - last[key] < HEARTBEAT_SECONDS:
+            return
+        last[key] = now
+        write(phase, done, total)
+    return heartbeat
+
+
 def run_one(export_id: str) -> int:
     """The export process: claim the request, write the package, record the outcome. Exit 0 for any recorded outcome."""
     import config
@@ -84,16 +99,9 @@ def run_one(export_id: str) -> int:
         row = dict(user_id=user_id, email=email, name=name, case_id=case_id)
         target = package_path(case_id, export_id)
         remove_files(target)
-        beat = dict(at=0.0)
-
-        def heartbeat(phase=None, done=None, total=None):
-            now = time.monotonic()
-            if now - beat["at"] < HEARTBEAT_SECONDS:
-                return
-            beat["at"] = now
-            conn.execute("UPDATE case_exports SET heartbeat_at = now(), phase = coalesce(%s, phase), "
-                         "done = coalesce(%s, done), total = coalesce(%s, total) WHERE id = %s",
-                         (phase, done, total, export_id))
+        heartbeat = make_heartbeat(lambda phase, done, total: conn.execute(
+            "UPDATE case_exports SET heartbeat_at = now(), phase = coalesce(%s, phase), "
+            "done = coalesce(%s, done), total = coalesce(%s, total) WHERE id = %s", (phase, done, total, export_id)))
 
         def cancelled():
             heartbeat()
