@@ -31,6 +31,7 @@ from services.agent.schemas import (
     AgentToolTraceItem,
 )
 import services.agent.storage as storage
+import services.agent.plain_answer as plain_answer
 import services.agent.run_record as run_record
 import services.agent.run_settle as run_settle
 from services import ai_budget
@@ -232,8 +233,10 @@ class AgentService:
                 answer = runner_clarification.question
             if not answer:
                 answer = "I could not produce an answer from the available case data."
+            answer, plain_check = plain_answer.checked(answer)  # internal terms in plain words (lx-agentlive C)
             answer, citation_check = storage.checked_answer(db, case_id=thread.case_id, answer=answer)
-            storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check})
+            storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check,
+                                                               "plain_check": plain_check})
 
             usage = final_result.get("usage")
             cost_record = self._record_usage(
@@ -522,8 +525,10 @@ class AgentService:
                 answer = runner_clarification.question
             if not answer:
                 answer = "I could not produce an answer from the available case data."
+            answer, plain_check = plain_answer.checked(answer)  # internal terms in plain words (lx-agentlive C)
             answer, citation_check = storage.checked_answer(db, case_id=thread.case_id, answer=answer)
-            storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check})
+            storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check,
+                                                               "plain_check": plain_check})
 
             usage = result.get("usage")
             cost_record = self._record_usage(

@@ -222,6 +222,8 @@ def _final_answer_system_prompt(rules: str = "") -> str:
     return writing_standard.system_prompt(_FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + rules if rules else ""))
 
 
+from services.agent.plain_answer import PROMPT_RULE as _PLAIN_WORDS_RULE  # noqa: E402 - beside its one use
+
 _FINAL_ANSWER_SYSTEM_PROMPT = (
     "Write the final answer from the completed tool results. "
     "Write for an investigator in plain words: never a proof-class code (P0 to P4; say 'checked against the "
@@ -254,7 +256,9 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "The same holds for possible transfers between accounts, a payment's possible other legs and phone identity "
     "suggestions: mention every one returned with its strength and its reasons, list weak and faint ones as weak or "
     "faint rather than dropping them, give the count per strength and what the search bound left out, and never "
-    "call one a link, a confirmed name or corroboration, or add one into a total."
+    "call one a link, a confirmed name or corroboration, or add one into a total. "
+    # Plain words (services.agent.plain_answer checks every answer for what slips through).
+    + _PLAIN_WORDS_RULE
 )
 
 
@@ -681,6 +685,7 @@ Your job:
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
+- Answers are read by an investigator who is not technical: never write a check-status code (p0 to p4), the words proof class or population, a tool name, a tool call or a field name in the answer; say what it means in plain words.
 - When using document search results, cite each passage with its cite field as a link: [filename, p.N](doc://<evidence file id>/N) when it has a page, or [filename](doc://<evidence file id>) when it has none. Copy the cite; never invent a page or a link.
 - A tool message with a _paging note is shown in part: _paging states total, returned and next_page. Read the rest with read_tool_result_page before drawing a conclusion that depends on the whole result. If you stop before reading every page (for example, the tool budget), the answer must say it covers <returned> of <total> and which result is partial.
 
