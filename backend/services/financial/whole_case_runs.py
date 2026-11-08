@@ -100,12 +100,16 @@ def _now():
 
 
 def _alive(pid, identifier):
-    """This run's own child, not a later process that was given the same number."""
+    """True: this run's own child. False: the number is not a process at all. None: a process that does
+    not answer for the run — Popen can return before the child reaches its own program (posix_spawn),
+    and until then its cmdline is the parent's or empty (measured: 172 of 300 immediate reads, load 20);
+    a dead child not yet collected and a later process given the same number read the same way."""
     try:
         with open('/proc/%d/cmdline' % int(pid), 'rb') as handle:
-            return identifier.encode() in handle.read()
+            content = handle.read()
     except (OSError, TypeError, ValueError):
         return False
+    return True if identifier.encode() in content else None
 
 
 def view(state):
@@ -117,7 +121,15 @@ def view(state):
         # No pid yet: the moment between recording the run and starting its child, under the start lock.
         pid = state.get('pid')
         silent = time.time() - beat
-        if silent > STALE_HEARTBEAT_SECONDS if pid is None else (not _alive(pid, state['id']) or silent > HUNG_HEARTBEAT_SECONDS):
+        if pid is None:
+            gone = silent > STALE_HEARTBEAT_SECONDS
+        else:
+            seen = _alive(pid, state['id'])
+            # A process that does not answer is only called stopped once the heartbeat is stale too:
+            # a child still short of its own program has not beaten yet, and the beat is what tells it
+            # apart from a dead one.
+            gone = seen is False or (seen is None and silent > STALE_HEARTBEAT_SECONDS) or silent > HUNG_HEARTBEAT_SECONDS
+        if gone:
             state = {**state, 'status': 'stopped',
                      'error': 'This run stopped before it finished, most likely because the server restarted. '
                               'Nothing partial was kept. Run it again.'}

@@ -97,21 +97,35 @@ class Store(TestCase):
         seen = W.view(dict(id='a' * 32, status='running', pid=2 ** 22 + 7, heartbeat=time.time()))
         self.assertEqual(seen['status'], 'stopped')
         self.assertIn('Nothing partial', seen['error'])
-        # The number was given to another process: this test's own, which is not the run's child.
-        self.assertEqual(W.view(dict(id='a' * 32, status='running', pid=os.getpid(), heartbeat=time.time()))['status'], 'stopped')
-        never = W.view(dict(id='a' * 32, status='queued', heartbeat=time.time() - W.STALE_HEARTBEAT_SECONDS - 1))
+        # The number was given to another process: this test's own, which is not the run's child. That
+        # reads the same as a child short of its own program, so only a stale heartbeat settles it.
+        stale = time.time() - W.STALE_HEARTBEAT_SECONDS - 1
+        self.assertEqual(W.view(dict(id='a' * 32, status='running', pid=os.getpid(), heartbeat=stale))['status'], 'stopped')
+        never = W.view(dict(id='a' * 32, status='queued', heartbeat=stale))
         self.assertEqual(never['status'], 'stopped')
+
+    def test_a_child_not_yet_through_exec_is_not_called_stopped(self):
+        # Popen can return before the child reaches its own program (posix_spawn); until then its
+        # cmdline is the parent's or empty. This test's own process reads exactly that way: alive,
+        # without the run id in its cmdline. A fresh heartbeat answers for the run.
+        state = dict(id='c' * 32, status='running', pid=os.getpid(), heartbeat=time.time())
+        self.assertEqual(W.view(state)['status'], 'running')
 
     def test_a_slow_living_child_is_not_called_stopped(self):
         identifier = 'b' * 32
-        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', identifier])
+        child = subprocess.Popen([sys.executable, '-c', 'import sys, time; print("up", flush=True); time.sleep(600)',
+                                  identifier], stdout=subprocess.PIPE)
         try:
+            # The line arrives only once the child runs its own program, so the reading below is of a
+            # living child whose cmdline carries the run id, at any box load.
+            self.assertEqual(child.stdout.readline(), b'up\n')
             state = dict(id=identifier, status='running', pid=child.pid)
             self.assertEqual(W.view({**state, 'heartbeat': time.time() - W.STALE_HEARTBEAT_SECONDS - 1})['status'], 'running')
             self.assertEqual(W.view({**state, 'heartbeat': time.time() - W.HUNG_HEARTBEAT_SECONDS - 1})['status'], 'stopped')
         finally:
             child.kill()
             child.wait()
+            child.stdout.close()
 
     def test_equal_items_store_equal_digests(self):
         rows = [(dict(b=2, a=n), None, None) for n in range(5)]
