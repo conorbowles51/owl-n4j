@@ -74,6 +74,27 @@ it("renders exact large amounts, signed net and excluded populations", async () 
   ).toBeInTheDocument()
   expect(screen.getByText("Superseded readings: 1")).toBeInTheDocument()
 })
+it("says plainly when no payment counts as verified, and names the counted classes in words", async () => {
+  // Live 8 Nov 2026: every BNB2 payment sits in a balanced statement period, yet verified totals showed a bare zero.
+  mount({
+    ...answer,
+    considered_rows: 3,
+    included_rows: 0,
+    excluded_rows: 3,
+    exclusions: { ...answer.exclusions, superseded: 0, proof_class_not_included: 3 },
+    currencies: [],
+  })
+  expect(await screen.findByTestId("none-verified")).toHaveTextContent(
+    "No payment in this scope counts as verified yet"
+  )
+  expect(screen.getByText(/Counted: Checked against the statement's balances;/)).toBeInTheDocument()
+  expect(screen.queryByText(/P0, P1, P2/)).not.toBeInTheDocument()
+})
+it("shows no 'none verified' line when verified rows exist", async () => {
+  mount()
+  await screen.findByText("Credits: 90071992547409.93 GBP")
+  expect(screen.queryByTestId("none-verified")).not.toBeInTheDocument()
+})
 it.each([
   { case_id: "other" },
   { account_id: "other" },

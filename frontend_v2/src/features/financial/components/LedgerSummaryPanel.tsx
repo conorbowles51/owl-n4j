@@ -1,6 +1,6 @@
 import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
-import { formatLedgerAmount } from "../lib/ledger-format"
+import { formatLedgerAmount, readProofClass } from "../lib/ledger-format"
 import { useState } from "react"
 import { SummaryContributions } from "./SummaryContributions"
 import {
@@ -326,10 +326,14 @@ export function LedgerSummaryPanel({
           <Disclosure label="How these totals are calculated">
             <p>{query.data.limitation}</p>
             <p>
-              Included classifications:{" "}
-              {query.data.included_classes
-                .map((c) => c.toUpperCase())
-                .join(", ")}
+              Counted:{" "}
+              {[
+                ...new Set(
+                  query.data.included_classes.map(
+                    (c) => readProofClass(c).label
+                  )
+                ),
+              ].join("; ")}
               .
             </p>
           </Disclosure>
@@ -343,6 +347,16 @@ export function LedgerSummaryPanel({
             <p>Summary unavailable. {query.data.reason}</p>
           ) : (
             <>
+              {!working &&
+                query.data.included_rows === 0 &&
+                query.data.excluded_rows > 0 && (
+                  <p data-testid="none-verified">
+                    No payment in this scope counts as verified yet. Rows read
+                    from a statement count once a person confirms the reading,
+                    even when the statement's balances agree. Working totals
+                    show every admitted payment.
+                  </p>
+                )}
               <p>
                 {query.data.included_rows} included rows;{" "}
                 {query.data.excluded_rows} excluded from{" "}

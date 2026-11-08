@@ -249,7 +249,8 @@ const PROOF_CLASS_COPY: Record<ProofClass, TermCopy> = {
   },
   p3: {
     label: "Not fully checked — not in verified totals",
-    description: "The checks on this figure are incomplete or did not pass, so it is left out of verified totals.",
+    description:
+      "Left out of verified totals: the checks on this figure are incomplete or did not pass, or it was read from a statement and no person has confirmed the reading yet (even when the statement's balances agree).",
   },
   p4: {
     label: "Mentioned elsewhere, not a financial record — not counted",
