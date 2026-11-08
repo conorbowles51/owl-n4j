@@ -2,7 +2,7 @@
 
 A group (a graph selection, a set from the Significant layer, a timeline range, a ledger selection, a set of
 evidence files or a map area) is stored once in ``case_selections`` with every member and how it was chosen, and
-linked as one row. A chat answer from the agent is linked as ``agent_answer``. Each addition, and each theory as a
+linked as one row. A chat answer from the agent is linked as ``agent_answer``; an interview as ``interview``. Each addition, and each theory as a
 whole, carries narratives in ``theory_narratives`` (person-written or a model reading). Existing rows are unchanged.
 
 The lists are written out here, not imported, so this migration keeps meaning what it meant when it ran.
@@ -21,7 +21,7 @@ OLD = ("'evidence', 'graph_entity', 'dossier', 'entry', 'task', 'deadline', 'tim
        "'phone_selection', 'phone_view', 'statement_check', 'financial_account', 'financial_party', "
        "'financial_transaction', 'evidence_passage'")
 NEW = ("'graph_selection', 'significant_set', 'timeline_range', 'financial_selection', 'evidence_selection', "
-       "'map_selection', 'agent_answer'")
+       "'map_selection', 'agent_answer', 'interview'")
 GROUPS = ("'graph_selection', 'significant_set', 'timeline_range', 'financial_selection', 'evidence_selection', "
           "'map_selection'")
 

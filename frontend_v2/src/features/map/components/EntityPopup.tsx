@@ -20,6 +20,7 @@ import {
 import type { EntityType } from "@/lib/theme"
 import { useParams } from "react-router-dom"
 import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 interface EntityPopupProps {
   location: MapLocation
@@ -87,6 +88,9 @@ export function EntityPopup({
               surface="map_popup"
               compact
             />
+          ) : null}
+          {caseId ? (
+            <AddToTheory caseId={caseId} surface="map" label="Theory…" items={[{ target_type: "graph_entity", target_id: location.key, target_label: location.name, source_anchor: { latitude: location.latitude, longitude: location.longitude } }]} />
           ) : null}
         </div>
 

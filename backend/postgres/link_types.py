@@ -69,12 +69,16 @@ GROUP_TYPES: tuple[str, ...] = (
 # A chat answer from the case agent, with its citations: a model reading until a person confirms what it says.
 AGENT_TYPES: tuple[str, ...] = ("agent_answer",)
 
+# An interview of a dossier (dossier_interviews), checked against the case. The legacy ``witness`` type is repointed
+# to the dossier itself and is not reused.
+INTERVIEW_TYPES: tuple[str, ...] = ("interview",)
+
 # Old Notebook names that the Notebook still accepts and maps onto the canonical names.
 NOTEBOOK_ALIASES: dict[str, str] = {"entity": "graph_entity", "document": "evidence"}
 
 # Per container, in display order. 07 section 6.1 decides which phone types each container takes.
 WORKSPACE_TYPES: tuple[str, ...] = (CORE_TYPES + PHONE_TYPES + FINANCIAL_TYPES + EVIDENCE_TEXT_TYPES + GROUP_TYPES
-                                    + AGENT_TYPES)
+                                    + AGENT_TYPES + INTERVIEW_TYPES)
 DOSSIER_TYPES: tuple[str, ...] = (
     "entry",
     "task",

@@ -22,6 +22,7 @@ import { collectSummarySources } from "@/lib/summary-sources"
 import { SummarySources } from "./SummarySources"
 import { ConnectionsList } from "./ConnectionsList"
 import { MultiNodePanel } from "./MultiNodePanel"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 import { NodePropertiesTable } from "./NodePropertiesTable"
 import { NotebookLinkedNotes } from "@/features/notebook/components/NotebookLinkedNotes"
 import {
@@ -204,6 +205,28 @@ export function NodeDetailSheet({
     return (
       <>
         <div className="flex h-full min-h-0 flex-col overflow-hidden border-l border-border bg-card">
+          <div className="px-4 pt-3">
+            {(() => {
+              // The selection as one group: every selected entity, and how it was chosen (lx-theorybuild A).
+              const g = useGraphStore.getState()
+              const significant = caseLayer === "significant"
+              const keys = new Set(significant ? selectedKeys : Array.from(selectedNodeKeys))
+              const byKey = new Map(selectedNodes.map((n) => [n.key, n.label]))
+              const types = g.selectedEntityTypes ? Array.from(g.selectedEntityTypes) : []
+              return (
+                <AddToTheory
+                  caseId={caseId}
+                  surface={significant ? "significant" : "graph"}
+                  group={{
+                    group_type: significant ? "significant_set" : "graph_selection",
+                    members: Array.from(keys).map((k) => ({ type: "graph_entity" as const, id: k, label: byKey.get(k) })),
+                    how: { selection: "picked on the graph", ...(g.appliedSearchQuery ? { search: g.appliedSearchQuery } : {}), ...(types.length ? { types } : {}), ...(significant ? { layer: "significant" } : {}) },
+                    words: `${keys.size} ${significant ? "Significant entities" : "entities"} selected on the graph`,
+                  }}
+                />
+              )
+            })()}
+          </div>
           <MultiNodePanel
             nodes={selectedNodes}
             onMerge={selectedNodeKeys.size >= 2 ? onMergeSelected : undefined}
@@ -354,6 +377,12 @@ export function NodeDetailSheet({
             entityKey={detail.key}
             surface="entity_detail"
             compact
+          />
+          <AddToTheory
+            caseId={caseId}
+            surface={caseLayer === "significant" ? "significant" : "graph"}
+            label="Theory…"
+            items={[{ target_type: "graph_entity", target_id: detail.key, target_label: detail.label }]}
           />
           {canEdit ? (
             <Button

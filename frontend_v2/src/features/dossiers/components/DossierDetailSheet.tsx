@@ -85,6 +85,7 @@ import { RemovedFromDossier } from "./RemovedFromDossier"
 import { DossierEvidencePicker } from "./DossierEvidencePicker"
 import { EvidenceImage } from "./EvidenceImage"
 import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAIPanel"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 const CaseworkDetailSheet = lazy(() =>
   import("@/features/workspace/components/CaseworkDetailSheet").then(
@@ -1171,6 +1172,12 @@ export function DossierDetailSheet({
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <CalendarDays className="size-4 text-muted-foreground" />
+                        <AddToTheory
+                          caseId={caseId}
+                          surface="interview"
+                          label="Theory…"
+                          items={[{ target_type: "interview", target_id: item.id, target_label: `Interview with ${dossier.display_name}, ${formatInterviewDate(item.date_value ?? item.interview_date)}` }]}
+                        />
                         {canEdit && (
                           <div className="ml-auto flex gap-1">
                             <Button

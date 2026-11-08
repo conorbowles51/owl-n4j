@@ -16,6 +16,7 @@ import { PaymentTotals } from "./InvestigationTransactionTable"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 export function PaymentComparison({
   caseId,
@@ -71,6 +72,11 @@ export function PaymentComparison({
               Similar dates or amounts alone do not establish a transfer.
             </DialogDescription>
           </DialogHeader>
+          {ids.length > 0 && (
+            <div>
+              <AddToTheory caseId={caseId} surface="financial" group={{ group_type: "financial_selection", members: ids.map((id) => ({ type: "financial_transaction" as const, id })), how: { traced: title }, words: title }} />
+            </div>
+          )}
           {query.isPending && (
             <p role="status">Loading all {ids.length} selected payments…</p>
           )}

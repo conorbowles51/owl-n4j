@@ -36,6 +36,8 @@ import { SubgraphView } from "./SubgraphView"
 import type { NodeDetail } from "@/types/graph.types"
 import { SaveSnapshotDialog } from "./SaveSnapshotDialog"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import { useSignificantManifest } from "@/features/significant/hooks/use-significant"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
 const GraphCanvas3D = lazy(() =>
@@ -66,6 +68,9 @@ export function GraphPage() {
   // leave the rest unreachable. It is switched on once both reach past the cap.
   const { data: graphData, isLoading } = useGraphData(caseId, { phoneCap: PHONE_GRAPH_CAP_ON })
   const { filteredData, filteredNodes, totalNodes } = useGraphSearch(graphData)
+  const significantManifest = useSignificantManifest(caseId ?? "")
+  const theorySearch = useGraphStore((s) => s.appliedSearchQuery)
+  const theoryTypes = useGraphStore((s) => s.selectedEntityTypes)
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const selectNodes = useGraphStore((s) => s.selectNodes)
@@ -303,6 +308,45 @@ export function GraphPage() {
       )}
       {graphData && caseId && <GraphPhoneScope caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} />}
       {graphData && caseId && <PhoneCommunicationEdges caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} />}
+      {caseId && graphData && (() => {
+        // This view as one group for a theory (lx-theorybuild A): the whole Significant layer, or the graph as
+        // filtered now. A graph showing only its most connected items says so in the group's words.
+        if (caseLayer === "significant") {
+          const keys = significantManifest.data?.entity_keys ?? []
+          const labels = new Map(graphData.nodes.map((n) => [n.key, n.label]))
+          return (
+            <div className="flex items-center gap-2 border-b border-border px-4 py-1 text-xs">
+              <span className="text-muted-foreground">The Significant layer: {keys.length.toLocaleString("en-US")} marked</span>
+              <AddToTheory
+                caseId={caseId}
+                surface="significant"
+                label="Add the layer to a theory…"
+                group={{ group_type: "significant_set", members: keys.map((k) => ({ type: "graph_entity" as const, id: k, label: labels.get(k) })), how: { snapshot: true, layer: "significant" }, words: `the whole Significant layer (${keys.length} marked)` }}
+              />
+            </div>
+          )
+        }
+        const filtered = !!theorySearch || !!theoryTypes
+        if (!filtered) return null
+        const nodes = (filteredData ?? graphData).nodes
+        const capped = graphData.total_node_count != null && graphData.total_node_count > graphData.nodes.length
+        return (
+          <div className="flex items-center gap-2 border-b border-border px-4 py-1 text-xs">
+            <span className="text-muted-foreground">This filtered view: {nodes.length.toLocaleString("en-US")} entities</span>
+            <AddToTheory
+              caseId={caseId}
+              surface="graph"
+              label="Add this view to a theory…"
+              group={{
+                group_type: "graph_selection",
+                members: nodes.map((n) => ({ type: "graph_entity" as const, id: n.key, label: n.label })),
+                how: { ...(theorySearch ? { search: theorySearch } : {}), ...(theoryTypes ? { types: Array.from(theoryTypes) } : {}), ...(capped ? { shown: graphData.nodes.length, of: graphData.total_node_count } : {}) },
+                words: `the graph filtered${theorySearch ? ` by "${theorySearch}"` : ""}${theoryTypes ? ` to ${Array.from(theoryTypes).join(", ")}` : ""}${capped ? ` (from the ${graphData.nodes.length} most connected of ${graphData.total_node_count} items)` : ""}`,
+              }}
+            />
+          </div>
+        )
+      })()}
       <GraphToolbar
         caseId={caseId!}
         graphRef={graphRef}

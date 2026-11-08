@@ -23,7 +23,7 @@ function kindOf(a: Addition): Surface {
   if (a.target_type === "graph_entity") return "graph"
   if (a.target_type === "agent_answer" || a.target_type === "agent_artifact") return "agent"
   if (a.target_type === "timeline_event") return "timeline"
-  if (a.target_type === "witness") return "interview"
+  if (a.target_type === "witness" || a.target_type === "interview") return "interview"
   return "workspace"
 }
 
@@ -284,7 +284,7 @@ export function LoupeDialog({ caseId, entryId, addition, onClose }: { caseId: st
   )
 }
 
-export function describeHow(how: Record<string, unknown>): string {
+function describeHow(how: Record<string, unknown>): string {
   const parts: string[] = []
   for (const [k, v] of Object.entries(how)) {
     if (v === null || v === undefined || v === "") continue

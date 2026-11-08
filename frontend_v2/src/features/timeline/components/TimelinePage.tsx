@@ -44,6 +44,9 @@ import { usePhoneLens } from "../lens/usePhoneLens"
 import { PeriodPhones } from "../lens/PeriodPhones"
 import { UndatedEvents } from "./UndatedEvents"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
+import { AddToTheory } from "@/features/theory/AddToTheory"
+import type { GroupMember } from "@/features/theory/api"
+import type { TimelineEvent } from "../api"
 
 export function TimelinePage() {
   const { id: caseId } = useParams()
@@ -444,7 +447,44 @@ export function TimelinePage() {
         onToggleFilterSidebar={handleToggleFilters}
         activeFilterCount={activeFilterCount}
         onExport={() => openExportDialog(null)}
-        extra={lensToggle}
+        extra={
+          <>
+            {lensToggle}
+            {caseId && (() => {
+              // The timeline to a theory (lx-theorybuild A): the selected events, else the range and filters in view.
+              const chosen = multiSelectedKeys.size > 0 ? filteredEvents.filter((e) => multiSelectedKeys.has(e.key)) : filteredEvents
+              const filters = [
+                dateRange.start || dateRange.end ? `${dateRange.start ?? "the start"} to ${dateRange.end ?? "the end"}` : null,
+                searchTerm ? `matching "${searchTerm}"` : null,
+                selectedTypes.size ? `${selectedTypes.size} event types` : null,
+                selectedEntityKeys.size ? `${selectedEntityKeys.size} entities` : null,
+              ].filter(Boolean)
+              const words = multiSelectedKeys.size > 0
+                ? `${chosen.length} events picked on the timeline`
+                : `the timeline${filters.length ? `, ${filters.join(", ")}` : ", everything shown"}`
+              return (
+                <AddToTheory
+                  caseId={caseId}
+                  surface="timeline"
+                  label={multiSelectedKeys.size > 0 ? `Add ${chosen.length} to theory…` : "Add this range to theory…"}
+                  group={{
+                    group_type: "timeline_range",
+                    members: chosen.map(timelineMember),
+                    how: {
+                      range: { start: dateRange.start, end: dateRange.end },
+                      ...(visibleWindow ? { window: visibleWindow } : {}),
+                      ...(searchTerm ? { search: searchTerm } : {}),
+                      ...(selectedTypes.size ? { types: Array.from(selectedTypes) } : {}),
+                      ...(selectedEntityKeys.size ? { entities: Array.from(selectedEntityKeys) } : {}),
+                      ...(multiSelectedKeys.size > 0 ? { picked: multiSelectedKeys.size } : {}),
+                    },
+                    words,
+                  }}
+                />
+              )
+            })()}
+          </>
+        }
       />
 
       {/* 2-panel layout: filter sidebar + event stream */}
@@ -551,3 +591,11 @@ function TimelineSource({
   )
 }
 import { MoneyTrailReview } from "@/features/financial/components/MoneyTrailReview"
+
+/** A timeline event as a member of a theory's group: a ledger row, a workspace entry, a timeline entry or a graph event. */
+function timelineMember(e: TimelineEvent): GroupMember {
+  if (e.source?.kind === "transaction") return { type: "financial_transaction", id: e.source.id, label: e.name }
+  if (e.ledger_transaction_id) return { type: "financial_transaction", id: e.ledger_transaction_id, label: e.name }
+  if (e.source?.kind === "workspace_entry") return { type: "entry", id: e.source.id, label: e.name }
+  return { type: e.key.startsWith("timeline-entry:") ? "timeline_event" : "graph_entity", id: e.key, label: `${e.date} · ${e.name}` }
+}

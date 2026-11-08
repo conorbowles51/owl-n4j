@@ -28,6 +28,7 @@ import {
   needsReview,
 } from "@/lib/location-confidence"
 import { getVisibleLocations } from "../lib/visible-locations"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 interface MapToolbarProps {
   caseId: string
@@ -427,6 +428,20 @@ export function MapToolbar({ caseId, locations, phonePositions }: MapToolbarProp
                     </button>
                   </div>
                 ))}
+                {caseId && visibleMapLocations.length > 0 && (
+                  // The places inside the drawn areas, as one group for a theory, with the areas themselves.
+                  <AddToTheory
+                    caseId={caseId}
+                    surface="map"
+                    label={`Add ${visibleMapLocations.length} places to theory…`}
+                    group={{
+                      group_type: "map_selection",
+                      members: Array.from(new Set(visibleMapLocations.map((l) => l.key))).map((key) => ({ type: "graph_entity" as const, id: key, label: visibleMapLocations.find((l) => l.key === key)?.name })),
+                      how: { areas: boundingShapes.map((b) => b.coordinates) },
+                      words: `${visibleMapLocations.length} places inside ${boundingShapes.length} drawn area${boundingShapes.length === 1 ? "" : "s"} on the map`,
+                    }}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={clearBoundingShapes}

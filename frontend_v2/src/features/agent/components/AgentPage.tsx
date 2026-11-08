@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 import type { MutableRefObject, ReactNode } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import ForceGraph2D, {
@@ -1337,6 +1338,12 @@ function MessageBubble({
         {caseId && !message.pending && !showClarificationPanel && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
           <AcceptAnswerIntoAssessment caseId={caseId} messageId={message.id} />
         ) : null}
+        {caseId && !message.pending && message.role === "assistant" && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
+          // The answer with its citations, added as a model reading (lx-theorybuild A).
+          <div className="mt-1">
+            <AddToTheory caseId={caseId} surface="agent" label="Add answer to theory…" items={[{ target_type: "agent_answer", target_id: message.id }]} />
+          </div>
+        ) : null}
         {!message.pending && message.runId && SAVED_MESSAGE_ID.test(message.runId) ? (
           <AgentRunRecordPanel runId={message.runId} />
         ) : null}
@@ -1885,6 +1892,7 @@ function ArtifactShell({
 }) {
   const Icon = artifactIcons[artifact.type] ?? FileText
   const [isDownloading, setIsDownloading] = useState(false)
+  const { id: artifactCaseId } = useParams()
   const exportFormats: AgentArtifactExportFormat[] =
     artifact.type === "report" ? ["pdf", "docx"] : ["csv"]
 
@@ -1916,6 +1924,9 @@ function ArtifactShell({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {headerActions}
+          {artifactCaseId && SAVED_MESSAGE_ID.test(artifact.id) && (
+            <AddToTheory caseId={artifactCaseId} surface="agent" label="Theory…" items={[{ target_type: "agent_artifact", target_id: artifact.id, target_label: `Agent ${artifact.type}: ${artifact.title}` }]} />
+          )}
           {exportFormats.map((format) => (
             <Button
               key={format}

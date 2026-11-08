@@ -31,6 +31,8 @@ export function memberHref(caseId: string, type: string, id: string, anchor: Rec
       return `${c(caseId)}/workspace?entry=${encodeURIComponent(id)}`
     case "timeline_event":
       return `${c(caseId)}/timeline?event=${encodeURIComponent(id)}`
+    case "interview":
+      return anchor.dossier_id ? `${c(caseId)}/dossiers?dossier=${encodeURIComponent(String(anchor.dossier_id))}&tab=interviews` : null
     case "dossier":
       return `${c(caseId)}/dossiers?dossier=${encodeURIComponent(id)}`
     case "agent_answer":

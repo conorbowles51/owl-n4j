@@ -147,6 +147,25 @@ class TheoryAdditionTests(DuplicateTestCase):
             self.group("financial_selection", [{"type": "financial_transaction", "id": str(self.other_row.id)}],
                        {}, "another case's row", "financial")
 
+    def test_an_interview_of_this_case_and_never_another_cases(self):
+        from postgres.models.dossier import DossierInterview
+        Base.metadata.create_all(self.engine, tables=[DossierInterview.__table__])
+        ours = CaseProfile(id=uuid.uuid4(), case_id=self.case.id, display_name="Ann Smith", profile_type="person")
+        theirs = CaseProfile(id=uuid.uuid4(), case_id=self.other_case.id, display_name="Zed", profile_type="person")
+        self.db.add_all([ours, theirs])
+        self.db.flush()
+        mine = DossierInterview(id=uuid.uuid4(), dossier_id=ours.id, case_id=self.case.id, date_value="2026-02-03")
+        other = DossierInterview(id=uuid.uuid4(), dossier_id=theirs.id, case_id=self.other_case.id, date_value="2026-02-04")
+        self.db.add_all([mine, other])
+        self.db.commit()
+        self.add(surface="interview", why="her account of the transfers",
+                 items=[{"target_type": "interview", "target_id": str(mine.id)}])
+        row = self.reading()["additions"][0]
+        self.assertEqual(row["label"], "Interview with Ann Smith, 2026-02-03")
+        self.assertEqual(row["surface"], "interview")
+        with self.assertRaises(WorkspaceEntryValidationError):
+            self.add(surface="interview", items=[{"target_type": "interview", "target_id": str(other.id)}])
+
     def test_map_area(self):
         grp = self.group("map_selection", [{"type": "graph_entity", "id": "company:acme"}],
                          {"area": {"west": -1, "south": 51, "east": 0, "north": 52}}, "around the office", "map")

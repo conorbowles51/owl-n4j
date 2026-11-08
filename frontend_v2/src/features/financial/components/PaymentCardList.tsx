@@ -14,6 +14,7 @@ import { DescriptionCorrectionNote } from "./DescriptionCorrectionNote"
 import { MONEY, SourceTag } from "@/lib/data-colour"
 import { dayTotals } from "./day-totals"
 import { PaymentPlace } from "@/features/pattern/components/PaymentPlace"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 /** A payment card; in a list of judgement calls it carries its tier's tint and left border. */
 function PriorityCard({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
@@ -295,6 +296,7 @@ export function PaymentCardList({
                       ))}
                       {caseId && <PaymentPlace caseId={caseId} transactionId={row.key} />}
                       <div className="flex flex-wrap gap-2">
+                        {caseId && <AddToTheory caseId={caseId} surface="financial" items={[{ target_type: "financial_transaction", target_id: row.key, target_label: `${row.ordering_date} · ${row.description ?? row.txn_number}` }]} />}
                         <button type="button" className="rounded-md border bg-background px-3 py-1.5 font-medium hover:bg-muted" onClick={() => onOpen?.(row)}>
                           Open original statement
                         </button>

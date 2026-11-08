@@ -89,6 +89,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState, type Com
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import { paymentFilterKey } from "../lib/payment-table-draft"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 import { PaymentNamingPanel } from "./PaymentNamingPanel"
 import { needsConfirm, needsName } from "../lib/payment-naming"
 import type { LedgerTransaction } from "../api"
@@ -1599,6 +1600,31 @@ export function LedgerRowBrowser({
                   <Button variant="outline" onClick={() => setCompare(true)}>
                     Compare payments
                   </Button>
+                  {exportContext && (() => {
+                    // The chosen payments as one group for a theory, with the ledger filter they were chosen under.
+                    const labels = new Map(transactions.map((row) => [row.key, `${row.ordering_date} · ${row.description ?? row.txn_number}`]))
+                    const filter = Object.fromEntries(Object.entries({
+                      search, currency, minimum, maximum, direction, proof, sourceFilename,
+                      categories: categories.length ? categories : undefined,
+                      ...exportContext.params,
+                    }).filter(([, v]) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && !v.length)))
+                    const said = Object.entries(filter).map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(", ") : String(v)}`).join("; ")
+                    return selection.length === 1 ? (
+                      <AddToTheory caseId={exportContext.caseId} surface="financial" size="default" items={[{ target_type: "financial_transaction", target_id: selection[0], target_label: labels.get(selection[0]) }]} />
+                    ) : (
+                      <AddToTheory
+                        caseId={exportContext.caseId}
+                        surface="financial"
+                        size="default"
+                        group={{
+                          group_type: "financial_selection",
+                          members: selection.map((id) => ({ type: "financial_transaction" as const, id, label: labels.get(id) })),
+                          how: { filter, picked: selection.length },
+                          words: `${selection.length} payments chosen in the ledger${said ? ` (${said})` : ""}`.slice(0, 480),
+                        }}
+                      />
+                    )
+                  })()}
                   {exportContext && (
                     <MoneyTrailReview
                       caseId={exportContext.caseId}

@@ -26,6 +26,7 @@ import {
   absentPaymentBalance,
   paymentBalanceExplanation,
 } from "../lib/payment-balance"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 /** "Columns (8 of 15) ▾": a checkbox per optional column and Reset to default. */
 export function TableColumnPicker({
@@ -420,6 +421,7 @@ export function TransactionExplorerTable({
                         ))}
                         {caseId && <PaymentPlace caseId={caseId} transactionId={row.key} />}
                         <div className="flex flex-wrap gap-4">
+                          {caseId && <AddToTheory caseId={caseId} surface="financial" items={[{ target_type: "financial_transaction", target_id: row.key, target_label: `${row.ordering_date} · ${row.description ?? row.txn_number}` }]} />}
                           <button
                             className="underline"
                             onClick={() => onOpen?.(row)}

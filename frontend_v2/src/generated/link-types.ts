@@ -44,6 +44,7 @@ export const WORKSPACE_LINK_TYPES = [
   "evidence_selection",
   "map_selection",
   "agent_answer",
+  "interview",
 ] as const
 export type WorkspaceLinkType = (typeof WORKSPACE_LINK_TYPES)[number]
 

@@ -27,6 +27,10 @@ import { useProcessFolder } from "../hooks/use-process-folder"
 import { useGuardedProcess } from '../hooks/use-guarded-process'
 import { ProcessHoldDialog } from './ProcessHoldDialog'
 import { toast } from "sonner"
+import { useState } from "react"
+import { AddToTheoryDialog } from "@/features/theory/AddToTheory"
+import type { GroupInput } from "@/features/theory/api"
+import { foldersAPI } from "../folders.api"
 import type { FolderTreeNode as FolderTreeNodeType } from "@/types/evidence.types"
 
 interface FolderTreeNodeProps {
@@ -62,6 +66,32 @@ export function FolderTreeNode({
   const processMutation = useProcessFolder(caseId, processGate)
 
   const isExpanded = expandedFolderIds.has(node.id)
+  const [theoryGroup, setTheoryGroup] = useState<GroupInput | null>(null)
+
+  // A folder to a theory (lx-theorybuild A): every file directly in it, read page by page, never cut.
+  const addFolderToTheory = async () => {
+    const files: { id: string; name: string }[] = []
+    try {
+      for (let offset = 0; ; offset += 250) {
+        const page = await foldersAPI.getContents(caseId, node.id, { limit: 250, offset })
+        files.push(...page.files.map((f) => ({ id: f.id, name: f.original_filename })))
+        if (page.files.length === 0 || files.length >= page.file_total) break
+      }
+    } catch (e) {
+      toast.error(`The folder could not be read: ${e instanceof Error ? e.message : "it failed"}`)
+      return
+    }
+    if (!files.length) {
+      toast.error("This folder holds no files directly; add its subfolders one by one.")
+      return
+    }
+    setTheoryGroup({
+      group_type: "evidence_selection",
+      members: files.map((f) => ({ type: "evidence", id: f.id, label: f.name })),
+      how: { folder: node.name, folder_id: node.id, subfolders: "not included" },
+      words: `the ${files.length} files in the folder ${node.name} (not its subfolders)`,
+    })
+  }
   const kind = evidenceKind(node.name)
   const kindTone = kind ? EVIDENCE_KIND_TONE[kind.kind] : null
   const isActive = currentFolderId === node.id
@@ -109,6 +139,7 @@ export function FolderTreeNode({
   return (
     <div>
       <ProcessHoldDialog gate={processMutation.gate} />
+      {theoryGroup && <AddToTheoryDialog caseId={caseId} surface="evidence" group={theoryGroup} onClose={() => setTheoryGroup(null)} />}
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
@@ -182,6 +213,7 @@ export function FolderTreeNode({
             Process All
           </ContextMenuItem>
           <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => void addFolderToTheory()}>Add folder to theory…</ContextMenuItem>
           <ContextMenuItem disabled={!moves?.canMove} onClick={() => moves?.openMove(source)}><FolderInput className="size-4" />Move to…</ContextMenuItem>
           <ContextMenuItem onClick={handleRename}>
             <Pencil className="size-4" />

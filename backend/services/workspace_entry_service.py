@@ -622,6 +622,24 @@ def _sanitize_link(
         source_anchor = {**answer_anchor, **({"surface": surface} if surface else {})}
         if not _clean_optional_text(link.get("target_label"), max_length=512):
             link = {**link, "target_label": label}
+    elif target_type == "interview":
+        # An interview of one of this case's dossiers; its label names the person and the date.
+        from postgres.models.dossier import DossierInterview
+        from postgres.models.case_profile import CaseProfile
+        try:
+            interview_id = UUID(target_id)
+        except (TypeError, ValueError):
+            interview_id = None
+        row = db.execute(select(DossierInterview, CaseProfile.display_name).join(
+            CaseProfile, CaseProfile.id == DossierInterview.dossier_id).where(
+            DossierInterview.id == interview_id, DossierInterview.case_id == case_id)).first() if interview_id else None
+        if row is None:
+            raise WorkspaceEntryValidationError(f"The interview {target_id} was not found in this case")
+        interview, person = row
+        when = interview.date_value or (interview.interview_date.date().isoformat() if interview.interview_date else "undated")
+        source_anchor = {**(source_anchor or {}), "dossier_id": str(interview.dossier_id), "person": person, "date": when}
+        if not _clean_optional_text(link.get("target_label"), max_length=512):
+            link = {**link, "target_label": f"Interview with {person or 'unnamed person'}, {when}"}
     elif target_type == "graph_entity" and validate_target and (target_type, target_id) not in held_targets:
         # A new graph entity is checked against the case's graph by key and case together. One already held is not
         # checked again, so a theory whose entity left the graph can still be edited (it shows as gone, never drops).

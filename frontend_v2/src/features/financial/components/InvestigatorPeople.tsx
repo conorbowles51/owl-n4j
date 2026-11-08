@@ -41,6 +41,7 @@ import {
 } from "../lib/people-first-view"
 import { PaymentTotalsView } from "./InvestigationTransactionTable"
 import { ProfileStatementSummaryView } from "./ProfileStatementSummary"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 function UnidentifiedBreakdown({
   groups,
@@ -778,6 +779,24 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                         : selected.name}
                     </h3>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2 text-foreground">
+                  {selected.kind === "account" ? (
+                    <AddToTheory caseId={caseId} surface="financial" size="default" items={[{ target_type: "financial_account", target_id: selected.id.slice(8), target_label: selected.name }]} />
+                  ) : selected.kind === "owner" ? (
+                    <AddToTheory caseId={caseId} surface="financial" size="default" items={[{ target_type: "financial_party", target_id: selected.id.slice(6), target_label: selected.name }]} />
+                  ) : (
+                    <AddToTheory
+                      caseId={caseId}
+                      surface="financial"
+                      size="default"
+                      group={{
+                        group_type: "financial_selection",
+                        members: activeRows.map((row) => ({ type: "financial_transaction" as const, id: row.key, label: `${row.ordering_date} · ${row.description ?? row.txn_number}` })),
+                        how: { name_as_recorded: selected.name },
+                        words: `the ${activeRows.length} payments recorded with the name ${selected.name}`,
+                      }}
+                    />
+                  )}
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -787,6 +806,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   >
                     Search saved findings
                   </Button>
+                  </div>
                 </div>
                 {selected.kind !== "name" && (
                   <div

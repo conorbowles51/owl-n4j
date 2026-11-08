@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 import { useQuery } from '@tanstack/react-query'
 import { transcriptsAPI } from '../transcripts.api'
 import { canonicalName } from '../utils/transcript-status'
@@ -599,6 +600,7 @@ function DetailsPanelContent({
             <Button variant="ghost" size="icon-sm" title="Download" disabled={fileMissing} onClick={handleDownload}>
               <Download className="size-3.5" />
             </Button>
+            <AddToTheory caseId={caseId} surface="evidence" label="Theory…" items={[{ target_type: "evidence", target_id: file.id, target_label: file.original_filename }]} />
           </div>
 
           {/* Smart thumbnail */}

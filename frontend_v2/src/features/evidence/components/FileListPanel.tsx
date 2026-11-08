@@ -51,6 +51,7 @@ import {
 } from "@/features/workspace/hooks/use-workspace"
 
 import { FILE_PAGE_SIZE } from "../folders.api"
+import { AddToTheory } from "@/features/theory/AddToTheory"
 
 interface FileListPanelProps {
   caseId: string
@@ -498,6 +499,25 @@ export function FileListPanel({
             {selectedFileIds.size} file{selectedFileIds.size !== 1 ? "s" : ""}{" "}
             selected
           </span>
+          {(() => {
+            // The selected files as one group for a theory, with the folder they were chosen in (lx-theorybuild A).
+            const names = new Map(filteredFiles.map((f) => [f.id, f.original_filename]))
+            const ids = Array.from(selectedFileIds)
+            return ids.length === 1 ? (
+              <AddToTheory caseId={caseId} surface="evidence" items={[{ target_type: "evidence", target_id: ids[0], target_label: names.get(ids[0]) }]} />
+            ) : (
+              <AddToTheory
+                caseId={caseId}
+                surface="evidence"
+                group={{
+                  group_type: "evidence_selection",
+                  members: ids.map((id) => ({ type: "evidence" as const, id, label: names.get(id) })),
+                  how: { folder: browseFolderName, ...(currentFolderId ? { folder_id: currentFolderId } : {}) },
+                  words: `${ids.length} files chosen in ${browseFolderName}`,
+                }}
+              />
+            )
+          })()}
           {moves?.canMove && (
             <Button
               size="sm"
