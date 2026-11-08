@@ -2397,5 +2397,16 @@ from services.financial.whole_case_runs import read_run as read_whole_case_run, 
 __all__ += ["read_whole_case_run", "start_whole_case_run"]
 from services.financial.trace_walk import TraceSourcesInput, TraceWalkInput, trace_sources
 __all__ += ["TraceSourcesInput", "TraceWalkInput", "trace_sources"]
-from services.financial.account_flow import AccountFlowInput, account_flow, whole_case_account_flow
-__all__ += ["AccountFlowInput", "account_flow", "whole_case_account_flow"]
+from services.financial.account_flow import (AccountFlowInput, account_flow as case_account_flow,
+                                             whole_case_account_flow)
+__all__ += ["AccountFlowInput", "case_account_flow", "whole_case_account_flow"]
+# Evidence changes behind a workspace finding; aliased so the submodule stays the package attribute.
+from services.financial.finding_evidence_changes import (EvidenceChangeError,
+                                                         finding_evidence_changes as evidence_changes_for_findings)
+__all__ += ["EvidenceChangeError", "evidence_changes_for_findings"]
+# Page dispositions on an imported statement.
+from services.financial.page_reviews import capture_page_reviews, read_page_reviews, save_page_review, undo_page_review
+__all__ += ["capture_page_reviews", "read_page_reviews", "save_page_review", "undo_page_review"]
+# Repeated statement activity under another card or account number.
+from services.financial.repeated_activity import HOLD_MESSAGE as REPEATED_ACTIVITY_HOLD_MESSAGE, repeated_candidates
+__all__ += ["REPEATED_ACTIVITY_HOLD_MESSAGE", "repeated_candidates"]
