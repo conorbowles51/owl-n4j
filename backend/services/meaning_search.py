@@ -535,6 +535,46 @@ def start_gap_backfill() -> threading.Thread:
     return thread
 
 
+_resume_thread: threading.Thread | None = None
+RESUME_FIRST_DELAY_SECONDS = 120
+RESUME_INTERVAL_SECONDS = 600
+
+
+def resume_if_pending(*, session_factory: Callable | None = None,
+                      start_backfill: Callable | None = None) -> bool:
+    """Start the gap backfill when it is owed and the service is up, without waiting for a search to answer.
+
+    A restart ends a running backfill (its thread dies with the process) and only a later successful embedding call
+    started it again: on 8 Nov one stopped at 12:01 in a release, 2,316 of a case's 3,150 documents done, and on
+    5-8 Nov one lay idle 2.5 days because nobody searched. The advisory lock keeps it to one per host; a thread still
+    running in this process is not started twice."""
+    global _resume_thread
+    from sqlalchemy import text
+    if _resume_thread is not None and _resume_thread.is_alive():
+        return False
+    with (session_factory or _session_factory)() as db:
+        row = db.execute(text("SELECT status, backfill_pending FROM service_health_states WHERE service = :service"),
+                         {"service": SERVICE}).first()
+    if row is None or row[0] != "up" or not row[1]:
+        return False
+    _resume_thread = (start_backfill or start_gap_backfill)()
+    return True
+
+
+async def resume_backfill_forever() -> None:
+    """Lifespan loop: after a start-up delay, and then every RESUME_INTERVAL_SECONDS, resume an owed backfill."""
+    import asyncio
+    await asyncio.sleep(RESUME_FIRST_DELAY_SECONDS)
+    while True:
+        try:
+            await asyncio.to_thread(resume_if_pending)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            logger.warning("Meaning-search backfill resume check failed: %s", err)
+        await asyncio.sleep(RESUME_INTERVAL_SECONDS)
+
+
 def _lower_priority() -> None:
     try:
         os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), BACKFILL_NICE)  # this thread only (Linux)

@@ -284,6 +284,41 @@ class ReviewFindingTests(Fixture):
                                         session_factory=self.session, log=lambda *_a: None, lock=False)
         self.assertEqual(embedded, [receipt_id])  # one text is never indexed twice
 
+    def test_an_owed_backfill_resumes_after_a_restart_without_a_search(self):
+        """8 Nov: a release ended the backfill at 12:01 and nothing started it again until someone searched."""
+        import threading
+        started = []
+        self.addCleanup(setattr, meaning_search, "_resume_thread", None)
+        meaning_search._resume_thread = None
+        self.assertFalse(meaning_search.resume_if_pending(session_factory=self.session,
+                                                          start_backfill=lambda: started.append("none")))
+        with self.Session() as db:
+            db.execute(text("INSERT INTO service_health_states (service, status, backfill_pending) "
+                            "VALUES ('meaning_search', 'down', 1)"))
+            db.commit()
+        self.assertFalse(meaning_search.resume_if_pending(session_factory=self.session,
+                                                          start_backfill=lambda: started.append("down")))
+        with self.Session() as db:
+            db.execute(text("UPDATE service_health_states SET status = 'up'"))
+            db.commit()
+        release = threading.Event()
+
+        def start():
+            started.append("up")
+            thread = threading.Thread(target=release.wait, args=(10,), daemon=True)
+            thread.start()
+            return thread
+
+        self.assertTrue(meaning_search.resume_if_pending(session_factory=self.session, start_backfill=start))
+        self.assertFalse(meaning_search.resume_if_pending(session_factory=self.session, start_backfill=start))
+        release.set()
+        meaning_search._resume_thread.join(10)
+        with self.Session() as db:
+            db.execute(text("UPDATE service_health_states SET backfill_pending = 0"))
+            db.commit()
+        self.assertFalse(meaning_search.resume_if_pending(session_factory=self.session, start_backfill=start))
+        self.assertEqual(started, ["up"])  # never while down, never twice in one process, never once finished
+
     def test_a_backfill_the_engine_asked_for_starts_even_when_this_process_saw_no_outage(self):
         started = []
         saved = dict(meaning_search._memo)
