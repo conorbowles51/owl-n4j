@@ -171,8 +171,10 @@ def test_two_workers_confirm_once_and_keep_first_durable_outcome(pg, monkeypatch
         first = pool.submit(run, pg)
         assert entered.wait(3)  # The first claim's transaction has been released.
         second = pool.submit(run, pg)
-        first.result(timeout=15)
-        second.result(timeout=15)
+        # A test bound, not production's (live sessions set no lock_timeout): at suite load 46-56 a 12-payment
+        # confirm outlived 15 s (5 Nov, 2 of 2).
+        first.result(timeout=300)
+        second.result(timeout=300)
     after = state(pg)
     assert after['status'] == 'imported' and len(after['payments']) == 12
     assert sorted(receipt['created'] for receipt in receipts) == [False, True]

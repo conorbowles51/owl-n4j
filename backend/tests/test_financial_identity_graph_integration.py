@@ -10,6 +10,17 @@ from tests.test_financial_duplicates import DuplicateTestCase
 
 @unittest.skipUnless(os.getenv('LOUPE_TEST_LOCAL_GRAPH') == '1', 'Requires isolated local graph')
 class IdentityGraphTests(DuplicateTestCase):
+    def setUp(self):
+        super().setUp()
+        # Production's 20 s transaction cap is not what these tests prove; the scratch Neo4j runs on one CPU at
+        # suite load and timed out a projection there (5 Nov, load 47-71). Live: 0 timeouts since 1 Nov, and a
+        # timed-out projection retries from the SQL audit chain, so the cap loses no work.
+        from unittest.mock import patch
+        import services.financial.identity_graph as identity_graph
+        bound = patch.object(identity_graph, 'GRAPH_TRANSACTION_TIMEOUT', 300)
+        bound.start()
+        self.addCleanup(bound.stop)
+
     def test_target_validation_sees_cross_label_duplicates_but_not_other_cases(self):
         uri = os.environ['NEO4J_URI']
         assert uri == 'bolt://127.0.0.1:57687'
