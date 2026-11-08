@@ -38,6 +38,8 @@ BACKGROUND_LOOPS = {
     'financial-case-files-warmup': 'per-process',  # this process's evidence-file copies
     'deleted-items-purge': 'row-claim',  # one advisory lock across the host (casebin_purge)
     'backend-handover-recovery': 'per-process',  # this process's subscriptions
+    'meaning-search-backfill-resume': 'row-claim',  # the backfill's session advisory lock (meaning_search._backfill_lock)
+    'agent-run-settle': 'row-claim',  # FOR UPDATE SKIP LOCKED on the orphaned run rows (run_settle)
 }
 
 # The supervisor writes this file when it runs the backend: deploy/backend-handover.sh passes the same path.
