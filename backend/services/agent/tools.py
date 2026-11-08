@@ -246,6 +246,14 @@ class AccountMentionsArgs(BaseModel):
     limit: int = Field(25, ge=1, le=100)
 
 
+class ConnectedPaymentsArgs(BaseModel):
+    payment: str = Field(..., min_length=1, max_length=100, description="The payment's id or its reference (ref_id).")
+    mode: Literal["connected", "onward", "search"] = "connected"
+    search: str = Field("", max_length=300)
+    offset: int = Field(0, ge=0)
+    limit: int = Field(25, ge=1, le=100)
+
+
 class FinancialScopeArgs(BaseModel):
     account_ids: list[uuid.UUID] | None = Field(None, max_length=200)
     account_holders: list[str] | None = Field(None, max_length=200)
@@ -3002,6 +3010,18 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "payments mention it and whether a statement for a matching account is in the case "
                 "(show=missing: only those with none)."),
             args_schema=AccountMentionsArgs,
+        ),
+        wrap(
+            lambda **kw: read_ledger_extra("find_connected_payments", "find_connected_payments", **kw),
+            name="find_connected_payments",
+            description=("For one payment (id or reference): mode=connected lists every possible other side of it "
+                "in this case (money the other way in another account: same or near amount, fees, splits, another "
+                "currency, shared references, account numbers, names), mode=onward lists the payments out of the "
+                "account the money arrived in shortly after (the next step of the trail), mode=search searches the "
+                "whole case (amounts 825.62, 800-900, 825±10; dates 2024-01-02..2024-01-09; names, references) "
+                "graded against it. Each candidate has a rule-computed strength and its reasons. Never links: say "
+                "that a person links a candidate."),
+            args_schema=ConnectedPaymentsArgs,
         ),
         wrap(
             get_financial_transactions,

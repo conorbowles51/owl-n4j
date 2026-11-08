@@ -2413,3 +2413,7 @@ __all__ += ["capture_page_reviews", "read_page_reviews", "save_page_review", "un
 # Repeated statement activity under another card or account number.
 from services.financial.repeated_activity import HOLD_MESSAGE as REPEATED_ACTIVITY_HOLD_MESSAGE, repeated_candidates
 __all__ += ["REPEATED_ACTIVITY_HOLD_MESSAGE", "repeated_candidates"]
+
+from services.financial.link_suggestions import (LinkSuggestionError, grade_payments, search_payments,
+                                                 suggest_connected, suggest_onward)
+__all__ += ["LinkSuggestionError", "grade_payments", "search_payments", "suggest_connected", "suggest_onward"]

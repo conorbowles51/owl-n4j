@@ -1994,3 +1994,45 @@ def get_payment_other_legs(case_id: UUID = Query(...), transaction_id: UUID = Qu
     if found is None:
         raise HTTPException(status_code=404, detail="That payment is not in this case.")
     return {**found, "scale": SCALE_WORDS}
+
+
+from services.financial.link_suggestions import LinkSuggestionError, grade_payments, search_payments, suggest_connected, suggest_onward
+
+
+@router.get('/payment-links/suggestions')
+def get_payment_link_suggestions(case_id: UUID = Query(...), transaction_id: UUID = Query(...),
+                                 mode: Literal['connected', 'onward'] = Query('connected'),
+                                 page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                                 db: Session = Depends(get_db)):
+    """Ranked possible other sides of one payment, or the onward payments out of the account it arrived in."""
+    try:
+        fn = suggest_onward if mode == 'onward' else suggest_connected
+        return fn(db, case_id=case_id, transaction_id=transaction_id, page=page, page_size=page_size)
+    except (LinkSuggestionError, AccountPartyError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/payment-links/search')
+def search_payment_links(case_id: UUID = Query(...), q: str = Query(..., min_length=1, max_length=300),
+                         transaction_id: UUID | None = Query(None),
+                         direction: Literal['debit', 'credit'] | None = Query(None),
+                         account_id: UUID | None = Query(None),
+                         page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                         db: Session = Depends(get_db)):
+    """Search the whole case by name, reference, account number, amount (exact, range, ±) and date range."""
+    try:
+        return search_payments(db, case_id=case_id, q=q, transaction_id=transaction_id, direction=direction,
+                               account_id=account_id, page=page, page_size=page_size)
+    except (LinkSuggestionError, AccountPartyError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/payment-links/named')
+def get_named_payment_links(case_id: UUID = Query(...), transaction_id: UUID = Query(...),
+                            ids: Annotated[list[UUID], Query(max_length=200)] = [],
+                            db: Session = Depends(get_db)):
+    """Payments named elsewhere (a model's answer cites them), graded against one payment by the same rule."""
+    try:
+        return grade_payments(db, case_id=case_id, ids=ids, transaction_id=transaction_id)
+    except (LinkSuggestionError, AccountPartyError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

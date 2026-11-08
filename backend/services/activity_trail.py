@@ -67,6 +67,7 @@ ACTIONS = {
     'evidence_failed_rerun': 'Automated re-run of failed files (with the approval in the details)',
     'financial_send': 'Added files to Financial',
     'financial_auto_add': 'Added to Financial automatically',
+    'money_trail_save': 'Linked payments as a transfer or onward allocation (the suggestion it came from, if any, is in the details)',
     'phone_extraction_superseded': 'Replaced a phone report',
     'case_deleted': 'Deleted a case',
     'case_graph_removed': "Removed a deleted case's graph",

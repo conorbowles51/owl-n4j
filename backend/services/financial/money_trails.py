@@ -64,6 +64,8 @@ class TrailRequest(BaseModel):
     payments: list[Allocation] = Field(default_factory=list, max_length=100)
     allow_fx: bool = Field(default=False, strict=True)
     reason: str = Field(min_length=1, max_length=4000)
+    # Which rule or which model suggested this link, when it came from a suggestion; the person saving it is the actor.
+    suggested_by: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode='after')
     def valid_shape(self):

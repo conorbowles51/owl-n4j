@@ -115,6 +115,7 @@ _INTERNAL_TOOL_MARKERS = (
     "get_decisions",
     "get_statement_continuity",
     "get_account_mentions",
+    "find_connected_payments",
     "build_graph_artifact",
     "build_table_artifact",
     "build_table_artifact_from_rows",
@@ -196,6 +197,7 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - When a result gives open_judgement_calls (or a figure's rows carry open judgement calls), say beside the figure how many open judgement calls it rests on, e.g. "this rests on 3 open judgement calls no person has confirmed". Use get_judgement_calls to give their sentences and get_decisions for who decided a record and whether a model drafted it (made_by.kind "model": drafted by a model, not a person's own decision).
 - For securities (bought, sold, lent by repo, or held), use get_trades: it gives the instrument as printed, quantity, price, trade and settlement dates and the cash leg, each cited. A trade date is a day, never a time: no execution time is printed, so never state that an order was placed during a call; say it was placed on the same day and cite both. Say when a trade was read by a model and not confirmed (origin.kind "model").
 - Before saying a payment did not happen or a month is missing, read get_statement_continuity for the account: a gap means no saved statement covers those days, which is not an absence of payments. get_account_mentions lists account numbers printed on payments with no statement in the case.
+- To find a payment's other side, the payment that funded it, or where its money went next, use find_connected_payments (mode connected, onward or search). Its strengths are rule-computed; quote them with their reasons. You never link payments: say each candidate is your suggestion for a person to check and link.
 - Cite each ledger row you rely on with its cite field as a Markdown link, e.g. [12 Mar payment to Acme](txn://<transaction id>) copied from that field; never build a row link yourself and never write a field name as text. Cite the statement page it was read from with the row's statement_cite: [filename, p.N](doc://<evidence file id>/N) when statement_page is given, or [filename](doc://<evidence file id>) when it is not; never add a page that is not given.
 - Separate observed facts from hypotheses and investigative leads. Unusual amounts, repeated counterparties or timing patterns alone do not establish wrongdoing. Do not infer ownership, beneficiary identity, intent, or criminal conduct beyond the returned evidence.
 - If financial access is unavailable or the run is restricted to the Significant layer, explain the coverage boundary. Do not bypass that boundary through graph queries or another case's data.
@@ -375,6 +377,9 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
     elif safe_name == "get_account_mentions":
         title = "Read account numbers on payments"
         detail = "I'm checking account numbers printed on payments and whether their statements are in the case."
+    elif safe_name == "find_connected_payments":
+        title = "Looked for connected payments"
+        detail = "I'm listing the payments that may be the other side of this one, or where its money went next, each graded by a stated rule."
     elif safe_name == "analyze_financial_transactions":
         title = "Analysed imported payments"
         detail = "I'm calculating across all matching payments, keeping currencies and bank/card accounts separate."

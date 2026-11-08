@@ -446,6 +446,66 @@ def get_account_mentions(session, *, case_id, search="", show="missing", offset=
                            "statement for a matching account is in this case, not that the account does not exist.")
 
 
+# ---- connected payments (lx-linksuggest) ----------------------------------------------------------------------------
+
+CONNECTED_SCHEMA = "loupe.agent.connected_payments.v1"
+
+
+def _payment_id(session, case_id, payment):
+    """A payment of this case by its id or its reference (ref_id); never another case's."""
+    from sqlalchemy import select
+    from postgres.models.financial import FinancialTransaction as FT
+    text = _strip(payment)
+    try:
+        return UUID(text)
+    except (TypeError, ValueError, AttributeError):
+        found = session.scalar(select(FT.id).where(FT.case_id == case_id, FT.ref_id == text))
+        if found is None:
+            raise LedgerReadingError("No payment %s in this case." % text)
+        return found
+
+
+def find_connected_payments(session, *, case_id, payment, mode="connected", search="", offset=0, limit=25):
+    """Ranked candidate payments for one payment (``services.financial.link_suggestions``): its possible other side
+    (``connected``), the onward payments out of the account it arrived in (``onward``), or a case-wide search graded
+    against it (``search``: amounts like 825.62, 800-900 or 825±10, dates 2024-01-02..2024-01-09, names, references).
+    Each with its strength (rule-computed) and reasons; a person links, never the agent."""
+    from services.financial import link_suggestions as LS
+    case_id = _uuid(case_id, "case identifier")
+    offset, limit = _page(offset, limit)
+    if mode not in ("connected", "onward", "search"):
+        raise LedgerReadingError("Mode is connected, onward or search.")
+    ident = _payment_id(session, case_id, payment)
+    try:
+        if mode == "search":
+            if not str(search or "").strip():
+                raise LedgerReadingError("Give the search words, amount or dates.")
+            out = LS.search_payments(session, case_id=case_id, q=str(search)[:300], transaction_id=ident,
+                                     page=1, page_size=LS.MAX_PAGE_SIZE)
+        else:
+            fn = LS.suggest_onward if mode == "onward" else LS.suggest_connected
+            out = fn(session, case_id=case_id, transaction_id=ident, page=1, page_size=LS.MAX_PAGE_SIZE)
+    except LS.LinkSuggestionError as exc:
+        if exc.status_code == 404:
+            return _unavailable(CONNECTED_SCHEMA, case_id, str(exc))
+        raise LedgerReadingError(str(exc)) from exc
+    items = list(out["candidates"])
+    # the service pages at most MAX_PAGE_SIZE; read every page so the agent's offset covers the whole list
+    for page in range(2, out["pages"] + 1):
+        fn_kw = dict(case_id=case_id, transaction_id=ident, page=page, page_size=LS.MAX_PAGE_SIZE)
+        more = (LS.search_payments(session, q=str(search)[:300], **fn_kw) if mode == "search" else
+                (LS.suggest_onward if mode == "onward" else LS.suggest_connected)(session, **fn_kw))
+        items.extend(more["candidates"])
+    items = [dict(c, financial_href=payment_href(case_id, c["id"]),
+                  citation=dict(href=payment_href(case_id, c["id"]))) for c in items]
+    anchor = dict(out["anchor"], financial_href=payment_href(case_id, out["anchor"]["id"]))
+    return _paged(CONNECTED_SCHEMA, case_id, items, offset, limit, _revision([c["id"] for c in items]),
+                  mode=mode, anchor=anchor, by_level=out["by_level"], rule=out["rule"],
+                  understood=out.get("understood"), left_out=out.get("left_out"),
+                  limitation="These are possibilities computed by a stated rule, never links. Only a person links "
+                             "payments; anything you propose is a model suggestion until a person links it.")
+
+
 # ---- investigator timeline additions (D) -------------------------------------------------------------------------
 
 TIMELINE_SOURCES = {"transaction": "ledger payment", "money_trail": "money trail", "workspace_entry": "finding",

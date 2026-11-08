@@ -481,9 +481,19 @@ def preview_money_trail(body: TrailRequest, case_id: UUID = Query(...), db: Sess
 
 
 @router.post('/money-trails')
+@records('money_trail_link', 'change', subject_type='money_trail', subject=lambda c: c['result'].get('id'),
+         field=lambda c: c['body'].get('kind') or 'transfer',
+         reason=lambda c: ' '.join(x for x in (c['body'].get('reason'), ('[' + c['body']['suggested_by'] + ']')
+                                               if c['body'].get('suggested_by') else None) if x))
 def save_money_trail(body: TrailRequest, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
-        return save_trail(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+        result = save_trail(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+        from services import activity_trail
+        activity_trail.record('money_trail_save', db=db, commit=True, user=current_user, case_id=case_id,
+                              details=dict(trail_id=result.get('id'), kind=body.kind, revision=result.get('revision'),
+                                           payments=[p.get('key') for p in (result.get('details') or {}).get('payments') or []],
+                                           suggested_by=body.suggested_by))
+        return result
     except (AccountPartyError, ActorError) as exc:
         raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
 

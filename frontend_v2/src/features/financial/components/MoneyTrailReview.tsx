@@ -29,6 +29,7 @@ import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { AccountOwnershipReview } from "./AccountOwnershipReview"
 import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
+import { PaymentLinkFinder, PaymentPicker } from "./PaymentLinkFinder"
 
 type Draft = {
   id: string
@@ -122,7 +123,7 @@ function TrailEditor({
   const client = useQueryClient()
   const [id] = useState(randomRequestId)
   const [search, setSearch] = useState("")
-  const [chooserLimit, setChooserLimit] = useState(200)
+  const [picked, setPicked] = useState<Record<string, string>>({})
   const [source, setSource] = useState<string | null>(null)
   const [timeline, setTimeline] = useState<SavedTrail | null>(null)
   const [finding, setFinding] = useState<{
@@ -299,55 +300,46 @@ function TrailEditor({
     retry: false,
   })
   const busy = save.isPending || assess.isPending || remove.isPending
+  // One role of the link (the debit or the receipt): the chosen payment and a search of the whole case. There is no
+  // list of every payment to scroll; suggestions above and this search find it (lx-linksuggest).
   const choose = (
     title: string,
     value: string,
-    direction: string,
+    direction: "debit" | "credit",
     change: (value: string) => void
   ) => {
-    const visible = rows.filter(
-      (p) =>
-        p.direction === direction &&
-        (p.key === value ||
-          paymentLabel(p).toLowerCase().includes(search.toLowerCase()))
-    )
+    const chosen = rows.find((p) => p.key === value)
+    const other = direction === "debit" ? draft.credit : draft.debit
     return (
-      <label className="block">
-        {title}
-        <select
-          className="block w-full rounded border bg-background p-2"
-          value={value}
-          onChange={(e) => change(e.target.value)}
-        >
-          <option value="">Choose a payment</option>
-          {value && !rows.some((p) => p.key === value) && (
-            <option value={value}>
-              Earlier reading is unavailable — choose its current payment
-            </option>
-          )}
-          {visible
-            .filter((p, i) => i < chooserLimit || p.key === value)
-            .map((p) => (
-              <option key={p.key} value={p.key}>
-                {paymentLabel(p)}
-              </option>
-            ))}
-        </select>
-        {visible.length > chooserLimit && (
-          <span>
-            Showing the first {chooserLimit} of {visible.length} matches. Refine
-            the search or{" "}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => setChooserLimit((n) => n + 200)}
-            >
-              show 200 more
+      <div role="group" aria-label={title} className="space-y-2 rounded border p-2">
+        <p className="font-medium">{title}</p>
+        <p>
+          {chosen
+            ? paymentLabel(chosen)
+            : value
+              ? picked[value] ||
+                "Earlier reading is unavailable — choose its current payment"
+              : "None chosen yet. Use a suggestion above or search below."}{" "}
+          {value && (
+            <button type="button" className="underline" onClick={() => change("")}>
+              Clear
             </button>
-            .
-          </span>
-        )}
-      </label>
+          )}
+        </p>
+        <PaymentPicker
+          caseId={caseId}
+          direction={direction}
+          anchorId={other || undefined}
+          label={`Search for the ${direction === "debit" ? "debit (money out)" : "receipt (money in)"}`}
+          onPick={(p) => {
+            setPicked((x) => ({
+              ...x,
+              [p.id]: `${p.date} · ${p.description || p.ref_id} · ${p.amount} · ${p.account_label}`,
+            }))
+            change(p.id)
+          }}
+        />
+      </div>
     )
   }
   const loadSaved = (trail: SavedTrail) => {
@@ -592,6 +584,46 @@ function TrailEditor({
   )
   return (
     <div className="space-y-4 text-sm">
+      {transactionIds.length === 1 && !trailId && (
+        <PaymentLinkFinder
+          caseId={caseId}
+          anchorId={transactionIds[0]}
+          canLink={canEdit}
+          onOpen={setSource}
+          onUseInForm={(v) => {
+            patch({
+              id: randomRequestId(),
+              revision: 0,
+              kind: "transfer",
+              debit: v.split ? "" : v.debit,
+              credit: v.split ? "" : v.credit,
+              split: !!v.split,
+              parts: v.split
+                ? Object.fromEntries(
+                    [v.debit, v.credit].map((key) => {
+                      const p = rows.find((r) => r.key === key)
+                      return [
+                        key,
+                        {
+                          principal: p
+                            ? correctionMoney(String(p.amount_minor), p.currency).split(" ")[0]
+                            : "",
+                          fee: "0",
+                        },
+                      ]
+                    })
+                  )
+                : {},
+              fx: !!v.fx,
+              payments: {},
+              reference: false,
+            })
+            document
+              .getElementById(`trail-editor-${id}`)
+              ?.scrollIntoView({ block: "start", behavior: "smooth" })
+          }}
+        />
+      )}
       {(ledger.isPending || trails.isPending) && (
         <p role="status">Loading case payments and saved links…</p>
       )}
@@ -630,9 +662,9 @@ function TrailEditor({
             {draft.revision ? "Review saved link" : "Create a link"}
           </legend>
           <p>
-            The chooser searches bank-account payments across this case,
-            including accounts hidden by your current filters. Closing this
-            review returns to your previous view.
+            Searches cover every bank-account payment in this case, including
+            accounts hidden by your current filters. Closing this review returns
+            to your previous view.
           </p>
           <AccountOwnershipReview
             caseId={caseId}
@@ -715,10 +747,7 @@ function TrailEditor({
             <input
               className="block w-full rounded border bg-background p-2"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setChooserLimit(200)
-              }}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Description, account, date or amount"
             />
           </label>

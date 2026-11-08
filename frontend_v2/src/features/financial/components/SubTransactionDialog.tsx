@@ -14,6 +14,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { Transaction } from "../api"
 import { formatFinancialDate } from "../lib/date-utils"
+import { rankSubTransactionCandidates } from "../lib/sub-transaction-suggestions"
 
 interface SubTransactionDialogProps {
   open: boolean
@@ -35,6 +36,7 @@ export function SubTransactionDialog({
   onUnlink,
 }: SubTransactionDialogProps) {
   const [search, setSearch] = useState("")
+  const [shown, setShown] = useState(20)
 
   if (!parent) return null
 
@@ -63,6 +65,9 @@ export function SubTransactionDialog({
           .includes(search.toLowerCase()) ||
         (t.purpose || "").toLowerCase().includes(search.toLowerCase()))
   )
+
+  // Suggested parts first, strongest first, by a stated rule; every match stays listed (paged with its count).
+  const suggested = rankSubTransactionCandidates(parent, remaining, linkable)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -133,29 +138,52 @@ export function SubTransactionDialog({
             <Input
               placeholder="Search transactions..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setShown(20)
+              }}
               className="mb-2"
             />
-            <ScrollArea className="max-h-32">
+            <p className="mb-1 text-xs text-muted-foreground">
+              {suggested.length === 0
+                ? "No transaction matches."
+                : `Suggested first: ${Math.min(shown, suggested.length)} of ${suggested.length} shown, strongest first (amount fits what is left, close date, same sender or recipient).`}
+            </p>
+            <ScrollArea className="max-h-48">
               <div className="space-y-1">
-                {linkable.slice(0, 20).map((tx) => (
+                {suggested.slice(0, shown).map(({ tx, level, reasons }) => (
                   <button
                     key={tx.key}
                     onClick={() => onLink(tx.key)}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted"
+                    className="flex w-full flex-col rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
                   >
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {formatFinancialDate(tx.date)}
+                    <span className="flex w-full items-center gap-2">
+                      <span className="rounded bg-muted px-1 text-[10px] font-semibold capitalize">
+                        {level}
+                      </span>
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {formatFinancialDate(tx.date)}
+                      </span>
+                      <span className="flex-1 truncate">
+                        {tx.from_entity?.name || "—"} →{" "}
+                        {tx.to_entity?.name || "—"}
+                      </span>
+                      <span>{formatEvidenceAmount(tx.amount, tx.currency)}</span>
                     </span>
-                    <span className="flex-1 truncate">
-                      {tx.from_entity?.name || "—"} →{" "}
-                      {tx.to_entity?.name || "—"}
-                    </span>
-                    <span>{formatEvidenceAmount(tx.amount, tx.currency)}</span>
+                    <span className="text-[10px] text-muted-foreground">{reasons}</span>
                   </button>
                 ))}
               </div>
             </ScrollArea>
+            {suggested.length > shown && (
+              <Button
+                variant="link"
+                size="sm"
+                onClick={() => setShown((n) => n + 20)}
+              >
+                Show 20 more of {suggested.length - shown} not shown
+              </Button>
+            )}
           </div>
         </div>
 
