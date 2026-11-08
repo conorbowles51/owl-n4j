@@ -246,13 +246,17 @@ class PageViews(Captured):
     def test_detail_is_checked_value_by_value(self):
         detail = dict(queue_max_ms=812.4, resources=31, resource_bytes=1234567, largest_route='/api/timeline',
                       largest_ms=5300.5, effective_type='4g', downlink_mbps=9.5, rtt_ms=50, heap_used_mb=410.2,
-                      longest_task_ms=-5, nav_dom_ms='soon', long_tasks=float('nan'))
+                      longest_task_ms=-5, nav_dom_ms='soon', long_tasks=float('nan'),
+                      first_paint_ms=1240.5, first_api_ms=7150, first_api_route='/api/timeline')
         self.assertTrue(rs.enqueue_page_view('case/timeline', 'LOAD', CASE, 9000, 'a@b', detail,
                                              lambda path: '/api/timeline' if path == '/api/timeline' else None))
         [row] = list(rs._pages)
         self.assertEqual((row['page'], row['method'], row['case_id'], row['ms']), ('case/timeline', 'LOAD', CASE, 9000.0))
         self.assertEqual((row['queue_max_ms'], row['resources'], row['resource_bytes']), (812.4, 31, 1234567))
         self.assertEqual((row['largest_route'], row['effective_type'], row['downlink_mbps']), ('/api/timeline', '4g', 9.5))
+        # The opening's own start, checked like every other browser figure (first_api_route like largest_route).
+        self.assertEqual((row['first_paint_ms'], row['first_api_ms'], row['first_api_route']),
+                         (1240.5, 7150.0, '/api/timeline'))
         self.assertIsNone(row['longest_task_ms'])  # negative
         self.assertIsNone(row['nav_dom_ms'])  # not a number
         self.assertIsNone(row['long_tasks'])  # NaN
@@ -281,6 +285,11 @@ class PageViews(Captured):
         self.assertIsNone(rs.page_detail({'largest_route': '/api/graph/node/john-smith'})['largest_route'])
         self.assertEqual(kept('/assets/index-Bx12.js'), '/assets/index-Bx12.js')
         self.assertIsNone(kept('/assets/../john'))
+        # first_api_route is kept by the same rule: the app's own template or nothing.
+        first = lambda route: rs.page_detail({'first_api_route': route}, route_of)['first_api_route']  # noqa: E731
+        self.assertEqual(first('/api/graph/node/john-smith'), '/api/graph/node/{node_key}')
+        self.assertIsNone(first('/api/unknown/john-smith'))
+        self.assertIsNone(rs.page_detail({'first_api_route': '/api/graph/node/john-smith'})['first_api_route'])
         self.assertIsNone(rs.page_detail({'effective_type': 'fast'})['effective_type'])
 
     def test_router_passes_the_detail(self):
@@ -399,6 +408,7 @@ class MigrationHasEveryColumn(TestCase):
         migration = (BACKEND / 'postgres/alembic/versions/20261031_lx_measure.py').read_text()
         migration += (BACKEND / 'postgres/alembic/versions/20261031_slow_pool_wait.py').read_text()
         migration += (BACKEND / 'postgres/alembic/versions/20261031_slow_engine_ms.py').read_text()
+        migration += (BACKEND / 'postgres/alembic/versions/20261108_page_start_marks.py').read_text()
         for column in re.findall(r':(\w+)', rs.INSERT_SLOW.split('VALUES')[1]):
             if column not in ('at', 'kind', 'method', 'route', 'case_id', 'user_id', 'status', 'duration_ms', 'bytes'):
                 self.assertIn(f"'{column}'", migration, column)

@@ -13,7 +13,11 @@
  *  - transfer_total_ms: first byte to last byte; largest_*: the longest request, its route shape
  *    (ids replaced by {id}, no query) and its bytes;
  *  - longest_task_ms, long_tasks: main-thread tasks over 50 ms;
- *  - nav_* (opening only): response start, DOM ready and load, and the page's bytes.
+ *  - nav_* (opening only): response start, DOM ready and load, and the page's bytes;
+ *  - first_paint_ms, first_api_ms, first_api_route (opening only): the document's first contentful paint, and
+ *    when this document first asked the API for data (the checks every page shares are not data: the sign-in
+ *    check and the speed beacons themselves), with that request's route shape. Together with ms they split a
+ *    real person's opening into app start (paint, then the first ask) and the data time.
  */
 
 export type ViewDetail = Record<string, number | string | null>
@@ -67,6 +71,23 @@ export function routeShape(url: string): string | null {
   }
 }
 
+/** The checks every page shares (the sign-in check, the speed beacons) are not the page asking for data. */
+export function isAppStartCheck(path: string): boolean {
+  return /^\/api\/(auth\/|request-speed\/)/.test(path)
+}
+
+/** The document's first API data request: the earliest same-origin /api resource that is not a shared check. */
+export function firstDataRequest(): PerformanceResourceTiming | null {
+  let first: PerformanceResourceTiming | null = null
+  for (const entry of resources) {
+    if (first && entry.startTime >= first.startTime) continue
+    const shape = routeShape(entry.name)
+    if (!shape || !shape.startsWith("/api/") || isAppStartCheck(shape)) continue
+    first = entry
+  }
+  return first
+}
+
 const round = (value: number) => Math.round(value * 10) / 10
 
 /** Figures for a view that ran from `start` to `end` (performance.now times). */
@@ -118,6 +139,15 @@ export function viewDetail(start: number, end: number, opening: boolean): ViewDe
       detail.nav_dom_ms = round(nav.domContentLoadedEventEnd)
       if (nav.loadEventEnd > 0) detail.nav_load_ms = round(nav.loadEventEnd)
       detail.nav_bytes = nav.transferSize || 0
+    }
+    const paint = performance
+      .getEntriesByType?.("paint")
+      ?.find((entry) => entry.name === "first-contentful-paint")
+    if (paint) detail.first_paint_ms = round(paint.startTime)
+    const firstApi = firstDataRequest()
+    if (firstApi) {
+      detail.first_api_ms = round(firstApi.startTime)
+      detail.first_api_route = routeShape(firstApi.name)
     }
   }
   const memory = (performance as unknown as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory

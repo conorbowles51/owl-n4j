@@ -400,7 +400,7 @@ PRUNE = (f"DELETE FROM request_speed_slow WHERE at < now() - interval '{SLOW_KEE
 PAGE_COLUMNS = ('nav_response_ms', 'nav_dom_ms', 'nav_load_ms', 'nav_bytes', 'resources', 'resource_bytes',
                 'queue_max_ms', 'queue_total_ms', 'transfer_total_ms', 'largest_ms', 'largest_route',
                 'largest_bytes', 'longest_task_ms', 'long_tasks', 'heap_used_mb', 'heap_limit_mb',
-                'effective_type', 'downlink_mbps', 'rtt_ms')
+                'effective_type', 'downlink_mbps', 'rtt_ms', 'first_paint_ms', 'first_api_ms', 'first_api_route')
 INSERT_PAGE = f'''
 INSERT INTO request_speed_pages (at, page, method, case_id, user_id, ms, {', '.join(PAGE_COLUMNS)})
 VALUES (:at, :page, :method, CAST(:case_id AS uuid), CAST(:user_id AS uuid), :ms, {', '.join(':' + c for c in PAGE_COLUMNS)})
@@ -638,7 +638,8 @@ def page_detail(detail, route_of=None):
     detail = detail or {}
     row = {}
     for name in ('nav_response_ms', 'nav_dom_ms', 'nav_load_ms', 'queue_max_ms', 'queue_total_ms',
-                 'transfer_total_ms', 'largest_ms', 'longest_task_ms', 'rtt_ms'):
+                 'transfer_total_ms', 'largest_ms', 'longest_task_ms', 'rtt_ms',
+                 'first_paint_ms', 'first_api_ms'):
         row[name] = _number(detail.get(name), PAGE_MAX_MS * 10)
     for name in ('nav_bytes', 'resource_bytes', 'largest_bytes'):
         value = _number(detail.get(name), 2 ** 40)
@@ -651,18 +652,21 @@ def page_detail(detail, route_of=None):
     row['downlink_mbps'] = _number(detail.get('downlink_mbps'), 10 ** 5)
     effective = detail.get('effective_type')
     row['effective_type'] = effective if effective in EFFECTIVE_TYPES else None
-    route = detail.get('largest_route')
-    # Only a route shape the browser has already reduced (ids replaced by {id}, no query) is kept.
-    kept = None
-    if isinstance(route, str) and len(route) <= 600:
-        if _ASSET.match(route):
-            kept = route
-        elif route.startswith('/api/') and route_of is not None:
-            try:
-                kept = route_of(route)
-            except Exception:
-                kept = None
-    row['largest_route'] = kept[:160] if kept else None
+    def kept_route(route):
+        # Only a route shape the browser has already reduced (ids replaced by {id}, no query) is kept.
+        kept = None
+        if isinstance(route, str) and len(route) <= 600:
+            if _ASSET.match(route):
+                kept = route
+            elif route.startswith('/api/') and route_of is not None:
+                try:
+                    kept = route_of(route)
+                except Exception:
+                    kept = None
+        return kept[:160] if kept else None
+
+    row['largest_route'] = kept_route(detail.get('largest_route'))
+    row['first_api_route'] = kept_route(detail.get('first_api_route'))
     return row
 
 
