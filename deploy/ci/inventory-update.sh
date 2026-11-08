@@ -23,7 +23,9 @@ backup_state="no health file"
 bk=/mnt/owl-data/backups/status.tsv
 if [ -f "$bk" ]; then
   age_h=$(( ($(date +%s) - $(stat -c %Y "$bk")) / 3600 ))
-  backup_state=$(awk -F'\t' -v age="$age_h" 'BEGIN{bad=0; n=0} {n++; if ($2 != "OK") bad++} END{printf "%d checks, %d not OK, health file %dh old", n, bad, age}' "$bk")
+  # States in the file are ok / FAILED / OFF (deploy/backup-check.sh); count each.
+  backup_state=$(awk -F'\t' -v age="$age_h" \
+    '{n++; c[$2]++} END{line=n " checks:"; for (s in c) line=line " " c[s] " " s ","; sub(/,$/, "", line); printf "%s; health file %dh old", line, age}' "$bk")
 fi
 
 python3 - "$inv/owl-dev.json" "$sha" "$zone" "$last_dep" "$backup_state" <<'EOF' "$health"
