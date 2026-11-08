@@ -276,6 +276,7 @@ RULE_PRIORITY = {
     'holder.printed_on_statement': (2, 'the account holder was kept as printed on the statement'),
     'period.start_derived': (2, 'the period start was taken from the previous statement'),
     'guard.neighbour_check': (2, 'the statement was saved on a comparison with its neighbours'),
+    'copies.repeated_activity': (2, 'a statement repeating earlier payments under another card or account number was held for a person'),
     'L26.duplicate_set_aside': (2, 'one of two saved copies was set aside'),
     'L19.unreadable_copy': (2, 'an unreadable copy was matched to a saved statement'),
     'copies.held_copy': (2, 'a held copy was matched to a saved statement'),
