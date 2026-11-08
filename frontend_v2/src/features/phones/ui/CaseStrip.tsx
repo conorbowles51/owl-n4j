@@ -12,12 +12,12 @@ import { installKeymap } from "@/lib/keymap"
 import { getJobs, JOB_FRESH_MS, JOB_POLL_MS, jobsQueryKey, justFinished, trayJob } from "@/features/phones/job-list"
 import { phonesQuery } from "@/features/phones/phones-query"
 import { PHONE_GUIDES } from "@/features/phones/guide"
-import { KeymapOverlay } from "./KeymapOverlay"
 import { guideAnchor } from "./screen-guide"
 import { useBindings } from "./use-bindings"
 
 // The guide (markdown and its renderer) loads when Guide is pressed, not with every case page.
 const GuideDialog = lazy(() => import("@/components/ui/guide-dialog").then((m) => ({ default: m.GuideDialog })))
+const KeymapOverlay = lazy(() => import("./KeymapOverlay").then((m) => ({ default: m.KeymapOverlay })))
 const ReportProblem = lazy(() => import("@/components/ui/report-problem").then((m) => ({ default: m.ReportProblem })))
 
 const n = (v: number) => v.toLocaleString("en-US")
@@ -140,7 +140,11 @@ export default function CaseStrip({ caseId, problemScreen }: { caseId: string; p
         {hasPhones && <GuideButton />}
         <HeaderJobs caseId={caseId} onList={setJobs} />
       </div>
-      {hasPhones && <KeymapOverlay open={keys} onOpenChange={setKeys} />}
+      {hasPhones && keys && (
+        <Suspense fallback={null}>
+          <KeymapOverlay open={keys} onOpenChange={setKeys} />
+        </Suspense>
+      )}
     </>
   )
 }

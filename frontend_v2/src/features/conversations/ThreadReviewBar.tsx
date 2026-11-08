@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState, type RefObject } from "react"
+import { lazy, Suspense, type RefObject, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { getThreadReviewState, recordSecondPass, shareFailure, type ReviewPosition, type SecondPassState } from "@/features/phones/review-share"
-import { HandOverDialog } from "./HandOverDialog"
+
 import { useReadingPosition, type ReadRow } from "./use-reading-position"
 import { useThreadPresence } from "./use-thread-presence"
 import { instantWords } from "@/features/phones/lib/time-words"
+
+const HandOverDialog = lazy(() => import("./HandOverDialog").then((m) => ({ default: m.HandOverDialog })))
 
 /**
  * Under the open thread's header: "[name] is also reviewing this thread." (07 J-13 failure state), the review task
@@ -48,7 +50,11 @@ export function ThreadReviewBar({ caseId, threadKey, extraction, readRow, onResu
           <TaskActions position={s.position} canHand={canEdit && s.status !== "done"} onResume={onResume} onHand={() => setHanding({ id: s.task_id, title: s.title })} />
         </div>
       ))}
-      {handing && <HandOverDialog caseId={caseId} taskId={handing.id} title={handing.title} open onClose={() => setHanding(null)} />}
+      {handing && (
+        <Suspense fallback={null}>
+          <HandOverDialog caseId={caseId} taskId={handing.id} title={handing.title} open onClose={() => setHanding(null)} />
+        </Suspense>
+      )}
     </div>
   )
 }

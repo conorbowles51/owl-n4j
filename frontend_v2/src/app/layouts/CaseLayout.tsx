@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { Outlet, useLocation, useMatch, useParams } from "react-router-dom"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import {
@@ -13,10 +13,23 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import { phoneScreen } from "@/lib/phone-screen"
 
 // Case search (Ctrl/Cmd+K) has nothing on screen until it is opened, so its code (search, phones and their schema
-// library) loads just after the case page instead of inside the app shell.
+// library) loads on the first open: the first Ctrl+K (the same event the keymap sends) or a return to saved results.
+// A lazy component mounted closed still downloads its chunks, so the mount itself waits for that first ask.
 const SearchDialog = lazy(() =>
   import("@/features/search/components/SearchDialog").then((m) => ({ default: m.SearchDialog }))
 )
+
+function useSearchWanted(savedResults: boolean): boolean {
+  const [wanted, setWanted] = useState(savedResults)
+  if (savedResults && !wanted) setWanted(true)
+  useEffect(() => {
+    if (wanted) return
+    const want = () => setWanted(true)
+    document.addEventListener("owl:toggle-command-palette", want)
+    return () => document.removeEventListener("owl:toggle-command-palette", want)
+  }, [wanted])
+  return wanted
+}
 
 // Shown only on the Evidence page; its code loads with that page, not with every case page.
 const LazyEvidenceContextSidebar = lazy(() =>
@@ -41,14 +54,16 @@ export function CaseLayout() {
   const isAgentRoute = !!useMatch("/cases/:id/agent")
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
   const narrowViewport = useMediaQuery("(max-width: 767px)")
-  const screen = phoneScreen(useLocation().pathname)
+  const location = useLocation()
+  const screen = phoneScreen(location.pathname)
+  const searchWanted = useSearchWanted(!!(location.state as { caseSearch?: unknown } | null)?.caseSearch)
 
   // Graph and Agent routes manage their own full-width workspaces.
   const showCaseSidePanel = !isGraphRoute && !isAgentRoute
 
   return (
     <div className="flex h-full">
-      {caseId && (
+      {caseId && searchWanted && (
         <ErrorBoundary
           fallback={
             <p role="alert" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md bg-background px-3 py-2 text-xs shadow">
@@ -57,7 +72,7 @@ export function CaseLayout() {
           }
         >
           <Suspense fallback={null}>
-            <SearchDialog caseId={caseId} />
+            <SearchDialog caseId={caseId} initialOpen />
           </Suspense>
         </ErrorBoundary>
       )}

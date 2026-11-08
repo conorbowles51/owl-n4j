@@ -14,8 +14,10 @@ import { conversationsWithText, hitPath } from "../lib/open-hit"
  * first hits; Enter opens the highlighted hit, and the highlight starts on the top hit of the group whose top hit
  * scores highest. A group's full list opens in Conversations (messages, calls, emails) or on the results page.
  */
-export function SearchDialog({ caseId }: { caseId: string }) {
-  const [open, setOpen] = useState(false)
+export function SearchDialog({ caseId, initialOpen = false }: { caseId: string; initialOpen?: boolean }) {
+  // initialOpen: the layout mounts this component on the first ask (Ctrl+K or a return to saved results), so the
+  // press that caused the mount opens the box it asked for.
+  const [open, setOpen] = useState(initialOpen)
   const [q, setQ] = useState("")
   const [typed, setTyped] = useState("")
   const [exact, setExact] = useState(false)
