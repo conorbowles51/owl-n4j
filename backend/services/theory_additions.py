@@ -201,7 +201,9 @@ def _transaction_facts(db, case_id, ids: list[str]) -> dict[str, dict[str, Any]]
             state = "corrected" if row.superseded_by_id else ("rejected" if row.ledger_status == "rejected" else "present")
             if state == "corrected":
                 text += " · corrected: this row was replaced; the correction is what counts"
-            out[str(row.id)] = {"text": text, "date": day.isoformat() if day else None, "state": state,
+            label = (f"{day.isoformat() if day else 'undated'} · {_money(row.amount_minor, row.currency)} {way} · "
+                     f"{row.description or row.ref_id}")[:160]
+            out[str(row.id)] = {"text": text, "label": label, "date": day.isoformat() if day else None, "state": state,
                                 "amount_minor": row.amount_minor, "currency": row.currency, "direction": row.direction,
                                 **({"corrected_by": str(row.superseded_by_id)} if row.superseded_by_id else {})}
     return out
@@ -235,10 +237,27 @@ def member_facts(db, case_id, members: list[dict[str, Any]]) -> list[dict[str, A
                       for k, v in _transaction_facts(db, case_id, by_type["financial_transaction"]).items()})
     if by_type.get("evidence"):
         known.update({("evidence", k): v for k, v in _evidence_facts(db, case_id, by_type["evidence"]).items()})
+    if by_type.get("graph_entity") or by_type.get("timeline_event"):
+        # Dated graph nodes (events on the timeline) carry their date, so a theory can be read as a timeline.
+        keys = by_type.get("graph_entity", []) + by_type.get("timeline_event", [])
+        try:
+            dates = case_selections.graph_event_dates(str(case_id), keys)
+        except Exception:  # noqa: BLE001 - without the graph the members still show, undated
+            dates = {}
+        for kind in ("graph_entity", "timeline_event"):
+            for key in by_type.get(kind, []):
+                if key in dates:
+                    known[(kind, key)] = {"date_shown": dates[key]["date"], "name": dates[key]["name"]}
     out = []
     for m in members:
         fact = known.get((m["type"], m["id"]), {})
-        label = m.get("label") or fact.get("label") or m["id"]
+        # A ledger row or file is named by what it is now; other members by the words they were chosen with.
+        if m["type"] in ("financial_transaction", "evidence"):
+            label = fact.get("label") or m.get("label") or m["id"]
+        else:
+            label = m.get("label") or fact.get("name") or fact.get("label") or m["id"]
+        if "date_shown" in fact:
+            fact = {**fact, "date": case_selections.iso_day(fact["date_shown"]) or fact["date_shown"]}
         state = m.get("state") if m.get("state") not in (None, "present") else fact.get("state", "present")
         if m["type"] in ("evidence", "financial_transaction") and (m["type"], m["id"]) not in known:
             state = "gone"
@@ -249,7 +268,7 @@ def member_facts(db, case_id, members: list[dict[str, Any]]) -> list[dict[str, A
             text += " · no longer in the case"
         out.append({"ref": f"{m['type']}:{m['id']}", "type": m["type"], "id": m["id"], "label": label,
                     "text": text[:MAX_FACT], "state": state,
-                    **{k: fact[k] for k in ("date", "amount_minor", "currency", "direction", "corrected_by") if k in fact}})
+                    **{k: fact[k] for k in ("date", "date_shown", "amount_minor", "currency", "direction", "corrected_by") if k in fact}})
     return out
 
 

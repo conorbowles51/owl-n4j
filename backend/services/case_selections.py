@@ -63,6 +63,41 @@ def graph_keys_in_case(case_id: str, keys: list[str]) -> set[str]:
     return set(neo4j_service.get_existing_node_keys(str(case_id), keys))
 
 
+_ISO = __import__("re").compile(r"(\d{4}-\d{2}-\d{2})")
+_DMY = __import__("re").compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})")
+
+
+def iso_day(text: str | None) -> str | None:
+    """A day to sort by: an ISO date in the text, or a day-first date (14/06/2022) as the timeline prints them."""
+    if not text:
+        return None
+    found = _ISO.search(text)
+    if found:
+        return found.group(1)
+    dmy = _DMY.match(text.strip())
+    if dmy and 1 <= int(dmy.group(2)) <= 12 and 1 <= int(dmy.group(1)) <= 31:
+        return f"{dmy.group(3)}-{int(dmy.group(2)):02d}-{int(dmy.group(1)):02d}"
+    return None
+
+
+def graph_event_dates(case_id: str, keys: list[str]) -> dict[str, dict[str, Any]]:
+    """The date the timeline gives each dated node of this case (matched by key and case together), with its name."""
+    from services.neo4j.driver import driver
+    from services.neo4j.timeline_service import TimelineService
+    out: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(keys), 1000):
+        with driver.session() as session:
+            rows = session.run(
+                f"""
+                MATCH (n) WITH n, {TimelineService.SORT_DATE_CYPHER} AS sort_date
+                WHERE n.case_id = $case_id AND n.key IN $keys AND sort_date IS NOT NULL
+                RETURN n.key AS key, sort_date AS date, n.name AS name
+                """, case_id=str(case_id), keys=keys[start:start + 1000])
+            for row in rows:
+                out[row["key"]] = {"date": str(row["date"]), "name": row["name"]}
+    return out
+
+
 def _graph(db, case_id, ids):
     return graph_keys_in_case(str(case_id), ids)
 

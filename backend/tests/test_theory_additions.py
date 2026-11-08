@@ -312,3 +312,23 @@ class TheoryAdditionTests(DuplicateTestCase):
         self.assertEqual(whole["graph_keys"], ["event:meeting-1"])
         first = next(m for m in whole["members"] if m["id"] == str(self.rows[0].id))
         self.assertEqual(len(first["additions"]), 2)
+
+    def test_a_ledger_row_is_named_by_itself_and_a_graph_event_keeps_its_timeline_date(self):
+        grp = self.group("timeline_range", [{"type": "financial_transaction", "id": str(self.rows[0].id)},
+                                            {"type": "graph_entity", "id": "event:meeting-1"}],
+                         {"range": {"start": "2026-01-01"}}, "Jan", "timeline")
+        with mock.patch.object(case_selections, "graph_event_dates",
+                               return_value={"event:meeting-1": {"date": "14/06/2022", "name": "Meeting"}}) as dates:
+            lens = self.loupe(grp["added_link_ids"][0])
+            whole = T.union(self.db, case_id=self.case.id, entry_id=self.theory["id"])
+        self.assertEqual(dates.call_args[0][0], str(self.case.id))  # asked of this case's graph only
+        row, event = lens["members"]
+        self.assertTrue(row["label"].startswith("2026-01-15 · 120.00"), row["label"])
+        self.assertNotEqual(row["label"], str(self.rows[0].id))
+        self.assertEqual((event["date"], event["date_shown"], event["label"]), ("2022-06-14", "14/06/2022", "Meeting"))
+        self.assertEqual(whole["dated"], 2)
+
+    def test_day_first_dates_sort_as_days(self):
+        self.assertEqual(case_selections.iso_day("14/06/2022"), "2022-06-14")
+        self.assertEqual(case_selections.iso_day("2022-06-14T10:00"), "2022-06-14")
+        self.assertIsNone(case_selections.iso_day("June 2022"))
