@@ -464,6 +464,73 @@ class TraceWalk(_network.NetworkTracingTests):
             build_trace_support_archive([report])
 
 
+class TraceSources(_network.NetworkTracingTests):
+    """The backward walk: every credit of a reached account is a followed transfer, a stated stop, or an outside source."""
+
+    def sources_request(self, request, accounts, **changes):
+        keep = ('expected_snapshot_sha256', 'population', 'tolerance_days', 'start_date', 'end_date', 'currency', 'pairs', 'basis')
+        return {**{key: request[key] for key in keep}, 'account_ids': accounts, 'steps': 2, **changes}
+
+    def test_every_credit_of_a_reached_account_is_counted_exactly_once(self):
+        from services.financial.trace_walk import trace_sources
+        export, request, rows = self.network()
+        summary, sections = trace_sources(export, self.sources_request(request, [rows[5].account_id]))
+        by_id = {a['account_id']: a for a in summary['accounts']}
+        self.assertEqual(len(by_id), 3)
+        start = by_id[str(rows[5].account_id)]
+        self.assertEqual((start['steps_back'], start['transfers_in'], start['transfers_in_minor']), (0, 1, '6000'))
+        middle = by_id[str(rows[3].account_id)]
+        self.assertEqual((middle['steps_back'], middle['transfers_in'], middle['transfers_in_minor']), (1, 1, '10000'))
+        origin = by_id[str(rows[0].account_id)]
+        self.assertEqual((origin['steps_back'], origin['outside_credits'], origin['outside_credits_minor']), (2, 2, '20000'))
+        self.assertEqual(summary['outside_credits'], 2)
+        self.assertEqual(summary['transfers_in'], 2)
+        self.assertEqual(summary['not_followed'], 0)
+        self.assertFalse(summary['stopped'])
+        self.assertIsNone(summary['stop_words'])
+        credits = [r for r in (rows[0], rows[1], rows[3], rows[5])]
+        self.assertEqual(summary['outside_credits'] + summary['transfers_in'] + summary['not_followed'], len(credits))
+        self.assertEqual({row['key'] for row in sections['sources']}, {str(rows[0].id), str(rows[1].id)})
+        self.assertEqual([t['from_account_label'] is not None for t in sections['transfers']], [True, True])
+
+    def test_a_stopped_backward_walk_counts_and_states_what_it_did_not_follow(self):
+        from services.financial.trace_walk import trace_sources
+        export, request, rows = self.network()
+        summary, sections = trace_sources(export, self.sources_request(request, [rows[5].account_id], steps=1))
+        self.assertTrue(summary['stopped'])
+        self.assertEqual(summary['not_followed'], 1)
+        self.assertEqual(summary['continue_with_steps'], 2)
+        self.assertIn('Stopped after 1 step back: 1 selected transfer into', summary['stop_words'])
+        self.assertIn('Add one step to continue.', summary['stop_words'])
+        self.assertEqual(summary['stops'][0]['debit_id'], request['pairs'][0]['debit_id'])
+        self.assertEqual(len(summary['accounts']), 2)
+        self.assertEqual(sections['sources'], [])
+        self.assertEqual(len(sections['transfers']), 1)
+
+    def test_unknown_accounts_reused_pairs_and_a_missing_basis_are_refused(self):
+        from services.financial.trace_walk import trace_sources
+        export, request, rows = self.network()
+        with self.assertRaisesRegex(LedgerSummaryError, 'current readings'):
+            trace_sources(export, self.sources_request(request, [str(uuid4())]))
+        with self.assertRaises(LedgerSummaryError):
+            trace_sources(export, self.sources_request(request, [rows[5].account_id], pairs=request['pairs'] * 2))
+        with self.assertRaisesRegex(LedgerSummaryError, 'basis for transfer pairings'):
+            trace_sources(export, self.sources_request(request, [rows[5].account_id], basis=''))
+        with self.assertRaisesRegex(LedgerSummaryError, 'each account once'):
+            trace_sources(export, self.sources_request(request, [rows[5].account_id, rows[5].account_id]))
+
+    def test_the_stored_run_sections_page_sources_by_account(self):
+        from services.financial.whole_case_runs import compute_sources
+        export, request, rows = self.network()
+        params = self.sources_request(request, [rows[5].account_id])
+        summary, sections = compute_sources(export, {**params, 'case_id': str(self.case.id), 'run_id': 'x' * 32}, None)
+        self.assertEqual(len(sections['sources']), 2)
+        for row, subset, words in sections['sources']:
+            self.assertEqual(subset, str(rows[0].account_id))
+            self.assertIn(row['amount_minor'], ' '.join(str(w) for w in words))
+        self.assertEqual(len(sections['transfers']), 2)
+
+
 class ComputeTraceRequest(TestCase):
     def test_the_run_ids_do_not_reach_the_trace_input(self):
         from services.financial.trace_walk import TraceWalkInput

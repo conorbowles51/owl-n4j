@@ -1515,7 +1515,7 @@ def get_candidate_page_scan(evidence_file_id: UUID, case_id: UUID = Query(...), 
 
 
 from services.financial import whole_case_runs
-from services.financial.trace_walk import TraceWalkInput
+from services.financial.trace_walk import TraceSourcesInput, TraceWalkInput
 
 
 class WholeCaseRunRequest(BaseModel):
@@ -1587,6 +1587,11 @@ def start_whole_case_run(body: WholeCaseRunRequest, case_id: UUID = Query(...), 
 @router.post('/whole-case-runs/trace')
 def start_whole_case_trace(body: TraceWalkInput, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind='trace', case_id=case_id, params=body.model_dump(mode='json')))
+
+
+@router.post('/whole-case-runs/trace-sources')
+def start_whole_case_trace_sources(body: TraceSourcesInput, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind='sources', case_id=case_id, params=body.model_dump(mode='json')))
 
 
 @router.get('/whole-case-runs/{run_id}')

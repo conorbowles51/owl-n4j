@@ -38,7 +38,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 
 logger = logging.getLogger(__name__)
 
-KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'pdf', 'export')
+KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'sources', 'pdf', 'export')
 PAGE_LIMIT = 200
 HEARTBEAT_SECONDS = 5
 STALE_HEARTBEAT_SECONDS = 180  # for a run whose child never recorded itself
@@ -560,6 +560,19 @@ def compute_trace(capture, params, run):
     return summary, dict(files={'trace-report.json': report})
 
 
+def compute_sources(capture, params, run):
+    from services.financial.trace_walk import trace_sources
+    request = {key: value for key, value in params.items() if key not in ('case_id', 'run_id')}
+    summary, sections = trace_sources(capture, request)
+    def row_words(row):
+        return (row['ordering_date'], row.get('account_label'), row.get('description'), row.get('from_name'),
+                row.get('to_name'), row.get('txn_number'), row['currency'], row['amount_minor'])
+    return summary, dict(
+        sources=[(row, row['account_id'], row_words(row)) for row in sections['sources']],
+        transfers=[(item, item['to_account_id'], (item['debit_date'], item['credit_date'], item['from_account_label'],
+                                                  item['to_account_label'], item['amount_minor'])) for item in sections['transfers']])
+
+
 def _resume_dir(case_id, params):
     """What a stopped report keeps for its next run, removed when the report is finished. Named without the code
     version, which is in a run's own name: a release stops the run, and the run after it picks up the finished parts."""
@@ -661,10 +674,11 @@ def compute_export(capture, params, run):
 
 SOURCES_SHOWN = 50
 EXPORT_FILE = 'ledger-export.zip'
-COMPUTE = dict(transfers=compute_transfers, timeline=compute_timeline, patterns=compute_patterns, trace=compute_trace, pdf=compute_pdf,
-               export=compute_export)
+COMPUTE = dict(transfers=compute_transfers, timeline=compute_timeline, patterns=compute_patterns, trace=compute_trace,
+               sources=compute_sources, pdf=compute_pdf, export=compute_export)
 COMPUTE_LABEL = dict(transfers='Comparing every payment by amount and date', timeline='Putting the payments in date order',
                      patterns='Screening the payments for patterns', trace='Following the selected transfers from the start point',
+                     sources='Walking the selected transfers back to where the money came in',
                      pdf='Writing the PDF parts', export='Writing the report, the manifest and the archive')
 
 
