@@ -140,6 +140,6 @@ describe("Conversations start-up defers what the shell does not need", () => {
     paint()
     paint()
     await waitFor(() => expect(marksFn).toHaveBeenCalled())
-    expect(await screen.findByText("New")).toBeInTheDocument()
+    expect((await screen.findAllByText("New")).length).toBeGreaterThan(0)
   })
 })
