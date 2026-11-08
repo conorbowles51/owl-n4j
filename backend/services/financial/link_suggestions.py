@@ -398,7 +398,8 @@ def suggest_connected(session, *, case_id, transaction_id, page=1, page_size=PAG
     # a printed reference or this account's number, anywhere in the case
     probes = sorted(grader.refs)
     if probes:
-        conditions = [col.ilike('%' + token + '%') for token in probes
+        # digits have no case: plain LIKE avoids lower-casing every line of the case (measured 5x on BNB2)
+        conditions = [(col.like if token.isdigit() else col.ilike)('%' + token + '%') for token in probes
                       for col in (T.description, T.counterparty_raw, T.bank_reference)]
         found = [p for p in map(_row, session.execute(_current(case_id).where(or_(*conditions))))]
         hits = {t: sum(1 for p in found if t in _line(p).upper().replace(' ', '') or t in _line(p).upper())
