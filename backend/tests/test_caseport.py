@@ -348,3 +348,16 @@ def test_progress_line_is_not_swallowed_by_a_liveness_beat():
     now[0] += 1
     beat("Evidence files: 1000", 3, 9)       # throttled: same kind inside the interval
     assert len(seen) == 2
+
+
+def test_import_insert_may_write_generated_always_identity_ids():
+    from services.caseport import importer
+
+    class Cur:
+        sql = ""
+        def execute(self, sql, params=None):
+            self.sql = sql
+    cur = Cur()
+    importer._insert(cur, "pol_activity_event", ["id", "x"], {"id": 7}, ['{"id": 1, "x": 2}'])
+    assert "OVERRIDING SYSTEM VALUE" in cur.sql
+    assert "\"id\" + 7" in cur.sql

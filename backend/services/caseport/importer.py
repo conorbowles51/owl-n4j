@@ -150,7 +150,9 @@ def _insert(cur, name, columns, offsets, lines):
     quoted = I._quote(name)
     targets = ", ".join(I._quote(c) for c in columns)
     values = ", ".join(f"{I._quote(c)} + {offsets[c]}" if c in offsets else I._quote(c) for c in columns)
-    cur.execute(f"INSERT INTO {quoted} ({targets}) SELECT {values} "
+    # OVERRIDING SYSTEM VALUE: the ids were reserved from the sequence (offsets), and a GENERATED ALWAYS identity
+    # column (the pol_* tables) refuses any explicit value without it.
+    cur.execute(f"INSERT INTO {quoted} ({targets}) OVERRIDING SYSTEM VALUE SELECT {values} "
                 f"FROM json_populate_recordset(NULL::{quoted}, %s::json)", ("[" + ",".join(lines) + "]",))
 
 
