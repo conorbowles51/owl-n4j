@@ -93,7 +93,7 @@ export interface AgentMessageResponse {
   model_info: AgentModelInfo
   cost?: AgentCost | null
   clarification?: AgentClarification | null
-  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required"
+  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required" | "interrupted"
   created_at: string
   mandate: AgentMandateUsage
 }
@@ -172,7 +172,7 @@ export type AgentStreamEvent =
 export interface AgentRunStatus {
   run_id: string
   thread_id: string
-  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required"
+  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required" | "interrupted"
   error?: string | null
   completed_at?: string | null
 }

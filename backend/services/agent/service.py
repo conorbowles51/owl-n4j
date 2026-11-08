@@ -32,6 +32,7 @@ from services.agent.schemas import (
 )
 import services.agent.storage as storage
 import services.agent.run_record as run_record
+import services.agent.run_settle as run_settle
 from services.ai_costs_service import CostOperationKind, record_cost
 from services.ai_model_policy import get_workload_model
 from services.ai_provider_credentials import get_provider_api_key
@@ -166,7 +167,10 @@ class AgentService:
         final_result: dict[str, Any] | None = None
         collected_trace: list[dict[str, Any]] = []
 
+        # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
+        heartbeat = run_settle.RunHeartbeat(run.id)
         try:
+            heartbeat.start()
             for event in runner.stream(
                 case_id=str(request.case_id),
                 messages=history,
@@ -372,6 +376,8 @@ class AgentService:
                 "thread_id": str(thread.id),
                 "message": str(exc),
             }
+        finally:
+            heartbeat.stop()
 
     def handle_message(
         self,
@@ -462,7 +468,10 @@ class AgentService:
         )
         runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
 
+        # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
+        heartbeat = run_settle.RunHeartbeat(run.id)
         try:
+            heartbeat.start()
             result = runner.invoke(
                 case_id=str(request.case_id),
                 messages=history,
@@ -642,6 +651,8 @@ class AgentService:
             except Exception:
                 db.rollback()
             raise
+        finally:
+            heartbeat.stop()
 
     def cancel_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunStatusResponse:
         run = storage.get_run_for_user(db, run_id=run_id, user=user)

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 AgentArtifactType = Literal["graph", "table", "map", "report", "chart"]
 AgentToolStatus = Literal["success", "error"]
-AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required"]
+AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required", "interrupted"]
 AgentArtifactPreference = Literal[
     "auto",
     "none",

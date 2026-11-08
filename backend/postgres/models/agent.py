@@ -105,6 +105,8 @@ class AgentRun(Base):
         nullable=False,
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Beaten while the run's worker lives (services.agent.run_settle); a stopped beat is a run with no worker.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The run record (services.agent.run_record): the disclosure record of this run.
     prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     prompt_version_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
