@@ -554,6 +554,7 @@ def _sanitize_link(
     link: dict[str, Any],
     validate_target: bool = True,
     held_passages: frozenset[str] = frozenset(),
+    held_targets: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[str, Any]:
     target_type = _clean_optional_text(link.get("target_type"), max_length=32)
     target_id = _clean_optional_text(link.get("target_id"), max_length=512)
@@ -575,6 +576,7 @@ def _sanitize_link(
     if metadata is not None and not isinstance(metadata, dict):
         raise WorkspaceEntryValidationError("metadata must be an object")
     phone = None
+    group_members: tuple[str, ...] = ()
     if link_types.is_phone_type(target_type):
         # A phone link is always checked against the case, and carries the mapping version set at collect time.
         try:
@@ -595,6 +597,39 @@ def _sanitize_link(
         source_anchor = financial_anchor(target_type, target_id, source_anchor)
         if not _clean_optional_text(link.get("target_label"), max_length=512):
             link = {**link, "target_label": label}
+    elif link_types.is_group_type(target_type):
+        # A group: stored once with every member and how it was chosen (services.case_selections), checked against
+        # the case here; its members are indexed with the link like a phone selection's.
+        from services import case_selections
+        try:
+            group = case_selections.resolve(db, case_id, target_type, target_id)
+        except link_types.LinkTargetError as exc:
+            raise WorkspaceEntryValidationError(str(exc)) from exc
+        source_anchor = {**(source_anchor or {}), **group["anchor"]}
+        group_members = group["members"]
+        link = {**link, "target_label": group["label"]}
+    elif target_type == "agent_answer":
+        # A model reading: the anchor names the model, the turn and the citations; the client's anchor is not kept.
+        from services.agent_answer_links import AnswerLinkError, answer_target
+        try:
+            label, answer_anchor = answer_target(db, case_id, target_id)
+        except AnswerLinkError as exc:
+            raise WorkspaceEntryValidationError(str(exc)) from exc
+        surface = (source_anchor or {}).get("surface")
+        source_anchor = {**answer_anchor, **({"surface": surface} if surface else {})}
+        if not _clean_optional_text(link.get("target_label"), max_length=512):
+            link = {**link, "target_label": label}
+    elif target_type == "graph_entity" and validate_target and (target_type, target_id) not in held_targets:
+        # A new graph entity is checked against the case's graph by key and case together. One already held is not
+        # checked again, so a theory whose entity left the graph can still be edited (it shows as gone, never drops).
+        from services import case_selections
+        try:
+            found = case_selections.graph_keys_in_case(str(case_id), [target_id])
+        except Exception as exc:  # noqa: BLE001 - the graph could not be asked; refuse rather than store unchecked
+            raise WorkspaceEntryValidationError(
+                f"The graph could not be checked for {target_id}, so it was not added; try again") from exc
+        if target_id not in found:
+            raise WorkspaceEntryValidationError(f"The graph entity {target_id} was not found in this case")
     elif target_type == "evidence_passage":
         # A new quote is written here from the stored text, with its reader's label; what the client sent is not kept.
         # A quote already held keeps what was taken, whatever the document holds now (the sync below keeps it).
@@ -616,7 +651,7 @@ def _sanitize_link(
         "relationship": relationship,
         "source_anchor": source_anchor or {},
         "metadata": metadata or {},
-        "phone_members": phone.members if phone is not None else (),
+        "phone_members": phone.members if phone is not None else group_members,
     }
 
 
@@ -646,7 +681,7 @@ def _append_link(
         created_by_user_id=user.id if user else None,
     )
     db.add(record)
-    if record.target_type == "phone_selection":
+    if record.target_type == "phone_selection" or link_types.is_group_type(record.target_type):
         from services import collection_index
 
         collection_index.write_members(
@@ -665,8 +700,10 @@ def _replace_links(
     sanitized: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     held_passages = frozenset(old.target_id for old in entry.links if old.target_type == "evidence_passage")
+    held_targets = frozenset((old.target_type, old.target_id) for old in entry.links)
     for link in links:
-        data = _sanitize_link(db, case_id=entry.case_id, link=link, held_passages=held_passages)
+        data = _sanitize_link(db, case_id=entry.case_id, link=link, held_passages=held_passages,
+                              held_targets=held_targets)
         key = (data["target_type"], data["target_id"])
         if key in seen:
             continue
@@ -682,7 +719,7 @@ def _replace_links(
     for key, old in list(existing.items()):
         if key in wanted:
             continue
-        if old.target_type == "phone_selection":
+        if old.target_type == "phone_selection" or link_types.is_group_type(old.target_type):
             collection_index.remove_members(db, link_id=old.id)
         entry.links.remove(old)
     db.flush()

@@ -55,11 +55,26 @@ FINANCIAL_TYPES: tuple[str, ...] = (
 # holds a target once, and a finding may hold several quotes of one document. The server writes its anchor.
 EVIDENCE_TEXT_TYPES: tuple[str, ...] = ("evidence_passage",)
 
+# A group chosen on one surface, stored once in case_selections with every member and how it was chosen
+# (services.case_selections checks each member against the case). The phone build's own group is phone_selection.
+GROUP_TYPES: tuple[str, ...] = (
+    "graph_selection",
+    "significant_set",
+    "timeline_range",
+    "financial_selection",
+    "evidence_selection",
+    "map_selection",
+)
+
+# A chat answer from the case agent, with its citations: a model reading until a person confirms what it says.
+AGENT_TYPES: tuple[str, ...] = ("agent_answer",)
+
 # Old Notebook names that the Notebook still accepts and maps onto the canonical names.
 NOTEBOOK_ALIASES: dict[str, str] = {"entity": "graph_entity", "document": "evidence"}
 
 # Per container, in display order. 07 section 6.1 decides which phone types each container takes.
-WORKSPACE_TYPES: tuple[str, ...] = CORE_TYPES + PHONE_TYPES + FINANCIAL_TYPES + EVIDENCE_TEXT_TYPES
+WORKSPACE_TYPES: tuple[str, ...] = (CORE_TYPES + PHONE_TYPES + FINANCIAL_TYPES + EVIDENCE_TEXT_TYPES + GROUP_TYPES
+                                    + AGENT_TYPES)
 DOSSIER_TYPES: tuple[str, ...] = (
     "entry",
     "task",
@@ -110,6 +125,10 @@ def sql_in_check(column: str, types: tuple[str, ...]) -> str:
 
 def is_financial_type(target_type: str | None) -> bool:
     return target_type in FINANCIAL_TYPES
+
+
+def is_group_type(target_type: str | None) -> bool:
+    return target_type in GROUP_TYPES
 
 
 def is_phone_type(target_type: str | None) -> bool:

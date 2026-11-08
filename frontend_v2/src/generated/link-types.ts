@@ -37,6 +37,13 @@ export const WORKSPACE_LINK_TYPES = [
   "financial_party",
   "financial_transaction",
   "evidence_passage",
+  "graph_selection",
+  "significant_set",
+  "timeline_range",
+  "financial_selection",
+  "evidence_selection",
+  "map_selection",
+  "agent_answer",
 ] as const
 export type WorkspaceLinkType = (typeof WORKSPACE_LINK_TYPES)[number]
 

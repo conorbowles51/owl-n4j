@@ -112,6 +112,13 @@ class WorkspaceEntryServiceTests(unittest.TestCase):
                     add_entry_link(db, case_id=self.case_id, entry_id=UUID(note["id"]), current_user=self._user(db), expected_version=1, link={"target_type": "dossier", "target_id": str(invalid_id)})
 
     def setUp(self):
+        # The graph is not here: every key asked of this case is in its graph, none of another case's.
+        from unittest import mock
+        from services import case_selections
+        graph = mock.patch.object(case_selections, "graph_keys_in_case",
+                                  side_effect=lambda case_id, keys: set(keys) if case_id == str(self.case_id) else set())
+        graph.start()
+        self.addCleanup(graph.stop)
         self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
         Base.metadata.create_all(self.engine, tables=ENTRY_TABLES)
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
