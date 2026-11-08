@@ -338,6 +338,75 @@ class TraceWalk(_network.NetworkTracingTests):
         with self.assertRaises(LedgerSummaryError):
             trace_walk(export, self.walk_request(request, expected_snapshot_sha256='0' * 64))
 
+    def test_an_asset_use_is_annotated_per_method_like_the_cross_account_trace_and_replays(self):
+        from services.financial.network_tracing import evaluate_network_trace
+        from services.financial.trace_replay import replay_trace
+        from services.financial.trace_walk import trace_walk
+        export, request, rows = self.network()
+        use = dict(transaction_id=str(rows[-1].id), asset_label='Synthetic equipment', basis='Explicit synthetic whole-payment use')
+        full = json.loads(evaluate_network_trace(export, {**request, 'asset_uses': [use]})['scenario_json'])
+        summary, report = trace_walk(export, self.walk_request(request, asset_uses=[use]))
+        walked = json.loads(report)
+        self.assertEqual(summary['asset_uses'], 1)
+        for method, outcome in full['results'].items():
+            self.assertEqual(walked['results'][method]['asset_uses'], outcome['asset_uses'])
+            self.assertEqual(summary['methods'][method]['asset_uses'], outcome['asset_uses'])
+        self.assertIn('asset-use hypotheses', ' '.join(walked['limitations']))
+        self.assertEqual(replay_trace(report)['status'], 'matching_calculations')
+        with self.assertRaisesRegex(LedgerSummaryError, 'not paired transfers'):
+            trace_walk(export, self.walk_request(request, asset_uses=[{**use, 'transaction_id': request['pairs'][0]['debit_id']}]))
+
+    def test_the_step_trace_takes_the_same_backward_timing_as_the_cross_account_trace(self):
+        from datetime import date as _date
+        from services.financial.network_tracing import evaluate_network_trace
+        from services.financial.trace_replay import replay_trace
+        from services.financial.trace_walk import trace_walk
+        export, request, rows = self.network()
+        for row, day in zip(rows, [4, 4, 5, 1, 2, 2, 3]):
+            row.transaction_date = row.ordering_date = _date(2026, 1, day)
+            row.value_date = row.posted_date = row.effective_date = None
+        self.db.commit()
+        export = self.recapture()
+        request.update(expected_snapshot_sha256=export.snapshot.sha256, tolerance_days=7,
+                       ordered_transaction_ids=[str(rows[i].id) for i in (3, 4, 5, 6, 0, 1, 2)])
+        with self.assertRaisesRegex(LedgerSummaryError, 'Forward tracing'):
+            trace_walk(export, self.walk_request(request))
+        with self.assertRaisesRegex(LedgerSummaryError, 'Explain the basis'):
+            trace_walk(export, self.walk_request(request, allow_backward=True))
+        basis = 'Synthetic earlier receiving credit linked explicitly to a later payer debit.'
+        full = json.loads(evaluate_network_trace(export, {**request, 'allow_backward': True, 'backward_basis': basis})['scenario_json'])
+        summary, report = trace_walk(export, self.walk_request(request, allow_backward=True, backward_basis=basis))
+        walked = json.loads(report)
+        self.assertTrue(walked['backward_timing_used'])
+        self.assertTrue(summary['backward_timing_used'])
+        self.assertEqual(walked['calculation_account_order'], full['calculation_account_order'])
+        for method, outcome in full['results'].items():
+            self.assertEqual(walked['results'][method]['claims'], outcome['claims'])
+            self.assertEqual(walked['results'][method]['hops'], outcome['hops'])
+            self.assertEqual(walked['results'][method]['accounts'], outcome['accounts'])
+        self.assertEqual(replay_trace(report)['status'], 'matching_calculations')
+
+    def test_a_backward_account_cycle_is_refused_without_a_partial_trace(self):
+        from services.financial.trace_walk import trace_walk
+        export, request, rows = self.network()
+        rows[1].amount_minor = 2000  # the clean credit, so the cycle never touches the root attribution
+        self.db.commit()
+        export = self.recapture()
+        request.update(expected_snapshot_sha256=export.snapshot.sha256)
+        request['pairs'].append(dict(debit_id=str(rows[6].id), credit_id=str(rows[1].id)))
+        with self.assertRaisesRegex(LedgerSummaryError, 'circular account dependency'):
+            trace_walk(export, self.walk_request(request, allow_backward=True, backward_basis='Synthetic circular dependency',
+                                                 ordered_transaction_ids=None))
+
+    def test_enabling_backward_without_using_it_keeps_the_forward_figures(self):
+        from services.financial.trace_walk import trace_walk
+        export, request, _ = self.network()
+        _, forward = trace_walk(export, self.walk_request(request))
+        summary, enabled = trace_walk(export, self.walk_request(request, allow_backward=True,
+                                                                backward_basis='No backward pair is actually selected.'))
+        self.assertFalse(summary['backward_timing_used'])
+        self.assertEqual(json.loads(forward)['results'], json.loads(enabled)['results'])
+
     def test_a_step_trace_report_replays_with_identical_figures(self):
         from services.financial.trace_replay import replay_trace
         from services.financial.trace_walk import trace_walk

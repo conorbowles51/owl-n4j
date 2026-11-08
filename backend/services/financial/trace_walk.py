@@ -12,7 +12,6 @@ start point, so a continued trace is the same calculation with a larger limit (s
 import hashlib
 import json
 from datetime import date
-from typing import ClassVar
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -22,6 +21,7 @@ from services.financial.ledger_tracing import TraceAttributionInput, _exact_json
 from services.financial.ledger_transfers import TransferPairChoice, ledger_transfer_candidates
 from services.financial.network_tracing import NetworkOpening, network_results
 from services.financial.ledger_snapshot import view_capture, snapshot_matches
+from services.financial.trace_assets import TraceAssetUseInput, validate_asset_uses
 from services.financial.tracing import Doctrine, TracingError
 
 MAX_STEPS = 25
@@ -44,10 +44,9 @@ class TraceWalkInput(BaseModel):
     order_basis: str = Field(min_length=1, max_length=4096)
     ordered_transaction_ids: list[UUID] | None = None
     doctrines: list[Doctrine] = Field(min_length=1, max_length=5)
-
-    # What the shared calculation reads of a cross-account request and this trace does not offer.
-    asset_uses: ClassVar[tuple] = ()
-    backward_basis: ClassVar[str] = ''
+    asset_uses: list[TraceAssetUseInput] = Field(default_factory=list, max_length=50)
+    allow_backward: bool = Field(default=False, strict=True)
+    backward_basis: str = Field(default='', max_length=4096)
 
     @field_validator('order_basis')
     @classmethod
@@ -90,7 +89,9 @@ def reached_accounts(*, roots, links, rows, steps):
 def movement_order(request, scoped, followed):
     """(order, moved): the investigator's explicit order if given, else the recorded one: date, then the row's place on
     its statement. Same-day order is an assumption either way, so a receiving credit recorded before its selected debit
-    on the same day is placed straight after it, and each such move is named in the report."""
+    on the same day is placed straight after it, and each such move is named in the report. With explicit backward
+    timing the order is kept as recorded or given: an earlier receiving credit stays where it is and its pair is
+    calculated as a backward assumption instead of being moved."""
     moved = []
     if request.ordered_transaction_ids is not None:
         ordered = [str(key) for key in request.ordered_transaction_ids]
@@ -101,6 +102,8 @@ def movement_order(request, scoped, followed):
             raise LedgerSummaryError('Movement order cannot reverse recorded ordering dates.')
     else:
         ordered = sorted(scoped, key=lambda key: (scoped[key]['ordering_date'], scoped[key].get('row_index') or 0, key))
+    if request.allow_backward:
+        return ordered, moved
     for _ in range(len(followed) + 1):
         positions = {key: i for i, key in enumerate(ordered)}
         late = [(debit, credit) for debit, credit in sorted(followed.items()) if positions[credit] <= positions[debit]]
@@ -150,11 +153,30 @@ def walk_payload(request, rows, *, case_id, snapshot_sha256, digest_covers, cand
         raise LedgerSummaryError('Declare an opening balance for every account this trace reaches: ' + ', '.join(names.get(a) or a for a in missing) + '.')
     openings = {account: declared[account] for account in accounts}
     scoped = {key: row for key, row in rows.items() if row['account_id'] in accounts}
+    if request.allow_backward and not request.backward_basis.strip():
+        raise LedgerSummaryError('Explain the basis for allowing backward transfer timing.')
     ordered, moved = movement_order(request, scoped, followed)
     positions = {key: i for i, key in enumerate(ordered)}
+    backward_pairs = ([(debit, credit) for debit, credit in sorted(followed.items()) if positions[credit] <= positions[debit]]
+                      if request.allow_backward else [])
+    account_order = []
+    if backward_pairs:
+        # Account dependencies, not global dates, set the calculation order (as the cross-account trace does);
+        # acyclic dependencies ensure every incoming allocation is known before its account is calculated.
+        dependencies = {account: set() for account in accounts}
+        for debit, credit in followed.items():
+            dependencies[rows[credit]['account_id']].add(rows[debit]['account_id'])
+        while dependencies:
+            ready = sorted(account for account, parents in dependencies.items() if not parents)
+            if not ready:
+                raise LedgerSummaryError('Backward timing with a circular account dependency cannot be resolved by this calculation. No trace was returned.')
+            account_order.extend(ready)
+            dependencies = {account: parents - set(ready) for account, parents in dependencies.items() if account not in ready}
+    validate_asset_uses(request.asset_uses, scoped, {str(pair.debit_id) for pair in request.pairs},
+                        ordered_transaction_ids=ordered, transfer_credits={str(pair.credit_id) for pair in request.pairs})
     try:
         results = network_results(request, rows=scoped, accounts=accounts, openings=openings, ordered=ordered, positions=positions, links=followed,
-                                  backward_pairs=[], account_order=[], roots=roots, root_totals=root_totals)
+                                  backward_pairs=backward_pairs, account_order=account_order, roots=roots, root_totals=root_totals)
     except TracingError as error:
         raise LedgerSummaryError(str(error)) from error
     labels = {row['account_id']: row.get('account_label') for row in scoped.values()}
@@ -173,11 +195,16 @@ def walk_payload(request, rows, *, case_id, snapshot_sha256, digest_covers, cand
                    inputs=request.model_dump(mode='json'), snapshot_sha256=snapshot_sha256, digest_covers=digest_covers,
                    accounts=[dict(account_id=account, label=labels.get(account), steps_from_start=depth[account]) for account in sorted(accounts)],
                    readings=[scoped[key] for key in ordered], order=ordered, same_day_moves=moved, results=results, stopped=stops,
+                   backward_timing_used=bool(backward_pairs), calculation_account_order=account_order,
                    pair_rows=[rows[key] for key in sorted(referenced - set(scoped))], code_version=code_version(),
                    limitations=['Conditional trace. Opening balances, root claims, transfer pairings and same-day order are investigator assumptions, not ledger facts.',
                                 'Only accounts reached from the start points by selected transfers are read: no other account can change these figures. Their postings are all included.',
                                 'Movement order is recorded date, then position on the statement; same-day order remains an assumption with the basis recorded.',
-                                'A transfer carries only the claim share allocated to its debit under that method. Selected methods are calculation rules, not a recommendation of which rule legally applies.'])
+                                'A transfer carries only the claim share allocated to its debit under that method. Selected methods are calculation rules, not a recommendation of which rule legally applies.']
+                               + (['Conditional backward timing enabled: selected earlier receiving credits are attributed from later debit allocations. This is an investigator assumption, not a legal conclusion or a finding about payment causation.']
+                                  if backward_pairs else [])
+                               + (['Explicit asset-use hypotheses are separate annotations on complete withdrawals; they do not change cash results or establish asset ownership, present value or legal entitlement.']
+                                  if request.asset_uses else []))
     return payload, stopped
 
 
@@ -212,11 +239,12 @@ def trace_walk(capture, request):
                                     digest_covers=stamp['digest_covers'], candidates=candidates)
     encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
     summary = dict(case_id=result['case_id'], applied=False, currency=request.currency, steps=request.steps, snapshot_sha256=stamp['snapshot_sha256'], digest_covers=stamp['digest_covers'],
+                   backward_timing_used=payload['backward_timing_used'], asset_uses=len(request.asset_uses),
                    accounts=payload['accounts'], readings=len(payload['order']), same_day_moves=len(payload['same_day_moves']), candidates_in_scope=len(result['candidates']), not_followed=len(stopped),
                    stopped=bool(stopped), continue_with_steps=(request.steps + 1) if stopped and request.steps < MAX_STEPS else None,
                    stop_words=stop_words(stopped, rows, request.steps), scenario_sha256=hashlib.sha256(encoded).hexdigest(), scenario_byte_count=len(encoded),
                    methods={method: dict(claims=outcome['claims'], hops=len(outcome['hops']), unidentified_withdrawals_minor=outcome['unidentified_withdrawals_minor'],
-                                         stops=payload['stopped'][method]) for method, outcome in payload['results'].items()})
+                                         asset_uses=outcome['asset_uses'], stops=payload['stopped'][method]) for method, outcome in payload['results'].items()})
     return summary, encoded
 
 
