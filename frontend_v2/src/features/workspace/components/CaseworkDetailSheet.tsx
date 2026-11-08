@@ -77,6 +77,7 @@ import { RelationshipBadge, ReviewBadge } from "./CaseworkBadges"
 import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAIPanel"
 import { DisconfirmPanel } from "@/features/workspace-ai/components/DisconfirmPanel"
 import { RedCellPanel } from "@/features/workspace-ai/components/RedCellPanel"
+import { TheoryReadingSection } from "@/features/theory/TheoryReading"
 
 interface CaseworkDetailSheetProps {
   caseId: string
@@ -494,6 +495,11 @@ export function CaseworkDetailSheet({
                 ) : null}
                 {entry.entry_type === "theory" && !entry.deleted_at ? (
                   <DisconfirmPanel caseId={caseId} theoryId={entry.id} canEdit={canEdit} />
+                ) : null}
+
+                {!entry.deleted_at && (entry.entry_type === "theory" || entry.links.length > 0) ? (
+                  // Each addition with why it was chosen, its narrative and its Loupe; the theory read as a whole.
+                  <TheoryReadingSection caseId={caseId} entryId={entry.id} />
                 ) : null}
 
                 {!!entry.links.length && (
