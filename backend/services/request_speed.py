@@ -652,11 +652,11 @@ def page_detail(detail, route_of=None):
     row['downlink_mbps'] = _number(detail.get('downlink_mbps'), 10 ** 5)
     effective = detail.get('effective_type')
     row['effective_type'] = effective if effective in EFFECTIVE_TYPES else None
-    def kept_route(route):
+    def kept_route(route, assets=True):
         # Only a route shape the browser has already reduced (ids replaced by {id}, no query) is kept.
         kept = None
         if isinstance(route, str) and len(route) <= 600:
-            if _ASSET.match(route):
+            if assets and _ASSET.match(route):
                 kept = route
             elif route.startswith('/api/') and route_of is not None:
                 try:
@@ -666,7 +666,8 @@ def page_detail(detail, route_of=None):
         return kept[:160] if kept else None
 
     row['largest_route'] = kept_route(detail.get('largest_route'))
-    row['first_api_route'] = kept_route(detail.get('first_api_route'))
+    # The first data request is an API route by definition: an asset path is never kept here.
+    row['first_api_route'] = kept_route(detail.get('first_api_route'), assets=False)
     return row
 
 

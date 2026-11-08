@@ -39,10 +39,13 @@ describe("the shell tells the waiter when a painted page has asked for nothing",
     tick(PAINT_AT + GAP_SHOW_MS + 500)
     expect(screen.getByTestId("progress-panel")).toBeTruthy()
     expect(screen.getByRole("status").textContent).toContain("Opening the page")
-    // The sign-in check and the speed beacons are not the page asking for data.
+    // The sign-in check, the speed beacons and the sidebar's own queries are not the page asking for data.
     act(() => {
       startRequest("/api/auth/me")
       startRequest("/api/request-speed/page-views")
+      startRequest("/api/significant/cded78d0-e659-44cc-940d-d8f8c8012760")
+      startRequest("/api/phones?case_id=cded78d0-e659-44cc-940d-d8f8c8012760")
+      startRequest("/api/phones/my-marks")
     })
     expect(screen.getByTestId("progress-panel")).toBeTruthy()
     act(() => {
@@ -71,6 +74,15 @@ describe("the shell tells the waiter when a painted page has asked for nothing",
     render(<AppStartWaiting />)
     tick(PAINT_AT + GAP_SHOW_MS + 500)
     expect(screen.queryByTestId("progress-panel")).toBeNull()
+  })
+
+  it("after an in-document sign-in the gap runs from the shell appearing, not the login screen's paint", () => {
+    nowMs = 30000 // the person typed credentials for 30 s; the document painted at PAINT_AT
+    render(<AppStartWaiting />)
+    tick(30500)
+    expect(screen.queryByTestId("progress-panel")).toBeNull()
+    tick(30000 + GAP_SHOW_MS + 500)
+    expect(screen.getByTestId("progress-panel")).toBeTruthy()
   })
 
   it("stops watching after a minute rather than stay up on a page that never reads", () => {

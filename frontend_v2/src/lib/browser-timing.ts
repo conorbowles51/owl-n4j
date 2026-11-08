@@ -71,20 +71,34 @@ export function routeShape(url: string): string | null {
   }
 }
 
-/** The checks every page shares (the sign-in check, the speed beacons) are not the page asking for data. */
+/**
+ * The requests the shell itself sends on every page are not the page asking for data: the sign-in check, the
+ * speed beacons, and the sidebar's own queries (case layers, the phones group, first-visit marks), which leave
+ * before any page's first request (measured 8 Nov: significant at 0.5–0.7 s, the page's route at 0.7–3.2 s).
+ * On the phones index page the sidebar's query is also the page's first read; its opening is measured from its
+ * next request. Takes a path or a fetch endpoint (the query string is ignored).
+ */
 export function isAppStartCheck(path: string): boolean {
-  return /^\/api\/(auth\/|request-speed\/)/.test(path)
+  const clean = path.split("?")[0]
+  if (/^\/api\/(auth|request-speed)\//.test(clean)) return true
+  return /^\/api\/(significant\/|phones(\/jobs|\/my-marks)?$)/.test(clean)
 }
 
-/** The document's first API data request: the earliest same-origin /api resource that is not a shared check. */
-export function firstDataRequest(): PerformanceResourceTiming | null {
-  let first: PerformanceResourceTiming | null = null
+// The document's first data request never changes once seen: it is kept here so a row written late (a LEFT row
+// hours in) still records it after the resources buffer (KEEP) has dropped the earliest entries.
+let firstData: { startTime: number; route: string | null } | null = null
+
+/** The document's first API data request: the earliest same-origin /api resource that is not the shell's own. */
+export function firstDataRequest(): { startTime: number; route: string | null } | null {
+  if (firstData) return firstData
+  let first: { startTime: number; route: string | null } | null = null
   for (const entry of resources) {
     if (first && entry.startTime >= first.startTime) continue
     const shape = routeShape(entry.name)
     if (!shape || !shape.startsWith("/api/") || isAppStartCheck(shape)) continue
-    first = entry
+    first = { startTime: entry.startTime, route: shape }
   }
+  firstData = first
   return first
 }
 
@@ -147,7 +161,7 @@ export function viewDetail(start: number, end: number, opening: boolean): ViewDe
     const firstApi = firstDataRequest()
     if (firstApi) {
       detail.first_api_ms = round(firstApi.startTime)
-      detail.first_api_route = routeShape(firstApi.name)
+      detail.first_api_route = firstApi.route
     }
   }
   const memory = (performance as unknown as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory
@@ -169,6 +183,7 @@ export function viewDetail(start: number, end: number, opening: boolean): ViewDe
 export function resetBrowserTiming() {
   resources.length = 0
   longTasks.length = 0
+  firstData = null
 }
 
 /** For tests: add an observed entry. */

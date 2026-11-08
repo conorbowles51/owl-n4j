@@ -36,7 +36,15 @@ function readFirstPaint(): number | null {
 export function AppStartWaiting() {
   const [done, setDone] = useState(firstDataRequested)
   const [paintedAt, setPaintedAt] = useState<number | null>(readFirstPaint)
+  // The gap runs from the later of first paint and this shell appearing: after an in-document sign-in the
+  // document painted long ago, and the wait the person feels starts when the signed-in shell is up.
+  const [shownAt, setShownAt] = useState<number | null>(null)
   const now = useTick(!done)
+  const startedAt = paintedAt === null || shownAt === null ? null : Math.max(paintedAt, shownAt)
+
+  useEffect(() => {
+    setShownAt((value) => value ?? performance.now())
+  }, [])
 
   useEffect(() => {
     if (done) return
@@ -56,16 +64,16 @@ export function AppStartWaiting() {
       if (painted !== null) setPaintedAt(painted)
       return
     }
-    if (now - paintedAt > GIVE_UP_MS) setDone(true)
-  }, [now, done, paintedAt])
+    if (startedAt !== null && now - startedAt > GIVE_UP_MS) setDone(true)
+  }, [now, done, paintedAt, startedAt])
 
-  if (done || paintedAt === null) return null
-  if (now - paintedAt < GAP_SHOW_MS) return null
+  if (done || startedAt === null) return null
+  if (now - startedAt < GAP_SHOW_MS) return null
   if (pageChunksPending()) return null
   return (
     <div className="pointer-events-none absolute inset-x-0 top-3 z-50 mx-auto w-full max-w-md px-4">
       <ProgressPanel
-        progress={{ step: "Opening the page", startedAt: paintedAt, movedAt: paintedAt }}
+        progress={{ step: "Opening the page", startedAt, movedAt: startedAt }}
         now={now}
         className="shadow-md"
       />

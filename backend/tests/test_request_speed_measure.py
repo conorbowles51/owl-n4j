@@ -285,10 +285,11 @@ class PageViews(Captured):
         self.assertIsNone(rs.page_detail({'largest_route': '/api/graph/node/john-smith'})['largest_route'])
         self.assertEqual(kept('/assets/index-Bx12.js'), '/assets/index-Bx12.js')
         self.assertIsNone(kept('/assets/../john'))
-        # first_api_route is kept by the same rule: the app's own template or nothing.
+        # first_api_route is kept by the same rule, except an asset is never an API route.
         first = lambda route: rs.page_detail({'first_api_route': route}, route_of)['first_api_route']  # noqa: E731
         self.assertEqual(first('/api/graph/node/john-smith'), '/api/graph/node/{node_key}')
         self.assertIsNone(first('/api/unknown/john-smith'))
+        self.assertIsNone(first('/assets/index-Bx12.js'))
         self.assertIsNone(rs.page_detail({'first_api_route': '/api/graph/node/john-smith'})['first_api_route'])
         self.assertIsNone(rs.page_detail({'effective_type': 'fast'})['effective_type'])
 
