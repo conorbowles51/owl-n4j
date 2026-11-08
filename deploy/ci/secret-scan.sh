@@ -9,9 +9,16 @@ set -euo pipefail
 repo=$1; out=$2
 mkdir -p "$out"
 
+# Findings triaged on 8 Nov 2026 (ci-reports/0c6ec8483e19/triage.md) form the
+# baseline; only findings not in it are reported. CI_FAIL_ON_NEW=1 (the GitHub
+# workflow) turns a new finding into a failing job.
+baseline="$(dirname "$0")/gitleaks-baseline.json"
+baseline_args=()
+[ -f "$baseline" ] && baseline_args=(--baseline-path "$baseline")
+
 set +e
 $CI_NICE "$(gitleaks_bin)" git "$repo" \
-  --redact=100 --no-banner --exit-code 9 \
+  --redact=100 --no-banner --exit-code 9 "${baseline_args[@]}" \
   --report-format json --report-path "$out/gitleaks.json" \
   > "$out/gitleaks.log" 2>&1
 rc=$?
@@ -39,3 +46,8 @@ json.dump({"secret_findings": len(findings), "distinct_rule_file_pairs": len(see
           open(os.path.join(out, "secret-counts.json"), "w"), indent=1)
 print(json.dumps({"secret_findings": len(findings), "distinct_rule_file_pairs": len(seen)}))
 EOF
+
+if [ "${CI_FAIL_ON_NEW:-0}" = 1 ] && [ $rc -eq 9 ]; then
+  echo "new secret findings (not in the baseline): failing as asked (CI_FAIL_ON_NEW=1)" >&2
+  exit 1
+fi

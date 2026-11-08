@@ -1,0 +1,102 @@
+# CI for Loupe: tests, lint, typecheck, build, and the dependency/secret scans.
+# Manual trigger only (workflow_dispatch): automatic triggers wait on Neil's decision,
+# with the measured minutes and cost of one dispatch. The container scan is not here —
+# it runs on the deploy box against the images the production containers actually use
+# (deploy/ci/container-scan.sh); runners have no production images to scan.
+name: ci
+on:
+  workflow_dispatch
+
+jobs:
+  backend-financial-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # The one-line bootstrap from CLAUDE.md "Backend bootstrap" (not requirements.txt,
+      # which pulls openai-whisper/torch for no benefit to the suite).
+      - name: Bootstrap backend test dependencies
+        run: pip install --quiet "SQLAlchemy==2.0.46" "pydantic==2.12.5" "fastapi==0.123.9" "psycopg[binary]==3.2.13" "python-dateutil==2.9.0.post0" "lxml==6.0.2" "openpyxl==3.1.5" "neo4j==5.28.2" "alembic==1.14.0" "email-validator==2.2.0" "python-multipart==0.0.20" "openai==2.9.0" "python-jose==3.5.0" "langchain-core==1.5.0" "langchain-openai==1.1.7" "langgraph==1.0.6" "langgraph-checkpoint==4.0.0" "orjson==3.11.5" "python-dotenv==1.2.1" "bcrypt==5.0.0" "cryptography==46.0.3" "pypdf==6.4.0" "phonenumbers==9.0.31" "PyMuPDF==1.28.0" "numpy==2.3.5" "Pillow==12.1.1" "uvicorn==0.38.0" "python-docx==1.2.0" "weasyprint==68.1" "jsonschema==4.25.1" "pytest==8.4.2" "pytest-asyncio==0.25.0"
+      - name: Financial suite (unittest)
+        working-directory: backend
+        run: env PYTHONHASHSEED=0 python3 -m unittest discover -s tests -p 'test_financial_*.py' -t .
+
+  backend-pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Bootstrap backend test dependencies
+        run: pip install --quiet "SQLAlchemy==2.0.46" "pydantic==2.12.5" "fastapi==0.123.9" "psycopg[binary]==3.2.13" "python-dateutil==2.9.0.post0" "lxml==6.0.2" "openpyxl==3.1.5" "neo4j==5.28.2" "alembic==1.14.0" "email-validator==2.2.0" "python-multipart==0.0.20" "openai==2.9.0" "python-jose==3.5.0" "langchain-core==1.5.0" "langchain-openai==1.1.7" "langgraph==1.0.6" "langgraph-checkpoint==4.0.0" "orjson==3.11.5" "python-dotenv==1.2.1" "bcrypt==5.0.0" "cryptography==46.0.3" "pypdf==6.4.0" "phonenumbers==9.0.31" "PyMuPDF==1.28.0" "numpy==2.3.5" "Pillow==12.1.1" "uvicorn==0.38.0" "python-docx==1.2.0" "weasyprint==68.1" "jsonschema==4.25.1" "pytest==8.4.2" "pytest-asyncio==0.25.0"
+      # The plain pytest functions unittest discover never collects (CLAUDE.md "Backend pytest tests").
+      - name: Backend pytest tests
+        working-directory: backend
+        run: PYTHONHASHSEED=0 python3 -m pytest -q -p no:cacheprovider -rfEs $(ls tests/test_*.py | grep -v test_financial_) $(grep -lE '^(async )?def test_' tests/test_financial_*.py)
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend_v2/package-lock.json
+      - name: Install
+        working-directory: frontend_v2
+        run: npm ci
+      - name: Typecheck
+        working-directory: frontend_v2
+        run: npx tsc -b
+      - name: Lint
+        working-directory: frontend_v2
+        run: npx eslint .
+      - name: Unit tests
+        working-directory: frontend_v2
+        run: npx vitest run --project unit
+      - name: Production build
+        working-directory: frontend_v2
+        run: npm run build
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: pip-audit + npm audit (deploy/ci/deps-scan.sh)
+        run: |
+          mkdir -p /tmp/scan-out
+          CI_TOOLS_DIR=/tmp/ci-tools bash deploy/ci/bootstrap-tools.sh
+          CI_TOOLS_DIR=/tmp/ci-tools CI_LIVE_VENV=/nonexistent bash deploy/ci/deps-scan.sh "$GITHUB_WORKSPACE" /tmp/scan-out
+          cat /tmp/scan-out/deps-counts.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan
+          path: /tmp/scan-out
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks scans the full history
+      - name: gitleaks (deploy/ci/secret-scan.sh)
+        run: |
+          mkdir -p /tmp/scan-out
+          CI_TOOLS_DIR=/tmp/ci-tools bash deploy/ci/bootstrap-tools.sh
+          CI_TOOLS_DIR=/tmp/ci-tools CI_FAIL_ON_NEW=1 bash deploy/ci/secret-scan.sh "$GITHUB_WORKSPACE" /tmp/scan-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: secret-scan
+          path: /tmp/scan-out
