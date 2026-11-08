@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 
 from services.financial.journal import journal
@@ -320,6 +321,63 @@ def read_lines(read, pages, rows, reads=READS, deadline=None, prompt_version=PRO
 
 
 # ---------------------------------------------------------------------------
+# Long numbers: the page's own text reading settles digit order
+# ---------------------------------------------------------------------------
+
+# A model reading a page image can print a long number's digits in another order (followups 2026-11-08, case d5b330d1:
+# account 00002180904676564130 on the page, saved as ...04675664130 on 3 payments read from page images; the page's
+# text reading had it right, so a search by the account missed them). Text recognition misreads a digit as another
+# digit; it does not reorder them. So a long number in a page-image description that is not on its page, while one
+# number on that page has the very same digits in another order (at most PAGE_DIGITS_MOVED places differ), is taken as
+# the page prints it. Switch LOUPE_FINANCIAL_PAGE_DIGITS (default on).
+PAGE_DIGITS = os.environ.get('LOUPE_FINANCIAL_PAGE_DIGITS', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+PAGE_DIGITS_MIN = 8
+PAGE_DIGITS_MOVED = 4
+# Dots and dashes join a printed number's groups; a space parts two numbers (a bank code beside an account).
+_LONG_NUMBER = re.compile(r'\d(?:[\d.-]*\d)?')
+
+
+def _numbers(text):
+    """(digits, start, end) of each number of at least PAGE_DIGITS_MIN digits in ``text``."""
+    found = []
+    for match in _LONG_NUMBER.finditer(str(text or '')):
+        digits = re.sub(r'\D', '', match.group())
+        if len(digits) >= PAGE_DIGITS_MIN:
+            found.append((digits, match.start(), match.end()))
+    return found
+
+
+def page_digit_fixes(description, page_texts):
+    """(description with each reordered long number as its page prints it, [{read, page}]) for a description read
+    from a page image, against ``page_texts`` (the page's text reading, every cell). A number already on the page, or
+    with no single number of the same digits in another order there, is left as read. Separators are kept."""
+    if not PAGE_DIGITS or not description:
+        return description, []
+    printed = {digits for text in page_texts or () for digits, _, _ in _numbers(text)}
+    if not printed:
+        return description, []
+    text, changes = str(description), []
+    for digits, start, end in reversed(_numbers(text)):
+        if digits in printed:
+            continue
+        same = [p for p in printed if len(p) == len(digits) and sorted(p) == sorted(digits)
+                and sum(a != b for a, b in zip(p, digits)) <= PAGE_DIGITS_MOVED]
+        if len(same) != 1:
+            continue
+        page, part = iter(same[0]), text[start:end]
+        fixed = ''.join(next(page) if ch.isdigit() else ch for ch in part)
+        text = text[:start] + fixed + text[end:]
+        changes.insert(0, dict(read=part, page=fixed))
+    return text, changes
+
+
+def page_texts(rows, page):
+    """Every cell's text of the text reading's rows (statement_import_original rows) on ``page``."""
+    return [str(cell.get('expected_text') or '') for row in rows or () if row.get('page_number') == page
+            for cell in row.get('source_cells') or ()]
+
+
+# ---------------------------------------------------------------------------
 # Saved statements: the description lines of payments already saved from page images
 # ---------------------------------------------------------------------------
 
@@ -379,6 +437,7 @@ def completed_from_image(session, row):
 
 IMAGE_LINES_BASIS = 'page_image_descriptions'
 FIRST_LINE_BASIS = 'page_image_first_line'
+DIGITS_BASIS = 'page_image_digits'  # saved_reading_replacement.correct_page_digits
 _CHAIN = 20  # corrections followed back at most; a longer chain is not counted (none on live, 31 Oct)
 
 
@@ -394,7 +453,7 @@ def _image_first_line(session, row, *bases, depth=0):
     lines = provenance.get('reader_descriptions') or {}
     previous = (provenance.get('correction') or {}).get('previous_transaction_id')
     basis = lines.get('basis')
-    if basis not in (bases or (IMAGE_LINES_BASIS, FIRST_LINE_BASIS)) or not previous or page_of(row) is None \
+    if basis not in (bases or (IMAGE_LINES_BASIS, FIRST_LINE_BASIS, DIGITS_BASIS)) or not previous or page_of(row) is None \
             or depth >= _CHAIN:
         return None
     before = _words(lines.get('previous_description'))
@@ -405,7 +464,7 @@ def _image_first_line(session, row, *bases, depth=0):
                      else _image_first_line(session, earlier, *bases, depth=depth + 1))
     if not earlier_first:
         return None
-    if basis == FIRST_LINE_BASIS:
+    if basis in (FIRST_LINE_BASIS, DIGITS_BASIS):
         change = lines.get('first_line') or {}
         if _words(change.get('before')) != earlier_first:
             return None
@@ -560,11 +619,12 @@ def read_saved_lines(factory, document_id, resolve_path, *, request_for=None):
 # A new reading: its payments' description lines, before it is saved
 # ---------------------------------------------------------------------------
 
-def complete_request(factory, case_id, path, request, *, request_for=None, deadline=None):
+def complete_request(factory, case_id, path, request, *, request_for=None, deadline=None, page_rows=None):
     """Complete the descriptions of a proved page-image reading's payments (``request``: the statement review
     vision_reader.build_request made, before it is saved) in place, from their description lines (read_lines, by the
     first usable reader of the chain, within the case's budget). Only a payment row's description and reason change.
-    Returns the record (stored with the reading's outcome), or None when nothing was sent."""
+    ``page_rows``: the text reading's rows (proposal rows), whose page text settles the order of long numbers in the
+    lines added (page_digit_fixes). Returns the record (stored with the reading's outcome), or None when nothing was sent."""
     from services.financial import vision_reader as vr
     if not LINES:
         return None
@@ -603,7 +663,9 @@ def complete_request(factory, case_id, path, request, *, request_for=None, deadl
     by = vr.provider_name(provider)
     for row in rows:
         if row['id'] in found:
-            row['description'] = found[row['id']]
+            text, fixes = page_digit_fixes(found[row['id']], page_texts(page_rows, int(row['manual_page'])))
+            row['description'] = text
             row['reason'] = (str(row.get('reason') or '').rstrip() + ' ' + REASON.format(page=row['manual_page'],
-                                                                                          by=by)).strip()
+                                                                                          by=by)).strip() + ''.join(
+                f' Number {c["read"]} as read; {c["page"]} as the page\'s text reading prints it.' for c in fixes)
     return dict(record, status='read', provider=provider, model=model, cost_usd=round(cost, 6), pages=pages)

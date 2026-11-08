@@ -22,6 +22,11 @@ differs from the saved one by a few characters, it is stored as a proposed corre
 --apply (only the payments named by --payment, when given), through the same correction chain, as the reading model's work for that person, shown as the model's reading
 and not confirmed (saved_reading_replacement.correct_first_lines).
 
+--page-digits [--apply]: a long number in a page-image payment's description whose digits the page's own text reading
+prints in another order (the same digits, a few places swapped: a model reordered them; text recognition does not) is
+listed by the dry run as NUMBER; with --apply it is put as the page prints it, by the system, through the same
+correction chain, the earlier row kept (saved_reading_replacement.correct_page_digits). Nothing else is applied then.
+
 From ``backend/`` with the service environment loaded:
 
     python3 scripts/financial_image_descriptions.py --case <case uuid>               # dry run
@@ -63,7 +68,8 @@ def documents(session, case_ids, document_ids):
 def survey(factory, case_ids, document_ids):
     from scripts.financial_reader_recovery_estimate import read_only
     from services.financial import vision_descriptions
-    from services.financial.saved_reading_replacement import assess_first_line_fixes, assess_image_descriptions
+    from services.financial.saved_reading_replacement import (assess_first_line_fixes, assess_image_descriptions,
+                                                              assess_page_digit_fixes)
     results = []
     with factory() as session:
         read_only(session)
@@ -76,7 +82,8 @@ def survey(factory, case_ids, document_ids):
             results.append(dict(verdict, page_image_payments=len(pairs),
                                 not_read=len(vision_descriptions.not_looked(stored, pairs, session)),
                                 kept_by_reading=dict(Counter(stored.get('kept', {}).values())),
-                                first_lines=assess_first_line_fixes(session, document)))
+                                first_lines=assess_first_line_fixes(session, document),
+                                page_digits=assess_page_digit_fixes(session, document)))
         session.rollback()
     return results
 
@@ -88,6 +95,9 @@ def main(argv=None):
     parser.add_argument('--read', action='store_true')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--first-lines', action='store_true')
+    parser.add_argument('--page-digits', action='store_true',
+                        help='put long numbers read in another digit order as the page\'s text reading prints them '
+                             '(by the system, the earlier rows kept)')
     parser.add_argument('--for-name')
     parser.add_argument('--for-email')
     parser.add_argument('--for-user-id')
@@ -129,6 +139,27 @@ def main(argv=None):
             print(f"  FIRST LINE document {r['document_id']} page {change['page']} payment "
                   f"{change['transaction_id']}: {change['first_line_before']!r} -> {change['first_line_after']!r} "
                   f"(read by {(change.get('read_by') or {}).get('model')})")
+    for r in results:
+        for change in (r.get('page_digits') or {}).get('changes') or []:
+            print(f"  NUMBER document {r['document_id']} page {change['page']} payment {change['transaction_id']}: "
+                  + '; '.join(f"{n['read']} -> {n['page']}" for n in change['numbers']))
+    if args.page_digits:
+        from services.financial.saved_reading_replacement import correct_page_digits
+        for entry in list(results):
+            if (entry.get('page_digits') or {}).get('outcome') != 'describe':
+                continue
+            if not args.apply:
+                continue
+            try:
+                outcome = correct_page_digits(session_factory=factory, case_id=entry['case_id'],
+                                              document_id=entry['document_id'])
+            except Exception as error:  # Reported per statement; nothing of that statement was written.
+                outcome = dict(applied=False, refusal=str(error)[:300])
+            print(f"  {'APPLIED' if outcome.get('applied') else 'NOT APPLIED'} numbers, document "
+                  f"{entry['document_id']}: " + (f"{outcome.get('payments')} corrected" if outcome.get('applied')
+                                                 else (outcome.get('refusal') or outcome.get('code') or '')), flush=True)
+            results.append(dict(document_id=entry['document_id'], page_digits_applied=outcome))
+        args.apply = False  # --page-digits --apply corrects numbers only
     if args.apply:
         from services.financial.saved_reading_replacement import refresh_descriptions
         applied = []

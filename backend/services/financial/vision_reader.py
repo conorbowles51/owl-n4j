@@ -1917,12 +1917,16 @@ def build_request(proposal, reading, by=None):
     for row in reading['rows']:
         if row['page'] not in (proposal.get('page_numbers') or []):
             raise NotProved('A payment was read from a page outside this file.')
+        from services.financial.vision_descriptions import page_digit_fixes, page_texts
+        description, digit_fixes = page_digit_fixes(row['description'], page_texts(proposal.get('rows'), row['page']))
         entry = dict(id=f'manual:vision-p{row["page"]}-{row["index"]}', excluded=False, manual_page=row['page'],
-                     date=row['date'], date_unprinted=False, date_values={}, description=row['description'],
+                     date=row['date'], date_unprinted=False, date_values={}, description=description,
                      counterparty='', amount_minor=str(row['amount_minor']), direction=row['direction'],
                      balance_minor=str(row['balance_minor']) if row['balance_minor'] is not None else None,
                      reason=row_reason(row['page'], by) + (
-                         ' In or out from the printed running balance.' if row.get('direction_from_balance') else ''))
+                         ' In or out from the printed running balance.' if row.get('direction_from_balance') else '')
+                     + ''.join(f' Number {c["read"]} as read; {c["page"]} as the page\'s text reading prints it.'
+                               for c in digit_fixes))
         allowed = sorted(allowed_source_positions(originals, row['page'], pages))
         anchor = next((a for a in allowed if a[0] == 'after'), None) or (allowed[0] if allowed else None)
         if anchor:
@@ -3310,7 +3314,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 # Within the claim: a page whose requests could end after it keeps its first lines ('deferred'); the
                 # saved statement's lines are read later (scripts/financial_image_descriptions.py).
                 lines = vision_descriptions.complete_request(factory, case_id, path, request,
-                                                             deadline=chain_started + CHAIN_SECONDS)
+                                                             deadline=chain_started + CHAIN_SECONDS,
+                                                             page_rows=proposal.get('rows'))
             except Exception as error:  # noqa: BLE001 - the payments keep their first lines
                 log.warning('Description lines of file %s could not be read (%s: %s)', str(file_id)[:8],
                             type(error).__name__, str(error)[:200])

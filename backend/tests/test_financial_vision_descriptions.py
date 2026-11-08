@@ -76,6 +76,40 @@ class CompletedTests(TestCase):
         self.assertEqual(found, {'a': FULL})
 
 
+class PageDigitsTests(TestCase):
+    """A long number a model read from a page image in another digit order is taken as the page's text reading prints
+    it (followups 2026-11-08, case d5b330d1: 00002180904676564130 printed, 00002180904675664130 read)."""
+    PAGE = ['T20 SPEI RECIBIDOBBVA', '00002180904676564130 REF 0123', 'CLABE 012180001234567891']
+
+    def test_two_swapped_digits_are_put_back(self):
+        text, fixes = vd.page_digit_fixes('T20 SPEI RECIBIDOBBVA 00002180904675664130 REF 0123', self.PAGE)
+        self.assertEqual(text, 'T20 SPEI RECIBIDOBBVA 00002180904676564130 REF 0123')
+        self.assertEqual(fixes, [dict(read='00002180904675664130', page='00002180904676564130')])
+
+    def test_separators_are_kept(self):
+        text, _ = vd.page_digit_fixes('CTA 0000-2180-9046-7566-4130', self.PAGE)
+        self.assertEqual(text, 'CTA 0000-2180-9046-7656-4130')
+
+    def test_a_number_on_the_page_or_not_there_in_any_order_stays(self):
+        for description in ('X 00002180904676564130', 'X 99992180904676564130', 'X 012180001234567891', 'REF 0123'):
+            self.assertEqual(vd.page_digit_fixes(description, self.PAGE), (description, []), description)
+
+    def test_a_different_digit_is_a_misread_not_a_reordering(self):
+        # Text recognition misreads digits; a substituted digit is not settled by the page here.
+        self.assertEqual(vd.page_digit_fixes('X 00002180904676564180', self.PAGE)[1], [])
+
+    def test_two_page_numbers_with_the_same_digits_settle_nothing(self):
+        page = ['12345678', '12345687']
+        self.assertEqual(vd.page_digit_fixes('X 12345768', page)[1], [])
+
+    def test_more_than_a_few_places_moved_stays(self):
+        self.assertEqual(vd.page_digit_fixes('X 87654321', ['12345678'])[1], [])
+
+    def test_switched_off_nothing_changes(self):
+        with patch.object(vd, 'PAGE_DIGITS', False):
+            self.assertEqual(vd.page_digit_fixes('X 00002180904675664130', self.PAGE)[1], [])
+
+
 class ReadLinesTests(TestCase):
     pages = [(2, [b'p2']), (3, [b'p3'])]
 
@@ -185,6 +219,30 @@ class CompleteRequestTests(TestCase):
             self.assertEqual(request['rows'][1][key], before['rows'][1][key], key)
         self.assertEqual((request['rows'][0], request['rows'][2]), (before['rows'][0], before['rows'][2]))
 
+    def test_lines_added_take_a_long_number_as_the_page_prints_it(self):
+        request = self.request()
+        read = FIRST + ' Ref. 0000259567 014 0001485460571779777'
+        page_rows = [dict(page_number=2, source_cells=[dict(expected_text='014 0001485460571777977')]),
+                     dict(page_number=3, source_cells=[dict(expected_text='0001485460571779777')])]
+        record = self._complete_with(request, {'manual:vision-p2-0': read}, page_rows)
+        self.assertEqual(record['status'], 'read')
+        self.assertEqual(request['rows'][1]['description'], FIRST + ' Ref. 0000259567 014 0001485460571777977')
+        self.assertTrue(request['rows'][1]['reason'].endswith(
+            'Number 0001485460571779777 as read; 0001485460571777977 as the page\'s text reading prints it.'))
+
+    def _complete_with(self, request, texts, page_rows):
+        def request_for(model, key, provider):
+            def read(shown, listed_rows):
+                return answer(**{row['id']: texts.get(row['id'], row['first_line']) for row in listed_rows}), {}
+            return read
+        with patch.object(vd, '_reader', return_value=('deepseek', 'deepseek-flash', 'key')), \
+                patch('services.financial.vision_reader.render_pages',
+                      side_effect=lambda path, pages, strips=None: [(p, [b'png']) for p in pages]), \
+                patch('services.financial.vision_reader._reserve', return_value=True), \
+                patch('services.financial.vision_reader._add_spend'):
+            return vd.complete_request(self._session(), 'case', self.path, request, request_for=request_for,
+                                       page_rows=page_rows)
+
     def test_a_new_reading_is_asked_for_its_lines_only_as_before(self):
         asked = []
 
@@ -225,9 +283,8 @@ class CompleteRequestTests(TestCase):
         self.assertEqual(request['rows'][1]['description'], FIRST)
 
 
-class SavedImageDescriptionTests(TestCase):
-    """A saved statement's payment read from a page image gains its description lines through the correction chain;
-    its names stay on it and its money is untouched."""
+class SavedImageDescriptionCase(TestCase):
+    """A saved statement with one labelled payment read from a page image (page 1)."""
 
     def setUp(self):
         from tests.test_financial_saved_reading_replacement import DescriptionRefreshTests
@@ -262,6 +319,12 @@ class SavedImageDescriptionTests(TestCase):
     def assess(self):
         with self.f.SessionLocal() as db:
             return replacement.assess_image_descriptions(db, db.get(FinancialSourceDocument, self.document_id))
+
+
+
+class SavedImageDescriptionTests(SavedImageDescriptionCase):
+    """A saved statement's payment read from a page image gains its description lines through the correction chain;
+    its names stay on it and its money is untouched."""
 
     def test_the_lines_complete_the_payment_keeping_its_name_and_money(self):
         self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
@@ -523,3 +586,66 @@ class SavedFirstLineTests(SavedImageDescriptionTests):
     def test_no_fix_stored_changes_nothing(self):
         self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
         self.assertEqual(self.first_lines()['code'], 'no_first_line_fixes')
+
+
+class SavedPageDigitsTests(SavedImageDescriptionCase):
+    """A saved page-image payment whose long number was read in another digit order is corrected through the
+    correction chain by the system, from the page's own text reading; the earlier row and its text stay."""
+    READ = 'Incoming 00002180904675664130'
+    PRINTED = 'Incoming 00002180904676564130'
+
+    def setUp(self):
+        super().setUp()
+        with self.f.SessionLocal() as db:
+            row = db.get(FinancialTransaction, self.labelled)
+            row.description = self.READ
+            provenance = deepcopy(row.provenance)
+            provenance['statement_import_review']['description'] = self.READ
+            row.provenance = provenance
+            document = db.get(FinancialSourceDocument, self.document_id)
+            metadata = deepcopy(document.metadata_ or {})
+            original = dict(metadata.get('statement_import_original') or {})
+            # The page's text reading prints the number on one of its rows (a cell added to a page-1 row).
+            rows = deepcopy(list(original.get('rows') or []))
+            on_page = next(r for r in rows if r.get('page_number') == 1)
+            on_page['source_cells'] = list(on_page.get('source_cells') or []) + [
+                dict(expected_text='00002180904676564130')]
+            original['rows'] = rows
+            metadata['statement_import_original'] = original
+            document.metadata_ = metadata
+            db.commit()
+
+    def digits(self):
+        with self.f.SessionLocal() as db:
+            return replacement.assess_page_digit_fixes(db, db.get(FinancialSourceDocument, self.document_id))
+
+    def test_the_number_is_corrected_by_the_system_keeping_the_earlier_row(self):
+        verdict = self.digits()
+        self.assertEqual([(c['before'], c['after']) for c in verdict['changes']], [(self.READ, self.PRINTED)])
+        saved_rows = self.d.t.admitted_rows()
+        result = replacement.correct_page_digits(session_factory=self.f.SessionLocal, case_id=self.d.t.case_id,
+                                                 document_id=self.document_id)
+        self.assertTrue(result['applied'], result)
+        self.assertEqual(self.d.t.admitted_rows(), saved_rows, 'the same payments count, once')
+        with self.f.SessionLocal() as db:
+            old = db.get(FinancialTransaction, self.labelled)
+            new = db.get(FinancialTransaction, old.superseded_by_id)
+            self.assertEqual((old.ledger_status, old.description, new.description),
+                             ('superseded', self.READ, self.PRINTED))
+            self.assertEqual((new.amount_minor, new.direction, new.transaction_date, new.running_balance_minor),
+                             (old.amount_minor, old.direction, old.transaction_date, old.running_balance_minor))
+            lines = new.provenance['reader_descriptions']
+            self.assertEqual((lines['basis'], lines['first_line'], lines['numbers']),
+                             (replacement.DIGITS_BASIS, dict(before=self.READ, after=self.PRINTED),
+                              [dict(read='00002180904675664130', page='00002180904676564130')]))
+            event = db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.subject_id == old.id,
+                                                              AdjudicationEvent.decision == 'correct_transaction'))
+            self.assertEqual((event.reason, event.actor_name), (replacement.DIGITS_REASON, replacement.ACTOR.name))
+            pairs = vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id))
+            self.assertEqual([(row.id, first) for row, first in pairs], [(new.id, self.PRINTED)],
+                             'still a page-image payment')
+        self.assertEqual(self.digits()['outcome'], 'same', 'done once')
+
+    def test_switched_off_nothing_changes(self):
+        with patch.object(vd, 'PAGE_DIGITS', False):
+            self.assertEqual(self.digits()['code'], 'disabled')

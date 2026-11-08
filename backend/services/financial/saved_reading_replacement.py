@@ -127,6 +127,11 @@ FIRST_LINE_REASON = ('The first printed line of this payment was read again from
                      'read gives the same text, which differs from the saved first line by a few characters. This is the '
                      'model\'s reading, not confirmed by a person; the earlier row and its text are kept, linked. Amount, '
                      'direction, date and balance are the saved ones.')
+DIGITS_BASIS = 'page_image_digits'
+DIGITS_REASON = ('A long number in this payment\'s description, read from its page image, had its digits in another '
+                 'order than the page\'s own text reading prints them (the same digits, a few places swapped). Text '
+                 'recognition misreads digits but does not reorder them, so the number is taken as the page\'s text '
+                 'reading prints it. Only those digits change; the earlier row and its text are kept, linked.')
 DESCRIPTION_REASON = ('The current reader reads more of this payment\'s printed description; its amount, direction, '
                       'date and balance are the saved ones. The earlier row is kept, linked.')
 IMAGE_BASIS = 'page_image'
@@ -882,6 +887,58 @@ def assess_first_line_fixes(session, document, only=None):
             'revision': None}
 
 
+def assess_page_digit_fixes(session, document):
+    """What putting the long numbers of this saved copy's page-image payment descriptions in the order the page's own
+    text reading prints them would do (vision_descriptions.page_digit_fixes against the saved text reading's cells of
+    the payment's page). Reads only. Same verdict shape as assess_first_line_fixes. A payment changes only while its
+    first line is still one read from the page image (vision_descriptions.first_line_rows); only reordered digits
+    change, every other character stays."""
+    from services.financial import vision_descriptions
+    result = dict(document_id=str(document.id), evidence_file_id=str(document.evidence_file_id),
+                  case_id=str(document.case_id), outcome='refused', code=None, basis=DIGITS_BASIS)
+    if not (ENABLED and vision_descriptions.PAGE_DIGITS):
+        return {**result, 'code': 'disabled'}
+    if document.status != 'admitted':
+        return {**result, 'code': 'not_admitted'}
+    if (document.metadata_ or {}).get('financial_import_removal'):
+        return {**result, 'code': 'removed'}
+    period = session.scalar(select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id == document.id))
+    if period is None:
+        return {**result, 'code': 'no_single_period'}
+    result.update(period_id=str(period.id), currency=period.currency)
+    cells = ((document.metadata_ or {}).get('statement_import_original') or {}).get('rows') or []
+    words = vision_descriptions._words
+    changes, kept = [], []
+    for row, first in vision_descriptions.first_line_rows(session, document):
+        page = vision_descriptions.page_of(row)
+        texts = vision_descriptions.page_texts(cells, page)
+        new, fixes = vision_descriptions.page_digit_fixes(words(row.description), texts)
+        if not fixes:
+            continue
+        first_after, _ = vision_descriptions.page_digit_fixes(first, texts)
+        if not (new + ' ').startswith(first_after + ' '):
+            kept.append(dict(transaction_id=str(row.id), code='number_crosses_first_line', before=row.description,
+                             after=new))
+            continue
+        review = (row.provenance or {}).get('statement_import_review') or {}
+        changes.append(dict(transaction_id=str(row.id), row_id=review.get('id'), before=row.description, after=new,
+                            page=page, numbers=fixes, first_line_before=first, first_line_after=first_after,
+                            read_by=dict(basis='page text reading')))
+    if not changes:
+        return {**result, 'outcome': 'same', 'code': 'same', 'kept': kept}
+    return {**result, 'outcome': 'describe', 'code': None, 'changes': changes, 'kept': kept,
+            'differs': ['numbers'], 'statement_id': (document.metadata_ or {}).get('statement_import_statement_id'),
+            'revision': None}
+
+
+def correct_page_digits(*, session_factory, case_id, document_id):
+    """Apply this saved copy's digit-order corrections (assess_page_digit_fixes) through the correction chain, by
+    "system: reader replacement", the earlier rows kept: refresh_descriptions with page_digits."""
+    return refresh_descriptions(session_factory=session_factory, case_id=case_id, document_id=document_id,
+                                page_digits=True)
+
+
 def first_line_actor(change, *, for_name, for_email, for_user_id=None, file_name=None):
     """The model that read this first line again, working for ``for_name``: its correction is shown as the model's,
     not confirmed, until a person confirms it."""
@@ -916,7 +973,7 @@ def _event_text(value):
 
 
 def refresh_descriptions(*, session_factory, case_id, document_id, from_images=False, first_lines_for=None,
-                         first_lines_only=None):
+                         first_lines_only=None, page_digits=False):
     """Give each payment of this saved copy the description its current reading prints (assess_descriptions, judged
     again under the case lock), in one transaction: each changed payment is superseded by the same payment with the
     new description through the correction chain (names, category, link and notes go with it), with an adjudication
@@ -946,7 +1003,9 @@ def refresh_descriptions(*, session_factory, case_id, document_id, from_images=F
         rows = list(session.scalars(select(FinancialTransaction).where(
             FinancialTransaction.source_document_id == document.id).order_by(FinancialTransaction.id).with_for_update()
             .execution_options(populate_existing=True)))
-        if first_lines_for is not None:
+        if page_digits:
+            verdict = assess_page_digit_fixes(session, document)
+        elif first_lines_for is not None:
             verdict = assess_first_line_fixes(session, document, only=first_lines_only)
         elif from_images:
             verdict = assess_image_descriptions(session, document)
@@ -962,10 +1021,13 @@ def refresh_descriptions(*, session_factory, case_id, document_id, from_images=F
         references = set(session.scalars(select(FinancialTransaction.ref_id).where(
             FinancialTransaction.case_id == document.case_id)))
         now = datetime.now(timezone.utc).isoformat()
-        basis, why = ((FIRST_LINE_BASIS, FIRST_LINE_REASON) if first_lines_for is not None else
+        basis, why = ((DIGITS_BASIS, DIGITS_REASON) if page_digits else
+                      (FIRST_LINE_BASIS, FIRST_LINE_REASON) if first_lines_for is not None else
                       (IMAGE_DESCRIPTION_BASIS, IMAGE_DESCRIPTION_REASON) if from_images else
                       (DESCRIPTION_BASIS, DESCRIPTION_REASON))
         file_name = None
+        if page_digits:
+            from_images = True
         if first_lines_for is not None:
             from_images = True
             file_name = getattr(session.get(EvidenceFile, document.evidence_file_id), 'original_filename', None)
@@ -996,7 +1058,8 @@ def refresh_descriptions(*, session_factory, case_id, document_id, from_images=F
                                                if from_images else {}),
                                             **({'first_line': dict(before=change['first_line_before'],
                                                                    after=change['first_line_after'])}
-                                               if first_lines_for is not None else {}))}
+                                               if first_lines_for is not None or page_digits else {}),
+                                            **({'numbers': change['numbers']} if page_digits else {}))}
             actor = (first_line_actor(change, file_name=file_name, **first_lines_for) if first_lines_for is not None
                      else ACTOR)
             if first_lines_for is not None:
@@ -1037,7 +1100,9 @@ def refresh_descriptions(*, session_factory, case_id, document_id, from_images=F
                            row_id=c['row_id']) for c in applied])]
         document.metadata_ = metadata
         _log(session, document.case_id, document, f'{len(applied)} payment description(s) of this saved statement '
-             + ('given the first line its page image prints (the model\'s reading, not confirmed)'
+             + ('given the digit order its page\'s text reading prints for a long number'
+                if page_digits else
+                'given the first line its page image prints (the model\'s reading, not confirmed)'
                 if first_lines_for is not None else
                 'completed from its page images (description lines only)' if from_images else
                 'completed from the current reading') + '; amounts, dates and balances unchanged. The earlier rows are '

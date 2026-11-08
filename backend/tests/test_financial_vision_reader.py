@@ -611,6 +611,29 @@ class RequestTest(unittest.TestCase):
         self.assertEqual(added[0]['source_order_anchor'], dict(relation='after', row_id='t1'))
         self.assertEqual((request['holder'], request['currency'], request['period_end']), ('ACME SA DE CV', 'MXN', '2025-12-31'))
 
+    def test_a_long_number_read_in_another_digit_order_is_taken_as_the_page_prints_it(self):
+        # followups 2026-11-08, case d5b330d1 (MIDA BBVA 2022 page 2): the page prints account 00002180904676564130,
+        # the model read 00002180904675664130 (two digits swapped) and a search by the account missed the payment.
+        page_text = dict(id='t1', kind='unresolved', excluded=True, issues=[], page_number=1, fields={},
+                         source_cells=[dict(expected_text='SPEI ENVIADO BANAMEX'),
+                                       dict(expected_text='00002180904676564130 PAGO FACTURA')])
+        proposal = _proposal([page_text])
+        pages = _balanced_pages()
+        pages[0][1]['sections'][0]['rows'][0]['description'] = 'SPEI ENVIADO BANAMEX 00002180904675664130 PAGO FACTURA'
+        pages[0][1]['sections'][0]['rows'][1]['description'] = 'PAGO 12345678'
+        request = vr.build_request(proposal, _proved(proposal, pages=pages))
+        added = [r for r in request['rows'] if r['id'].startswith('manual:vision-')]
+        self.assertEqual(added[0]['description'], 'SPEI ENVIADO BANAMEX 00002180904676564130 PAGO FACTURA')
+        self.assertEqual(added[0]['reason'], 'Read from page image, page 1. Number 00002180904675664130 as read; '
+                                             '00002180904676564130 as the page\'s text reading prints it.')
+        self.assertEqual(added[1]['description'], 'PAGO 12345678', 'not on the page in any order: as read')
+        self.assertTrue(added[0]['reason'].startswith('Read from page image'), 'still a page-image row')
+        from services.financial import vision_descriptions as vd
+        with mock.patch.object(vd, 'PAGE_DIGITS', False):
+            request = vr.build_request(proposal, _proved(proposal, pages=pages))
+        self.assertIn('00002180904675664130', request['rows'][-3]['description'] + request['rows'][-2]['description']
+                      + request['rows'][-1]['description'])
+
     def test_a_text_total_the_scan_misread_takes_the_total_the_images_read_and_checked(self):
         # fin-queue3 L8 (BNB2 09 BBVA 23 MXN): the text reading's deposit total is 3,428,314.57, the images print
         # 3,129,314.57, the one deposit read; the text's total held the period the images prove.
