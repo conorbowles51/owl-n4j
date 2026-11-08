@@ -24,6 +24,7 @@ from routers import (
     snapshots_router,
     cases_router,
     case_members_router,
+    case_exports_router,
     dossiers_router,
     auth_router,
     evidence_router,
@@ -188,6 +189,9 @@ async def lifespan(app: FastAPI):
     from config import EVIDENCE_DATA_ROOT as _evidence_root
     malware_scan_task = asyncio.create_task(run_scans_forever(lambda path: _resolve_evidence_path(path, _evidence_root)),
                                             name="evidence-malware-scan")
+    # Whole-case exports: each runs as a process of its own; this starts them, watches them and removes old packages.
+    from services.caseport.jobs import run_forever as run_case_exports_forever
+    case_exports_task = asyncio.create_task(run_case_exports_forever(), name="case-exports")
 
     # Jobs the old backend started after this one's start are recovered once it has stopped (services.backend_handover).
     from services.backend_handover import after_old_backend_stopped
@@ -209,7 +213,7 @@ async def lifespan(app: FastAPI):
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, address_lookup_task, phone_interpretation_task, financial_batches_task,
          view_warmup_task, view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task,
-         casebin_purge_task, malware_scan_task, handover_task, agent_run_settle_task, backfill_resume_task],
+         casebin_purge_task, malware_scan_task, case_exports_task, handover_task, agent_run_settle_task, backfill_resume_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 
@@ -299,6 +303,7 @@ app.include_router(timeline_router)
 app.include_router(snapshots_router)
 app.include_router(cases_router)
 app.include_router(case_members_router)
+app.include_router(case_exports_router)
 app.include_router(dossiers_router)
 app.include_router(auth_router)
 app.include_router(evidence_router)

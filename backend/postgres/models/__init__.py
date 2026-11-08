@@ -1,6 +1,7 @@
 from postgres.models.financial_category import FinancialCategory
 from postgres.models.manual_change import ManualChange
 from postgres.models.financial_custody import FinancialCustodyEvent
+from postgres.models.case_export import CaseExport
 from postgres.models.financial_audit import FinancialAuditEvent
 # Postgres/models/__init__.py
 from postgres.models.user import User

@@ -10,6 +10,7 @@ from routers.timeline import router as timeline_router
 from routers.snapshots import router as snapshots_router
 from routers.cases import router as cases_router
 from routers.case_members import router as case_members_router
+from routers.case_exports import router as case_exports_router
 from routers.dossiers import router as dossiers_router
 from routers.auth import router as auth_router
 from routers.evidence import router as evidence_router
@@ -60,6 +61,7 @@ __all__ = [
     "snapshots_router",
     "cases_router",
     "case_members_router",
+    "case_exports_router",
     "dossiers_router",
     "auth_router",
     "evidence_router",
