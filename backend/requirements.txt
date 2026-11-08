@@ -82,7 +82,7 @@ pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
-pypdf==6.4.0
+pypdf==6.21.4
 PyMuPDF>=1.25,<2
 pyproject_hooks==1.2.0
 pyreadline3==3.5.4
@@ -90,7 +90,7 @@ python-dateutil==2.9.0.post0
 python-docx==1.2.0
 python-dotenv==1.2.1
 python-jose==3.5.0
-python-multipart==0.0.20
+python-multipart==0.0.31
 pytz==2025.2
 PyYAML==6.0.3
 redis==7.4.0
@@ -125,7 +125,7 @@ psycopg[binary]==3.2.13
 email-validator==2.2.0
 SQLAlchemy==2.0.46
 weasyprint==68.1
-Pillow==12.1.1
+Pillow==13.0.0
 pytesseract>=0.3.10
 openai-whisper>=20231117
 # Local translation of phone messages and transcripts (05 section 17.5), run in a child process only. All Apache-2.0.
