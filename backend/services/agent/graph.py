@@ -149,6 +149,13 @@ _INTERNAL_TOOL_MARKERS = (
     "get_transfer_pairs",
     "get_payment_other_legs",
     "get_identity_suggestions",
+    "get_evidence_files",
+    "get_interviews",
+    "get_transcript",
+    "list_dossiers",
+    "get_theory",
+    "get_significant_layer",
+    "get_reports",
 )
 
 _CROSS_TITLES = {"search_case": "Searched the case", "get_person_phones": "Read a person's phones",
@@ -163,7 +170,17 @@ _CROSS_TITLES = {"search_case": "Searched the case", "get_person_phones": "Read 
                  "get_analysis_results": "Read a phone analysis",
                  "draft_control_claim": "Drafted who had the means to operate an account",
                  "get_payment_conversation": "Read the conversation around a payment",
-                 "draft_payment_purpose": "Drafted a payment's stated purpose"}
+                 "draft_payment_purpose": "Drafted a payment's stated purpose",
+                 "get_evidence_files": "Checked the case's files and their processing",
+                 "get_interviews": "Read the interviews and transcripts",
+                 "get_transcript": "Read a transcript",
+                 "list_dossiers": "Listed the dossiers",
+                 "get_theory": "Read a theory and what was added to it",
+                 "get_significant_layer": "Read the Significant layer",
+                 "get_reports": "Read the saved reports"}
+
+_CASE_MATERIAL_TOOLS = ("get_evidence_files", "get_interviews", "get_transcript", "list_dossiers", "get_theory",
+                        "get_significant_layer", "get_reports")
 
 _PHONE_PROMPT = """Phones (extraction reports of the case's phones):
 - Read phone messages, calls, people, places and money with the phone tools: phone_find_people, phone_messages, phone_contact_summary, phone_coverage, phone_places, phone_money_readings, phone_colocation_results and phone_record. They read only this case; a phone, person or record they answer "Not in this case." for is not in this case: say exactly that, and never look for it another way.
@@ -474,6 +491,9 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
                  "get_payment_other_legs": "Read a payment's possible other legs",
                  "get_identity_suggestions": "Read possible links between phone identities"}[safe_name]
         detail = "I'm reading every possible match with its strength, weak and faint ones included."
+    elif safe_name in _CASE_MATERIAL_TOOLS:
+        title = _CROSS_TITLES[safe_name]
+        detail = "I'm reading this case's own records as its pages show them, with links to each."
     elif safe_name in _CROSS_TITLES:
         title = _CROSS_TITLES[safe_name]
         detail = "I'm reading this case's phones the way the screens do, and joining them to the ledger."
@@ -662,6 +682,9 @@ Your job:
 - Answer investigation questions using tools instead of guessing.
 - Search the graph for people, companies, events, relationships, timelines, locations and contextual links. Use the authoritative ledger tools below for imported payments.
 - Search documents when the answer needs source text, document excerpts, or semantic context.
+- Read the case's own records with their tools: get_evidence_files (which files are in the case and their processing state), get_interviews and get_transcript (interviews and recordings), list_dossiers and get_dossier, get_casework (notes, findings, observations, theories) and get_theory (one theory with everything added to it), get_significant_layer (what is marked significant), get_reports (saved reports), get_judgement_calls and get_decisions (omit subject for the whole case). Cite casework, theories and dossiers by the href page link each result gives, as a markdown link.
+- For where something happened or where a place is, read get_map_locations (the case map's places, with what happened at each) before searching documents.
+- When phone_coverage says the case has no phones, say so in the answer and do not look for phone material another way.
 - Use run_readonly_cypher for precise graph questions that need counts, filters, paths, or custom tables.
 - Use inspect_graph_schema before writing custom Cypher for labels or properties you have not already inspected in this run.
 - For human-readable entity names in Cypher, prefer coalesce(n.name, n.display_name, n.full_name, n.title, n.key); do not assume display_name exists.

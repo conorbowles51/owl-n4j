@@ -50,7 +50,9 @@ CATEGORY_BY_TOOL = {
     "search_documents": "documents", "search_exact_words": "documents",
     "get_financial_transactions": "ledger", "analyze_financial_transactions": "ledger",
     "get_financial_coverage": "ledger",
-    "get_casework": "casework", "get_dossier": "casework",
+    "get_casework": "casework", "get_dossier": "casework", "list_dossiers": "casework", "get_theory": "casework",
+    "get_reports": "casework", "get_interviews": "casework", "get_transcript": "evidence",
+    "get_evidence_files": "evidence", "get_significant_layer": "significant",
     # agent-phones cross tools (phone_cross_tools.TOOLS): phones read as the screens read them, joined to money.
     "search_case": "case_search", "get_person_phones": "phones", "get_day_activity": "phones",
     "get_together_apart": "phones", "get_routine_deviations": "phones", "get_phone_map_summary": "phones",
@@ -73,6 +75,8 @@ CATEGORY_LABELS = {
     "map": "Map locations",
     "casework": "Casework notes, findings and dossiers",
     "case_search": "Case-wide search (every kind of record)",
+    "evidence": "Evidence files, their processing and transcripts",
+    "significant": "The Significant layer",
 }
 
 

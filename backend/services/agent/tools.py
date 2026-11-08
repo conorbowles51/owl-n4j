@@ -228,7 +228,9 @@ class TradesArgs(BaseModel):
 
 
 class DecisionsArgs(BaseModel):
-    subject: str = Field(..., description="payment:<id>, statement:<source_document_id>, period:<id> or account:<id>.")
+    subject: str | None = Field(None, description="payment:<id>, statement:<source_document_id>, period:<id> or "
+                                "account:<id>; omit for every decision of the case, with counts by decision and by "
+                                "who decided.")
     offset: int = Field(0, ge=0)
     limit: int = Field(25, ge=1, le=100)
 
@@ -547,12 +549,77 @@ class CaseworkArgs(BaseModel):
     kinds: list[Literal["note", "finding", "theory"]] = Field(default_factory=list, description=(
         "Which casework entries; empty for notes, findings and theories."))
     search: str | None = Field(None, description="Words the title or body must contain.")
+    tag: str | None = Field(None, description=(
+        "Only entries carrying this tag. Financial casework is tagged: financial-observation (an observation), "
+        "financial-entry-finding (a financial finding), financial-question (a question), financial-open or "
+        "financial-complete (its state), financial-report (a saved report)."))
     offset: int = Field(0, ge=0)
     limit: int = Field(20, ge=1, le=50)
 
 
 class DossierArgs(BaseModel):
     dossier: str = Field(..., description="A dossier id, or the name of the person or subject it is about.")
+
+
+class EvidenceFilesArgs(BaseModel):
+    state: Literal["unprocessed", "processing", "processed", "failed"] | None = Field(None, description=(
+        "Only files in this processing state; omit for every file. Counts by state always cover every file."))
+    name: str | None = Field(None, description="Part of the file name.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(20, ge=1, le=50)
+
+
+class InterviewsArgs(BaseModel):
+    dossier: str | None = Field(None, description="A dossier id or name; omit for every interview in the case.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(20, ge=1, le=50)
+
+
+class TranscriptArgs(BaseModel):
+    evidence: str = Field(..., description="The recording's evidence_file_id (or its exact file name).")
+    offset: int = Field(0, ge=0, description="Character offset, from next_offset.")
+
+
+class ListDossiersArgs(BaseModel):
+    search: str | None = Field(None, description="Words the dossier's name or summary must contain.")
+    include_archived: bool = False
+    offset: int = Field(0, ge=0)
+    limit: int = Field(20, ge=1, le=50)
+
+
+class TheoryArgs(BaseModel):
+    theory: str = Field(..., description="The theory's id, or words of its title.")
+
+
+class SignificantLayerArgs(BaseModel):
+    search: str | None = Field(None, description="Part of an item's name.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(50, ge=1, le=50)
+
+
+class ReportsArgs(BaseModel):
+    offset: int = Field(0, ge=0)
+    limit: int = Field(20, ge=1, le=50)
+
+
+def _lookup_entity_names_and_kinds(case_id: str, keys: list[str]) -> dict[str, dict[str, Any]]:
+    """key -> {name, type} for graph entities of this case (read-only session)."""
+    clean_keys = [key for key in dict.fromkeys(keys) if key]
+    if not clean_keys:
+        return {}
+    with driver.session(default_access_mode=READ_ACCESS) as session:
+        rows = session.run(
+            """
+            MATCH (n)
+            WHERE n.case_id = $case_id AND n.key IN $keys
+            RETURN n.key AS key,
+                   coalesce(n.name, properties(n)['display_name'], properties(n)['full_name'], properties(n)['title'], n.key) AS name,
+                   [l IN labels(n) WHERE l <> 'Entity'][0] AS type
+            """,
+            case_id=case_id,
+            keys=clean_keys,
+        )
+        return {str(row["key"]): {"name": str(row["name"]), "type": row["type"]} for row in rows if row.get("key")}
 
 
 def _artifact(artifact_type: str, title: str, data: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -2347,6 +2414,31 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         summary = " ".join(x for x in (data.get("coverage"), data.get("limitation")) if x)
         return context.result(tool_name, data, summary=summary or "Read the casework.")
 
+    def read_case_material(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
+        """Evidence files, interviews and transcripts, dossiers, theories, the Significant layer and reports
+        (services.agent.case_material_tools). The case id is the run's; the session is read-only."""
+        if context.significant_scope and func_name != "significant_layer":
+            return scope_error(tool_name, "Reading this case material")
+        from services.agent import case_material_tools as CM
+        if func_name == "significant_layer":
+            kwargs["names"] = lambda keys: _lookup_entity_names_and_kinds(context.case_id, keys)
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                data = getattr(CM, func_name)(db, uuid.UUID(context.case_id), **kwargs)
+        except ValueError as exc:
+            return context.result(tool_name, {"available": False, "reason": str(exc)},
+                summary=str(exc), status="error", error=str(exc))
+        except Exception:
+            logger.exception("Agent case material read %s failed for case %s", func_name, context.case_id)
+            return context.result(tool_name, {"available": False,
+                "reason": "This could not be read just now. Retry; nothing partial was returned."},
+                summary="This could not be read; no partial result was returned.", status="error",
+                error="The case material could not be read.")
+        if data.get("available") is False:
+            return context.result(tool_name, data, summary=str(data.get("reason")))
+        summary = " ".join(str(x) for x in (data.get("coverage"), data.get("limitation")) if x)
+        return context.result(tool_name, data, summary=summary or "Read the case material.")
+
     def read_tool_result_page(result_id: str, path: list[str | int], offset: int) -> dict[str, Any]:
         from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model
         view = context.model_views.get(result_id)
@@ -2993,7 +3085,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             lambda **kw: read_ledger_extra("get_decisions", "get_decisions", **kw),
             name="get_decisions",
             description=("The recorded decisions on one payment, statement, period or account, oldest first: what "
-                "changed, the reason, who decided and, when a model drafted it, the model (made_by.kind = model)."),
+                "changed, the reason, who decided and, when a model drafted it, the model (made_by.kind = model). "
+                "Without a subject: every decision of the case, newest first, with counts by decision, by who decided "
+                "and how many a model drafted."),
             args_schema=DecisionsArgs,
         ),
         wrap(
@@ -3204,5 +3298,62 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "doc:// for files). A link with link_state collected something that was corrected or read differently "
                 "since: say so when citing it. Says 'Not in this case' when no dossier in this case matches."),
             args_schema=DossierArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_case_material("list_dossiers", "list_dossiers", **kw),
+            name="list_dossiers",
+            description=("List this case's dossiers (people and organisations), each with how many links, "
+                "assessments and interviews it holds and its page link (href). Read one with get_dossier."),
+            args_schema=ListDossiersArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_case_material("get_evidence_files", "evidence_files", **kw),
+            name="get_evidence_files",
+            description=("The case's evidence files and their processing state: counts of files processed, waiting, "
+                "being processed and failed (as the Evidence page lists them, and how many more phone conversation "
+                "documents there are), then a page of files, failed first, each with its failure in words and its "
+                "doc:// link. Filter by state or part of the name. Use this for any question about which files are in "
+                "the case or whether a file was processed; search_documents reads their text."),
+            args_schema=EvidenceFilesArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_case_material("get_interviews", "interviews", **kw),
+            name="get_interviews",
+            description=("Interviews recorded on the case's dossiers (who took part, when, state, notes and the "
+                "files attached, each with its doc:// link and dossier page link), and the recordings of the case "
+                "that have a transcript, with whether a person reviewed it. Read a transcript with get_transcript."),
+            args_schema=InterviewsArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_case_material("get_transcript", "transcript", **kw),
+            name="get_transcript",
+            description=("One recording's transcript text, paged by characters, with whether it is the machine "
+                "transcript or reviewed or published by a person. Cite it by its doc:// link."),
+            args_schema=TranscriptArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_case_material("get_theory", "theory", **kw),
+            name="get_theory",
+            description=("One theory read whole (by id or title words): its statement, every addition oldest first "
+                "(records, selections, quotes, agent answers) with who added it and why, its relationship (supports, "
+                "contradicts, context), up to 25 members of each with their facts, and every narrative, a model's "
+                "labelled as a model reading with whether a person confirmed it. List theories with get_casework "
+                "kinds [theory]. Cite the theory by its href."),
+            args_schema=TheoryArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_case_material("get_significant_layer", "significant_layer", **kw),
+            name="get_significant_layer",
+            description=("What is in this case's Significant layer: every item with its name and kind from the graph, "
+                "how it was added (by a person, from a merge, from the agent), by whom and when, with counts by kind. "
+                "Use this for 'what is significant' or 'is X in the Significant layer'."),
+            args_schema=SignificantLayerArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_case_material("get_reports", "reports", **kw),
+            name="get_reports",
+            description=("The case's saved financial reports (newest first, each with its text and page link) and "
+                "what the casework report would hold, section by section, if it were exported now."),
+            args_schema=ReportsArgs,
         ),
     ] + _proposal_tools(context) + _cross_case_tools(context) + _match_tools(context)

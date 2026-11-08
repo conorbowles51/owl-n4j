@@ -143,7 +143,7 @@ def _phone_link_count(links: list[dict]) -> int:
     return sum(1 for l in links if str(l["target_type"]).startswith("phone_") or l["target_type"] == "statement_check")
 
 
-def casework(db, case_id, *, kinds=(), search=None, offset=0, limit=20) -> dict[str, Any]:
+def casework(db, case_id, *, kinds=(), search=None, tag=None, offset=0, limit=20) -> dict[str, Any]:
     """Notes, findings and theories, newest first, each with its links cited."""
     from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
     from services.phone import link_states
@@ -154,6 +154,10 @@ def casework(db, case_id, *, kinds=(), search=None, offset=0, limit=20) -> dict[
     if search and search.strip():
         pattern = "%%%s%%" % search.strip()
         cond.append(or_(WorkspaceEntry.title.ilike(pattern), WorkspaceEntry.body.ilike(pattern)))
+    if tag and tag.strip():
+        t = tag.strip()
+        cond.append(WorkspaceEntry.tags.contains([t]) if db.get_bind().dialect.name == "postgresql"
+                    else WorkspaceEntry.tags.like('%%"%s"%%' % t))
     from sqlalchemy import func
     total = int(db.scalar(select(func.count()).select_from(WorkspaceEntry).where(*cond)) or 0)
     offset, limit = max(0, int(offset or 0)), max(1, min(int(limit or 20), 50))
@@ -169,6 +173,7 @@ def casework(db, case_id, *, kinds=(), search=None, offset=0, limit=20) -> dict[
                       "significance": e.significance, "confidence": e.confidence, "state": e.lifecycle_state,
                       "review_state": e.review_state, "author": e.author_name or e.author_email,
                       "updated_at": e.updated_at.isoformat() if e.updated_at else None,
+                      "href": "/cases/%s/workspace?view=casework&kind=%s&entry=%s" % (case_id, e.entry_type, e.id),
                       "links": out_links, "phone_links": _phone_link_count(out_links)})
     collecting = [l for e in entries for l in link_states.entry_links(conn, case_id, e.id)]
     found = link_states.for_readers(conn, case_id, collecting)
@@ -176,8 +181,9 @@ def casework(db, case_id, *, kinds=(), search=None, offset=0, limit=20) -> dict[
     nxt = offset + len(items) if offset + len(items) < total else None
     return {"schema": _schema("casework"), "case_id": str(case_id), "available": True, "total_matching": total,
             "returned": len(items), "has_more": nxt is not None, "next_offset": nxt, "items": items,
-            "coverage": "Read %d of %d casework entries%s." % (
-                len(items), total, " (%s)" % ", ".join(kinds) if kinds else ""),
+            "coverage": "Read %d of %d casework entries%s%s." % (
+                len(items), total, " (%s)" % ", ".join(kinds) if kinds else "",
+                " tagged %s" % tag.strip() if tag and tag.strip() else ""),
             "limitation": ("Only %d of %d are in this result; read on with offset %d." % (len(items), total, nxt))
             if nxt is not None else None, "link_states": _link_state_note(marked)}
 

@@ -62,6 +62,21 @@ def list_agent_workflows(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+_BOUND_TOOLS: list[str] = []
+
+
+@router.get("/capabilities")
+def list_agent_capabilities(current_user: User = Depends(get_current_db_user)):
+    """What the case agent can work with, in plain words: each kind of case material, what it covers and example
+    questions (services.agent.capabilities, the registry the coverage check uses). Kinds whose tools are not bound
+    on this server are left out."""
+    from services.agent.capabilities import capabilities
+    from services.agent.tools import AgentToolContext, make_agent_tools
+    if not _BOUND_TOOLS:
+        _BOUND_TOOLS.extend(t.name for t in make_agent_tools(AgentToolContext(case_id="00000000-0000-0000-0000-000000000000")))
+    return capabilities(_BOUND_TOOLS)
+
+
 @router.get("/threads/{thread_id}", response_model=AgentThreadDetail)
 def get_agent_thread(
     thread_id: UUID,

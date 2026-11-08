@@ -289,7 +289,53 @@ def _made_by(origin, actor_name):
     return dict(kind="person", model=None, for_person=actor_name, label="Decided by %s" % actor_name)
 
 
-def get_decisions(session, *, case_id, subject, offset=0, limit=25):
+DECISION_SUBJECT_WORDS = {"transaction": "payment", "source_document": "statement", "statement_period": "period",
+                          "account": "account"}
+
+
+def _case_decisions(session, case_id, offset, limit):
+    """Every recorded decision of the case, newest first, with counts by decision, by who decided and by whether a
+    model drafted it (lx-agentlive: "how many decisions, and by whom" had no answer without naming one record)."""
+    from sqlalchemy import func, select
+    from postgres.models.financial import AdjudicationEvent
+    cond = [AdjudicationEvent.case_id == case_id]
+    total = int(session.scalar(select(func.count()).select_from(AdjudicationEvent).where(*cond)) or 0)
+    by_decision = {d: int(n) for d, n in session.execute(select(AdjudicationEvent.decision, func.count()).where(
+        *cond).group_by(AdjudicationEvent.decision).order_by(func.count().desc()))}
+    by_subject = {DECISION_SUBJECT_WORDS.get(t, t): int(n) for t, n in session.execute(select(
+        AdjudicationEvent.subject_type, func.count()).where(*cond).group_by(AdjudicationEvent.subject_type))}
+    who: dict[str, dict] = {}
+    model_drafted = 0
+    for actor, origin in session.execute(select(AdjudicationEvent.actor_name, AdjudicationEvent.actor_origin)
+                                         .where(*cond)):
+        made = _made_by(origin, actor)
+        model_drafted += made["kind"] == "model"
+        label = made["label"]
+        who.setdefault(label, {"made_by": label, "kind": made["kind"], "decisions": 0})["decisions"] += 1
+    events = session.scalars(select(AdjudicationEvent).where(*cond).order_by(
+        AdjudicationEvent.created_at.desc(), AdjudicationEvent.id).offset(offset).limit(limit)).all()
+    items = []
+    for e in events:
+        kind = DECISION_SUBJECT_WORDS.get(e.subject_type, e.subject_type)
+        href = payment_href(case_id, e.subject_id) if kind == "payment" else (
+            accounts_href(case_id) if kind == "account" else judgements_href(case_id))
+        items.append(dict(id=str(e.id), decision=e.decision, reason=e.reason, reason_kind=e.reason_kind,
+                          subject="%s:%s" % (kind, e.subject_id), actor=e.actor_name,
+                          made_by=_made_by(e.actor_origin, e.actor_name),
+                          recorded_at=e.created_at.isoformat() if e.created_at else None,
+                          citation=dict(href=href, subject="%s:%s" % (kind, e.subject_id))))
+    nxt = offset + len(items) if offset + len(items) < total else None
+    return dict(schema=DECISION_SCHEMA, case_id=str(case_id), available=True, reason=None, scope="whole case",
+                revision=_revision([total, by_decision, [i["id"] for i in items]]), total=total,
+                returned=len(items), offset=offset, has_more=nxt is not None, next_offset=nxt, items=items,
+                counts_by_decision=by_decision, counts_by_subject=by_subject,
+                counts_by_who=sorted(who.values(), key=lambda w: -w["decisions"]), model_drafted=model_drafted,
+                person_decided=total - model_drafted,
+                note="Counts cover every decision of the case; items are the newest, paged. A decision drafted by "
+                     "a model (made_by.kind model) is not a person's own decision.")
+
+
+def get_decisions(session, *, case_id, subject=None, offset=0, limit=25):
     """The recorded decisions (adjudications) on one subject, oldest first, each with who made it and, when a
     model drafted it, the model origin (``actor_origin``)."""
     from sqlalchemy import select
@@ -298,7 +344,7 @@ def get_decisions(session, *, case_id, subject, offset=0, limit=25):
     offset, limit = _page(offset, limit)
     kind, ident = _subject(subject)
     if kind is None:
-        raise LedgerReadingError("Name the subject as payment:<id>, statement:<id>, period:<id> or account:<id>.")
+        return _case_decisions(session, case_id, offset, limit)
     if not _in_case(session, case_id, kind, ident):
         return _unavailable(DECISION_SCHEMA, case_id, NOT_IN_CASE)
     subjects = correction_chain(session, case_id, ident) if kind == "payment" else [ident]
