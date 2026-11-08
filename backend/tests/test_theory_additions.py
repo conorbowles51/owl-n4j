@@ -332,3 +332,25 @@ class TheoryAdditionTests(DuplicateTestCase):
         self.assertEqual(case_selections.iso_day("14/06/2022"), "2022-06-14")
         self.assertEqual(case_selections.iso_day("2022-06-14T10:00"), "2022-06-14")
         self.assertIsNone(case_selections.iso_day("June 2022"))
+
+    def test_the_agent_proposes_an_addition_and_a_person_accepts_it_labelled_as_the_models(self):
+        from postgres.models.workspace_ai import WorkspaceAIOutput
+        from services.agent import workspace_proposals as W
+        from services.agent.proposals import agent_origin
+        tables = [WorkspaceAIOutput.__table__]
+        try:
+            from postgres.models.case_context import CaseContext, CaseMandateVersion
+            tables[:0] = [CaseMandateVersion.__table__, CaseContext.__table__]
+        except ImportError:
+            pass
+        Base.metadata.create_all(self.engine, tables=tables + [t for t in Base.metadata.sorted_tables
+                                                               if t.name in ("agent_proposal_source_opens",)])
+        origin = agent_origin(for_name=self.user.name, for_user_id=self.user.id, model="gpt-test")
+        proposal = W.propose_link(self.db, case_id=self.case.id, entry_id=self.theory["id"], target_type="evidence",
+                                  target_id=str(self.evidence_id), relationship="supports",
+                                  why="the statement shows the January payments", citations=[f"txn://{self.rows[0].id}"], origin=origin)
+        self.assertEqual(self.reading()["additions"], [])  # nothing is added before a person accepts
+        W.accept(self.db, case_id=self.case.id, output_id=proposal["id"], reviewer=self.user)
+        row = self.reading()["additions"][0]
+        self.assertEqual((row["origin"], row["model"], row["accepted_by"], row["why"]),
+                         ("agent", "gpt-test", "Investigator", "the statement shows the January payments"))
