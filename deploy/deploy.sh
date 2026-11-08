@@ -15,7 +15,7 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-step()    { echo -e "\n${BLUE}[STEP]${NC} $(date -u +%T) ${BOLD}$1${NC}"; }
+step()    { DEPLOY_STEP="$1"; echo -e "\n${BLUE}[STEP]${NC} $(date -u +%T) ${BOLD}$1${NC}"; }
 success() { echo -e "  ${GREEN}[  OK]${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}[WARN]${NC} $1"; }
 fail()    { echo -e "  ${RED}[FAIL]${NC} $1"; }
@@ -101,7 +101,14 @@ fi
 exec 8>&1
 exec > >(tee -a "${LOG_FILE}") 2>&1
 TEE_PID=$!
-DEPLOY_OUTCOME="failed before completion (see the last [FAIL] above)"
+DEPLOY_OUTCOME_DEFAULT="failed before completion (see the last [FAIL] above)"
+DEPLOY_OUTCOME="${DEPLOY_OUTCOME_DEFAULT}"
+DEPLOY_STEP="start"
+DEPLOY_FAILED_AT=""
+# The last command that failed in the script or its functions, with the step it was in. Conditions, || and && lists
+# do not reach the trap, so only a failure that can stop the release is recorded.
+set -E
+trap 'DEPLOY_FAILED_AT="step \"${DEPLOY_STEP}\", line ${LINENO}: ${BASH_COMMAND:0:200} (exit $?)"' ERR
 
 echo ""
 echo -e "${BOLD}============================================${NC}"
@@ -195,7 +202,12 @@ release_work_resume() {
 }
 on_deploy_exit() {
     local rc=$?
-    trap - EXIT TERM INT HUP
+    trap - EXIT TERM INT HUP ERR
+    # A command that stopped the release under set -e without its own [FAIL] line is named in the summary, which
+    # deploy-now.sh copies into its log (8 Nov: two releases ended "exit 1" with no reason anywhere).
+    if [ "${rc}" -ne 0 ] && [ "${DEPLOY_OUTCOME}" = "${DEPLOY_OUTCOME_DEFAULT}" ] && [ -n "${DEPLOY_FAILED_AT:-}" ]; then
+        DEPLOY_OUTCOME="failed in ${DEPLOY_FAILED_AT}"
+    fi
     # A release that ends between starting the next backend and stopping the old one leaves the old one serving.
     backend_handover_abort_open || true
     backend_tree_settle || true

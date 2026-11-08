@@ -758,3 +758,10 @@ def test_every_step_of_a_release_has_its_time(release_sandbox):
     assert result.returncode == 0, result.stdout + result.stderr
     steps = [line for line in result.stdout.splitlines() if '[STEP]' in line]
     assert steps and all(re.search(r'\d\d:\d\d:\d\d', line) for line in steps)
+
+
+def test_a_release_stopped_by_a_failing_command_names_its_step_and_command():
+    result = subprocess.run(['bash', str(DEPLOY / 'tests/test-deploy-failure-named.sh')],
+        capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'PASS deploy failure named' in result.stdout
