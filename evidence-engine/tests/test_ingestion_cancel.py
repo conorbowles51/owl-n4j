@@ -58,7 +58,7 @@ async def world(monkeypatch, tmp_path):
 async def make(world, statuses, *, job_type="ingestion", batched=True, **values):
     case, batch = str(uuid4()), uuid4()
     rows = [Job(id=uuid4(), case_id=case, batch_id=batch if batched else None, job_type=job_type, status=status,
-                file_name=f"file-{n}.txt", **values) for n, status in enumerate(statuses)]
+                **{"file_name": f"file-{n}.txt", **values}) for n, status in enumerate(statuses)]
     async with world.session() as db:
         db.add_all(rows)
         await db.commit()
