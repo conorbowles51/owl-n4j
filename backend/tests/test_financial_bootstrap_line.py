@@ -60,6 +60,7 @@ NOT_ON_LINE = {
     "langchain-google-genai": "loaded only when a Gemini agent model is chosen; ImportError is a named ValueError",
     "redis": "opened only when the job-status subscriber or evidence websocket connects to a Redis server",
     "reverse-geocoder": "the geocoder factory catches ImportError and turns the offline backend off",
+    "markdown-it-py": "markdown readers (routers/backfill.py, utils/text_extraction.py) fall back to regex stripping on ImportError",
 }
 # A function-body import (indented), the only kind importing the module does not reach.
 LAZY_IMPORT = re.compile(r"^[ \t]+(?:from[ \t]+([A-Za-z_][A-Za-z0-9_]*)[.A-Za-z0-9_]*[ \t]+import|"
