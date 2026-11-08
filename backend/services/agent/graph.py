@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import operator
+import logging
 import re
 import time
 import uuid
@@ -26,6 +27,9 @@ from services.agent.model_payloads import (
 )
 from services.agent.run_record import call_facts
 from services.agent.tools import AgentToolContext, make_agent_tools
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRunCancelled(Exception):
@@ -218,6 +222,9 @@ def _final_answer_system_prompt(rules: str = "") -> str:
 
 _FINAL_ANSWER_SYSTEM_PROMPT = (
     "Write the final answer from the completed tool results. "
+    "Write for an investigator in plain words: never a proof-class code (P0 to P4; say 'checked against the "
+    "statement's printed balances' or 'not yet confirmed by a person' instead), a field or tool name, or money in "
+    "minor units (write 12,345.67 MXN). "
     "Be concise, do not call tools, and mention any artifacts created. "
     "Do not expose internal tool names, tool-call syntax, Cypher implementation details, or messages like "
     "'I will run a query'. "
@@ -247,6 +254,54 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "faint rather than dropping them, give the count per strength and what the search bound left out, and never "
     "call one a link, a confirmed name or corroboration, or add one into a total."
 )
+
+
+# Internal vocabulary a person reading the answer cannot use: proof-class codes, field or tool names, money in minor
+# units. The finalizer's prompt forbids them, and a model still copies them from tool results (live 8 Nov 2026, run
+# 8df85211: "proof_class p3", "proof_class_not_included: 27673", "get_financial_coverage(...)", "Credits (minor)").
+_JARGON_PATTERNS = (
+    re.compile(r"(?<![\w/.#-])[Pp][0-4](?:\s*[\u2013-]\s*[Pp]?[0-4])?(?!\w|\.\w)"),  # p3, P0-P4, p0–p2
+    re.compile(r"proof[_ ]class", re.I),
+    re.compile(r"`[a-z][a-z0-9]*(?:_[a-z0-9]+)+`"),  # `field_name`
+    re.compile(r"(?<![\w/.-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+\s*(?:\(|=|:\s*\d)"),  # tool(...), field=..., field: 12
+    re.compile(r"\(minor\)|\bminor units?\b", re.I),
+    re.compile(r"(?<![\w/?&.-])[a-z][a-z_]*=[\w\"']"),  # population=verified
+)
+
+_PLAIN_WORDS_REQUEST = (
+    "Rewrite this answer for an investigator in plain words. Replace proof-class codes (P0 to P4) with what they mean: "
+    "P0 to P2 'checked against the statement's own totals or balances', P3 'not checked against printed balances, or "
+    "not yet confirmed by a person', P4 'a claim in a letter, message or interview, never counted as money'. Remove "
+    "every tool name, field name and code in backticks; say what was looked at instead. Write money in the currency's "
+    "own units (12,345.67 MXN), never in minor units. Keep every fact, figure, caveat, table, heading and Markdown "
+    "link (txn://, doc://, rec://) exactly. Reply with the rewritten answer only."
+)
+
+
+_LINK_TARGET = re.compile(r"\]\(([^)]*)\)")
+
+
+def _has_jargon(text: str) -> bool:
+    # Link targets carry ids and file names, not words a person reads.
+    readable = re.sub(r"\]\([^)]*\)", "]", text or "")
+    return any(pattern.search(readable) for pattern in _JARGON_PATTERNS)
+
+
+def _in_plain_words(model: Any, response: AnyMessage) -> tuple[list[AnyMessage], str]:
+    """The finalizer's reply, and one rewrite of it when it still speaks in internal codes or field names."""
+    text = message_content_to_text(response.content)
+    if not _has_jargon(text):
+        return [response], text
+    try:
+        rewrite = model.invoke([SystemMessage(content=_PLAIN_WORDS_REQUEST), HumanMessage(content=text)])
+    except Exception:  # noqa: BLE001 - the unrewritten answer is still the answer; never lose it to a failed rewrite
+        logger.warning("Plain-words rewrite of the final answer failed; the answer is kept as written", exc_info=True)
+        return [response], text
+    plain = message_content_to_text(rewrite.content).strip()
+    # A rewrite that drops or changes a citation is not the same answer: keep the original.
+    if not plain or not set(_LINK_TARGET.findall(text)) <= set(_LINK_TARGET.findall(plain)):
+        return [response, rewrite], text
+    return [response, rewrite], plain
 
 
 def _looks_like_tool_planning_text(text: str) -> bool:
@@ -867,7 +922,8 @@ class AgentGraphRunner:
                     HumanMessage(content=_FINAL_ANSWER_REQUEST),
                 ]
             )
-            return {"messages": [response], "final_answer": link_document_citations(message_content_to_text(response.content))}
+            replies, text = _in_plain_words(self.base_model, response)
+            return {"messages": replies, "final_answer": link_document_citations(text)}
 
         workflow = StateGraph(AgentState)
         workflow.add_node("agent", agent_node)
@@ -1075,7 +1131,8 @@ class AgentGraphRunner:
                     HumanMessage(content=_FINAL_ANSWER_REQUEST),
                 ]
             )
-            return {"messages": [response], "final_answer": link_document_citations(message_content_to_text(response.content))}
+            replies, text = _in_plain_words(self.base_model, response)
+            return {"messages": replies, "final_answer": link_document_citations(text)}
 
         workflow = StateGraph(AgentState)
         workflow.add_node("agent", agent_node)
