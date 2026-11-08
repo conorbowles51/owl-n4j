@@ -84,6 +84,34 @@ class ReaderReleaseTests(TestCase):
         with self.f.SessionLocal() as db:
             return deepcopy(batches.batch_for(db, self.f.case.id, batch).files)
 
+    def test_a_write_waits_out_a_starved_lock_holder_instead_of_failing(self):
+        """Under suite load a lock-holding thread is starved past pysqlite's 5 s default; writers must wait."""
+        import sqlite3
+        import threading
+        import time
+        path = Path(self.f._directory) / 'ledger.db'
+        holding = threading.Event()
+
+        def hold():
+            connection = sqlite3.connect(path)
+            connection.execute('BEGIN IMMEDIATE')
+            holding.set()
+            time.sleep(12)  # well past the 5 s that failed release() on head 564db2da
+            connection.rollback()
+            connection.close()
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        self.assertTrue(holding.wait(30))
+        try:
+            with self.f.SessionLocal() as db:
+                batch = batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
+                                             file_ids=[self.f.file.id], folder_ids=[], actor=self.f.actor)
+                db.commit()
+            self.assertIsNotNone(batch)
+        finally:
+            holder.join()
+
     def test_a_statement_waiting_for_a_reader_fix_becomes_ready_after_the_release_with_no_click(self):
         batch = self.prepare_with_old_reader()
         self.assertEqual(self.item(batch).status, 'attention')

@@ -409,6 +409,10 @@ class TransactionPersistenceTestCase(unittest.TestCase):
         self.engine = create_engine(
             f"sqlite+pysqlite:///{Path(self._directory) / 'ledger.db'}",
             future=True,
+            # The batch loop writes from worker threads (asyncio.to_thread), so connections contend. Under suite
+            # load a lock-holding thread can be starved far past pysqlite's 5 s default, which surfaced as
+            # "database is locked" in import_batches.release() (head 564db2da at load 76-125). A writer waits.
+            connect_args={"timeout": 600.0},
         )
 
         @event.listens_for(self.engine, "connect")
