@@ -322,10 +322,13 @@ export function PatternCard({
   scope,
   hypothesis: h,
   onSource,
+  allSources,
 }: {
   scope: PatternReview
   hypothesis: PatternReview["hypotheses"][number] & { sources_total?: number }
   onSource: (id: string) => void
+  /** Every payment of a group larger than the sources shown, in order; the whole-case screen pages them from the stored run. */
+  allSources?: () => Promise<PatternReview["hypotheses"][number]["sources"]>
 }) {
   const payments = h.sources_total ?? h.sources.length
   const [title, setTitle] = useFinancialDraft(
@@ -339,12 +342,26 @@ export function PatternCard({
       ""
     ),
     [validation, setValidation] = useState("")
+  const [collecting, setCollecting] = useState(false)
   const { canEdit } = useFinancialAccess()
   const save = useCreateCaseworkEntry(scope.case_id)
-  const submit = () => {
+  const submit = async () => {
     try {
-      const input = patternTheory(scope, h, title, reason)
       setValidation("")
+      let chosen = h
+      let bound = scope
+      if (payments > h.sources.length) {
+        if (!allSources) throw Error("Every payment of this group is needed to save it; open it from the whole-case screen.")
+        setCollecting(true)
+        try {
+          const sources = await allSources()
+          chosen = { ...h, sources }
+          bound = { ...scope, hypotheses: [chosen] }
+        } finally {
+          setCollecting(false)
+        }
+      }
+      const input = patternTheory(bound, chosen, title, reason)
       save.mutate(input)
     } catch (error) {
       setValidation(
@@ -446,14 +463,17 @@ export function PatternCard({
               disabled={
                 !title.trim() ||
                 !reason.trim() ||
+                collecting ||
                 h.sources.some((s) => !s.source.evidence_file_id) ||
-                payments > h.sources.length
+                (payments > h.sources.length && !allSources)
               }
-              onClick={submit}
+              onClick={() => void submit()}
             >
-              {save.isPending
-                ? "Saving…"
-                : "Save explanation and supporting payments"}
+              {collecting
+                ? `Collecting ${payments.toLocaleString("en-US")} payments…`
+                : save.isPending
+                  ? "Saving…"
+                  : "Save explanation and supporting payments"}
             </Button>
           </fieldset>
         ))}

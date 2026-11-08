@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { correctionMoney } from "../lib/correction-contract"
 import type { PatternReview } from "../lib/pattern-review"
-import { useWholeCasePage, useWholeCaseRun, type WholeCaseRequest } from "../lib/whole-case-run"
+import { readWholeCasePage, useWholeCasePage, useWholeCaseRun, type WholeCaseRequest } from "../lib/whole-case-run"
 import { Disclosure } from "./Disclosure"
 import { PatternCard } from "./FinancialPatternReview"
 import { WholeCasePager, WholeCaseProgress } from "./WholeCaseProgress"
@@ -84,6 +84,25 @@ export function WholeCasePatterns({
             scope={{ ...summary, hypotheses: [h], date_unavailable_ids: [] }}
             hypothesis={h}
             onSource={onSource}
+            allSources={
+              h.sources_total > h.sources.length
+                ? async () => {
+                    const sources: Hypothesis["sources"] = []
+                    while (sources.length < h.sources_total) {
+                      const slice = await readWholeCasePage<Hypothesis["sources"][number]>(
+                        caseId,
+                        run.id,
+                        "sources",
+                        h.sources_start + sources.length,
+                        200
+                      )
+                      if (!slice.items.length) throw Error("The stored group could not be read whole; run the check again.")
+                      sources.push(...slice.items)
+                    }
+                    return sources
+                  }
+                : undefined
+            }
           />
           {h.sources_total > h.sources.length && (
             <GroupPayments caseId={caseId} run={run} hypothesis={h} onSource={onSource} />
@@ -111,8 +130,8 @@ function GroupPayments({
   return (
     <Disclosure label={<>All {n(h.sources_total)} payments in this group</>}>
       <p className="text-sm">
-        The first {n(h.sources.length)} are above. A saved explanation cites up to {n(h.sources.length)} payments, so
-        narrow the dates to save this group; every payment can be opened here.
+        The first {n(h.sources.length)} are above. Saving this explanation cites all {n(h.sources_total)} payments;
+        every payment can be opened here.
       </p>
       {page.data?.items.map((s, i) => (
         <div key={s.row.key}>

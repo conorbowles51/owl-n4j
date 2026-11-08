@@ -193,6 +193,12 @@ export function wholeCaseFileUrl(caseId: string, id: string, name: string) {
   return runUrl(id, caseId, `/files/${encodeURIComponent(name)}`)
 }
 
+/** One stored page, read outside a hook (collecting a whole group for a save, page by page). */
+export function readWholeCasePage<Item>(caseId: string, runId: string, section: string, offset: number, limit: number) {
+  const query = new URLSearchParams({ offset: String(offset), limit: String(limit) })
+  return fetchAPI<WholeCasePage<Item>>(`${runUrl(runId, caseId, `/pages/${encodeURIComponent(section)}`)}&${query}`)
+}
+
 /** A stored comparison's scenario report: its bytes match its digest and it records exactly what was asked. */
 export type WholeCaseScenarioFigure = {
   currency: string

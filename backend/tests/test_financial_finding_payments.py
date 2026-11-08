@@ -159,3 +159,23 @@ class FindingPaymentTests(DuplicateTestCase):
         self.assertEqual(added["source_anchor"]["financial_transaction_ids"], [str(self.rows[1].id)])
         self.assertEqual(added["source_anchor"]["cite"], f"txn://{self.rows[1].id}")
         self.assertEqual(added["metadata"]["transactions"][0]["key"], str(self.rows[1].id))
+
+    def test_an_explanation_above_fifty_payments_saves_and_reloads_complete(self):
+        """A screening explanation of any size saves whole: every cited payment id and snapshot comes back."""
+        from uuid import uuid4
+        ids = [str(uuid4()) for _ in range(203)]
+        snapshots = [{"row": {"key": key, "amount_minor": "1", "currency": "USD"}} for key in ids]
+        entry = create_entry(
+            self.db, case_id=self.case.id, current_user=self.user, entry_type="theory",
+            lifecycle_state="proposed", title="Repeated payments: a name seen 203 times",
+            body="Reasoning.\n\nSaved with 203 supporting payments.",
+            tags=["financial", "screening-hypothesis", "repeated_counterparty"],
+            links=[{"target_type": "evidence", "target_id": self.file_id, "relationship": "context",
+                    "source_anchor": {"financial_transaction_ids": ids},
+                    "metadata": {"schema": "loupe.financial.pattern_support/1", "pattern_id": "h",
+                                 "sources": snapshots}}])
+        reloaded = get_entry(self.db, case_id=self.case.id, entry_id=UUID(entry["id"]))
+        link = reloaded["links"][0]
+        self.assertEqual(link["source_anchor"]["financial_transaction_ids"], ids)
+        self.assertEqual(len(link["metadata"]["sources"]), 203)
+        self.assertEqual(link["metadata"]["sources"], snapshots)

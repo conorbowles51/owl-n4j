@@ -118,20 +118,42 @@ it("pages patterns by kind and opens a group above fifty to every payment", asyn
   const source = (n: number) => ({ row: { key: "k" + n, account_label: "A", chronology_date: "2024-01-01", direction: "debit", amount_minor: "1", currency: "USD", description: "d" + n }, source: { evidence_file_id: "f" }, provenance: {} })
   const sources = Array.from({ length: 147 }, (_, i) => source(i))
   const hypothesis = { id: "h", kind: "repeated_counterparty", counterparty_label: "TRUIST MERCH SVC", transaction_ids: sources.map((s) => s.row.key), gap_days: 3, account_id: "a", account_label: "A", currency: "USD", amount_minor: "147", sources: sources.slice(0, 50), sources_total: 147, sources_start: 0, explanation: "E", limitation: "L" }
-  routes(
-    {
-      id: "c".repeat(32), kind: "patterns", status: "completed", phase: "Finished", step: 3, steps: 3, done: 1, total: 1, created_at: "",
-      counts: { hypotheses: 1267 },
-      summary: { case_id: "case", reviewed_rows: 1787, date_unavailable_count: 0, limitation: "L", by_kind: { repeated_counterparty: 123, repeated_equal_amount: 746, equal_amount_in_and_out: 398 } },
-    },
-    { hypotheses: [hypothesis], sources }
-  )
+  const run = {
+    id: "c".repeat(32), kind: "patterns", status: "completed", phase: "Finished", step: 3, steps: 3, done: 1, total: 1, created_at: "",
+    counts: { hypotheses: 1267 },
+    summary: { case_id: "case", reviewed_rows: 1787, date_unavailable_count: 0, limitation: "L", by_kind: { repeated_counterparty: 123, repeated_equal_amount: 746, equal_amount_in_and_out: 398 } },
+  }
+  const pages: Record<string, unknown[]> = { hypotheses: [hypothesis], sources }
+  const saved: { links?: { source_anchor: { financial_transaction_ids: string[] }; metadata: { sources: unknown[] } }[] }[] = []
+  api.fetchAPI.mockImplementation(async (url: string, options?: { method?: string; body?: unknown }) => {
+    if (String(url).includes("/workspace/") && options?.method === "POST") {
+      saved.push(options.body as (typeof saved)[number])
+      return { id: "entry", case_id: "case", title: "T", entry_type: "theory" }
+    }
+    if (options?.method === "POST") return run
+    const section = decodeURIComponent(String(url).match(/pages\/([^?]+)/)?.[1] ?? "")
+    if (!section) return run
+    const offset = Number(new URL(url, "http://x").searchParams.get("offset"))
+    const limit = Number(new URL(url, "http://x").searchParams.get("limit"))
+    const items = pages[section] ?? []
+    return { total: items.length, offset, limit, items: items.slice(offset, offset + limit) }
+  })
   wrap(<WholeCasePatterns caseId="case" request={{ population: "working", window_days: 3 }} onSource={() => undefined} />)
   expect(await screen.findByText(/1,787 payments checked/)).toBeTruthy()
   expect(screen.getByRole("option", { name: "Repeated names (123)" })).toBeTruthy()
   expect(await screen.findByText(/total of these 147 payments/)).toBeTruthy()
-  expect(screen.getByRole("button", { name: /Save explanation/ }).hasAttribute("disabled")).toBe(true)
   expect(await screen.findByRole("button", { name: "Open payment 51" })).toBeTruthy()
+  // A group above fifty saves whole: the explanation cites all 147 payments, collected from the stored run.
+  fireEvent.change(screen.getByLabelText("Theory title h"), { target: { value: "Theory" } })
+  fireEvent.change(screen.getByLabelText("Hypothesis reasoning h"), { target: { value: "Reasoning" } })
+  const save = screen.getByRole("button", { name: /Save explanation/ })
+  expect(save.hasAttribute("disabled")).toBe(false)
+  fireEvent.click(save)
+  await screen.findByText(/Saved in Findings as a proposed explanation/)
+  const cited = saved[0]!.links!.flatMap((l) => l.source_anchor.financial_transaction_ids)
+  expect(cited.length).toBe(147)
+  expect(new Set(cited).size).toBe(147)
+  expect(saved[0]!.links!.flatMap((l) => l.metadata.sources).length).toBe(147)
 })
 
 it("lists every numbered PDF part and the download", async () => {

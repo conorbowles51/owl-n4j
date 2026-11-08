@@ -111,6 +111,11 @@ export const patternReview = lazySchema(() => z
     }
   }))
 export type PatternReview = z.infer<typeof patternReview>
+// The saved links stay under this many bytes; above it every payment is still cited by id, and the snapshots beyond
+// the first of each file are read from the ledger when the entry is opened (stated in the entry's own words).
+export const SAVED_LINK_BYTES = 32 * 1024 * 1024
+const SNAPSHOTS_KEPT = 50
+
 export function patternTheory(
   scope: PatternReview,
   h: PatternReview["hypotheses"][number],
@@ -133,6 +138,33 @@ export function patternTheory(
     const file = source.source.evidence_file_id!
     byFile.set(file, [...(byFile.get(file) ?? []), source])
   }
+  const link = (file: string, sources: typeof h.sources, kept = sources.length) => ({
+    target_type: "evidence",
+    target_id: file,
+    relationship: "context",
+    source_anchor: {
+      financial_transaction_ids: sources.map((s) => s.row.key),
+    },
+    metadata: {
+      schema: "loupe.financial.pattern_support/1",
+      pattern_id: h.id,
+      snapshot_sha256: scope.snapshot_sha256,
+      digest_covers: scope.digest_covers,
+      population: scope.population,
+      window_days: scope.window_days,
+      cross_account: scope.cross_account,
+      transfer_pairs: h.transfer_pairs,
+      threshold_minor: scope.threshold_minor,
+      threshold_currency: scope.threshold_currency,
+      sources: sources.slice(0, kept),
+      ...(kept < sources.length ? { snapshots_omitted: sources.length - kept } : {}),
+    },
+  })
+  let links = [...byFile].map(([file, sources]) => link(file, sources))
+  const bounded =
+    new TextEncoder().encode(JSON.stringify(links)).length > SAVED_LINK_BYTES
+  if (bounded)
+    links = [...byFile].map(([file, sources]) => link(file, sources, SNAPSHOTS_KEPT))
   return {
     entry_type: "theory",
     lifecycle_state: "proposed",
@@ -142,28 +174,13 @@ export function patternTheory(
       h.explanation,
       h.limitation,
       `Saved with ${h.transaction_ids.length} supporting payments. These observations describe the records when this check was run; reopen the payments to inspect later corrections.`,
+      ...(bounded
+        ? [
+            `This selection is larger than the saved-snapshot bound, so the first ${SNAPSHOTS_KEPT} payment snapshots per source file are embedded here. Every one of the ${h.transaction_ids.length} payments is cited by id and opens from the ledger.`,
+          ]
+        : []),
     ].join("\n\n"),
     tags: ["financial", "screening-hypothesis", h.kind],
-    links: [...byFile].map(([file, sources]) => ({
-      target_type: "evidence",
-      target_id: file,
-      relationship: "context",
-      source_anchor: {
-        financial_transaction_ids: sources.map((s) => s.row.key),
-      },
-      metadata: {
-        schema: "loupe.financial.pattern_support/1",
-        pattern_id: h.id,
-        snapshot_sha256: scope.snapshot_sha256,
-        digest_covers: scope.digest_covers,
-        population: scope.population,
-        window_days: scope.window_days,
-        cross_account: scope.cross_account,
-        transfer_pairs: h.transfer_pairs,
-        threshold_minor: scope.threshold_minor,
-        threshold_currency: scope.threshold_currency,
-        sources,
-      },
-    })),
+    links,
   }
 }
