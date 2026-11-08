@@ -101,6 +101,29 @@ def list_tasks(
     )
 
 
+@router.get("/running")
+def list_running_work(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Work running on the server now (processing, exports, statement batches) and what was stopped lately.
+
+    Administrators see every case; anyone else sees the cases they own (services/running_work.py)."""
+    from services import running_work
+    return running_work.list_running(db, get_current_db_user(user, db))
+
+
+@router.post("/running/{kind}/{task_id}/stop")
+async def stop_running_work(kind: str, task_id: str, user: dict = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    """Stop one piece of running work. Administrators: any case; a case's owner: that case."""
+    from fastapi.concurrency import run_in_threadpool
+    from services import running_work
+    db_user = await run_in_threadpool(get_current_db_user, user, db)
+    try:
+        return await running_work.stop(db, db_user, kind, task_id)
+    except running_work.StopRefused as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get("/{task_id}", response_model=TaskResponse)
 def get_task(
     task_id: str,

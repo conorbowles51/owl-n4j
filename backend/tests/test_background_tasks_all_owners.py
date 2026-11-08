@@ -36,7 +36,7 @@ def client_as(monkeypatch):
         app = FastAPI()
         app.include_router(background_tasks.router)
         app.dependency_overrides[auth.get_current_user] = lambda: {"username": user.email, "email": user.email}
-        app.dependency_overrides[get_db] = lambda: None
+        app.dependency_overrides[get_db] = lambda: SimpleNamespace(rollback=lambda: None)
         monkeypatch.setattr(background_tasks, "get_current_db_user", lambda *_: user)
         return TestClient(app), seen
 
@@ -63,3 +63,19 @@ def test_the_default_stays_your_own(client_as):
     client, seen = client_as(GlobalRole.user)
     assert client.get("/api/background-tasks").status_code == 200
     assert seen == ["me@example.test"]
+
+
+def test_running_work_and_its_stop_have_their_own_routes(client_as, monkeypatch):
+    """GET /running is not read as a task id; a refused stop answers with its own status and words."""
+    from services import running_work
+    client, _ = client_as(GlobalRole.user)
+    monkeypatch.setattr(running_work, "list_running", lambda db, user: {"scope": "owned_cases", "tasks": [],
+                                                                          "stopped": []})
+
+    async def refused(db, user, kind, task_id):
+        raise running_work.StopRefused("Only an administrator or this case's owner can stop its work.", 403)
+    monkeypatch.setattr(running_work, "stop", refused)
+    monkeypatch.setattr(background_tasks, "get_current_db_user", lambda *_: SimpleNamespace(id=uuid4()))
+    assert client.get("/api/background-tasks/running").json()["scope"] == "owned_cases"
+    response = client.post(f"/api/background-tasks/running/processing/{uuid4()}/stop")
+    assert response.status_code == 403 and "case's owner" in response.json()["detail"]

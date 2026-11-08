@@ -13,6 +13,37 @@ export interface BackgroundTask {
   error?: string | null
 }
 
+/** services/running_work.py: one piece of work running now. */
+export interface RunningWork {
+  kind: "processing" | "export" | "statement_import"
+  id: string
+  case_id: string
+  case_title?: string | null
+  name: string
+  status: "running"
+  started_at?: string | null
+  started_by?: string | null
+  progress: { total?: number; completed?: number }
+}
+
+/** services/running_work.py: a stop, as answered and as listed afterwards. */
+export interface StoppedWork {
+  kind?: string | null
+  id?: string | null
+  case_id?: string | null
+  name?: string | null
+  status: "stopped"
+  stopped_by?: string | null
+  stopped_at?: string | null
+  summary?: string | null
+}
+
+export interface RunningWorkList {
+  scope: "all" | "owned_cases"
+  tasks: RunningWork[]
+  stopped: StoppedWork[]
+}
+
 /** routers/system_logs.py LogEntry. */
 export interface LogEntry {
   timestamp: string

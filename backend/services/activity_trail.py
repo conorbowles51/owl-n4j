@@ -58,6 +58,7 @@ ACTIONS = {
     'case_export_finished': 'A whole-case export finished',
     'case_export_failed': 'A whole-case export failed',
     'case_export_cancelled': 'Cancelled a whole-case export',
+    'background_task_stopped': 'Stopped work running in the background (what finished and what did not are in the details)',
     'case_export_downloaded': 'Downloaded a whole-case export',
     'case_export_removed': 'A whole-case export was removed',
     'case_imported': 'Imported this case from a package',

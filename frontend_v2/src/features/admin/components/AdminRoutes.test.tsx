@@ -1,11 +1,13 @@
 import type { ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { logMatches, TASKS_SHOWN } from "../admin-rows"
 import { BackgroundTasksPage } from "./BackgroundTasksPage"
 import { SystemLogsPage } from "./SystemLogsPage"
+import { RUNNING_WORK_URL } from "./RunningWorkPanel"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 
@@ -23,7 +25,21 @@ const task = {
 
 beforeEach(() => {
   vi.mocked(fetchAPI).mockReset()
+  useAuthStore.setState({ isAuthenticated: true, user: { username: "a", name: "Admin", role: "admin", global_role: "admin" } })
 })
+
+const nothingRunning = { scope: "all", tasks: [], stopped: [] }
+/** The recorded-tasks answer for its route; the Running now route answers nothing running unless given. */
+function answer(recorded: unknown, running: unknown = nothingRunning) {
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.startsWith(RUNNING_WORK_URL)) {
+      if (typeof running === "function") return running(url)
+      return running
+    }
+    if (recorded instanceof Error) throw recorded
+    return recorded
+  })
+}
 afterEach(cleanup)
 
 describe("System Logs reads the server's route and row", () => {
@@ -57,24 +73,70 @@ describe("System Logs reads the server's route and row", () => {
 
 describe("Background Tasks reads the server's route and row", () => {
   it("asks for every person's tasks and draws name, owner and no Cancel", async () => {
-    vi.mocked(fetchAPI).mockResolvedValue({ tasks: [task] })
+    answer({ tasks: [task] })
     shown(<BackgroundTasksPage />)
     expect(await screen.findByText("Reading 3 files")).toBeTruthy()
     expect(screen.getByText("a@b.c")).toBeTruthy()
-    expect(screen.getByText("1 running")).toBeTruthy()
+    expect(screen.getByText("1 recorded running")).toBeTruthy()
     expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull()
-    expect(vi.mocked(fetchAPI).mock.calls[0]?.[0]).toBe(`/api/background-tasks?all_owners=true&limit=${TASKS_SHOWN}`)
+    expect(vi.mocked(fetchAPI).mock.calls.map((c) => c[0])).toContain(`/api/background-tasks?all_owners=true&limit=${TASKS_SHOWN}`)
   })
 
   it("says so at the row limit", async () => {
-    vi.mocked(fetchAPI).mockResolvedValue({ tasks: Array.from({ length: TASKS_SHOWN }, (_, i) => ({ ...task, id: `t${i}` })) })
+    answer({ tasks: Array.from({ length: TASKS_SHOWN }, (_, i) => ({ ...task, id: `t${i}` })) })
     shown(<BackgroundTasksPage />)
     expect(await screen.findByText(/older ones are not listed/)).toBeTruthy()
   })
 
   it("shows a refusal, not an empty list", async () => {
-    vi.mocked(fetchAPI).mockRejectedValue(new Error("Administrators only"))
+    answer(new Error("Administrators only"))
     shown(<BackgroundTasksPage />)
     expect((await screen.findByRole("alert")).textContent).toContain("Administrators only")
+  })
+})
+
+const processing = {
+  kind: "processing", id: "c1", case_id: "c1", case_title: "Verification", name: "Processing 3 files",
+  status: "running", started_by: null, progress: { total: 3 },
+}
+
+describe("Stop on Background Tasks", () => {
+  it("stops running work after a confirm and shows what finished and what did not", async () => {
+    const summary = "Stopped by Admin. Of 3 files processing: 3 asked to stop."
+    answer({ tasks: [] }, (url: string) =>
+      url.endsWith("/stop") ? { status: "stopped", summary } : { scope: "all", tasks: [processing], stopped: [] })
+    shown(<BackgroundTasksPage />)
+    fireEvent.click(await screen.findByRole("button", { name: /^Stop$/ }))
+    expect(screen.getByText(/Files already finished stay in the case/)).toBeTruthy()
+    expect(vi.mocked(fetchAPI).mock.calls.some((c) => String(c[0]).endsWith("/stop"))).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: "Stop now" }))
+    expect((await screen.findByRole("status")).textContent).toBe(summary)
+    const call = vi.mocked(fetchAPI).mock.calls.find((c) => String(c[0]).endsWith("/stop"))
+    expect(call?.[0]).toBe(`${RUNNING_WORK_URL}/processing/c1/stop`)
+    expect(call?.[1]).toMatchObject({ method: "POST" })
+  })
+
+  it("says plainly when the server refuses the stop", async () => {
+    answer({ tasks: [] }, (url: string) => {
+      if (url.endsWith("/stop")) throw new Error("Only an administrator or this case's owner can stop its work.")
+      return { scope: "all", tasks: [processing], stopped: [] }
+    })
+    shown(<BackgroundTasksPage />)
+    fireEvent.click(await screen.findByRole("button", { name: /^Stop$/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Stop now" }))
+    expect((await screen.findByRole("status")).textContent).toContain("Not stopped: Only an administrator")
+  })
+
+  it("a case owner who is not an administrator sees only Running now, never every person's tasks", async () => {
+    useAuthStore.setState({ isAuthenticated: true, user: { username: "o", name: "Owner", role: "user", global_role: "user" } })
+    answer({ tasks: [task] }, { scope: "owned_cases", tasks: [processing], stopped: [
+      { status: "stopped", name: "Whole-case export", summary: "Stopped by Owner. 4 of 10 items were written", stopped_at: "2026-11-08T20:00:00Z" },
+    ] })
+    shown(<BackgroundTasksPage />)
+    expect(await screen.findByText("Processing 3 files")).toBeTruthy()
+    expect(screen.getByText("Work in the cases you own")).toBeTruthy()
+    expect(screen.getByText(/4 of 10 items were written/)).toBeTruthy()
+    expect(vi.mocked(fetchAPI).mock.calls.map((c) => c[0])).not.toContain(`/api/background-tasks?all_owners=true&limit=${TASKS_SHOWN}`)
+    expect(screen.queryByText("Reading 3 files")).toBeNull()
   })
 })

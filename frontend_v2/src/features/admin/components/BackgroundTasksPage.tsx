@@ -7,8 +7,24 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import { TASKS_SHOWN, taskPercent, type BackgroundTask } from "../admin-rows"
+import { isAdminUser } from "@/features/auth/auth.types"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { RunningWorkPanel } from "./RunningWorkPanel"
 
 export function BackgroundTasksPage() {
+  // A case owner who is not an administrator opens this page for the Running now list of their own cases only.
+  const isAdmin = isAdminUser(useAuthStore((state) => state.user))
+  if (!isAdmin) {
+    return (
+      <div className="flex h-full flex-col bg-background p-4">
+        <RunningWorkPanel />
+      </div>
+    )
+  }
+  return <AdminBackgroundTasks />
+}
+
+function AdminBackgroundTasks() {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["admin", "tasks"],
     queryFn: () =>
@@ -34,7 +50,7 @@ export function BackgroundTasksPage() {
         <span className="font-display text-sm font-semibold">Background Tasks</span>
         <div className="flex-1" />
         <Badge variant={running.length > 0 ? "amber" : "slate"}>
-          {running.length} running
+          {running.length} recorded running
         </Badge>
         <Button variant="ghost" size="sm" onClick={() => refetch()}>
           <RefreshCw className="size-3.5" />
@@ -42,6 +58,10 @@ export function BackgroundTasksPage() {
       </div>
 
       <div className="flex-1 overflow-auto p-4">
+        <div className="mb-4">
+          <RunningWorkPanel />
+        </div>
+        <h2 className="mb-2 text-sm font-semibold">Recorded tasks</h2>
         {isError ? (
           <p role="alert" className="py-8 text-center text-sm text-red-500">
             Background tasks could not be read: {error?.message}
