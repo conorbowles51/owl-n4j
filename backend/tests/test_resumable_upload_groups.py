@@ -513,6 +513,10 @@ def test_pages_past_the_total_a_changed_file_or_a_whole_selection_are_refused_in
     changed = dict(manifest[0], sha256='0' * 64, chunks=['0' * 64])
     differs = f.client.post(f'/api/evidence-upload-groups/{identity}/members', json={'members': [changed]})
     assert differs.status_code == 409 and 'differs from the one already declared' in differs.json()['detail']
+    # a modified time that drifted (a copied folder) does not make a declaration differ
+    drifted = dict(manifest[0], modified=1_700_000_000_000)
+    same = f.client.post(f'/api/evidence-upload-groups/{identity}/members', json={'members': [drifted]})
+    assert same.status_code == 200 and same.json()['file_count'] == 2
     extra = dict(manifest[0], path='P/d.txt')
     over = f.client.post(f'/api/evidence-upload-groups/{identity}/members',
                          json={'members': [manifest[2], extra]})

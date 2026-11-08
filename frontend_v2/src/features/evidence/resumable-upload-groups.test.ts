@@ -237,26 +237,45 @@ describe("a file list larger than one page (01 D41)", () => {
   const item = (i: number) => ({ path: `P/${i}`, size: 1, sha256: "a".repeat(64), chunks: ["a".repeat(64)] })
   const meta = { id: "g-9", case_id: "case-1", folder_id: null, name: "P", kind: "folder" as const, replace_existing: false }
 
-  it("declares the whole size, sends the rest in pages, and resolves with the full list", async () => {
+  it("declares the whole size and sends pages of the path-sorted list, whatever order the folder enumerated in", async () => {
     const { registerByPages } = await import("./resumable-upload-groups")
-    const manifest = Array.from({ length: 5 }, (_, i) => item(i))
+    const sorted = Array.from({ length: 5 }, (_, i) => item(i))
+    const manifest = [...sorted].reverse()
     api.fetchAPI.mockReset()
     api.fetchAPI.mockImplementation(async (url: string, init?: { method?: string; body?: unknown }) => {
       if (init?.method === "POST" && url === "/api/evidence-upload-groups") return { id: "g-9" }
       if (init?.method === "POST" && url === "/api/evidence-upload-groups/g-9/members") return { id: "g-9" }
-      if (url === "/api/evidence-upload-groups/g-9") return { id: "g-9", members: manifest }
+      if (url === "/api/evidence-upload-groups/g-9") return { id: "g-9", members: sorted }
       throw new Error(`unexpected ${url}`)
     })
     await expect(registerByPages(meta, manifest, 2)).resolves.toMatchObject({ id: "g-9" })
     const posts = api.fetchAPI.mock.calls.filter(([, init]) => (init as { method?: string })?.method === "POST")
-    expect(posts[0][1].body).toMatchObject({ members_total: 5, members: manifest.slice(0, 2) })
+    expect(posts[0][1].body).toMatchObject({ members_total: 5, members: sorted.slice(0, 2) })
     expect(posts.map(([url]) => url)).toEqual([
       "/api/evidence-upload-groups",
       "/api/evidence-upload-groups/g-9/members",
       "/api/evidence-upload-groups/g-9/members",
     ])
-    expect(posts[1][1].body).toMatchObject({ members: manifest.slice(2, 4) })
-    expect(posts[2][1].body).toMatchObject({ members: manifest.slice(4) })
+    expect(posts[1][1].body).toMatchObject({ members: sorted.slice(2, 4) })
+    expect(posts[2][1].body).toMatchObject({ members: sorted.slice(4) })
+  })
+
+  it("does not send again a page whose members are already listed", async () => {
+    const { registerByPages } = await import("./resumable-upload-groups")
+    const manifest = Array.from({ length: 6 }, (_, i) => item(i))
+    api.fetchAPI.mockReset()
+    api.fetchAPI.mockImplementation(async (url: string) =>
+      url === "/api/evidence-upload-groups/g-9" ? { id: "g-9", members: manifest } : { id: "g-9" }
+    )
+    const listed = new Set(manifest.slice(0, 4).map((m) => m.path))
+    await registerByPages(meta, manifest, 2, listed)
+    const posts = api.fetchAPI.mock.calls.filter(([, init]) => (init as { method?: string })?.method === "POST")
+    // the start carries page one as always; page two (all listed) is skipped; page three is sent
+    expect(posts.map(([url]) => url)).toEqual([
+      "/api/evidence-upload-groups",
+      "/api/evidence-upload-groups/g-9/members",
+    ])
+    expect(posts[1][1].body).toMatchObject({ members: manifest.slice(4) })
   })
 
   it("says so when the list did not finish arriving", async () => {

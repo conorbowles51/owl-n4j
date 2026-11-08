@@ -71,7 +71,7 @@ export function selectionRefusal(
   const total = files.reduce((sum, file) => sum + file.size, 0)
   if (total > caps.bytes)
     return (
-      `This selection is ${formatBytes(total)} and an upload can hold up to 64 GB. ` +
+      `This selection is ${formatBytes(total)} and an upload can hold up to ${Math.round(caps.bytes / 1024 ** 3)} GB. ` +
       `Nothing was read or sent. Split it into smaller selections.`
     )
   return null
@@ -566,30 +566,37 @@ type GroupMeta = {
 type ManifestItem = { path: string; size: number; sha256: string; chunks: string[]; modified?: number }
 
 /** Creates the selection with its first page and declared total, sends the remaining pages, and resolves with the
- * fully listed selection. Safe to run again against a selection whose list stopped part way (a closed tab): a
- * member already declared is acknowledged unchanged and only the missing ones are added. */
+ * fully listed selection. Pages are slices of the list sorted by path, so a later run of the same selection sends
+ * the same pages whatever order the browser enumerated the folder in. Safe to run again against a selection whose
+ * list stopped part way (a closed tab): a member already declared is acknowledged unchanged and only the missing
+ * ones are added; ``listed`` names the members already there, and pages holding only those are not sent again. */
 export async function registerByPages(
   meta: GroupMeta,
   manifest: ManifestItem[],
-  pageMembers = PAGE_MEMBERS
+  pageMembers = PAGE_MEMBERS,
+  listed?: ReadonlySet<string>
 ): Promise<UploadGroup> {
+  const sorted = [...manifest].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   await fetchAPI<UploadGroup>(endpoint, {
     method: "POST",
     timeout: PAGE_TIMEOUT_MS,
-    body: { ...meta, members: manifest.slice(0, pageMembers), members_total: manifest.length },
+    body: { ...meta, members: sorted.slice(0, pageMembers), members_total: sorted.length },
   })
-  for (let at = pageMembers; at < manifest.length; at += pageMembers)
+  for (let at = pageMembers; at < sorted.length; at += pageMembers) {
+    const page = sorted.slice(at, at + pageMembers)
+    if (listed && page.every((item) => listed.has(item.path))) continue
     await fetchAPI<UploadGroup>(`${endpoint}/${meta.id}/members`, {
       method: "POST",
       timeout: PAGE_TIMEOUT_MS,
-      body: { members: manifest.slice(at, at + pageMembers) },
+      body: { members: page },
     })
-  const listed = await fetchAPI<UploadGroup>(`${endpoint}/${meta.id}`)
-  if ((listed.members || []).length !== manifest.length)
+  }
+  const full = await fetchAPI<UploadGroup>(`${endpoint}/${meta.id}`)
+  if ((full.members || []).length !== sorted.length)
     throw new Error(
       "The selection's file list did not finish arriving. Try the upload again; the files already listed are kept."
     )
-  return listed
+  return full
 }
 
 export async function uploadFolderOrArchive(
@@ -669,7 +676,9 @@ export async function uploadFolderOrArchive(
         // This very selection's file list stopped part way (a closed tab): send the missing pages and carry on.
         prior = await registerByPages(
           { id: full.id, case_id: caseId, folder_id: options.folderId || null, name, kind, replace_existing: false },
-          manifest
+          manifest,
+          PAGE_MEMBERS,
+          new Set(members.map((member) => member.path))
         )
         break
       }

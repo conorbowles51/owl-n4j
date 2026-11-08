@@ -199,6 +199,12 @@ def _checked_page(page, kind, seen):
             raise HTTPException(400, 'Use folder upload to retain nested file paths')
 
 
+def _same_member(stored, member):
+    """The same declared file. ``modified`` is advisory (it steers what a resume reads again) and drifts when a
+    folder is copied or a file is re-saved with the same bytes, so it never makes two declarations differ."""
+    return stored is not None and all(stored.get(k) == member.get(k) for k in ('path', 'size', 'sha256', 'chunks'))
+
+
 def _session_row(group_id, case_id, user_id, folder_id, member, status='uploading'):
     return EvidenceUploadSession(id=uuid5(group_id, member['path']), group_id=group_id,
         case_id=case_id, user_id=user_id, folder_id=folder_id,
@@ -246,7 +252,7 @@ def start_group(body: StartGroup, user: User = Depends(get_current_db_user), db:
         raise HTTPException(409, 'This upload selection belongs to different files or a different destination')
     if paged and values['manifest'] != group.manifest:
         stored = {m['path']: m for m in group.manifest}
-        if any(stored.get(member['path']) != member for member in values['manifest']):
+        if any(not _same_member(stored.get(member['path']), member) for member in values['manifest']):
             raise HTTPException(409, 'This upload selection belongs to different files or a different destination')
     return snapshot(db, group)
 
@@ -269,7 +275,7 @@ def add_members(identity: UUID, body: AddMembers, user: User = Depends(get_curre
     for member in page:
         known = stored.get(member['path'])
         if known is not None:
-            if known != member:
+            if not _same_member(known, member):
                 raise HTTPException(409, 'A file in this page differs from the one already declared at its path. '
                                          'Discard this selection and start the upload again.')
             continue
@@ -1030,6 +1036,10 @@ async def _complete(db, identity, user, registration):
         rows = members(db, group)
         if group.status == 'paused':
             raise HTTPException(409, 'Resume this selection before completing it')
+        if group.members_total is not None and not group.receipt and len(rows) < group.members_total:
+            raise HTTPException(409, 'This selection declared %s files but only %s are listed so far. The rest '
+                                     'of the file list has to arrive before it can be completed.' % (
+                                     format(group.members_total, ','), format(len(rows), ',')))
         if not group.receipt and any(row.status != 'staged' for row in rows):
             raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
         registration.total = len(group.manifest)
