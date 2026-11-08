@@ -51,6 +51,8 @@ export function routePage(pathname: string): { page: string | null; caseId: stri
     if (!third) return { page: "case/workspace", caseId: second } // index redirects to workspace
     const phone = phonePage(parts.slice(2))
     if (phone) return { page: phone, caseId: second }
+    // The text workbench for one evidence file; the file id is never part of the page name.
+    if (third === "evidence" && parts.length === 5 && parts[4] === "text") return { page: "case/evidence/text", caseId: second }
     const view = third === "profiles" ? "dossiers" : third
     return { page: CASE_ROUTES.has(view) && parts.length === 3 ? `case/${view}` : "other", caseId: second }
   }

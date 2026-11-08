@@ -610,7 +610,9 @@ PHONE_RECORD_TYPES = ('messages', 'calls', 'contacts', 'locations', 'media', 'ap
 ADMIN_ROUTES = ('ai-costs', 'users', 'profiles', 'logs', 'activity', 'speed', 'tasks', 'updates', 'phone-registry')
 APP_PAGES = (['cases', 'triage', 'admin', 'settings', 'settings/ai', 'login', 'other']
              + [f'case/{r}' for r in CASE_ROUTES] + [f'admin/{r}' for r in ADMIN_ROUTES]
-             + [f'case/{r}' for r in PHONE_PAGES] + [f'case/phones/records/{t}' for t in PHONE_RECORD_TYPES])
+             + [f'case/{r}' for r in PHONE_PAGES] + [f'case/phones/records/{t}' for t in PHONE_RECORD_TYPES]
+             # The text workbench below case/evidence; the file id is never part of the page name.
+             + ['case/evidence/text'])
 # The page names the browser may report (frontend financialMainViews and statement sections, and every route).
 PAGES = frozenset([f'financial/{v}' for v in FINANCIAL_VIEWS] + [f'financial/statements/{s}' for s in STATEMENT_SECTIONS]
                   + APP_PAGES)

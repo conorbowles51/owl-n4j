@@ -216,7 +216,8 @@ class SlowRows(Captured):
 
 class PageViews(Captured):
     def test_every_app_route_is_a_page_and_unknown_names_are_refused(self):
-        for page in ('case/timeline', 'case/graph', 'case/evidence', 'cases', 'admin/speed', 'settings/ai', 'other'):
+        for page in ('case/timeline', 'case/graph', 'case/evidence', 'case/evidence/text', 'cases', 'admin/speed',
+                     'settings/ai', 'other'):
             self.assertTrue(rs.enqueue_page_view(page, 'LOAD', CASE, 100, 'a@b'), page)
         for page in ('case/made-up', 'case/../x', 'timeline', ''):
             self.assertFalse(rs.enqueue_page_view(page, 'LOAD', CASE, 100, 'a@b'), page)

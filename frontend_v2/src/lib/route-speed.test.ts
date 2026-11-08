@@ -11,6 +11,8 @@ describe("route page names", () => {
     expect(routePage(`/cases/${CASE}`)).toEqual({ page: "case/workspace", caseId: CASE })
     expect(routePage(`/cases/${CASE}/profiles`)).toEqual({ page: "case/dossiers", caseId: CASE })
     expect(routePage(`/cases/${CASE}/secret-thing`)).toEqual({ page: "other", caseId: CASE })
+    expect(routePage(`/cases/${CASE}/evidence/f1e2d3c4-5555-6666-7777-888899990000/text`)).toEqual({ page: "case/evidence/text", caseId: CASE })
+    expect(routePage(`/cases/${CASE}/evidence/f1e2d3c4-5555-6666-7777-888899990000/else`)).toEqual({ page: "other", caseId: CASE })
     expect(routePage("/")).toEqual({ page: "cases", caseId: null })
     expect(routePage("/cases")).toEqual({ page: "cases", caseId: null })
     expect(routePage("/admin")).toEqual({ page: "admin", caseId: null })
