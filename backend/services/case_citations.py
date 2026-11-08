@@ -149,6 +149,7 @@ class Resolution:
     field: str | None = None
     legacy: bool = False
     detail: dict[str, Any] = _field(default_factory=dict)
+    production_numbers: list[dict[str, Any]] = _field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         out = {key: value for key, value in self.__dict__.items() if value not in (None, [], {})}
@@ -290,7 +291,21 @@ def resolve_citations(session, case_id, citations: Iterable[Citation]) -> list[R
             if records is None or c.target not in records:
                 r.status, r.reason = "not_in_case", NOT_IN_CASE
         out.append(r)
-    return out
+    return _with_production_numbers(session, case_uuid, out)
+
+
+def _with_production_numbers(session, case_id, resolutions: list[Resolution]) -> list[Resolution]:
+    """Beside each citation of a file, the production numbers of the cited page, each saying what kind it is."""
+    from sqlalchemy import inspect
+
+    from services.production_numbers import references_for
+    cited = [r for r in resolutions if r.status == "ok" and r.evidence_file_id]
+    if cited and inspect(session.connection()).has_table("production_assignments"):
+        names = {r.evidence_file_id: r.filename for r in cited if r.filename}
+        found = references_for(session, case_id, [(r.evidence_file_id, r.page) for r in cited], names=names)
+        for r in cited:
+            r.production_numbers = found.get((r.evidence_file_id, r.page), [])
+    return resolutions
 
 
 def check_text(session, case_id, text: str | None) -> dict[str, Any]:

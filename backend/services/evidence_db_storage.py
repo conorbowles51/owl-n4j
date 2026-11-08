@@ -582,7 +582,12 @@ class EvidenceDBStorage:
         if scope == "subtree" and folder_id is not None and folder_id not in by_id:
             raise EvidenceMoveError("Folder not found in this case", 404)
         from services.financial.source_lineage import visible_evidence_condition, reading_history
-        conditions = [EvidenceFile.case_id == case_id, visible_evidence_condition(), *_file_filters(query, status, type_category)]
+        conditions = [EvidenceFile.case_id == case_id, visible_evidence_condition(), *_file_filters(None, status, type_category)]
+        if query:
+            from services.production_numbers import file_ids_for_query
+            named = func.lower(EvidenceFile.original_filename).contains(query.lower(), autoescape=True)
+            numbered = file_ids_for_query(db, case_id, query)  # a production number finds its file like its name does
+            conditions.append(or_(named, EvidenceFile.id.in_(numbered)) if numbered else named)
         if scope == "subtree" and folder_id is not None:
             children = {}
             for folder in folders:

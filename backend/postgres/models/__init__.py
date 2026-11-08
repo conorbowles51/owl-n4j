@@ -66,6 +66,7 @@ from postgres.models.dossier import (
 )
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.significant import SignificantEntity
+from postgres.models.production_numbers import ProductionAssignment, ProductionSet, ProductionStampedCopy, ReceivedNumber
 from postgres.models.loupe import Loupe, LoupeLink, LoupeMember, LoupeRevision
 from postgres.models.financial_candidates import FinancialStatementReviewDraft, FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization, FinancialCandidateTransaction
 from postgres.models.financial import (
@@ -118,6 +119,10 @@ __all__ = [
     "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall", "AgentPromptVersion", "AgentRunItem",
     "EvidenceClaim", "EvidenceDocumentText", "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "SignificantEntity",
+    "ProductionAssignment",
+    "ProductionSet",
+    "ProductionStampedCopy",
+    "ReceivedNumber",
     "Loupe",
     "LoupeMember",
     "LoupeLink",

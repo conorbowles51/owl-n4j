@@ -19,6 +19,7 @@ so.
 from __future__ import annotations
 
 import re
+import uuid
 
 from sqlalchemy import text
 
@@ -29,7 +30,7 @@ from services.phone import time_display as T
 from services.phone.derive import IN_USE_ORDER
 from services.search import document_folds
 
-GROUPS = ("messages", "calls", "emails", "people", "records", "documents", "machine_text", "payments")
+GROUPS = ("messages", "calls", "emails", "people", "records", "documents", "machine_text", "payments", "production_numbers")
 COMM_KINDS = {"messages": ["message", "chat_activity"], "calls": ["call", "voicemail"], "emails": ["email"]}
 FIRST = 20
 MAX_PAGE = 200
@@ -277,6 +278,23 @@ def _documents(conn, case_id, q, exact, offset, limit):
     return total, out, unprepared
 
 
+def _production_numbers(conn, case_id, q, offset, limit):
+    """Files by production number, with the page when the range has one number per page. Each hit says what kind of
+    number it is, and a number only suggested by a file name says so."""
+    from sqlalchemy.orm import Session
+    from services.production_numbers import find_number
+    with Session(bind=conn) as session:
+        found = find_number(session, uuid.UUID(str(case_id)), q)
+    items = []
+    for hit in found["hits"][offset:offset + limit if limit else offset]:
+        items.append({"kind": "production_number", "title": hit["file_name"], "label": hit["label"],
+                      "snippet": {"before": "", "match": hit["number"], "after": " · " + (hit["note"] or hit["label"])},
+                      "page": hit["page"], "record_uid": None, "evidence_file_id": hit["evidence_file_id"],
+                      "open": {"screen": "document", "params": {"evidence_file_id": hit["evidence_file_id"],
+                                                                "page": hit["page"]}}})
+    return found["total"], items
+
+
 def _page(locations, at):
     best = None
     for loc in locations or []:
@@ -424,6 +442,8 @@ def _group(conn, case_id, group, q, exact, phones, start, end, offset, limit, ct
         total, items = (0, []) if short else _machine(conn, case_id, q, exact, phones, offset, limit, ctx)
     elif group == "documents":
         total, items, unprepared = (0, [], None) if short else _documents(conn, case_id, q, exact, offset, limit)
+    elif group == "production_numbers":
+        total, items = _production_numbers(conn, case_id, q, offset, limit)
     elif group == "payments":
         from services.search.payments import NOT_SEARCHED as PAYMENTS_NOT_SEARCHED, search_payments
         total, items, totals = (0, [], None) if short else search_payments(conn, case_id, q, offset=offset,

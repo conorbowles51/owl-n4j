@@ -371,6 +371,8 @@ from routers.search import router as search_router
 app.include_router(search_router)
 from routers.citations import router as citations_router
 app.include_router(citations_router)
+from routers.production_numbers import router as production_numbers_router
+app.include_router(production_numbers_router)
 from routers.pattern_of_life import router as pattern_of_life_router
 app.include_router(pattern_of_life_router)
 from services.pattern_of_life import places as _pol_places
