@@ -262,3 +262,31 @@ Acceptance: a real local capture of the existing synthetic case, actual OpenSSL
 signatures/nonces and an in-memory TSA transport passed; the next pass skipped the
 unchanged head and the database audit count stayed unchanged. No external request,
 real trust configuration, case mutation or automatic process was started.
+
+## Daily outside time-stamp of each case's audit chain
+
+Each night at 03:20 UTC every case with recorded audit events is time-stamped by an outside authority
+(`deploy/owl-audit-anchor.timer`, `scripts/anchor_audit_heads.py`, `services/financial/audit_head_anchor.py`).
+The case's whole chain is read from the database in sequence and checked event by event; the checkpoint is the
+case, the number of events and the hash of the last event. Only the checkpoint's SHA-256 fingerprint leaves the
+server, inside an RFC 3161 request. A case with no new events since its last stamp sends nothing.
+
+- **Authority:** DigiCert's public time-stamping service, `http://timestamp.digicert.com` (RFC 3161, the one used
+  to time-stamp signed software). Its answers are verified offline against the pinned DigiCert Trusted Root G4
+  (`deploy/tsa/digicert-trusted-root-g4.pem`, SHA-256 fingerprint 55:2F:7B:DC:…:C8:99:88, valid to 2038).
+  Plain http is the service's published address; the answer is signed, so the transport adds nothing to it.
+- **Kept:** `/mnt/owl-data/audit-anchors/<case>/<stamp>/` holds the checkpoint, the exact request, the signed
+  answer, the root and the verification; `latest.json` names the newest. A chain whose last stamped head is no
+  longer part of the current chain is reported in the journal (`journalctl -u owl-audit-anchor`), never stamped over.
+- **Check a case:** `python scripts/anchor_audit_heads.py verify --case-id <uuid> --output /mnt/owl-data/audit-anchors`
+  (with the app's `.env` loaded) checks the signature and recomputes the stamped head from the database.
+- **What it shows:** the chain up to that event, with that head, existed no later than the signed time. Not that
+  the events are true, not history before the audit migrations, and not that the authority is independent of
+  anyone in the case.
+- **Way back:** write `off` in `deploy/audit-anchor.conf` and release (the timer is disabled, stamps kept), or
+  `systemctl disable --now owl-audit-anchor.timer`. Another authority: change `--tsa-url` and the pinned root in
+  `deploy/owl-audit-anchor.service`; earlier stamps keep verifying with the root kept beside each.
+- **Accuracy reviewers:** none named yet; the expert packet states that gap.
+
+The older per-export anchor (`scripts/anchor_financial_cases.py`, above) stays an operator tool: it stamps a full
+ledger export, which some cases refuse (ledger summary unavailable) and whose chain capture has a size limit.

@@ -1,0 +1,17 @@
+# Daily outside time-stamp of each case's audit chain head (Neil 8 Nov agreed). Installed and enabled by each
+# release from deploy/audit-anchor.conf (deploy/audit-anchor.sh). Only each checkpoint's SHA-256 fingerprint is
+# sent, to DigiCert's public RFC 3161 time-stamping service; answers are verified against the pinned DigiCert
+# Trusted Root G4 (deploy/tsa/) and kept in /mnt/owl-data/audit-anchors/<case>/ with the checkpoint and request.
+# Way back: write "off" in deploy/audit-anchor.conf and release, or systemctl disable --now owl-audit-anchor.timer.
+[Unit]
+Description=Loupe daily outside time-stamp of each case's audit chain
+After=docker.service
+
+[Service]
+Type=oneshot
+# Exit 2: a case needs attention (its JSON line in the journal says why); the other cases were still stamped.
+SuccessExitStatus=2
+ExecStart=/bin/bash -c 'set -a; . /home/conorbowles51/app-v3/owl-n4j/.env; set +a; exec /home/conorbowles51/app-v3/owl-n4j/.venv/bin/python /home/conorbowles51/app-v3/owl-n4j/scripts/anchor_audit_heads.py stamp --all-cases --output /mnt/owl-data/audit-anchors --tsa-url http://timestamp.digicert.com --ca-file /home/conorbowles51/app-v3/owl-n4j/deploy/tsa/digicert-trusted-root-g4.pem'
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=2h

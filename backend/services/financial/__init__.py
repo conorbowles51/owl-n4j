@@ -2031,6 +2031,9 @@ __all__ += ["render_review_package_report"]
 from services.financial.periodic_audit_anchor import anchor_financial_case_once
 __all__ += ["anchor_financial_case_once"]
 
+from services.financial.audit_head_anchor import anchor_audit_head, verify_audit_head
+__all__ += ["anchor_audit_head", "verify_audit_head"]
+
 from services.financial.statement_import import StatementImportRequest, read_statement_import, confirm_statement_import
 from services.financial.statement_import_proposal import propose_table, exact_amount
 from services.financial.statement_reprocessing import create_statement_version

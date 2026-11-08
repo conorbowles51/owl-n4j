@@ -654,6 +654,9 @@ if [ "${HEALTHY}" = true ]; then
     step "Resuming paused work: the new services are healthy"
     release_work_resume
     step "Tidying up"
+    # The daily outside time-stamp of each case's audit chain, on or off from deploy/audit-anchor.conf.
+    [ -f "${PROJECT_DIR}/deploy/audit-anchor.sh" ] && { bash "${PROJECT_DIR}/deploy/audit-anchor.sh" install ||
+        warn "The daily audit time-stamp could not be installed; the release stands"; }
     # The checkout's venv is the release tooling's; nothing that serves reads it any more.
     if [ "${STEP_PIP}" = run ] && [ -n "${BACKEND_TREE_STAGED}" ]; then
         $(release_build_scope) $RUN_AS "${PROJECT_DIR}/.venv/bin/python" -m pip install -r "${BACKEND_DIR}/requirements.txt" --quiet ||
