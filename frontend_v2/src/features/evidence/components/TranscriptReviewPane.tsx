@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { fetchAPI } from '@/lib/api-client'
+import { randomRequestId } from '@/lib/browser-crypto'
 import { useCase } from '@/features/cases/hooks/use-cases'
 import { useCasePermissions } from '@/features/cases/hooks/use-case-permissions'
 import { AudioTranscriptViewer, type AudioTranscriptViewerProps } from './AudioTranscriptViewer'
@@ -98,7 +99,7 @@ export function TranscriptReviewPane({ evidenceId, caseId, registerCloseActions,
   }
   const approve = async (process: boolean) => {
     const saved = await save()
-    const reviewed = await transcriptsAPI.review(evidenceId, saved.revision_id, crypto.randomUUID())
+    const reviewed = await transcriptsAPI.review(evidenceId, saved.revision_id, randomRequestId())
     await refresh(reviewed)
     if (process) await gate.start({ fileIds: [evidenceId], reprocessCompleted: saved.evidence_status === 'processed' || !!saved.published_revision_id })
   }

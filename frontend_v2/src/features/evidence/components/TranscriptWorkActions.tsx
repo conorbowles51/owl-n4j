@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { randomRequestId } from "@/lib/browser-crypto"
 import {
   Dialog,
   DialogContent,
@@ -424,7 +425,7 @@ export function TranscriptWorkActions({ caseId }: { caseId: string }) {
                   const result = await gate.start({
                     fileIds: readyFiles.map((file) => file.id),
                     planId: readyPlan!.id,
-                    requestKey: crypto.randomUUID(),
+                    requestKey: randomRequestId(),
                   })
                   if (result === "started") {
                     useEvidenceStore.getState().openSidebarTo("processing")
