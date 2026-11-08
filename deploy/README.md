@@ -168,6 +168,33 @@ If a release fails after building the frontend, its recovery trap restarts the
 frontend using the bundle currently on disk. That bundle may already be new;
 the restart does not prove that the backend or the whole release was updated.
 
+## Promoting a release to a customer instance
+
+One path, development box first, customer instances after, each step a script that
+exists in this repo:
+
+1. **Validate on the development box.** A commit reaches customers only after it has
+   been live on the development box (`deploy-now.sh` there), its head suite has a
+   green verdict (`suite-slot.sh heads <sha>` on the box), and the per-head scans
+   (`deploy/ci/scan-head.sh`, automatic per live head) show no new high findings.
+2. **Provision once per customer:** `deploy/provision` (Terraform; see its README),
+   then on the new VM `sudo bash deploy/setup-server.sh`, fill `.env` from
+   `.env.example` and run `sudo bash deploy/rotate-secrets.sh --check` then
+   `--apply` so no shipped secret survives.
+3. **Promote the validated commit:** on the customer VM,
+   `sudo DEPLOY_TARGET_SHA=<sha> bash deploy/deploy.sh` — the same release path as
+   the development box, pinned to exactly the validated commit (never whatever was
+   pushed after it), with its health check and automatic rollback
+   (`deploy/rollback.sh` by hand if needed).
+4. **Verify:** `/health` reports the promoted commit; `deploy/backup-check.sh`
+   stays green; the instance's entry in the inventory
+   (`deploy/ci/inventory-update.sh` on the box, `deploy/provision/inventory/` for
+   terraformed customers) shows the new version. `deploy/ci/inventory-check.sh`
+   fails on a missing or stale entry.
+
+No customer instance exists yet (8 Nov 2026); steps 2-4 are written against the
+scripts above and first run for real when one does.
+
 ## Choosing the correct server checkout
 
 Before running a deployment, identify the checkout used by the live services:
