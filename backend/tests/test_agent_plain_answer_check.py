@@ -64,8 +64,8 @@ class PlainAnswerTests(unittest.TestCase):
                      "[02 ARRENDO SANTANDER MOVIMIENTOS A FEB 24.pdf, p.1](doc://02006956-f000-4d1a-ad9a-5fb88a97dfa8/1)"):
             self.assertIn(kept, out)
         self.assertIn("**What could be checked:** The set of verified payments is empty", out)
-        self.assertIn("admitted at check status **not fully checked, so left out of verified totals** only", out)
-        self.assertIn("(left out of verified totals because not fully checked: 27673)", out)
+        self.assertIn("admitted at check status **left out of verified totals (not fully checked, or read from a statement and not yet confirmed by a person)** only", out)
+        self.assertIn("(left out of verified totals because not fully checked or not yet confirmed by a person: 27673)", out)
         self.assertIn("**no verified rows at all**", out)
         self.assertIn("The “Checked financial coverage” step (account holders: Jose Alejandro Reyes Zeind) "
                       "returns zero accounts", out)

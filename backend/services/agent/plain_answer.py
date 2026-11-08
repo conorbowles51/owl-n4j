@@ -31,7 +31,7 @@ CLASS_WORDS = {
     "0": "checked against the file's own totals",
     "1": "read exactly, with no total in the file to check against",
     "2": "checked against the statement's printed balances",
-    "3": "not fully checked, so left out of verified totals",
+    "3": "left out of verified totals (not fully checked, or read from a statement and not yet confirmed by a person)",
     "4": "mentioned elsewhere, not a financial record, and never counted",
 }
 VERIFIED_WORDS = "verified"  # p0, p1 and p2 together: the classes that enter verified totals
@@ -42,7 +42,7 @@ POPULATION_NOUN = {"verified": "set of verified payments", "working": "working s
 FIELD_WORDS = {
     "proof_class": "check status",
     "source_proof_class": "source's check status",
-    "proof_class_not_included": "left out of verified totals because not fully checked",
+    "proof_class_not_included": "left out of verified totals because not fully checked or not yet confirmed by a person",
     "source_not_admitted": "from a source not yet admitted",
     "total_matching": "payments matching",
     "has_more": "more not yet read",
