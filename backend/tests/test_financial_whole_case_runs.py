@@ -718,3 +718,29 @@ class NumberedPdfParts(TestCase):
         self.assertIn('investigation_notes', parts[0][2])
         self.assertNotIn('investigation_notes', parts[1][2])
         self.assertIn('are in part 1', parts[1][3])
+
+
+class QuestionAccountsCapture(TestCase):
+    """Live 8 Nov: the flow and backward-walk runs passed their chosen accounts as a ledger scope, so the capture was
+    narrower than the comparison's and every run on a real case refused with 'Captured ledger or date scope changed'."""
+
+    def _scope(self, kind, params):
+        seen = {}
+        def capture(connection, **scope):
+            seen.update(scope)
+            return 'capture'
+        with patch('services.financial.ledger_snapshot.capture_ledger_scope', capture):
+            W._capture(None, 'case', params, kind, None)
+        return seen
+
+    def test_chosen_accounts_ask_the_comparisons_scope_and_do_not_narrow_it(self):
+        account = str(uuid4())
+        for kind in ('flow', 'sources'):
+            scope = self._scope(kind, dict(account_ids=[account], start_date='2021-01-01', end_date=None))
+            self.assertEqual(scope, dict(case_id='case', account_id=None, account_ids=None, account_holders=None,
+                                         start_date=__import__('datetime').date(2021, 1, 1), end_date=None), kind)
+
+    def test_a_scoped_kind_still_narrows_by_its_accounts(self):
+        account = str(uuid4())
+        scope = self._scope('timeline', dict(account_ids=[account]))
+        self.assertEqual([str(value) for value in scope['account_ids']], [account])

@@ -38,6 +38,8 @@ from services.financial.ledger_summary import LedgerSummaryError
 
 logger = logging.getLogger(__name__)
 
+# Kinds whose account_ids choose accounts within the comparison's captured scope rather than narrowing it.
+QUESTION_ACCOUNTS = ('flow', 'sources')
 KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'sources', 'flow', 'pdf', 'export')
 PAGE_LIMIT = 200
 HEARTBEAT_SECONDS = 5
@@ -453,6 +455,10 @@ def _scope(case_id, params):
 def _capture(connection, case_id, params, kind, run):
     from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope
     scope = _scope(case_id, params)
+    if kind in QUESTION_ACCOUNTS:
+        # The chosen accounts are the question asked of the comparison's captured scope, not a narrower scope: the
+        # capture must be the comparison's own (whole case + dates) or its fingerprint never matches.
+        scope.update(account_id=None, account_ids=None, account_holders=None)
     if kind == 'pdf':
         return capture_ledger_export(connection, generated_by=params.get('generated_by'), privilege_marking=params.get('privilege_marking', 'unmarked'),
                                      size_limit=False, generated_at=_export_time(case_id, params), **scope)
