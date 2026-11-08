@@ -1,4 +1,4 @@
-import maplibregl from "maplibre-gl"
+import * as maplibregl from "maplibre-gl"  // 6.x has no default export
 import type { RequestParameters, StyleSpecification } from "maplibre-gl"
 import { BLACK, GRAYSCALE, layers, type Flavor } from "@protomaps/basemaps"
 import { FetchSource, PMTiles, Protocol } from "pmtiles"

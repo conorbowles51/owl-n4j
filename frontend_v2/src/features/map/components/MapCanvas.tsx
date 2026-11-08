@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react"
 import Map, { Source, Layer, NavigationControl } from "react-map-gl/maplibre"
-import maplibregl from "maplibre-gl"
+import * as maplibregl from "maplibre-gl"  // 6.x has no default export
 import "maplibre-gl/dist/maplibre-gl.css"
 import { useMapTheme } from "../hooks/use-map-theme"
 import { useMapStore } from "../stores/map.store"
