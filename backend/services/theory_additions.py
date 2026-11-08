@@ -82,6 +82,13 @@ def _words(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def _added_order(link: WorkspaceEntryLink):
+    """The order additions were made: the row's time, then the add's own stamp (to the microsecond), then its id."""
+    stamp = str(((link.link_metadata or {}).get("addition") or {}).get("at") or "")
+    created = link.created_at.replace(tzinfo=None) if link.created_at else datetime.max
+    return (created.replace(microsecond=0), stamp, str(link.id))
+
+
 def _entry(db, case_id, entry_id) -> WorkspaceEntry:
     entry = db.get(WorkspaceEntry, _uuid(entry_id)) if _uuid(entry_id) else None
     if entry is None or entry.case_id != _uuid(case_id) or entry.deleted_at is not None:
@@ -420,7 +427,7 @@ def infer_narrative(db, *, case_id, entry_id, link_id=None, user: User,
     else:
         if entry.entry_type != "theory":
             raise AdditionError("Only a theory has a whole to explain")
-        links = sorted(entry.links, key=lambda l: (l.created_at or _now(), str(l.id)))
+        links = sorted(entry.links, key=_added_order)
         if not links:
             raise AdditionError("This theory holds nothing yet")
         prompt_facts, refs = [], {}
@@ -497,7 +504,7 @@ def reading(db, *, case_id, entry_id) -> dict[str, Any]:
     """The theory read as a whole: each addition with its why and narrative, and how it all fits together."""
     entry = _entry(db, case_id, entry_id)
     rows = _narratives(db, entry.id)
-    links = sorted(entry.links, key=lambda l: (l.created_at or _now(), str(l.id)))
+    links = sorted(entry.links, key=_added_order)
     names = _names(db, [l.created_by_user_id for l in links] + [r.user_id for r in rows]
                    + [r.confirmed_by_user_id for r in rows])
     fit = _current(_versions(rows, None))
@@ -526,3 +533,29 @@ def loupe(db, *, case_id, entry_id, link_id, member_limit: int = 2000) -> dict[s
         **held,
         "history": [serialize_narrative(r, names) for r in reversed(versions)],
     }
+
+
+UNION_LIMIT = 5000
+
+
+def union(db, *, case_id, entry_id, limit: int = UNION_LIMIT) -> dict[str, Any]:
+    """The theory's own timeline, graph and map: every member of every addition, once, with the additions it is in.
+    ``members_shown`` of ``member_count`` says when the list is cut at ``limit``; nothing is cut silently."""
+    entry = _entry(db, case_id, entry_id)
+    links = sorted(entry.links, key=_added_order)
+    seen: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for link in links:
+        held = addition_members(db, entry.case_id, link, limit=limit)
+        for member in held["members"]:
+            ref = member["ref"]
+            if ref not in seen:
+                seen[ref] = {**member, "additions": []}
+                order.append(ref)
+            seen[ref]["additions"].append(str(link.id))
+    members = [seen[ref] for ref in order]
+    shown = members[:limit]
+    return {"entry": {"id": str(entry.id), "title": entry.title}, "members": shown, "member_count": len(members),
+            "members_shown": len(shown),
+            "dated": sum(1 for m in shown if m.get("date")),
+            "graph_keys": [m["id"] for m in shown if m["type"] == "graph_entity"]}

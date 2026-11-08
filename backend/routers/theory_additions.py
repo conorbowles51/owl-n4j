@@ -164,3 +164,12 @@ def describe_selection(case_id: UUID, selection_id: UUID,
     if found is None:
         raise HTTPException(status_code=404, detail="That group was not found in this case")
     return found
+
+
+@router.get("/{case_id}/entries/{entry_id}/members", dependencies=[Depends(require_case_view)])
+def theory_members(case_id: UUID, entry_id: UUID, db: Session = Depends(get_db)):
+    """Every member of every addition, once: the theory's own timeline, graph and map."""
+    try:
+        return T.union(db, case_id=case_id, entry_id=entry_id)
+    except Exception as exc:  # noqa: BLE001
+        _raise(db, exc)

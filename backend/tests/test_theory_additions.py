@@ -282,3 +282,14 @@ class TheoryAdditionTests(DuplicateTestCase):
         whole = T.reading(self.db, case_id=self.case.id, entry_id=made["entry_id"])
         self.assertEqual(whole["entry"]["entry_type"], "theory")
         self.assertEqual(len(whole["additions"]), 1)
+
+    def test_the_theory_as_its_own_timeline_is_the_union_of_its_additions(self):
+        self.add(surface="financial", items=[{"target_type": "financial_transaction", "target_id": str(self.rows[0].id)}])
+        self.group("timeline_range", [{"type": "financial_transaction", "id": str(r.id)} for r in self.rows[:2]]
+                   + [{"type": "graph_entity", "id": "event:meeting-1"}], {"range": {"start": "2026-01-01"}}, "Jan", "timeline")
+        whole = T.union(self.db, case_id=self.case.id, entry_id=self.theory["id"])
+        self.assertEqual(whole["member_count"], 3)
+        self.assertEqual(whole["dated"], 2)
+        self.assertEqual(whole["graph_keys"], ["event:meeting-1"])
+        first = next(m for m in whole["members"] if m["id"] == str(self.rows[0].id))
+        self.assertEqual(len(first["additions"]), 2)
