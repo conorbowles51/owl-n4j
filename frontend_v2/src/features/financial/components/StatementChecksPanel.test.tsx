@@ -71,7 +71,7 @@ it("checks on request with exact amounts, exclusions and old result clearly dist
   expect(calculation).toHaveAttribute("aria-expanded", "false")
   fireEvent.click(screen.getByText("Calculation and further checks"))
   expect(calculation).toHaveAttribute("aria-expanded", "true")
-  expect(screen.getByText(/Source: superseded · P3/)).toBeVisible()
+  expect(screen.getByText(/Source: superseded · Not fully checked — not in verified totals/)).toBeVisible()
   expect(
     screen.getByText(/2 admitted rows counted; 1 other rows excluded/)
   ).toBeVisible()

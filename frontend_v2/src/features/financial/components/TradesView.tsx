@@ -11,7 +11,7 @@ import {
   type SecurityRow,
   type SecurityRowKind,
 } from "../hooks/use-security-rows"
-import { formatLedgerAmount } from "../lib/ledger-format"
+import { formatLedgerAmount, readProofClass } from "../lib/ledger-format"
 
 // Trades and holdings read from the case's brokerage statements. Each row cites its printed line; a trade
 // links to its cash leg in the money ledger. A model's reading says so until a person confirms it; a corrected
@@ -351,7 +351,7 @@ export function TradesView({ caseId }: { caseId: string }) {
                     <td className="p-2 text-xs">{row.account ?? "–"}</td>
                     <td className="p-2">
                       <OriginBadge row={row} />
-                      <span className="block text-xs text-muted-foreground">{row.proof_class.toUpperCase()}</span>
+                      <span className="block text-xs text-muted-foreground">{readProofClass(row.proof_class).label}</span>
                     </td>
                     <td className="p-2 text-xs">
                       <a

@@ -177,7 +177,8 @@ it("leads with the next step, the journey, money by currency and every old panel
   expect(screen.getByRole("button", { name: "MXN · 2" }).getAttribute("aria-pressed")).toBe("true")
   expect(screen.getByText("+5.00 k")).toBeTruthy()
   fireEvent.click(screen.getByRole("button", { name: "USD · 1" }))
-  expect(screen.getByText("−10")).toBeTruthy()
+  expect(screen.getAllByText("−10").length).toBeGreaterThan(0)
+  expect(screen.getByText("Net")).toBeTruthy()
   // kept panels
   for (const text of ["Scope", "Connections over 3 payments", "Coverage grid", "Imported payments in the selected accounts and dates", "Saved investigation work", "Your statements", "Explore activity over time"])
     expect(screen.getByText(text)).toBeTruthy()

@@ -229,7 +229,7 @@ it("restores every payment filter and the table page after leaving and reopening
     ["Table minimum amount", "50"],
     ["Table maximum amount", "150"],
     ["Money in or out", "debit"],
-    ["Table proof class", "p3"],
+    ["Table check status", "p3"],
     ["Sort payments", "newest"],
   ])
     fireEvent.change(screen.getByLabelText(name), { target: { value } })
@@ -243,7 +243,7 @@ it("restores every payment filter and the table page after leaving and reopening
     ["Table minimum amount", "50"],
     ["Table maximum amount", "150"],
     ["Money in or out", "debit"],
-    ["Table proof class", "p3"],
+    ["Table check status", "p3"],
     ["Sort payments", "newest"],
   ])
     expect(screen.getByLabelText(name)).toHaveValue(value)

@@ -214,87 +214,87 @@ export function InvestigatorOverview({
       )}
       <section
         aria-label="Next for you"
-        className="space-y-7 rounded-2xl p-5 text-[#f7f7f8] sm:p-8"
+        className="space-y-3 rounded-xl p-3 text-[#f7f7f8] sm:p-4"
         style={{ background: "radial-gradient(1100px 420px at 90% -20%, #3a1319 0%, #0b0c0f 62%)" }}
       >
-        <div className="flex flex-wrap items-stretch gap-7">
-          <div className="flex min-w-0 flex-[1_1_420px] flex-col justify-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex min-w-0 flex-[1_1_320px] flex-wrap items-center gap-x-3 gap-y-2">
             <span className={`${eyebrow} text-[#e33b4c]`}>Next for you</span>
-            <h2 className="text-3xl font-semibold leading-[1.05] sm:text-[42px]" style={heading}>
-              {next.title}
-              <br />
-              <span className="text-[#9a9da5]">{next.sub}</span>
+            <h2 className="min-w-0 flex-[1_1_220px] text-[15px] font-semibold leading-snug">
+              {next.title} <span className="font-normal text-[#9a9da5]">{next.sub}</span>
             </h2>
-            <div className="mt-1 flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={next.onClick}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#b41624] px-[18px] py-3 text-[15px] font-semibold text-white hover:bg-[#9a121f]"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#b41624] px-3 py-1.5 text-[14px] font-semibold text-white hover:bg-[#9a121f]"
               >
                 {next.action}
               </button>
               <button
                 type="button"
                 onClick={() => navigate("transactions")}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-[18px] py-3 text-[15px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-3 py-1.5 text-[14px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
               >
                 Skip to transactions
               </button>
               <button
                 type="button"
                 onClick={() => navigate("statements")}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-[18px] py-3 text-[15px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-3 py-1.5 text-[14px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
               >
                 Add or review statements
               </button>
             </div>
           </div>
-          <div className="flex min-w-0 flex-[0_1_380px] flex-col gap-3 rounded-[14px] border border-[#292b32] bg-[#17181c] p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className={`${eyebrow} text-[#9a9da5]`}>
-                Money in this scope{currency ? ` · ${currency}` : ""}
-              </span>
-              {currencies.length > 1 && (
-                <div role="group" aria-label="Currency" className="inline-flex rounded-lg border border-[#292b32] bg-[#0b0c0f] p-[3px]">
-                  {currencies.map((code) => (
-                    <button
-                      key={code}
-                      type="button"
-                      aria-pressed={code === currency}
-                      onClick={() => setChosenCurrency(code)}
-                      className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${code === currency ? "bg-[#f7f7f8] text-[#0b0c0f]" : "text-[#bfc1c8] hover:text-white"}`}
-                    >
-                      {code} · {n(currencyCounts.get(code) ?? 0)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="flex min-w-0 flex-[1_1_360px] flex-wrap items-center gap-x-5 gap-y-2 text-[14px]">
+            <span className={`${eyebrow} text-[#9a9da5]`}>
+              Money in this scope{currency ? ` · ${currency}` : ""}
+            </span>
+            {currencies.length > 1 && (
+              <div role="group" aria-label="Currency" className="inline-flex rounded-lg border border-[#292b32] bg-[#0b0c0f] p-[3px]">
+                {currencies.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    aria-pressed={code === currency}
+                    onClick={() => setChosenCurrency(code)}
+                    className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${code === currency ? "bg-[#f7f7f8] text-[#0b0c0f]" : "text-[#bfc1c8] hover:text-white"}`}
+                  >
+                    {code} · {n(currencyCounts.get(code) ?? 0)}
+                  </button>
+                ))}
+              </div>
+            )}
             {!totalsReady && !totals.isError ? (
               <p role="status" className="text-[#bfc1c8]">Adding up payments…</p>
             ) : !totalsReady ? (
               <p role="alert" className="text-[#bfc1c8]">Payments could not be added up. Open Transactions to try again.</p>
             ) : (
               <>
-                <div className="flex items-baseline justify-between" title={exact(money?.credit ?? 0n)}>
+                <span className="inline-flex items-baseline gap-2" title={exact(money?.credit ?? 0n)}>
                   <span className="text-[#bfc1c8]"><span aria-hidden="true">↓ </span>In</span>
-                  <span className="text-3xl font-semibold tabular-nums text-[#5fd39a]" style={heading}>
+                  <span className="text-lg font-semibold tabular-nums text-[#5fd39a]">
                     +{compactMoney(minorToNumber(money?.credit ?? 0n, currency))}
                   </span>
-                </div>
-                <div className="flex items-baseline justify-between" title={exact(money?.debit ?? 0n)}>
+                </span>
+                <span className="inline-flex items-baseline gap-2" title={exact(money?.debit ?? 0n)}>
                   <span className="text-[#bfc1c8]"><span aria-hidden="true">↑ </span>Out</span>
-                  <span className="text-3xl font-semibold tabular-nums" style={heading}>
+                  <span className="text-lg font-semibold tabular-nums">
                     −{compactMoney(minorToNumber(money?.debit ?? 0n, currency))}
                   </span>
-                </div>
-                <div className="h-px bg-[#292b32]" />
-                <div className="flex flex-wrap items-baseline justify-between gap-2 text-[14px]">
-                  <span className="text-[#bfc1c8]">{plural(accountCount, "account")} · {span}</span>
-                  <button type="button" onClick={() => navigate("transactions")} className="font-semibold text-[#f7f7f8] hover:underline">
-                    Open →
-                  </button>
-                </div>
+                </span>
+                <span className="inline-flex items-baseline gap-2" title={exact((money?.credit ?? 0n) - (money?.debit ?? 0n))}>
+                  <span className="text-[#bfc1c8]">Net</span>
+                  <span className="text-lg font-semibold tabular-nums">
+                    {(money?.credit ?? 0n) >= (money?.debit ?? 0n) ? "+" : "−"}
+                    {compactMoney(Math.abs(minorToNumber((money?.credit ?? 0n) - (money?.debit ?? 0n), currency)))}
+                  </span>
+                </span>
+                <span className="text-[#bfc1c8]">{plural(accountCount, "account")} · {span}</span>
+                <button type="button" onClick={() => navigate("transactions")} className="font-semibold text-[#f7f7f8] hover:underline">
+                  Open →
+                </button>
               </>
             )}
           </div>

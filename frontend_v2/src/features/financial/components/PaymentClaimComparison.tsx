@@ -6,6 +6,7 @@ import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
+import { readProofClass } from "../lib/ledger-format"
 import { candidateUrl } from "../lib/candidate-contract"
 import { correctionMinor, correctionMoney } from "../lib/correction-contract"
 import {
@@ -384,7 +385,7 @@ function ClaimForm({
                 </p>
                 <Disclosure className="my-2" label={<>Why this result?</>}>
                   <p>
-                    Reading class: {candidate.entry.proof_class.toUpperCase()}
+                    How it was read: {readProofClass(candidate.entry.proof_class).label}
                   </p>
                   {Object.values(candidate.components).map((component) => (
                     <p key={component.name}>

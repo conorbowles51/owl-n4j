@@ -50,7 +50,7 @@ it("shows every class including zeroes, with all four server rules", () => {
       .map((cell) => cell.textContent)
   ).toEqual(["2", "4", "No", "Yes", "Yes", "No"])
   expect(
-    screen.getByText(/Classes eligible for totals: P0, P1, P2/)
+    screen.getByText(/Classes eligible for totals: Checked against the statement.s balances, Read exactly; the file gives no total to check, Checked against the statement.s balances/)
   ).toBeInTheDocument()
 })
 it("renders a future class explicitly and uses the supplied permissions", () => {

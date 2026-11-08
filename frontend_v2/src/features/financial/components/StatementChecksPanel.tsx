@@ -1,4 +1,5 @@
 import { Disclosure } from "./Disclosure"
+import { readProofClass } from "../lib/ledger-format"
 import { currentNativeControls } from "../lib/native-control-contract"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { statementDeltaHints } from "../lib/statement-delta-hints"
@@ -398,7 +399,7 @@ export function StatementChecksPanel({
                   <Disclosure className="space-y-3 text-sm" label="Calculation and further checks">
                     <p>
                       Source: {period.source_status} ·{" "}
-                      {period.proof_class.toUpperCase()}. These checks do not
+                      {readProofClass(period.proof_class).label}. These checks do not
                       change source eligibility.
                     </p>
                     {period.delta_hints && (

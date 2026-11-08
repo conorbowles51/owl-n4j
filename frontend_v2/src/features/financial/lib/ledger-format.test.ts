@@ -341,3 +341,15 @@ describe("exact integer-string ledger amounts", () => {
       expect(formatLedgerAmount(raw, "USD").scaled).toBe(false)
   })
 })
+
+describe("proof class wording", () => {
+  it("never shows a P-code or the words proof class, and says plainly when a figure is outside verified totals", () => {
+    for (const raw of ["p0", "p1", "p2", "p3", "p4"]) {
+      const term = readProofClass(raw)
+      expect(`${term.label} ${term.description}`).not.toMatch(/\bP[0-4]\b|proof class/i)
+    }
+    expect(readProofClass("p3").label).toBe("Not fully checked — not in verified totals")
+    expect(readProofClass("p4").label).toMatch(/not counted/)
+    expect(readProofClass("p0").label).toBe("Checked against the statement's balances")
+  })
+})

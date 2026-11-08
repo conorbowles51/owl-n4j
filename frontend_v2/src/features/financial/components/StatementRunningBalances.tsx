@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
+import { readProofClass } from "../lib/ledger-format"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { currentRunningBalanceComparison } from "../lib/correction-contract"
 import { RunningBalanceComparisonPanel } from "./RunningBalanceComparisonPanel"
@@ -85,7 +86,7 @@ export function StatementRunningBalances({
             <p className="text-sm">
               Checked at {query.data.checked_at}. Source:{" "}
               {query.data.source_status} ·{" "}
-              {query.data.proof_class.toUpperCase()}. No source eligibility or
+              {readProofClass(query.data.proof_class).label}. No source eligibility or
               stored result was changed.
             </p>
             <RunningBalanceComparisonPanel

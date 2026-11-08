@@ -71,7 +71,7 @@ const labels = {
   superseded: "Superseded readings",
   rejected: "Rejected readings",
   source_not_admitted: "Source excluded",
-  proof_class_not_included: "Classification outside these totals",
+  proof_class_not_included: "Not fully checked, left out",
 }
 export function LedgerSummaryPanel({
   caseId,

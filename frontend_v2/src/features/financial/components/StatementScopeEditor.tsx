@@ -140,7 +140,7 @@ export function StatementScopeEditor({
       <p>
         Assign selected reviewed rows to one printed statement period. This
         records your reading and its sources; it does not establish complete
-        extraction or raise P3 eligibility.
+        extraction or make a figure count toward verified totals.
       </p>
       <label className="block">
         Statement account

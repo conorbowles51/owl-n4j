@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { SummaryContribution } from "../lib/summary-contributions"
 import { Button } from "@/components/ui/button"
+import { readProofClass } from "../lib/ledger-format"
 import { correctionMoney } from "../lib/correction-contract"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 
@@ -74,8 +75,9 @@ export function SummaryContributions({
                       {correctionMoney(row.amount_minor, currency)}
                     </td>
                     <td className="text-center">
-                      {row.proof_class.toUpperCase()} /{" "}
-                      {row.source_proof_class.toUpperCase()}
+                      {row.proof_class === row.source_proof_class
+                        ? readProofClass(row.proof_class).label
+                        : `${readProofClass(row.proof_class).label} (source: ${readProofClass(row.source_proof_class).label})`}
                     </td>
                     <td>
                       <Button

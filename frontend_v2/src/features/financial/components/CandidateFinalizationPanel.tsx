@@ -207,7 +207,7 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
         transactions. Every reading must be resolved or rejected.
       </p>
       <p className="text-muted-foreground">
-        Selected rows stay P3 and outside default verified totals. Finalizing
+        Selected rows stay outside verified totals (not fully checked). Finalizing
         seals this PDF reading: no later additions or candidate edits. Changes
         to written rows use ledger corrections.
       </p>
@@ -410,8 +410,8 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
         <div className="space-y-2" role="status">
           <p>
             Finalized {receipt.transaction_count} transactions. Original
-            readings and review history are retained. These P3 rows remain
-            outside default verified totals.
+            readings and review history are retained. These rows remain
+            outside verified totals (not fully checked).
           </p>
           <ul>
             {receipt.transactions.map((row) => (

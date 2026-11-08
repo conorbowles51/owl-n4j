@@ -136,7 +136,7 @@ describe("LedgerTable closed vocabularies", () => {
     expect(screen.getByTestId("ledger-quarantine-reason").textContent).toBe(
       "Balance break"
     )
-    expect(screen.getByTestId("ledger-proof-class").textContent).toBe("P0")
+    expect(screen.getByTestId("ledger-proof-class").textContent).toBe("Checked against the statement's balances")
     expect(screen.getByTestId("ledger-extraction-layer").textContent).toBe(
       "Native"
     )

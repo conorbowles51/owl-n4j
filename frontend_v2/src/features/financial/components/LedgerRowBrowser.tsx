@@ -1105,22 +1105,22 @@ export function LedgerRowBrowser({
                 )}
               </fieldset>
             )}
-            <Disclosure label="Technical filter">
+            <Disclosure label="Filter by how it was checked">
               <label>
-                Evidence classification
+                How it was checked
                 <select
-                  aria-label="Table proof class"
+                  aria-label="Table check status"
                   className="block rounded border bg-background p-2"
                   value={proof}
                   onChange={(e) => {
                     changeView({ proof: e.target.value })
                   }}
                 >
-                  <option value="">All proof classes</option>
+                  <option value="">All</option>
                   {[...new Set(transactions.map((r) => r.proof_class))]
                     .sort()
                     .map((p) => (
-                      <option key={p}>{p}</option>
+                      <option key={p} value={p}>{readProofClass(p).label}</option>
                     ))}
                 </select>
               </label>

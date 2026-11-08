@@ -725,16 +725,19 @@ function PaymentHeader({
           </dd>
         </div>
       </dl>
-      <p className="text-xs text-[#c9cbd2]">
-        <span className="font-semibold text-white">{proof.label}</span>
-        {": "}
-        {proof.description} Read by:{" "}
-        <span className="font-semibold text-white">
-          {layer.label}
-          {layer.isFallback ? " (marked fallback)" : ""}
-        </span>
-        . {layer.description}
+      <p className="text-xs font-semibold text-white" data-testid="source-check-line">
+        {proof.label}
       </p>
+      <Disclosure label="Details">
+        <p className="mt-2 text-xs text-[#c9cbd2]">
+          {proof.description} Read by:{" "}
+          <span className="font-semibold text-white">
+            {layer.label}
+            {layer.isFallback ? " (marked fallback)" : ""}
+          </span>
+          . {layer.description}
+        </p>
+      </Disclosure>
     </div>
   )
 }

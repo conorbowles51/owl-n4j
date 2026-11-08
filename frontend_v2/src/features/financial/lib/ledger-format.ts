@@ -236,29 +236,24 @@ export function changeAvailableFor(
 
 const PROOF_CLASS_COPY: Record<ProofClass, TermCopy> = {
   p0: {
-    label: "P0",
-    description:
-      "Structured file whose own control totals were checked successfully.",
+    label: "Checked against the statement's balances",
+    description: "The file's own totals were checked and agree.",
   },
   p1: {
-    label: "P1",
-    description:
-      "Structured file without control totals. The figures were read exactly, but the file states no total to check them against.",
+    label: "Read exactly; the file gives no total to check",
+    description: "The figures were read exactly, but the file states no total to check them against.",
   },
   p2: {
-    label: "P2",
-    description:
-      "Statement document whose arithmetic closes against its own printed balances.",
+    label: "Checked against the statement's balances",
+    description: "The statement's arithmetic closes against its own printed balances.",
   },
   p3: {
-    label: "P3",
-    description:
-      "Financial source whose checks are incomplete or did not pass. This includes selected financial rows whose full document coverage has not been established.",
+    label: "Not fully checked — not in verified totals",
+    description: "The checks on this figure are incomplete or did not pass, so it is left out of verified totals.",
   },
   p4: {
-    label: "P4",
-    description:
-      "A figure asserted somewhere other than a financial record. Never admitted to the ledger and never counted; useful only as corroboration.",
+    label: "Mentioned elsewhere, not a financial record — not counted",
+    description: "A figure mentioned somewhere other than a financial record. It is never counted.",
   },
 }
 

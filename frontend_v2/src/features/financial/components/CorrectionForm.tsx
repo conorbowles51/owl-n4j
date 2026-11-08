@@ -1,4 +1,5 @@
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { readProofClass } from "../lib/ledger-format"
 import type { LedgerTransaction } from "../api"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
@@ -408,9 +409,10 @@ function CorrectionFormForm({
             />
           )}
           <p>
-            Document verification: {reviewed.verification.current_proof_class} →{" "}
-            {reviewed.verification.proposed_proof_class ?? "unavailable"}. This
-            applies to all rows in this source document.
+            Document check: {readProofClass(reviewed.verification.current_proof_class).label} →{" "}
+            {reviewed.verification.proposed_proof_class
+              ? readProofClass(reviewed.verification.proposed_proof_class).label
+              : "unavailable"}. This applies to all rows in this source document.
           </p>
           {reviewed.verification.can_record &&
             !reviewed.verification.included_in_default_totals && (
