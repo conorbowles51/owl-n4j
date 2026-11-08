@@ -223,6 +223,9 @@ class LifespanShutdownTests(ShutdownStateMixin, unittest.TestCase):
             async def stop(self):
                 pass
 
+            async def recover_after_handover(self):
+                pass
+
         async def forever(**_):
             await asyncio.sleep(3600)
 
@@ -271,6 +274,46 @@ class LifespanShutdownTests(ShutdownStateMixin, unittest.TestCase):
     def blocking_unit_named(self, name, entered):
         entered.set()
         self.release.wait(60)
+
+
+class SupervisorCancelBoundTests(unittest.TestCase):
+    """The phone-sweep supervisor's cancellation handler ends on its own, whatever its child does."""
+
+    def test_a_cancelled_supervisor_ends_even_when_the_child_exit_is_never_observed(self):
+        """asyncio.run's teardown cancels every leftover task once and then waits without a limit. The
+        supervisor's old handler ended with an unbounded wait on the child, so a child exit the loop no
+        longer observes kept the whole process alive (it held both test-suite slots for 55 hours, 6-8 Nov)."""
+        from services.phone import sweep_worker
+
+        signals = []
+
+        class NeverObserved:
+            returncode = None
+
+            def send_signal(self, sig):
+                signals.append(sig)
+
+            def kill(self):
+                signals.append(signal.SIGKILL)
+
+            async def wait(self):
+                await asyncio.Event().wait()
+
+        async def never_exec(*args, **kwargs):
+            return NeverObserved()
+
+        async def scenario():
+            with patch.object(asyncio, "create_subprocess_exec", never_exec), \
+                 patch.object(sweep_worker, "STOP_GRACE_SECONDS", 0.2):
+                task = asyncio.create_task(sweep_worker.supervise_forever(), name="phone-interpretation")
+                await asyncio.sleep(0.05)
+                task.cancel()
+                done, _pending = await asyncio.wait({task}, timeout=5)
+                self.assertIn(task, done)
+                self.assertTrue(task.cancelled())
+                self.assertEqual(signals, [signal.SIGTERM, signal.SIGKILL])
+
+        asyncio.run(scenario())
 
 
 APP_SOURCE = textwrap.dedent('''

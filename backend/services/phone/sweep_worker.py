@@ -12,6 +12,7 @@ Run by hand: ``cd backend && python -m services.phone.sweep_worker``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import shutil
@@ -112,12 +113,18 @@ async def supervise_forever():
                 await asyncio.sleep(min(600, 30 * 2 ** min(failures, 5)))
     except asyncio.CancelledError:
         if proc is not None and proc.returncode is None:
-            proc.send_signal(signal.SIGTERM)
+            # Every wait here is bounded and every signal tolerates a child already gone: this
+            # handler runs during loop teardown, where a second cancellation can arrive and the
+            # child's exit may never be observed, and it must still end.
+            with contextlib.suppress(ProcessLookupError):
+                proc.send_signal(signal.SIGTERM)
             try:
                 await asyncio.wait_for(proc.wait(), STOP_GRACE_SECONDS)
-            except asyncio.TimeoutError:
-                proc.kill()  # the open pass rolls back; the previous generation stays readable
-                await proc.wait()
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()  # the open pass rolls back; the previous generation stays readable
+                with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                    await asyncio.wait_for(proc.wait(), 2)
         raise
 
 
