@@ -11,7 +11,10 @@ import { TraceReportDownload } from "./TraceReportDownload"
 import { IndirectReviewWorkbench } from "./IndirectReviewWorkbench"
 import { TraceAssetFields, TraceAssetResultsPanel } from "./TraceAssetFields"
 import type { TraceAssetUse } from "../lib/trace-assets"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { TraceStartStep } from "./TraceStartStep"
+import { useElapsedSeconds } from "../hooks/use-elapsed-seconds"
+import { TRACE_START_DRAFT, type TraceStart } from "../lib/trace-start"
 import { fetchAPI } from "@/lib/api-client"
 import { isTraceSizeRefusal } from "../lib/whole-case-run"
 import { WholeCaseTrace } from "./WholeCaseTrace"
@@ -87,6 +90,23 @@ function CaseTracing({ caseId }: { caseId: string }) {
     "single-trace-population",
     "verified"
   )
+  const [start] = useFinancialDraft<TraceStart | null>(
+    caseId,
+    TRACE_START_DRAFT,
+    null
+  )
+  // A trace started from Follow money loads its inputs at once while the form still shows that start. A start
+  // restored later from the tab's drafts (a reload) waits for Load, so opening the page never re-runs a read.
+  const [opened] = useState(() => Date.now())
+  const autoLoad =
+    start &&
+    opened - start.at < 60_000 &&
+    params.accountId === start.account_id &&
+    params.startDate === start.day &&
+    params.endDate === start.end &&
+    population === start.population
+      ? start.at
+      : null
   return (
     <section aria-label="Conditional ledger tracing" className="space-y-4 p-4">
       <h2 className="font-semibold">Trace money through one account</h2>
@@ -95,6 +115,7 @@ function CaseTracing({ caseId }: { caseId: string }) {
         funds, deposit attribution and same-day order are your assumptions.
         Results do not establish ownership or which legal rule applies.
       </p>
+      <TraceStartStep caseId={caseId} />
       <LedgerFilters
         caseId={caseId}
         onApply={setParams}
@@ -120,25 +141,34 @@ function CaseTracing({ caseId }: { caseId: string }) {
         population={population}
         caseId={caseId}
         params={params}
+        autoLoad={autoLoad}
       />
     </section>
   )
 }
+/** Clicks whose inputs already loaded, so moving between tabs never loads one twice. */
+const autoLoaded = new Set<number>()
 function ScopedTracing({
   population,
   caseId,
   params,
+  autoLoad = null,
 }: {
   caseId: string
   params: LedgerQueryParams
   population: "working" | "verified"
+  /** The click that started this trace: its inputs load once, without the user pressing Load. */
+  autoLoad?: number | null
 }) {
   const [inputs, setInputs] = useState<TraceInputs | null>(null)
   const freshness = useAnalysisFreshness(caseId)
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("")
+  const [began, setBegan] = useState(0)
+  const seconds = useElapsedSeconds(busy, began)
   const load = async () => {
     const assertCurrent = freshness.beginRead()
+    setBegan(Date.now())
     setBusy(true)
     setError("")
     setInputs(null)
@@ -173,6 +203,13 @@ function ScopedTracing({
       setBusy(false)
     }
   }
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => {
+    if (autoLoad === null || autoLoaded.has(autoLoad)) return
+    autoLoaded.add(autoLoad)
+    void loadRef.current()
+  }, [autoLoad])
   return (
     <div className="space-y-3">
       <p>
@@ -188,7 +225,21 @@ function ScopedTracing({
       >
         {busy ? "Loading…" : "Load tracing inputs"}
       </Button>
-      {error && !isTraceSizeRefusal(error) && <p role="alert">{error}</p>}
+      {busy && (
+        <p role="status">
+          Loading the payments of this account from {params.startDate} to{" "}
+          {params.endDate} for the tracing rules… {seconds} s. A large account
+          can take about 10 s.
+        </p>
+      )}
+      {error && !isTraceSizeRefusal(error) && (
+        <div role="alert" className="space-y-2">
+          <p>{error}</p>
+          <Button variant="outline" onClick={() => void load()}>
+            Retry
+          </Button>
+        </div>
+      )}
       {isTraceSizeRefusal(error) && (
         <WholeCaseTrace
           caseId={caseId}

@@ -454,7 +454,13 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
           caseId={caseId}
           rows={data.rows}
           onOpen={(ids, title) => setOpen({ ids, title })}
-          onTrace={() => setMainView("tracing")}
+          onTrace={(row) => {
+            writeTraceStart(
+              caseId,
+              traceStartFrom(row, data.rows, data.params)
+            )
+            setMainView("tracing")
+          }}
         />
         <div id="follow-money-tables" className="scroll-mt-4" />
         <ReviewedMoneyTrails caseId={caseId} rows={data.rows} />
@@ -716,3 +722,4 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
   )
 }
 import { MoneyTrailReview } from "./MoneyTrailReview"
+import { traceStartFrom, writeTraceStart } from "../lib/trace-start"

@@ -34,7 +34,7 @@ it("draws money in and out by category, keeps the difference, opens a band's pay
   expect(onOpen).toHaveBeenLastCalledWith(["o1"], "Payroll · money out")
   expect(screen.getByText("INDHECA")).toBeTruthy()
   fireEvent.click(screen.getByRole("button", { name: "Trace where it went next →" }))
-  expect(onTrace).toHaveBeenCalled()
+  expect(onTrace).toHaveBeenCalledWith(expect.objectContaining({ key: "big", account_id: "a1" }))
   fireEvent.click(screen.getByRole("button", { name: "USD · 1" }))
   expect(screen.getByRole("button", { name: /^Deposits in: \+5\.00 USD/ })).toBeTruthy()
   expect(screen.getByRole("link", { name: /Show as table/ }).getAttribute("href")).toBe("#follow-money-tables")

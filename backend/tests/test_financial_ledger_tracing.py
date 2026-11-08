@@ -206,3 +206,35 @@ class LedgerTraceRouterTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as caught:router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),"verified",db)
             self.assertEqual(caught.exception.status_code,500)
             self.assertNotIn('private',caught.exception.detail)
+
+
+class NothingToTraceTests(unittest.TestCase):
+    """An account and dates with nothing to trace say why and what to do, never the size refusal."""
+
+    def _export(self, readings):
+        from types import SimpleNamespace
+        ledger = dict(case_id='c', account_id='a', start_date='2025-04-28', end_date='2026-08-31', history_captured=True, readings=readings)
+        return SimpleNamespace(snapshot=SimpleNamespace(content=json.dumps(dict(export_ready=True, ledger=ledger)), sha256='0' * 64))
+
+    def _refusal(self, readings, population='verified'):
+        with self.assertRaises(LedgerSummaryError) as caught:
+            ledger_trace_inputs(self._export(readings), population=population)
+        return str(caught.exception)
+
+    def test_unverified_payments_point_to_all_imported_payments(self):
+        message = self._refusal([dict(included=False, exclusion_reason='proof_class_not_included')] * 3)
+        self.assertEqual(message, 'No verified payments to trace in this account from 2025-04-28 to 2026-08-31: 3 imported payments '
+                         'are not verified yet. Choose All imported payments to trace them, or verify the statements first.')
+        self.assertNotIn('between 1 and 1000', message)
+
+    def test_an_empty_window_says_no_payments_in_the_statements_loaded(self):
+        message = self._refusal([], population='working')
+        self.assertTrue(message.startswith('No payments in this account from 2025-04-28 to 2026-08-31 in the statements loaded.'))
+
+    def test_excluded_payments_say_they_are_excluded(self):
+        message = self._refusal([dict(included=False, exclusion_reason='superseded')], population='working')
+        self.assertIn('1 payment is excluded from the ledger totals', message)
+
+    def test_more_than_the_limit_keeps_the_size_refusal(self):
+        rows = [dict(included=True, exclusion_reason=None, row=dict(currency='USD'))] * 1001
+        self.assertIn('Tracing requires between 1 and 1000', self._refusal(rows))

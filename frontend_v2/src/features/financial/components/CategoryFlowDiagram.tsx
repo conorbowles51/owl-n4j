@@ -62,7 +62,8 @@ export function CategoryFlowDiagram({
   caseId: string
   rows: LedgerTransaction[]
   onOpen: (ids: string[], title: string) => void
-  onTrace?: () => void
+  /** Starts a trace from the payment the button sits on. */
+  onTrace?: (row: LedgerTransaction) => void
 }) {
   const colors = useCategoryColors(caseId)
   const counts = new Map<string, number>()
@@ -275,7 +276,7 @@ export function CategoryFlowDiagram({
                   Open it
                 </button>
                 {onTrace && (
-                  <button type="button" className="rounded-lg bg-[#b41624] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a121f]" onClick={onTrace}>
+                  <button type="button" className="rounded-lg bg-[#b41624] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a121f]" onClick={() => onTrace(biggest)}>
                     Trace where it went next →
                   </button>
                 )}

@@ -60,6 +60,23 @@ class LedgerTraceInput(BaseModel):
         return value
 
 
+def _no_trace_rows(ledger, population):
+    """Why an account and dates hold nothing to trace, and what to do: never read as a size refusal."""
+    readings = ledger['readings']
+    where = f"in this account from {ledger['start_date']} to {ledger['end_date']}"
+    unverified = sum(1 for r in readings if r['exclusion_reason'] == 'proof_class_not_included')
+    if population == 'verified' and unverified:
+        noun = 'payment is' if unverified == 1 else 'payments are'
+        return (f"No verified payments to trace {where}: {unverified} imported {noun} not verified yet. "
+                "Choose All imported payments to trace them, or verify the statements first.")
+    if readings:
+        noun = 'payment is' if len(readings) == 1 else 'payments are'
+        return (f"No payments to trace {where}: {len(readings)} {noun} excluded from the ledger totals. "
+                "Open Transactions to see why they are excluded.")
+    return (f"No payments {where} in the statements loaded. "
+            "Check Statements & accounts for a missing period, or choose other dates.")
+
+
 def ledger_trace_inputs(export, *, population="verified"):
     if population not in ("working", "verified"):
         raise LedgerSummaryError("Choose working or verified readings for tracing.")
@@ -70,7 +87,9 @@ def ledger_trace_inputs(export, *, population="verified"):
     if not ledger['account_id'] or not ledger['start_date'] or not ledger['end_date']:
         raise LedgerSummaryError('Choose one account and a closed ordering-date interval for tracing.')
     rows = [r for r in ledger['readings'] if r['included'] or (population == 'working' and r['exclusion_reason'] == 'proof_class_not_included')]
-    if not rows or len(rows) > MAX_TRACE_ROWS:
+    if not rows:
+        raise LedgerSummaryError(_no_trace_rows(ledger, population))
+    if len(rows) > MAX_TRACE_ROWS:
         raise LedgerSummaryError('Tracing requires between 1 and 1000 included readings; narrow the scope without omitting relevant activity.')
     currencies = {r['row']['currency'] for r in rows}
     if len(currencies) != 1:
