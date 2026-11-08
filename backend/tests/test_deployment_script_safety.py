@@ -46,6 +46,9 @@ def release_sandbox(tmp_path):
     (project / 'deploy/git-update.sh').write_text('update_deploy_checkout() { $RUN_AS git pull --ff-only origin "$1"; }\n')
     # This service installer is not under test, and must never touch the host.
     (project / 'deploy/install-frontend-service.sh').write_text('#!/bin/bash\nexit 0\n')
+    # The Chroma settings step (bc6570d3a) is not under test, and the real script writes to the live
+    # Chroma on 127.0.0.1 (--apply); the sandbox gets an inert stand-in like the installer above.
+    (project / 'deploy/chroma-settings.sh').write_text('#!/bin/bash\nexit 0\n')
     (project / '.env').write_text('API_PORT=8002\nFRONTEND_PORT=5174\n')
     # The checked-in choice of server may be nginx; these tests cover the vite preview path, and nginx paths point
     # into the sandbox so a run as root can never install a site on the host.
@@ -688,6 +691,8 @@ def test_a_backend_in_a_tree_keeps_its_data_paths(tmp_path):
     (checkout / '.env').write_text('')
     (tree / '.env').symlink_to(checkout / '.env')
     shutil.copy(Path(__file__).resolve().parents[1] / 'config.py', tree / 'backend/config.py')
+    # config.py ends by calling secret_check (a7e1035f5), so the module must sit beside it here too.
+    shutil.copy(Path(__file__).resolve().parents[1] / 'secret_check.py', tree / 'backend/secret_check.py')
     env = {key: value for key, value in os.environ.items() if key not in ('EVIDENCE_DATA_ROOT', 'PLATFORM_UPDATE_REPO_DIR')}
     answer = subprocess.run([sys.executable, '-c', 'import config; print(config.EVIDENCE_DATA_ROOT, config.PLATFORM_UPDATE_REPO_DIR, config.BASE_DIR)'],
                             cwd=tree / 'backend', env=env, capture_output=True, text=True, check=True).stdout.split()

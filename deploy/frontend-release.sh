@@ -121,8 +121,13 @@ frontend_switch() {
 }
 
 # Keep the newest FRONTEND_KEEP_BUILDS builds (current always), and only their files in the asset pool.
+# One pass over the pool: the kept builds' asset names are listed once and everything else goes in a single rm.
+# The old shape forked basename and up to four existence checks per pool file and one rm per removed file, which
+# held the release lock 13-34 min at load 90 and 34 s even with nothing to remove (2,094 files, 8 Nov, load 14).
+# The kept set is computed before anything is deleted, and when the serving build lists no assets the prune stops
+# with nothing deleted: a pool emptied against a misread kept set would 404 every open tab.
 frontend_prune() {
-    local current keep=() b f name
+    local current keep=() b kept_names doomed
     current="$(frontend_current_build)"
     [ -n "${current}" ] || return 0
     keep+=("${current}")
@@ -131,15 +136,17 @@ frontend_prune() {
         [ "${b}" = "${current}" ] && continue
         frontend_build_exists "${b}" && keep+=("${b}")
     done < <(cd "${FRONTEND_RELEASES}/builds" && ls -1t 2>/dev/null)
+    if [ -z "$(ls -1A "$(frontend_build_dir "${current}")/assets" 2>/dev/null)" ]; then
+        warn "Frontend prune: the serving build ${current:0:12} lists no assets; nothing deleted"
+        return 1
+    fi
+    kept_names="$(for b in "${keep[@]}"; do ls -1A "$(frontend_build_dir "${b}")/assets" 2>/dev/null; done | LC_ALL=C sort -u)"
     for b in $(cd "${FRONTEND_RELEASES}/builds" && ls -1A); do
         printf '%s\n' "${keep[@]}" | grep -qxF "${b}" && continue
         $RUN_AS chmod -R u+w "$(frontend_build_dir "${b}")" && $RUN_AS rm -rf "$(frontend_build_dir "${b}")"
     done
-    for f in "${FRONTEND_RELEASES}"/assets/*; do
-        [ -e "${f}" ] || continue
-        name="$(basename "${f}")"
-        local used=false
-        for b in "${keep[@]}"; do [ -e "$(frontend_build_dir "${b}")/assets/${name}" ] && { used=true; break; }; done
-        [ "${used}" = true ] || $RUN_AS rm -f "${f}"
-    done
+    doomed="$(cd "${FRONTEND_RELEASES}/assets" && ls -1A 2>/dev/null | LC_ALL=C sort |
+        LC_ALL=C comm -23 - <(printf '%s\n' "${kept_names}"))"
+    [ -n "${doomed}" ] || return 0
+    (cd "${FRONTEND_RELEASES}/assets" && printf '%s\n' "${doomed}" | tr '\n' '\0' | $RUN_AS xargs -0 rm -f --)
 }
