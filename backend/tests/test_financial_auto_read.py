@@ -221,6 +221,23 @@ class AutoReadTests(AutoReadBase):
         [batch] = self.batches()
         self.assertEqual([f['file_id'] for f in batch.files], [str(ids[0])])
 
+    def test_a_round_whose_budget_is_spent_before_detection_still_reads_one_file(self):
+        """At suite load the backfill outlived the 8 s budget and the round checked nothing (5-6 Nov)."""
+        import fitz
+        path = Path(self.f._directory) / 'spent.pdf'
+        with fitz.open() as document:
+            document.new_page().insert_text((40, 60), STATEMENT_TEXT, fontsize=8)
+            document.save(path)
+        with patch('services.financial.auto_read.detect_enabled', return_value=True), \
+                patch.object(auto_read, 'backfill_enabled', return_value=False), \
+                patch.object(auto_read, 'SWEEP_BUDGET_SECONDS', -1.0), self.f.SessionLocal() as db:
+            from services.evidence_db_storage import EvidenceDBStorage
+            [row] = EvidenceDBStorage.add_files(db, case_id=self.f.case.id, created_by_id=self.f.user.id, files_data=[
+                dict(original_filename='spent.pdf', stored_path=str(path), sha256='f' * 64, size=1)])
+            db.commit()
+            result = auto_read.sweep(self.f.SessionLocal, Path)
+        self.assertEqual(result, dict(checked=1, added=1))
+
     def test_evidence_pdfs_uploaded_before_detection_are_checked_too(self):
         """Files registered before automatic detection had no mark and were never checked (OPDMD66).
 

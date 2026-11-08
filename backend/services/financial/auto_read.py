@@ -431,8 +431,10 @@ def _detect_pending(session, resolve_path, deadline):
     from services.financial.statement_detection import detect
     checked = 0
     # A file the Evidence pipeline is reading now is looked at after it finishes.
+    # The budget bounds a round, but a round always checks one file: on a loaded box the backfill alone can
+    # outlive it, and a round that checks nothing makes no progress however many rounds run.
     for file in _marked(session, ('pending',), SWEEP_LIMIT, (EvidenceFile.status != 'processing',)):
-        if time.monotonic() >= deadline:
+        if checked and time.monotonic() >= deadline:
             break
         if _in_archive(file):
             continue
@@ -458,9 +460,9 @@ def _enroll_marked(session, deadline):
     for file in files:
         by_case.setdefault(file.case_id, []).append(file)
     session.commit()  # release the row locks before taking a case lock
-    for case_id, group in by_case.items():
-        if time.monotonic() >= deadline:
-            break
+    for number, (case_id, group) in enumerate(by_case.items()):
+        if number and time.monotonic() >= deadline:
+            break  # one case per round at least, as for detection
         if not _lock_case(session, case_id):
             continue  # a statement review holds the case; next sweep
         current = [f for f in session.scalars(select(EvidenceFile).where(EvidenceFile.id.in_([f.id for f in group]))
