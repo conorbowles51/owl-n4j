@@ -390,7 +390,45 @@ def get_run_detail(db: Session, *, run_id: UUID, user: User) -> AgentRunDetail:
         tool_trace=[to_api_tool_trace(tool_call) for tool_call in run.tool_calls],
         mandate_version_id=str(run.mandate_version_id) if run.mandate_version_id else None,
         mandate_override=run.mandate_override,
+        **run_progress_fields(run),
     )
+
+
+def run_progress_fields(run: AgentRun) -> dict[str, Any]:
+    from services.agent import live_runs
+    running = run.status == "running"
+    return {
+        "progress": (run.extra_metadata or {}).get("progress") if running else None,
+        "heartbeat_at": run.heartbeat_at,
+        "stale": bool(running and live_runs.stale(run.heartbeat_at or run.started_at)),
+        "server_time": datetime.now(timezone.utc),
+    }
+
+
+def active_runs(db: Session, *, user: User, case_id: UUID) -> list[dict[str, Any]]:
+    """The person's own runs in the case still marked running, newest first (at most 5), with progress."""
+    check_case_access(db, case_id, user, required_permission=("case", "view"))
+    runs = (db.query(AgentRun)
+            .join(AgentThread, AgentThread.id == AgentRun.thread_id)
+            .filter(AgentRun.case_id == case_id, AgentRun.status == "running",
+                    AgentThread.owner_user_id == user.id)
+            .order_by(AgentRun.started_at.desc())
+            .limit(5).all())
+    out = []
+    for run in runs:
+        fields = run_progress_fields(run)
+        out.append({
+            "run_id": str(run.id),
+            "thread_id": str(run.thread_id),
+            "input_message": run.input_message,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "workflow": (run.extra_metadata or {}).get("workflow"),
+            "progress": fields["progress"],
+            "heartbeat_at": run.heartbeat_at.isoformat() if run.heartbeat_at else None,
+            "stale": fields["stale"],
+            "server_time": fields["server_time"].isoformat(),
+        })
+    return out
 
 
 def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThreadDetail:

@@ -150,6 +150,12 @@ class AgentRunDetail(AgentRunStatusResponse):
     tool_trace: list[AgentToolTraceItem] = Field(default_factory=list)
     mandate_version_id: str | None = None
     mandate_override: dict[str, Any] | None = None
+    # Live progress of a running run (services.agent.live_runs): the plain line for the step, when the worker last
+    # beat, whether that beat is too old for a living worker, and the server's clock to time "so far" against.
+    progress: dict[str, Any] | None = None
+    heartbeat_at: datetime | None = None
+    stale: bool = False
+    server_time: datetime | None = None
 
 
 class AgentThreadSummary(BaseModel):

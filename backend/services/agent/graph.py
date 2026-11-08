@@ -6,6 +6,7 @@ import logging
 import re
 import time
 import uuid
+import logging
 from typing import Annotated, Any, TypedDict
 from collections.abc import Callable
 
@@ -984,7 +985,19 @@ class AgentGraphRunner:
         proposer: dict[str, Any] | None = None,
         user_id: str | None = None,
         all_cases: bool = False,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ):
+        from services.agent import live_runs
+
+        def note(progress: dict[str, Any]) -> None:
+            # The plain line for the step now starting (services.agent.live_runs); a failure never stops the run.
+            if on_progress is None:
+                return
+            try:
+                on_progress(progress)
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).warning("Agent progress note failed", exc_info=True)
+
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
             case_id=case_id,
@@ -1014,6 +1027,7 @@ class AgentGraphRunner:
         def agent_node(state: AgentState) -> dict[str, Any]:
             if should_cancel and should_cancel():
                 raise AgentRunCancelled("Agent run cancelled")
+            note(live_runs.progress_thinking(step=int(state.get("tool_iterations") or 0)))
             response = model_with_tools.invoke(
                 [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
             )
@@ -1029,11 +1043,14 @@ class AgentGraphRunner:
             tool_results: dict[str, Any] = {}
             used_chars = _tool_message_chars(state["messages"])
 
-            for tool_call in tool_calls:
+            done_before = int(state.get("tool_iterations") or 0)
+            for position, tool_call in enumerate(tool_calls, start=1):
                 if should_cancel and should_cancel():
                     raise AgentRunCancelled("Agent run cancelled")
                 name = tool_call.get("name")
                 args = tool_call.get("args") or {}
+                note(live_runs.progress_for_tool(step=done_before + position, name=name, args=args,
+                                                 index=position, batch=len(tool_calls)))
                 call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
                 activity = activity_for_tool_call(name, args, call_id)
                 started = time.perf_counter()
@@ -1132,6 +1149,7 @@ class AgentGraphRunner:
                 return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
             final_messages = _messages_for_finalizer(state)
+            note(live_runs.progress_writing(step=int(state.get("tool_iterations") or 0)))
             response = self.base_model.invoke(
                 [
                     SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),

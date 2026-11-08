@@ -53,12 +53,24 @@ def _now():
 class RunHeartbeat:
     """Beats ``agent_runs.heartbeat_at`` on its own connection while the run's worker lives.
 
+    It also carries the run's live progress (services.agent.live_runs): a changed progress line is written at once
+    to ``extra_metadata['progress']``, so a person who leaves and comes back, or reads from the other worker, sees
+    the same step. Every ``POLL_SECONDS`` it reads the run's status: a Stop written by the other web worker
+    (``cancelled``) is passed to this worker's run (services.agent.cancellation), which stops at its next check.
+
     A beat that fails is logged and retried on the next tick; the run itself is never touched by a beat failure.
     """
+
+    POLL_SECONDS = 2
 
     def __init__(self, run_id):
         self.run_id = run_id
         self._stop = threading.Event()
+        self._wake = threading.Event()
+        self._lock = threading.Lock()
+        self._progress = None
+        self._progress_dirty = False
+        self._last_beat = 0.0
         self._thread = threading.Thread(target=self._beat, name=f'agent-run-heartbeat-{run_id}', daemon=True)
 
     def start(self) -> 'RunHeartbeat':
@@ -68,21 +80,78 @@ class RunHeartbeat:
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
+
+    def note_progress(self, progress: dict) -> None:
+        with self._lock:
+            self._progress = dict(progress)
+            self._progress_dirty = True
+        self._wake.set()
 
     def _beat(self) -> None:
-        while not self._stop.wait(HEARTBEAT_SECONDS):
-            self._beat_once()
+        import time
+        while not self._stop.is_set():
+            self._wake.wait(self.POLL_SECONDS)
+            self._wake.clear()
+            if self._stop.is_set():
+                break
+            with self._lock:
+                dirty = self._progress_dirty
+            if dirty or time.monotonic() - self._last_beat >= HEARTBEAT_SECONDS:
+                self._beat_once()
+            self._check_stopped_elsewhere()
 
     def _beat_once(self) -> None:
+        import time
         from postgres.models.agent import AgentRun
         from postgres.session import get_background_session
+        with self._lock:
+            progress = self._progress if self._progress_dirty else None
+            self._progress_dirty = False
         try:
             with get_background_session() as session:
                 session.execute(update(AgentRun).where(AgentRun.id == self.run_id)
                                 .values(heartbeat_at=_now()))
+                if progress is not None:
+                    _write_progress(session, self.run_id, progress)
                 session.commit()
+            self._last_beat = time.monotonic()
         except Exception as exc:  # noqa: BLE001 - the run goes on; the next tick tries again
             log.warning('Agent run %s heartbeat failed: %s', self.run_id, exc)
+            if progress is not None:
+                with self._lock:
+                    if not self._progress_dirty:
+                        self._progress, self._progress_dirty = progress, True
+
+    def _check_stopped_elsewhere(self) -> None:
+        from postgres.models.agent import AgentRun
+        from postgres.session import get_background_session
+        from services.agent.cancellation import request_cancel
+        try:
+            with get_background_session() as session:
+                status = session.execute(select(AgentRun.status).where(AgentRun.id == self.run_id)).scalar()
+            if status is not None and status != 'running':
+                request_cancel(str(self.run_id))
+        except Exception as exc:  # noqa: BLE001
+            log.warning('Agent run %s status check failed: %s', self.run_id, exc)
+
+
+def _write_progress(session, run_id, progress: dict) -> None:
+    """``extra_metadata['progress'] = progress`` without touching the run's other metadata keys (on PostgreSQL one
+    ``jsonb_set``, so a key the run writes at the same moment is never lost)."""
+    import json
+    from sqlalchemy import text
+    from postgres.models.agent import AgentRun
+    from services.agent.json_utils import to_jsonable
+    payload = to_jsonable(progress)
+    if session.get_bind().dialect.name == 'postgresql':
+        session.execute(text("UPDATE agent_runs SET extra_metadata = jsonb_set(COALESCE(extra_metadata, '{}'::jsonb), "
+                             "'{progress}', CAST(:p AS jsonb)) WHERE id = :id"),
+                        {'p': json.dumps(payload), 'id': str(run_id)})
+        return
+    run = session.get(AgentRun, run_id)
+    if run is not None:
+        run.extra_metadata = {**(run.extra_metadata or {}), 'progress': payload}
 
 
 def settle_orphaned_runs(session) -> list[dict]:

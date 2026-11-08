@@ -69,7 +69,10 @@ class AgentService:
         db: Session,
         user: User,
         request: AgentMessageRequest,
+        live=None,
     ):
+        """``live`` (services.agent.live_runs.LiveRun): the channel a detached run reports its steps to as they start;
+        without it the steps still reach the run's stored progress through the heartbeat."""
         if not request.persist:
             raise ValueError("Ephemeral agent runs are not supported yet")
 
@@ -147,8 +150,12 @@ class AgentService:
             run=run,
             details={"thread_id": str(thread.id), "streaming": True},
         )
+        from services.agent import live_runs
         yield {
             "type": "run_started",
+            "started_at": run.started_at.isoformat() if run.started_at else live_runs.now_iso(),
+            "server_time": live_runs.now_iso(),
+            "progress": live_runs.progress_thinking(step=0),
             "thread_id": str(thread.id),
             "run_id": run_id,
             "user_message_id": str(user_message.id),
@@ -171,6 +178,12 @@ class AgentService:
 
         # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
         heartbeat = run_settle.RunHeartbeat(run.id)
+        if live is not None:
+            live.run_id = run_id
+            live.on_progress_change = heartbeat.note_progress
+            on_progress = live.set_progress
+        else:
+            on_progress = heartbeat.note_progress
         try:
             heartbeat.start()
             for event in runner.stream(
@@ -191,6 +204,7 @@ class AgentService:
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
                 all_cases=request.all_cases,
+                on_progress=on_progress,
             ):
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
@@ -711,6 +725,9 @@ class AgentService:
         return mandate_context_service.metadata(
             db, case_id=thread.case_id, version_id=thread.mandate_version_id
         )
+
+    def active_runs(self, *, db: Session, user: User, case_id: UUID) -> list[dict[str, Any]]:
+        return storage.active_runs(db, user=user, case_id=case_id)
 
     def get_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunDetail:
         return storage.get_run_detail(db, run_id=run_id, user=user)

@@ -116,16 +116,35 @@ def create_agent_message(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+def get_run_db():
+    """The run's own session: a streamed run outlives its request (services.agent.live_runs), so its session is
+    closed by the run's worker thread when the run ends, not when the response does. Closed here only when the
+    run never started."""
+    from postgres.session import _get_session_local
+    db = _get_session_local()()
+    try:
+        yield db
+    except BaseException:
+        db.close()
+        raise
+
+
 @router.post("/messages/stream")
 def stream_agent_message(
     request: AgentMessageRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_run_db),
     current_user: User = Depends(get_current_db_user),
 ):
+    from services.agent import live_runs
+
+    started = False
     try:
-        events = agent_service.stream_message(db=db, user=current_user, request=request)
+        user = db.get(User, current_user.id) or current_user
+        live = live_runs.LiveRun()
+        events = agent_service.stream_message(db=db, user=user, request=request, live=live)
         event_iterator = iter(events)
         first_event = next(event_iterator)
+        started = True
     except BudgetRefused as exc:
         raise HTTPException(status_code=402, detail=exc.reason) from exc
     except ValueError as exc:
@@ -138,14 +157,22 @@ def stream_agent_message(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except StopIteration as exc:
         raise HTTPException(status_code=500, detail="Agent stream ended before it started") from exc
+    finally:
+        if not started:
+            db.close()
+
+    # The run goes on to its end on its own thread; leaving the page stops only this reading of it.
+    live_runs.pump(event_iterator, live, on_end=db.close, name=f"agent-run-{first_event.get('run_id')}")
 
     def event_stream():
         yield _sse(first_event)
         try:
-            for event in event_iterator:
+            for event in live.read():
                 yield _sse(event)
         except Exception as exc:
             yield _sse({"type": "error", "message": str(exc)})
+        finally:
+            live.reader_left()
 
     return StreamingResponse(
         event_stream(),
@@ -155,6 +182,24 @@ def stream_agent_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/runs/active")
+def list_active_agent_runs(
+    case_id: UUID = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """This person's runs still working in the case, newest first, each with its plain progress line: what the
+    agent page shows on return while a run goes on server-side."""
+    try:
+        return {"runs": agent_service.active_runs(db=db, user=current_user, case_id=case_id)}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunDetail)
