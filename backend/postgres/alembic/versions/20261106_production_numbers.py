@@ -4,7 +4,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
 revision = "20261106_production_numbers"
-down_revision = "20261108_upload_group_members_total"
+down_revision = "20261106_case_exports"
 branch_labels = None
 depends_on = None
 
