@@ -32,8 +32,10 @@ function ExportRow({ row, caseId, onChanged }: { row: CaseExport; caseId: string
   const [actionError, setActionError] = useState<string | null>(null)
   const active = (ACTIVE_EXPORT_STATUSES as readonly string[]).includes(row.status)
   const act = useMutation({
-    mutationFn: (what: "cancel" | "remove") =>
-      what === "cancel" ? caseExportsAPI.cancel(caseId, row.id) : caseExportsAPI.remove(caseId, row.id),
+    mutationFn: async (what: "cancel" | "remove"): Promise<void> => {
+      if (what === "cancel") await caseExportsAPI.cancel(caseId, row.id)
+      else await caseExportsAPI.remove(caseId, row.id)
+    },
     onSuccess: onChanged,
     onError: (error) => setActionError((error as Error).message),
   })
