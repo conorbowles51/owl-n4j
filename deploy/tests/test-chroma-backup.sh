@@ -45,6 +45,22 @@ run "$(epoch '2026-11-05 12:00')" check || fail "fresh set failed"
 if run "$(epoch '2026-11-06 03:31')" check; then fail "stale set passed"; fi
 grep -q '25 h old' "${alerts}" || fail "no stale alert"
 
+# Busy box: tar exits 1 ("file changed as we read it", the root folder's time) while no index moved. That is a set.
+cat > "${test_root}/tar" <<'EOF'
+#!/usr/bin/env bash
+/usr/bin/tar "$@" || exit $?
+exit 1
+EOF
+chmod +x "${test_root}/tar"; : > "${alerts}"
+PATH="${test_root}:${PATH}" run "$(epoch '2026-11-05 02:32')" dump || fail "tar exit 1 with still indexes lost the set"
+[[ -d "${dir}/chroma-20261105-0232Z" ]] || fail "no set after tar exit 1"
+[[ ! -s "${alerts}" ]] || fail "alert after tar exit 1: $(cat "${alerts}")"
+# A real tar failure gives no set and an alert.
+printf '#!/usr/bin/env bash\nexit 2\n' > "${test_root}/tar"; : > "${alerts}"
+if PATH="${test_root}:${PATH}" run "$(epoch '2026-11-05 02:33')" dump; then fail "tar exit 2 accepted"; fi
+[[ ! -d "${dir}/chroma-20261105-0233Z" ]] || fail "tar exit 2 became a set"
+[[ -s "${alerts}" ]] || fail "no alert for tar exit 2"
+
 # An index that keeps changing while read gives no set and an alert.
 cat > "${test_root}/tar" <<EOF
 #!/usr/bin/env bash

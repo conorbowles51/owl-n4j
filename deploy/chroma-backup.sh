@@ -54,7 +54,7 @@ do_dump() {
     mkdir -p "${BACKUP_DIR}"
     exec 8>"${BACKUP_DIR}/.lock"
     flock -n 8 || { alert "a Chroma backup is already running"; return 1; }
-    local name previous prev_size=0 size started tries=0 ok=0 s0 s1
+    local name previous prev_size=0 size started tries=0 ok=0 s0 s1 rc
     name="chroma-$(stamp)Z"
     previous="$(sets chroma | tail -n 1)"
     [[ -n "${previous}" ]] && prev_size="$(stored_size "${BACKUP_DIR}/${previous}/chroma.sqlite3")"
@@ -69,7 +69,10 @@ do_dump() {
     while (( tries < COPY_TRIES )); do
         tries=$(( tries + 1 ))
         s0="$(index_state)"
-        tar -C "${CHROMA_DATA}" --exclude='./chroma.sqlite3*' -cf "${out}/hnsw.tar" . || { log "try ${tries}: tar failed"; continue; }
+        # tar exit 1 is "file changed as we read it": the root folder's time moves as SQLite journals come and go.
+        # index_state below decides whether an index moved. 2 and above is a real failure.
+        rc=0; tar -C "${CHROMA_DATA}" --exclude='./chroma.sqlite3*' -cf "${out}/hnsw.tar" . || rc=$?
+        if (( rc > 1 )); then log "try ${tries}: tar failed (exit ${rc})"; continue; fi
         s1="$(index_state)"
         if [[ "${s0}" != "${s1}" ]]; then log "try ${tries}: an index changed during the copy; again"; continue; fi
         rm -f -- "${out}/chroma.sqlite3"
