@@ -7,6 +7,8 @@ export interface AgentRunNavigationState {
   threadId: string | null
   isLoading: boolean
   statusText: string | null
+  /** When this browser started the run (ms since epoch), for the elapsed time beside the status. */
+  startedAt?: number | null
   terminalState: AgentRunTerminalState | null
   error: string | null
 }
@@ -35,6 +37,7 @@ export const useAgentRunStore = create<AgentRunStore>((set) => ({
           threadId,
           isLoading: true,
           statusText: "Starting agent run",
+          startedAt: Date.now(),
           terminalState: null,
           error: null,
         },

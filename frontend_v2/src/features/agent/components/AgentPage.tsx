@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import type { MutableRefObject, ReactNode } from "react"
+import { ThinkingBubble } from "./ThinkingBubble"
 import { useNavigate, useParams } from "react-router-dom"
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -1157,6 +1158,8 @@ export function AgentPage() {
                   {isLoading && (
                     <ThinkingBubble
                       status={runStatusText}
+                      startedAt={sharedRun?.startedAt ?? null}
+                      stepsDone={activityTrail.filter((step) => step.status !== "running").length}
                       onCancel={activeRunId ? cancelActiveRun : undefined}
                     />
                   )}
@@ -1558,40 +1561,6 @@ function AgentEntityDetailsPanel({
         caseId={caseId ?? ""}
       />
     </section>
-  )
-}
-
-function ThinkingBubble({
-  status,
-  onCancel,
-}: {
-  status?: string | null
-  onCancel?: () => void
-}) {
-  return (
-    <div className="flex gap-3">
-      <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <Bot className="size-4" />
-      </div>
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <Loader2 className="size-4 animate-spin" />
-          {status || "Working through the case data"}
-        </div>
-        {onCancel && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={onCancel}
-          >
-            <X className="mr-1 size-3" />
-            Cancel
-          </Button>
-        )}
-      </div>
-    </div>
   )
 }
 

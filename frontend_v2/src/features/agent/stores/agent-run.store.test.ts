@@ -20,6 +20,7 @@ describe("agent run navigation store", () => {
       threadId: "thread-1",
       isLoading: true,
       statusText: "Investigating the case",
+      startedAt: expect.any(Number),
       terminalState: null,
       error: null,
     })
