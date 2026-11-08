@@ -238,9 +238,13 @@ def _load_references(cur, reader, inv) -> dict:
     return counts
 
 
-def _check_foreign_keys(cur, inv, loaded, new_case) -> list:
-    """Every foreign key of every loaded table, over the new case's rows only."""
-    broken = []
+def _check_foreign_keys(cur, inv, loaded, new_case) -> tuple:
+    """Every foreign key of every loaded table, over the new case's rows only.
+
+    A reference to a row outside the case (a duplicate marker naming another case's file) cannot travel. When the
+    column may be empty it is cleared and the old value is kept in the returned ``cleared`` list, which goes into the
+    report and the audit trail; otherwise the import is refused. Returns (broken, cleared)."""
+    broken, cleared = [], []
     for name in loaded:
         table = inv.tables[name]
         for cols, target, target_cols, _ in table.foreign_keys:
@@ -249,12 +253,25 @@ def _check_foreign_keys(cur, inv, loaded, new_case) -> list:
             joined = " AND ".join(f"p.{I._quote(tc)} = t.{I._quote(c)}" for c, tc in zip(cols, target_cols))
             present = " AND ".join(f"t.{I._quote(c)} IS NOT NULL" for c in cols)
             where = I.scope_where(inv, name, "t").replace("%(case)s", "%s")
-            n = cur.execute(f"SELECT count(*) FROM {I._quote(name)} t WHERE {where} AND {present} AND NOT EXISTS "
-                            f"(SELECT 1 FROM {I._quote(target)} p WHERE {joined})",
-                            (new_case,) * where.count("%s")).fetchone()[0]
-            if n:
+            params = (new_case,) * where.count("%s")
+            dangling = (f"FROM {I._quote(name)} t WHERE {where} AND {present} AND NOT EXISTS "
+                        f"(SELECT 1 FROM {I._quote(target)} p WHERE {joined})")
+            n = cur.execute(f"SELECT count(*) {dangling}", params).fetchone()[0]
+            if not n:
+                continue
+            nullable = len(cols) == 1 and cur.execute(
+                "SELECT NOT a.attnotnull FROM pg_attribute a WHERE a.attrelid = %s::regclass AND a.attname = %s",
+                (I._quote(name), cols[0])).fetchone()[0]
+            if not nullable:
                 broken.append(f"{name}.{','.join(cols)}: {n} rows point at nothing in {target}")
-    return broken
+                continue
+            col = I._quote(cols[0])
+            kept = cur.execute(f"SELECT t.ctid::text, t.{col}::text {dangling}", params).fetchall()
+            cur.execute(f"UPDATE {I._quote(name)} u SET {col} = NULL WHERE u.ctid = ANY(%s::tid[])",
+                        ([k[0] for k in kept],))
+            cleared.append({"column": f"{name}.{cols[0]}", "rows": n, "was_pointing_outside_the_case":
+                            [k[1] for k in kept[:50]]})
+    return broken, cleared
 
 
 def _sequence_offsets(cur, inv, reader, manifest) -> dict:
@@ -436,7 +453,7 @@ def run_import(url, package_path, *, by_email, evidence_root, graph=None, vector
                     loaded[name] = _load_audit_chain(cur, reader, meta["columns"], remap, paths)
                 else:
                     loaded[name] = _load_table(cur, reader, name, meta["columns"], remap, paths, offsets.get(name, {}))
-            broken = _check_foreign_keys(cur, inv, list(loaded), new_case)
+            broken, cleared = _check_foreign_keys(cur, inv, list(loaded), new_case)
             if broken:
                 raise ImportRefused("The loaded rows do not hold together: " + "; ".join(broken[:10]))
             mismatch = [f"{name}: {n} loaded, {manifest['parts'][f'pg/{name}.jsonl.gz']['rows']} in the package"
@@ -458,7 +475,8 @@ def run_import(url, package_path, *, by_email, evidence_root, graph=None, vector
             report = {
                 "case_id": new_case, "title": case_row["title"], "owner": owner[1], "tables": len(loaded),
                 "rows": sum(loaded.values()), "rows_per_table": loaded, "evidence": files, "graph": graph_result,
-                "vectors": vector_result, "people_added_without_sign_in": people_added, "reference_rows_added": references,
+                "vectors": vector_result, "references_outside_the_case_cleared": cleared,
+                "people_added_without_sign_in": people_added, "reference_rows_added": references,
                 "not_loaded": {t: f"{manifest['parts'][f'pg/{t}.jsonl.gz']['rows']} rows, kept in the package as a "
                                "record; access to the new case is given by its owner" for t in I.RECORD_ONLY},
                 "package_sha256": result["sha256"], "source_case": manifest["source_case"],

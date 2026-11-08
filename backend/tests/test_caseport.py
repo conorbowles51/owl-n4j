@@ -361,3 +361,35 @@ def test_import_insert_may_write_generated_always_identity_ids():
     importer._insert(cur, "pol_activity_event", ["id", "x"], {"id": 7}, ['{"id": 1, "x": 2}'])
     assert "OVERRIDING SYSTEM VALUE" in cur.sql
     assert "\"id\" + 7" in cur.sql
+
+
+def test_a_reference_outside_the_case_is_cleared_and_reported_when_the_column_may_be_empty(monkeypatch):
+    from types import SimpleNamespace
+    from services.caseport import importer, inventory as I
+
+    monkeypatch.setattr(I, "scope_where", lambda inv, name, alias: "t.case_id = %(case)s")
+    ran = []
+
+    class Cur:
+        def __init__(self, nullable):
+            self.nullable = nullable
+            self.last = ""
+
+        def execute(self, sql, params=None):
+            ran.append(sql)
+            self.last = sql
+            return self
+
+        def fetchone(self):
+            return (3,) if self.last.startswith("SELECT count") else (self.nullable,)
+
+        def fetchall(self):
+            return [("(0,1)", "old-a")]
+
+    inv = SimpleNamespace(tables={"evidence_files": SimpleNamespace(
+        foreign_keys=[(["duplicate_of_id"], "evidence_files", ["id"], "NO ACTION")])})
+    broken, cleared = importer._check_foreign_keys(Cur(True), inv, ["evidence_files"], "new-case")
+    assert broken == [] and cleared[0]["column"] == "evidence_files.duplicate_of_id" and cleared[0]["rows"] == 3
+    assert any(s.startswith("UPDATE") and "= NULL" in s for s in ran)
+    broken, cleared = importer._check_foreign_keys(Cur(False), inv, ["evidence_files"], "new-case")
+    assert broken and not cleared
