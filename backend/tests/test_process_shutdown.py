@@ -30,6 +30,51 @@ from services.financial.import_batches import _finish_atomic
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
+
+def run_bounded(scenario, bound, on_timeout=None):
+    """asyncio.run(scenario()) on a worker thread; fail instead of hanging when it outlives the bound."""
+    outcome = {}
+
+    def run():
+        try:
+            outcome["value"] = asyncio.run(scenario())
+        except BaseException as error:  # noqa: BLE001 - the failure must reach the test
+            outcome["error"] = error
+
+    runner = threading.Thread(target=run, name="bounded-asyncio-run", daemon=True)
+    runner.start()
+    runner.join(bound)
+    if runner.is_alive():
+        if on_timeout is not None:
+            on_timeout()
+        raise AssertionError(f"asyncio.run did not return within {bound} s: a task survived cancellation")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
+class BoundedRunTests(unittest.TestCase):
+    def test_a_task_that_survives_cancellation_fails_instead_of_hanging(self):
+        release = threading.Event()
+
+        async def scenario():
+            async def stubborn():
+                while not release.is_set():
+                    try:
+                        await asyncio.sleep(0.05)
+                    except asyncio.CancelledError:
+                        pass  # survives every cancel, as the hung runner exit did
+
+            asyncio.get_running_loop().create_task(stubborn())
+            await asyncio.sleep(0)
+            return "body done"
+
+        started = time.monotonic()
+        with self.assertRaises(AssertionError):
+            run_bounded(scenario, 2, on_timeout=release.set)
+        self.assertLess(time.monotonic() - started, 30)
+
+
 class ShutdownStateMixin:
     def setUp(self):
         process_shutdown._reset_for_tests()
@@ -263,12 +308,10 @@ class LifespanShutdownTests(ShutdownStateMixin, unittest.TestCase):
                 for item in reversed(patches):
                     item.stop()
 
-        original = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
-        try:
-            elapsed = asyncio.run(scenario())
-        finally:
-            for sig, handler in original.items():
-                signal.signal(sig, handler)
+        # asyncio.run's exit cancels every leftover task once and then waits without a limit, so a task that
+        # survives cancellation hung pytest itself, not just this test (both suite slots, 55 h, 6-8 Nov).
+        # Off the main thread install_signal_handlers() declines, so no handler needs saving or restoring.
+        elapsed = run_bounded(scenario, 600, on_timeout=self.release.set)
         self.assertLess(elapsed, 2.0)
 
     def blocking_unit_named(self, name, entered):
