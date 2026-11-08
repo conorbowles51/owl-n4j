@@ -23,6 +23,10 @@ describe("agent run navigation store", () => {
       startedAt: expect.any(Number),
       terminalState: null,
       error: null,
+      progress: { phase: "starting", step: 0, title: "Sending your question" },
+      source: "stream",
+      stale: false,
+      inputMessage: null,
     })
 
     useAgentRunStore.getState().finishRun("case-1", "completed")
