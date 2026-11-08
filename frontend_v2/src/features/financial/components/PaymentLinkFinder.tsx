@@ -14,6 +14,7 @@ import {
   type LinkSuggestions,
 } from "../lib/link-suggestions"
 import { Disclosure } from "./Disclosure"
+import { Markdown } from "@/components/ui/markdown"
 
 const LEVEL_CLASS: Record<string, string> = {
   strong: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100",
@@ -524,7 +525,7 @@ export function PaymentLinkFinder({
             {ask.data.asked.toLocaleString()} · not linked: a person checks and
             links
           </p>
-          <p className="whitespace-pre-wrap text-sm">{ask.data.answer.answer}</p>
+          <Markdown content={ask.data.answer.answer} className="text-sm" />
           {ask.data.named && ask.data.named.candidates.length > 0 &&
             list(ask.data.named, "Payments the model suggests", {
               kind: "model",

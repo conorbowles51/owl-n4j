@@ -119,12 +119,12 @@ export const linkSuggestionAPI = {
   },
 }
 
-/** Payment ids a model's answer cites (its payment links), in order, once each. */
+/** Payment ids a model's answer cites, in order, once each: txn://<id> citations and the older Financial page links
+ * (...&payment=<id>), the two forms lib/citations.ts reads as a ledger row. */
 export function citedPaymentIds(answer: string): string[] {
-  const found = answer.match(
-    /payment=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi
-  )
-  return [...new Set((found || []).map((m) => m.slice(8).toLowerCase()))]
+  const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+  const found = [...answer.matchAll(new RegExp(`(?:txn://|payment=)(${uuid})`, "gi"))]
+  return [...new Set(found.map((m) => m[1].toLowerCase()))]
 }
 
 export const LEVEL_WORDS: Record<string, string> = {

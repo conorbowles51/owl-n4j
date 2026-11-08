@@ -123,7 +123,7 @@ it("labels the agent's suggestions as a model's and links nothing until a person
     throw Error(`unexpected ${url}`)
   })
   vi.spyOn(agentAPI, "sendMessage").mockResolvedValue({
-    thread_id: uuid(20), run_id: uuid(21), answer: `It may have gone to [TX-04](/cases/${caseId}/financial?view=transactions&payment=${weaker}).`,
+    thread_id: uuid(20), run_id: uuid(21), answer: `It may have gone to [TX-04](txn://${weaker}).`,
     artifacts: [], tool_trace: [], status: "completed", created_at: "2024-01-01T00:00:00Z", mandate: {} as never,
     model_info: { provider: "openai", model_id: "gpt-x", model_name: "GPT X", server: "api" },
   } as never)
@@ -145,6 +145,8 @@ it("finds the payments a model cites by their links", () => {
     exact,
     weaker,
   ])
+  // the agent's own citation form (seen live 8 Nov: [TX-2KRR-6JV3-G29P](txn://0e2131f9-...))
+  expect(citedPaymentIds(`| Strong | [TX-04](txn://${weaker}) |\n| Weak | [TX-03](txn://${exact}) |`)).toEqual([weaker, exact])
 })
 
 it("the link form has no dropdown of every payment of the case", async () => {
