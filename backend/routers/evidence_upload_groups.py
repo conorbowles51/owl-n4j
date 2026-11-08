@@ -124,7 +124,7 @@ def members(db, group):
 def snapshot(db, group, *, include_members=True):
     rows = members(db, group)
     manifest = {str(uuid5(group.id, m['path'])): m for m in group.manifest}
-    states = [dict(**uploads.snapshot(row), path=manifest[str(row.id)]['path'],
+    states = [dict(**uploads.snapshot(row, trust_staged=True), path=manifest[str(row.id)]['path'],
                    modified=manifest[str(row.id)].get('modified')) for row in rows]
     received = sum(min(row['chunk_size'], row['size'] - index * row['chunk_size'])
         for row in states for index in row['received'])

@@ -326,6 +326,19 @@ def test_damaged_staged_chunk_can_be_reselected_and_restored(groups):
     assert control(f, state, 'complete').json()['status'] == 'completed'
 
 
+def test_a_selection_snapshot_counts_saved_members_without_reading_their_parts(groups):
+    """130 s for an 81,820-file selection (6 Nov): every chunk of every saved member was stat'd on each open."""
+    f = groups; content = {'Folder/a.txt': b'synthetic data ' * 12, 'Folder/b.txt': b'more synthetic ' * 9}
+    state, _ = start(f, content); stage(f, state, content)
+    for member in state['members']:
+        for part in (f.root / 'pending' / str(f.case) / member['id']).glob('*.part'):
+            part.unlink()
+    state = f.client.get(f"/api/evidence-upload-groups/{state['id']}").json()
+    assert [(m['status'], m['received']) for m in state['members']] == [
+        ('staged', list(range((len(content[m['path']]) + 31) // 32))) for m in state['members']]
+    assert state['received_bytes'] == sum(len(v) for v in content.values())
+
+
 def test_selection_identity_and_case_are_checked_before_resume(groups):
     f = groups; content = {'Folder/a.txt': b'synthetic'}
     state, body = start(f, content)

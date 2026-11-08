@@ -113,13 +113,18 @@ def sweep_completed_parts(db, *, apply=False):
     return out
 
 
-def snapshot(item):
+def snapshot(item, *, trust_staged=False):
+    """``trust_staged``: a staged member (assembled and checked against its fingerprint) counts every chunk without
+    a look at its parts. A selection's snapshot passes it: it stat'd every chunk of every saved member, 130 s for an
+    81,820-file selection at load 50 (6 Nov). Registration still reads the parts (default), so a staged member whose
+    parts were lost is found there and sent again."""
     root = directory(item)
     received = []
-    if item.status == 'completed':
+    full = item.status == 'completed' or (trust_staged and item.status == 'staged')
+    if full:
         # Every chunk was received and verified; the parts are removed once the file is evidence.
         received = list(range(len(item.chunks)))
-    for index in range(len(item.chunks) if item.status != 'completed' else 0):
+    for index in range(len(item.chunks) if not full else 0):
         try:
             if (root / f'{index}.part').stat().st_size == min(item.chunk_size, item.size - index * item.chunk_size):
                 received.append(index)
