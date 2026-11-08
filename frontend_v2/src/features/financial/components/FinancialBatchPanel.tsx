@@ -2157,10 +2157,9 @@ export function BatchStatementReview({
             saved: onBack,
             conflict: {
               read: async () => {
-                const latest = await client.fetchQuery({
-                  ...batchItemQuery(caseId, batchId, itemId),
-                  staleTime: 0,
-                })
+                // Read past the shared cache: writing the newer item there changes the
+                // review's key, which would unmount this comparison and the person's values.
+                const latest = await batchItemQuery(caseId, batchId, itemId).queryFn()
                 if (!latest?.review_request) return null
                 const shared = z
                   .object({ saved_review: z.object({ saved_at: z.string(), saved_by: z.object({ name: z.string().nullish(), origin: z.record(z.string(), z.unknown()).nullish() }) }).nullable() })

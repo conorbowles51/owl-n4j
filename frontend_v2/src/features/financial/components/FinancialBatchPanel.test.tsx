@@ -47,6 +47,15 @@ vi.mock("./StatementImportPanel", () => ({
         <p>Focused row: {ctx?.rowId}</p>
         <p>Saved holder: {ctx?.draft?.holder}</p>
         <p>Focused field: {ctx?.field}</p>
+        <p>Draft revision: {ctx?.draftRevision}</p>
+        <button
+          onClick={async () => {
+            const saved = await ctx!.conflict!.read()
+            document.body.dataset.readRevision = saved?.review_revision ?? ""
+          }}
+        >
+          Read the saved review
+        </button>
         <button
           onClick={() => onImported({ transaction_count: 0, record_count: 0 })}
         >
@@ -1337,4 +1346,32 @@ it("does not offer Import while the batch on screen is an earlier copy being upd
   } finally {
     act(() => clearUpdatingViews())
   }
+})
+
+it("reads the newer saved review for a refused save without replacing the open review", async () => {
+  // A remount on a new draft revision would unmount the comparison and the person's unsaved values.
+  let itemRevision = "b".repeat(64)
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (options?.method) return { saved: true } as never
+    if (url.includes("/saved-review"))
+      return {
+        saved_review: { saved_at: "2026-11-08T13:00:00Z", saved_by: { name: "Other reviewer" } },
+      } as never
+    if (url.includes("/items/"))
+      return {
+        ...item,
+        review_revision: itemRevision,
+        review_request: { holder: "Saved elsewhere", rows: [] },
+      } as never
+    return batch as never
+  })
+  mount("/cases/case/financial?view=statements&batch=batch&batchItem=item")
+  await screen.findByText(`Draft revision: ${"b".repeat(64)}`)
+  itemRevision = "d".repeat(64)
+  fireEvent.click(screen.getByRole("button", { name: "Read the saved review" }))
+  await waitFor(() =>
+    expect(document.body.dataset.readRevision).toBe("d".repeat(64))
+  )
+  expect(screen.getByText(`Draft revision: ${"b".repeat(64)}`)).toBeVisible()
+  delete document.body.dataset.readRevision
 })
