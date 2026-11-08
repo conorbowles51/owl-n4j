@@ -174,71 +174,146 @@ async def _send_files(
         return prepared
     file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk = prepared
 
-    try:
-        jobs = await evidence_engine_client.upload_file_paths_batch(
-            case_id=str(case_id),
-            files=file_tuples,
-            processing_metadata=per_file_metadata,
-        )
-    except Exception as exc:
-        recovered_jobs: list[dict[str, Any]] = []
+    accepted_files: list[EvidenceFile] = []
+    accepted_jobs: list[dict[str, Any]] = []
+    refused: list[tuple[EvidenceFile, str]] = []
+    recovered = False
+    chunks = _send_chunks(per_file_metadata)
+    for position, chunk in enumerate(chunks):
         try:
-            case_jobs = await evidence_engine_client.list_jobs(str(case_id))
-            jobs_by_source_id: dict[str, dict[str, Any]] = {}
-            for job in case_jobs:
-                pipeline_state = job.get("pipeline_state") or {}
-                if pipeline_state.get("ingestion_request_id") != ingestion_request_id:
-                    continue
-                source_id = str(job.get("source_evidence_file_id") or "")
-                if source_id:
-                    jobs_by_source_id[source_id] = job
-            recovered_jobs = [
-                jobs_by_source_id[file_id]
-                for file_id in valid_ids
-                if file_id in jobs_by_source_id
-            ]
-        except Exception:
-            logger.exception(
-                "Failed to check whether ingestion request %s was accepted",
-                ingestion_request_id,
-            )
+            done, refused_here = await _upload_isolating(case_id, file_tuples, per_file_metadata, chunk)
+        except Exception as exc:
+            # Not a refusal of particular files (the engine is unreachable, timed out or failed): the files of this
+            # request may still have been accepted, so look for their jobs before calling anything failed.
+            chunk_files = [valid_files[i] for i in chunk]
+            found = await _recover_accepted(case_id, ingestion_request_id, [valid_ids[i] for i in chunk])
+            if found is not None:
+                accepted_files.extend(chunk_files)
+                accepted_jobs.extend(found)
+                recovered = True
+                continue
+            unsent = [valid_files[i] for later in chunks[position:] for i in later]
+            await run_in_threadpool(_record_upload_failed, db, unsent, str(exc))
+            if not accepted_files and not refused:
+                raise  # nothing went: the caller reports the failure as before
+            refused.extend((ef, str(exc)) for ef in unsent)
+            break
+        for index, job in done:
+            accepted_files.append(valid_files[index])
+            accepted_jobs.append(job)
+        refused.extend((valid_files[index], reason) for index, reason in refused_here)
+        for index, reason in refused_here:
+            await run_in_threadpool(_record_upload_failed, db, [valid_files[index]], reason)
 
-        if len(recovered_jobs) == len(valid_files):
-            recovered_job_ids = await run_in_threadpool(_record_recovered_jobs, db, valid_files, recovered_jobs)
-            await reconcile_case_jobs(db, str(case_id))
-            subscriber = get_subscriber()
-            await subscriber.track_jobs(recovered_job_ids, str(case_id))
-            logger.warning(
-                "Recovered %d accepted jobs after upload response failure request_id=%s",
-                len(recovered_job_ids),
-                ingestion_request_id,
-            )
-            return {
-                "job_ids": recovered_job_ids,
-                "file_count": len(valid_files),
-                "skipped_count": skipped_processing,
-                "missing_on_disk": missing_on_disk,
-                "message": f"Processing {len(valid_files)} file(s)",
-                "recovered_after_response_error": True,
-            }
-
-        await run_in_threadpool(_record_upload_failed, db, valid_files, str(exc))
-        raise
-
-    job_ids_out = await run_in_threadpool(_record_engine_jobs, db, valid_files, jobs)
+    if recovered:
+        job_ids_out = await run_in_threadpool(_record_recovered_jobs, db, accepted_files, accepted_jobs)
+        await reconcile_case_jobs(db, str(case_id))
+        logger.warning("Recovered accepted jobs after upload response failure request_id=%s", ingestion_request_id)
+    else:
+        job_ids_out = await run_in_threadpool(_record_engine_jobs, db, accepted_files, accepted_jobs)
 
     if job_ids_out:
         subscriber = get_subscriber()
         await subscriber.track_jobs(job_ids_out, str(case_id))
 
+    message = f"Processing {len(accepted_files)} file(s)"
+    if refused:
+        message += f"; {len(refused)} file(s) refused by the processing service, marked failed with the reason"
+    if missing_on_disk:
+        message += f"; {missing_on_disk} file(s) not sent: {FILE_MISSING_DETAIL}"
     return {
         "job_ids": job_ids_out,
-        "file_count": len(valid_files),
+        "file_count": len(accepted_files),
         "skipped_count": skipped_processing,
         "missing_on_disk": missing_on_disk,
-        "message": f"Processing {len(valid_files)} file(s)" + (
-            f"; {missing_on_disk} file(s) not sent: {FILE_MISSING_DETAIL}" if missing_on_disk else ""),
+        "message": message,
+        **({"refused": [{"file_id": str(ef.id), "name": ef.original_filename, "reason": reason}
+                        for ef, reason in refused]} if refused else {}),
+        **({"recovered_after_response_error": True} if recovered else {}),
     }
+
+
+# One request to the engine carries at most this many files and this much processing metadata. The engine's form
+# parser refuses any field over 1 MiB (Starlette max_part_size) and so refuses the whole request; each file's metadata
+# lists the other files of its folder, so 250 files of a 366-file folder sent 11.3 MB and all 250 failed (SB4,
+# 28 Oct). The margin under 1 MiB covers the JSON separators between entries.
+MAX_FILES_PER_SEND = 25
+MAX_METADATA_BYTES_PER_SEND = 900_000
+
+
+def _send_chunks(per_file_metadata: list[dict[str, Any]]) -> list[list[int]]:
+    import json
+    chunks: list[list[int]] = []
+    current: list[int] = []
+    size = 0
+    for index, metadata in enumerate(per_file_metadata):
+        item = len(json.dumps(metadata)) + 2
+        if current and (len(current) >= MAX_FILES_PER_SEND or size + item > MAX_METADATA_BYTES_PER_SEND):
+            chunks.append(current)
+            current, size = [], 0
+        current.append(index)
+        size += item
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _refusal_reason(exc: Exception) -> str | None:
+    """The engine's own words when it refused the request for what was in it (a 4xx other than sign-in or rate
+    limit, which say nothing about the files); None for any other failure."""
+    import httpx
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return None
+    code = exc.response.status_code
+    if code < 400 or code >= 500 or code in (401, 403, 404, 408, 429):
+        return None
+    try:
+        detail = exc.response.json().get("detail")
+    except Exception:
+        detail = None
+    detail = detail if isinstance(detail, str) and detail else exc.response.reason_phrase or str(code)
+    return f"The processing service refused this file ({detail[:300]})"
+
+
+async def _upload_isolating(case_id, file_tuples, per_file_metadata, indexes):
+    """Send these files in one request. A refusal is split until each refused file is alone, so one bad file fails
+    by itself with the engine's reason and the others are processed. Returns ([(index, job)], [(index, reason)])."""
+    try:
+        jobs = await evidence_engine_client.upload_file_paths_batch(
+            case_id=str(case_id),
+            files=[file_tuples[i] for i in indexes],
+            processing_metadata=[per_file_metadata[i] for i in indexes],
+        )
+    except Exception as exc:
+        reason = _refusal_reason(exc)
+        if reason is None:
+            raise
+        if len(indexes) == 1:
+            logger.warning("Engine refused one file: %s", reason)
+            return [], [(indexes[0], reason)]
+        middle = len(indexes) // 2
+        left_done, left_refused = await _upload_isolating(case_id, file_tuples, per_file_metadata, indexes[:middle])
+        right_done, right_refused = await _upload_isolating(case_id, file_tuples, per_file_metadata, indexes[middle:])
+        return left_done + right_done, left_refused + right_refused
+    return list(zip(indexes, jobs)), []
+
+
+async def _recover_accepted(case_id, ingestion_request_id: str, file_ids: list[str]):
+    """The engine's jobs for these files when it accepted them all before its response was lost, else None."""
+    try:
+        case_jobs = await evidence_engine_client.list_jobs(str(case_id))
+    except Exception:
+        logger.exception("Failed to check whether ingestion request %s was accepted", ingestion_request_id)
+        return None
+    jobs_by_source_id: dict[str, dict[str, Any]] = {}
+    for job in case_jobs:
+        if (job.get("pipeline_state") or {}).get("ingestion_request_id") != ingestion_request_id:
+            continue
+        source_id = str(job.get("source_evidence_file_id") or "")
+        if source_id:
+            jobs_by_source_id[source_id] = job
+    found = [jobs_by_source_id[file_id] for file_id in file_ids if file_id in jobs_by_source_id]
+    return found if len(found) == len(file_ids) else None
 
 
 def _partition_audio_files(db, *, case_id, file_ids, force_reprocess, audio_mode,
