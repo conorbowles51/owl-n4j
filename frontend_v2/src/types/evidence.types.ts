@@ -47,6 +47,8 @@ export interface EvidenceFile {
   created_at: string
   processed_at?: string | null
   last_error?: string | null
+  /** last_error in plain words, from the server; the stored text stays in last_error */
+  failure_reason?: string | null
   summary?: string | null
   transcription?: string | null
   transcription_segments?: TranscriptSegment[]
@@ -353,6 +355,7 @@ export interface EvidenceFileRecord {
   created_at: string | null
   processed_at: string | null
   last_error: string | null
+  failure_reason?: string | null
   legacy_id: string | null
   summary: string | null
   transcription: string | null

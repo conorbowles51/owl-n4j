@@ -664,10 +664,10 @@ function DetailsPanelContent({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-red-600 dark:text-red-400">
-                    Processing Error
+                    Processing failed
                   </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {file.last_error}
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground" data-testid="failure-reason">
+                    {file.failure_reason || file.last_error}
                   </p>
                   <Button
                     variant="outline"
@@ -681,7 +681,7 @@ function DetailsPanelContent({
                     ) : (
                       <RotateCcw className="size-3.5" />
                     )}
-                    Retry
+                    Process again
                   </Button>
                 </div>
               </div>
@@ -841,10 +841,10 @@ function DetailsPanelContent({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-red-600 dark:text-red-400">
-                    Processing Error
+                    Processing failed
                   </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {file.last_error}
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground" data-testid="failure-reason">
+                    {file.failure_reason || file.last_error}
                   </p>
                 </div>
               </div>
