@@ -8,7 +8,7 @@ ever spent. Runs once; the new records are marked, and downgrade removes exactly
 from alembic import op
 
 revision = "20261106_vision_spend_recorded"
-down_revision = "20261105_pending_chunk_vectors"
+down_revision = "20261106_production_numbers"
 branch_labels = None
 depends_on = None
 
