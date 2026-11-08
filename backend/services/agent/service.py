@@ -336,8 +336,8 @@ class AgentService:
             db.rollback()
             run = db.merge(run)
             self._record_stopped_run(db, run=run, trace=collected_trace)
-            self._record_usage(db=db, usage=runner.spent_so_far(), provider=provider, model_id=model.id,
-                               request=request, user=user, thread_id=thread.id, run_id=run.id)
+            self._record_stop_usage(db=db, runner=runner, provider=provider, model_id=model.id,
+                                    request=request, user=user, thread_id=thread.id, run_id=run.id)
             storage.finish_run(db, run=run, status="cancelled", error=str(exc))
             self._log_agent_event(
                 db,
@@ -360,8 +360,8 @@ class AgentService:
             try:
                 run = db.merge(run)
                 self._record_stopped_run(db, run=run, trace=collected_trace)
-                self._record_usage(db=db, usage=runner.spent_so_far(), provider=provider, model_id=model.id,
-                                   request=request, user=user, thread_id=thread.id, run_id=run.id)
+                self._record_stop_usage(db=db, runner=runner, provider=provider, model_id=model.id,
+                                        request=request, user=user, thread_id=thread.id, run_id=run.id)
                 storage.finish_run(db, run=run, status="failed", error=str(exc))
                 self._log_agent_event(
                     db,
@@ -945,6 +945,17 @@ class AgentService:
             "error": item.get("error"),
             "activity": item.get("activity"),
         }
+
+    def _record_stop_usage(self, *, db: Session, runner, run_id, **kwargs):
+        """The billed tokens of a stopped or failed run, recorded in a savepoint. Recording them never decides how
+        the run ends: an error here is logged and the run is still marked failed or cancelled with its own error
+        (a raise here used to roll the mark back and leave the run 'running', later settled as a restart cut)."""
+        try:
+            usage = runner.spent_so_far()
+            with db.begin_nested():
+                self._record_usage(db=db, usage=usage, run_id=run_id, **kwargs)
+        except Exception:
+            logger.exception("Could not record the spend of stopped agent run %s", run_id)
 
     @staticmethod
     def _record_usage(

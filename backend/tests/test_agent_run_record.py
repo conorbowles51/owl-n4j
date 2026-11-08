@@ -383,7 +383,7 @@ class RunRecordTests(RunRecordFixture):
 class RunRecordServiceTests(RunRecordFixture):
     """The streamed service path: each call is stored as it runs; a run that fails keeps its calls."""
 
-    def stream_service(self, events):
+    def stream_service(self, events, usage=None):
         from types import SimpleNamespace
         from services.agent import service as svc
         from services.agent.schemas import AgentMessageRequest
@@ -391,6 +391,9 @@ class RunRecordServiceTests(RunRecordFixture):
         class FakeRunner:
             def __init__(self, **_k):
                 pass
+
+            def spent_so_far(self):
+                return usage
 
             def stream(self, **_k):
                 for event in events:
@@ -425,6 +428,19 @@ class RunRecordServiceTests(RunRecordFixture):
         call = self.fx.db.query(AgentToolCall).filter_by(run_id=run.id).one()
         self.assertEqual((call.total, call.returned), (5, 2))
         self.assertEqual(self.fx.db.query(AgentRunItem).filter_by(run_id=run.id).count(), 2)
+
+    def test_a_spend_record_error_still_marks_the_failed_run_failed(self):
+        from services.agent import service as svc
+        def boom(**_k):
+            raise RuntimeError("cost table unavailable")
+
+        usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        with patch.object(svc, "record_cost", side_effect=boom), self.assertLogs(svc.logger, level="ERROR"):
+            out = self.stream_service([RuntimeError("provider went away")], usage=usage)
+        self.assertEqual(out[-1]["type"], "error")
+        run = self.fx.db.query(AgentRun).one()
+        self.assertEqual(run.status, "failed")
+        self.assertIn("provider went away", run.error or "")
 
 
 if __name__ == "__main__":

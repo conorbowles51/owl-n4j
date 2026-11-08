@@ -218,6 +218,11 @@ class CapturedRecordsTests(unittest.TestCase):
     def setUp(self):
         self.f = fixture.LedgerSummaryTests()
         self.f.setUp()
+        # A ledger export reads the case's production numbers (services.production_numbers.numbers_by_file).
+        from postgres.base import Base
+        from postgres.models import production_numbers as numbers
+        Base.metadata.create_all(self.f.engine, tables=[m.__table__ for m in (
+            numbers.ProductionSet, numbers.ProductionAssignment, numbers.ProductionStampedCopy, numbers.ReceivedNumber)])
         self.row, self.doc = self.f.add()
 
     def tearDown(self):
