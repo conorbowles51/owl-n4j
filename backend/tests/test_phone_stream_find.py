@@ -104,7 +104,9 @@ def test_a_match_held_only_by_a_hidden_copy_finds_the_row_shown_for_its_group():
             phone(c, case, events=[
                 dict(kind="message", instant=at(2023, 3, 14, 15), body="plain synthetic", app="SyntheticApp", thread="t",
                      direction="incoming", dup="g1", parties=parties),
-                dict(kind="message", instant=at(2023, 3, 14, 15), body="needle synthetic", thread="t",
+                # No app on this copy (the fixture's default is "WhatsApp"): the copy with more fields filled is the
+                # one shown, so the other copy is shown whatever order the random record ids fall in.
+                dict(kind="message", instant=at(2023, 3, 14, 15), body="needle synthetic", app=None, thread="t",
                      direction="incoming", dup="g1", parties=parties)])
         with engine.connect() as c:
             for collapse in (True, False):
