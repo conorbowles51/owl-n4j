@@ -196,9 +196,11 @@ function Calculation({ caseId, id, canEdit }: { caseId: string; id: string; canE
       <p className="text-[13px]" data-testid="proceeds-deposits">
         Deposits beside it, measured from the ledger
         {calc.deposits.categories.length ? ` (${calc.deposits.categories.join(", ")})` : ""}:{" "}
-        {calc.deposits.categories.length
-          ? `${money(calc.deposits.verified_minor)} over ${calc.deposits.verified_rows} rows. `
-          : ""}
+        {!calc.deposits.categories.length
+          ? ""
+          : calc.deposits.verified_rows
+            ? `${money(calc.deposits.verified_minor)} over ${calc.deposits.verified_rows.toLocaleString()} rows. `
+            : "no verified deposit in these categories yet. "}
         {calc.deposits.note}
       </p>
     </div>

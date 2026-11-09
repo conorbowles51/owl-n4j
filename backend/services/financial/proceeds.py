@@ -281,8 +281,8 @@ def deposits(session, calc) -> dict:
         else:
             left += 1
             classes[proof] = classes.get(proof, 0) + 1
-    note = ('Verified rows only (p0 to p2).' + (f' {left} deposit rows of lower proof are left out, not summed.'
-                                                 if left else '')
+    note = ('Verified deposits only (checked against the statement\'s totals or printed balances).'
+            + (f' {left:,} deposit rows not checked against printed balances are left out, not summed.' if left else '')
             + (f' {other_currency} rows in another currency are left out.' if other_currency else ''))
     return dict(categories=list(calc.deposit_categories), verified_minor=verified, verified_rows=rows,
                 left_out_rows=left, left_out_classes=classes, other_currency_rows=other_currency, note=note)

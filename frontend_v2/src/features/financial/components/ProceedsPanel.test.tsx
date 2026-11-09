@@ -43,3 +43,29 @@ it("labels the range an estimate, not measured, names who set each value and sho
   // A price is stored in minor units and shown in the currency (old code showed "30000 to 50000").
   expect(screen.getByText("MX$300.00 to MX$500.00")).toBeVisible()
 })
+
+it("says no deposit is verified yet instead of a bare zero over 0 rows (lx-agentlive, 9 Nov)", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) =>
+    url.includes("/list")
+      ? { items: [{ id: "p-1", title: "Line A", currency: "MXN", created_by: "Verification user" }], total: 1 }
+      : {
+          id: "p-1", case_id: "case-a", title: "Line A", currency: "MXN", period_start: null, period_end: null,
+          created_by: "Verification user", label: "estimate, not measured",
+          formula: "messages × share that are deals × deals per message × price per deal",
+          assumptions: [set("messages", "Messages", "100", "200"), set("share_deals", "Share", "10", "20"),
+            set("deals_per_message", "Deals per message", "1", "1"), set("price_per_deal", "Price per deal", "30000", "50000")],
+          result: { low_minor: 300000, mid_minor: 787500, high_minor: 2000000, moves: [
+            { key: "price_per_deal", label: "Price per deal", at_low_minor: 675000, at_high_minor: 1125000, swing_minor: 450000 }] },
+          missing: [],
+          deposits: { categories: ["Cash deposit"], verified_minor: 0, verified_rows: 0, left_out_rows: 5, left_out_classes: { p3: 5 }, note: "Verified deposits only." },
+        }
+  )
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ProceedsPanel caseId="case-a" />
+    </QueryClientProvider>
+  )
+  const line = await screen.findByTestId("proceeds-deposits")
+  expect(line).toHaveTextContent("no verified deposit in these categories yet")
+  expect(line).not.toHaveTextContent(/over 0 rows/)
+})
