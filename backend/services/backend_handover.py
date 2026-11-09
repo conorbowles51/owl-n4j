@@ -40,6 +40,8 @@ BACKGROUND_LOOPS = {
     'backend-handover-recovery': 'per-process',  # this process's subscriptions
     'meaning-search-backfill-resume': 'row-claim',  # the backfill's session advisory lock (meaning_search._backfill_lock)
     'agent-run-settle': 'row-claim',  # FOR UPDATE SKIP LOCKED on the orphaned run rows (run_settle)
+    'evidence-malware-scan': 'row-claim',  # one advisory lock across the host for each sweep (evidence_malware.sweep)
+    'case-exports': 'row-claim',  # one advisory lock per pass (caseport.jobs.tick); the export claims its queued row
 }
 
 # The supervisor writes this file when it runs the backend: deploy/backend-handover.sh passes the same path.
