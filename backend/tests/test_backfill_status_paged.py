@@ -29,6 +29,13 @@ class _Collection:
 
 
 class BackfillStatusPagedTest(unittest.TestCase):
+    @staticmethod
+    def _engine(case_id=None, include_phones=False):
+        keys = {"id0": "Person", "id1": "Event", "id99": "Location"}
+        if include_phones:
+            keys["id2"] = "PhoneNumber"
+        return keys
+
     def _status(self, chunks, entities):
         neo = mock.Mock()
         neo.run_cypher.side_effect = [
@@ -36,7 +43,8 @@ class BackfillStatusPagedTest(unittest.TestCase):
             [{"total": 30, "with_case_id": 25}],
         ]
         vdb = mock.Mock(chunk_collection=chunks, entity_collection=entities)
-        with mock.patch.object(backfill, "neo4j_service", neo), \
+        with mock.patch("services.entity_vectors.engine_entity_labels", self._engine), \
+                mock.patch.object(backfill, "neo4j_service", neo), \
                 mock.patch.object(backfill, "vector_db_service", vdb), \
                 mock.patch.object(backfill, "STATUS_PAGE_SIZE", 5):
             return backfill.get_backfill_status(user={"username": "t"})
@@ -57,6 +65,13 @@ class BackfillStatusPagedTest(unittest.TestCase):
         out = self._status(_Collection([{"doc_id": "d"}] * 10), _Collection([{"case_id": "c"}] * 5))
         self.assertEqual(out.chunks["total"], 10)
         self.assertEqual(out.entities["total_chromadb"], 5)
+
+    def test_missing_counts_only_entities_the_engine_embeds(self):
+        """Payments, statement periods and file Documents are never embedded: the old count (every non-Document node
+        minus every vector) reported 46,067 missing on live 9 Nov while no entity vector was stale."""
+        out = self._status(_Collection([]), _Collection([{"case_id": "c"}] * 4))  # vectors id0..id3
+        self.assertEqual(out.entities["missing_embeddings"], 1)   # id99
+        self.assertEqual(out.entities["orphaned_embeddings"], 1)  # id3: no engine entity
 
     def test_failed_read_is_an_error_not_zero(self):
         broken = mock.Mock()

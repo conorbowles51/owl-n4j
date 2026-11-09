@@ -953,8 +953,8 @@ def backfill_case_ids_endpoint(
 STATUS_PAGE_SIZE = 5000
 
 
-def _iter_metadatas(collection, page_size: int | None = None):
-    """Every metadata of a Chroma collection, read page by page (limit/offset)."""
+def _iter_metadatas(collection, page_size: int | None = None, with_ids: bool = False):
+    """Every metadata of a Chroma collection (with its id when asked), read page by page (limit/offset)."""
     page_size = page_size or STATUS_PAGE_SIZE
     offset = 0
     while True:
@@ -962,7 +962,8 @@ def _iter_metadatas(collection, page_size: int | None = None):
         ids = page.get("ids") or []
         metadatas = page.get("metadatas") or []
         for i in range(len(ids)):
-            yield metadatas[i] if i < len(metadatas) else None
+            metadata = metadatas[i] if i < len(metadatas) else None
+            yield (ids[i], metadata) if with_ids else metadata
         if len(ids) < page_size:
             return
         offset += len(ids)
@@ -1020,10 +1021,19 @@ def get_backfill_status(
         # Check ChromaDB entity metadata for case_id (paged, as above)
         total_entities_chromadb = 0
         entities_with_case_id = 0
-        for metadata in _iter_metadatas(vector_db_service.entity_collection):
+        entity_ids: set[str] = set()
+        for entity_id, metadata in _iter_metadatas(vector_db_service.entity_collection, with_ids=True):
             total_entities_chromadb += 1
+            entity_ids.add(entity_id)
             if metadata and metadata.get("case_id"):
                 entities_with_case_id += 1
+        # Missing = the entities the engine embeds (entity_vectors.engine_entity_labels) with no vector; payments,
+        # statement periods, phone nodes and file Documents are never embedded and are not counted.
+        from services.entity_vectors import engine_entity_labels
+        engine_keys = engine_entity_labels(include_phones=True)
+        embeddable = set(engine_entity_labels())
+        missing_embeddings = len(embeddable - entity_ids)
+        orphaned_embeddings = len(entity_ids - set(engine_keys))
 
         return BackfillStatusResponse(
             documents={
@@ -1040,8 +1050,8 @@ def get_backfill_status(
                 "total_chromadb": total_entities_chromadb,
                 "with_case_id_metadata": entities_with_case_id,
                 "missing_case_id": total_entities_chromadb - entities_with_case_id,
-                "missing_embeddings": max(0, total_entities_neo4j - total_entities_chromadb),
-                "orphaned_embeddings": max(0, total_entities_chromadb - total_entities_neo4j),
+                "missing_embeddings": missing_embeddings,
+                "orphaned_embeddings": orphaned_embeddings,
                 "neo4j_with_case_id": entities_neo4j_with_case_id,
                 "neo4j_missing_case_id": total_entities_neo4j - entities_neo4j_with_case_id,
             },

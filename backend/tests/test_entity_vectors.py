@@ -226,7 +226,8 @@ def _kept_merge_pass(result):
 
     def clear(case_id, keys):
         calls["cleared"] = list(keys)
-    ev.backfill_case("c", stale=lambda c: ["old", "merged"], pending=lambda c: ["merged"], refresh=refresh, clear=clear)
+    ev.backfill_case("c", stale=lambda c: ["old", "merged"], pending=lambda c: ["merged"], refresh=refresh, clear=clear,
+                     unembedded=lambda c: {})
     return calls
 
 
@@ -239,4 +240,61 @@ def test_a_pass_that_stopped_keeps_the_mark():
 
 
 def test_nothing_waiting_touches_nothing():
-    assert ev.backfill_case("c", stale=lambda c: [], pending=lambda c: [])["requested"] == 0
+    assert ev.backfill_case("c", stale=lambda c: [], pending=lambda c: [], unembedded=lambda c: {})["requested"] == 0
+
+
+# An entity whose ingestion embed was lost before the engine marked such entities vector_pending has no vector and no
+# mark: live 9 Nov, 2,786 engine-written entities in 4 cases were missing from meaning search (followups m110908594625808).
+
+class _IdCollection:
+    def __init__(self, ids):
+        self.ids = set(ids)
+        self.asked = []
+
+    def get(self, ids=None, include=None, **_):
+        self.asked.append(list(ids))
+        return {"ids": [i for i in ids if i in self.ids]}
+
+
+def test_unembedded_keys_are_engine_entities_with_no_vector():
+    vectors = type("V", (), {"entity_collection": _IdCollection({"a", "c"})})()
+    out = ev.unembedded_keys("case", vector_db=vectors, nodes=lambda c: {"a": "Person", "b": "Location", "c": "Event"})
+    assert out == {"b": "Location"}
+
+
+def test_backfill_pass_embeds_entities_with_no_vector_and_no_mark():
+    seen = {}
+
+    def refresh(case_id, keys):
+        seen["keys"] = list(keys)
+        return {"embedded": len(keys), "stopped": None}
+    ev.backfill_case("c", stale=lambda c: ["old"], pending=lambda c: [], refresh=refresh, clear=lambda *a: None,
+                     unembedded=lambda c: {"lost": "Location"})
+    assert seen["keys"] == ["old", "lost"]
+
+
+class _RowsSession:
+    def __init__(self, rows):
+        self.rows = rows
+        self.queries = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def run(self, query, **params):
+        self.queries.append((query, params))
+        return self.rows
+
+
+def test_engine_entity_labels_leave_out_phone_nodes_unless_asked():
+    rows = [{"key": "p", "labels": ["Person"], "category": None},
+            {"key": "n", "labels": ["PhoneNumber"], "category": None},
+            {"key": "d", "labels": ["Document"], "category": None}]
+    session = _RowsSession(rows)
+    assert ev.engine_entity_labels("c", session_factory=lambda: session) == {"p": "Person", "d": "Document"}
+    assert "job_id IS NOT NULL" in session.queries[0][0] and session.queries[0][1]["case_id"] == "c"
+    assert set(ev.engine_entity_labels(session_factory=lambda: session, include_phones=True)) == {"p", "n", "d"}
+    assert "n.case_id" not in session.queries[1][0]

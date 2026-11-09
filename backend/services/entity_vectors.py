@@ -177,7 +177,8 @@ def stale_keys(case_id: str, *, vector_db=None, read_nodes: Callable | None = No
 
 
 def refresh_entities(case_id: str, keys: Iterable[str], *, vector_db=None, embed: Callable | None = None,
-                     read_nodes: Callable | None = None, stop_on_failure: bool = True) -> dict[str, Any]:
+                     read_nodes: Callable | None = None, stop_on_failure: bool = True,
+                     labels_by_key: dict[str, str] | None = None) -> dict[str, Any]:
     """Re-embed these entities from the graph as it is now. Stops at the first refused embedding call (the
     failure is recorded by the embedding service; the gap backfill retries when the service answers again)."""
     keys = [k for k in dict.fromkeys(keys or []) if k]
@@ -193,7 +194,8 @@ def refresh_entities(case_id: str, keys: Iterable[str], *, vector_db=None, embed
     if embed is None:
         from services.embedding_service import EmbeddingService
         embed = EmbeddingService().generate_embedding
-    nodes = (read_nodes or _read_nodes)(case_id, keys)
+    nodes = (_read_nodes(case_id, keys, labels_by_key=labels_by_key) if read_nodes is None
+             else read_nodes(case_id, keys))
     for key in keys:
         if key not in nodes:
             summary["skipped"] += 1
@@ -279,19 +281,89 @@ def clear_pending(case_id: str, keys: list[str], *, session_factory: Callable | 
                     keys=keys, case_id=case_id)
 
 
+# The nodes the engine embeds at ingestion: every node it writes (they carry its job_id), file Documents excluded
+# (they have no job_id), recycle-bin copies excluded. Phone nodes are never embedded here (see the module note).
+ENGINE_NODES_CYPHER = (
+    "MATCH (n) WHERE n.job_id IS NOT NULL {case_filter}"
+    "AND NONE(l IN labels(n) WHERE l IN ['RecycleBin', 'RecycleBinItem']) "
+    "RETURN n.key AS key, labels(n) AS labels, n.category AS category")
+
+
+def _first_label(labels: Iterable[str]) -> str:
+    return next((label for label in labels or [] if label not in ("Entity", "RecycleBin", "RecycleBinItem")), "")
+
+
+def engine_entity_labels(case_id: str | None = None, *, session_factory: Callable | None = None,
+                         include_phones: bool = False) -> dict[str, str]:
+    """{key: label} of the entities meaning search should hold a vector for (one case, or every case); with
+    ``include_phones``, also the engine's phone nodes (it embedded some at ingestion)."""
+    if session_factory is None:
+        from services.neo4j.driver import driver
+        session_factory = driver.session
+    query = ENGINE_NODES_CYPHER.format(case_filter="AND n.case_id = $case_id " if case_id is not None else "")
+    out: dict[str, str] = {}
+    with session_factory() as session:
+        for row in session.run(query, case_id=case_id):
+            labels = list(row["labels"] or [])
+            category = str(row["category"] or _first_label(labels) or "")
+            if row["key"] and (include_phones or not is_phone(category)):
+                out[row["key"]] = _first_label(labels)
+    return out
+
+
+def stored_ids(collection, case_id: str | None = None, page_size: int = 5000) -> set[str]:
+    """Ids of the entity vectors (one case, or all), read page by page."""
+    out: set[str] = set()
+    offset = 0
+    while True:
+        kwargs = {"where": {"case_id": case_id}} if case_id is not None else {}
+        page = collection.get(include=[], limit=page_size, offset=offset, **kwargs)
+        ids = page.get("ids") or []
+        out.update(ids)
+        if len(ids) < page_size:
+            return out
+        offset += len(ids)
+
+
+def unembedded_keys(case_id: str, *, vector_db=None, nodes: Callable | None = None) -> dict[str, str]:
+    """{key: label} of the case's engine-written entities with no vector at all. Their ingestion embed was lost
+    before the engine marked such entities ``vector_pending`` (live 9 Nov: 2,786 entities in 4 cases), so neither
+    ``stale_keys`` (vectors only) nor ``pending_keys`` (marked only) finds them."""
+    if vector_db is None:
+        from services.vector_db_service import get_vector_db_service
+        vector_db = get_vector_db_service()
+    if not vector_db:
+        return {}
+    wanted = (nodes or engine_entity_labels)(case_id)
+    if not wanted:
+        return {}
+    # A vector stored under another case's metadata still counts as present: look it up by id.
+    have: set[str] = set()
+    keys = list(wanted)
+    for i in range(0, len(keys), 500):
+        have.update(vector_db.entity_collection.get(ids=keys[i:i + 500], include=[]).get("ids") or [])
+    return {key: label for key, label in wanted.items() if key not in have}
+
+
 def backfill_case(case_id: str, *, stale: Callable | None = None, refresh: Callable | None = None,
                   log: Callable[[str, str], None] | None = None, pending: Callable | None = None,
-                  clear: Callable | None = None) -> dict[str, Any]:
-    """The gap backfill's entity pass for one case: re-embed every stale entity vector and embed every entity still
-    waiting for its first one. The mark goes only when the whole pass finished; a pass that stopped embeds them again."""
+                  clear: Callable | None = None, unembedded: Callable | None = None) -> dict[str, Any]:
+    """The gap backfill's entity pass for one case: re-embed every stale entity vector, embed every entity still
+    waiting for its first one, and every engine-written entity with no vector at all. The mark goes only when the
+    whole pass finished; a pass that stopped embeds them again."""
     waiting = (pending or pending_keys)(case_id)
-    keys = list(dict.fromkeys(list((stale or stale_keys)(case_id)) + waiting))
+    old = list((stale or stale_keys)(case_id))
+    absent = (unembedded or unembedded_keys)(case_id)
+    keys = list(dict.fromkeys(old + waiting + list(absent)))
     if not keys:
         return {"requested": 0, "embedded": 0, "skipped": 0, "stopped": None}
     if log:
-        log("info", "Case %s: %d entity vector(s) older than the graph, %d waiting for a first one" % (
-            case_id, len(keys) - len(waiting), len(waiting)))
-    result = (refresh or refresh_entities)(case_id, keys)
+        log("info", "Case %s: %d entity vector(s) older than the graph, %d waiting for a first one, %d with none" % (
+            case_id, len(old), len(waiting), len([k for k in absent if k not in waiting and k not in old])))
+    if refresh is None:
+        result = refresh_entities(case_id, keys, labels_by_key=dict(absent) or None)
+    else:
+        result = refresh(case_id, keys)
     if waiting and not result.get("stopped"):
         (clear or clear_pending)(case_id, waiting)
     return result
