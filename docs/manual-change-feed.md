@@ -35,9 +35,9 @@ someone's behalf, by "System" or "Batch review", or by a `@system.local` address
 The audit chain (`financial_audit_events`) records row changes on 19 tables, made by triggers. It does not cover
 `financial_judgements`, `financial_payment_categories`, `financial_category_rules`,
 `financial_import_batch_items`, `financial_import_batches.files`, the graph (Neo4j), `graph_recycle_bin_items`,
-`rejected_merge_pairs`, `significant_entities` or `workspace_ai_outputs`, and a row change does not say whether a
-person decided it or a reader, a re-read or a sweep wrote it. Each route that takes a person's decision therefore
-records it, in that route.
+`rejected_merge_pairs`, `significant_entities`, `significant_relationships`, `financial_money_trails` or
+`workspace_ai_outputs`, and a row change does not say whether a person decided it or a reader, a re-read or a sweep
+wrote it. Each route that takes a person's decision therefore records it, in that route.
 
 ## Inventory
 
@@ -135,6 +135,7 @@ existed on the 6 financial cases (recorded as historic by the backfill; automate
 | `transaction_bulk_correct` | POST /api/financial/transactions/bulk-correct | change | no (graph) | fields → corrected | – |
 | `sub_transaction_link` | POST /api/financial/transactions/{key}/sub-transactions | change | no (graph) | no parent → parent | – |
 | `sub_transaction_unlink` | DELETE /api/financial/transactions/{key}/parent | set aside | no (graph) | parent → none | – |
+| `money_trail_link` | POST /api/financial/money-trails | change | no | two payments → linked as a transfer or a trail step | – |
 
 ### Graph and entities
 
@@ -154,6 +155,8 @@ existed on the 6 financial cases (recorded as historic by the backfill; automate
 | `significant_entity_add` | POST /api/significant/{case}/entities:batch | confirm | no | entity → significant | – |
 | `significant_entity_remove` | POST /api/significant/{case}/entities:remove | set aside | no | significant → removed | – |
 | `significant_entity_clear` | DELETE /api/significant/{case} | set aside | no | all significant → cleared | – |
+| `significant_relationship_add` | POST /api/significant/{case}/relationships:batch | confirm | no | relationship → significant | – |
+| `significant_relationship_remove` | POST /api/significant/{case}/relationships:remove | set aside | no | significant → removed | – |
 
 ### Evidence, phones, workspace, timeline
 
