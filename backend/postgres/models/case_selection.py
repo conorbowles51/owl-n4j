@@ -26,6 +26,7 @@ GROUP_SURFACES: dict[str, str] = {
     "financial_selection": "financial",
     "evidence_selection": "evidence",
     "map_selection": "map",
+    "step_trail": "history",
 }
 
 
@@ -34,7 +35,7 @@ class CaseSelection(Base):
     __table_args__ = (
         CheckConstraint(
             "group_type IN ('graph_selection', 'significant_set', 'timeline_range', 'financial_selection', "
-            "'evidence_selection', 'map_selection')",
+            "'evidence_selection', 'map_selection', 'step_trail')",
             name="ck_case_selections_group_type",
         ),
         CheckConstraint("member_count >= 0 AND left_out >= 0", name="ck_case_selections_counts"),

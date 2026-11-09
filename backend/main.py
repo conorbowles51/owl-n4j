@@ -376,6 +376,10 @@ from routers.phone_extractions import router as phone_extractions_router
 app.include_router(phone_extractions_router)
 from routers.phones import router as phones_router
 app.include_router(phones_router)
+from routers.guidance import router as guidance_router  # noqa: E402
+app.include_router(guidance_router)
+from routers.step_history import router as step_history_router  # noqa: E402
+app.include_router(step_history_router)
 from routers.phone_analysis import router as phone_analysis_router
 app.include_router(phone_analysis_router)
 from routers.case_briefs import router as case_briefs_router

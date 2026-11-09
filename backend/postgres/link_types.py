@@ -64,6 +64,8 @@ GROUP_TYPES: tuple[str, ...] = (
     "financial_selection",
     "evidence_selection",
     "map_selection",
+    # a run of steps from one person's step history, kept with each step's screen and view state (lx-guide)
+    "step_trail",
 )
 
 # A chat answer from the case agent, with its citations: a model reading until a person confirms what it says.

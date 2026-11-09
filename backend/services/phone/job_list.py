@@ -290,7 +290,8 @@ MARKS = ("phones_new_hidden", "first_phone_card_seen")
 
 def marks(conn, user_id) -> dict:
     return {r.mark: r.at.isoformat() for r in conn.execute(
-        text("SELECT mark, at FROM phone_user_marks WHERE user_id = :u"), {"u": str(user_id)})}
+        text("SELECT mark, at FROM phone_user_marks WHERE user_id = :u AND mark = ANY(:m)"),
+        {"u": str(user_id), "m": list(MARKS)})}
 
 
 def set_mark(conn, user_id, mark) -> dict:

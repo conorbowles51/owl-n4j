@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Callable, Iterable, Mapping
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, select, text as sql_text
 
 from postgres import link_types
 from postgres.models.case_selection import GROUP_SURFACES, CaseSelection
@@ -31,6 +31,7 @@ SURFACE_WORDS = {
     "financial": "the ledger",
     "evidence": "the evidence files",
     "map": "the map",
+    "history": "your step history",
 }
 
 # Member types each group takes.
@@ -41,6 +42,7 @@ GROUP_MEMBER_TYPES: dict[str, tuple[str, ...]] = {
     "financial_selection": ("financial_transaction", "financial_account", "financial_party"),
     "evidence_selection": ("evidence",),
     "map_selection": ("graph_entity", "phone_record"),
+    "step_trail": ("history_step",),
 }
 
 
@@ -166,6 +168,17 @@ def _entries(db, case_id, ids):
         WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None), WorkspaceEntry.id.in_(wanted)))} if wanted else set()
 
 
+def _steps(db, case_id, ids):
+    """Steps of this case from the person's step history (``case_steps``). The trail keeps each step's screen and
+    view state in ``how``, so it still opens after the history itself is cleared or ages out."""
+    wanted = [str(u) for u in (_uuid(i) for i in ids) if u]
+    if not wanted:
+        return set()
+    query = sql_text("SELECT id FROM case_steps WHERE case_id = :c AND id IN :ids").bindparams(
+        bindparam("ids", expanding=True))
+    return {str(v) for v in db.execute(query, {"c": str(case_id), "ids": wanted}).scalars()}
+
+
 def _phone_records(db, case_id, ids):
     found: set[str] = set()
     for value in ids:
@@ -186,6 +199,7 @@ MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "timeline_event": _timeline_events,
     "phone_record": _phone_records,
     "entry": _entries,
+    "history_step": _steps,
 }
 
 

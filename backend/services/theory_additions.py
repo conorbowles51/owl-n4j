@@ -53,6 +53,7 @@ SURFACES: dict[str, str] = {
     "map": "the map",
     "search": "search",
     "workspace": "Workspace",
+    "history": "your step history",
 }
 MAX_WHY = 1000
 MAX_NARRATIVE = 8000

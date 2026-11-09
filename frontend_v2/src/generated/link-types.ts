@@ -43,6 +43,7 @@ export const WORKSPACE_LINK_TYPES = [
   "financial_selection",
   "evidence_selection",
   "map_selection",
+  "step_trail",
   "agent_answer",
   "interview",
 ] as const

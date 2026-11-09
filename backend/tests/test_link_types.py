@@ -87,15 +87,24 @@ def test_migration_allows_exactly_the_registry_types():
     passage = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(passage)
     assert parse(passage.OLD) + ("evidence_passage",) == link_types.WORKSPACE_TYPES[:passage_at + 1]
-    # groups and agent answers came last (lx-theorybuild), and their migration is the latest to write the check
+    # groups and agent answers came next (lx-theorybuild)
     spec = importlib.util.spec_from_file_location(
         "g", BACKEND / "postgres/alembic/versions/20261108_case_selections.py"
     )
     groups = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(groups)
     assert parse(groups.OLD) == link_types.WORKSPACE_TYPES[:passage_at + 1]
-    assert parse(groups.OLD) + parse(groups.NEW) == link_types.WORKSPACE_TYPES
-    assert parse(groups.GROUPS) == link_types.GROUP_TYPES
+    assert parse(groups.OLD) + parse(groups.NEW) == tuple(t for t in link_types.WORKSPACE_TYPES if t != "step_trail")
+    assert parse(groups.GROUPS) + ("step_trail",) == link_types.GROUP_TYPES
+    # a trail of steps from the step history came last (lx-guide), and its migration is the latest to write the check
+    spec = importlib.util.spec_from_file_location(
+        "s", BACKEND / "postgres/alembic/versions/20261109_guidance_and_steps.py"
+    )
+    steps = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(steps)
+    assert parse(steps.OLD) == parse(groups.OLD) + parse(groups.NEW)
+    assert set(parse(steps.OLD) + parse(steps.NEW)) == set(link_types.WORKSPACE_TYPES)
+    assert parse(steps.OLD_GROUPS) + parse(steps.NEW) == link_types.GROUP_TYPES
 
 
 def test_every_phone_type_is_refused_with_a_stated_message_until_a_resolver_registers():
