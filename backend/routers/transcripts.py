@@ -277,12 +277,50 @@ class ExecutionInput(BaseModel):
     audio_mode: str | None = Field(default=None, pattern='^(review_first|direct)$')
 
 
+def _reserved_message(db, reservations) -> str:
+    """Says which earlier press holds the files: how many files it is sending."""
+    plan_ids = {r.get('plan_id') for r in reservations if r.get('plan_id')}
+    counts = []
+    for plan_id in sorted(plan_ids):
+        try:
+            other = db.get(EvidenceProcessingPlan, uuid.UUID(plan_id))
+        except ValueError:
+            other = None
+        if other is not None and other.execution:
+            counts.append(len(other.execution.get('file_ids') or []))
+    what = 'an earlier press of Process'
+    if len(counts) == 1 and counts[0]:
+        what += ' (%d %s)' % (counts[0], 'file' if counts[0] == 1 else 'files')
+    return ('A selected file is already being sent for processing by %s. Nothing was sent this time. '
+            'Wait for that to finish, then check the files again.' % what)
+
+
+def _refuse_files_reserved_elsewhere(db, plan) -> None:
+    """Refuse at once, before waiting for any lock, when another press has reserved a chosen file. Without this a
+    second press waited for the case audit lock (2 min 31 s on 9 Nov) only to be refused after it."""
+    chosen = [uuid.UUID(item['id']) for item in plan.payload.get('files', []) if not item.get('skipped')]
+    if not chosen:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    held = []
+    for metadata in db.scalars(select(EvidenceFile.metadata_).where(EvidenceFile.id.in_(chosen))):
+        reservation = (metadata or {}).get('processing_reservation') or {}
+        if reservation and reservation.get('plan_id') != str(plan.id) and reservation.get('expires_at', '') > now:
+            held.append(reservation)
+    if held:
+        message = _reserved_message(db, held)
+        db.rollback()
+        raise HTTPException(409, message)
+
+
 def _accept_plan_execution(plan_id, update, db, user):
     from services.evidence_processing_service import process_db_files, _stored_path
     from services.financial.admission_gate import gate_document_processing
     from services.financial import UnadmittedFileError
     plan = get_plan(db, plan_id, user)
     authorize_case(db, plan.case_id, user, ('evidence', 'upload'))
+    if not plan.execution:
+        _refuse_files_reserved_elsewhere(db, plan)
     from services.financial.audit_chain import lock_case_audit_chain
     lock_case_audit_chain(db, plan.case_id)
     plan = get_plan(db, plan_id, user, lock=True)
@@ -325,7 +363,7 @@ def _accept_plan_execution(plan_id, update, db, user):
                 validate_bindings(file, saved.payload['speaker_entity_ids'])
             reservation = (file.metadata_ or {}).get('processing_reservation') or {}
             if reservation and reservation.get('plan_id') != str(plan.id) and reservation.get('expires_at', '') > datetime.now(timezone.utc).isoformat():
-                raise HTTPException(409, 'A selected file was reserved by another processing request.')
+                raise HTTPException(409, _reserved_message(db, [reservation]))
         try: gate_document_processing(db, case_id=plan.case_id, files=files, resolve_path=_stored_path)
         except UnadmittedFileError as error: raise HTTPException(409, error.as_dict())
         from services.folder_context_service import build_processing_snapshot

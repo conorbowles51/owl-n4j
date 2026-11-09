@@ -325,3 +325,40 @@ def test_processing_receipt_retries_are_idempotent_and_job_revision_is_frozen(tr
     assert len(calls) == 1
     assert 'folder_snapshots' not in retry.json()
     assert client.post(route, json={'request_key': 'different'}).status_code == 409
+
+
+def test_a_press_on_files_another_press_reserved_is_refused_at_once_without_waiting_for_the_case_lock(transcript_client, monkeypatch):
+    """9 Nov: a second Process press waited 2 min 31 s for the case audit lock, then was refused because an earlier
+    press had reserved the files. The reservation is now read before any lock, and the refusal says which press."""
+    from datetime import datetime, timedelta, timezone
+    from services import evidence_processing_service as processing
+    from services.financial import audit_chain
+    from routers import transcripts
+    client, db, file, owner = transcript_client
+    async def capability(_): return {'enabled': True}
+    monkeypatch.setattr(transcripts, 'audio_capabilities', capability)
+    monkeypatch.setattr('services.financial.admission_gate.gate_document_processing', lambda *_, **__: None)
+    monkeypatch.setattr('services.folder_context_service.build_processing_snapshot', lambda *_, **__: {})
+    async def process(_db, **kwargs): return {'job_ids': ['synthetic-job'], 'file_count': 1}
+    monkeypatch.setattr(processing, 'process_db_files', process)
+    body = {'case_id': str(file.case_id), 'file_ids': [str(file.id)]}
+    earlier = client.post('/api/evidence/processing-plans', json=body).json()
+    later = client.post('/api/evidence/processing-plans', json=body).json()
+    # The earlier press has reserved the file and is still sending it.
+    plan = db.get(EvidenceProcessingPlan, uuid.UUID(earlier['id']))
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+    plan.execution = {'request_key': 'earlier', 'audio_mode': None, 'state': 'accepted', 'job_ids': [],
+                      'file_ids': [str(file.id)], 'lease_expires_at': expires}
+    file.metadata_ = {**(file.metadata_ or {}), 'processing_reservation': {'plan_id': earlier['id'], 'expires_at': expires}}
+    db.commit()
+    locks = []
+    monkeypatch.setattr(audit_chain, 'lock_case_audit_chain', lambda _db, case_id: locks.append(case_id))
+    refused = client.post(f"/api/evidence/processing-plans/{later['id']}/executions", json={'request_key': 'later'})
+    assert refused.status_code == 409
+    assert refused.json()['detail'] == ('A selected file is already being sent for processing by an earlier press '
+                                        'of Process (1 file). Nothing was sent this time. Wait for that to finish, '
+                                        'then check the files again.')
+    assert locks == []  # refused before waiting for the case lock
+    # The earlier press itself goes on: its own reservation never refuses it.
+    again = client.post(f"/api/evidence/processing-plans/{earlier['id']}/executions", json={'request_key': 'earlier'})
+    assert again.status_code == 202, again.text
