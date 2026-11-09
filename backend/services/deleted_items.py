@@ -286,6 +286,7 @@ def _purge_folder_files(db, record, engine_delete=None) -> dict:
     from postgres.models.evidence import EvidenceFile
     from services import activity_trail, evidence_casebin
     from services.casebin_purge import _engine_delete, purge_file
+    from services import upload_leftovers
     from services.evidence_db_storage import EvidenceDBStorage
     counts: dict = {}
     ids = _folder_files(db, record)
@@ -322,6 +323,8 @@ def _purge_folder_files(db, record, engine_delete=None) -> dict:
                   deleted_at=r.deleted_at, deleted_by_user_id=r.deleted_by_user_id, stored_path=r.stored_path,
                   source_type=r.source_type, engine_job_id=r.engine_job_id) for r in quick]
     folder_item = str(record.id)
+    # The upload folders each file came from, removed after its part commits (services/upload_leftovers.py).
+    copies = {r.id: upload_leftovers.candidates_of([r]) for r in quick}
     db.commit()
     for start in range(0, len(plain), PURGE_COMMIT_EVERY):
         part = plain[start:start + PURGE_COMMIT_EVERY]
@@ -338,8 +341,11 @@ def _purge_folder_files(db, record, engine_delete=None) -> dict:
                 path = _resolve_stored_path(stored_path) or Path(stored_path)
                 if path.exists():
                     try:
+                        links = path.stat().st_nlink
                         path.unlink()
                         details["file_deleted"] = True
+                        # Freed only when this was the file's last name (an upload copy may hold the same bytes).
+                        details["bytes_freed"] = int(r["size"] or 0) if links <= 1 else 0
                         removed_paths.add(stored_path)
                     except OSError as exc:
                         details["file_error"] = str(exc)[:200]
@@ -359,6 +365,8 @@ def _purge_folder_files(db, record, engine_delete=None) -> dict:
         # for 5,000 files held it 807.5 s on 9 Nov. A purge stopped part-way leaves the rest in Deleted items,
         # and purging again takes the rest.
         db.commit()
+        _add(counts, _upload_counts(upload_leftovers.after_purge(
+            db, record.case_id, set().union(*(copies[r["id"]] for r in part)))))
     soft_delete.forget()
     return counts
 
@@ -466,7 +474,14 @@ def _file_counts(details: dict) -> dict:
                 graph_documents_removed=int(bool(details.get("document_deleted"))),
                 graph_entities_removed=len(details.get("exclusive_entities_recycled") or []),
                 search_cleaned=int(bool(details.get("chromadb_cleaned"))),
-                bytes_on_disk_freed=int(details.get("size") or 0) if details.get("file_deleted") else 0)
+                bytes_on_disk_freed=int(details.get("bytes_freed") or 0) + int(details.get("upload_bytes_freed") or 0),
+                upload_copies_removed=int(details.get("upload_files_removed") or 0))
+
+
+def _upload_counts(out: dict) -> dict:
+    """What removing the purged rows' upload copies freed (services/upload_leftovers.py)."""
+    return dict(bytes_on_disk_freed=int(out.get("upload_bytes_freed") or 0),
+                upload_copies_removed=int(out.get("upload_files_removed") or 0))
 
 
 def _add(total: dict, part: dict) -> dict:

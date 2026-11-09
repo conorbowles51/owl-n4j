@@ -44,7 +44,8 @@ def _tables():
     from postgres.models.work import CaseTask
     from postgres.models.workspace_entry import (WorkspaceEntry, WorkspaceEntryEvent, WorkspaceEntryLink,
                                                  WorkspaceEntryRevision)
-    return [WorkspaceEntryRevision.__table__, WorkspaceEntryEvent.__table__, CaseTask.__table__, TimelineView.__table__, ActivityEvent.__table__, User.__table__, Case.__table__, CaseMembership.__table__, EvidenceFolder.__table__,
+    from postgres.models.evidence_upload import EvidenceUploadGroup, EvidenceUploadSession
+    return [EvidenceUploadGroup.__table__, EvidenceUploadSession.__table__, WorkspaceEntryRevision.__table__, WorkspaceEntryEvent.__table__, CaseTask.__table__, TimelineView.__table__, ActivityEvent.__table__, User.__table__, Case.__table__, CaseMembership.__table__, EvidenceFolder.__table__,
             EvidenceFile.__table__, RemovedRecord.__table__, FinancialImportBatch.__table__,
             FinancialSourceDocument.__table__, FinancialTransaction.__table__, WorkspaceEntry.__table__,
             WorkspaceEntryLink.__table__]
@@ -482,3 +483,138 @@ def test_a_purge_stopped_part_way_leaves_the_rest_in_deleted_items_and_a_second_
     with soft_delete.showing_deleted(db):
         assert [f.original_filename for f in db.query(EvidenceFile).filter(EvidenceFile.case_id == case_id)] == ["shared-copy.bin"]
     assert deleted_items.list_items(db, case_id, world["owner"])["items"] == []
+
+
+# ------------------------------------------------------------------ upload copies (live 9 Nov 2026: 6.16 GB reported
+# freed by purging 28,000 folder-upload files, about none freed: each file's upload copy kept the same bytes)
+
+def _old(*paths):
+    import os
+    import time
+    then = time.time() - 7200
+    for path in paths:
+        for base, dirs, files in os.walk(path):
+            for name in dirs + files:
+                os.utime(os.path.join(base, name), (then, then))
+        os.utime(path, (then, then))
+
+
+def _folder_upload(world, root, members, *, status="completed", kind="folder"):
+    """A folder upload as the app saves it: <case>/_uploads/<session>/<name>, hard-linked into the group's payload,
+    the evidence row pointing at the payload name. ``members``: {relative path: evidence folder or None}."""
+    import os
+    from postgres.models.evidence_upload import EvidenceUploadGroup, EvidenceUploadSession
+    db, case, owner = world["db"], world["case"], world["owner"]
+    group = EvidenceUploadGroup(id=uuid.uuid4(), case_id=case.id, user_id=owner.id, name="upload", kind=kind,
+                                manifest=[], status=status)
+    db.add(group)
+    db.flush()
+    case_dir = root / str(case.id)
+    out = {}
+    for rel, folder in members.items():
+        sid = uuid.uuid5(group.id, rel)
+        copy = case_dir / "_uploads" / str(sid) / rel.split("/")[-1]
+        copy.parent.mkdir(parents=True)
+        copy.write_bytes(b"u" * 7)
+        payload = case_dir / "_upload_groups" / str(group.id) / "payload" / rel
+        payload.parent.mkdir(parents=True, exist_ok=True)
+        os.link(copy, payload)
+        db.add(EvidenceUploadSession(id=sid, case_id=case.id, user_id=owner.id, group_id=group.id,
+                                     filename=rel.split("/")[-1], size=7, sha256="u" * 64, chunk_size=4194304,
+                                     chunks=[], status="completed"))
+        row = EvidenceFile(id=uuid.uuid4(), case_id=case.id, folder_id=folder.id if folder else None,
+                           original_filename=rel.split("/")[-1], stored_path=str(payload), sha256="u" * 64,
+                           status="processed", size=7,
+                           metadata_={"upload_group_id": str(group.id), "relative_path": rel})
+        db.add(row)
+        out[rel] = dict(session_dir=copy.parent, payload=payload, row=row)
+    db.commit()
+    _old(case_dir)
+    return group, out
+
+
+def test_purge_removes_a_folder_uploads_copy_and_counts_only_bytes_really_freed(world, tmp_path):
+    from services import deleted_items
+    root = tmp_path / "evidence-data"
+    db, case_id = world["db"], world["case"].id
+    with patch("config.EVIDENCE_DATA_ROOT", root):
+        group, up = _folder_upload(world, root, {"f/c.bin": world["top"], "f/d.bin": None})
+        out = _delete_folder(world, world["owner"])
+        with _Fakes():
+            result = deleted_items.purge(db, case_id, "evidence_folder", out["deleted_item_id"], world["owner"],
+                                         engine_delete=lambda *a: None)
+    c = result["counts"]
+    # c.bin: its payload name and its upload copy are gone, so its 7 bytes are freed; a.bin and b.bin 10 each.
+    assert not up["f/c.bin"]["payload"].exists() and not up["f/c.bin"]["session_dir"].exists()
+    assert c["files_removed"] == 3 and c["upload_copies_removed"] == 1
+    assert c["bytes_on_disk_freed"] == 27
+    # d.bin is live: its upload copy, its payload and the group folder stay.
+    assert up["f/d.bin"]["session_dir"].exists() and up["f/d.bin"]["payload"].exists()
+    assert (root / str(case_id) / "_upload_groups" / str(group.id)).exists()
+    with patch("config.EVIDENCE_DATA_ROOT", root):
+        from services import upload_leftovers
+        again = upload_leftovers.remove(db, case_id, None, apply=False)
+    assert again["would_remove"] == []  # nothing a live row uses is ever offered
+
+
+def test_a_purged_files_bytes_still_named_elsewhere_are_not_reported_freed(world, tmp_path):
+    """Without its upload copy removed (the copy is younger than an hour), the payload name goes but the bytes stay:
+    the count says 0 freed, not 7."""
+    from services import deleted_items
+    root = tmp_path / "evidence-data"
+    db, case_id = world["db"], world["case"].id
+    with patch("config.EVIDENCE_DATA_ROOT", root):
+        _group, up = _folder_upload(world, root, {"f/c.bin": world["top"]})
+        up["f/c.bin"]["session_dir"].joinpath("c.bin").touch()  # changed just now: an upload may be writing it
+        out = _delete_folder(world, world["owner"])
+        with _Fakes():
+            result = deleted_items.purge(db, case_id, "evidence_folder", out["deleted_item_id"], world["owner"],
+                                         engine_delete=lambda *a: None)
+    assert up["f/c.bin"]["session_dir"].joinpath("c.bin").exists()
+    assert result["counts"]["bytes_on_disk_freed"] == 20  # a.bin and b.bin only
+
+
+def test_upload_leftovers_command_removes_unused_copies_keeps_what_is_used_or_in_progress(world, tmp_path):
+    from postgres.models.evidence_upload import EvidenceUploadSession
+    from services import casebin_purge
+    root = tmp_path / "evidence-data"
+    db, case = world["db"], world["case"]
+    case_dir = root / str(case.id)
+    with patch("config.EVIDENCE_DATA_ROOT", root):
+        group, up = _folder_upload(world, root, {"f/live.bin": None, "f/gone.bin": None})
+        gone = up["f/gone.bin"]["row"]
+        db.delete(gone)  # removed before the purge removed upload copies
+        db.commit()
+        up["f/gone.bin"]["payload"].unlink()
+        # A single-file upload still going on, and an orphan copy with no upload row at all.
+        paused = EvidenceUploadSession(id=uuid.uuid4(), case_id=case.id, user_id=world["owner"].id, filename="p.bin",
+                                       size=7, sha256="p" * 64, chunk_size=4194304, chunks=[], status="paused")
+        db.add(paused)
+        db.commit()
+        for sid in (paused.id, uuid.uuid4()):
+            (case_dir / "_uploads" / str(sid)).mkdir(parents=True)
+            (case_dir / "_uploads" / str(sid) / "x.bin").write_bytes(b"o" * 5)
+        orphan = [p for p in (case_dir / "_uploads").iterdir() if p.name not in
+                  {str(paused.id), up["f/live.bin"]["session_dir"].name, up["f/gone.bin"]["session_dir"].name}][0]
+        _old(case_dir)
+        dry = casebin_purge.purge_upload_leftovers(db, case.id)
+        assert sorted(dry["would_remove"]) == sorted([str(up["f/gone.bin"]["session_dir"]), str(orphan)])
+        assert up["f/gone.bin"]["session_dir"].exists()  # a dry run removes nothing
+        done = casebin_purge.purge_upload_leftovers(db, case.id, apply=True)
+    assert (done["upload_folders_removed"], done["upload_files_removed"], done["upload_bytes_freed"]) == (2, 2, 12)
+    assert not up["f/gone.bin"]["session_dir"].exists() and not orphan.exists()
+    assert up["f/live.bin"]["session_dir"].exists() and up["f/live.bin"]["payload"].exists()
+    assert (case_dir / "_uploads" / str(paused.id) / "x.bin").exists()
+    from postgres.models.activity_event import ActivityEvent
+    assert db.query(ActivityEvent).filter(ActivityEvent.action == "evidence_upload_copies_removed").count() == 1
+
+
+def test_upload_leftovers_command_refuses_a_missing_or_empty_case_folder(world, tmp_path):
+    from services import casebin_purge
+    root = tmp_path / "evidence-data"
+    with patch("config.EVIDENCE_DATA_ROOT", root):
+        with pytest.raises(SystemExit):
+            casebin_purge.purge_upload_leftovers(world["db"], world["case"].id)
+        (root / str(world["case"].id)).mkdir(parents=True)
+        with pytest.raises(SystemExit):
+            casebin_purge.purge_upload_leftovers(world["db"], world["case"].id, apply=True)

@@ -103,7 +103,7 @@ def purge_file(db, file_id, *, engine_delete=None, graph_session=None, vector_db
     """Put back the file's hidden graph and chunks, then run the delete used before Deleted items."""
     from postgres import soft_delete
     from postgres.models.evidence import EvidenceFile
-    from services import activity_trail, evidence_casebin
+    from services import activity_trail, evidence_casebin, upload_leftovers
     with soft_delete.showing_deleted(db):
         record = db.get(EvidenceFile, file_id)
         if record is None or record.deleted_at is None:
@@ -138,10 +138,12 @@ def purge_file(db, file_id, *, engine_delete=None, graph_session=None, vector_db
                        deleted_by_user_id=str(record.deleted_by_user_id) if record.deleted_by_user_id else None,
                        size=record.size, sha256=record.sha256)
         case_id = record.case_id
+        candidates = upload_leftovers.candidates_of([record])
         db.delete(record)
         activity_trail.record("evidence_purged", db=db, system=True, case_id=case_id, details=details)
         db.commit()
     soft_delete.forget()
+    details.update(upload_leftovers.after_purge(db, case_id, candidates))
     logger.warning("Deleted items: purged evidence file %s (%s)", file_id, details.get("filename"))
     return details
 
@@ -346,11 +348,40 @@ def _main(argv=None):
     folders.add_argument("roots", nargs="+")
     folders.add_argument("--apply", action="store_true")
     folders.add_argument("--by", default=None)
+    copies = sub.add_parser("upload-leftovers", help="upload copies no evidence row uses, in one case (dry run by "
+                                                     "default; services/upload_leftovers.py)")
+    copies.add_argument("case_id")
+    copies.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     from postgres.session import _get_background_session_local
     with _get_background_session_local()() as db:
-        result = purge_deleted_case_folders(db, args.roots, apply=args.apply, user_email=args.by)
+        if args.command == "upload-leftovers":
+            result = purge_upload_leftovers(db, args.case_id, apply=args.apply)
+        else:
+            result = purge_deleted_case_folders(db, args.roots, apply=args.apply, user_email=args.by)
     print(json.dumps(result, indent=1))
+
+
+def purge_upload_leftovers(db, case_id, *, apply=False) -> dict:
+    """Upload copies left in one case by evidence removed before the purge removed them too (every folder under the
+    case's _uploads and _upload_groups that no evidence row, live or in Deleted items, uses). Dry run by default;
+    an applied run is in the activity trail."""
+    import uuid as _uuid
+    from pathlib import Path
+    from services import activity_trail, upload_leftovers
+    from config import EVIDENCE_DATA_ROOT
+    case_uuid = _uuid.UUID(str(case_id))
+    case_dir = Path(EVIDENCE_DATA_ROOT) / str(case_uuid)
+    if not case_dir.is_dir() or not any(case_dir.iterdir()):
+        raise SystemExit(f"Refusing: {case_dir} is missing or empty (is the evidence disk mounted?)")
+    out = upload_leftovers.remove(db, case_uuid, None, apply=apply)
+    if apply and out["upload_folders_removed"]:
+        activity_trail.record("evidence_upload_copies_removed", db=db, system=True, case_id=case_uuid, details=out)
+        db.commit()
+    if not apply:
+        out["would_remove_count"] = len(out.get("would_remove") or [])
+        out["would_remove"] = (out.get("would_remove") or [])[:20]
+    return out
 
 
 if __name__ == "__main__":

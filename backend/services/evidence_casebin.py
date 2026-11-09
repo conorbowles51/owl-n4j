@@ -654,8 +654,11 @@ def remove_for_good(db: Session, record: EvidenceFile, *, deleted_by_email: str 
         file_path = _resolve_stored_path(stored_path) or Path(stored_path)
         if file_path.exists():
             try:
+                links = file_path.stat().st_nlink
                 file_path.unlink()
                 result_info["file_deleted"] = True
+                # Freed only when this was the file's last name (an upload copy may hold the same bytes).
+                result_info["bytes_freed"] = int(record.size or 0) if links <= 1 else 0
             except Exception as e:
                 logger.warning("Failed to delete physical file: %s", e)
     return record.engine_job_id, result_info

@@ -77,6 +77,7 @@ ACTIONS = {
     'evidence_moved_to_deleted_items': 'Moved an evidence file to Deleted items',
     'evidence_restored': 'Restored a deleted evidence file',
     'evidence_purged': 'Removed a deleted evidence file for good (30 days after it was deleted)',
+    'evidence_upload_copies_removed': 'Removed the upload copies of evidence removed for good',
     'evidence_folder_moved_to_deleted_items': 'Moved an evidence folder to Deleted items',
     'deleted_item_restored': 'Restored an item from Deleted items',
     'deleted_item_purged': 'Removed an item from Deleted items for good',
