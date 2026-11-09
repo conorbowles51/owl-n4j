@@ -275,9 +275,13 @@ def _restore_folder_files(db, case_uuid, record, user) -> tuple[int, int]:
     return restored, failed
 
 
+PURGE_COMMIT_EVERY = 200
+
+
 def _purge_folder_files(db, record, engine_delete=None) -> dict:
-    """Purge the folder item's files: graphless ones together (one search delete, one shared-file check, one
-    commit), the others one by one through casebin_purge.purge_file. A file another row still uses stays."""
+    """Purge the folder item's files: graphless ones together (one search delete, one shared-file check, a commit
+    per PURGE_COMMIT_EVERY files), the others one by one through casebin_purge.purge_file. A file another row still
+    uses stays."""
     from pathlib import Path
     from postgres.models.evidence import EvidenceFile
     from services import activity_trail, evidence_casebin
@@ -313,33 +317,48 @@ def _purge_folder_files(db, record, engine_delete=None) -> dict:
         in_use |= EvidenceDBStorage.stored_paths_in_use(db, paths[start:start + 1000], quick_ids)
     from routers.evidence import _resolve_stored_path
     removed_paths = set()
-    for r in quick:
-        details = dict(evidence_id=str(r.id), filename=r.original_filename, size=r.size, sha256=r.sha256,
-                       deleted_at=_aware(r.deleted_at).isoformat(), with_folder=str(record.id),
-                       deleted_by_user_id=str(r.deleted_by_user_id) if r.deleted_by_user_id else None)
-        if r.stored_path and EvidenceDBStorage.keeps_file_on_delete(r.source_type):
-            details["file_kept_production"] = True
-        elif r.stored_path and r.stored_path in in_use:
-            details["file_kept_shared"] = True
-        elif r.stored_path and r.stored_path not in removed_paths:
-            path = _resolve_stored_path(r.stored_path) or Path(r.stored_path)
-            if path.exists():
-                try:
-                    path.unlink()
-                    details["file_deleted"] = True
-                    removed_paths.add(r.stored_path)
-                except OSError as exc:
-                    details["file_error"] = str(exc)[:200]
-        if r.engine_job_id:
-            try:
-                (engine_delete or _engine_delete)(str(r.case_id), r.engine_job_id)
-                details["engine_copy_removed"] = True
-            except Exception as exc:
-                details["engine_copy_error"] = str(exc)[:200]
-        _add(counts, _file_counts(details))
-        activity_trail.record("evidence_purged", db=db, system=True, case_id=r.case_id, details=details)
-        db.delete(r)
+    # Plain values first: the rows are committed in parts below, and a committed row is not read again.
+    plain = [dict(id=r.id, case_id=r.case_id, filename=r.original_filename, size=r.size, sha256=r.sha256,
+                  deleted_at=r.deleted_at, deleted_by_user_id=r.deleted_by_user_id, stored_path=r.stored_path,
+                  source_type=r.source_type, engine_job_id=r.engine_job_id) for r in quick]
+    folder_item = str(record.id)
     db.commit()
+    for start in range(0, len(plain), PURGE_COMMIT_EVERY):
+        part = plain[start:start + PURGE_COMMIT_EVERY]
+        for r in part:
+            details = dict(evidence_id=str(r["id"]), filename=r["filename"], size=r["size"], sha256=r["sha256"],
+                           deleted_at=_aware(r["deleted_at"]).isoformat(), with_folder=folder_item,
+                           deleted_by_user_id=str(r["deleted_by_user_id"]) if r["deleted_by_user_id"] else None)
+            stored_path = r["stored_path"]
+            if stored_path and EvidenceDBStorage.keeps_file_on_delete(r["source_type"]):
+                details["file_kept_production"] = True
+            elif stored_path and stored_path in in_use:
+                details["file_kept_shared"] = True
+            elif stored_path and stored_path not in removed_paths:
+                path = _resolve_stored_path(stored_path) or Path(stored_path)
+                if path.exists():
+                    try:
+                        path.unlink()
+                        details["file_deleted"] = True
+                        removed_paths.add(stored_path)
+                    except OSError as exc:
+                        details["file_error"] = str(exc)[:200]
+            if r["engine_job_id"]:
+                try:
+                    (engine_delete or _engine_delete)(str(r["case_id"]), r["engine_job_id"])
+                    details["engine_copy_removed"] = True
+                except Exception as exc:
+                    details["engine_copy_error"] = str(exc)[:200]
+            _add(counts, _file_counts(details))
+            activity_trail.record("evidence_purged", db=db, system=True, case_id=r["case_id"], details=details)
+        with soft_delete.showing_deleted(db):
+            for row in db.query(EvidenceFile).filter(EvidenceFile.id.in_([r["id"] for r in part])).all():
+                db.delete(row)
+        # Each part commits on its own: deleting a file writes the case's audit record, which holds the case audit
+        # lock until the commit, and every merge, processing press or save in the case waits for it. One commit
+        # for 5,000 files held it 807.5 s on 9 Nov. A purge stopped part-way leaves the rest in Deleted items,
+        # and purging again takes the rest.
+        db.commit()
     soft_delete.forget()
     return counts
 

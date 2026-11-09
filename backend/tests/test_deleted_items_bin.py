@@ -426,3 +426,59 @@ def test_a_folder_move_hides_graph_and_search_entries_of_exactly_the_files_that_
         deleted_items.restore(db, case_id, "evidence_folder", out["deleted_item_id"], owner)
     assert {k: v.get("ingestion_state") for k, v in chunks.rows.items()} == {"c1": "active", "c2": "active",
                                                                              "c3": None}
+
+
+def test_a_large_folder_purge_commits_in_parts_so_the_case_audit_lock_is_not_held_throughout(world):
+    """A 5,000-file purge in one commit held the case audit lock 807.5 s on 9 Nov (merges and processing presses in
+    the case waited). Each part of PURGE_COMMIT_EVERY files commits on its own; the result is the same."""
+    from postgres import soft_delete
+    from services import deleted_items
+    db, case_id, paths = world["db"], world["case"].id, world["paths"]
+    out = _delete_folder(world, world["owner"])
+    commits = []
+    real_commit = db.commit
+
+    def counting_commit():
+        with soft_delete.showing_deleted(db):
+            commits.append(db.query(EvidenceFile).filter(EvidenceFile.case_id == case_id).count())
+        real_commit()
+
+    with _Fakes(), patch.object(deleted_items, "PURGE_COMMIT_EVERY", 1), patch.object(db, "commit", counting_commit):
+        result = deleted_items.purge(db, case_id, "evidence_folder", out["deleted_item_id"], world["owner"],
+                                     engine_delete=lambda *a: None)
+    # 4 rows before (3 in the folder, 1 outside); one commit per file, each with one fewer row, then the item's own.
+    assert commits[-4:] == [3, 2, 1, 1]
+    c = result["counts"]
+    assert (c["rows_removed"], c["files_removed"], c["files_kept_shared"], c["folders_removed"]) == (3, 2, 1, 2)
+    assert paths["shared.bin"].exists() and not paths["a.bin"].exists()
+    from postgres.models.activity_event import ActivityEvent
+    purged = [e for e in db.query(ActivityEvent).all() if e.action == "evidence_purged"]
+    assert len(purged) == 3 and all(e.details["with_folder"] == out["deleted_item_id"] for e in purged)
+
+
+def test_a_purge_stopped_part_way_leaves_the_rest_in_deleted_items_and_a_second_purge_takes_them(world):
+    from postgres import soft_delete
+    from services import deleted_items
+    db, case_id = world["db"], world["case"].id
+    out = _delete_folder(world, world["owner"])
+    real_commit, calls = db.commit, []
+
+    def failing_second_part():
+        calls.append(1)
+        if len(calls) == 3:  # the first commit is before any file; the second ends part one
+            raise RuntimeError("stopped")
+        real_commit()
+
+    with _Fakes(), patch.object(deleted_items, "PURGE_COMMIT_EVERY", 1):
+        with patch.object(db, "commit", failing_second_part), pytest.raises(RuntimeError):
+            deleted_items.purge(db, case_id, "evidence_folder", out["deleted_item_id"], world["owner"],
+                                engine_delete=lambda *a: None)
+        db.rollback()
+        with soft_delete.showing_deleted(db):
+            assert db.query(EvidenceFile).filter(EvidenceFile.case_id == case_id).count() == 3
+        assert [i["kind"] for i in deleted_items.list_items(db, case_id, world["owner"])["items"]] == ["evidence_folder"]
+        deleted_items.purge(db, case_id, "evidence_folder", out["deleted_item_id"], world["owner"],
+                            engine_delete=lambda *a: None)
+    with soft_delete.showing_deleted(db):
+        assert [f.original_filename for f in db.query(EvidenceFile).filter(EvidenceFile.case_id == case_id)] == ["shared-copy.bin"]
+    assert deleted_items.list_items(db, case_id, world["owner"])["items"] == []
