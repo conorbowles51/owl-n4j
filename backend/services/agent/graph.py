@@ -374,7 +374,8 @@ _FINAL_ANSWER_REQUEST = (
 
 _OUT_OF_STEPS_REQUEST = (
     " The step limit for one answer ended the search before it finished. Write the answer from what was found, and "
-    "start with one line saying what it could not yet cover."
+    "start with one line saying what it could not yet cover, in an investigator's words (which accounts, people or "
+    "periods were not yet looked at), not as counts of groups, rows or pages a tool read."
 )
 
 def _final_answer_system_prompt(rules: str = "") -> str:
