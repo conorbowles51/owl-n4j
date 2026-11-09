@@ -108,8 +108,15 @@ def _account_line(account: dict[str, Any]) -> str:
     return " · ".join(parts) or str(account.get("id"))
 
 
-def block(scope: Scope) -> str:
-    """The focus lines for the prompts; empty when the question names nothing the case holds."""
+# Planning prompt only. Run 8df85211 (8 Nov) found a person's second account number only in payment text, through
+# search_case on the name; two replays that did not search named one account of two (lx-callagent, 9 Nov).
+SEARCH_NAMES = ("Before you answer, search the whole case for each person or company named here (search_case with "
+                "the name): payment and statement text can name accounts the ledger does not hold.")
+
+
+def block(scope: Scope, *, planning: bool = False) -> str:
+    """The focus lines for the prompts; empty when the question names nothing the case holds. ``planning``: the
+    agent's planning prompt, which also asks for a case-wide search of each name (the final answer has no tools)."""
     lines = [STAY_ON_THE_QUESTION]
     if scope.empty:
         return "\n".join(lines)
@@ -125,6 +132,8 @@ def block(scope: Scope) -> str:
         lines.append("- Numbers: " + ", ".join(scope.identifiers))
     if scope.dates:
         lines.append("- Dates: " + ", ".join(scope.dates))
+    if planning and scope.names:
+        lines.append(SEARCH_NAMES)
     return "\n".join(lines)
 
 
@@ -139,8 +148,9 @@ def case_accounts(session, case_id) -> list[dict[str, Any]]:
     return [dict(id=str(r[0]), holder=r[1], institution=r[2], identifier=r[3] or r[4]) for r in rows]
 
 
-def focus_for(session, case_id, question: str) -> str:
-    """The focus block for one question; the stay-on-the-question rule alone when the case cannot be read."""
+def focus_for(session, case_id, question: str) -> tuple[str, str]:
+    """The focus blocks for one question, (planning, final answer); the stay-on-the-question rule alone when the case
+    cannot be read."""
     import logging
     try:
         with session.begin_nested():  # a savepoint: a failed read never undoes the run's own unsaved rows
@@ -148,4 +158,5 @@ def focus_for(session, case_id, question: str) -> str:
     except Exception:  # noqa: BLE001 - focus helps the answer; it never stops a run
         logging.getLogger(__name__).warning("Question scope: case accounts could not be read", exc_info=True)
         accounts = []
-    return block(build(question, accounts))
+    scope = build(question, accounts)
+    return block(scope, planning=True), block(scope)

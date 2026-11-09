@@ -115,11 +115,13 @@ def main():
                                                   version_id=run['mandate_version_id'], override=run['mandate_override'])
         hidden, note = AgentService._tools_not_offered(
             s, SimpleNamespace(all_cases=False, case_id=run['case_id'], workflow_id=None))
-        focus = ''
+        focus = focus_plan = ''
         if hasattr(AgentService, '_question_focus'):  # lx-callagent B; absent on the code before it
             focus = AgentService._question_focus(s, SimpleNamespace(case_id=run['case_id'],
                                                                     message=args.question or run['input_message']))
-    block = '\n\n'.join(x for x in (mandate.block, note, focus) if x)
+            # (planning, final answer) since the name search line; one block for both before it.
+            focus_plan, focus = focus if isinstance(focus, tuple) else (focus, focus)
+    block = '\n\n'.join(x for x in (mandate.block, note, focus_plan) if x)
 
     from services.agent import graph
     real = graph.make_agent_tools
@@ -165,7 +167,7 @@ def main():
     wall = time.perf_counter() - started
     from services.agent import plain_answer
     answer, plain_check = plain_answer.checked((final.get('answer') or '').strip())
-    out = dict(run=args.run, question=question, focus=focus, model=args.model, reasoning=args.reasoning,
+    out = dict(run=args.run, question=question, focus=focus, focus_plan=focus_plan, model=args.model, reasoning=args.reasoning,
                seconds=round(wall, 1), retries=sum(1 for x in counter.lines if x['kind'] == 'model'),
                embedding_retries=sum(1 for x in counter.lines if x['kind'] == 'embedding'), retry_lines=counter.lines,
                clarifications=final.get('clarifications') or final.get('clarification'),

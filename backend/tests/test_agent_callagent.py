@@ -243,6 +243,29 @@ class QuestionScopeTests(unittest.TestCase):
         self.assertEqual([a["id"] for a in scope.accounts], ["a2", "a1", "a3"])
         self.assertEqual(scope.identifiers, ["55667788"])
 
+    def test_the_planning_prompt_asks_for_a_case_wide_search_of_each_named_person_and_the_answer_prompt_does_not(self):
+        """Run 8df85211 found a person's second account number only in payment text, by searching the name; replays
+        that did not search named one account of two (lx-callagent, 9 Nov)."""
+        from services.agent import question_scope
+        scope = question_scope.build("Which accounts does Erica Hopper hold that this case's financial records do "
+                                     "not?", ACCOUNTS)
+        planning = question_scope.block(scope, planning=True)
+        self.assertIn("search the whole case for each person or company named here (search_case with the name)",
+                      planning)
+        self.assertNotIn("search_case", question_scope.block(scope))
+        nobody = question_scope.build("What happened in March 2021?", ACCOUNTS)
+        self.assertNotIn("search_case", question_scope.block(nobody, planning=True))
+
+    def test_focus_for_gives_the_planning_and_the_answer_block(self):
+        from unittest import mock
+        from services.agent import question_scope
+        session = mock.MagicMock()
+        with mock.patch.object(question_scope, "case_accounts", return_value=ACCOUNTS):
+            planning, answer = question_scope.focus_for(session, "c1", "Which accounts does Erica Hopper hold?")
+        self.assertIn("search_case", planning)
+        self.assertNotIn("search_case", answer)
+        self.assertTrue(answer.startswith("Stay on the question."))
+
     def test_a_question_naming_nothing_still_gets_the_rule(self):
         from services.agent import question_scope
         block = question_scope.block(question_scope.build("What happened?", ACCOUNTS))

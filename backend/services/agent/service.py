@@ -187,7 +187,7 @@ class AgentService:
             storage.update_run_metadata(db, run=run, metadata={"fault_drill": "first model request fails once"})
             db.commit()
         # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
-        focus = self._question_focus(db, request)
+        focus_plan, focus = self._question_focus(db, request)
         final_result: dict[str, Any] | None = None
         collected_trace: list[dict[str, Any]] = []
 
@@ -219,7 +219,7 @@ class AgentService:
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block="\n\n".join(x for x in (self._prompt_block(mandate_context.block, request, feedback),
-                                                               offer_note, focus) if x),
+                                                               offer_note, focus_plan) if x),
                 hidden_tools=hidden_tools,
                 final_answer_rules="\n\n".join(x for x in (self._final_rules(request), focus) if x),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
@@ -526,7 +526,7 @@ class AgentService:
         )
         runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key, reasoning=choice.reasoning)
         # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
-        focus = self._question_focus(db, request)
+        focus_plan, focus = self._question_focus(db, request)
 
         # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
         heartbeat = run_settle.RunHeartbeat(run.id)
@@ -545,7 +545,7 @@ class AgentService:
                 ),
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block="\n\n".join(x for x in (
-                    self._prompt_block(mandate_context.block, request, feedback), focus) if x),
+                    self._prompt_block(mandate_context.block, request, feedback), focus_plan) if x),
                 final_answer_rules="\n\n".join(x for x in (self._final_rules(request), focus) if x),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
@@ -890,7 +890,7 @@ class AgentService:
         return frozenset(hidden), " ".join(notes)
 
     @staticmethod
-    def _question_focus(db: Session, request: AgentMessageRequest) -> str:
+    def _question_focus(db: Session, request: AgentMessageRequest) -> tuple[str, str]:
         from services.agent import question_scope
         return question_scope.focus_for(db, request.case_id, request.message)
 
