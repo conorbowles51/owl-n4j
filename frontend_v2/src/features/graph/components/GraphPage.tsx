@@ -39,6 +39,7 @@ import type { NodeDetail } from "@/types/graph.types"
 import { SaveSnapshotDialog } from "./SaveSnapshotDialog"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 import { useSignificantManifest } from "@/features/significant/hooks/use-significant"
+import { markedWords } from "@/features/significant/marked-words"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
@@ -326,7 +327,7 @@ export function GraphPage() {
           const labels = new Map(graphData.nodes.map((n) => [n.key, n.label]))
           return (
             <div className="flex items-center gap-2 border-b border-border px-4 py-1 text-xs">
-              <span className="text-muted-foreground">The Significant layer: {keys.length.toLocaleString("en-US")} marked</span>
+              <span className="text-muted-foreground">The Significant layer: {markedWords(keys.length, significantManifest.data?.relationships?.length ?? 0)}</span>
               <AddToTheory
                 caseId={caseId}
                 surface="significant"
