@@ -230,6 +230,18 @@ class SignificantServiceTests(unittest.TestCase):
         self.assertEqual(get_significant_layer_keys(self.db, case_id=self.case.id), ["p1", "c1", "x", "y"])
         self.assertEqual(get_significant_entity_keys(self.db, case_id=self.case.id), ["p1"])
 
+    def test_marks_saved_together_keep_one_order_whatever_their_ids(self):
+        from datetime import datetime, timezone
+        from uuid import UUID
+        same_time = datetime(2026, 11, 9, 5, 0, tzinfo=timezone.utc)
+        for row_id, (source, kind, target) in ((UUID(int=1), ("x", "PAID", "y")), (UUID(int=2), ("p1", "OWNS", "c1"))):
+            self.db.add(SignificantRelationship(id=row_id, case_id=self.case.id, source_key=source, rel_type=kind,
+                                                target_key=target, added_by_user_id=self.user.id,
+                                                addition_source="manual", context={},
+                                                created_at=same_time, updated_at=same_time))
+        self.db.commit()
+        self.assertEqual(get_significant_layer_keys(self.db, case_id=self.case.id), ["p1", "c1", "x", "y"])
+
     def test_a_relationship_needs_both_ends_and_a_type(self):
         with self.assertRaises(ValueError):
             add_significant_relationships(self.db, case_id=self.case.id, current_user=self.user,

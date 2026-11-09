@@ -95,7 +95,12 @@ def get_significant_layer_keys(db: Session, *, case_id: UUID) -> list[str]:
     for source_key, target_key in db.execute(
         select(SignificantRelationship.source_key, SignificantRelationship.target_key).where(
             SignificantRelationship.case_id == case_id, SignificantRelationship.removed_at.is_(None),
-        ).order_by(SignificantRelationship.created_at, SignificantRelationship.id)
+        ).order_by(
+            # Marks saved in one request share created_at; ties go by the relationship itself, not the random id,
+            # so the layer's order is the same on every read.
+            SignificantRelationship.created_at, SignificantRelationship.source_key,
+            SignificantRelationship.rel_type, SignificantRelationship.target_key,
+        )
     ):
         for key in (source_key, target_key):
             if key not in seen:
