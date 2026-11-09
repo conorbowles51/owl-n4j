@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
@@ -28,6 +29,12 @@ _RELATIVE_INTERNAL_LOCATION_RE = re.compile(
     re.IGNORECASE,
 )
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+# Words that name no place on their own. "el hotel", "en la oficina" or "la of" is one generic word or none once
+# these are left out, so it is held to the one-word rule below: a guess at the nearest feature of that name anywhere
+# in the world is not a place (the bare word "notaría" in a Mexican chat was pinned to a notary office in Madrid).
+_NON_PLACE_WORDS = frozenset(
+    "a al at de del el en in la las lo los of on the un una".split()
+)
 _UK_POSTCODE_RE = re.compile(
     r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b",
     re.IGNORECASE,
@@ -91,8 +98,20 @@ def _extract_postcode(value: str) -> str | None:
     return _WHITESPACE_RE.sub("", match.group(1)).upper()
 
 
+def _fold_accents(value: str) -> str:
+    return "".join(
+        ch for ch in unicodedata.normalize("NFKD", value) if not unicodedata.combining(ch)
+    )
+
+
 def _normalize_component(value: Any) -> str:
-    return _NON_ALNUM_RE.sub(" ", str(value or "").lower()).strip()
+    # Accents folded first: without it "notaría" read as the two words "notar a" and "Torreón" never matched
+    # "Torreon".
+    return _NON_ALNUM_RE.sub(" ", _fold_accents(str(value or "").lower())).strip()
+
+
+def _place_words(value: Any) -> list[str]:
+    return [token for token in _normalize_component(value).split() if token not in _NON_PLACE_WORDS]
 
 
 def _component_matches(expected: str, actual: str) -> bool:
@@ -184,8 +203,18 @@ def _candidate_match_confidence(
     if specificity == "country" and result_type not in {"country", "administrative"}:
         return None, "granularity_mismatch"
 
-    raw_tokens = _normalize_component(request.location_raw or request.query).split()
-    if specificity == "unknown" and len(raw_tokens) == 1 and result_type not in {
+    raw_text = request.location_raw or request.query
+    has_context = bool(request.city or request.region or request.country or request.address)
+    if specificity == "unknown" and not has_context:
+        # No town, region or country beside the text: one place word or none is too little to choose among the
+        # features of that name worldwide, so only a settlement or an area of that name is taken.
+        place_word_count = len(_place_words(raw_text))
+        if place_word_count == 0:
+            return None, "no_place_words"
+    else:
+        # With a town, region or country beside it, the word count is the plain one it always was.
+        place_word_count = len(_NON_ALNUM_RE.sub(" ", raw_text.lower()).split())
+    if specificity == "unknown" and place_word_count == 1 and result_type not in {
         "administrative",
         "borough",
         "city",
@@ -327,6 +356,30 @@ def build_geocode_request(
     return None
 
 
+def recheck_cached_result(request: GeocodeRequest | None, cached: GeocodeResult) -> GeocodeResult:
+    """A stored answer is held to today's checks before it places anything: answers stored before a check existed
+    (or while one was broken) would otherwise keep putting the same wrong pin on every case that asks again. A stored
+    success keeps the provider's chosen result in raw_response; when today's checks refuse it the answer is
+    ambiguous, as a fresh lookup refusing every candidate is."""
+    if request is None or cached.status != "success" or not isinstance(cached.raw_response, dict):
+        return cached
+    confidence, rejection = _candidate_match_confidence(request, cached.raw_response)
+    if confidence is not None:
+        return cached
+    return GeocodeResult(
+        provider=cached.provider,
+        normalized_query=cached.normalized_query,
+        original_query=cached.original_query,
+        status="ambiguous",
+        raw_response={
+            "results": [cached.raw_response],
+            "rejection_reason": rejection or "no_valid_candidate",
+            # Marks a stored success refused by today's checks, so a case re-run clears exactly the pins it placed.
+            "rechecked": True,
+        },
+    )
+
+
 # The status an address gets when no geocoder on this server is configured: nothing was sent, nothing is cached
 # (a geocoder held on this server later still gets the question), and the address is not placed.
 NOT_RUN_STATUS = "not_run"
@@ -383,6 +436,7 @@ class GeocodingService:
 
         cached = await self._load_cached_result(self.provider, normalized_query)
         if cached is not None:
+            cached = recheck_cached_result(request, cached)
             self._memoized_results[memo_key] = cached
             return cached
 
@@ -407,6 +461,11 @@ class GeocodingService:
         await self._save_cached_result(result)
         self._memoized_results[memo_key] = result
         return result
+
+    async def cached_only(self, request: GeocodeRequest) -> GeocodeResult | None:
+        """The stored answer for a request, held to today's checks, without asking any geocoder (a dry run)."""
+        cached = await self._load_cached_result(self.provider, _match_cache_key(request))
+        return recheck_cached_result(request, cached) if cached is not None else None
 
     async def _load_cached_result(
         self,
