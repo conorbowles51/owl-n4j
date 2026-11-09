@@ -14,8 +14,11 @@ from postgres.base import Base
 PATH = Path(__file__).resolve().parents[1] / 'postgres/alembic/versions/20261109_evidence_delete_fk_indexes.py'
 
 
-def _load():
-    spec = importlib.util.spec_from_file_location('evidence_delete_fk_indexes', PATH)
+SECOND = PATH.with_name('20261109_evidence_delete_fk_indexes_2.py')
+
+
+def _load(path=PATH):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -129,6 +132,51 @@ class EvidenceDeleteFkIndexesTest(unittest.TestCase):
         bind = Bind(create_errors=[sa.exc.OperationalError('CREATE INDEX', {}, Exception('disk full'))])
         with self.assertRaises(sa.exc.OperationalError):
             self.run_upgrade(bind)
+
+
+class SecondPassTest(unittest.TestCase):
+    """9 Nov live: the first pass found evidence_upload_sessions and evidence_files held in all 599 polls, by readers
+    that never conflict with an index build, and built neither."""
+
+    def run_upgrade(self, bind):
+        module = _load(SECOND)
+        context = mock.Mock(autocommit_block=contextlib.nullcontext)
+        with mock.patch.object(module, 'op') as op, mock.patch.object(module, 'time', Clock()):
+            op.get_bind.return_value = bind
+            op.get_context.return_value = context
+            module.upgrade()
+        return module
+
+    def test_follows_the_first_pass_with_the_same_indexes(self):
+        second, first = _load(SECOND), _load()
+        self.assertEqual(second.down_revision, first.revision)
+        self.assertEqual(second.INDEXES, first.INDEXES)
+
+    def test_waits_only_for_locks_that_conflict_with_the_build(self):
+        bind = Bind()
+        self.run_upgrade(bind)
+        polls = [s for s in bind.statements if 'FROM pg_locks' in s]
+        self.assertTrue(polls)
+        for poll in polls:
+            self.assertIn("mode NOT IN ('AccessShareLock', 'RowShareLock', 'ShareLock')", poll)
+        first = [s for s in _load_statements_of_first_pass() if 'FROM pg_locks' in s]
+        self.assertTrue(first and all('mode NOT IN' not in s for s in first))  # the first pass waited for readers too
+        self.assertEqual(len([s for s in bind.statements if s.startswith('CREATE INDEX')]), 9)
+
+    def test_an_index_the_first_pass_built_is_left_alone(self):
+        bind = Bind(exists=1)
+        self.run_upgrade(bind)
+        self.assertFalse(any(s.startswith('CREATE INDEX') for s in bind.statements))
+
+
+def _load_statements_of_first_pass():
+    bind = Bind()
+    module = _load()
+    with mock.patch.object(module, 'op') as op, mock.patch.object(module, 'time', Clock()):
+        op.get_bind.return_value = bind
+        op.get_context.return_value = mock.Mock(autocommit_block=contextlib.nullcontext)
+        module.upgrade()
+    return bind.statements
 
 
 if __name__ == '__main__':
