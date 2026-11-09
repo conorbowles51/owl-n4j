@@ -25,7 +25,8 @@ def db():
             " provider TEXT, model_id TEXT, prompt_tokens INT, completion_tokens INT, total_tokens INT, cost_usd NUMERIC,"
             " operation_kind TEXT, engine_job_id TEXT, evidence_file_id TEXT, pricing_version TEXT, description TEXT,"
             " extra_metadata TEXT, created_at TIMESTAMP, updated_at TIMESTAMP)")
-        connection.exec_driver_sql("CREATE TABLE cases (id TEXT PRIMARY KEY, title TEXT)")
+        # deleted_at: the Deleted-items filter (on by default since bc0ad983b) hides deleted cases on every read.
+        connection.exec_driver_sql("CREATE TABLE cases (id TEXT PRIMARY KEY, title TEXT, deleted_at TIMESTAMP)")
     session = sessionmaker(bind=engine)()
     yield session
     session.close()
