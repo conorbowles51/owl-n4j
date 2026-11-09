@@ -75,10 +75,10 @@ export class ErrorBoundary extends Component<
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-semibold text-foreground">
-              Something went wrong
+              This part of the page stopped working
             </h3>
             <p className="max-w-md text-xs text-muted-foreground">
-              {this.state.error?.message || "An unexpected error occurred"}
+              {this.state.error?.message || "The page hit an error it did not expect. Try again; if it happens again, reload the page."}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={this.handleRetry}>

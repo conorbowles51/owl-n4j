@@ -544,7 +544,7 @@ def auto_extract_from_to(
             raise HTTPException(status_code=500, detail=result.get("message", "Extraction failed"))
         return result
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid case_id")
+        raise HTTPException(status_code=400, detail="That case reference is not valid.")
     except CaseNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except CaseAccessDenied:

@@ -95,7 +95,7 @@ def execute_cypher(
         case_uuid = authorize_case(db, case_id, current_user, ("case", "view"))
         case_id = str(case_uuid)
         if request.params and "case_id" in request.params:
-            raise HTTPException(status_code=400, detail="$case_id is supplied by the server; do not send it.")
+            raise HTTPException(status_code=400, detail="Leave out $case_id: Loupe fills it in with the open case.")
     elif not _is_admin(current_user):
         raise HTTPException(
             status_code=403,

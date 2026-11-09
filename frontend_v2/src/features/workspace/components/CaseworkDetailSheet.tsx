@@ -758,7 +758,7 @@ export function CaseworkDetailSheet({
             <DialogTitle>Create finding from theory</DialogTitle>
             <DialogDescription>
               Review the draft before saving. The original theory is marked
-              Converted only after this finding is created successfully.
+              Converted only once this finding is saved.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

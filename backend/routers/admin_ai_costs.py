@@ -143,13 +143,13 @@ def _apply_filters(
         try:
             query = query.filter(CostRecord.user_id == UUID(user_id))
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid user_id filter") from exc
+            raise HTTPException(status_code=400, detail="That user filter is not a known user.") from exc
 
     if case_id:
         try:
             query = query.filter(CostRecord.case_id == UUID(case_id))
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid case_id filter") from exc
+            raise HTTPException(status_code=400, detail="That case filter is not a known case.") from exc
 
     if provider:
         query = query.filter(CostRecord.provider == provider)

@@ -132,7 +132,7 @@ def list_chat_histories(
     if scope == "case" and case_id is None:
         raise HTTPException(
             status_code=400,
-            detail="case_id is required when scope='case'",
+            detail="Choose a case to list case conversations.",
         )
     try:
         conversations = list_conversations_for_user(

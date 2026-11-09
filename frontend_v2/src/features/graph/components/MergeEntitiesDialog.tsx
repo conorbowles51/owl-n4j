@@ -242,8 +242,8 @@ export function MergeEntitiesDialog({
                 <div className="text-xs text-yellow-800 dark:text-yellow-200">
                 <p className="font-medium">Merge completed with warnings</p>
                 <p className="mt-0.5 opacity-80">
-                  Entities merged successfully, but some source entities could not be removed.
-                  You may see duplicates — check the recycle bin.
+                  The entities were merged, but some of the originals could not be removed.
+                  Duplicates may show; check the recycle bin.
                 </p>
               </div>
             </div>

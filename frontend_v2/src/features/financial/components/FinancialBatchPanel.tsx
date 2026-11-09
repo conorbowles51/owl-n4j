@@ -1158,8 +1158,8 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       )}
       {!!batch.counts.pending_import && (
         <p role="status">
-          Importing {batch.counts.pending_import} statements. Successfully
-          imported statements are retained if another one needs attention.
+          Importing {batch.counts.pending_import} statements. Statements already
+          imported stay imported if another one needs attention.
         </p>
       )}
       {batch.review_summary && (

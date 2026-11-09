@@ -1293,7 +1293,7 @@ async def upload_evidence(
     files = [value for value in form.getlist("files") if isinstance(value, StarletteUploadFile)]
 
     if not case_id:
-        raise HTTPException(status_code=400, detail="case_id is required")
+        raise HTTPException(status_code=400, detail="Choose a case first.")
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
     if is_archive and len(files) != 1:
@@ -1478,7 +1478,7 @@ async def process_evidence_background(
 
         if db_backed_ids:
             if not request.case_id:
-                raise HTTPException(status_code=400, detail="case_id is required for DB-backed evidence files")
+                raise HTTPException(status_code=400, detail="Choose the case these files belong to.")
             engine_result = await process_db_files(
                 db,
                 case_id=UUID(request.case_id),
@@ -1558,7 +1558,7 @@ async def check_evidence_financial_route(
         try:
             case_uuid = UUID(request.case_id)
         except ValueError:
-            raise HTTPException(status_code=400, detail="case_id is not a valid UUID")
+            raise HTTPException(status_code=400, detail="That case reference is not valid.")
 
         # A read, so viewing the case is the right bar -- lower than the ``evidence:upload``
         # that ``/process/background`` requires.  Someone who may look at a case
@@ -1659,7 +1659,7 @@ async def process_evidence(
 
         if db_backed_ids:
             if not request.case_id:
-                raise HTTPException(status_code=400, detail="case_id is required for DB-backed evidence files")
+                raise HTTPException(status_code=400, detail="Choose the case these files belong to.")
             engine_result = await process_db_files(
                 db,
                 case_id=UUID(request.case_id),
@@ -2799,7 +2799,7 @@ def _verify_evidence_case_access(
     try:
         case_uuid = UUID(case_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+        raise HTTPException(status_code=400, detail="That case reference is not valid.") from exc
 
     try:
         check_case_access(db, case_uuid, current_user, required_permission=required_permission)
@@ -2917,7 +2917,7 @@ def _evidence_by_name(db: Session, current_user: User, filename: str, case_id: s
     try:
         case_uuid = UUID(case_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="case_id is not a case id")
+        raise HTTPException(status_code=400, detail="That case reference is not valid.")
     _check_engine_jobs_access(db, case_id, current_user)
     found = EvidenceDBStorage.find_all_by_filename(db, filename, case_uuid)
     if evidence_file_id:

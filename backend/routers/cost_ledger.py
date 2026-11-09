@@ -99,7 +99,7 @@ def get_cost_ledger(
             case_uuid = UUID(case_id)
             query = query.filter(CostRecord.case_id == case_uuid)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid case_id format")
+            raise HTTPException(status_code=400, detail="That case reference is not valid.")
     
     if job_type:
         if job_type not in [CostJobType.INGESTION.value, CostJobType.AI_ASSISTANT.value]:
@@ -201,7 +201,7 @@ def get_cost_summary(
                     case_uuid = UUID(case_id)
                     query = query.filter(CostRecord.case_id == case_uuid)
                 except ValueError:
-                    raise HTTPException(status_code=400, detail="Invalid case_id format")
+                    raise HTTPException(status_code=400, detail="That case reference is not valid.")
             
             # Job type filter
             if job_type:

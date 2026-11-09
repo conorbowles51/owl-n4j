@@ -70,7 +70,7 @@ const RUN_STATUS_COPY: Record<IngestionRunStatus, TermCopy> = {
   failed: {
     label: "Broke",
     description:
-      "The attempt stopped part way because something went wrong. Anything it had already taken in is in the ledger, and anything it had not reached is missing from it.",
+      "The attempt stopped part way on an error. Anything it had already taken in is in the ledger, and anything it had not reached is missing from it.",
   },
   aborted: {
     label: "Stopped",

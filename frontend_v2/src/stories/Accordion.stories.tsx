@@ -26,8 +26,8 @@ export const Default = {
       <AccordionItem value="item-2">
         <AccordionTrigger>How does case isolation work?</AccordionTrigger>
         <AccordionContent>
-          All queries are filtered by case_id to ensure data isolation between
-          different investigations.
+          Every search reads only the open case, so one investigation never
+          shows another's data.
         </AccordionContent>
       </AccordionItem>
       <AccordionItem value="item-3">

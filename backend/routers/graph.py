@@ -998,7 +998,7 @@ def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_use
         raise HTTPException(status_code=400, detail="Node type is required")
 
     if not request.case_id or not request.case_id.strip():
-        raise HTTPException(status_code=400, detail="case_id is required")
+        raise HTTPException(status_code=400, detail="Choose a case first.")
 
     try:
         from services.graph_entities import EntityExists, create_case_entity
@@ -1073,7 +1073,7 @@ def create_relationships(request: CreateRelationshipsRequest, user: dict = Depen
         raise HTTPException(status_code=400, detail="At least one relationship is required")
 
     if not request.case_id or not request.case_id.strip():
-        raise HTTPException(status_code=400, detail="case_id is required")
+        raise HTTPException(status_code=400, detail="Choose a case first.")
 
     try:
         from services.cypher_generator import generate_cypher_from_graph

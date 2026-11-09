@@ -72,7 +72,7 @@ def list_directory(
     """
     try:
         if not case_id:
-            raise HTTPException(status_code=400, detail="case_id is required")
+            raise HTTPException(status_code=400, detail="Choose a case first.")
         
         # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
         case_root = FILESYSTEM_ROOT / case_id
@@ -185,7 +185,7 @@ def read_file(
     """
     try:
         if not case_id:
-            raise HTTPException(status_code=400, detail="case_id is required")
+            raise HTTPException(status_code=400, detail="Choose a case first.")
         
         # Case-specific root: {EVIDENCE_DATA_ROOT}/{case_id}
         case_root = FILESYSTEM_ROOT / case_id
