@@ -222,18 +222,35 @@ def build_html(*, title, case_name, generated, export_id, contains, days, partic
     return doc, missing
 
 
-def local_only(url, *args, **kwargs):
-    """WeasyPrint's URL fetcher, limited to the bundled fonts: nothing in an export is fetched from a network."""
-    import weasyprint
+def local_only(url, headers=None):
+    """WeasyPrint's URL fetch, limited to the bundled fonts: nothing in an export is fetched from a network."""
     path = url[len("file://"):] if url.startswith("file://") else None
     if path is None or not os.path.realpath(path).startswith(os.path.realpath(FONT_DIR) + os.sep):
         raise ValueError("phone exports load only the bundled fonts, not %s" % url.split(":", 1)[0])
-    return weasyprint.default_url_fetcher(url, *args, **kwargs)
+    return _fetcher().fetch(url, headers, checked=True)
+
+
+@lru_cache(maxsize=None)
+def _fetcher_class():
+    # WeasyPrint 70 takes a URLFetcher (a plain function lost default_url_fetcher, so every bundled font failed to
+    # load with only a log warning and the PDF printed in the system's fonts).
+    from weasyprint.urls import URLFetcher
+
+    class LocalOnlyFetcher(URLFetcher):
+        def fetch(self, url, headers=None, checked=False):
+            if not checked:
+                return local_only(url, headers)
+            return super().fetch(url, headers)
+    return LocalOnlyFetcher
+
+
+def _fetcher():
+    return _fetcher_class()(allowed_protocols={"file"})
 
 
 def render(doc: str) -> bytes:
     import weasyprint
-    return weasyprint.HTML(string=doc, base_url=FONT_DIR, url_fetcher=local_only).write_pdf()
+    return weasyprint.HTML(string=doc, base_url=FONT_DIR, url_fetcher=_fetcher()).write_pdf()
 
 
 RENDER_MEMORY_MB = int(os.environ.get("LOUPE_PHONE_EXPORT_MEMORY_MB", "4096"))
