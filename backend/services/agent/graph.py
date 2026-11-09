@@ -106,6 +106,32 @@ def invoke_model(model: Any, messages: list[Any], *, note: Callable[[dict[str, A
     raise AssertionError("unreachable")
 
 
+
+# A live check of the retry line needs a model failure on demand. Only the automated-checks case may ask for one
+# (AgentMessageRequest.fault_drill); the run records that it was a drill. Reverse: remove with the live check.
+FAULT_DRILL_CASES = frozenset({"cded78d0-e659-44cc-940d-d8f8c8012760"})
+
+
+class FaultDrill:
+    """Wraps a model so its first request fails as a timeout (once per run), then passes every request through."""
+
+    def __init__(self, model: Any, state: dict[str, int] | None = None):
+        self._model, self._state = model, state if state is not None else {"left": 1}
+
+    def bind_tools(self, *args: Any, **kwargs: Any) -> "FaultDrill":
+        return FaultDrill(self._model.bind_tools(*args, **kwargs), self._state)
+
+    def invoke(self, messages: Any, *args: Any, **kwargs: Any) -> Any:
+        if self._state["left"] > 0:
+            self._state["left"] -= 1
+            import httpx
+            import openai
+            raise openai.APITimeoutError(request=httpx.Request("POST", "https://fault-drill.invalid/chat/completions"))
+        return self._model.invoke(messages, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._model, name)
+
 class DeepSeekReasoningChat(ChatOpenAI):
     """DeepSeek in thinking mode. With tools in the request, DeepSeek refuses (400) a conversation whose earlier
     assistant turns lack their ``reasoning_content``; LangChain's OpenAI client neither keeps nor sends it. This keeps

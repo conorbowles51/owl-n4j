@@ -80,6 +80,10 @@ class AgentService:
 
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
         ai_budget.check(db, request.case_id, "this agent question")
+        if request.fault_drill:
+            from services.agent.graph import FAULT_DRILL_CASES
+            if str(request.case_id) not in FAULT_DRILL_CASES:
+                raise ValueError("A fault drill runs only in the automated-checks case.")
         if request.all_cases and request.case_layer == "significant":
             raise ValueError("All-cases mode reads whole cases; switch the case layer to All data to use it.")
         allowed_entity_keys = (
@@ -177,6 +181,11 @@ class AgentService:
             else self._build_history(db, thread=thread, all_cases=request.all_cases)
         )
         runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key, reasoning=choice.reasoning)
+        if request.fault_drill:
+            from services.agent import graph as agent_graph
+            runner.base_model = agent_graph.FaultDrill(runner.base_model)
+            storage.update_run_metadata(db, run=run, metadata={"fault_drill": "first model request fails once"})
+            db.commit()
         # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
         focus = self._question_focus(db, request)
         final_result: dict[str, Any] | None = None

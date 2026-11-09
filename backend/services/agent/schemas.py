@@ -29,6 +29,8 @@ class AgentMessageRequest(BaseModel):
     model: str | None = None
     # How hard the model reasons (services.agent.graph.REASONING_LEVELS); None: the default for the model.
     reasoning: Literal["off", "high", "max"] | None = None
+    # A live check of the retry line: the first model request fails once (only in graph.FAULT_DRILL_CASES).
+    fault_drill: bool = False
     artifact_preference: AgentArtifactPreference = "auto"
     case_layer: Literal["all", "significant"] = "all"
     persist: bool = True

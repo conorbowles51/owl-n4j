@@ -136,6 +136,17 @@ class OutOfStepsTests(unittest.TestCase):
         self.assertIn("start with one line saying what it could not yet cover", Writer.requests[-1])
 
 
+class FaultDrillTests(unittest.TestCase):
+    def test_the_drill_fails_the_first_request_once_across_bound_copies(self):
+        from services.agent.graph import FaultDrill, invoke_model
+        notes = []
+        drill = FaultDrill(SimpleNamespace(invoke=lambda m: "ok", bind_tools=lambda t: SimpleNamespace(invoke=lambda m: "tools")))
+        bound = drill.bind_tools([])
+        self.assertEqual(invoke_model(bound, [], note=notes.append, sleep=lambda s: None), "tools")
+        self.assertEqual(drill.invoke([]), "ok")
+        self.assertEqual(len(notes), 1)
+
+
 class ReasoningClientTests(unittest.TestCase):
     def test_higher_reasoning_sends_thinking_and_effort_and_returns_the_reasoning(self):
         from langchain_core.messages import AIMessage, HumanMessage
