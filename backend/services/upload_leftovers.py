@@ -27,6 +27,15 @@ from sqlalchemy import select
 
 ENDED_GROUP = ("completed", "discarded")
 MIN_AGE_S = 3600
+# Ids per lookup: a case can hold more upload folders than PostgreSQL takes parameters in one query (65,535).
+IDS_PER_QUERY = 5000
+
+
+def _in_parts(db, model, case_id, column, ids):
+    ids = list(ids)
+    for start in range(0, len(ids), IDS_PER_QUERY):
+        yield from db.scalars(select(model).where(model.case_id == case_id,
+                                                  column.in_(ids[start:start + IDS_PER_QUERY])))
 
 
 def _root() -> Path:
@@ -139,8 +148,8 @@ def remove(db, case_id, candidates=None, *, apply=True, min_age_s=MIN_AGE_S) -> 
             except ValueError:
                 pass
     if group_dirs:
-        extra = {case / "_uploads" / str(sid) for sid in db.scalars(select(EvidenceUploadSession.id).where(
-            EvidenceUploadSession.case_id == case_id, EvidenceUploadSession.group_id.in_(group_dirs)))}
+        extra = {case / "_uploads" / str(s.id) for s in _in_parts(db, EvidenceUploadSession, case_id,
+                                                                    EvidenceUploadSession.group_id, group_dirs)}
         candidates = sorted(set(candidates) | {p for p in extra if p.is_dir()})
     ids = []
     for p in candidates:
@@ -148,11 +157,9 @@ def remove(db, case_id, candidates=None, *, apply=True, min_age_s=MIN_AGE_S) -> 
             ids.append(uuid.UUID(p.name))
         except ValueError:
             pass
-    sessions = {str(s.id): s for s in db.scalars(select(EvidenceUploadSession).where(
-        EvidenceUploadSession.case_id == case_id, EvidenceUploadSession.id.in_(ids)))} if ids else {}
+    sessions = {str(s.id): s for s in _in_parts(db, EvidenceUploadSession, case_id, EvidenceUploadSession.id, ids)}
     group_ids = {s.group_id for s in sessions.values() if s.group_id} | set(ids)
-    groups = {str(g.id): g for g in db.scalars(select(EvidenceUploadGroup).where(
-        EvidenceUploadGroup.case_id == case_id, EvidenceUploadGroup.id.in_(group_ids)))} if group_ids else {}
+    groups = {str(g.id): g for g in _in_parts(db, EvidenceUploadGroup, case_id, EvidenceUploadGroup.id, group_ids)}
     now = time.time()
     out = dict(upload_folders_removed=0, upload_files_removed=0, upload_bytes_freed=0, upload_folders_kept=0)
     would = []

@@ -646,3 +646,21 @@ def test_a_phone_reports_upload_copies_stay_while_its_row_does_and_go_with_its_g
     assert not group_dir.exists()
     assert not any(m["session_dir"].exists() for m in up.values())
     assert (out["upload_folders_removed"], out["upload_files_removed"], out["upload_bytes_freed"]) == (3, 4, 14)
+
+
+def test_upload_leftovers_looks_up_sessions_and_groups_in_parts(world, tmp_path):
+    """A case held more upload folders than PostgreSQL takes parameters in one query (65,535): the whole-case scan
+    failed. Lookups go in parts of IDS_PER_QUERY; the answer is the same."""
+    from services import upload_leftovers
+    root = tmp_path / "evidence-data"
+    db, case_id = world["db"], world["case"].id
+    with patch("config.EVIDENCE_DATA_ROOT", root):
+        _group, up = _folder_upload(world, root, {"f/a1.bin": None, "f/a2.bin": None, "f/a3.bin": None})
+        gone = up["f/a2.bin"]
+        db.delete(gone["row"])
+        db.commit()
+        gone["payload"].unlink()
+        whole = upload_leftovers.remove(db, case_id, None, apply=False)
+        with patch("services.upload_leftovers.IDS_PER_QUERY", 1):
+            parts = upload_leftovers.remove(db, case_id, None, apply=False)
+    assert whole["would_remove"] == parts["would_remove"] == [str(gone["session_dir"])]
