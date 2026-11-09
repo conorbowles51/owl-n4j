@@ -393,7 +393,10 @@ class AgentImprovementTests(unittest.TestCase):
 
         fake_vector = FakeVectorDB()
         fake_embedding = FakeEmbeddingService()
-        context = AgentToolContext(case_id="case-1")
+        # A real case id: the search's cost record is filed under the case as a UUID (c1e88a8b0), so a made-up id
+        # makes the meaning search fail and fall back to the word search.
+        case_id = "0b7f6c1e-5d1a-4c55-9a3e-2f61d2a4c001"
+        context = AgentToolContext(case_id=case_id)
         tools = {tool.name: tool for tool in make_agent_tools(context)}
 
         with patch("services.agent.tools.get_vector_db_service", return_value=fake_vector), patch(
@@ -404,7 +407,7 @@ class AgentImprovementTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["data"]["count"], 1)
-        self.assertEqual(fake_vector.filter_metadata, {"case_id": "case-1"})
+        self.assertEqual(fake_vector.filter_metadata, {"case_id": case_id})
 
     def test_inspect_graph_schema_reports_actual_properties_and_samples(self):
         class FakeSession:
