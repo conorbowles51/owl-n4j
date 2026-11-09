@@ -177,7 +177,7 @@ def test_investigator_terms_from_case_terms_and_keyword_lists_reach_typed_words_
     assert [r["records"][0]["record_uid"] for r in after_i] == [s]
     assert after_i[0]["measures"]["term_kinds"] == ["investigator_term"] and after_i[0]["measures"]["terms_matched"] == 2
     assert rev0 != rev1
-    assert T.VERSION == "7.3" and I.VERSION == "9.3"
+    assert T.VERSION == "7.3" and I.VERSION == "9.4"
 
 
 # ---- 05 10.3 step 1, the rest of the vocabulary: case entities, ledger amounts, places (cb-vocab) -------------------
