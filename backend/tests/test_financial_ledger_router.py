@@ -164,6 +164,37 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 500)
 
 
+class GetLedgerRowsByIdTests(GetLedgerTransactionsTests):
+    """The money-trail form reads its chosen payments by id instead of the whole case ledger (lx-linksuggest)."""
+
+    async def test_reads_only_the_named_payments_and_counts_the_missing(self):
+        case_id, first, second = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        fake_row = SimpleNamespace(account=object())
+
+        class FakeView:
+            def to_json(self):
+                return {"key": str(first)}
+
+        with patch.object(
+            financial_ledger, "list_transactions", return_value=[fake_row]
+        ) as list_call, patch.object(financial_ledger, "to_view", return_value=FakeView()):
+            result = financial_ledger.get_ledger_rows_by_id(
+                case_id=case_id, ids=[first, second, first], db="fake-session")
+
+        self.assertEqual(result, {"case_id": str(case_id), "transactions": [{"key": str(first)}],
+                                  "total": 1, "not_found": 1})
+        list_call.assert_called_once_with(
+            "fake-session", case_id, account_id=None, source_document_id=None, account_ids=None,
+            account_holders=None, ledger_status=None, start_date=None, end_date=None,
+            transaction_ids=[first, second])
+
+    async def test_no_ids_reads_nothing(self):
+        with patch.object(financial_ledger, "list_transactions") as list_call:
+            result = financial_ledger.get_ledger_rows_by_id(case_id=uuid.uuid4(), ids=[], db="fake-session")
+        self.assertEqual(result["transactions"], [])
+        list_call.assert_not_called()
+
+
 class GetLedgerCountTests(unittest.IsolatedAsyncioTestCase):
     """The count the Transactions page shows while the ledger rows load: same filters as ``/ledger``."""
 

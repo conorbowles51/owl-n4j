@@ -1630,6 +1630,16 @@ export const financialAPI = {
   },
 
   /**
+   * Named payments of one case (up to 200), in the same form `getLedgerTransactions` gives them. A form that needs a
+   * few chosen payments reads them here instead of loading every payment of the case.
+   */
+  getLedgerRowsById: (caseId: string, ids: string[]) => {
+    const qs = new URLSearchParams({ case_id: caseId })
+    for (const id of ids) qs.append("ids", id)
+    return fetchAPI<LedgerResponse & { not_found: number }>(`/api/financial/ledger-rows?${qs}`)
+  },
+
+  /**
    * The Overview's headline figures over exactly the rows `getLedgerTransactions` returns for the same filters,
    * restricted to `categories` as the page restricts them (none: every category). Computed on the server so the
    * Overview's top card does not wait for every payment.

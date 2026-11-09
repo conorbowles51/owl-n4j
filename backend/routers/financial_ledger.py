@@ -866,8 +866,29 @@ def get_ledger_transactions(
     }
 
 
+@router.get("/ledger-rows")
+def get_ledger_rows_by_id(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    ids: Annotated[list[UUID], Query(max_length=200)] = [],
+    db: Session = Depends(get_db)):
+    """Named payments of one case, in the same form ``/ledger`` gives them (admitted rows only, as ``/ledger``).
+
+    The money-trail link form reads its chosen payments here instead of loading every payment of the case
+    (d5b330d1: 27,668 rows) to label a few. ``not_found`` counts ids that are not an admitted payment of this case."""
+    wanted = list(dict.fromkeys(ids))
+    transactions = _ledger_rows(
+        db, case_id, source_document_id=None, account_id=None, account_ids=None, account_holders=None,
+        ledger_status=None, start_date=None, end_date=None, transaction_ids=wanted) if wanted else []
+    return {
+        "case_id": str(case_id),
+        "transactions": transactions,
+        "total": len(transactions),
+        "not_found": len(wanted) - len(transactions),
+    }
+
+
 def _ledger_rows(db, case_id, *, source_document_id, account_id, account_ids, account_holders, ledger_status,
-                 start_date, end_date):
+                 start_date, end_date, transaction_ids=None):
     """The rows ``/ledger`` answers with, as JSON objects (shared with ``/ledger-overview``, so both read the same
     rows the same way)."""
     status = _ledger_status_param(ledger_status)
@@ -880,6 +901,7 @@ def _ledger_rows(db, case_id, *, source_document_id, account_id, account_ids, ac
             ledger_status=status,
             start_date=start_date,
             end_date=end_date,
+            **({'transaction_ids': transaction_ids} if transaction_ids is not None else {}),
         )
     except LedgerQueryError as e:
         raise HTTPException(status_code=400, detail=str(e))

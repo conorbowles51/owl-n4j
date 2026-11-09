@@ -117,8 +117,12 @@ def list_transactions(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     source_document_id: Optional[UUID] = None,
+    transaction_ids=None,
 ) -> list[FinancialTransaction]:
     """Rows for one case, defaulting to the population that counts toward totals.
+
+    ``transaction_ids`` (when given) keeps only those payments: a form that needs a few chosen payments reads them
+    instead of the whole case ledger.
 
     ``ledger_status`` left unset means :attr:`LedgerStatus.admitted`, not
     every row regardless of status. ``start_date``/``end_date`` bound
@@ -132,6 +136,8 @@ def list_transactions(
         account_id=account_id, account_ids=account_ids, account_holders=account_holders,
         ledger_status=ledger_status, start_date=start_date, end_date=end_date,
         source_document_id=source_document_id)
+    if transaction_ids is not None:
+        stmt = stmt.where(FinancialTransaction.id.in_(list(transaction_ids)))
     stmt = stmt.order_by(
         FinancialTransaction.ordering_date.asc(),
         FinancialTransaction.row_index.asc(),

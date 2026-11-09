@@ -72,6 +72,49 @@ const payments = [
   running_balance_minor: null,
   superseded_by_id: null,
 }))
+// The dialog reads its chosen payments by id and one account's payments for an allocation; it never loads every
+// payment of the case (lx-linksuggest: d5b330d1, 27,668 rows).
+function mockLedger(all: LedgerTransaction[]) {
+  const whole = vi
+    .spyOn(financialAPI, "getLedgerTransactions")
+    .mockImplementation(async (params) => {
+      const transactions = all.filter((p) => p.account_id === params.accountId)
+      return { case_id: caseId, total: transactions.length, transactions } as never
+    })
+  vi.spyOn(financialAPI, "getLedgerRowsById").mockImplementation(
+    async (_case, ids) => {
+      const transactions = all.filter((p) => ids.includes(p.key))
+      return {
+        case_id: caseId,
+        total: transactions.length,
+        transactions,
+        not_found: ids.length - transactions.length,
+      } as never
+    }
+  )
+  return () =>
+    expect(whole.mock.calls.filter(([params]) => !params.accountId)).toEqual([])
+}
+const candidate = (p: LedgerTransaction) => ({
+  id: p.key,
+  ref_id: p.ref_id,
+  date: p.ordering_date,
+  dated: true,
+  direction: p.direction,
+  amount_minor: p.amount_minor,
+  currency: p.currency,
+  amount: p.amount_minor,
+  account_id: p.account_id,
+  account_label: p.account_label,
+  from_name: "",
+  to_name: "",
+  description: p.description,
+  already_linked: false,
+  level: null,
+  rule: "",
+  reasons: "",
+  gap_days: null,
+})
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -80,11 +123,7 @@ afterEach(() => {
 
 it("reviews a transfer, follows the receipt to a supplier, persists both links and keeps internal accounting distinct", async () => {
   let records: SavedTrail[] = []
-  vi.spyOn(financialAPI, "getLedgerTransactions").mockResolvedValue({
-    case_id: caseId,
-    total: 3,
-    transactions: payments,
-  } as never)
+  const neverWholeLedger = mockLedger(payments as never)
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     if (String(url).startsWith("/api/timeline/entries")) {
       const body = options?.body as {
@@ -180,6 +219,11 @@ it("reviews a transfer, follows the receipt to a supplier, persists both links a
     .getByRole("button", { name: "Review saved transfers and money trails" })
     .click()
   await screen.findByLabelText("Sending account’s debit")
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Use selected transactions (2)" })
+    ).toBeEnabled()
+  )
   fireEvent.click(
     screen.getByRole("button", { name: "Use selected transactions (2)" })
   )
@@ -216,7 +260,7 @@ it("reviews a transfer, follows the receipt to a supplier, persists both links a
   fireEvent.click(
     within(receipt).getByRole("button", { name: "Follow this receipt" })
   )
-  fireEvent.click(screen.getByRole("checkbox", { name: /Water supplier/ }))
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Water supplier/ }))
   fireEvent.change(screen.getByLabelText("Allocation for TX-WATER"), {
     target: { value: "4000.00" },
   })
@@ -271,6 +315,7 @@ it("reviews a transfer, follows the receipt to a supplier, persists both links a
     .getByRole("button", { name: "Open transfer and statements" })
     .click()
   expect(await screen.findByLabelText("Relationship")).toHaveValue("transfer")
+  neverWholeLedger()
 })
 
 it("reviews split principal and fees, reopens the same amounts, and keeps fee/residual spending outside internal totals", async () => {
@@ -287,12 +332,23 @@ it("reviews split principal and fees, reopens the same amounts, and keeps fee/re
     { ...payments[2] },
   ]
   let record: SavedTrail | null = null
-  vi.spyOn(financialAPI, "getLedgerTransactions").mockResolvedValue({
-    case_id: caseId,
-    total: rows.length,
-    transactions: rows,
-  } as never)
+  const neverWholeLedger = mockLedger(rows as never)
   vi.mocked(fetchAPI).mockImplementation(async (_url, options) => {
+    if (String(_url).startsWith("/api/financial/payment-links/search"))
+      return {
+        case_id: caseId,
+        mode: "search",
+        anchor: null,
+        rule: "",
+        compared: rows.length,
+        total: rows.length,
+        page: 1,
+        page_size: 50,
+        pages: 1,
+        by_level: {},
+        candidates: rows.map((p) => candidate(p as never)),
+        elapsed_ms: 1,
+      } as never
     if (options?.method !== "POST")
       return { case_id: caseId, trails: record ? [record] : [] }
     const input = options.body as {
@@ -369,8 +425,11 @@ it("reviews split principal and fees, reopens the same amounts, and keeps fee/re
       "This transfer has fees, split entries or only uses part of a payment"
     )
   )
+  fireEvent.change(screen.getByLabelText("Find payments"), {
+    target: { value: "TX" },
+  })
   for (const name of ["TX-SEND", "TX-RECEIVE", "TX-RECEIVE-2"])
-    fireEvent.click(screen.getByLabelText(`Include ${name} in transfer`))
+    fireEvent.click(await screen.findByLabelText(`Include ${name} in transfer`))
   fireEvent.change(screen.getByLabelText("Principal for TX-SEND"), {
     target: { value: "5000" },
   })
@@ -416,4 +475,5 @@ it("reviews split principal and fees, reopens the same amounts, and keeps fee/re
   await page.screenshot({ path: "/tmp/loupe-split-transfer-mobile.png" })
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
   client.clear()
+  neverWholeLedger()
 })

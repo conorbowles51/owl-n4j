@@ -2,7 +2,7 @@ import { Disclosure } from "./Disclosure"
 import { TransferPartsEditor, type TransferParts } from "./TransferPartsEditor"
 import { useState } from "react"
 import { randomRequestId } from "@/lib/browser-crypto"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -30,6 +30,7 @@ import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { AccountOwnershipReview } from "./AccountOwnershipReview"
 import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
 import { PaymentLinkFinder, PaymentPicker } from "./PaymentLinkFinder"
+import { linkSuggestionAPI } from "../lib/link-suggestions"
 
 type Draft = {
   id: string
@@ -168,21 +169,74 @@ function TrailEditor({
     },
     retry: false,
   })
+  // The form reads only the payments it shows: the chosen ones by id, the receiving account's payments for an
+  // allocation, and the payments a split search finds. It never loads every payment of the case (d5b330d1: 27,668
+  // rows) to label a few (lx-linksuggest).
+  const splitSearch = draft.kind === "transfer" && draft.split ? search.trim() : ""
+  const splitFound = useQuery({
+    queryKey: ["financial-ledger", caseId, "money-trail-split-search", splitSearch],
+    queryFn: () => linkSuggestionAPI.search(caseId, splitSearch),
+    enabled: !!splitSearch,
+    retry: false,
+  })
+  const wanted = [
+    ...new Set(
+      [
+        ...transactionIds,
+        draft.debit,
+        draft.credit,
+        ...Object.keys(draft.parts || {}),
+        ...Object.keys(draft.payments || {}),
+        ...(splitSearch ? (splitFound.data?.candidates ?? []).map((c) => c.id) : []),
+      ].filter(Boolean)
+    ),
+  ]
+    .sort()
+    .slice(0, 200)
   const ledger = useQuery({
-    queryKey: ["financial-ledger", caseId, "money-trail-all-payments"],
+    queryKey: ["financial-ledger", caseId, "money-trail-payments", wanted.join(",")],
     queryFn: async () => {
-      const result = await financialAPI.getLedgerTransactions({ caseId })
+      if (!wanted.length) return []
+      const result = await financialAPI.getLedgerRowsById(caseId, wanted)
+      if (
+        result.case_id !== caseId ||
+        result.transactions.some((p) => p.case_id !== caseId)
+      )
+        throw Error("The chosen payments could not be loaded.")
+      return result.transactions.filter((p) => p.account_type !== "credit_card")
+    },
+    placeholderData: keepPreviousData,
+    retry: false,
+  })
+  const named = ledger.data ?? []
+  const receiptRow = named.find((p) => p.key === draft.credit)
+  const accountPayments = useQuery({
+    queryKey: ["financial-ledger", caseId, "money-trail-account", receiptRow?.account_id],
+    queryFn: async () => {
+      const result = await financialAPI.getLedgerTransactions({
+        caseId,
+        accountId: receiptRow!.account_id,
+      })
       if (
         result.case_id !== caseId ||
         result.total !== result.transactions.length ||
         result.transactions.some((p) => p.case_id !== caseId)
       )
-        throw Error("The complete case payment list could not be loaded.")
-      return result.transactions.filter((p) => p.account_type !== "credit_card")
+        throw Error("The receiving account's payments could not be loaded.")
+      return result.transactions
     },
+    enabled: draft.kind === "allocation" && !!receiptRow?.account_id,
     retry: false,
   })
-  const rows = ledger.data ?? []
+  const rows = [
+    ...named,
+    ...(accountPayments.data ?? []).filter((p) => !named.some((n) => n.key === p.key)),
+  ]
+  const splitRows = named.filter(
+    (p) =>
+      p.key in (draft.parts || {}) ||
+      (splitSearch && (splitFound.data?.candidates ?? []).some((c) => c.id === p.key))
+  )
   const patch = (p: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...p }))
     setPreview(null)
@@ -590,7 +644,12 @@ function TrailEditor({
           anchorId={transactionIds[0]}
           canLink={canEdit}
           onOpen={setSource}
-          onUseInForm={(v) => {
+          onUseInForm={async (v) => {
+            // A split starts with each side's whole amount as its principal; read the two payments for that.
+            const sides = v.split
+              ? (await financialAPI.getLedgerRowsById(caseId, [v.debit, v.credit]).catch(() => null))
+                  ?.transactions ?? []
+              : []
             patch({
               id: randomRequestId(),
               revision: 0,
@@ -601,7 +660,7 @@ function TrailEditor({
               parts: v.split
                 ? Object.fromEntries(
                     [v.debit, v.credit].map((key) => {
-                      const p = rows.find((r) => r.key === key)
+                      const p = sides.find((r) => r.key === key)
                       return [
                         key,
                         {
@@ -624,11 +683,16 @@ function TrailEditor({
           }}
         />
       )}
-      {(ledger.isPending || trails.isPending) && (
-        <p role="status">Loading case payments and saved links…</p>
+      {(ledger.isPending || trails.isPending || accountPayments.isFetching || splitFound.isFetching) && (
+        <p role="status">Loading the chosen payments and saved links…</p>
       )}
-      {(ledger.error || trails.error) && (
-        <p role="alert">{ledger.error?.message || trails.error?.message}</p>
+      {(ledger.error || trails.error || accountPayments.error || splitFound.error) && (
+        <p role="alert">
+          {ledger.error?.message ||
+            trails.error?.message ||
+            accountPayments.error?.message ||
+            splitFound.error?.message}
+        </p>
       )}
       <Button
         variant="outline"
@@ -638,6 +702,7 @@ function TrailEditor({
           assess.reset()
           remove.reset()
           void ledger.refetch()
+          void accountPayments.refetch()
           void trails.refetch()
         }}
       >
@@ -652,7 +717,7 @@ function TrailEditor({
           {showSaved(receipt)}
         </section>
       )}
-      {canEdit && ledger.data && (
+      {canEdit && (
         <fieldset
           id={`trail-editor-${id}`}
           disabled={busy}
@@ -665,6 +730,9 @@ function TrailEditor({
             Searches cover every bank-account payment in this case, including
             accounts hidden by your current filters. Closing this review returns
             to your previous view.
+            {draft.kind === "transfer" && draft.split
+              ? " Find payments searches the case for split entries to add."
+              : ""}
           </p>
           <AccountOwnershipReview
             caseId={caseId}
@@ -685,6 +753,7 @@ function TrailEditor({
           {transactionIds.length > 0 && (
             <Button
               variant="outline"
+              disabled={!transactionIds.every((key) => named.some((p) => p.key === key))}
               onClick={() => {
                 const selected = rows.filter((p) =>
                     transactionIds.includes(p.key)
@@ -784,10 +853,10 @@ function TrailEditor({
             <>
               {draft.split ? (
                 <TransferPartsEditor
-                  rows={rows}
+                  rows={splitRows}
                   value={draft.parts || {}}
                   onChange={(parts) => patch({ parts })}
-                  search={search}
+                  search=""
                 />
               ) : (
                 <>

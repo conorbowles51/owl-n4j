@@ -240,6 +240,9 @@ class ListTransactionsTests(LedgerQueryTestCase):
         january = list_transactions(self.db, self.case.id, start_date=date(2024, 1, 1), end_date=date(2024, 1, 31))
         self.assertEqual({row.currency for row in january}, {'MXN', 'USD'})
         self.assertEqual(len(list_transactions(self.db, self.case.id)), 3)
+        named = list_transactions(self.db, self.case.id, transaction_ids=[euro_rows[0].id, uuid.uuid4()])
+        self.assertEqual([row.id for row in named], [euro_rows[0].id])
+        self.assertEqual(list_transactions(self.db, self.case.id, transaction_ids=[]), [])
 
     def test_defaults_to_admitted_rows_only(self):
         (admitted,) = self.write([self.draft()])
