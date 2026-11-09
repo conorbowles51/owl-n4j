@@ -40,6 +40,7 @@ export function SimilarEntitiesView({
     startScan,
     cancel,
     removePair,
+    afterMerge,
   } = useSimilarEntities(caseId)
   const [rejectError, setRejectError] = useState<string | null>(null)
   const [rejecting, setRejecting] = useState<string | null>(null)
@@ -55,10 +56,13 @@ export function SimilarEntitiesView({
     similarity: number
   }>({ e1: null, e2: null, similarity: 0 })
 
+  // After every merge the list drops the merged-away entities and rescans, so it never offers an entity that is gone.
   const mergeTracker = useMergeTracker({
-    onCompleted: () => { onRefresh() },
-    onPartial: () => { onRefresh() },
+    onCompleted: ({ goneKeys }) => { onRefresh(); afterMerge(goneKeys) },
+    onPartial: ({ goneKeys }) => { onRefresh(); afterMerge(goneKeys) },
   })
+  const mergeStatus = mergeTracker.activeJob?.status
+  const mergeRunning = mergeTracker.activeJob !== null && !["completed", "partial", "failed"].includes(mergeStatus ?? "")
 
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -111,6 +115,8 @@ export function SimilarEntitiesView({
   }
 
   const handleMerge = (pair: SimilarPair) => {
+    // A finished merge left in the tracker would show in the next pair's dialog with no Merge button.
+    if (mergeTracker.activeJob && !mergeRunning) mergeTracker.clearJob()
     const e1 = graphData.nodes.find((n) => n.key === pair.key1) ?? {
       key: pair.key1,
       label: pair.name1,
@@ -324,6 +330,8 @@ export function SimilarEntitiesView({
                 <Button
                   variant="outline"
                   size="sm"
+                  disabled={mergeRunning}
+                  title={mergeRunning ? "Wait for the current merge to finish" : undefined}
                   onClick={() => handleMerge(pair)}
                 >
                   <GitMerge className="size-3" />

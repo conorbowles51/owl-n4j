@@ -2,12 +2,14 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { SimilarEntitiesView } from "./SimilarEntitiesView"
 import type { GraphData } from "@/types/graph.types"
+import type { MergeOutcome } from "../hooks/use-merge-tracker"
 
 const graphMocks = vi.hoisted(() => ({
   trackerOptions: null as null | {
-    onCompleted?: () => void
-    onPartial?: () => void
+    onCompleted?: (outcome: MergeOutcome) => void
+    onPartial?: (outcome: MergeOutcome) => void
   },
+  afterMerge: vi.fn(),
   latestDialogProps: null as null | { open: boolean },
   setDialogOpen: vi.fn(),
   startTracking: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock("../hooks/use-similar-entities", () => ({
     startScan: graphMocks.startScan,
     cancel: vi.fn(),
     removePair: graphMocks.removePair,
+    afterMerge: graphMocks.afterMerge,
   }),
 }))
 
@@ -47,7 +50,7 @@ vi.mock("../hooks/use-graph-data", () => ({
 }))
 
 vi.mock("../hooks/use-merge-tracker", () => ({
-  useMergeTracker: (options: { onCompleted?: () => void; onPartial?: () => void }) => {
+  useMergeTracker: (options: { onCompleted?: (outcome: MergeOutcome) => void; onPartial?: (outcome: MergeOutcome) => void }) => {
     graphMocks.trackerOptions = options
     return {
       activeJob: null,
@@ -156,13 +159,24 @@ describe("SimilarEntitiesView", () => {
     expect(graphMocks.latestDialogProps?.open).toBe(true)
 
     act(() => {
-      graphMocks.trackerOptions?.onCompleted?.()
+      graphMocks.trackerOptions?.onCompleted?.({ sourceKeys: ["entity-a", "entity-b"], goneKeys: ["entity-a", "entity-b"], mergedKey: "m" })
     })
 
     expect(onRefresh).toHaveBeenCalledTimes(1)
     await waitFor(() => {
       expect(graphMocks.latestDialogProps?.open).toBe(true)
     })
+  })
+
+  // GR-02: each finished merge prunes the list of the removed entities and rescans, the second as well as the first.
+  it("two merges in a row each refresh the suggestion list with the entities they removed", () => {
+    const onRefresh = vi.fn()
+    graphMocks.afterMerge.mockReset()
+    render(<SimilarEntitiesView caseId="case-1" graphData={graphData} onRefresh={onRefresh} />)
+    act(() => graphMocks.trackerOptions?.onCompleted?.({ sourceKeys: ["entity-a", "entity-b"], goneKeys: ["entity-a", "entity-b"], mergedKey: "m1" }))
+    act(() => graphMocks.trackerOptions?.onPartial?.({ sourceKeys: ["entity-c", "entity-d"], goneKeys: ["entity-c"], mergedKey: "m2" }))
+    expect(graphMocks.afterMerge.mock.calls).toEqual([[["entity-a", "entity-b"]], [["entity-c"]]])
+    expect(onRefresh).toHaveBeenCalledTimes(2)
   })
 
   it("deselects all types before selecting one for the duplicate scan", () => {

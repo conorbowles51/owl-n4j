@@ -270,6 +270,33 @@ def _acquire_merge_entity_locks(
             )
 
 
+def _missing_merge_entity_error(db: Session, case_id: str, entity_key: str) -> HTTPException:
+    """The refusal for a merge naming an entity that is not in the case graph.
+
+    An entity merged away earlier is in the recycle bin, not deleted: say so, so a stale suggestion list reads as
+    stale rather than as a broken merge (GR-02). Bulk merge reuses this per pair.
+    """
+    from postgres.models.merge_job import MergeJob
+    try:
+        earlier = db.execute(
+            select(MergeJob).where(
+                MergeJob.case_id == case_id,
+                MergeJob.status.in_(["completed", "partial"]),
+                MergeJob.recycled_source_keys.contains([entity_key]),
+            ).order_by(MergeJob.created_at.desc()).limit(1)
+        ).scalar_one_or_none()
+    except Exception as exc:  # the plain refusal still stands
+        logging.getLogger(__name__).warning("Could not read earlier merges of %s: %s", entity_key, exc)
+        earlier = None
+    if earlier is not None:
+        return HTTPException(
+            status_code=409,
+            detail=("This entity was already merged into another one and is in the recycle bin. "
+                    "Scan again to see the current suggestions."),
+        )
+    return HTTPException(status_code=404, detail=f"Entity not found: {entity_key}")
+
+
 class MergeEntitiesRequest(BaseModel):
     """Request model for AI-powered entity merging via evidence engine."""
     case_id: str
@@ -1570,10 +1597,7 @@ async def merge_entities(
             for entity_key in unique_keys:
                 details = neo4j_service.get_node_details(entity_key, case_id=request.case_id)
                 if not details:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Entity not found: {entity_key}",
-                    )
+                    raise _missing_merge_entity_error(db, request.case_id, entity_key)
                 if (details.get("properties") or {}).get("financial_identity_managed"):
                     raise HTTPException(status_code=409, detail="Connect reviewed financial identities through Financial → Account identity and case connections. Financial accounts must remain distinct.")
                 entity_payloads.append(_entity_merge_payload(details))

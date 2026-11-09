@@ -21,9 +21,17 @@ export interface MergeTrackerJob {
 export const SEARCH_PENDING_NOTE =
   "The merged record is not in search yet. It is added automatically when the search service is back; until then, duplicate checks may miss it."
 
+/** What a finished merge removed: the entities that no longer exist and the entity that replaced them. */
+export interface MergeOutcome {
+  sourceKeys: string[]
+  /** Source entities moved to the recycle bin (all of them on success; those removed on a partial merge). */
+  goneKeys: string[]
+  mergedKey: string | null
+}
+
 interface UseMergeTrackerOptions {
-  onCompleted?: () => void
-  onPartial?: () => void
+  onCompleted?: (outcome: MergeOutcome) => void
+  onPartial?: (outcome: MergeOutcome) => void
 }
 
 /** Next steps after a merge (lx-guide B): the merged entry on the graph and the timeline. */
@@ -61,15 +69,16 @@ export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptio
   }, [])
 
   const handleMergeJobUpdate = useCallback(
-    (data: { status: string; error_message?: string | null; search_pending?: boolean | null; merged_entity_key?: string | null }, sourceKeys: string[]) => {
+    (data: { status: string; error_message?: string | null; search_pending?: boolean | null; merged_entity_key?: string | null; recycled_source_keys?: string[] | null }, sourceKeys: string[]) => {
       const searchPending = data.search_pending === true
+      const outcome = (gone: string[]): MergeOutcome => ({ sourceKeys, goneKeys: gone, mergedKey: data.merged_entity_key ?? null })
       if (data.status === "completed") {
         stopTracking()
         announceMerge(data.merged_entity_key ?? null, sourceKeys)
         setActiveJob((prev) =>
           prev ? { ...prev, status: "completed", progress: 100, message: "Merge complete!", searchPending } : null
         )
-        callbacksRef.current.onCompleted?.()
+        callbacksRef.current.onCompleted?.(outcome(data.recycled_source_keys ?? sourceKeys))
         if (!dialogOpenRef.current) {
           if (searchPending) toast.success("Merge complete", { description: SEARCH_PENDING_NOTE })
           else toast.success("Merge complete")
@@ -92,7 +101,7 @@ export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptio
               }
             : null
         )
-        callbacksRef.current.onPartial?.()
+        callbacksRef.current.onPartial?.(outcome(data.recycled_source_keys ?? []))
         if (!dialogOpenRef.current) {
           toast.warning("Merge completed with warnings — some source entities remain")
         }

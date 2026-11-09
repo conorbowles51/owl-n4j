@@ -118,6 +118,31 @@ class GraphMergeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(ctx.exception.status_code, 409)
 
+    def test_a_merged_away_entity_is_refused_as_already_merged_not_missing(self):
+        # GR-02: the second merge named an entity the first merge had moved to the recycle bin and got a bare 404.
+        db = _FakeDb(job=SimpleNamespace(merged_entity_key="merged-1"))
+        error = graph._missing_merge_entity_error(db, "case-1", "entity-a")
+        self.assertEqual(error.status_code, 409)
+        self.assertIn("already merged", error.detail)
+        self.assertIn("Scan again", error.detail)
+
+    def test_an_entity_never_merged_is_still_not_found(self):
+        error = graph._missing_merge_entity_error(_FakeDb(job=None), "case-1", "entity-a")
+        self.assertEqual(error.status_code, 404)
+        self.assertEqual(error.detail, "Entity not found: entity-a")
+
+    def test_the_merged_away_lookup_is_scoped_to_the_case(self):
+        captured = []
+
+        class _Db(_FakeDb):
+            def execute(self, statement, params=None):
+                captured.append(str(statement.compile(compile_kwargs={})))
+                return _ScalarOneOrNoneResult(None)
+
+        graph._missing_merge_entity_error(_Db(), "case-1", "entity-a")
+        self.assertIn("merge_jobs.case_id", captured[0])
+        self.assertIn("recycled_source_keys", captured[0])
+
     def test_relationship_merge_payload_strips_identity_and_keeps_provenance(self):
         payload = graph._relationship_merge_payload(
             {

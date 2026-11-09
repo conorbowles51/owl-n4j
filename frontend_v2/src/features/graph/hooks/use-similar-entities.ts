@@ -14,6 +14,12 @@ interface ScanProgress {
   pairs_found: number
 }
 
+interface ScanOptions {
+  entityTypes?: string[] | null
+  similarityThreshold?: number
+  maxResults?: number
+}
+
 export function useSimilarEntities(caseId: string) {
   const [isScanning, setIsScanning] = useState(false)
   const [progress, setProgress] = useState<ScanProgress | null>(null)
@@ -23,16 +29,21 @@ export function useSimilarEntities(caseId: string) {
   // what the scan found against what is shown: never a silent cut (Neil 2026-11-04: no cutoff hides a match)
   const [summary, setSummary] = useState<{ total: number; belowThreshold: number; threshold: number; floor: number } | null>(null)
   const cancelRef = useRef<(() => void) | null>(null)
+  // Options of the last scan, so a merge can rescan with the same filters.
+  const lastOptionsRef = useRef<ScanOptions | null>(null)
+  // Keys merged away in this view: never offered again, even by a scan that read the graph before the merge finished.
+  const goneRef = useRef<Set<string>>(new Set())
 
   const startScan = useCallback(
-    (options: {
-      entityTypes?: string[] | null
-      similarityThreshold?: number
-      maxResults?: number
-    }) => {
+    (options: ScanOptions, { keepShown = false }: { keepShown?: boolean } = {}) => {
+      lastOptionsRef.current = options
+      cancelRef.current?.()
       setIsScanning(true)
-      setResults([])
-      setSummary(null)
+      // A rescan after a merge keeps the pruned list on screen until the new one arrives.
+      if (!keepShown) {
+        setResults([])
+        setSummary(null)
+      }
       setError(null)
       setProgress(null)
 
@@ -69,7 +80,8 @@ export function useSimilarEntities(caseId: string) {
               similarity: p.similarity as number,
             }
           })
-          setResults(mapped)
+          const gone = goneRef.current
+          setResults(gone.size ? mapped.filter((pair) => !gone.has(pair.key1) && !gone.has(pair.key2)) : mapped)
           setIsScanning(false)
           setCurrentType(null)
         },
@@ -113,7 +125,22 @@ export function useSimilarEntities(caseId: string) {
     )
   }, [])
 
+  // After a merge (GR-02): drop every pair that names a merged-away entity at once, then rescan with the same filters
+  // so the merged entity's own suggestions appear. Without this the list kept offering removed entities and the next
+  // merge failed with "Entity not found".
+  const afterMerge = useCallback(
+    (goneKeys: string[]) => {
+      if (goneKeys.length === 0) return
+      for (const key of goneKeys) goneRef.current.add(key)
+      const gone = goneRef.current
+      setResults((current) => current.filter((pair) => !gone.has(pair.key1) && !gone.has(pair.key2)))
+      if (lastOptionsRef.current) startScan(lastOptionsRef.current, { keepShown: true })
+    },
+    [startScan]
+  )
+
   return {
+    afterMerge,
     isScanning,
     progress,
     currentType,
