@@ -15,6 +15,9 @@ mkdir -p "$out"
 baseline="$(dirname "$0")/gitleaks-baseline.json"
 baseline_args=()
 [ -f "$baseline" ] && baseline_args=(--baseline-path "$baseline")
+# Default rules plus one narrow allowlist (record ids written as "entity_key": "<uuid>"); see gitleaks.toml.
+config="$(dirname "$0")/gitleaks.toml"
+[ -f "$config" ] && baseline_args+=(--config "$config")
 
 set +e
 $CI_NICE "$(gitleaks_bin)" git "$repo" \

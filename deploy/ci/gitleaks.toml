@@ -1,0 +1,14 @@
+# gitleaks settings for secret-scan.sh: the default rules, plus one narrow allowlist.
+title = "loupe gitleaks"
+
+[extend]
+useDefault = true
+
+# Record ids in the agent-coverage baselines ("entity_key": "<uuid>") match generic-api-key; they are graph node
+# ids, not secrets (8 Nov docs/agent-coverage/baseline-2026-11-08.json, 3 alerts). Only that exact shape is
+# allowed: the key name, then one lower-case UUID and nothing else.
+[[allowlists]]
+description = "graph record ids written as entity_key UUIDs"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''^entity_key"\s*:\s*"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"$''']
