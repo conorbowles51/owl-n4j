@@ -56,14 +56,21 @@ async def _immediate(function, *args, **kwargs):
     return function(*args, **kwargs)
 
 
-def _run(keys, preferred_type=None):
+def _run(keys, preferred_type=None, budget=None, db=None, engine=None):
+    """``budget``: stands in for the AI spending-limit check, which reads the database; by default every call is
+    recorded on ``db.budget_checks`` and allowed."""
     endpoint = inspect.unwrap(graph.merge_entities)
-    db, engine = _Db(), AsyncMock(return_value={"id": "engine-job-1"})
+    db, engine = db or _Db(), engine or AsyncMock(return_value={"id": "engine-job-1"})
+    db.budget_checks = []
+
+    def allowed(case_id, what):
+        db.budget_checks.append((case_id, what, len(db.added)))
     details = {f"orla-{i}": _duplicate(i) for i in range(30)}
     subscriber = SimpleNamespace(track_jobs=AsyncMock())
     request = graph.MergeEntitiesRequest(case_id=str(uuid4()), entity_keys=keys, preferred_name="Orla Test",
                                          preferred_type=preferred_type)
     with patch.object(graph, "run_in_threadpool", _immediate), \
+            patch.object(graph, "check_ai_budget", budget or allowed), \
             patch.object(graph, "_acquire_merge_entity_locks", lambda *a: None), \
             patch.object(graph.neo4j_service, "get_node_details", lambda key, case_id=None: details.get(key)), \
             patch("services.evidence_engine_client.merge_entities", engine), \
@@ -87,6 +94,21 @@ def test_eight_duplicates_merge_in_one_request_keeping_every_fact_attributed():
         assert entity["source_files"] == [f"doc-{index}.pdf"] and entity["summary"] == f"Summary {index}"
         assert entity["relationships"][0]["target_key"] == f"company-{index}"
     assert payload["user_preferences"] == {"name": "Orla Test", "type": "Person"}
+    # The spending limit is checked once for the merge, before any merge job is recorded.
+    assert db.budget_checks == [(jobs[0].case_id, "this merge", 0)]
+
+
+def test_a_merge_refused_at_the_spending_limit_leaves_no_pending_job_behind():
+    """A pending merge job left by a refusal would block these entities from every later merge ("already being
+    merged", 409) and the engine would never be asked."""
+    def at_limit(case_id, what):
+        raise HTTPException(status_code=402, detail=f"AI spending limit reached: {what} was not started.")
+
+    db, engine = _Db(), AsyncMock(return_value={"id": "engine-job-1"})
+    with pytest.raises(HTTPException) as refused:
+        _run([f"orla-{i}" for i in range(3)], budget=at_limit, db=db, engine=engine)
+    assert refused.value.status_code == 402 and "this merge" in refused.value.detail
+    assert db.added == [] and db.commits == 0 and engine.await_count == 0
 
 
 def test_more_than_the_limit_is_refused_not_cut():

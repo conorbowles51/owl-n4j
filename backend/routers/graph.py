@@ -1588,6 +1588,9 @@ async def merge_entities(
                     detail="One or more selected entities are already being merged.",
                 )
 
+    # Before anything is reserved or recorded: a refusal here (402) leaves no pending merge job behind to block these
+    # entities from a later merge, and the database read runs off the event loop.
+    await run_in_threadpool(check_ai_budget, request.case_id, "this merge")
     await run_in_threadpool(_reserve_entities)
 
     try:
@@ -1629,7 +1632,6 @@ async def merge_entities(
             "requested_by_user_id": user.get("id"),
         }
 
-        check_ai_budget(request.case_id, "this merge")
         try:
             engine_response = await evidence_engine_client.merge_entities(
                 request.case_id, payload,
