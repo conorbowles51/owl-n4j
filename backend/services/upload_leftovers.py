@@ -12,7 +12,7 @@ freed only when the last name of a file goes. A folder is kept when:
 - its upload can still go on: a single upload not completed, or a folder upload whose group is not completed or
   discarded;
 - an evidence row still comes from it (a folder upload member, by group and relative path; any row of an archive
-  upload keeps the whole archive's copies);
+  upload, and a row whose stored path is a folder (a phone report), keeps every copy of its upload);
 - it changed in the last hour (an upload being written).
 """
 from __future__ import annotations
@@ -114,20 +114,34 @@ def remove(db, case_id, candidates=None, *, apply=True, min_age_s=MIN_AGE_S) -> 
     with soft_delete.showing_deleted(db):
         rows = db.execute(select(EvidenceFile.id, EvidenceFile.stored_path, EvidenceFile.metadata_)
                           .where(EvidenceFile.case_id == case_id)).all()
-    used_paths, used_inodes, member_sessions, groups_with_rows = [], set(), set(), set()
+    used_paths, used_inodes, member_sessions, groups_with_rows, whole_groups = [], set(), set(), set(), set()
     for _id, stored, meta in rows:
         meta = meta or {}
+        group, rel = meta.get("upload_group_id"), meta.get("relative_path")
         if stored:
             path = _resolve(stored)
             used_paths.append(str(path))
             ino = _inode(path)
             if ino:
                 used_inodes.add(ino)
-        group, rel = meta.get("upload_group_id"), meta.get("relative_path")
+            if group and path.is_dir():
+                whole_groups.add(str(group))  # a phone report: the row is a folder, not one row per member
         if group:
             groups_with_rows.add(str(group))
             if rel:
                 member_sessions.add(str(uuid.uuid5(uuid.UUID(str(group)), rel)))
+    # A group folder that goes takes its sessions' upload copies with it (they are checked like any other).
+    group_dirs = []
+    for p in candidates:
+        if p.parent.name == "_upload_groups":
+            try:
+                group_dirs.append(uuid.UUID(p.name))
+            except ValueError:
+                pass
+    if group_dirs:
+        extra = {case / "_uploads" / str(sid) for sid in db.scalars(select(EvidenceUploadSession.id).where(
+            EvidenceUploadSession.case_id == case_id, EvidenceUploadSession.group_id.in_(group_dirs)))}
+        candidates = sorted(set(candidates) | {p for p in extra if p.is_dir()})
     ids = []
     for p in candidates:
         try:
@@ -144,7 +158,7 @@ def remove(db, case_id, candidates=None, *, apply=True, min_age_s=MIN_AGE_S) -> 
     would = []
     for folder in candidates:
         if not _removable(folder, sessions, groups, used_paths, used_inodes, member_sessions, groups_with_rows,
-                          now, min_age_s):
+                          whole_groups, now, min_age_s):
             out["upload_folders_kept"] += 1
             continue
         if not apply:
@@ -159,8 +173,8 @@ def remove(db, case_id, candidates=None, *, apply=True, min_age_s=MIN_AGE_S) -> 
     return out
 
 
-def _removable(folder, sessions, groups, used_paths, used_inodes, member_sessions, groups_with_rows, now,
-               min_age_s) -> bool:
+def _removable(folder, sessions, groups, used_paths, used_inodes, member_sessions, groups_with_rows, whole_groups,
+               now, min_age_s) -> bool:
     prefix = str(folder) + os.sep
     if any(p.startswith(prefix) for p in used_paths):
         return False
@@ -179,6 +193,8 @@ def _removable(folder, sessions, groups, used_paths, used_inodes, member_session
                 if group is not None and group.status not in ENDED_GROUP:
                     return False
                 if name in member_sessions:
+                    return False
+                if str(session.group_id) in whole_groups:
                     return False
                 if group is not None and group.kind == "archive" and str(group.id) in groups_with_rows:
                     return False

@@ -618,3 +618,31 @@ def test_upload_leftovers_command_refuses_a_missing_or_empty_case_folder(world, 
         (root / str(world["case"].id)).mkdir(parents=True)
         with pytest.raises(SystemExit):
             casebin_purge.purge_upload_leftovers(world["db"], world["case"].id, apply=True)
+
+
+def test_a_phone_reports_upload_copies_stay_while_its_row_does_and_go_with_its_group_folder(world, tmp_path):
+    """A phone report is one row whose stored path is the report folder, not one row per member: every upload copy
+    of its group stays while that row exists. Once the group's last row is gone, removing the group folder takes
+    its sessions' copies with it."""
+    from services import upload_leftovers
+    root = tmp_path / "evidence-data"
+    db, case_id = world["db"], world["case"].id
+    with patch("config.EVIDENCE_DATA_ROOT", root):
+        group, up = _folder_upload(world, root, {"report/a.db": None, "report/b.db": None})
+        report = EvidenceFile(id=uuid.uuid4(), case_id=case_id, original_filename="report",
+                              stored_path=str(up["report/a.db"]["payload"].parent), sha256="r" * 64,
+                              status="processed", size=0,
+                              metadata_={"upload_group_id": str(group.id), "relative_path": "report"})
+        for member in up.values():
+            db.delete(member["row"])
+        db.add(report)
+        db.commit()
+        kept = upload_leftovers.remove(db, case_id, None, apply=False)
+        assert kept["would_remove"] == []
+        db.delete(report)
+        db.commit()
+        group_dir = root / str(case_id) / "_upload_groups" / str(group.id)
+        out = upload_leftovers.remove(db, case_id, {group_dir})
+    assert not group_dir.exists()
+    assert not any(m["session_dir"].exists() for m in up.values())
+    assert (out["upload_folders_removed"], out["upload_files_removed"], out["upload_bytes_freed"]) == (3, 4, 14)
