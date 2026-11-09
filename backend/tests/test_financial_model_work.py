@@ -123,6 +123,19 @@ class ModelLabelTests(unittest.TestCase):
         _, view = self.source(self.row)
         self.assertEqual((view[self.side], view['label_sources'][self.side]['source']), ('ACME LTD', 'model_reading'))
 
+    def test_a_corrected_reading_stays_visible_beside_the_persons_name_after_a_reload(self):
+        self.save([self.row], claude(), counterparty_name='ACME LTD')
+        self.row = self.f.db.get(FinancialTransaction, self.row.id)
+        self.save([self.row], self.f.actor, counterparty_name='ACME LIMITED', named_from='statement', category='Rent')
+        _, view = self.source(self.row)
+        said = view['label_sources'][self.side]['explanation']
+        self.assertIn(f'Named by {self.f.actor.name} from the statement', said)
+        self.assertIn('Claude read: "ACME LTD".', said)
+        # The category was saved in the same step: it is "saved", not "named", and has no reading beside it.
+        category = view['label_sources']['category']['explanation']
+        self.assertTrue(category.startswith(f'Saved by {self.f.actor.name}'), category)
+        self.assertNotIn('read:', category)
+
     def test_confirm_makes_the_person_the_actor_without_changing_the_value(self):
         self.save([self.row], claude(), counterparty_name='ACME LTD')
         row = self.f.db.get(FinancialTransaction, self.row.id)

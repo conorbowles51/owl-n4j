@@ -384,13 +384,30 @@ def _saved_by(row, field):
     if not entry or not entry.get('actor_name'):
         return 'Saved by an investigator.'
     when = str(entry.get('at') or '')[:10]
-    if entry.get('via') == 'statement':
+    note = f" Note: {entry['note']}" if entry.get('note') else ''
+    read = _model_read_before(history, field)
+    if entry.get('via') == 'statement' and field != 'category':
         same = ' (the same name as a payment like it)' if entry.get('same_as') else ''
-        note = f" Note: {entry['note']}" if entry.get('note') else ''
-        return f"Named by {entry['actor_name']} from the statement" + (f' on {when}' if when else '') + same + '.' + note
+        return f"Named by {entry['actor_name']} from the statement" + (f' on {when}' if when else '') + same + '.' + read + note
     text = f"Saved by {entry['actor_name']}" + (f' on {when}' if when else '') + '.'
-    text += ' ' + entry['reason'] if entry.get('reason') else ''
-    return text + (f" Note: {entry['note']}" if entry.get('note') else '')
+    if entry.get('reason') and entry.get('via') != 'statement':
+        text += ' ' + entry['reason']
+    return text + read + note
+
+
+def _model_read_before(history, field):
+    """' Claude read: "X".' when a person replaced a name a model had read: the reading stays visible beside the
+    person's name (the label history keeps it; this only shows it). Empty when no model reading was replaced."""
+    for entry in reversed(history):
+        if not isinstance(entry, dict) or field not in (entry.get('after') or {}):
+            continue
+        previous = (entry.get('previous_label_sources') or {}).get(field) or {}
+        if previous.get('source') == 'model_reading':
+            value = (entry.get('before') or {}).get(field)
+            if value:
+                model = (previous.get('origin') or {}).get('model') or 'A model'
+                return f' {model} read: "{value}".'
+    return ''
 
 
 def _missing(reason):

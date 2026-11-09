@@ -191,3 +191,12 @@ it("closing the check panel lands on the same row by its key, focused, with noth
   expect(scrolled).toHaveBeenCalledWith({ block: "nearest" })
   expect(scrolled.mock.contexts[0]).toBe(document.querySelector('[data-reading-row="p1"]'))
 })
+
+it("puts Confirm / Correct / Cancel before the statement page, so they show without scrolling the list", async () => {
+  mount(true)
+  fireEvent.click(screen.getByRole("button", { name: /click to check/ }))
+  const box = await screen.findByTestId("inline-reading-check")
+  const viewer = await within(box).findByRole("group", { name: "Statement viewer controls" })
+  const confirm = within(box).getByRole("button", { name: "Confirm" })
+  expect(confirm.compareDocumentPosition(viewer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})

@@ -133,7 +133,6 @@ export function InlineReadingCheck({
         <span className="font-medium">{model} read:</span> <strong data-testid="inline-reading">{read}</strong>
       </p>
       {citation && <p className="text-muted-foreground">{citation}</p>}
-      <StatementView caseId={caseId} row={row} />
       {!canEdit && <p role="note">An editor of this case can confirm this.</p>}
       {canEdit && !correcting && (
         <div className="flex flex-wrap items-center gap-2">
@@ -182,6 +181,8 @@ export function InlineReadingCheck({
         </div>
       )}
       {error && <p role="alert">{error.message}</p>}
+      {/* The buttons come first, so they are in view without moving the page; the line to check follows. */}
+      <StatementView caseId={caseId} row={row} />
       {openPanel && (
         <button type="button" className="underline" onClick={() => openPanel(row.key)}>
           Open in the check panel
