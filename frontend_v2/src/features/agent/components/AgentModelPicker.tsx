@@ -21,7 +21,7 @@ export function AgentModelPicker({
     <select
       aria-label="Model for the next message"
       title="Model for the next message"
-      className="h-9 max-w-44 shrink-0 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+      className="h-9 w-60 shrink-0 rounded-md border border-border bg-background px-2 text-xs text-foreground"
       value={current}
       onChange={(event) => onChange(event.target.value)}
       disabled={disabled}
