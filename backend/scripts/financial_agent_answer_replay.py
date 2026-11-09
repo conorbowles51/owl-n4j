@@ -38,7 +38,7 @@ def _only_deepseek(host, *args, **kwargs):
 socket.getaddrinfo = _only_deepseek
 sys.path.insert(0, '.')
 
-CITATION = re.compile(r'(?:rec|txn|doc)://[^\s)\]]+|\]\((?:/cases/[^)]+)\)')
+CITATION = re.compile(r'(?:rec|txn|doc)://[^\s)\]]+|\]\((?:entity:[^)]+|/cases/[^)]+)\)')
 # What makes an answer read like a system log (AG-01): code spans, tool calls, proof codes, field names.
 LOG_PHRASES = re.compile(r'`[^`\n]+`|\b[a-z]+(?:_[a-z0-9]+)+\b|\b[a-z_]+\([^)]*\)|\bp[0-4](?:[–-]p[0-4])?\b'
                          r'|\bpopulation\b|\bproof[ _]class\b|\(minor\)|\bpayload\b|\breturns? (?:zero|0)\b', re.I)
