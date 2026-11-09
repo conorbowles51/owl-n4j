@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { History, ListTree, X } from "lucide-react"
@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn"
 import { historyAPI, stepsKey, type Step } from "../api"
 import { returnTo, useHistory } from "./recorder"
 import { AllStepsDialog } from "./AllSteps"
-import { STRIP_STEPS, when } from "./time-words"
+import { keepInView, STRIP_STEPS, when } from "./time-words"
 
 /**
  * The slender history strip (lx-guide H): the last 8 steps in this case, oldest on the left, the current one
@@ -24,6 +24,14 @@ export function HistoryStrip({ caseId }: { caseId: string }) {
     staleTime: 60_000,
   })
   const steps = [...(list.data?.steps ?? [])].reverse()
+  const row = useRef<HTMLOListElement>(null)
+  const order = steps.map((s) => s.id).join(",")
+  // On a narrow screen the strip scrolls: keep the current step in view, never only the oldest ones.
+  useEffect(() => {
+    const ol = row.current
+    const el = ol?.querySelector<HTMLElement>('[aria-current="step"]')
+    if (ol && el) keepInView(ol, el)
+  }, [order, currentId])
   const go = (step: Step) => returnTo(caseId, step, navigate)
   return (
     <>
@@ -31,7 +39,7 @@ export function HistoryStrip({ caseId }: { caseId: string }) {
         <History className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         {list.isError && <span role="alert" className="text-[11px]">Your steps could not be read. They are still being kept.</span>}
         {list.data && steps.length === 0 && <span className="text-[11px] text-muted-foreground">Your steps in this case appear here.</span>}
-        <ol aria-label="Your last steps in this case" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+        <ol ref={row} aria-label="Your last steps in this case" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
           {steps.map((step, i) => {
             const current = step.id === currentId || (!currentId && i === steps.length - 1)
             return (
@@ -72,3 +80,4 @@ export function HistoryStrip({ caseId }: { caseId: string }) {
     </>
   )
 }
+

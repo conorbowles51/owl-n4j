@@ -8,6 +8,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import type { Step } from "../api"
 import { trailGroup } from "./trail"
 import { decide, FIND_MS, returnTo, useHistory, useReturnCheck } from "./recorder"
+import { keepInView } from "./time-words"
 import { mergesInto, rangeWords, stepName, type Snapshot } from "./view-state"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
@@ -136,5 +137,18 @@ describe("adding a run of steps to a theory", () => {
     expect(g.members.map((m) => m.id)).toEqual(["s2", "s3", "s4"])
     expect((g.how.steps as Step[]).map((s) => s.path)).toEqual(steps.map(() => "/cases/c1/financial?view=transactions&payment=tx-2"))
     expect(g.words).toBe("3 steps, from Transactions · BBVA 0110280038 to Graph · Jose")
+  })
+})
+
+describe("the strip on a narrow screen", () => {
+  it("scrolls sideways so the current step is in view, not only the oldest steps", () => {
+    const ol = document.createElement("ol")
+    const li = document.createElement("li")
+    const box = (left: number, right: number) => () => ({ left, right, top: 0, bottom: 20, width: right - left, height: 20, x: left, y: 0, toJSON: () => ({}) })
+    ol.getBoundingClientRect = box(0, 200)
+    li.getBoundingClientRect = box(520, 600)
+    ol.scrollLeft = 0
+    keepInView(ol, li)
+    expect(ol.scrollLeft).toBe(400)
   })
 })
