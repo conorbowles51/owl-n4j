@@ -143,8 +143,13 @@ class AdmittedDuplicateTests(TestCase):
             self.assertIsNotNone(db.get(EvidenceFile, self.primary.id))
             rows = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == copy.id)))
             self.assertEqual({row.ledger_status for row in rows}, {'superseded'})
-            event = db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.subject_id == copy.id))
-            self.assertEqual((event.decision, event.actor_name), ('supersede_duplicate', 'system: duplicate set-aside'))
+            # Each saved reading's import first records its regrade (adds up to its printed balances, 721ed9b45).
+            events = list(db.scalars(select(AdjudicationEvent).where(AdjudicationEvent.subject_id == copy.id)
+                                     .order_by(AdjudicationEvent.subject_sequence)))
+            self.assertEqual([(e.decision, e.actor_name) for e in events],
+                             [('reclassify_document', 'Loupe reconciliation stage'),
+                              ('supersede_duplicate', 'system: duplicate set-aside')])
+            event = events[-1]
             self.assertEqual(event.after['basis'], admitted.SET_ASIDE_BASIS)
             log = db.scalar(select(IngestionLog).where(IngestionLog.evidence_file_id == self.primary.id,
                 IngestionLog.extra['action'].as_string() == 'financial_duplicate_set_aside'))
@@ -199,7 +204,7 @@ class AdmittedDuplicateTests(TestCase):
         with self.f.SessionLocal() as db:
             decisions = [e.decision for e in db.scalars(select(AdjudicationEvent).where(
                 AdjudicationEvent.subject_id == copy.id).order_by(AdjudicationEvent.subject_sequence))]
-        self.assertEqual(decisions, ['supersede_duplicate', 'restore_document'])
+        self.assertEqual(decisions, ['reclassify_document', 'supersede_duplicate', 'restore_document'])
 
     def test_investigator_can_keep_the_other_copy_instead(self):
         other, batch_id = self.save_twice()
