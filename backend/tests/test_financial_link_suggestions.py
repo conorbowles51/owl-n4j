@@ -146,6 +146,14 @@ class LinkSuggestionTests(DuplicateTestCase):
         with self.assertRaises(LinkSuggestionError):
             suggest_onward(self.db, case_id=self.case.id, transaction_id=onward.id)
 
+    def test_payments_a_model_cites_out_of_the_receiving_account_are_graded_as_onward_steps(self):
+        receipt = self.b(825_62)
+        onward = self.b(825_62, direction=TransactionDirection.debit)
+        out = grade_payments(self.db, case_id=self.case.id, ids=[onward.id], transaction_id=receipt.id)
+        self.assertEqual(out['candidates'][0]['level'], 'strong')
+        self.assertEqual(out['candidates'][0]['rule'], 'named')
+        self.assertIn('same amount as the receipt', out['candidates'][0]['reasons'])
+
     def test_every_candidate_is_listed_and_paged_with_its_count(self):
         anchor = self.a(50_00)
         made = [self.b(50_00, day=DAY + timedelta(days=i % 30)) for i in range(7)]

@@ -436,6 +436,42 @@ def suggest_connected(session, *, case_id, transaction_id, page=1, page_size=PAG
                 elapsed_ms=round((time.monotonic() - started) * 1000), **out)
 
 
+def _onward_grade(anchor, p, sums, linked):
+    """One payment out of the receiving account, graded as a possible onward step (ONWARD_RULE)."""
+    diff = p['amount_minor'] - anchor['amount_minor']
+    if diff == 0:
+        amount, words = 3, 'same amount as the receipt'
+    elif Decimal(abs(diff)) <= FEE_SHARE * Decimal(anchor['amount_minor']):
+        amount, words = 2, 'within 2%% of the receipt (%s %s)' % (
+            amount_text(abs(diff), p['currency']), 'more' if diff > 0 else 'less')
+    elif p['id'] in sums:
+        amount, words = 2, 'with %s (%s) it adds up to the receipt' % (
+            sums[p['id']]['ref_id'], amount_text(sums[p['id']]['amount_minor'], p['currency']))
+    elif diff < 0:
+        amount, words = 1, 'part of the receipt (%s of %s)' % (
+            amount_text(p['amount_minor'], p['currency']), amount_text(anchor['amount_minor'], p['currency']))
+    else:
+        amount, words = 0, 'more than the receipt'
+    gap = _gap(anchor, p)
+    when = _date_fit(gap)
+    reasons = [words, _when(gap, undated=p['day'] is None or anchor['day'] is None)]
+    if p['id'] in linked:
+        reasons.append('already in a saved transfer')
+    return dict(_view(p, linked), level=_onward_level(amount, when), rule='onward_payment',
+                reasons='; '.join(reasons), fits=dict(amount=amount, date=when), gap_days=gap, name_similarity=[])
+
+
+def _onward_sums(anchor, rows):
+    sums, seen = {}, {}
+    for p in sorted(rows, key=lambda x: (x['ordering_date'] or date.min, x['id'])):
+        partner = seen.get(anchor['amount_minor'] - p['amount_minor'])
+        if partner:
+            sums.setdefault(p['id'], partner)
+            sums.setdefault(partner['id'], p)
+        seen.setdefault(p['amount_minor'], p)
+    return sums
+
+
 def suggest_onward(session, *, case_id, transaction_id, page=1, page_size=PAGE_SIZE):
     """The next step of a trail: payments out of the account the money arrived in, shortly after (ONWARD_RULE)."""
     started = time.monotonic()
@@ -453,38 +489,8 @@ def suggest_onward(session, *, case_id, transaction_id, page=1, page_size=PAGE_S
             T.direction == 'debit', T.account_id.in_(accounts), T.currency == anchor['currency'],
             T.ordering_date >= anchor['ordering_date'],
             T.ordering_date <= anchor['ordering_date'] + timedelta(days=ONWARD_DAYS)))]
-    sums = {}
-    seen = {}
-    for p in sorted(rows, key=lambda x: (x['ordering_date'], x['id'])):
-        partner = seen.get(anchor['amount_minor'] - p['amount_minor'])
-        if partner:
-            sums.setdefault(p['id'], partner)
-            sums.setdefault(partner['id'], p)
-        seen.setdefault(p['amount_minor'], p)
-    candidates = []
-    for p in rows:
-        diff = p['amount_minor'] - anchor['amount_minor']
-        if diff == 0:
-            amount, words = 3, 'same amount as the receipt'
-        elif Decimal(abs(diff)) <= FEE_SHARE * Decimal(anchor['amount_minor']):
-            amount, words = 2, 'within 2%% of the receipt (%s %s)' % (
-                amount_text(abs(diff), p['currency']), 'more' if diff > 0 else 'less')
-        elif p['id'] in sums:
-            amount, words = 2, 'with %s (%s) it adds up to the receipt' % (
-                sums[p['id']]['ref_id'], amount_text(sums[p['id']]['amount_minor'], p['currency']))
-        elif diff < 0:
-            amount, words = 1, 'part of the receipt (%s of %s)' % (
-                amount_text(p['amount_minor'], p['currency']), amount_text(anchor['amount_minor'], p['currency']))
-        else:
-            amount, words = 0, 'more than the receipt'
-        gap = _gap(anchor, p)
-        when = _date_fit(gap)
-        reasons = [words, _when(gap, undated=p['day'] is None or anchor['day'] is None)]
-        if p['id'] in linked:
-            reasons.append('already in a saved transfer')
-        candidates.append(dict(_view(p, linked), level=_onward_level(amount, when), rule='onward_payment',
-                               reasons='; '.join(reasons), fits=dict(amount=amount, date=when), gap_days=gap,
-                               name_similarity=[]))
+    sums = _onward_sums(anchor, rows)
+    candidates = [_onward_grade(anchor, p, sums, linked) for p in rows]
     candidates.sort(key=_sort_key)
     out = _page(candidates, page, page_size)
     return dict(case_id=str(case_id), mode='onward', anchor=_view(anchor, linked), rule=ONWARD_RULE,
@@ -664,8 +670,13 @@ def grade_payments(session, *, case_id, ids, transaction_id):
     window = [p for p in rows if p['direction'] != anchor['direction'] and grader.other_account(p)]
     grader.prepare(window)
     items = []
+    onward = [p for p in rows if anchor['direction'] == 'credit' and p['direction'] == 'debit'
+              and not grader.other_account(p) and p['currency'] == anchor['currency']
+              and _gap(anchor, p) is not None and 0 <= _gap(anchor, p) <= ONWARD_DAYS]
+    sums = _onward_sums(anchor, onward)
     for p in rows:
-        graded = grader.grade(p) if p in window else None
+        graded = (grader.grade(p) if p in window else
+                  _onward_grade(anchor, p, sums, grader.linked) if p in onward else None)
         if graded is None:
             gap = _gap(anchor, p)
             graded = dict(_view(p, grader.linked), level='faint', rule='named', reasons='; '.join(
