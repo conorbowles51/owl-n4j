@@ -4,7 +4,7 @@ from services.financial.proof_class import SourceShape, assign_proof_class, admi
 from postgres.models.enums import ProofClass
 
 
-def correction_verification(document, rows, statuses, *, native_rechecked=False):
+def correction_verification(document, rows, statuses, *, native_rechecked=False, printed_balances=False):
     """Compute the class and reservations without modifying any stored object."""
     shape = read_source_shape(document)
     if any(row.proof_class != document.proof_class for row in rows):
@@ -28,7 +28,7 @@ def correction_verification(document, rows, statuses, *, native_rechecked=False)
         if reason not in reservations:
             reservations.append(reason)
     outcome = combine_period_outcomes(statuses)
-    earned = assign_proof_class(shape, outcome)
+    earned = assign_proof_class(shape, outcome, printed_balances=printed_balances)
     graded = ProofClass.p3 if reservations and admits_automatically(earned) else earned
     return {"can_record": True, "current_proof_class": document.proof_class,
             "proposed_proof_class": graded.value, "reservations": reservations,

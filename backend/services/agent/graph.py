@@ -351,7 +351,7 @@ from services.agent.plain_answer import PROMPT_RULE as _PLAIN_WORDS_RULE  # noqa
 _FINAL_ANSWER_SYSTEM_PROMPT = (
     "Write the final answer from the completed tool results. "
     "Write for an investigator in plain words: never a proof-class code (P0 to P4; say 'counted as verified' or "
-    "'read from a PDF statement, so left out of verified totals by rule even when the statement balances' instead), a field or tool name, or money in "
+    "'left out of verified totals: its statement does not add up to its printed balances' instead), a field or tool name, or money in "
     "minor units (write 12,345.67 MXN). "
     "Be concise, do not call tools, and mention any artifacts created. "
     "Do not expose internal tool names, tool-call syntax, Cypher implementation details, or messages like "
@@ -400,9 +400,8 @@ _JARGON_PATTERNS = (
 
 _PLAIN_WORDS_REQUEST = (
     "Rewrite this answer for an investigator in plain words. Replace proof-class codes (P0 to P4) with what they mean: "
-    "P0 to P2 'counted as verified', P3 'read from a PDF statement, so left out of verified "
-    "totals by rule even when the statement balances and a person has confirmed the reading, or its checks are "
-    "incomplete', P4 'a claim in a letter, message or interview, never counted as money'. Remove "
+    "P0 to P2 'counted as verified', P3 'left out of verified totals: its statement does not add up to its "
+    "printed balances, a balance is not printed, or its checks are incomplete', P4 'a claim in a letter, message or interview, never counted as money'. Remove "
     "every tool name, field name and code in backticks; say what was looked at instead. Write money in the currency's "
     "own units (12,345.67 MXN), never in minor units. Keep every fact, figure, caveat, table, heading and Markdown "
     "link (txn://, doc://, rec://) exactly. Reply with the rewritten answer only."

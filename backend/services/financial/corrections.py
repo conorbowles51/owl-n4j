@@ -14,7 +14,7 @@ from postgres.models.enums import AdjudicationDecision, AdjudicationSubject, Tra
 from postgres.models.financial import FinancialTransaction, FinancialSourceDocument, FinancialStatementPeriod
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.decisions import Actor, record
-from services.financial.documents import reclassify_after_reconciliation, document_reconciliation
+from services.financial.documents import reclassify_after_reconciliation, document_reconciliation, printed_balances
 from services.financial.reconcile import reconcile_period
 from services.financial.references import RowReading, content_hash, ref_id
 from services.financial.correction_fields import correction_fields, DATE_FIELDS
@@ -118,7 +118,8 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
             reconcile_period(session, period)
         reservations = preview["verification"]["reservations"]
         document.metadata_ = {**(document.metadata_ or {}), "admissibility_reservations": reservations}
-        reclassify_after_reconciliation(session, document, document_reconciliation(session, document), reservations=reservations)
+        reclassify_after_reconciliation(session, document, document_reconciliation(session, document), reservations=reservations,
+                                        printed_balances=printed_balances(session, document))
         session.flush()
         # The corrected row's trade follows it; a person's trade corrections carry while their value reads the same.
         from services.financial.brokerage_ledger import after_cash_rows_changed

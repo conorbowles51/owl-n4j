@@ -23,12 +23,11 @@ holds and cannot change what a file said when it was read months earlier.  A
 period that parsed clean and has since had two rows set aside is no longer a
 period whose rows add up, and only this path can say so.
 
-**What this module does not do.**  It does not touch proof class.  Moving a
-document between p2 and p3 on the strength of an identity is
-``assign_proof_class`` and ``record_admission``, which are a later unit, and
-doing it here would mean two code paths writing the same column on two
-different definitions of the same word.  The result is computed, recorded on
-the period, and exposed.  What is done about it is decided elsewhere.
+**Proof class.**  This module does not write proof class itself.
+``reconcile.reconcile_period`` regrades a statement reading's document after
+recording the identity (``reconcile.grade_statement_document``: rows that add
+up to printed opening and closing balances count as verified, Neil 9 Nov 2026),
+so a sweep here applies that rule to every stored statement reading.
 
 **A refusal leaves the stored verdict alone.**  A period whose stored balances
 cannot be reconstructed, or which holds an admitted row in another currency,

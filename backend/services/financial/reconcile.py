@@ -403,4 +403,45 @@ def reconcile_period(
     # Flush here so that a bad write is raised against the period that caused
     # it rather than at some later commit covering many periods.
     session.flush()
+    grade_statement_document(session, period, now=period.reconciled_at)
     return outcome
+
+
+def grade_statement_document(session: "Session", period: FinancialStatementPeriod, *, now: Optional[datetime] = None):
+    """Regrade a statement reading's document after its period was checked.
+
+    Neil, 9 Nov 2026: a statement period whose rows add up exactly to its printed
+    opening and closing balances counts as verified; one that does not add up, or
+    lacks a printed balance, stays held for a person. Every write path that changes
+    a period's rows (import, correction, added or withdrawn payment) calls
+    :func:`reconcile_period`, so a later correction that breaks the balance takes
+    the period back out here too. Only statement readings (selected document rows)
+    are graded here; native files are graded by their parsers at ingestion.
+    Returns the logged decision, or None when nothing changed.
+    """
+    from postgres.models.financial import FinancialSourceDocument
+    from services.financial.documents import (document_reconciliation, printed_balances, read_source_shape,
+                                              reclassify_after_reconciliation)
+    from services.financial.proof_class import SourceShape
+    if period.source_document_id is None:
+        return None
+    document = session.get(FinancialSourceDocument, period.source_document_id)
+    if document is None or (document.metadata_ or {}).get('source_shape') != SourceShape.selected_document_rows.value:
+        return None
+    if read_source_shape(document) is not SourceShape.selected_document_rows:
+        return None
+    status = document_reconciliation(session, document)
+    printed = printed_balances(session, document)
+    checked = (now or datetime.now(timezone.utc)).strftime('%-d %b %Y')
+    if status is ReconciliationStatus.balanced and printed:
+        note = f'adds up to the printed balances, checked {checked}'
+    elif status is ReconciliationStatus.balanced:
+        note = f'adds up, but an opening or closing balance is not printed on the statement, checked {checked}'
+    else:
+        note = f'does not add up to the printed balances, checked {checked}'
+    # A correction's stored reservations (e.g. a corrected row's printed running-balance chain still needs
+    # rechecking) keep holding the document, as they do when the correction is recorded.
+    reservations = (document.metadata_ or {}).get('admissibility_reservations') or []
+    reservations = [r for r in reservations if isinstance(r, str)] if isinstance(reservations, list) else []
+    return reclassify_after_reconciliation(session, document, status, reservations=reservations,
+                                           printed_balances=printed, note=note)

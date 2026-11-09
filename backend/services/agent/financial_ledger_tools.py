@@ -496,10 +496,8 @@ def _why_not_verified(session, readings) -> str:
     balanced = sum(status.get(str(r['row'].get('statement_period_id'))) == 'balanced' for r in readings)
     other = len(readings) - balanced
     text = (f"{len(readings):,} payments in this scope are not counted as verified. {balanced:,} of them sit in "
-            "statement periods whose rows add up to the statement's printed opening and closing balances. Payments read "
-            "from a PDF statement stay out of verified totals by rule, even after a person confirms the reading and "
-            "even when the statement balances; working totals count them. Payments from the bank's own electronic "
-            "statement files count as verified.")
+            "statement periods whose rows add up but lack printed opening and closing balances, or hold a correction "
+            "still to be checked; working totals count them.")
     if other:
         text += (f" {other:,} sit in periods that did not balance, could not be checked against printed balances, "
                  "or have no statement period.")

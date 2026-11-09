@@ -245,12 +245,13 @@ const PROOF_CLASS_COPY: Record<ProofClass, TermCopy> = {
   },
   p2: {
     label: "Checked against the statement's balances",
-    description: "The statement's arithmetic closes against its own printed balances.",
+    description:
+      "This statement period's rows add up to its printed opening and closing balances, so it counts as verified without a person confirming it.",
   },
   p3: {
     label: "Not fully checked — not in verified totals",
     description:
-      "Left out of verified totals: the checks on this figure are incomplete or did not pass, or it was read from a PDF statement, which stays out by rule even when the statement balances and a person has confirmed the reading.",
+      "Left out of verified totals: its statement period does not add up to the printed balances, a balance is not printed on the statement, or another check is incomplete or did not pass. Working totals count it.",
   },
   p4: {
     label: "Mentioned elsewhere, not a financial record — not counted",

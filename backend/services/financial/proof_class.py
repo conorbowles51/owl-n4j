@@ -144,6 +144,8 @@ _PASSING = frozenset({ReconciliationStatus.balanced})
 def assign_proof_class(
     shape: SourceShape,
     reconciliation: Optional[ReconciliationStatus] = None,
+    *,
+    printed_balances: bool = False,
 ) -> ProofClass:
     """Assign a proof class from the source shape and the arithmetic outcome.
 
@@ -188,7 +190,16 @@ def assign_proof_class(
     # Balancing a selected subset does not prove completeness. An outcome
     # alone must never turn nominated financial rows into a checked statement.
     # A separately established complete reading requires its own source record.
+    #
+    # Neil, 9 Nov 2026: a statement period whose rows add up exactly to its
+    # printed opening and closing balances counts as verified (p2). Rows that
+    # sum from a printed opening to a printed closing cannot be missing a
+    # non-zero total, which is the gap this rule guards. ``printed_balances``
+    # is True only when every period of the document has both balances printed
+    # on the page; a carried-forward or absent balance keeps the rows at p3.
     if shape is SourceShape.selected_document_rows:
+        if printed_balances and reconciliation in _PASSING:
+            return ProofClass.p2
         return ProofClass.p3
 
     passed = reconciliation in _PASSING

@@ -185,9 +185,10 @@ class FinancialAgentLedgerTests(LedgerToolFixture):
         self.assertIn('4 payments in this scope are not counted as verified. 3 of them sit in statement periods', why)
         self.assertIn('printed opening and closing balances', why)
         self.assertIn('1 sit in periods that did not balance', why)
-        # Confirming a reading does not admit it: totals count by proof class alone (live BNB2 rows are all confirmed).
-        self.assertIn('stay out of verified totals by rule, even after a person confirms the reading', why)
+        # Since 9 Nov a period that adds up to printed balances counts; those still out lack a printed balance.
+        self.assertIn('lack printed opening and closing balances', why)
         self.assertNotIn('only once a person confirms', why)
+        self.assertNotIn('by rule', why)
 
     def test_canonical_accounts_months_counterparties_and_category_groups(self):
         _, _, rows = self.source(rows=3)

@@ -352,4 +352,10 @@ describe("proof class wording", () => {
     expect(readProofClass("p4").label).toMatch(/not counted/)
     expect(readProofClass("p0").label).toBe("Checked against the statement's balances")
   })
+
+  it("says a statement period that adds up to its printed balances counts as verified (Neil, 9 Nov 2026)", () => {
+    expect(readProofClass("p2").description).toMatch(/add up to its printed opening and closing balances/)
+    expect(readProofClass("p3").description).not.toMatch(/even when the statement's balances agree/)
+    expect(readProofClass("p3").description).toMatch(/does not add up to the printed balances/)
+  })
 })

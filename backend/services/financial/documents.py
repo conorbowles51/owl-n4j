@@ -483,6 +483,21 @@ def document_reconciliation(
     )
 
 
+def printed_balances(session: "Session", document: FinancialSourceDocument) -> bool:
+    """True when every period of the document has its opening and closing balance printed on the page.
+
+    A carried-forward or absent balance is not printed, and a document with no
+    period has nothing printed: both keep a statement reading held for a person
+    (see :func:`~services.financial.proof_class.assign_proof_class`).
+    """
+    from sqlalchemy import select
+    from postgres.models.enums import BalanceSource
+    sources = session.execute(select(FinancialStatementPeriod.opening_balance_source,
+                                     FinancialStatementPeriod.closing_balance_source)
+                              .where(FinancialStatementPeriod.source_document_id == document.id)).all()
+    return bool(sources) and all(o == BalanceSource.printed.value and c == BalanceSource.printed.value for o, c in sources)
+
+
 def reclassify_after_reconciliation(
     session: "Session",
     document: FinancialSourceDocument,
@@ -490,8 +505,14 @@ def reclassify_after_reconciliation(
     *,
     run: Optional["IngestionRunHandle"] = None,
     reservations: Sequence[str] = (),
+    printed_balances: bool = False,
+    note: str = "",
 ) -> Optional[AdjudicationEvent]:
     """Move a document's proof class to the one the arithmetic now supports.
+
+    ``printed_balances`` says every period of the document had both balances
+    printed on the page (see :func:`assign_proof_class`); ``note`` is a
+    plain-words reason added to the logged decision.
 
     Returns the logged decision, or ``None`` if the class is already what the
     outcome implies — which is the common case for a totals-free native export,
@@ -614,7 +635,7 @@ def reclassify_after_reconciliation(
 
     shape = read_source_shape(document)
     current = document.proof_class
-    earned = assign_proof_class(shape, reconciliation)
+    earned = assign_proof_class(shape, reconciliation, printed_balances=printed_balances)
     graded = earned
     withheld = bool(held) and admits_automatically(earned)
     if withheld:
@@ -655,6 +676,7 @@ def reclassify_after_reconciliation(
             f"reconciliation reported {reconciliation.value} for a "
             f"{shape.value} source; proof class {current} -> {graded.value}; "
             f"{stale_rows} ledger row(s) reclassified with it" + withholding
+            + (f"; {note}" if note else "")
         ),
         actor=reconciliation_actor(),
         before={"proof_class": current},

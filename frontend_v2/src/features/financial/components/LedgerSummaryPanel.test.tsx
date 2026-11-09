@@ -86,8 +86,8 @@ it("says plainly when no payment counts as verified, and names the counted class
   })
   const line = await screen.findByTestId("none-verified")
   expect(line).toHaveTextContent("No payment in this scope counts as verified.")
-  // Confirming a reading does not admit it: live BNB2 rows are all confirmed and still outside verified totals.
-  expect(line).toHaveTextContent("even after a person confirms the reading")
+  // Since 9 Nov a statement period that adds up to its printed balances counts as verified.
+  expect(line).toHaveTextContent("adds up to its printed opening and closing balances")
   expect(line).not.toHaveTextContent(/count once a person confirms/)
   expect(screen.getByText(/Counted: Checked against the statement's balances;/)).toBeInTheDocument()
   expect(screen.queryByText(/P0, P1, P2/)).not.toBeInTheDocument()

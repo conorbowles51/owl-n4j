@@ -169,7 +169,9 @@ def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uu
     if result["native_controls_rechecked"]:
         result["limitation"] = result["limitation"].replace("Native controls are not revalidated.", "Native controls were recalculated against verified source bytes; interpretation remains conditional.")
     try:
-        result["verification"] = correction_verification(document, rows, statuses, native_rechecked=result["native_controls_rechecked"])
+        from services.financial.documents import printed_balances
+        result["verification"] = correction_verification(document, rows, statuses, native_rechecked=result["native_controls_rechecked"],
+                                                         printed_balances=printed_balances(session, document))
     except (UnknownSourceShapeError, ValueError):
         result["verification"] = {"can_record": False, "current_proof_class": document.proof_class,
                                   "proposed_proof_class": None, "reservations": [],
