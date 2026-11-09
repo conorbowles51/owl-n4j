@@ -84,11 +84,14 @@ describe("AppSidebar case navigation", () => {
     expect(heard).toHaveBeenCalledTimes(1)
   })
 
-  it("shows the Phones group only when the case has a phone (03 D-18)", async () => {
+  it("shows Phones in every case: one add entry with no phone, the full group once there is one (03 D-18)", async () => {
     phones.list = []
     const { unmount } = sidebar()
     await new Promise((r) => setTimeout(r, 0))
-    expect(screen.queryByRole("region", { name: "Phones" })).not.toBeInTheDocument()
+    const empty = screen.getByRole("region", { name: "Phones" })
+    const add = within(empty).getAllByRole("link")
+    expect(add.map((l) => l.textContent)).toEqual(["Phones — add a phone report"])
+    expect(add[0]).toHaveAttribute("href", "/cases/case-1/phones")
     unmount()
     phones.list = [{ extraction_id: "e1", label: "C1" }]
     sidebar()

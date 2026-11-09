@@ -8,6 +8,7 @@ import { phoneQueryTarget } from "./phone-query"
 import { phonesQuery } from "@/features/phones/phones-query"
 import { RecordListPage } from "@/features/phones/records/RecordListPage"
 import { FirstPhoneCard } from "@/features/phones/summary/FirstPhoneCard"
+import { AddPhoneReport } from "@/features/phones/AddPhoneReport"
 
 /**
  * The phone addresses Workspace, dossiers and Notebook links use (07 section 4.13; phone-links.ts). Each one lands
@@ -51,7 +52,7 @@ export function PhonesIndexPage() {
       {fileUid && file.isError && <p role="alert">{failureText(file.error, "This file is not in this case.")}</p>}
       {phones.isLoading && <p className="text-sm">Loading the phones</p>}
       {phones.isError && <p role="alert">{failureText(phones.error, "The phones could not be loaded.")}</p>}
-      {phones.data && phones.data.phones.length === 0 && <p className="text-sm">This case has no phone yet.</p>}
+      {phones.data && phones.data.phones.length === 0 && <AddPhoneReport caseId={caseId} />}
       {active.length >= 2 && (
         <div>
           <Button size="sm" variant="outline" aria-expanded={comparing} onClick={() => setComparing((v) => !v)}>

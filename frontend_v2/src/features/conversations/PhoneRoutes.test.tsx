@@ -77,3 +77,16 @@ describe("Phones list after a Replace (07 J-13b, 01 10.7)", () => {
     expect(screen.getByRole("link", { name: "Replaced report: C1" })).toHaveAttribute("href", "/cases/case-1/phones/o")
   })
 })
+
+describe("Phones in a case with no phone", () => {
+  it("says what a phone report is, what can be added and how big, and opens Evidence with the phone choice", async () => {
+    mocks.phones.mockResolvedValue({ phones: [], total: 0 })
+    show("/cases/case-1/phones")
+    const add = await screen.findByRole("region", { name: "Add a phone report" })
+    expect(add).toHaveTextContent("A phone report is the export")
+    expect(add).toHaveTextContent("Cellebrite report folder")
+    expect(add).toHaveTextContent("ZIP file")
+    expect(add).toHaveTextContent("8 GB")
+    expect(screen.getByRole("link", { name: "Add a phone report" })).toHaveAttribute("href", "/cases/case-1/evidence?add=phone")
+  })
+})

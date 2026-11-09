@@ -83,7 +83,9 @@ export function FileListToolbar({
   // The pickers open from inside the menu's select (the browser needs the click in the person's gesture), so the menus
   // are closed here: left open, a modal menu keeps the rest of the page hidden from assistive technology.
   const [uploadMenuOpen, setUploadMenuOpen] = useState(false)
-  const [phoneMenuOpen, setPhoneMenuOpen] = useState(false)
+  // Opened from the Phones page's "Add a phone report" (Evidence ?add=phone): the menu waits for the person's choice,
+  // because the browser opens a file picker only from their own click.
+  const [phoneMenuOpen, setPhoneMenuOpen] = useState(() => new URLSearchParams(window.location.search).get("add") === "phone")
   const pick = (
     input: HTMLInputElement | null,
     close: (open: boolean) => void

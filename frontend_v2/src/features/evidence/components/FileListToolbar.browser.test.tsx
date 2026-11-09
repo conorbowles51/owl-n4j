@@ -38,3 +38,18 @@ it.each([
   expect(screen.getByRole("button", { name: /^Add phone report/ })).toBeTruthy()
   opened.mockRestore()
 })
+
+it("arriving from the Phones page's Add a phone report (?add=phone), the phone report choices are open", async () => {
+  window.history.replaceState(null, "", "/cases/case/evidence?add=phone")
+  try {
+    render(
+      <TooltipProvider>
+        <FileListToolbar caseId="case" onCreateFolder={() => {}} onDeleteFiles={() => {}} />
+      </TooltipProvider>
+    )
+    expect(await screen.findByRole("menuitem", { name: "Phone report folder" })).toBeTruthy()
+    expect(screen.getByRole("menuitem", { name: "Phone report ZIP file" })).toBeTruthy()
+  } finally {
+    window.history.replaceState(null, "", "/")
+  }
+})

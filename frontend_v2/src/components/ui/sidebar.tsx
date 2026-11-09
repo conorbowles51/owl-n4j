@@ -79,7 +79,7 @@ function getFullDataCaseNav(caseId: string): NavItem[] {
   ]
 }
 
-/** The Phones group (03 D-18): shown only when the case has a phone. */
+/** The Phones group (03 D-18): the full group once the case has a phone; before that, one entry that adds one. */
 function getPhonesNav(caseId: string): NavItem[] {
   return [
     { label: "Phone summary", icon: Smartphone, to: `/cases/${caseId}/phones`, end: true },
@@ -433,6 +433,17 @@ export function AppSidebar() {
                 active={pathname.startsWith(`/cases/${caseId}/phones-prototype`)}
               />
             )}
+          </SidebarSection>
+        )}
+
+        {caseId && !hasPhones && (
+          // A case with no phone still shows where phones go: one entry to the page that adds a phone report.
+          <SidebarSection label="Phones" expanded={sidebarExpanded} separated>
+            <SidebarLink
+              item={{ label: "Phones — add a phone report", icon: Smartphone, to: `/cases/${caseId}/phones`, end: true }}
+              expanded={sidebarExpanded}
+              active={pathname === `/cases/${caseId}/phones`}
+            />
           </SidebarSection>
         )}
 
