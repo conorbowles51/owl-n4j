@@ -85,7 +85,7 @@ def test_an_owner_stops_processing_in_their_case_and_the_stop_is_recorded(db, mo
     listed = running_work.list_running(db, owner)
     assert [(t["kind"], t["progress"]["total"]) for t in listed["tasks"]] == [("processing", 3)]
 
-    out = _run(running_work.stop(db, owner, "processing", str(case.id)))
+    out = _run(running_work.stop_work(db, owner, "processing", str(case.id)))
     assert asked == [("j1", "cancel"), ("j2", "cancel")]
     assert out["summary"].startswith("Stopped by Owner Person. Of 3 files processing: 3 asked to stop")
     event_row = db.query(ActivityEvent).one()
@@ -110,7 +110,7 @@ def test_a_batch_already_writing_to_the_case_is_reported_not_hidden(db, monkeypa
         return {"affected_jobs": 1}
     from services import evidence_engine_client
     monkeypatch.setattr(evidence_engine_client, "control_job", control)
-    out = _run(running_work.stop(db, owner, "processing", str(case.id)))
+    out = _run(running_work.stop_work(db, owner, "processing", str(case.id)))
     assert "1 asked to stop" in out["summary"]
     assert "1 batch could not be stopped: This batch has already started writing to the case." in out["summary"]
 
@@ -121,7 +121,7 @@ def test_someone_who_does_not_own_the_case_cannot_stop_it_or_see_it(db, monkeypa
     _file(db, case)
     assert running_work.list_running(db, other)["tasks"] == []
     with pytest.raises(running_work.StopRefused) as refused:
-        _run(running_work.stop(db, other, "processing", str(case.id)))
+        _run(running_work.stop_work(db, other, "processing", str(case.id)))
     assert refused.value.status_code == 403
     assert db.query(ActivityEvent).count() == 0
 
@@ -134,7 +134,7 @@ def test_an_administrator_sees_and_stops_any_case(db):
     db.add(export)
     db.commit()
     assert [t["kind"] for t in running_work.list_running(db, admin)["tasks"]] == ["export"]
-    out = _run(running_work.stop(db, admin, "export", str(export.id)))
+    out = _run(running_work.stop_work(db, admin, "export", str(export.id)))
     assert db.get(CaseExport, export.id).status == "cancelling"
     assert "4 of 10 items were written before the stop; no export file is offered" in out["summary"]
 
@@ -149,7 +149,7 @@ def test_a_statement_batch_is_paused_so_untried_statements_stay_unmarked(db, mon
     db.commit()
     db.add(FinancialImportBatchItem(id=uuid4(), batch_id=batch.id, file_id=uuid4(), status="ready", summary={}))
     db.commit()
-    out = _run(running_work.stop(db, owner, "statement_import", str(batch.id)))
+    out = _run(running_work.stop_work(db, owner, "statement_import", str(batch.id)))
     assert db.get(FinancialImportBatch, batch.id).status == "paused"
     assert db.query(FinancialImportBatchItem).count() == 1
     assert "1 of 3 statements were prepared and stay in the batch; 2 were not started" in out["summary"]

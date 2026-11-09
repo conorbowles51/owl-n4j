@@ -73,6 +73,8 @@ _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
 # Coroutines that take the session but run their own database work in the thread pool.
 _OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs', 'process_db_files', 'retry_file_checked',
                         'prepare_existing_financial_file',
+                        # stopping running work: each kind's database work and the activity record in the thread pool
+                        'stop_work',
                         # reads the graph with asyncio.to_thread, then compares names between awaits
                         'find_similar_entities_streaming'}
 _ROUTE_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'api_route')

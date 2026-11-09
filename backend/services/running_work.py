@@ -125,7 +125,7 @@ def _who(user):
     return user.name or user.email
 
 
-async def stop(db: Session, user: User, kind: str, task_id: str) -> dict:
+async def stop_work(db: Session, user: User, kind: str, task_id: str) -> dict:
     """Database work runs in a thread, never on the event loop (a session held across awaits deadlocked, 1 Nov)."""
     from fastapi.concurrency import run_in_threadpool
     if kind not in KINDS:

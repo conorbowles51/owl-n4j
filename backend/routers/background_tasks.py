@@ -118,9 +118,9 @@ async def stop_running_work(kind: str, task_id: str, user: dict = Depends(get_cu
     from services import running_work
     db_user = await run_in_threadpool(get_current_db_user, user, db)
     try:
-        return await running_work.stop(db, db_user, kind, task_id)
+        return await running_work.stop_work(db, db_user, kind, task_id)
     except running_work.StopRefused as exc:
-        db.rollback()
+        await run_in_threadpool(db.rollback)  # ends the refused stop's transaction (an export's row lock) off the loop
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 

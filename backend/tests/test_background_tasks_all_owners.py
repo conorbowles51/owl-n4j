@@ -74,7 +74,7 @@ def test_running_work_and_its_stop_have_their_own_routes(client_as, monkeypatch)
 
     async def refused(db, user, kind, task_id):
         raise running_work.StopRefused("Only an administrator or this case's owner can stop its work.", 403)
-    monkeypatch.setattr(running_work, "stop", refused)
+    monkeypatch.setattr(running_work, "stop_work", refused)
     monkeypatch.setattr(background_tasks, "get_current_db_user", lambda *_: SimpleNamespace(id=uuid4()))
     assert client.get("/api/background-tasks/running").json()["scope"] == "owned_cases"
     response = client.post(f"/api/background-tasks/running/processing/{uuid4()}/stop")
