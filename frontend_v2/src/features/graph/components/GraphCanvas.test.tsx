@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useGraphStore } from "@/stores/graph.store"
 import type { GraphData } from "@/types/graph.types"
 import { warmupLayout, type LayoutMessage, type WarmupLink, type WarmupNode, type WarmupParams } from "../lib/warmup-layout"
-import { GraphCanvas } from "./GraphCanvas"
+import { GraphCanvas, SIGNIFICANT_EDGE_COLOR } from "./GraphCanvas"
 
 interface MockNode {
   key: string
@@ -18,9 +18,17 @@ interface MockProps {
   enableNodeDrag?: boolean
   onRenderFramePost?: () => void
   linkPointerAreaPaint?: (...args: unknown[]) => void
+  linkCanvasObject?: (...args: unknown[]) => void
+  onBackgroundRightClick?: (event: MouseEvent) => void
 }
 
-const mocks = vi.hoisted(() => ({ props: [] as MockProps[], reheats: 0 }))
+const mocks = vi.hoisted(() => ({ props: [] as MockProps[], reheats: 0, marked: new Set<string>() }))
+
+vi.mock("@/features/significant/hooks/use-significant", () => ({
+  relationshipMarkKey: (s: string, t: string, d: string) => `${s}\u001f${t}\u001f${d}`,
+  useSignificantManifest: () => ({ relationshipKeySet: mocks.marked, entityKeySet: new Set(), isLoading: false }),
+  useToggleSignificantRelationship: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}))
 
 vi.mock("react-force-graph-2d", async () => {
   const React = await vi.importActual<typeof import("react")>("react")
@@ -34,6 +42,8 @@ vi.mock("react-force-graph-2d", async () => {
           mocks.reheats++
         },
         zoomToFit: vi.fn(),
+        screen2GraphCoords: (x: number, y: number) => ({ x, y }),
+        zoom: () => 1,
       }))
       return React.createElement("div", { "data-testid": "force-graph-2d" })
     }),
@@ -145,6 +155,47 @@ describe("GraphCanvas layout", () => {
     const ctx = { beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fill: vi.fn() }
     paint!({ source: { x: 0, y: 0 }, target: { x: 10, y: 10 } }, "#000001", ctx, 1)
     for (const fn of Object.values(ctx)) expect(fn).not.toHaveBeenCalled()
+  })
+
+  // GR-01: a relationship marked significant is drawn in its own colour, heavier, and still at the lowest zoom.
+  it("draws a significant relationship amber and heavier, and keeps it at low zoom", async () => {
+    vi.stubGlobal("Worker", FakeLayoutWorker)
+    mocks.marked = new Set(["n0\u001fKNOWS\u001fn1"])
+    await act(async () => {
+      render(<GraphCanvas data={makeGraph(3)} caseId="case-1" />)
+    })
+    const paint = last().linkCanvasObject!
+    const ctx = () => ({ beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fill: vi.fn(),
+      closePath: vi.fn(), setLineDash: vi.fn(), strokeStyle: "", lineWidth: 0, globalAlpha: 1, fillStyle: "" })
+    const marked = ctx()
+    paint({ source: { key: "n0", x: 1, y: 1 }, target: { key: "n1", x: 20, y: 1 }, type: "KNOWS" }, marked, 1)
+    const plain = ctx()
+    paint({ source: { key: "n1", x: 1, y: 1 }, target: { key: "n2", x: 20, y: 1 }, type: "KNOWS" }, plain, 1)
+    expect(marked.strokeStyle).toBe(SIGNIFICANT_EDGE_COLOR)
+    expect(plain.strokeStyle).not.toBe(SIGNIFICANT_EDGE_COLOR)
+    expect(marked.lineWidth).toBeGreaterThan(plain.lineWidth)
+    const low = ctx()
+    paint({ source: { key: "n0", x: 1, y: 1 }, target: { key: "n1", x: 20, y: 1 }, type: "KNOWS" }, low, 0.2)
+    expect(low.stroke).toHaveBeenCalled()
+    mocks.marked = new Set()
+  })
+
+  it("opens the relationship menu on a right-click over an edge, and nothing off every edge", async () => {
+    vi.stubGlobal("Worker", FakeLayoutWorker)
+    const view = await act(async () => render(<GraphCanvas data={makeGraph(2)} caseId="case-1" />))
+    const shown = last().graphData as unknown as { nodes: { key: string; x?: number; y?: number }[]; links: { source: unknown; target: unknown }[] }
+    // place the two nodes and resolve the link ends as the force engine does
+    shown.nodes[0].x = 0; shown.nodes[0].y = 0; shown.nodes[1].x = 100; shown.nodes[1].y = 0
+    shown.links[0].source = shown.nodes[0]; shown.links[0].target = shown.nodes[1]
+    const click = (x: number, y: number) =>
+      act(() => last().onBackgroundRightClick!({ clientX: x, clientY: y, preventDefault: () => {} } as MouseEvent))
+    click(50, 300)
+    expect(view.queryByTestId("graph-edge-menu")).toBeNull()
+    click(50, 2)
+    const menu = view.getByTestId("graph-edge-menu")
+    expect(menu.textContent).toContain("N 0")
+    expect(menu.textContent).toContain("knows")
+    expect(view.getByRole("button", { name: /Mark relationship significant: N 0 knows N 1/ })).toBeTruthy()
   })
 
   it("draws a small graph at once, with no worker", async () => {

@@ -20,7 +20,7 @@ export function SignificantEmptyState({
 }: SignificantEmptyStateProps) {
   const { data, isPending } = useSignificantManifest(caseId)
   const setLayer = useCaseLayerStore((state) => state.setLayer)
-  const hasSignificantEntities = (data?.count ?? 0) > 0
+  const hasSignificantEntities = (data?.count ?? 0) > 0 || (data?.relationships?.length ?? 0) > 0
 
   if (isPending) {
     return (

@@ -5,17 +5,24 @@ import { Badge } from "@/components/ui/badge"
 
 import { cn } from "@/lib/cn"
 import type { ConnectionGroup } from "@/types/graph.types"
+import { SignificantRelationshipButton } from "@/features/significant/components/SignificantRelationshipButton"
+import { entityPanelColour } from "../lib/entity-panel-colours"
 
 interface ConnectionsListProps {
   connections: ConnectionGroup[]
   onNodeClick?: (key: string) => void
   className?: string
+  /** With both, each relationship gets a star to mark it significant (GR-01). */
+  caseId?: string
+  entity?: { key: string; label: string }
 }
 
 export function ConnectionsList({
   connections,
   onNodeClick,
   className,
+  caseId,
+  entity,
 }: ConnectionsListProps) {
   const relType = (g: ConnectionGroup) => g.relationshipType ?? "unknown"
 
@@ -66,18 +73,36 @@ export function ConnectionsList({
 
             {expanded.has(type) && (
               <div className="ml-5 space-y-0.5">
-                {(group.nodes ?? []).map((node) => (
-                  <button
-                    key={node.key}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50"
-                    onClick={() => onNodeClick?.(node.key)}
-                  >
-                    <NodeBadge type={node.type} />
-                    <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-                      {node.label}
-                    </span>
-                  </button>
-                ))}
+                {(group.nodes ?? []).map((node) => {
+                  const outgoing = node.direction !== "incoming"
+                  const words = type.replace(/_/g, " ").toLowerCase()
+                  return (
+                  <div key={`${node.key}-${node.direction ?? ""}`} className="flex items-center gap-1">
+                    <button
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50"
+                      onClick={() => onNodeClick?.(node.key)}
+                    >
+                      <NodeBadge type={node.type} color={entityPanelColour(node.type)} />
+                      <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+                        {node.label}
+                      </span>
+                    </button>
+                    {caseId && entity && node.direction && (
+                      <SignificantRelationshipButton
+                        caseId={caseId}
+                        compact
+                        surface="entity_panel"
+                        relationship={{
+                          source_key: outgoing ? entity.key : node.key,
+                          type,
+                          target_key: outgoing ? node.key : entity.key,
+                        }}
+                        description={outgoing ? `${entity.label} ${words} ${node.label}` : `${node.label} ${words} ${entity.label}`}
+                      />
+                    )}
+                  </div>
+                  )
+                })}
               </div>
             )}
           </div>

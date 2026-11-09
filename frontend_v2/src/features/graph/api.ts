@@ -139,7 +139,7 @@ export const graphAPI = {
   getNodeDetails: async (key: string, caseId: string) => {
     const raw = await fetchAPI<
       Record<string, unknown> & {
-        connections?: { relationship?: string; key: string; name: string; type: string }[]
+        connections?: { relationship?: string; key: string; name: string; type: string; direction?: string }[]
       }
     >(
       `/api/graph/node/${encodeURIComponent(key)}?case_id=${caseId}`
@@ -147,7 +147,7 @@ export const graphAPI = {
     // Group flat connections into ConnectionGroup[]
     const grouped = new Map<
       string,
-      { relationshipType: string; nodes: { key: string; label: string; type: string }[] }
+      { relationshipType: string; nodes: { key: string; label: string; type: string; direction?: "outgoing" | "incoming" }[] }
     >()
     for (const c of raw.connections ?? []) {
       const relType = c.relationship || "RELATED_TO"
@@ -158,6 +158,7 @@ export const graphAPI = {
         key: c.key,
         label: c.name,
         type: c.type,
+        ...(c.direction === "outgoing" || c.direction === "incoming" ? { direction: c.direction } : {}),
       })
     }
     const properties =

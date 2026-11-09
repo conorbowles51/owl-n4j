@@ -2,9 +2,15 @@ import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { significantAPI } from "../api"
 import type {
+  RelationshipRef,
   SignificantAdditionSource,
   SignificantManifest,
 } from "../types"
+
+/** One string per relationship (source, type, target), for set lookups on the graph and in panels. */
+export function relationshipMarkKey(sourceKey: string, type: string, targetKey: string): string {
+  return `${sourceKey}\u001f${type}\u001f${targetKey}`
+}
 
 export const significantKeys = {
   manifest: (caseId: string) => ["significant", caseId] as const,
@@ -38,7 +44,26 @@ export function useSignificantManifest(caseId: string | undefined) {
     () => new Set(query.data?.entity_keys ?? []),
     [query.data?.entity_keys]
   )
-  return { ...query, entityKeySet }
+  const relationshipKeySet = useMemo(
+    () => new Set((query.data?.relationships ?? []).map((r) => relationshipMarkKey(r.source_key, r.type, r.target_key))),
+    [query.data?.relationships]
+  )
+  return { ...query, entityKeySet, relationshipKeySet }
+}
+
+/** Mark or unmark one relationship significant (GR-01); the manifest and the scoped views refresh. */
+export function useToggleSignificantRelationship(caseId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ relationship, significant, surface }: { relationship: RelationshipRef; significant: boolean; surface: string }) =>
+      significant
+        ? significantAPI.addRelationships(caseId, [relationship], "manual", { surface })
+        : significantAPI.removeRelationships(caseId, [relationship]),
+    onSuccess: (manifest) => {
+      queryClient.setQueryData<SignificantManifest>(significantKeys.manifest(caseId), manifest)
+      refreshScopedProjections(queryClient, caseId)
+    },
+  })
 }
 
 export function useAddSignificantEntities(caseId: string) {

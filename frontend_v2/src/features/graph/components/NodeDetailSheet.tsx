@@ -60,6 +60,7 @@ import { useCreateDossier } from "@/features/dossiers"
 import { NodePhoneConversations } from "./NodePhoneConversations"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
+import { entityPanelColour } from "../lib/entity-panel-colours"
 
 interface NodeDetailSheetProps {
   caseId: string
@@ -318,7 +319,7 @@ export function NodeDetailSheet({
       <div className="flex items-start justify-between border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <NodeBadge type={detail.type} />
+            <NodeBadge type={detail.type} color={entityPanelColour(detail.type)} />
             <h3 className="truncate text-sm font-semibold">{detail.label}</h3>
             {(properties.latitude !== undefined ||
               properties.geocoding_status !== undefined) && (
@@ -704,6 +705,8 @@ export function NodeDetailSheet({
           <ConnectionsList
             connections={connections}
             onNodeClick={(key) => selectNodes([key])}
+            caseId={caseId}
+            entity={{ key: detail.key, label: detail.label }}
           />
         </div>
 

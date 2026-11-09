@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn"
 import { useCaseLayer, useCaseLayerStore } from "../stores/case-layer.store"
 import { useSignificantManifest } from "../hooks/use-significant"
 import type { CaseLayer } from "../types"
+import { markedWords } from "../marked-words"
 
 interface CaseLayerSwitcherProps {
   caseId: string
@@ -47,7 +48,10 @@ export function CaseLayerSwitcher({
   const layer = useCaseLayer(caseId)
   const setLayer = useCaseLayerStore((state) => state.setLayer)
   const { data, isPending } = useSignificantManifest(caseId)
-  const count = data?.count ?? 0
+  const relationshipCount = data?.relationships?.length ?? 0
+  // Entities and relationships marked (GR-01): the layer holds both.
+  const count = (data?.count ?? 0) + relationshipCount
+  const markedText = markedWords(data?.count ?? 0, relationshipCount)
   const compactCount = new Intl.NumberFormat(undefined, {
     notation: "compact",
     maximumFractionDigits: 1,
@@ -86,6 +90,7 @@ export function CaseLayerSwitcher({
           <LayerOptions
             layer={layer}
             count={count}
+            markedText={markedText}
             onChange={(next) => setLayer(caseId, next)}
           />
         </PopoverContent>
@@ -139,7 +144,7 @@ export function CaseLayerSwitcher({
                 title={
                   isPending
                     ? "Loading marked entity count"
-                    : `${count.toLocaleString()} marked entities`
+                    : markedText
                 }
               >
                 {isPending ? "…" : compactCount}
@@ -154,11 +159,12 @@ export function CaseLayerSwitcher({
 
 function LayerOptions({
   layer,
-  count,
+  markedText,
   onChange,
 }: {
   layer: CaseLayer
   count: number
+  markedText: string
   onChange: (layer: CaseLayer) => void
 }) {
   return (
@@ -201,7 +207,7 @@ function LayerOptions({
               <span className="block text-xs font-medium">{option.label}</span>
               <span className="block text-[10px] text-muted-foreground">
                 {option.value === "significant"
-                  ? `${count.toLocaleString()} marked entities`
+                  ? markedText
                   : option.description}
               </span>
             </span>

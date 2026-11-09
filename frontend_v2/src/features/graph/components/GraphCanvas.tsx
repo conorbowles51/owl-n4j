@@ -11,6 +11,12 @@ import { useTheme } from "@/lib/theme-context"
 import type { GraphData } from "@/types/graph.types"
 import type { LayoutMessage } from "../lib/warmup-layout"
 import { normaliseLinks, registerCanvasGraphSource } from "../lib/graph-snapshot"
+import { linkEndKey, nearestLink } from "../lib/edge-hit"
+import { relationshipMarkKey, useSignificantManifest } from "@/features/significant/hooks/use-significant"
+import { GraphEdgeMenu, type EdgeMenuState } from "./GraphEdgeMenu"
+
+/** A relationship marked significant (GR-01): drawn amber and heavier, and kept at every zoom. */
+export const SIGNIFICANT_EDGE_COLOR = "#d97706"
 
 /* ------------------------------------------------------------------ */
 /*  Types for react-force-graph-2d                                     */
@@ -69,7 +75,10 @@ interface GraphCanvasProps {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: GraphCanvasProps) {
+export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgress }: GraphCanvasProps) {
+  const { relationshipKeySet: significantLinks } = useSignificantManifest(caseId)
+  const [edgeMenu, setEdgeMenu] = useState<EdgeMenuState | null>(null)
+  const closeEdgeMenu = useCallback(() => setEdgeMenu(null), [])
   const containerRef = useRef<HTMLDivElement>(null)
   const internalRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined)
   const fgRef = externalRef ?? internalRef
@@ -446,21 +455,24 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
       const src = link.source as ForceNode
       const tgt = link.target as ForceNode
       if (!src?.x || !tgt?.x) return
+      const marked = significantLinks.size > 0 &&
+        significantLinks.has(relationshipMarkKey(String(src.key ?? ""), link.type, String(tgt.key ?? "")))
 
-      /* LOD: skip links entirely at very low zoom */
-      if (globalScale < 0.3) return
+      /* LOD: skip links entirely at very low zoom (a significant one is still drawn) */
+      if (globalScale < 0.3 && !marked) return
 
       // the Graph time slider (03 14.3): a phone pair's edge restyled from its count in the window
       const ws = windowStyle(link.type, String(src.id ?? ""), String(tgt.id ?? ""), edgeWindow, edgeCounts)
       const baseWidth = Math.max(0.5, (link.weight ?? 1) * 0.8) * (ws?.widthFactor ?? 1)
-      const width = baseWidth / Math.sqrt(globalScale)
+      const width = (marked ? Math.max(2, baseWidth * 2.5) : baseWidth) / Math.sqrt(globalScale)
+      const linkColor = marked ? SIGNIFICANT_EDGE_COLOR : canvasColors.linkColor
 
       ctx.beginPath()
       ctx.moveTo(src.x, src.y!)
       ctx.lineTo(tgt.x, tgt.y!)
-      ctx.strokeStyle = canvasColors.linkColor
+      ctx.strokeStyle = linkColor
       ctx.lineWidth = width
-      ctx.globalAlpha = ws?.alpha ?? 0.4
+      ctx.globalAlpha = marked ? 0.95 : (ws?.alpha ?? 0.4)
       ctx.setLineDash(ws?.dashed ? [4 / globalScale, 3 / globalScale] : [])
       ctx.stroke()
       ctx.setLineDash([])
@@ -499,7 +511,7 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
         endY - arrowLen * Math.sin(angle + 0.4)
       )
       ctx.closePath()
-      ctx.fillStyle = canvasColors.linkColor
+      ctx.fillStyle = linkColor
       ctx.fill()
 
       // Relationship label
@@ -528,7 +540,7 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
 
       ctx.globalAlpha = 1.0
     },
-    [showRelationshipLabels, canvasColors, edgeWindow, edgeCounts]
+    [showRelationshipLabels, canvasColors, edgeWindow, edgeCounts, significantLinks]
   )
 
   /* ---- Click handlers ---- */
@@ -549,6 +561,36 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
     setDragStart(null)
     setDragEnd(null)
   }, [selectNodes])
+
+  // Right-click on an edge (GR-01): the edge is found only now, by distance to each line (no per-frame hit area).
+  const handleBackgroundRightClick = useCallback(
+    (event: MouseEvent) => {
+      event.preventDefault()
+      const fg = fgRef.current
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!fg || !rect) return
+      const point = fg.screen2GraphCoords(event.clientX - rect.left, event.clientY - rect.top)
+      const zoom = typeof fg.zoom === "function" ? fg.zoom() : 1
+      const hit = nearestLink(shownData.links as ForceLink[], point.x, point.y, 6 / (zoom || 1))
+      if (!hit) {
+        setEdgeMenu(null)
+        return
+      }
+      const src = hit.source as ForceNode
+      const tgt = hit.target as ForceNode
+      setEdgeMenu({
+        x: event.clientX,
+        y: event.clientY,
+        sourceKey: linkEndKey(src),
+        sourceLabel: src.label ?? linkEndKey(src),
+        type: hit.type,
+        targetKey: linkEndKey(tgt),
+        targetLabel: tgt.label ?? linkEndKey(tgt),
+      })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shownData.links]
+  )
 
   const handleNodeRightClick = useCallback(
     (node: ForceNode, event: MouseEvent) => {
@@ -704,6 +746,7 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
         onNodeHover={handleNodeHover}
         onNodeDragEnd={handleNodeDragEnd}
         onBackgroundClick={handleBackgroundClick}
+        onBackgroundRightClick={handleBackgroundRightClick}
         onEngineStop={handleEngineStop}
         onRenderFramePost={handleRenderFramePost}
         enableNodeDrag={selectionMode === "click" && !arranging}
@@ -721,6 +764,8 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
           {arranging && ` step ${currentLayout.step} of ${simWarmupTicks}`}
         </div>
       )}
+
+      {edgeMenu && <GraphEdgeMenu caseId={caseId} menu={edgeMenu} onClose={closeEdgeMenu} />}
 
       {/* Drag selection rectangle overlay */}
       {selectionMode === "drag" && dragStart && dragEnd && isDraggingState && (

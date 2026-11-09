@@ -5,10 +5,12 @@ interface NodeBadgeProps {
   type: string
   className?: string
   children?: React.ReactNode
+  /** A colour chosen by the caller's own named mapping (the entity panel's, GR-04) instead of the shared lookup. */
+  color?: string
 }
 
-export function NodeBadge({ type, className, children }: NodeBadgeProps) {
-  const color = getNodeColor(type)
+export function NodeBadge({ type, className, children, color: chosen }: NodeBadgeProps) {
+  const color = chosen ?? getNodeColor(type)
   return (
     <span
       className={cn(

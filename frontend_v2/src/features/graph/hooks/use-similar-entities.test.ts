@@ -39,7 +39,7 @@ describe("useSimilarEntities", () => {
     const pair = (a: string, b: string) => ({ entity1: { key: a, name: a, type: "Person" }, entity2: { key: b, name: b, type: "Person" }, similarity: 0.9 })
     const { result } = renderHook(() => useSimilarEntities("case-a"))
     act(() => result.current.startScan({ entityTypes: ["Person"], similarityThreshold: 0.8 }))
-    act(() => callbacks.onComplete({ limited_results: [pair("a", "b"), pair("b", "c"), pair("d", "e")], total_pairs: 3 } as never))
+    act(() => callbacks.onComplete!({ limited_results: [pair("a", "b"), pair("b", "c"), pair("d", "e")], total_pairs: 3 } as never))
     expect(result.current.results).toHaveLength(3)
 
     act(() => result.current.afterMerge(["a", "b"]))
@@ -49,7 +49,7 @@ describe("useSimilarEntities", () => {
     expect(result.current.results).toHaveLength(1)
 
     // a rescan that read the graph before the merge finished still never offers a removed entity
-    act(() => callbacks.onComplete({ limited_results: [pair("b", "c"), pair("m", "c"), pair("d", "e")], total_pairs: 3 } as never))
+    act(() => callbacks.onComplete!({ limited_results: [pair("b", "c"), pair("m", "c"), pair("d", "e")], total_pairs: 3 } as never))
     expect(result.current.results.map((p) => `${p.key1}-${p.key2}`)).toEqual(["m-c", "d-e"])
   })
 })

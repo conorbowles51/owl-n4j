@@ -65,7 +65,8 @@ export interface NodeDetail {
 
 export interface ConnectionGroup {
   relationshipType: string
-  nodes: { key: string; label: string; type: string }[]
+  /** direction: whether the relationship runs from the entity shown to this node ("outgoing") or back. */
+  nodes: { key: string; label: string; type: string; direction?: "outgoing" | "incoming" }[]
 }
 
 export interface SourceReference {

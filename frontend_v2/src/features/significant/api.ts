@@ -1,5 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
 import type {
+  RelationshipRef,
   SignificantAdditionSource,
   SignificantManifest,
 } from "./types"
@@ -35,6 +36,23 @@ export const significantAPI = {
         method: "POST",
         body: { entity_keys: entityKeys },
       }
+    ),
+
+  addRelationships: (
+    caseId: string,
+    relationships: RelationshipRef[],
+    source: SignificantAdditionSource,
+    context: Record<string, unknown> = {}
+  ) =>
+    fetchAPI<SignificantManifest>(
+      `/api/significant/${encodeURIComponent(caseId)}/relationships:batch`,
+      { method: "POST", body: { relationships, source, context } }
+    ),
+
+  removeRelationships: (caseId: string, relationships: RelationshipRef[]) =>
+    fetchAPI<SignificantManifest>(
+      `/api/significant/${encodeURIComponent(caseId)}/relationships:remove`,
+      { method: "POST", body: { relationships } }
     ),
 
   clear: (caseId: string) =>
