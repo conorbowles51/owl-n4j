@@ -27,8 +27,9 @@ def Session():
         conn.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_engine(url, future=True, connect_args={"options": f"-csearch_path={schema}"})
     with engine.begin() as conn:
-        # Stand-ins for the referenced tables: only the evidence rows matter here.
-        conn.execute(text("CREATE TABLE cases (id uuid PRIMARY KEY)"))
+        # Stand-ins for the referenced tables: only the evidence rows matter here. cases keeps its deleted_at: the
+        # Deleted-items filter (postgres/soft_delete.py, on by default) reads it before every evidence read.
+        conn.execute(text("CREATE TABLE cases (id uuid PRIMARY KEY, deleted_at timestamptz)"))
         conn.execute(text("CREATE TABLE users (id uuid PRIMARY KEY)"))
     Base.metadata.create_all(engine, tables=[EvidenceFolder.__table__, EvidenceFile.__table__])
     evidence_job_sync._poll_settled.clear()

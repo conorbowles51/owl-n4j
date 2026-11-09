@@ -96,6 +96,10 @@ def periods(tmp_path, monkeypatch):
     engine = create_engine(URL, connect_args={'options': f'-csearch_path={schema}'})
     with engine.begin() as connection:
         connection.execute(text('CREATE TABLE financial_statement_periods (id serial PRIMARY KEY, case_id uuid NOT NULL)'))
+        # The deleted cases and files the Deleted-items filter (postgres/soft_delete.py, on by default) reads before
+        # an ORM read of a table that points at a case: none here.
+        connection.execute(text('CREATE TABLE cases (id uuid PRIMARY KEY, deleted_at timestamptz)'))
+        connection.execute(text('CREATE TABLE evidence_files (id uuid PRIMARY KEY, deleted_at timestamptz)'))
     import postgres.session
     monkeypatch.setattr(postgres.session, '_get_session_local', lambda: sessionmaker(bind=engine))
     # The pass takes its write counts through _get_engine (view_warmup._counts_now): the same disposable schema, never

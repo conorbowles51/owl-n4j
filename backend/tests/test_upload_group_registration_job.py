@@ -182,12 +182,15 @@ def test_on_postgresql_another_server_process_reads_progress_and_a_stopped_heart
     from sqlalchemy import create_engine
     from postgres.base import Base
     from postgres.models.case import Case
-    from postgres.models.evidence import EvidenceFolder
+    from postgres.models.evidence import EvidenceFile, EvidenceFolder
     from postgres.models.evidence_upload import EvidenceUploadRegistration
     from postgres.models.user import User
     engine = create_engine(os.environ['LOUPE_TEST_LOCAL_POSTGRES_URL'])
+    # evidence_files too: the Deleted-items filter (postgres/soft_delete.py, on by default) reads the deleted cases
+    # and files before an ORM read of a table that points at a case.
     Base.metadata.create_all(engine, tables=[User.__table__, Case.__table__, EvidenceFolder.__table__,
-                                             EvidenceUploadGroup.__table__, EvidenceUploadRegistration.__table__])
+                                             EvidenceFile.__table__, EvidenceUploadGroup.__table__,
+                                             EvidenceUploadRegistration.__table__])
     user, case, group = uuid4(), uuid4(), uuid4()
     try:
         with engine.begin() as c:

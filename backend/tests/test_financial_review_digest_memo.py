@@ -59,7 +59,10 @@ def engine():
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine = create_engine(URL, connect_args={'options': f'-csearch_path={schema}'})
     with engine.begin() as connection:
-        connection.execute(text('CREATE TABLE evidence_files (id uuid PRIMARY KEY, metadata jsonb)'))
+        # deleted_at on both, as on the real tables: the Deleted-items filter (postgres/soft_delete.py, on by default)
+        # reads the deleted cases and files before an ORM read of a table that points at them.
+        connection.execute(text('CREATE TABLE cases (id uuid PRIMARY KEY, deleted_at timestamptz)'))
+        connection.execute(text('CREATE TABLE evidence_files (id uuid PRIMARY KEY, metadata jsonb, deleted_at timestamptz)'))
     try:
         yield engine
     finally:
