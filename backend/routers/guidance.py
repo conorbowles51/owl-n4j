@@ -106,3 +106,10 @@ def set_case_default(case_id: UUID, body: CaseDefaultBody, db: Session = Depends
     authorize_case(db, case_id, user, ("collaborators", "invite"))
     _run(db, lambda c: guidance.set_case_default(c, case_id, body.guidance, user.id))
     return guidance.read(db.connection(), user.id, case_id)
+
+
+@router.get("/cases/{case_id}/start")
+def start_here(case_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """What the case has, so "Start here" offers only steps that lead somewhere."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    return guidance.start_counts(db.connection(), case_id)

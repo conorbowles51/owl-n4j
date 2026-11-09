@@ -89,3 +89,12 @@ def test_the_case_default_reaches_everyone_who_has_not_chosen():
             assert guidance.read(c, member, case)["guidance"] == "on"
             guidance.set_case_default(c, case, None, admin)
             assert guidance.read(c, admin, case)["case_default"] is None
+
+
+@needs_template
+def test_start_here_counts_what_a_new_case_has():
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            out = guidance.start_counts(c, case)
+            assert out == {"unavailable": [], "files": 0, "unprocessed": 0, "phones": 0, "payments": 0, "theories": 0}

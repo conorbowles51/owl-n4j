@@ -147,3 +147,26 @@ def set_case_default(conn, case_id, value: str | None, user_id) -> str | None:
                       "set_by_user_id = EXCLUDED.set_by_user_id, set_at = now()"),
                  {"c": str(case_id), "g": value, "u": str(user_id)})
     return value
+
+
+def start_counts(conn, case_id) -> dict:
+    """What a case has, for its "Start here" steps: one cheap count per kind (no graph read). A count that cannot be
+    read is ``None`` and named in ``unavailable``, so a missing step is never mistaken for an empty case."""
+    queries = {
+        "files": "SELECT count(*) FROM evidence_files WHERE case_id = :c AND deleted_at IS NULL",
+        "unprocessed": "SELECT count(*) FROM evidence_files WHERE case_id = :c AND deleted_at IS NULL "
+                       "AND status = 'unprocessed'",
+        "phones": "SELECT count(*) FROM phone_extractions WHERE case_id = :c",
+        "payments": "SELECT count(*) FROM financial_transactions WHERE case_id = :c AND ledger_status = 'admitted'",
+        "theories": "SELECT count(*) FROM workspace_entries WHERE case_id = :c AND entry_type = 'theory' "
+                    "AND deleted_at IS NULL",
+    }
+    out: dict = {"unavailable": []}
+    for key, sql in queries.items():
+        try:
+            with conn.begin_nested():
+                out[key] = int(conn.execute(text(sql), {"c": str(case_id)}).scalar_one())
+        except Exception:  # noqa: BLE001 - one unreadable count is named, the rest still answer
+            out[key] = None
+            out["unavailable"].append(key)
+    return out

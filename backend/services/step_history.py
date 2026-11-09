@@ -74,13 +74,13 @@ def record(conn, user_id, case_id, *, name, screen, path, state=None, item=None,
               "it": item_json}
     if replaces and last and last["id"] == str(replaces):
         r = conn.execute(text("UPDATE case_steps SET name = :n, screen = :s, path = :p, state = CAST(:st AS jsonb), "
-                              "item = CAST(:it AS jsonb), at = now() WHERE id = :id RETURNING *"),
+                              "item = CAST(:it AS jsonb), at = clock_timestamp() WHERE id = :id RETURNING *"),
                          {**params, "id": last["id"]}).first()
         return {**_row(r), "merged": True}
     if last and (last["path"], last["state"], last["name"]) == (path, json.loads(state_json), name):
         return {**last, "merged": True}  # the same view again (a reload, Back to it): one step, not two
-    r = conn.execute(text("INSERT INTO case_steps (id, case_id, user_id, name, screen, path, state, item) VALUES "
-                          "(:id, :c, :u, :n, :s, :p, CAST(:st AS jsonb), CAST(:it AS jsonb)) RETURNING *"),
+    r = conn.execute(text("INSERT INTO case_steps (id, case_id, user_id, at, name, screen, path, state, item) VALUES "
+                          "(:id, :c, :u, clock_timestamp(), :n, :s, :p, CAST(:st AS jsonb), CAST(:it AS jsonb)) RETURNING *"),
                      {**params, "id": str(uuid.uuid4())}).first()
     return {**_row(r), "merged": False}
 
