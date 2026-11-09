@@ -23,6 +23,23 @@ alert() {
     fi
 }
 
+# An alert sent once per result: a check that finds the same result again (the same failures, by <signature>) logs it
+# and does not send it again; a changed result is sent. alert_reset forgets it once the check passes, so the same
+# failure coming back is sent again. 5-9 Nov: the same "restore drill did not pass" reached the coordinator 12 times.
+alert_once() {  # <key> <signature> <reason>
+    local dir="${ALERT_STATE_DIR:-${BACKUP_DIR:-/mnt/owl-data/backups}/.alert-state}" file
+    file="${dir}/$1"
+    if [[ -f "${file}" && "$(cat "${file}")" == "$2" ]]; then
+        log "ALERT (same result as already sent, not sent again): $3"
+        return 0
+    fi
+    mkdir -p "${dir}" && printf '%s' "$2" > "${file}" || log "alert state not written: ${file}"
+    alert "$3"
+}
+alert_reset() {  # <key>
+    rm -f -- "${ALERT_STATE_DIR:-${BACKUP_DIR:-/mnt/owl-data/backups}/.alert-state}/$1"
+}
+
 # EXIT trap for a dump: a command that stops the script under set -e must not wait for the next freshness check to be
 # heard. Runs the script's cleanup, if it has one, and alerts when nothing else has for this failure.
 guard_exit() {

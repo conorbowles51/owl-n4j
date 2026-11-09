@@ -18,7 +18,8 @@ rows="${test_root}/rows"; report="${test_root}/report"
 fail() { echo "FAIL: $*"; cat "${report}"; exit 1; }
 drill() {  # prints nothing; the verdicts go to the report
     : > "${report}"
-    env FAKE_ROWS="${rows}" REPORT="${report}" DOCKER="${test_root}/docker" WORK="${test_root}/work" bash -c '
+    env FAKE_ROWS="${rows}" REPORT="${report}" DOCKER="${test_root}/docker" WORK="${test_root}/work" \
+        EVIDENCE_KNOWN_MISSING="${KNOWN:-${test_root}/no-known-list}" bash -c '
         set -uo pipefail
         source <(sed -n "/^drill_evidence() {/,/^}/p" "$1")
         report="${REPORT}"; failures=0; SCRATCH_PG=x; PG_USER=u; PG_DB=d; SAMPLE=300; LIVE_CHECKOUT=/none
@@ -42,6 +43,46 @@ printf 'r4\t%s\tzz\n' "${ev}/gone" >> "${rows}"
 drill
 grep -q 'no file on disk: row r4' "${report}" || fail "missing row not named"
 grep -q 'FAIL evidence: 1 of 4 rows' "${report}" || fail "missing row did not fail"
+grep -q 'FAIL evidence: 1 of 4 rows name a file that is not on disk: 0 known (listed in .*), 1 new' "${report}" ||
+    fail "a missing row not on the known list was not counted new"
+
+# Rows on the known list still fail the drill (no hiding), counted apart from new ones.
+printf '# files to be supplied again\nr4\n' > "${test_root}/known.ids"
+printf 'r5\t%s\tzz\n' "${ev}/gone-too" >> "${rows}"
+KNOWN="${test_root}/known.ids" drill
+grep -q "FAIL evidence: 2 of 5 rows name a file that is not on disk: 1 known (listed in ${test_root}/known.ids), 1 new" \
+    "${report}" || fail "known and new missing rows not counted apart"
+grep -q 'no file on disk: row r4 (known)' "${report}" || fail "known row not marked"
+grep -q 'no file on disk: row r5$' "${report}" || fail "new row not named"
+
+# Alerts: the same result is sent once, a changed one again, and a pass forgets it so a return is sent again.
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> "%s"\n' "${test_root}/sent" > "${test_root}/sender"
+chmod +x "${test_root}/sender"
+alerts() {  # <report>...: one drill check per report, through the drill's own functions; prints what was sent
+    env SENDER="${test_root}/sender" DRILL="${source_dir}/restore-drill.sh" LIB="${source_dir}/backup-lib.sh" STATE="${test_root}/alert-state" \
+        SENT="${test_root}/sent" bash -c '
+        set -uo pipefail
+        . "${LIB}"
+        source <(sed -n "/^drill_failures() {/p; /^drill_signature() {/,/^}/p" "${DRILL}")
+        ALERT_STATE_DIR="${STATE}"; BACKUP_ALERT_CMD="${SENDER}"
+        for r in "$@"; do
+            if grep -q "^RESULT PASS" "$r"; then alert_reset restore-drill
+            else alert_once restore-drill "$(drill_signature "$r")" "did not pass: $(drill_failures "$r")"; fi
+        done' _ "$@" > /dev/null
+}
+d1="${test_root}/d1"; d2="${test_root}/d2"; d3="${test_root}/d3"; ok="${test_root}/ok"
+printf 'FAIL evidence: 16 of 49048 rows name a file that is not on disk: 16 known (listed in k), 0 new (13 s)\nRESULT FAIL (1)\n' > "${d1}"
+printf 'FAIL evidence: 16 of 49100 rows name a file that is not on disk: 16 known (listed in k), 0 new (11 s)\nRESULT FAIL (1)\n' > "${d2}"
+printf 'FAIL evidence: 17 of 49100 rows name a file that is not on disk: 16 known (listed in k), 1 new (12 s)\nRESULT FAIL (1)\n' > "${d3}"
+printf 'RESULT PASS\n' > "${ok}"
+: > "${test_root}/sent"
+alerts "${d1}" "${d1}" "${d2}" "${d2}"
+[[ "$(wc -l < "${test_root}/sent")" -eq 1 ]] || { cat "${test_root}/sent"; fail "the same result was sent more than once"; }
+alerts "${d3}"
+[[ "$(wc -l < "${test_root}/sent")" -eq 2 ]] || fail "a new missing file was not sent"
+grep -q '1 new' "${test_root}/sent" || fail "the alert does not say what failed"
+alerts "${ok}" "${d1}"
+[[ "$(wc -l < "${test_root}/sent")" -eq 3 ]] || fail "a failure returning after a pass was not sent"
 
 # A file whose bytes changed fails on the hash.
 printf 'r1\t%s\t%s\n' "${ev}/a" "0000" > "${rows}"

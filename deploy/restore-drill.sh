@@ -167,21 +167,32 @@ drill_evidence() {
     # is one row over its folder), which is checked by being there. Then a random sample of the files is hashed.
     "${DOCKER}" exec "${SCRATCH_PG}" psql -U "${PG_USER}" -d "${PG_DB}" -AtqX -F $'\t' -c \
         "SELECT id, stored_path, sha256 FROM evidence_files WHERE deleted_at IS NULL AND stored_path LIKE '/%' AND sha256 <> ''" > "${WORK}/rows.tsv"
-    local rows folders=0 missing=0
+    local rows folders=0 missing=0 known=0 known_file="${EVIDENCE_KNOWN_MISSING:-/mnt/owl-data/backups/evidence-missing/known.ids}"
     rows="$(wc -l < "${WORK}/rows.tsv")"
     : > "${WORK}/present.tsv"
+    # Rows already known to have no file (one id a line, # comments; the files wait to be supplied again) still fail
+    # the drill, and are counted apart so a new one is seen.
+    declare -A known_ids=()
+    if [[ -f "${known_file}" ]]; then
+        while read -r id _; do [[ -n "${id}" && "${id}" != \#* ]] && known_ids["${id}"]=1; done < "${known_file}"
+    fi
     while IFS=$'\t' read -r id path sha; do
         if [[ -f "${path}" ]]; then printf '%s\t%s\t%s\n' "${id}" "${path}" "${sha}" >> "${WORK}/present.tsv"
         elif [[ -d "${path}" ]]; then folders=$(( folders + 1 ))
         else
             missing=$(( missing + 1 ))
-            (( missing > 40 )) || note "  no file on disk: row ${id}"
+            if [[ -n "${known_ids[${id}]:-}" ]]; then
+                known=$(( known + 1 ))
+                (( missing > 40 )) || note "  no file on disk: row ${id} (known)"
+            else
+                (( missing > 40 )) || note "  no file on disk: row ${id}"
+            fi
         fi
     done < "${WORK}/rows.tsv"
     if (( rows == 0 )); then
         fail "evidence: the restored database named no files"
     elif (( missing )); then
-        fail "evidence: ${missing} of ${rows} rows name a file that is not on disk ($(elapsed "${t0}") s)"
+        fail "evidence: ${missing} of ${rows} rows name a file that is not on disk: ${known} known (listed in ${known_file}), $(( missing - known )) new ($(elapsed "${t0}") s)"
     else
         pass "evidence: all ${rows} rows name a file or folder that is on disk, ${folders} folders ($(elapsed "${t0}") s)"
     fi
@@ -432,9 +443,19 @@ do_run() {
     mv -f -- "${report}" "${BACKUP_DIR}/${name}"
     report="${BACKUP_DIR}/${name}"
     if (( failures )); then
-        alert "restore drill FAILED (${failures}): see ${BACKUP_DIR}/${name}"
+        alert_once restore-drill "$(drill_signature "${report}")" \
+            "restore drill FAILED (${failures}): $(drill_failures "${report}"); see ${BACKUP_DIR}/${name}"
         return 1
     fi
+    alert_reset restore-drill
+}
+
+# The failing checks of a drill report, one line.
+drill_failures() { grep '^FAIL ' "$1" | sed 's/^FAIL //' | cut -c1-220 | paste -sd ';' - | sed 's/;/; /g'; }
+# What a drill's result is, for alerting once per result: its failing checks with counts, times and file stamps left
+# out, except the number of new missing files, so 16 known stays one result and a 17th, new, is a new one.
+drill_signature() {
+    { grep '^FAIL ' "$1" | sed -E 's/[0-9]+//g'; grep '^FAIL ' "$1" | grep -oE '[0-9]+ new'; } | sha256sum | cut -c1-16
 }
 
 do_check() {
@@ -451,9 +472,11 @@ do_check() {
         return 1
     fi
     if ! grep -q '^RESULT PASS' "${BACKUP_DIR}/${newest}"; then
-        alert "newest restore drill ${newest} did not pass"
+        alert_once restore-drill "$(drill_signature "${BACKUP_DIR}/${newest}")" \
+            "newest restore drill ${newest} did not pass: $(drill_failures "${BACKUP_DIR}/${newest}")"
         return 1
     fi
+    alert_reset restore-drill
     log "ok: newest ${newest}, ${age_d} days old, passed"
 }
 
