@@ -201,6 +201,8 @@ def main():
     ap.add_argument('--tokens', type=int, help='measured prompt tokens of the live run, to calibrate chars/token')
     ap.add_argument('--save-results')
     ap.add_argument('--from-results')
+    ap.add_argument('--offer', action='store_true',
+                    help="send only the tools the service offers this case (AgentService._tools_not_offered)")
     ap.add_argument('--finalizer-dump', help='write the finalizer request text here (local scratch)')
     args = ap.parse_args()
 
@@ -213,6 +215,15 @@ def main():
     with _financial_session() as s:
         run, batches = load_run(s, args.run)
         block, rules = prompt_block(s, run)
+        hidden, note = frozenset(), ''
+        if args.offer:
+            from types import SimpleNamespace
+            from services.agent.service import AgentService
+            wf = ((run['extra_metadata'] or {}).get('workflow') or {}).get('id')
+            hidden, note = AgentService._tools_not_offered(
+                s, SimpleNamespace(all_cases=False, case_id=run['case_id'], workflow_id=wf))
+            block = '\n\n'.join(x for x in (block, note) if x)
+            print('tools not offered:', len(hidden), sorted(hidden))
     stubs = {c['name']: dict(result_id='stub', summary='Proposal stubbed in the replay; nothing was saved.',
                              data=c['result_preview']) for b in batches for c in b if c['name'].startswith('propose_')}
     saved = json.load(open(args.from_results)) if args.from_results else None
@@ -229,7 +240,7 @@ def main():
     durations = []
     for event in runner.stream(case_id=run['case_id'], messages=[HumanMessage(content=run['input_message'])],
                                thread_id='replay', available_artifacts=[], mandate_context_block=block,
-                               final_answer_rules=rules,
+                               final_answer_rules=rules, hidden_tools=hidden,
                                proposer=dict(for_name='replay', for_user_id=None, for_email=None, model='replay',
                                              model_id='deepseek-v4-pro', provider='deepseek', run_id=None,
                                              thread_id=None, can_propose=True)):

@@ -1021,6 +1021,7 @@ class AgentGraphRunner:
         user_id: str | None = None,
         all_cases: bool = False,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
+        hidden_tools: frozenset[str] | set[str] = frozenset(),
     ):
         from services.agent import live_runs
 
@@ -1048,7 +1049,10 @@ class AgentGraphRunner:
         # Tool results may use a share of the model's context over the run; each result is whole when it fits.
         run_budget = run_budget_chars(context_window_for(getattr(self, "model_id", None)))
         # The tools as sent to the model: optional fields without the repeated null alternative (lean_history).
-        model_with_tools = self.base_model.bind_tools(tools_for_binding(self.base_model, tools))
+        # Tools for material the case holds none of are not offered (service._tools_not_offered); a call to one
+        # still runs, so nothing the model asks for is refused.
+        offered = [tool for tool in tools if tool.name not in hidden_tools]
+        model_with_tools = self.base_model.bind_tools(tools_for_binding(self.base_model, offered))
         repeated = RepeatedResults()
 
         def build_system_prompt(state: AgentState) -> str:

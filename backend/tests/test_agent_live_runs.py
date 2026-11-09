@@ -243,3 +243,40 @@ def test_text_shown_while_the_run_works_is_in_plain_words_too():
          "options": [{"id": "a", "label": "Yes"}, {"id": "b", "label": "No"}]},
         thread_id="t", run_id="r", original_message="q").question
     assert "get_financial_coverage" not in question and "p3" not in question
+
+
+def test_a_case_with_no_phones_is_not_sent_the_phone_tools_with_every_turn(monkeypatch):
+    """lx-agentlive B: phone-only definitions are a quarter of what every turn re-sends; BNB2 holds no phones."""
+    from types import SimpleNamespace
+    from services.agent import capabilities, workflows
+    from services.agent.service import AgentService
+    counts = {"phones": 0, "ledger": 27673, "financial_sources": 1363, "trades": 0}
+    monkeypatch.setattr(workflows, "case_counts", lambda conn, case_id: dict(counts))
+    db = SimpleNamespace(connection=lambda: None)
+    request = SimpleNamespace(all_cases=False, case_id=CASE, workflow_id="hidden-assets")
+    hidden, note = AgentService._tools_not_offered(db, request)
+    phone_tools = set(capabilities.tools_for_type("phones"))
+    assert "phone_messages" in hidden and "phone_places" in hidden
+    assert "phone_coverage" not in hidden  # the agent can still say the case holds none
+    assert "get_money_signal_leads" not in hidden  # a step of the run's workflow is always offered
+    assert not hidden - phone_tools  # financial tools stay: the case has statements
+    assert "no phone extractions" in note
+    # All-cases runs and a failed count hide nothing.
+    assert AgentService._tools_not_offered(db, SimpleNamespace(**{**vars(request), "all_cases": True}))[0] == frozenset()
+    counts["phones"] = None
+    assert AgentService._tools_not_offered(db, request)[0] == frozenset()
+
+
+def test_the_runner_binds_only_the_offered_tools_and_a_hidden_one_still_runs():
+    bound = []
+    runner = runner_for([("phone_coverage", {})])
+    original = runner.base_model.bind_tools
+
+    def capture(tools):
+        bound.extend(tool.name for tool in tools)
+        return original(tools)
+    runner.base_model.bind_tools = capture
+    events = list(runner.stream(case_id=CASE, messages=[HumanMessage(content="Any phones?")],
+                                hidden_tools=frozenset({"phone_messages"})))
+    assert "phone_messages" not in bound and "phone_coverage" in bound
+    assert events[-1]["type"] == "final"

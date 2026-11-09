@@ -178,6 +178,10 @@ class AgentService:
         collected_trace: list[dict[str, Any]] = []
 
         # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
+        hidden_tools, offer_note = self._tools_not_offered(db, request)
+        if hidden_tools:
+            storage.update_run_metadata(db, run=run, metadata={"tools_not_offered": sorted(hidden_tools)})
+            db.commit()
         heartbeat = run_settle.RunHeartbeat(run.id)
         if live is not None:
             live.run_id = run_id
@@ -200,7 +204,9 @@ class AgentService:
                 ),
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
-                mandate_context_block=self._prompt_block(mandate_context.block, request, feedback),
+                mandate_context_block="\n\n".join(x for x in (self._prompt_block(mandate_context.block, request, feedback),
+                                                               offer_note) if x),
+                hidden_tools=hidden_tools,
                 final_answer_rules=self._final_rules(request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
@@ -819,6 +825,41 @@ class AgentService:
         w = workflows.get(request.workflow_id)
         return {"workflow": {"id": w.id, "number": w.number, "title": w.title,
                              "steps": [s.tool for s in w.steps], "proposals": [t for t, _ in w.proposals]}}
+
+    @staticmethod
+    def _tools_not_offered(db: Session, request: AgentMessageRequest) -> tuple[frozenset[str], str]:
+        """Tools whose kind of case material this case holds none of, so their definitions are not sent with every
+        model turn (lx-agentlive B: 17,867 of 71,134 definition characters are phone-only, re-sent each turn of a
+        run in a case with no phones). Each kind keeps its coverage tool, so the agent can still say the case holds
+        none, and a guided workflow's own steps are always offered. All-cases runs and a count that failed (None)
+        hide nothing. Returns the names and a plain note for the prompt.
+
+        Decision (8 Nov): phones and financial records only, the two kinds whose count is exact
+        (services.agent.workflows.case_counts). Reverse if a hidden tool is shown to be needed by a case with none
+        of its material."""
+        if request.all_cases:
+            return frozenset(), ""
+        from services.agent import capabilities, workflows
+        try:
+            counts = workflows.case_counts(db.connection(), request.case_id)
+        except Exception:  # noqa: BLE001 - nothing hidden when the case cannot be counted
+            logger.warning("Agent tool offer: case counts failed", exc_info=True)
+            return frozenset(), ""
+        keep = set((AgentService._workflow_metadata(request).get("workflow") or {}).get("steps") or [])
+        others = lambda type_id: set().union(*[set(capabilities.tools_for_type(t["id"]))  # noqa: E731
+                                               for t in capabilities.DATA_TYPES if t["id"] != type_id])
+        hidden: set[str] = set()
+        notes = []
+        if counts.get("phones") == 0:
+            hidden |= set(capabilities.tools_for_type("phones")) - others("phones") - {"phone_coverage"} - keep
+            notes.append("This case holds no phone extractions, so the phone tools are not offered; say so if "
+                         "asked about phones.")
+        if counts.get("ledger") == 0 and counts.get("financial_sources") == 0 and counts.get("trades") == 0:
+            hidden |= (set(capabilities.tools_for_type("financials")) - others("financials")
+                       - {"get_financial_coverage"} - keep)
+            notes.append("This case holds no bank or brokerage statements, so the payment tools are not offered; "
+                         "say so if asked about money in statements.")
+        return frozenset(hidden), " ".join(notes)
 
     @staticmethod
     def _final_rules(request: AgentMessageRequest) -> str:
