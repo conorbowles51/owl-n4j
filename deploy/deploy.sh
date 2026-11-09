@@ -537,11 +537,37 @@ elif [ "${MIGRATED}" != true ]; then
     run_migrations
 fi
 
+# The Docker stack refresh has a time limit. 9 Nov 00:40 'docker compose up' held the release 2,569 s with uploads
+# paused and the evidence engine's containers only created; over the 40 releases before, the step took 19-65 s
+# (two others 794 s and 1,138 s). A refresh that does not finish is tried once more (compose starts what is left);
+# a second one undoes the release through the rollback below, which resumes the paused work.
+COMPOSE_UP_TIMEOUT_S="${COMPOSE_UP_TIMEOUT_S:-900}"
+ENGINE_REFRESH_FAILED=""
+docker_stack_up() {
+    local attempt rc
+    for attempt in 1 2; do
+        rc=0
+        # Plain timeout: this host's timeout (uutils 0.2.2) exits 125 at once when given --kill-after.
+        timeout "${COMPOSE_UP_TIMEOUT_S}" docker compose up -d --no-build --remove-orphans || rc=$?
+        [ "${rc}" -eq 0 ] && return 0
+        if [ "${rc}" -eq 124 ]; then
+            warn "docker compose up did not finish within ${COMPOSE_UP_TIMEOUT_S} s (attempt ${attempt} of 2)"
+        else
+            warn "docker compose up failed with exit ${rc} (attempt ${attempt} of 2)"
+        fi
+    done
+    return 1
+}
+
 if [ "${STEP_ENGINE}" = run ]; then
     step "Refreshing Docker stack"
     check_ingestion_idle
-    docker compose up -d --no-build --remove-orphans
-    success "Docker stack refreshed"
+    if docker_stack_up; then
+        success "Docker stack refreshed"
+    else
+        ENGINE_REFRESH_FAILED="the evidence engine did not start within 2 tries of ${COMPOSE_UP_TIMEOUT_S} s"
+        fail "Docker stack not refreshed: ${ENGINE_REFRESH_FAILED}; the release will be undone"
+    fi
 else
     success "Evidence engine inputs unchanged; docker build and refresh skipped"
 fi
@@ -628,6 +654,7 @@ fi
 HEALTHY=false
 [ "${FRONTEND_SWITCH_FAILED}" = true ] && HEALTH_RETRIES=0
 [ "${HANDOVER_KEPT_OLD}" = true ] && HEALTH_RETRIES=0
+[ -n "${ENGINE_REFRESH_FAILED}" ] && HEALTH_RETRIES=0
 for i in $(seq 1 ${HEALTH_RETRIES}); do
     sleep "${HEALTH_DELAY}"
     if release_is_healthy; then
@@ -641,7 +668,7 @@ for i in $(seq 1 ${HEALTH_RETRIES}); do
     echo "  Attempt ${i}/${HEALTH_RETRIES}: backend=${RESPONSE:-<no response>}, frontend compiled=$([[ -n "${FRONTEND_RESPONSE}" ]] && is_compiled_frontend "${FRONTEND_RESPONSE}" && echo yes || echo no) - waiting..."
 done
 
-if [ "${HEALTHY}" = true ]; then
+if [ "${HEALTHY}" = true ] && [ -z "${ENGINE_REFRESH_FAILED}" ]; then
     if [ "${STEP_BACKEND}" = run ]; then
         BACKEND_COMMIT="${NEW_COMMIT}"
     else
@@ -682,7 +709,10 @@ fi
 echo ""
 ROLLBACK_SHORT="$(git rev-parse --short "${ROLLBACK_TARGET}")"
 ROLLBACK_WHY="health check failed"
-if [ "${HANDOVER_KEPT_OLD}" = true ]; then
+if [ -n "${ENGINE_REFRESH_FAILED}" ]; then
+    ROLLBACK_WHY="${ENGINE_REFRESH_FAILED}"
+    fail "Rolling back to ${ROLLBACK_SHORT}: ${ENGINE_REFRESH_FAILED}"
+elif [ "${HANDOVER_KEPT_OLD}" = true ]; then
     ROLLBACK_WHY="the new backend did not take over"
     warn "Undoing the release: the old backend, untouched, keeps serving ${ROLLBACK_SHORT}"
 elif [ "${ROLLBACK_TARGET}" = "${NEW_COMMIT}" ]; then
@@ -720,7 +750,7 @@ if [ "${STEP_ENGINE}" = run ]; then
     step "Rollback: rebuilding Docker stack"
     docker compose build || true
     check_ingestion_idle
-    docker compose up -d --no-build --remove-orphans || true
+    docker_stack_up || warn "Rollback: the Docker stack did not refresh; the evidence engine may be down"
 fi
 
 step "Rollback: restarting services"

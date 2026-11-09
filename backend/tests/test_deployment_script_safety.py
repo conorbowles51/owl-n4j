@@ -94,6 +94,9 @@ if serving and event.split()[0] in ('alembic', 'pip') or serving and event.start
     if seen:
         with (root / 'probes').open('a') as stream:
             stream.write(json.dumps(seen) + '\\n')
+if os.environ.get('SANDBOX_COMPOSE_UP_HANGS') and event.startswith('docker compose up'):
+    import time
+    time.sleep(int(os.environ['SANDBOX_COMPOSE_UP_HANGS']))  # a refresh that does not finish in time
 if os.environ.get('SANDBOX_REAL_GIT') and name == 'git':
     os.execv('/usr/bin/git', ['git', *args])
 trigger = os.environ.get('WORK_ARRIVES_AFTER')
@@ -766,3 +769,18 @@ def test_a_release_stopped_by_a_failing_command_names_its_step_and_command():
         capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'PASS deploy failure named' in result.stdout
+
+
+def test_a_docker_refresh_that_never_finishes_is_capped_retried_once_and_undone(release_sandbox):
+    """9 Nov 00:40: 'docker compose up' held the release 2,569 s with uploads paused and nothing capped it."""
+    result, events = run_release(release_sandbox, 'deploy.sh', extra_env={
+        'SANDBOX_COMPOSE_UP_HANGS': '20', 'COMPOSE_UP_TIMEOUT_S': '2'})
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, output
+    ups = [event for event in events if event.startswith('docker compose up')]
+    assert len(ups) >= 3, events  # two capped tries, then the rollback's own (capped) refresh
+    assert 'did not finish within 2 s (attempt 2 of 2)' in output
+    assert 'the evidence engine did not start within 2 tries of 2 s' in output
+    first_up = events.index(ups[0])
+    assert any(event.startswith('git reset') for event in events[first_up:]), events
+    assert 'Deploy successful' not in output
