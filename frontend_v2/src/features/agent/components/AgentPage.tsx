@@ -58,6 +58,7 @@ import {
   Table2,
   Wrench,
   X,
+  RotateCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -89,6 +90,8 @@ import { cn } from "@/lib/cn"
 import { agentAPI } from "../api"
 import { localStartMs, useAgentRunStore } from "../stores/agent-run.store"
 import { AgentRunProgress } from "./AgentRunProgress"
+import { AgentModelPicker } from "./AgentModelPicker"
+import { modelParams, useAgentModelChoices } from "../agent-model-choice"
 import { useFollowServerRun } from "../agent-run-progress"
 import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import { MandateUsageBanner } from "@/features/workspace/components/MandateUsageBanner"
@@ -288,6 +291,7 @@ function storedToClientMessage(message: AgentStoredMessage): AgentClientMessage 
     citationCheck: message.citation_check ?? null,
     createdAt: message.created_at,
     runId: message.run_id ?? null,
+    writtenBy: message.written_by ?? null,
   }
 }
 
@@ -562,6 +566,9 @@ export function AgentPage() {
   const [threads, setThreads] = useState<AgentThreadSummary[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<AgentClientMessage[]>([])
+  // The model for the next message (AG-08): null is the Settings default.
+  const modelChoices = useAgentModelChoices()
+  const [modelKey, setModelKey] = useState<string | null>(null)
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([])
   const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
   const [activityTrail, setActivityTrail] = useState<AgentActivityItem[]>([])
@@ -715,6 +722,7 @@ export function AgentPage() {
     const terminalState = sharedRun.terminalState
     const terminalError = sharedRun.error
     const terminalRunId = sharedRun.runId
+    const terminalQuestion = sharedRun.inputMessage ?? null
 
     const consumeTerminalRun = async () => {
       if (sharedRun.runId && sharedRun.threadId) {
@@ -731,6 +739,7 @@ export function AgentPage() {
             role: "assistant",
             content: `The run failed before I could write a final response.\n\n${message}`,
             createdAt: new Date().toISOString(),
+            retryQuestion: terminalQuestion,
           },
         ])
       }
@@ -745,7 +754,7 @@ export function AgentPage() {
     return () => {
       cancelled = true
     }
-  }, [caseId, loadThread, loadThreads, sharedRun?.error, sharedRun?.runId, sharedRun?.terminalState, sharedRun?.threadId])
+  }, [caseId, loadThread, loadThreads, sharedRun?.error, sharedRun?.inputMessage, sharedRun?.runId, sharedRun?.terminalState, sharedRun?.threadId])
 
   const startNewThread = () => {
     setAllCases(false)
@@ -794,6 +803,7 @@ export function AgentPage() {
           mandateOverride: requestMandateOverride ? { perspective: requestMandateOverride } : undefined,
           workflowId: runWorkflowId,
           allCases: allCases && caseLayer !== "significant",
+          ...modelParams(modelChoices.find((choice) => choice.key === modelKey)),
         },
         (event) => {
           if (event.type === "run_started") {
@@ -924,6 +934,7 @@ export function AgentPage() {
                 citationCheck: response.citation_check ?? null,
                 createdAt: response.created_at,
                 runId: response.run_id,
+                writtenBy: response.model_info?.written_by ?? null,
               },
             ])
             setPendingClarification(null)
@@ -1203,6 +1214,9 @@ export function AgentPage() {
                           ? (answer) => sendMessage(answer)
                           : undefined
                       }
+                      onRetry={
+                        message.retryQuestion && !isLoading ? () => setRetryQuestion(message.retryQuestion ?? null) : undefined
+                      }
                     />
                   ))}
                   {isLoading && sharedRun && (
@@ -1277,6 +1291,7 @@ export function AgentPage() {
                   rows={1}
                   disabled={isLoading}
                 />
+                <AgentModelPicker choices={modelChoices} value={modelKey} onChange={setModelKey} disabled={isLoading} />
                 <Button size="icon" onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send agent prompt">
                   {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                 </Button>
@@ -1330,11 +1345,13 @@ function MessageBubble({
   caseId,
   showInvestigationTrail,
   onClarificationAnswer,
+  onRetry,
 }: {
   message: AgentClientMessage
   caseId?: string
   showInvestigationTrail: boolean
   onClarificationAnswer?: (answer: string) => void
+  onRetry?: () => void
 }) {
   const isUser = message.role === "user"
   const clarificationQuestion = message.clarification?.question.trim()
@@ -1385,8 +1402,15 @@ function MessageBubble({
             className="mt-3 max-w-3xl"
           />
         )}
-        <div className="mt-1 text-[11px] text-muted-foreground">
+        {onRetry && (
+          <Button type="button" size="sm" variant="secondary" className="mt-2 h-7 px-2 text-xs" onClick={onRetry}>
+            <RotateCcw className="mr-1 size-3" />
+            Retry
+          </Button>
+        )}
+        <div className="mt-1 text-[11px] text-muted-foreground" data-testid="agent-answer-meta">
           {formatTime(message.createdAt)}
+          {message.writtenBy ? ` · ${message.writtenBy}` : ""}
         </div>
         {caseId && !message.pending && !showClarificationPanel && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
           <AcceptAnswerIntoAssessment caseId={caseId} messageId={message.id} />

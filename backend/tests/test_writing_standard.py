@@ -80,6 +80,7 @@ COVERED = re.compile(r"writing_standard|self\._system\(|with_writing_standard\(|
 COVERED_BY_CALLER = {
     "backend/services/llm_service.py::_call_deepseek_vision": "call_vision_json (reading_prompt)",
     "backend/services/agent/graph.py::__init__": "AgentGraphRunner: every SystemMessage is checked below",
+    "backend/services/agent/graph.py::deepseek_chat": "AgentGraphRunner's DeepSeek client: every SystemMessage is checked below",
     "evidence-engine/app/services/openai_client.py::_openai_chat_completion": "chat_completion (with_writing_standard)",
     "evidence-engine/app/services/openai_client.py::_anthropic_chat_completion": "chat_completion (with_writing_standard)",
     "evidence-engine/app/services/openai_client.py::_gemini_chat_completion": "chat_completion (with_writing_standard)",

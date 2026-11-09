@@ -35,6 +35,111 @@ from services.agent.tools import AgentToolContext, make_agent_tools
 logger = logging.getLogger(__name__)
 
 
+# How hard the model reasons before it answers (AG-07). DeepSeek V4 takes thinking on/off plus an effort of low, high
+# or max; "off" is what every run used before 9 Nov. The setting is AGENT_REASONING (Settings → AI settings stores
+# it as the agent workload's reasoning); a person may pick another per message in the chat.
+REASONING_LEVELS = ("off", "high", "max")
+DEFAULT_REASONING = "off"
+
+# A model request that fails for a reason worth trying again (no answer in time, the service unreachable, busy or
+# erroring) is tried again by the run itself, never silently by the client, so the reader is told (AG-06).
+MODEL_ATTEMPTS = 3
+RETRY_WAITS_SECONDS = (2.0, 5.0)
+
+
+class ModelServiceError(RuntimeError):
+    """The model service failed every attempt. The message is the plain sentence shown in the chat."""
+
+    retryable = True
+
+
+def _model_failure_reason(exc: BaseException) -> str | None:
+    """A plain reason when ``exc`` is worth trying again; None when it is not (a bad request, a refused key)."""
+    import openai
+    try:
+        import httpx
+        transport = (httpx.TimeoutException, httpx.TransportError)
+    except Exception:  # noqa: BLE001
+        transport = ()
+    if isinstance(exc, (openai.APITimeoutError, TimeoutError)) or (transport and isinstance(exc, transport[:1])):
+        return "did not answer in time"
+    if isinstance(exc, openai.APIConnectionError) or (transport and isinstance(exc, transport)):
+        return "could not be reached"
+    if isinstance(exc, openai.RateLimitError):
+        return "is busy"
+    status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status, int) and (status >= 500 or status in (408, 409, 429)):
+        return "returned an error" if status >= 500 else "is busy"
+    return None
+
+
+def invoke_model(model: Any, messages: list[Any], *, note: Callable[[dict[str, Any]], None] | None = None,
+                 step: int = 0, should_cancel: Callable[[], bool] | None = None,
+                 sleep: Callable[[float], None] = time.sleep, attempts: int = MODEL_ATTEMPTS) -> Any:
+    """``model.invoke(messages)``, tried up to ``attempts`` times. Before each new try the reader is told in plain
+    words (services.agent.live_runs.progress_retrying), with the try number; after the last, ModelServiceError."""
+    from services.agent import live_runs
+    for attempt in range(1, attempts + 1):
+        try:
+            return model.invoke(messages)
+        except AgentRunCancelled:
+            raise
+        except Exception as exc:  # noqa: BLE001 - sorted below: only service failures are tried again
+            reason = _model_failure_reason(exc)
+            if reason is None:
+                raise
+            logger.warning("Model request failed (%s), attempt %s of %s: %s", reason, attempt, attempts, exc)
+            if attempt == attempts:
+                raise ModelServiceError(
+                    f"The model service {reason} after {attempts} tries, so this question has no answer. Nothing "
+                    "found so far is lost. Retry asks the same question again."
+                ) from exc
+            if note:
+                note(live_runs.progress_retrying(step=step, attempt=attempt + 1, attempts=attempts, reason=reason))
+            wait = RETRY_WAITS_SECONDS[min(attempt - 1, len(RETRY_WAITS_SECONDS) - 1)]
+            waited = 0.0
+            while waited < wait:
+                if should_cancel and should_cancel():
+                    raise AgentRunCancelled("Agent run cancelled")
+                sleep(min(0.5, wait - waited))
+                waited += 0.5
+    raise AssertionError("unreachable")
+
+
+class DeepSeekReasoningChat(ChatOpenAI):
+    """DeepSeek in thinking mode. With tools in the request, DeepSeek refuses (400) a conversation whose earlier
+    assistant turns lack their ``reasoning_content``; LangChain's OpenAI client neither keeps nor sends it. This keeps
+    it on the message (additional_kwargs) and sends it back."""
+
+    def _create_chat_result(self, response, generation_info=None):
+        result = super()._create_chat_result(response, generation_info)
+        raw = response if isinstance(response, dict) else response.model_dump()
+        for generation, choice in zip(result.generations, raw.get("choices") or []):
+            reasoning = (choice.get("message") or {}).get("reasoning_content")
+            if reasoning is not None:
+                generation.message.additional_kwargs["reasoning_content"] = reasoning
+        return result
+
+    def _get_request_payload(self, input_, *, stop=None, **kwargs):
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        messages = self._convert_input(input_).to_messages()
+        for message, sent in zip(messages, payload.get("messages") or []):
+            if isinstance(message, AIMessage) and sent.get("role") == "assistant":
+                sent["reasoning_content"] = message.additional_kwargs.get("reasoning_content") or ""
+        return payload
+
+
+def deepseek_chat(*, model_id: str, api_key: str, reasoning: str, max_retries: int = 0, timeout: int = 180):
+    if reasoning not in REASONING_LEVELS:
+        raise ValueError(f"Unknown reasoning level: {reasoning}")
+    if reasoning == "off":
+        return ChatOpenAI(model=model_id, api_key=api_key, base_url="https://api.deepseek.com", timeout=timeout,
+                          max_retries=max_retries, extra_body={"thinking": {"type": "disabled"}})
+    return DeepSeekReasoningChat(model=model_id, api_key=api_key, base_url="https://api.deepseek.com",
+                                 timeout=timeout, max_retries=max_retries,
+                                 extra_body={"thinking": {"type": "enabled"}, "reasoning_effort": reasoning})
+
+
 class AgentRunCancelled(Exception):
     """Raised when an in-flight agent run is cancelled by the caller."""
 
@@ -210,8 +315,8 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - Distinguish saved statement coverage from payment activity. A registered account or zero-payment period is not proof of no activity; unprocessed, incomplete, excluded or unreconciled records are not silently zero. Report pending review and missing dates/currency/account/beneficiary information explicitly. Do not call stored metadata a current reconciliation assessment unless the tool returned one.
 - Chart only months actually represented by returned payments or explicit source-backed periods. Do not fill absent months with invented zero activity or balance values. Label a source-backed quiet period separately from unknown or absent data.
 - Cite returned source references, filenames and exact page/statement-period/transaction identifiers when available. Use only returned links and locators; do not invent source pages, links or citations or pick a same-named file. Retain source_result_ids when building artifacts.
-- A request to analyse all transactions already defines the scope: all available imported payments in this case, using the returned default population and visibly stating it. Proceed with a useful investigator report covering scope/coverage, currency-separated account summaries, observed activity, supported counterparties/categories, anomalies needing review, sources and open questions. Do not ask the user to repeat the scope, choose arbitrary filters, or specify obvious headings. Ask only if a genuinely unresolved choice materially changes the requested conclusion.
-- Build ledger tables from returned rows or full-population grouped results with build_table_artifact_from_rows; do not query Neo4j to recreate relational ledger totals. Use build_chart_artifact and build_report_artifact for supporting views. Put coverage and exclusions in report_scope and the opening report section, and in table/chart notes. Direct table artifacts accept at most 100 rows and chart artifacts at most 250 rows; larger requests are rejected, not silently truncated. Prefer full-population grouped summaries for a large analysis. Label sampled, selected, top-ranked or paginated supporting rows with displayed and matching counts; their CSV exports contain only artifact rows and displayed fields, not a raw ledger export. A complete raw transaction CSV belongs to the Financial Transactions export workflow.
+- A request to analyse all transactions already defines the scope: all available imported payments in this case, using the returned default population and visibly stating it. Proceed with an investigator's report in this order: a summary of findings (what the records show, in plain sentences with figures and citations, answering what was asked); then the evidence for each finding (currency-separated account summaries, observed activity, supported counterparties/categories, anomalies needing review), each with its citations; then open questions a person must settle. Write it as an investigator reports findings, not as a system describing the checks it ran. Do not ask the user to repeat the scope, choose arbitrary filters, or specify obvious headings. Ask only if a genuinely unresolved choice materially changes the requested conclusion.
+- Build ledger tables from returned rows or full-population grouped results with build_table_artifact_from_rows; do not query Neo4j to recreate relational ledger totals. Use build_chart_artifact and build_report_artifact for supporting views. Put coverage and exclusions in report_scope, in one short paragraph of the opening report section after the summary of findings, and in table/chart notes. Direct table artifacts accept at most 100 rows and chart artifacts at most 250 rows; larger requests are rejected, not silently truncated. Prefer full-population grouped summaries for a large analysis. Label sampled, selected, top-ranked or paginated supporting rows with displayed and matching counts; their CSV exports contain only artifact rows and displayed fields, not a raw ledger export. A complete raw transaction CSV belongs to the Financial Transactions export workflow.
 - A name for a payment's sender or recipient comes only from its from_name/to_name, with that field's provenance. Never name a party from words in the printed description (counterparty_raw): quote the printed text as printed, and if you read anything into it, say it is your own reading of the description, not a name the statement gives.
 - Every ledger row carries provenance. provenance.origin is "processor" (printed on the statement and read by the processor), "model" (saved by a model for a person: a model reading, not a person's entry) or "person" (entered or reviewed and saved by a person); provenance.confirmation says whether a person has confirmed it. When an answer relies on a row that a model saved, that no person has confirmed, that carries a name a model read (provenance.model_read_names), or that has open judgement calls, say so beside the figure in plain words, e.g. "saved by Claude for <name>, not confirmed by a person" or "1 open judgement call: <rule_label> (<strength>)". The page's judgement_calls give each call's sentence. If provenance.judgement_calls.available is false, say the judgement calls could not be checked; never present such a row as having none.
 - A corrected row (provenance.correction) is used at its corrected value; state the original value beside it when it matters to the answer. Never add a p4 row (proof_class or source_proof_class "p4") into any total, and never add excluded rows (included_in_totals false) into totals; use the tools' totals.
@@ -232,8 +337,8 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 # that turn ("Answer succeeded.") instead of answering. This closing request is the turn it answers.
 _FINAL_ANSWER_REQUEST = (
     "Now write the final answer to my question for the investigator, from the tool results above. Any draft answer "
-    "above is yours: keep its facts, figures, tables and links, and apply the rules. Reply with the answer only, not "
-    "a comment about an earlier reply."
+    "above is yours: keep the facts, figures, tables and links in it that answer my question, and apply the rules. "
+    "Reply with the answer only, not a comment about an earlier reply."
 )
 
 def _final_answer_system_prompt(rules: str = "") -> str:
@@ -743,9 +848,11 @@ parties use get_money_between; for any other money total use the ledger tools.
 
 
 class AgentGraphRunner:
-    def __init__(self, *, provider: str, model_id: str, api_key: str | None = None):
+    def __init__(self, *, provider: str, model_id: str, api_key: str | None = None,
+                 reasoning: str = DEFAULT_REASONING):
         self.provider = provider
         self.model_id = model_id
+        self.reasoning = reasoning if provider == "deepseek" else "off"
         if provider == "openai":
             resolved_api_key = api_key or OPENAI_API_KEY
             if not resolved_api_key:
@@ -754,7 +861,7 @@ class AgentGraphRunner:
                 model=model_id,
                 api_key=resolved_api_key,
                 timeout=180,
-                max_retries=2,
+                max_retries=0,  # the run retries visibly (invoke_model)
                 use_responses_api=True,
             )
         elif provider == "anthropic":
@@ -769,7 +876,7 @@ class AgentGraphRunner:
                 model=model_id,
                 anthropic_api_key=resolved_api_key,
                 timeout=180,
-                max_retries=2,
+                max_retries=0,  # the run retries visibly (invoke_model)
             )
         elif provider == "gemini":
             resolved_api_key = api_key or GEMINI_API_KEY
@@ -783,20 +890,13 @@ class AgentGraphRunner:
                 model=model_id,
                 google_api_key=resolved_api_key,
                 timeout=180,
-                max_retries=2,
+                max_retries=0,  # the run retries visibly (invoke_model)
             )
         elif provider == "deepseek":
             resolved_api_key = api_key or DEEPSEEK_API_KEY
             if not resolved_api_key:
                 raise ValueError("DEEPSEEK_API_KEY is required for Agent mode")
-            self.base_model = ChatOpenAI(
-                model=model_id,
-                api_key=resolved_api_key,
-                base_url="https://api.deepseek.com",
-                timeout=180,
-                max_retries=2,
-                extra_body={"thinking": {"type": "disabled"}},
-            )
+            self.base_model = deepseek_chat(model_id=model_id, api_key=resolved_api_key, reasoning=self.reasoning)
         else:
             raise ValueError(f"Agent mode does not support provider: {provider}")
 
@@ -845,8 +945,10 @@ class AgentGraphRunner:
             )
 
         def agent_node(state: AgentState) -> dict[str, Any]:
-            response = model_with_tools.invoke(
-                [SystemMessage(content=build_system_prompt(state)), *lean_messages(state["messages"])]
+            response = invoke_model(
+                model_with_tools,
+                [SystemMessage(content=build_system_prompt(state)), *lean_messages(state["messages"])],
+                step=int(state.get("tool_iterations") or 0),
             )
             return {"messages": [response]}
 
@@ -959,12 +1061,14 @@ class AgentGraphRunner:
 
             # Every result whole unless the lean finalizer is switched on (lean_history.finalizer_messages).
             final_messages = finalizer_messages(_messages_for_finalizer(state))
-            response = self.base_model.invoke(
+            response = invoke_model(
+                self.base_model,
                 [
                     SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
                     *final_messages,
                     HumanMessage(content=_FINAL_ANSWER_REQUEST),
-                ]
+                ],
+                step=int(state.get("tool_iterations") or 0),
             )
             replies, text = _in_plain_words(self.base_model, response)
             return {"messages": replies, "final_answer": link_document_citations(text)}
@@ -1069,8 +1173,10 @@ class AgentGraphRunner:
             if should_cancel and should_cancel():
                 raise AgentRunCancelled("Agent run cancelled")
             note(live_runs.progress_thinking(step=int(state.get("tool_iterations") or 0)))
-            response = model_with_tools.invoke(
-                [SystemMessage(content=build_system_prompt(state)), *lean_messages(state["messages"])]
+            response = invoke_model(
+                model_with_tools,
+                [SystemMessage(content=build_system_prompt(state)), *lean_messages(state["messages"])],
+                note=note, step=int(state.get("tool_iterations") or 0), should_cancel=should_cancel,
             )
             return {"messages": [response]}
 
@@ -1193,12 +1299,14 @@ class AgentGraphRunner:
             # Every result whole unless the lean finalizer is switched on (lean_history.finalizer_messages).
             final_messages = finalizer_messages(_messages_for_finalizer(state))
             note(live_runs.progress_writing(step=int(state.get("tool_iterations") or 0)))
-            response = self.base_model.invoke(
+            response = invoke_model(
+                self.base_model,
                 [
                     SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
                     *final_messages,
                     HumanMessage(content=_FINAL_ANSWER_REQUEST),
-                ]
+                ],
+                note=note, step=int(state.get("tool_iterations") or 0), should_cancel=should_cancel,
             )
             replies, text = _in_plain_words(self.base_model, response)
             return {"messages": replies, "final_answer": link_document_citations(text)}

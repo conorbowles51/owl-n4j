@@ -62,6 +62,14 @@ def list_agent_workflows(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+@router.get("/models")
+def list_agent_models(db: Session = Depends(get_db), current_user: User = Depends(get_current_db_user)):
+    """The models the chat's model choice offers (services.agent.model_choice): the Settings default first, then
+    every agent model of a connected provider other than OpenAI, DeepSeek also at higher reasoning."""
+    from services.agent import model_choice
+    return model_choice.as_payload(db)
+
+
 _BOUND_TOOLS: list[str] = []
 
 

@@ -18,6 +18,8 @@ export interface SendAgentMessageParams {
   artifactPreference?: "auto" | "none" | "graph" | "table" | "map" | "report" | "chart"
   provider?: string
   model?: string
+  /** How hard the model reasons for this message (AG-07/08); omitted: the default for the model. */
+  reasoning?: "off" | "high" | "max"
   caseLayer?: CaseLayer
   mandateOverride?: Record<string, unknown>
   workflowId?: string
@@ -28,6 +30,9 @@ export interface SendAgentMessageParams {
 export const agentAPI = {
   listThreads: (caseId: string) =>
     fetchAPI<AgentThreadSummary[]>(`/api/agent/threads?case_id=${caseId}`),
+
+  /** The models the chat offers: the Settings default first (GET /api/agent/models). */
+  listModels: () => fetchAPI<import("./types").AgentModelChoices>("/api/agent/models"),
 
   getCapabilities: () => fetchAPI<import("./types").AgentCapabilities>("/api/agent/capabilities"),
 
@@ -46,6 +51,7 @@ export const agentAPI = {
         message: params.message,
         ...(params.provider ? { provider: params.provider } : {}),
         ...(params.model ? { model: params.model } : {}),
+        ...(params.reasoning ? { reasoning: params.reasoning } : {}),
         artifact_preference: params.artifactPreference || "auto",
         case_layer: params.caseLayer || "all",
         persist: true,
@@ -72,6 +78,7 @@ export const agentAPI = {
         message: params.message,
         ...(params.provider ? { provider: params.provider } : {}),
         ...(params.model ? { model: params.model } : {}),
+        ...(params.reasoning ? { reasoning: params.reasoning } : {}),
         artifact_preference: params.artifactPreference || "auto",
         case_layer: params.caseLayer || "all",
         persist: true,

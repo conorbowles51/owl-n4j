@@ -177,6 +177,12 @@ def progress_writing(*, step: int) -> dict[str, Any]:
     return {"phase": "writing", "step": step, "title": "Writing the answer from what was found", "since": now_iso()}
 
 
+def progress_retrying(*, step: int, attempt: int, attempts: int, reason: str) -> dict[str, Any]:
+    """A model request failed and the run tries again: said at once, with the try number (AG-06)."""
+    return {"phase": "retrying", "step": step, "attempt": attempt, "attempts": attempts,
+            "title": f"The model service {reason}; trying again ({attempt} of {attempts})", "since": now_iso()}
+
+
 def progress_starting() -> dict[str, Any]:
     return {"phase": "starting", "step": 0, "title": "Starting", "since": now_iso()}
 

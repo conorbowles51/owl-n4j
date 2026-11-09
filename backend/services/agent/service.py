@@ -31,6 +31,7 @@ from services.agent.schemas import (
     AgentToolTraceItem,
 )
 import services.agent.storage as storage
+import services.agent.model_choice as model_choice
 import services.agent.plain_answer as plain_answer
 import services.agent.run_record as run_record
 import services.agent.run_settle as run_settle
@@ -87,13 +88,11 @@ class AgentService:
             else None
         )
 
-        default_provider, default_model_id = get_workload_model(db, "agent")
-        if request.provider and request.provider != default_provider:
-            raise ValueError("Per-run provider overrides are disabled. Change Agent routing in Settings → AI settings.")
-        if request.model and request.model != default_model_id:
-            raise ValueError("Per-run model overrides are disabled. Change Agent routing in Settings → AI settings.")
-        requested_model = default_model_id
-        requested_provider = default_provider
+        # The Settings default, or the model a person picked for this message (services.agent.model_choice, AG-08).
+        choice, chosen = model_choice.resolve(db, model=request.model, provider=request.provider,
+                                              reasoning=request.reasoning, workload_model=get_workload_model)
+        requested_model = choice.model_id
+        requested_provider = choice.provider
         model = get_model_by_id(requested_model)
         if not model:
             raise ValueError(f"Invalid model: {requested_model}")
@@ -133,6 +132,8 @@ class AgentService:
                 **self._workflow_metadata(request),
                 **({"all_cases": True} if request.all_cases else {}),
                 **({"proposal_feedback": feedback} if feedback else {}),
+                "model_choice": {"reasoning": choice.reasoning, "chosen_by_person": chosen,
+                                 "written_by": model_choice.written_by(model.name, choice.reasoning)},
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -165,6 +166,8 @@ class AgentService:
                 "model_id": model.id,
                 "model_name": model.name,
                 "server": f"{provider.title()} (remote)",
+                "reasoning": choice.reasoning,
+                "written_by": model_choice.written_by(model.name, choice.reasoning),
             },
         }
 
@@ -173,7 +176,9 @@ class AgentService:
             if request.case_layer == "significant"
             else self._build_history(db, thread=thread, all_cases=request.all_cases)
         )
-        runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
+        runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key, reasoning=choice.reasoning)
+        # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
+        focus = self._question_focus(db, request)
         final_result: dict[str, Any] | None = None
         collected_trace: list[dict[str, Any]] = []
 
@@ -205,9 +210,9 @@ class AgentService:
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block="\n\n".join(x for x in (self._prompt_block(mandate_context.block, request, feedback),
-                                                               offer_note) if x),
+                                                               offer_note, focus) if x),
                 hidden_tools=hidden_tools,
-                final_answer_rules=self._final_rules(request),
+                final_answer_rules="\n\n".join(x for x in (self._final_rules(request), focus) if x),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
                 all_cases=request.all_cases,
@@ -342,6 +347,8 @@ class AgentService:
                     model_id=model.id,
                     model_name=model.name,
                     server=f"{provider.title()} (remote)",
+                    reasoning=choice.reasoning,
+                    written_by=model_choice.written_by(model.name, choice.reasoning),
                 ),
                 cost=AgentCost(
                     usd=float(cost_record.cost_usd),
@@ -412,6 +419,7 @@ class AgentService:
                 "run_id": run_id,
                 "thread_id": str(thread.id),
                 "message": str(exc),
+                "retryable": bool(getattr(exc, "retryable", False)),
             }
         finally:
             heartbeat.stop()
@@ -436,13 +444,11 @@ class AgentService:
             else None
         )
 
-        default_provider, default_model_id = get_workload_model(db, "agent")
-        if request.provider and request.provider != default_provider:
-            raise ValueError("Per-run provider overrides are disabled. Change Agent routing in Settings → AI settings.")
-        if request.model and request.model != default_model_id:
-            raise ValueError("Per-run model overrides are disabled. Change Agent routing in Settings → AI settings.")
-        requested_model = default_model_id
-        requested_provider = default_provider
+        # The Settings default, or the model a person picked for this message (services.agent.model_choice, AG-08).
+        choice, chosen = model_choice.resolve(db, model=request.model, provider=request.provider,
+                                              reasoning=request.reasoning, workload_model=get_workload_model)
+        requested_model = choice.model_id
+        requested_provider = choice.provider
         model = get_model_by_id(requested_model)
         if not model:
             raise ValueError(f"Invalid model: {requested_model}")
@@ -485,6 +491,8 @@ class AgentService:
                 **self._workflow_metadata(request),
                 **({"all_cases": True} if request.all_cases else {}),
                 **({"proposal_feedback": feedback} if feedback else {}),
+                "model_choice": {"reasoning": choice.reasoning, "chosen_by_person": chosen,
+                                 "written_by": model_choice.written_by(model.name, choice.reasoning)},
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -504,7 +512,9 @@ class AgentService:
             if request.case_layer == "significant"
             else self._build_history(db, thread=thread, all_cases=request.all_cases)
         )
-        runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
+        runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key, reasoning=choice.reasoning)
+        # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
+        focus = self._question_focus(db, request)
 
         # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
         heartbeat = run_settle.RunHeartbeat(run.id)
@@ -522,8 +532,9 @@ class AgentService:
                     else self._available_artifacts_for_runner(thread)
                 ),
                 allowed_entity_keys=allowed_entity_keys,
-                mandate_context_block=self._prompt_block(mandate_context.block, request, feedback),
-                final_answer_rules=self._final_rules(request),
+                mandate_context_block="\n\n".join(x for x in (
+                    self._prompt_block(mandate_context.block, request, feedback), focus) if x),
+                final_answer_rules="\n\n".join(x for x in (self._final_rules(request), focus) if x),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
                 all_cases=request.all_cases,
@@ -638,6 +649,8 @@ class AgentService:
                     model_id=model.id,
                     model_name=model.name,
                     server=f"{provider.title()} (remote)",
+                    reasoning=choice.reasoning,
+                    written_by=model_choice.written_by(model.name, choice.reasoning),
                 ),
                 cost=AgentCost(
                     usd=float(cost_record.cost_usd),
@@ -860,6 +873,11 @@ class AgentService:
             notes.append("This case holds no bank or brokerage statements, so the payment tools are not offered; "
                          "say so if asked about money in statements.")
         return frozenset(hidden), " ".join(notes)
+
+    @staticmethod
+    def _question_focus(db: Session, request: AgentMessageRequest) -> str:
+        from services.agent import question_scope
+        return question_scope.focus_for(db, request.case_id, request.message)
 
     @staticmethod
     def _final_rules(request: AgentMessageRequest) -> str:

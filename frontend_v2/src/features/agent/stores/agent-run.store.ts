@@ -4,8 +4,11 @@ export type AgentRunTerminalState = "completed" | "failed" | "cancelled"
 
 /** The plain line for the step a run is on (backend services/agent/live_runs.py). */
 export interface AgentRunProgress {
-  phase: "starting" | "thinking" | "tool" | "writing" | string
+  phase: "starting" | "thinking" | "tool" | "writing" | "retrying" | string
   step: number
+  /** phase "retrying": which try this is, of how many (the model service failed and the run tries again). */
+  attempt?: number
+  attempts?: number
   title: string
   since?: string
 }

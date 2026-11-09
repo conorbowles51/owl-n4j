@@ -431,6 +431,20 @@ def active_runs(db: Session, *, user: User, case_id: UUID) -> list[dict[str, Any
     return out
 
 
+def _written_by(message) -> str | None:
+    """The model that wrote an answer, as recorded on its run (AG-08). Runs before 9 Nov 2026 all used reasoning off."""
+    if message.role != "assistant" or not message.model_id:
+        return None
+    meta = message.run.extra_metadata if message.run and isinstance(message.run.extra_metadata, dict) else {}
+    recorded = (meta.get("model_choice") or {}).get("written_by")
+    if recorded:
+        return recorded
+    from models.llm_models import get_model_by_id
+    from services.agent.model_choice import written_by
+    model = get_model_by_id(message.model_id)
+    return written_by(model.name if model else message.model_id, "off")
+
+
 def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThreadDetail:
     thread = get_thread_for_user(db, thread_id=thread_id, user=user)
     messages = [
@@ -441,6 +455,7 @@ def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThrea
             run_id=str(message.run_id) if message.run_id else None,
             model_provider=message.model_provider,
             model_id=message.model_id,
+            written_by=_written_by(message),
             artifact_ids=[str(item) for item in (message.artifact_ids or [])],
             tool_trace_summary=message.tool_trace_summary or [],
             citation_check=(citation_check_for(db, case_id=thread.case_id, content=message.content)

@@ -48,7 +48,14 @@ export function AgentRunProgress({
       <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
         <Bot className="size-4" />
       </div>
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+      <div
+        className={
+          run.progress?.phase === "retrying"
+            ? "flex items-center gap-3 rounded-lg border border-amber-500/50 bg-card px-3 py-2 text-sm text-foreground"
+            : "flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground"
+        }
+        data-phase={run.progress?.phase}
+      >
         <div className="space-y-0.5">
           <div className="flex items-center gap-2" data-testid="agent-run-progress">
             <Loader2 className="size-4 shrink-0 animate-spin" />

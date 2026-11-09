@@ -65,6 +65,8 @@ export interface AgentModelInfo {
   model_id: string
   model_name: string
   server: string
+  reasoning?: string | null
+  written_by?: string | null
 }
 
 /** Every citation of an answer checked against the case (backend services/case_citations.check_text). */
@@ -207,6 +209,8 @@ export interface AgentStoredMessage {
   run_id?: string | null
   model_provider?: string | null
   model_id?: string | null
+  /** "Written by DeepSeek V4 Pro · thinks longer" (the model that wrote the answer). */
+  written_by?: string | null
   artifact_ids: string[]
   tool_trace_summary: Array<Record<string, unknown>>
   citation_check?: AgentCitationCheck | null
@@ -230,6 +234,25 @@ export interface AgentClientMessage {
   createdAt?: string
   /** The run that produced this answer (its run record opens from the answer). */
   runId?: string | null
+  /** The model that wrote this answer, shown on it. */
+  writtenBy?: string | null
+  /** A failed run's question: the failure offers Retry. */
+  retryQuestion?: string | null
+}
+
+export interface AgentModelChoice {
+  key: string
+  provider: string
+  model_id: string
+  model_name: string
+  reasoning: "off" | "high" | "max"
+  label: string
+  default: boolean
+}
+
+export interface AgentModelChoices {
+  default: string
+  choices: AgentModelChoice[]
 }
 
 /** The disclosure record of one agent run (GET /api/agent/runs/{id}/record). */

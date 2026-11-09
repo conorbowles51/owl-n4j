@@ -27,6 +27,8 @@ class AgentMessageRequest(BaseModel):
     thread_id: UUID | None = None
     provider: str | None = None
     model: str | None = None
+    # How hard the model reasons (services.agent.graph.REASONING_LEVELS); None: the default for the model.
+    reasoning: Literal["off", "high", "max"] | None = None
     artifact_preference: AgentArtifactPreference = "auto"
     case_layer: Literal["all", "significant"] = "all"
     persist: bool = True
@@ -65,6 +67,8 @@ class AgentModelInfo(BaseModel):
     model_id: str
     model_name: str
     server: str
+    reasoning: str | None = None
+    written_by: str | None = None
 
 
 class AgentCost(BaseModel):
@@ -180,6 +184,8 @@ class AgentStoredMessage(BaseModel):
     run_id: str | None = None
     model_provider: str | None = None
     model_id: str | None = None
+    # "Written by DeepSeek V4 Pro · thinks longer": the model that wrote an answer, shown on it (AG-08).
+    written_by: str | None = None
     artifact_ids: list[str] = Field(default_factory=list)
     tool_trace_summary: list[dict[str, Any]] = Field(default_factory=list)
     citation_check: dict[str, Any] | None = None

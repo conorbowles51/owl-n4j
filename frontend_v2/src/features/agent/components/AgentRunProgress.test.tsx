@@ -97,3 +97,27 @@ it("the chat panel says what it is doing and for how long, not bare dots", () =>
   render(<ChatWaitingLine />)
   expect(screen.getByRole("status").textContent).toBe("Searching the case and writing an answer · 0 s so far")
 })
+
+it("shows a retried step in plain words with the time so far and Stop (lx-callagent AG-06)", () => {
+  const onStop = vi.fn()
+  render(
+    <AgentRunProgress
+      run={running({
+        progress: {
+          phase: "retrying",
+          step: 3,
+          attempt: 2,
+          attempts: 3,
+          title: "The model service did not answer in time; trying again (2 of 3)",
+        },
+      })}
+      onStop={onStop}
+    />,
+  )
+  expect(screen.getByTestId("agent-run-progress").textContent).toBe(
+    "The model service did not answer in time; trying again (2 of 3) · 1 min 40 s so far",
+  )
+  expect(screen.getByTestId("agent-run-progress").closest("[data-phase]")?.getAttribute("data-phase")).toBe("retrying")
+  fireEvent.click(screen.getByRole("button", { name: /stop/i }))
+  expect(onStop).toHaveBeenCalled()
+})
