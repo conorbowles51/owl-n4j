@@ -26,7 +26,7 @@ def msg(instant, other, body, incoming=True):
 
 def call(instant, other, duration):
     return dict(kind="call", app="Phone", instant=instant, body=None, direction="outgoing", call_duration_s=duration,
-                parties=[(OWNER, "caller", True, None, None), (other, "callee", False, None, None)], thread="c")
+                parties=[(OWNER, "caller", True, None, None), (other, "callee", None, None, None)], thread="c")
 
 
 T1, T2, T3, T4, T5, T6 = (at(2023, 3, 14, 19, 7, 12), at(2023, 3, 14, 20), at(2023, 3, 15, 10), at(2023, 3, 16),

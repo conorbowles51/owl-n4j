@@ -102,7 +102,7 @@ def _comm(conn, ext, kind):
         cond, ek = "e.kind = :k", "message" if kind == "sms" else "call"
     rows = conn.execute(text(
         "SELECT e.record_uid::text AS record_uid, e.app, e.sort_instant, e.body, e.direction, e.call_duration_s, "
-        "(SELECT p.identity_key FROM pv_comm_party p WHERE p.event_uid = e.event_uid AND NOT p.is_phone_owner AND "
+        "(SELECT p.identity_key FROM pv_comm_party p WHERE p.event_uid = e.event_uid AND p.is_phone_owner IS NOT TRUE AND "
         " p.identity_key IS NOT NULL ORDER BY p.role, p.identity_key LIMIT 1) AS party, "
         "(SELECT t.original_text FROM pv_time t WHERE t.record_uid = e.record_uid AND t.instant = e.sort_instant "
         " LIMIT 1) AS instant_text FROM pv_comm_event e WHERE e.extraction_id = :e AND " + cond),
