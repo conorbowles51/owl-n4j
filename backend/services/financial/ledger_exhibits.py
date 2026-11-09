@@ -53,7 +53,7 @@ def capture_ledger_exhibits(document):
                     net_minor=str(tag.composition.amounts[p].minor_units))
                     for p in tag.composition.counts],
                 reasons=list(tag.reasons), outstanding_conditions=list(tag.conditions), caveats=[
-                    'Some rows remain P3 and outside verified totals; consult their retained review and decision history. P3 can reflect incomplete coverage or interpretation even when arithmetic agrees.'
+                    'Some rows are not checked against printed balances, or not yet confirmed by a person, and stay outside verified totals; see their review and decision history.'
                     if v.startswith(CAVEAT_UNADJUDICATED_P3) else v for v in tag.caveats],
                 sources=[dict(source_document_id=s.identifier, evidence_file_id=source_map[s.identifier],
                     sha256_at_ingestion=s.sha256, disclosure_recorded=False)

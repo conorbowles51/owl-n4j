@@ -341,8 +341,8 @@ REASON_SUBSTRATE_BELOW_SUMMARY = (
     "substantive evidence"
 )
 REASON_SUMMARISES_ADMISSIBLE_RECORDS = (
-    "every underlying row is P0-P2 and the artefact proves the content of those "
-    "records"
+    "every underlying row was checked against its statement's own totals or "
+    "balances, and the exhibit proves the content of those records"
 )
 
 CONDITION_MAKE_AVAILABLE = (
@@ -363,16 +363,17 @@ CAVEAT_SINGLE_DOCUMENT = (
     "directly instead"
 )
 CAVEAT_ASSERTIONS_PRESENT = (
-    "some rows are P4 assertions from unstructured material, which never enter "
-    "the ledger and are shown as claims"
+    "some rows are claims made in a letter, message or interview; they never "
+    "enter the ledger and are shown as claims"
 )
 CAVEAT_ADJUDICATION_RELIED_ON = (
-    "some rows are P3 admitted by a recorded adjudication, which explains why "
-    "the arithmetic does not close and does not make it close"
+    "some rows were not checked against printed balances and are included by a "
+    "person's recorded decision, which explains why the figures do not add up "
+    "and does not make them add up"
 )
 CAVEAT_UNADJUDICATED_P3 = (
-    "some rows are P3 with no recorded adjudication, which is below the ledger's "
-    "own admission rule"
+    "some rows were not checked against printed balances and no person has "
+    "confirmed them, which is below the ledger's own admission rule"
 )
 CAVEAT_MIXED_COMPOSITION = (
     "the rows rest on more than one proof class, so the weakest qualifies the "
@@ -477,13 +478,11 @@ class ExhibitRow:
     document: str
     """Identifier of the :class:`SourceDocument` this row was read from."""
 
+    # Whether a p3 row was admitted to the ledger by a recorded adjudication.
+    # Meaningful only for p3, and refused on any other class: on a p0 row it would
+    # imply a doubt that the arithmetic does not support, and on a p4 row it would
+    # imply an admission that never happened.
     adjudicated: bool = False
-    """Whether a P3 row was admitted to the ledger by a recorded adjudication.
-
-    Meaningful only for P3, and refused on any other class: on a P0 row it would
-    imply a doubt that the arithmetic does not support, and on a P4 row it would
-    imply an admission that never happened.
-    """
 
     def __post_init__(self) -> None:
         if not self.reference or not self.reference.strip():
@@ -508,9 +507,9 @@ class ExhibitRow:
             )
         if self.adjudicated and self.proof_class is not ProofClass.p3:
             raise ExhibitContentError(
-                f"{self.reference}: only a P3 row is admitted by adjudication, "
-                f"so recording one on a {self.proof_class.value} row states "
-                "something that did not happen"
+                f"{self.reference}: only a row not checked against printed balances is "
+                f"included by a person's decision, so recording one on a {self.proof_class.value} "
+                "row states something that did not happen"
             )
 
 

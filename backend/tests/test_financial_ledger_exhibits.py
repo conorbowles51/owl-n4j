@@ -1,3 +1,4 @@
+import re
 import unittest
 from services.financial.ledger_exhibits import capture_ledger_exhibits
 from services.financial.ledger_summary import LedgerSummaryError
@@ -35,7 +36,8 @@ class LedgerExhibitTests(unittest.TestCase):
         self.assertEqual(sections[1]['software_rule'],'rule_107')
         self.assertEqual(sections[1]['net_postings_minor'],'150')
         self.assertFalse(any('below the ledger' in c for c in sections[1]['caveats']))
-        self.assertTrue(any('arithmetic agrees' in c for c in sections[1]['caveats']))
+        self.assertTrue(any('not checked against printed balances' in c for c in sections[1]['caveats']))
+        self.assertFalse(any(re.search(r'\bP[0-4]\b', c) for c in sections[1]['caveats']))
 
     def test_empty_verified_set_is_unavailable_not_zero_evidence(self):
         sections=capture_ledger_exhibits(document([reading('a',0,proof='p3',exclusion='proof_class_not_included')]))['sections']
