@@ -58,9 +58,11 @@ class GraphStore:
 
     @classmethod
     def from_config(cls):
-        from neo4j import GraphDatabase
+        # through open_driver: with no NEO4J_PASSWORD it refuses without contacting the server, where a guessed
+        # password would count as a failed login and lock the neo4j user out for the live app
+        from services.neo4j.driver import open_driver
         import config
-        return cls(GraphDatabase.driver(config.NEO4J_URI, auth=(config.NEO4J_USER, config.NEO4J_PASSWORD)))
+        return cls(open_driver(config.NEO4J_URI, config.NEO4J_USER, config.NEO4J_PASSWORD))
 
     def _session(self):
         return self.driver.session(database=self.database) if self.database else self.driver.session()
