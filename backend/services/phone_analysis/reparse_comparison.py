@@ -32,7 +32,7 @@ from collections import defaultdict
 from sqlalchemy import text
 
 CODE = "reparse_comparison"
-VERSION = "17.3-3"
+VERSION = "17.3-4"
 PARAMETERS = {
     "time_window_hours": {"default": 26, "min": 0, "max": 48},
 }
