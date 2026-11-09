@@ -1,4 +1,5 @@
 """Synthetic complete-population agent reads; no graph or client fixtures."""
+import json
 import re
 from copy import deepcopy
 from datetime import date
@@ -580,3 +581,39 @@ class CorrectedRowProvenanceTests(unittest.TestCase):
         finally:
             fixture.tearDown()
 
+
+
+class KeptAgentLedgerReadTests(LedgerToolFixture):
+    """The agent's ledger read goes through the Financial view cache: on BNB2 one run made 4 whole-case reads of
+    47-59 s, two of them the same read of an unchanged case."""
+
+    def test_the_kept_read_is_a_financial_view_and_answers_as_the_direct_read(self):
+        from services.agent.financial_ledger_tools import _kept_ledger_read, kept_read_financial_ledger
+        from services.financial import view_cache
+        self.source(rows=3)
+        self.assertIs(view_cache.handlers['agent-ledger-read'], _kept_ledger_read)
+        for view in ('coverage', 'transactions'):
+            self.assertEqual(kept_read_financial_ledger(self.db, case_id=self.case.id, view=view, limit=2),
+                             json.loads(json.dumps(self.read(view=view, limit=2))))
+
+    def test_it_runs_in_a_fresh_context_never_an_updating_copy_and_never_a_visit(self):
+        from fastapi.responses import JSONResponse
+        from services.agent.financial_ledger_tools import kept_read_financial_ledger
+        from services.financial import view_cache
+        seen = {}
+
+        def stored(**kw):
+            seen.update(updating=view_cache._accepts_updating.get(), not_a_visit=view_cache.not_a_visit.get(),
+                        params=json.loads(kw['params']), case_id=kw['case_id'])
+            return JSONResponse(content={'available': True, 'total_matching': 3})
+        token = view_cache._accepts_updating.set(True)  # as in a browser request that accepts an updating copy
+        try:
+            with patch('services.agent.financial_ledger_tools._kept_ledger_read', stored):
+                out = kept_read_financial_ledger(None, case_id=str(self.case.id), view='coverage', limit=5)
+        finally:
+            view_cache._accepts_updating.reset(token)
+        self.assertEqual(out, {'available': True, 'total_matching': 3})
+        self.assertFalse(seen['updating'])
+        self.assertTrue(seen['not_a_visit'])
+        self.assertEqual(seen['params'], {'view': 'coverage', 'limit': 5})
+        self.assertEqual(seen['case_id'], self.case.id)

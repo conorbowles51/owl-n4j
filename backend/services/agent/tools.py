@@ -2213,7 +2213,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def read_ledger(tool_name: str, *, view: str, **kwargs) -> dict[str, Any]:
         if context.significant_scope:
             return scope_error(tool_name, "Financial analysis")
-        from services.agent.financial_ledger_tools import read_financial_ledger
+        from services.agent.financial_ledger_tools import kept_read_financial_ledger
         try:
             filters = {}
             for key in ("currency", "source_document_id", "direction", "search", "minimum_minor", "maximum_minor"):
@@ -2236,7 +2236,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                         "case_id": context.case_id, "available": False, "applied": False,
                         "no_financial_evidence": True, "reason": reason, "total_matching": None, "returned": 0},
                         summary=reason)
-                data = read_financial_ledger(db, case_id=uuid.UUID(context.case_id),
+                data = kept_read_financial_ledger(db, case_id=uuid.UUID(context.case_id),
                     view=view, filters=filters or None, **kwargs)
         except ValueError as exc:
             return context.result(tool_name,

@@ -685,3 +685,32 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         open_judgement_calls=behind(matching) if view in ('transactions', 'groups') else None,
         **({'grouping_basis': COUNTERPARTY_GROUPING} if view == 'groups' and group_by == 'counterparty' else {}),
         applied=False, limitation=LIMITATION)
+
+
+def kept_read_financial_ledger(session, *, case_id, **params):
+    """read_financial_ledger through the Financial view cache (view_cache.cached_view): the same read of an unchanged
+    case is computed once, for the agent and across its runs, as the Financial screens' views are. Measured on BNB2
+    d5b330d1 (8 Nov): one run made 4 whole-case reads of 47-59 s each, two of them the same read.
+
+    The stored copy is used only while the database proves every table the read used is unchanged; it runs in a
+    fresh context, so the agent never gets an "updating" copy, a browser's 304 or a compressed body, and its reads
+    are not counted as a person's visit (no background refresh is asked for them). ``session`` is a read session of
+    its own (the agent tools' ``_financial_session``): the cache ends its transaction and reads in its own snapshot."""
+    import contextvars
+    from services.financial import view_cache
+    key = json.dumps(params, sort_keys=True, separators=(',', ':'), default=str)
+
+    def read():
+        view_cache.not_a_visit.set(True)
+        return _kept_ledger_read(case_id=_uuid(case_id), db=session, params=key)
+    result = contextvars.Context().run(read)
+    body = getattr(result, 'body', None)
+    return json.loads(body) if isinstance(body, (bytes, bytearray)) else result
+
+
+def _kept_ledger_read(*, case_id, db, params):
+    return read_financial_ledger(db, case_id=case_id, **json.loads(params))
+
+
+from services.financial.view_cache import cached_view as _cached_view  # noqa: E402
+_kept_ledger_read = _cached_view('agent-ledger-read')(_kept_ledger_read)
