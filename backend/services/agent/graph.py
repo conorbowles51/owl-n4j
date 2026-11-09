@@ -17,7 +17,7 @@ from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from services import writing_standard
-from services.agent.citations import link_document_citations
+from services.agent.citations import link_document_citations, link_named_files
 from services.agent.all_cases import ALL_CASES_PROMPT
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.lean_history import RepeatedResults, finalizer_messages, lean_messages, tools_for_binding
@@ -440,6 +440,11 @@ _PLAIN_WORDS_REQUEST = (
 
 
 _LINK_TARGET = re.compile(r"\]\(([^)]*)\)")
+
+
+def _tool_text(state: Any) -> str:
+    """Every tool result of this run as text: what a quoted file name is checked against before it is linked."""
+    return "\n".join(message_content_to_text(m.content) for m in state.get("messages") or [] if isinstance(m, ToolMessage))
 
 
 def _has_jargon(text: str) -> bool:
@@ -1103,7 +1108,7 @@ class AgentGraphRunner:
                 step=int(state.get("tool_iterations") or 0),
             )
             replies, text = _in_plain_words(self.base_model, response)
-            return {"messages": replies, "final_answer": link_document_citations(text),
+            return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
@@ -1344,7 +1349,7 @@ class AgentGraphRunner:
                 note=note, step=int(state.get("tool_iterations") or 0), should_cancel=should_cancel,
             )
             replies, text = _in_plain_words(self.base_model, response)
-            return {"messages": replies, "final_answer": link_document_citations(text),
+            return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
