@@ -15,7 +15,7 @@ class FinancialPdfNomination(Base):
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),primary_key=True)
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('cases.id',ondelete='CASCADE'),nullable=False,index=True)
-    evidence_file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('evidence_files.id',ondelete='CASCADE'),nullable=False)
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),ForeignKey('evidence_files.id',ondelete='CASCADE'),nullable=False,index=True)
     status: Mapped[str] = mapped_column(String(16),nullable=False,default='pending')
     request_sha256: Mapped[str] = mapped_column(String(64),nullable=False)
     request: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(),'sqlite'),nullable=False)

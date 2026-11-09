@@ -147,6 +147,7 @@ class EvidenceFile(Base, TimestampMixin):
         UUID(as_uuid=True),
         ForeignKey("evidence_files.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,  # deleting a file looks up its duplicates (20261109_evidence_delete_fk_indexes)
     )
 
     # Deleted items (postgres/soft_delete.py): set while the file waits 30 days to be purged; every read hides it.
@@ -373,6 +374,7 @@ class IngestionLog(Base):
         UUID(as_uuid=True),
         ForeignKey("evidence_files.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,  # deleting a file looks up its log rows (20261109_evidence_delete_fk_indexes)
     )
 
     level: Mapped[str] = mapped_column(String(20), nullable=False)

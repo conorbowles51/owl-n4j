@@ -29,7 +29,7 @@ class FinancialImportBatchItem(Base, TimestampMixin):
     __table_args__ = (UniqueConstraint('batch_id','file_id','statement_key',name='uq_financial_batch_period'),)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('financial_import_batches.id', ondelete='CASCADE'), index=True)
-    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('evidence_files.id', ondelete='CASCADE'))
+    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('evidence_files.id', ondelete='CASCADE'), index=True)
     statement_key: Mapped[str] = mapped_column(String(64), default='', nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     summary: Mapped[dict] = mapped_column(json_type(), nullable=False)

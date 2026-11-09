@@ -38,7 +38,7 @@ class EvidenceUploadSession(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     chunk_size: Mapped[int] = mapped_column(Integer)
     chunks: Mapped[list] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'))
-    evidence_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey('evidence_files.id', ondelete='SET NULL'), nullable=True)
+    evidence_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey('evidence_files.id', ondelete='SET NULL'), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default='uploading')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

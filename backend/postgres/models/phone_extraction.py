@@ -33,7 +33,7 @@ class PhoneExtractionContainer(Base):
     id: Mapped[uuid.UUID] = mapped_column(_uuid(), primary_key=True, default=uuid.uuid4)
     case_id: Mapped[uuid.UUID] = mapped_column(_uuid(), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
     evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(
-        _uuid(), ForeignKey("evidence_files.id", ondelete="SET NULL"), nullable=True)
+        _uuid(), ForeignKey("evidence_files.id", ondelete="SET NULL"), nullable=True, index=True)
     upload_group_id: Mapped[uuid.UUID | None] = mapped_column(
         _uuid(), ForeignKey("evidence_upload_groups.id", ondelete="SET NULL"), nullable=True)
     container_kind: Mapped[str] = mapped_column(String(20), nullable=False)

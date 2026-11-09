@@ -29,6 +29,6 @@ class FinancialRecoveryItem(Base, TimestampMixin):
     __table_args__ = (UniqueConstraint('run_id', 'file_id', name='uq_financial_recovery_file'),)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('financial_recovery_runs.id', ondelete='CASCADE'), index=True)
-    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('evidence_files.id', ondelete='CASCADE'))
+    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('evidence_files.id', ondelete='CASCADE'), index=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default='pending')
     result: Mapped[dict] = mapped_column(json_type(), nullable=False, default=dict)
