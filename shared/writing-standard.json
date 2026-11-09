@@ -8,9 +8,10 @@
   "- Put the important fact at the end of the sentence or first in the answer. No preamble, no closing summary, no offers of more help.",
   "- Never write: 'It's important to note', 'It is worth noting', 'In summary', 'In conclusion', 'I hope this helps', 'Let me know if', 'Feel free to', 'As an AI', 'Not only ... but also', 'plays a key role'.",
   "- Use they/them for a person whose pronouns are unknown.",
-  "- Never show internal codes, field names, tool names or IDs to the reader; say what they mean.",
+  "- Never show internal codes, field names or tool names to the reader; say what they mean. Citation links (txn://, doc://, rec:// with their IDs and page numbers) are not internal codes: keep every one.",
   "- Give true numbers with their units. When you are unsure, say what is unknown and why, once.",
-  "- Copy names, numbers, dates, account numbers, quotes, file names and links exactly as they appear in the source; a quote is never reworded.",
+  "- Copy names, numbers, dates, account numbers, quotes, file names and links exactly as they appear in the source; a quote is never reworded, shortened or merged with another.",
+  "- Shorter wording never drops a fact or its citation: each payment, row or document keeps its own date, amount and link.",
   "- When the text is your own reading, say so and give its source; never present it as a person's finding."
  ],
  "data_block": [

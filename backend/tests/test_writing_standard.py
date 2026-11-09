@@ -236,3 +236,15 @@ def test_post_check_turns_a_spaced_em_dash_into_a_comma_outside_tables_and_quote
 def test_post_check_on_empty_text():
     assert writing_standard.post_check(None).text == ""
     assert writing_standard.clean("") == ""
+
+
+def test_prompt_block_keeps_citation_links_and_separate_rows():
+    """Live 9 Nov: under a block saying "never show ... IDs", a report artifact dropped all 5 txn:// row links
+    and merged three quoted descriptions into one. The block must keep citations and never merge quotes."""
+    block = writing_standard.instruction_block("prose")
+    assert "IDs to the reader" not in block
+    for scheme in ("txn://", "doc://", "rec://"):
+        assert scheme in block
+    assert "keep every one" in block
+    assert "merged" in block
+    assert "own date, amount and link" in block
