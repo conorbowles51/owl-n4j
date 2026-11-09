@@ -236,3 +236,17 @@ if RunRecordFixture is not None:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodeBeforeANounTests(unittest.TestCase):
+    """lx-plainwords m110900300316083: a live answer (agent_messages afcba983, 8 Nov 23:34) kept 'admitted P3
+    readings'; the code before a noun becomes a clause after it, so the sentence still reads."""
+
+    def test_the_live_sentence_speaks_without_the_code(self):
+        from services.agent.plain_answer import checked
+        out, check = checked("Working totals include admitted P3 readings; 11 rows were excluded as rejected.",
+                             tools=lambda: frozenset())
+        self.assertNotRegex(out, r"(?i)\bp3\b")
+        self.assertTrue(out.startswith("Working totals include readings left out of verified totals ("))
+        self.assertTrue(out.endswith("; 11 rows were excluded as rejected."))
+        self.assertEqual(check["rewritten"], 1)

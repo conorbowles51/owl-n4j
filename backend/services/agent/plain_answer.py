@@ -102,6 +102,9 @@ _DASH = r"\s*(?:–|—|-|to|through)\s*"
 _CLASS_LIST = re.compile(_EDGE_BEFORE + r"[pP]0,\s*[pP]1,?\s*(?:and|or)\s*[pP]2(?![\w\-])(\s+verified)?")
 _CLASS_RANGE = re.compile(_EDGE_BEFORE + r"((?:verified\s+)?)" + _CLASS + _DASH + r"[pP]?([0-4])(?![\w\-])(\s+verified)?")
 _CLASS_ONE = re.compile(_EDGE_BEFORE + _CLASS + r"(?![\w\-]|\.\d)")
+# A code used before a noun ("admitted P3 readings"): the meaning goes after the noun, so the sentence still reads.
+_CLASS_BEFORE_NOUN = re.compile(_EDGE_BEFORE + r"(?:(?i:admitted|included)\s+)?" + _CLASS +
+                                r"\s+(readings?|rows?|payments?|figures?|transactions?|records?|amounts?)\b")
 _PROOF_SCOPE = re.compile(r"(?i)\bproof[-_ ]class\s+scope\b")
 _PROOF_WORD = re.compile(r"(?i)(?<![\w.])(source[_ ])?proof[-_ ]class(es)?\b")
 _POPULATION_ARG = re.compile(r"(?i)\bpopulation\s*[=:]\s*[\"'`]?(verified|working)[\"'`]?")
@@ -281,6 +284,9 @@ class _Check:
         sub(_CLASS_RANGE, "check-status code",
             lambda m: VERIFIED_WORDS if (m.group(1) or m.group(4)) and _class_words(m.group(2), m.group(3)) == VERIFIED_WORDS
             else m.group(1) + _class_words(m.group(2), m.group(3)) + (m.group(4) or ""))
+        sub(_CLASS_BEFORE_NOUN, "check-status code",
+            lambda m: "%s %s" % (m.group(2), CLASS_WORDS[m.group(1)] if m.group(1) in "34"
+                                 else "counted as verified (%s)" % CLASS_WORDS[m.group(1)]))
         sub(_CLASS_ONE, "check-status code", lambda m: CLASS_WORDS[m.group(1)])
 
         def field(m):
