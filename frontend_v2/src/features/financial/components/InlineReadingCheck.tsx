@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -70,6 +71,7 @@ export function InlineReadingCheck({
     },
     onSuccess: () => {
       settle(withConfirmedName(row, field, `Confirmed by ${who} from the statement on ${today()}. Read first by ${model}.`))
+      announce(caseId, { kind: "confirmation-saved", count: 1, paymentId: row.key })
       onDone()
     },
   })
@@ -96,6 +98,7 @@ export function InlineReadingCheck({
         withPersonName(row, value, `Corrected by ${who} from the statement on ${today()}. ${model} read: "${read}".`)
       )
       toast.success("Saved your correction. What Claude read stays in the history.")
+      announce(caseId, { kind: "correction-saved", what: "Your correction", count: 1, paymentId: row.key })
       onDone()
     },
   })

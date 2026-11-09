@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useTheme } from "@/lib/theme-context"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { SettingsNav } from "./SettingsNav"
+import { GuidanceSettingsCard } from "@/features/guidance/GuidanceSettingsCard"
 
 const SHORTCUTS = [
   { keys: "Ctrl+K", description: "Open command palette" },
@@ -110,6 +111,8 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <GuidanceSettingsCard />
 
         {/* Keyboard Shortcuts */}
         <Card>

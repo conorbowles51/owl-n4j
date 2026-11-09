@@ -14,6 +14,7 @@ import { phonesQuery } from "@/features/phones/phones-query"
 import { PHONE_GUIDES } from "@/features/phones/guide"
 import { guideAnchor } from "./screen-guide"
 import { useBindings } from "./use-bindings"
+import { announce } from "@/features/guidance/announce"
 
 // The guide (markdown and its renderer) loads when Guide is pressed, not with every case page.
 const GuideDialog = lazy(() => import("@/components/ui/guide-dialog").then((m) => ({ default: m.GuideDialog })))
@@ -57,10 +58,18 @@ function HeaderJobs({ caseId, onList }: { caseId: string; onList: (jobs: number)
       const action = j.href ? { label: "Open", onClick: () => (j.href!.startsWith("/cases/") ? navigate(j.href!) : window.location.assign(j.href!)) } : undefined
       if (j.state === "failed") toast.error(`${j.title} stopped.`, { description: j.error ?? undefined, action })
       else if (j.state === "cancelled") toast(`${j.title}: cancelled.`, { description: j.note ?? undefined, action })
-      else toast.success(`${j.title}: done.`, { description: j.note ?? undefined, action })
+      else {
+        toast.success(`${j.title}: done.`, { description: j.note ?? undefined, action })
+        // what to do next, where the person is (lx-guide B)
+        const facts = { title: j.title, href: j.href, note: j.note }
+        if (j.kind === "intake") announce(caseId, { kind: "phone-imported", ...facts })
+        else if (j.kind === "media") announce(caseId, { kind: "media-read", ...facts })
+        else if (j.kind === "export") announce(caseId, { kind: "export-done", fileName: j.note || j.title, href: j.href })
+        else announce(caseId, { kind: "job-done", ...facts })
+      }
     }
     watching.current = new Set(list.items.filter((j) => j.state === "running").map((j) => j.id))
-  }, [list, navigate])
+  }, [list, navigate, caseId])
 
   const jobs = useMemo(() => (list?.items ?? []).map((j) => trayJob(j, Date.parse(list!.read_at))), [list])
   useEffect(() => onList(jobs.length), [jobs.length, onList])

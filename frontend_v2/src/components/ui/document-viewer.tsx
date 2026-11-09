@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useDocumentStep, useReportDocument } from "@/features/guidance/history/document-step"
 import {
   Dialog,
   DialogContent,
@@ -153,6 +154,14 @@ export function DocumentViewer({
   )
   const totalPages =
     pageTotal && pageTotal.fileId === evidenceId ? pageTotal.count : null
+  // The step history keeps which document and page is open, and a step that returns here asks for its page.
+  useReportDocument(open && evidenceId ? { evidenceId, name: documentName, page: currentPage, pages: totalPages } : null)
+  const wantedPage = useDocumentStep((s) => (open && evidenceId && s.wanted?.evidenceId === evidenceId ? s.wanted.page : null))
+  useEffect(() => {
+    if (!wantedPage) return
+    setCurrentPage(wantedPage)
+    useDocumentStep.getState().request(null)
+  }, [wantedPage])
   const [textContent, setTextContent] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const fetchIdRef = useRef(0)

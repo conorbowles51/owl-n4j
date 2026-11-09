@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useState } from "react"
 import { ArrowDown, ArrowUp, FileDown } from "lucide-react"
 import { toast } from "sonner"
@@ -18,6 +19,7 @@ export function CaseworkReportCard({ caseId }: { caseId: string }) {
     try {
       const filename = await downloadCaseworkReport(caseId, chosen, marking)
       toast.success(`Report downloaded: ${filename}`)
+      announce(caseId, { kind: "report-built", fileName: filename })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Report not produced")
     } finally {

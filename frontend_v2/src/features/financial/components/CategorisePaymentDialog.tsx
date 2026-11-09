@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -187,6 +188,7 @@ export function CategorisePaymentDialog({
       toast.success(
         `${category} saved for ${result.updated + learned} ${result.updated + learned === 1 ? "payment" : "payments"}${learned ? ` (${learned} similar)` : ""}.${ruled ? " Future statements will use it for payments like this." : ""}`
       )
+      if (!andNext) announce(caseId, { kind: "correction-saved", what: `${category}`, count: result.updated + learned, paymentId: result.updated + learned === 1 ? result.replacements[0]?.id : null })
       if (andNext && onNext) onNext()
       else onClose()
     },

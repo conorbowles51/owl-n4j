@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -171,6 +172,7 @@ export function PaymentCardEdit({
         void client.invalidateQueries({ queryKey: [key, caseId] })
       if (categoryChanged) void client.invalidateQueries({ queryKey: ["financial-category-library"] })
       toast.success("Saved your changes. The statement's reading stays visible beside them.")
+      announce(caseId, { kind: "correction-saved", what: "Your changes", count: 1, paymentId: current.key })
       onSaved(current.key)
     },
   })

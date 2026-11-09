@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCollectTargets } from "@/features/phones/collect-targets"
 import { theoryHref } from "./source-links"
+import { announce } from "@/features/guidance/announce"
 import { theoryAPI, choiceWords, type AdditionInput, type AdditionResult, type GroupInput, type ItemInput, type Surface } from "./api"
 
 /**
@@ -83,6 +84,7 @@ export function AddToTheoryDialog({ caseId, surface, items, group, onClose }: Om
       }
     }
     setDone({ result, target, entryId, note })
+    announce(caseId, { kind: "theory-addition", title: target, entryId, added: result.added, trail: group?.group_type === "step_trail" })
     void qc.invalidateQueries({ queryKey: ["theory-reading", caseId, entryId] })
     void qc.invalidateQueries({ queryKey: ["collect-targets"] })
   }

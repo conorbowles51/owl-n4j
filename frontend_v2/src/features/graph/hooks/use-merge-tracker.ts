@@ -1,4 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react"
+import { announce } from "@/features/guidance/announce"
+import { guidanceQueryClient } from "@/features/guidance/query-client"
+import { labelFromCache } from "@/features/guidance/label"
 import { graphAPI } from "../api"
 import { useGraphStore } from "@/stores/graph.store"
 import { toast } from "sonner"
@@ -21,6 +24,14 @@ export const SEARCH_PENDING_NOTE =
 interface UseMergeTrackerOptions {
   onCompleted?: () => void
   onPartial?: () => void
+}
+
+/** Next steps after a merge (lx-guide B): the merged entry on the graph and the timeline. */
+function announceMerge(mergedKey: string | null, sourceKeys: string[]) {
+  const caseId = /^\/cases\/([^/]+)/.exec(window.location.pathname)?.[1]
+  const qc = guidanceQueryClient()
+  const name = (mergedKey && qc && labelFromCache(qc, mergedKey)) || "one entry"
+  announce(caseId ? decodeURIComponent(caseId) : null, { kind: "merge-done", name, entityKey: mergedKey, merged: sourceKeys.length })
 }
 
 export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptions = {}) {
@@ -49,10 +60,11 @@ export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptio
   }, [])
 
   const handleMergeJobUpdate = useCallback(
-    (data: { status: string; error_message?: string | null; search_pending?: boolean | null }, sourceKeys: string[]) => {
+    (data: { status: string; error_message?: string | null; search_pending?: boolean | null; merged_entity_key?: string | null }, sourceKeys: string[]) => {
       const searchPending = data.search_pending === true
       if (data.status === "completed") {
         stopTracking()
+        announceMerge(data.merged_entity_key ?? null, sourceKeys)
         setActiveJob((prev) =>
           prev ? { ...prev, status: "completed", progress: 100, message: "Merge complete!", searchPending } : null
         )

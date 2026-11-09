@@ -20,7 +20,7 @@ import { AddToTheory } from "@/features/theory/AddToTheory"
 function PriorityCard({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
   const priority = useRowPriority(row)
   return (
-    <li data-priority={priority || undefined} className={priority ? cn(className, priorityRowClass(priority)) : className}>
+    <li data-row-key={row.key} data-priority={priority || undefined} className={priority ? cn(className, priorityRowClass(priority)) : className}>
       {children}
     </li>
   )

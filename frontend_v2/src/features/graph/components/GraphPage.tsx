@@ -1,3 +1,5 @@
+import { announce } from "@/features/guidance/announce"
+import { OPEN_RECYCLE_BIN } from "@/features/guidance/next-steps"
 import { lazy, Suspense, useRef, useState, useCallback, useMemo, useEffect } from "react"
 import { PhoneCommunicationEdges } from "./PhoneCommunicationEdges"
 import { GraphPhoneScope } from "./GraphPhoneScope"
@@ -188,9 +190,17 @@ export function GraphPage() {
       if (!caseId) return
       await graphAPI.deleteNode(key, caseId, false)
       refreshGraph()
+      announce(caseId, { kind: "deleted", count: 1, noun: "entry", where: "graph" })
     },
     [caseId, refreshGraph]
   )
+
+  // "Open the recycle bin" in the next steps after a delete (lx-guide B)
+  useEffect(() => {
+    const open = () => setGraphPanelToolOverlay("recycle")
+    window.addEventListener(OPEN_RECYCLE_BIN, open)
+    return () => window.removeEventListener(OPEN_RECYCLE_BIN, open)
+  }, [setGraphPanelToolOverlay])
 
   const handleCompareSelected = useCallback(async () => {
     if (!caseId || selectedNodeKeys.size !== 2) return

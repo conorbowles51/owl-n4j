@@ -39,6 +39,7 @@ import { CasePhonesSection } from "./CasePhonesSection"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { CaseExportsSection } from "./CaseExportsSection"
 import { MediaBlurSetting } from "./MediaBlurSetting"
+import { CaseGuidanceDefault } from "@/features/guidance/GuidanceSettingsCard"
 
 const STATUS_OPTIONS: Array<{
   value: CaseStatus
@@ -368,6 +369,12 @@ export function CaseSettingsPage() {
         <AddressLookupSetting caseData={caseData} />
         {canSeeCosts && <CaseCostsSection caseId={caseData.id} caseTitle={caseData.title} />}
         <MediaBlurSetting caseId={caseData.id} />
+        {(caseData.is_owner || role === "admin" || role === "super_admin") && (
+          <Card className="mt-6 gap-3 p-5">
+            <CardTitle className="text-base">Guidance</CardTitle>
+            <CaseGuidanceDefault caseId={caseData.id} />
+          </Card>
+        )}
         <CasePhonesSection caseId={caseData.id} isSuperAdmin={role === "super_admin"} isAdmin={role === "admin" || role === "super_admin"} />
         {(caseData.is_owner || role === "super_admin") && <CaseExportsSection caseId={caseData.id} />}
       </div>

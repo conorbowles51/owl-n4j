@@ -1,3 +1,5 @@
+import { announce } from "@/features/guidance/announce"
+import { OPEN_DELETED_ITEMS } from "@/features/guidance/next-steps"
 import { EvidenceMoveProvider } from "./EvidenceMoveProvider"
 import { useEffect, useState } from "react"
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom"
@@ -113,6 +115,12 @@ export function EvidenceExplorer() {
   const [caseProfileOpen, setCaseProfileOpen] = useState(false)
   const [deleteEvidenceOpen, setDeleteEvidenceOpen] = useState(false)
   const [deletedItemsOpen, setDeletedItemsOpen] = useState(false)
+  // "Undo from Deleted items" in the next steps after a delete opens the list here (lx-guide B)
+  useEffect(() => {
+    const show = () => setDeletedItemsOpen(true)
+    window.addEventListener(OPEN_DELETED_ITEMS, show)
+    return () => window.removeEventListener(OPEN_DELETED_ITEMS, show)
+  }, [])
   // Deleted items switched on (server setting, off by default); off, deletes are immediate as before.
   const deletedItems = useDeletedItemsEnabled()
   const [deleteEvidenceTarget, setDeleteEvidenceTarget] = useState<EvidenceFile | null>(null)
@@ -154,6 +162,7 @@ export function EvidenceExplorer() {
       onSuccess: () => {
         setDeleteFolderOpen(false)
         setDeleteFolderTarget(null)
+        if (deletedItems) announce(caseId, { kind: "deleted", count: 1, noun: "folder", where: "evidence" })
         toast.success(
           deletedItems
             ? `Folder "${deleteFolderTarget.name}" moved to Deleted items, with its files, for 30 days`
@@ -180,6 +189,7 @@ export function EvidenceExplorer() {
 
     const deleteNext = (index: number) => {
       if (index >= ids.length) {
+        if (deletedItems) announce(caseId, { kind: "deleted", count: ids.length, noun: "file", where: "evidence" })
         toast.success(
           deletedItems
             ? `Moved ${ids.length} file${ids.length !== 1 ? "s" : ""} to Deleted items (restorable for 30 days)`

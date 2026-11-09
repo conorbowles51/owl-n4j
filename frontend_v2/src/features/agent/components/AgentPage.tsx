@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import type { MutableRefObject, ReactNode } from "react"
@@ -935,6 +936,12 @@ export function AgentPage() {
             setMandateUsage(response.mandate)
             ended = true
             useAgentRunStore.getState().finishRun(caseId, "completed")
+            announce(caseId, {
+              kind: "agent-run-done",
+              threadId: response.thread_id,
+              payments: new Set(response.answer.match(/txn:\/\/[^\s)\]]+/g) ?? []).size,
+              records: new Set(response.answer.match(/rec:\/\/[^\s)\]]+/g) ?? []).size,
+            })
           }
 
           if (event.type === "cancelled") {

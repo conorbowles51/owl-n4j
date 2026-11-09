@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react"
+import { announce } from "@/features/guidance/announce"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ApiError } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import {
@@ -47,6 +48,10 @@ export function BulkImportDialog({
   const [attempted, setAttempted] = useState(false)
   const [uncertain, setUncertain] = useState(false)
   const [result, setResult] = useState<BulkCorrectionResult | null>(null)
+  // what to do next once the corrections are in (lx-guide B)
+  useEffect(() => {
+    if (result) announce(null, { kind: "import-done", corrected: result.corrected, failed: result.errors, total: result.total })
+  }, [result])
   const input = useRef<HTMLInputElement>(null)
   const fileVersion = useRef(0)
   const lock = useRef(false)

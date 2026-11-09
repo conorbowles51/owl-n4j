@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { toast } from "sonner"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -102,6 +103,7 @@ export function PaymentLabelsEditor({
       toast.success(
         `${names || counterparty ? "Saved changes" : "Category saved"} for ${ids.length} ${ids.length === 1 ? "transaction" : "transactions"}.`
       )
+      announce(caseId, { kind: "correction-saved", what: names || counterparty ? "Your names" : "The category", count: ids.length, paymentId: ids.length === 1 ? ids[0] : null })
       onClose()
     },
   })

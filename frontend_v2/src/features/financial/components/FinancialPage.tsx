@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
 import { NoFinancialEvidenceNotice } from "./NoFinancialEvidenceNotice"
 import { QUEUE_KEYS } from "../lib/queue-address"
@@ -1017,6 +1018,13 @@ function FinancialPageContent() {
                     caseId={caseId}
                     onImported={(result) => {
                       if (result) setImportReceipt(result)
+                      if (result)
+                        announce(caseId, {
+                          kind: "statement-imported",
+                          payments: result.record_count ?? result.transaction_count,
+                          needsLook: result.incomplete_count ?? 0,
+                          fileName: result.filename,
+                        })
                       const scope = { accountId: result?.account_id }
                       if (caseId) resetPaymentTableView(caseId, scope, result)
                       applyInvestigationScope(scope)

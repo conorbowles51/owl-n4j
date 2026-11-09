@@ -39,6 +39,10 @@ const LazyEvidenceContextSidebar = lazy(() =>
 // The job tray, Guide, keys and Report a problem above a phone case's screens; its code loads with the case page, not with the shell.
 const CaseStrip = lazy(() => import("@/features/phones/ui/CaseStrip"))
 
+// Guidance and step history (lx-guide): next steps after an action, tours, Start here, and the bottom history bar.
+const CaseGuidance = lazy(() => import("@/features/guidance/CaseGuidanceBar"))
+const CaseBottomBar = lazy(() => import("@/features/guidance/CaseGuidanceBar").then((m) => ({ default: m.CaseBottomBar })))
+
 function EvidenceContextSidebar({ caseId }: { caseId: string }) {
   return (
     <LazyPanel>
@@ -84,7 +88,14 @@ export function CaseLayout() {
             </Suspense>
           </ErrorBoundary>
         )}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="relative flex flex-1 overflow-hidden">
+          {caseId && (
+            <ErrorBoundary fallback={<></>}>
+              <Suspense fallback={null}>
+                <CaseGuidance caseId={caseId} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
           {showCaseSidePanel ? (
             <div className="relative flex min-w-0 flex-1 overflow-hidden">
               <ResizablePanelGroup orientation="horizontal" className="flex-1">
@@ -159,6 +170,13 @@ export function CaseLayout() {
             <CaseSidePanelRail />
           )}
         </div>
+        {caseId && (
+          <ErrorBoundary fallback={<></>}>
+            <Suspense fallback={<div className="h-7 shrink-0 border-t border-border bg-card" />}>
+              <CaseBottomBar caseId={caseId} />
+            </Suspense>
+          </ErrorBoundary>
+        )}
       </div>
     </div>
   )

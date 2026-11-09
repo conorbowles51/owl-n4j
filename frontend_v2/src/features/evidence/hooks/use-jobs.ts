@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import type { EvidenceJob } from "@/types/evidence.types"
 
 // For now, use the evidence engine jobs via the backend proxy
-async function fetchJobs(caseId: string): Promise<EvidenceJob[]> {
+export async function fetchJobs(caseId: string): Promise<EvidenceJob[]> {
   const { fetchAPI } = await import("@/lib/api-client")
   // Use the evidence engine's job listing
   const jobs = await fetchAPI<EvidenceJob[]>(`/api/evidence/engine/jobs?case_id=${caseId}`)

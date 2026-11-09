@@ -1,6 +1,7 @@
+import { announce } from "@/features/guidance/announce"
 import { sha256 } from "@noble/hashes/sha2.js"
 import type { LedgerTableView } from "../lib/ledger-table-view"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { formatBytes } from "@/features/evidence/upload-progress"
 import { isPdfSizeRefusal, useStartedRun, wholeCaseFileUrl, type ExportRunSummary } from "../lib/whole-case-run"
@@ -133,6 +134,16 @@ function ExportForm({
   const busy = starting || run?.status === "queued" || run?.status === "running"
   const refusal = startError?.message ?? (run?.status === "failed" || run?.status === "stopped" ? run.error : undefined)
   const finished = run?.status === "completed" && run.summary ? run.summary : null
+  // next steps once a run this screen watched finishes, not for a finished run read back on a later visit
+  const watched = useRef(false)
+  useEffect(() => {
+    if (busy) watched.current = true
+  }, [busy])
+  useEffect(() => {
+    if (!finished || !watched.current) return
+    watched.current = false
+    announce(caseId, { kind: "export-done", fileName: finished.filename, href: run ? wholeCaseFileUrl(caseId, run.id, finished.filename) : null })
+  }, [finished, caseId, run])
   // A PDF over one report's size is not a dead end: the numbered parts below replace the refusal.
   // A table view has no numbered parts, so its refusal stays on the page.
   const numberedPdf = !tableView && includePdf && isPdfSizeRefusal(refusal)

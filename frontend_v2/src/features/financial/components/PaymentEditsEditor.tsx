@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { Disclosure } from "./Disclosure"
 import { PaymentCounterpartyPicker } from "./PaymentCounterpartyPicker"
 import { useState } from "react"
@@ -201,6 +202,7 @@ export function PaymentEditsEditor({
       toast.success(
         `Saved changes to ${result.updated} ${result.updated === 1 ? "transaction" : "transactions"}.`
       )
+      announce(caseId, { kind: "correction-saved", what: "Your changes", count: result.updated, paymentId: result.updated === 1 ? result.replacements[0]?.id : null })
       onClose()
     },
   })

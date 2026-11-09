@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useEffect, useMemo, useState } from "react"
 import { Download, FileSpreadsheet, FileText } from "lucide-react"
 import { toast } from "sonner"
@@ -107,6 +108,7 @@ export function TimelineExportDialog({
       const { blob, filename } = await timelineAPI.downloadExport(payload)
       downloadBlob(blob, filename)
       toast.success(`${format.toUpperCase()} export downloaded`)
+      announce(caseId, { kind: "report-built", fileName: filename })
       onOpenChange(false)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Timeline export failed")

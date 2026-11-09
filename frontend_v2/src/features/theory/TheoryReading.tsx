@@ -1,9 +1,13 @@
 import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { NarrativeBlock } from "./NarrativeBlock"
 import { memberHref, opensAsGroup, useOpenGroup } from "./source-links"
+import { TrailSteps } from "@/features/guidance/history/TrailSteps"
+import { returnTo } from "@/features/guidance/history/recorder"
+import type { Step } from "@/features/guidance/api"
 import { SURFACE_WORDS, theoryAPI, theoryMembersAPI, type Addition, type LoupeView, type Member, type Surface } from "./api"
 
 /**
@@ -116,10 +120,19 @@ export function TheoryReadingSection({ caseId, entryId }: { caseId: string; entr
 
 function OpenSource({ caseId, entryId, a }: { caseId: string; entryId: string; a: Addition }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const open = useOpenGroup(caseId)
   const [error, setError] = useState<string | null>(null)
   const href = a.kind === "single" && a.target_type !== "graph_entity" ? memberHref(caseId, a.target_type, a.target_id, a.source_anchor) : null
   if (href) return <a className="self-center text-xs underline underline-offset-2" href={href}>Open where it came from</a>
+  if (a.target_type === "step_trail") {
+    const first = ((a.how?.steps ?? []) as Step[])[0]
+    return first ? (
+      <button type="button" className="self-center text-xs underline underline-offset-2" onClick={() => returnTo(caseId, first, navigate)}>
+        Open the first step
+      </button>
+    ) : null
+  }
   if (!opensAsGroup(a.target_type)) return null
   const go = async () => {
     setError(null)
@@ -253,6 +266,7 @@ export function LoupeDialog({ caseId, entryId, addition, onClose }: { caseId: st
                 </p>
               )}
               {data.missing && <p role="alert" className="text-sm">{data.missing}</p>}
+              {a.target_type === "step_trail" && <TrailSteps caseId={caseId} how={data.group?.how ?? a.how} />}
               {opensAsGroup(a.target_type) && data.members.length > 0 && (
                 <div>
                   <Button size="sm" variant="outline" onClick={() => open({ label: a.label, linkId: a.link_id, targetType: a.target_type, how: data.group?.how ?? a.how, members: data.members })}>

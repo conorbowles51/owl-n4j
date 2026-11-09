@@ -17,7 +17,7 @@ import { cn } from "@/lib/cn"
 function PriorityRow({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
   const priority = useRowPriority(row)
   return (
-    <tr data-priority={priority || undefined} className={priority ? cn(className, priorityRowClass(priority)) : className}>
+    <tr data-row-key={row.key} data-priority={priority || undefined} className={priority ? cn(className, priorityRowClass(priority)) : className}>
       {children}
     </tr>
   )

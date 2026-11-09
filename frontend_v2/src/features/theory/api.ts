@@ -9,10 +9,10 @@ import type { WorkspaceLinkType } from "@/generated/link-types"
  */
 export type Surface =
   | "graph" | "significant" | "timeline" | "financial" | "evidence" | "passage" | "interview" | "agent" | "phone"
-  | "map" | "search" | "workspace"
+  | "map" | "search" | "workspace" | "history"
 
 export type GroupType =
-  | "graph_selection" | "significant_set" | "timeline_range" | "financial_selection" | "evidence_selection" | "map_selection"
+  | "graph_selection" | "significant_set" | "timeline_range" | "financial_selection" | "evidence_selection" | "map_selection" | "step_trail"
 
 export const SURFACE_WORDS: Record<Surface, string> = {
   graph: "the graph",
@@ -27,6 +27,7 @@ export const SURFACE_WORDS: Record<Surface, string> = {
   map: "the map",
   search: "search",
   workspace: "Workspace",
+  history: "your step history",
 }
 
 export interface ItemInput {
@@ -37,7 +38,7 @@ export interface ItemInput {
 }
 
 export interface GroupMember {
-  type: "graph_entity" | "financial_transaction" | "financial_account" | "financial_party" | "evidence" | "timeline_event" | "phone_record" | "entry"
+  type: "graph_entity" | "financial_transaction" | "financial_account" | "financial_party" | "evidence" | "timeline_event" | "phone_record" | "entry" | "history_step"
   id: string
   label?: string
 }
