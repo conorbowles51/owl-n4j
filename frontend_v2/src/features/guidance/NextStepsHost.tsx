@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { ArrowRight, Lightbulb, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useGraphStore } from "@/stores/graph.store"
@@ -47,6 +47,9 @@ export function NextStepsHost({ caseId }: { caseId: string }) {
 
 export function NextStepsCardView({ card, onClose }: { card: Announced; onClose: () => void }) {
   const navigate = useNavigate()
+  const here = useLocation()
+  // a step to the screen the person is already on is left out: it would lead nowhere new
+  const steps = card.steps.filter((st) => st.to !== here.pathname + here.search && st.to !== here.pathname)
   const g = useGuidance(card.caseId)
   const go = (step: NextStep) => {
     if (step.effect?.selectGraph?.length) useGraphStore.getState().selectNodes(step.effect.selectGraph)
@@ -74,7 +77,7 @@ export function NextStepsCardView({ card, onClose }: { card: Announced; onClose:
         </button>
       </div>
       <ul className="mt-2 flex flex-col gap-1.5">
-        {card.steps.map((step) => (
+        {steps.map((step) => (
           <li key={step.id} className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">{step.text}</span>
             <Button size="sm" variant="outline" className="shrink-0" onClick={() => go(step)}>

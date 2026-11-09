@@ -41,6 +41,8 @@ export function TourHost({ caseId }: { caseId: string }) {
     return () => window.removeEventListener(START_TOUR, start)
   }, [area])
 
+  // another dialog open (an editor, a confirmation): the tour steps aside until it closes, never on top of it
+  const covered = useOtherDialog(!!open)
   const saved = area ? g.settings?.tours[area] : undefined
   const due = !!area && g.on && ready === pathname && !g.tipHidden(TOUR_TIP) && !saved?.state
   const resumeAt = saved?.step ?? 0
@@ -49,7 +51,7 @@ export function TourHost({ caseId }: { caseId: string }) {
     setOpen((o) => o ?? { area, step: Math.min(resumeAt, TOURS[area].steps.length - 1), auto: true })
   }, [due, area, resumeAt])
 
-  if (!open) return null
+  if (!open || covered) return null
   return (
     <TourPopup
       key={`${open.area}-${open.auto ? "auto" : "asked"}`}
@@ -71,6 +73,19 @@ export function TourHost({ caseId }: { caseId: string }) {
       guidanceOn={g.on}
     />
   )
+}
+
+/** Whether a dialog other than the tour is open; checked twice a second while the tour is open. */
+function useOtherDialog(watch: boolean): boolean {
+  const [covered, setCovered] = useState(false)
+  useEffect(() => {
+    if (!watch) return
+    const look = () => setCovered(!!document.querySelector("[role='dialog']:not([data-testid='tour-popup']), [role='alertdialog']"))
+    look()
+    const t = window.setInterval(look, 500)
+    return () => window.clearInterval(t)
+  }, [watch])
+  return watch && covered
 }
 
 interface Place {
@@ -132,7 +147,7 @@ export function TourPopup({
       {where.ring && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed z-[60] rounded-md ring-2 ring-primary ring-offset-2 ring-offset-background"
+          className="pointer-events-none fixed z-[45] rounded-md ring-2 ring-primary ring-offset-2 ring-offset-background"
           style={where.ring}
         />
       )}
@@ -141,7 +156,7 @@ export function TourPopup({
         aria-modal="false"
         aria-label={`${tour.name} tour, step ${index + 1} of ${tour.steps.length}`}
         data-testid="tour-popup"
-        className="fixed z-[61] rounded-lg border border-primary/50 bg-card p-3 text-sm shadow-xl"
+        className="fixed z-[46] rounded-lg border border-primary/50 bg-card p-3 text-sm shadow-xl"
         style={{ top: where.top, left: where.left, width: Math.min(W, window.innerWidth - 16) }}
       >
         <p className="text-[11px] font-medium uppercase tracking-wide text-primary">

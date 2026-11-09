@@ -117,6 +117,10 @@ export function stepName(parts: {
     if (account) out.push(account)
     const range = rangeWords(scope?.startDate, scope?.endDate)
     if (range) out.push(range)
+    const typed = Object.values(state.financial?.drafts ?? {}).find(
+      (v): v is { search: string } => !!v && typeof v === "object" && typeof (v as { search?: unknown }).search === "string" && !!(v as { search: string }).search.trim()
+    )
+    if (typed) out.push(`"${typed.search.trim().slice(0, 40)}"`)
     const payment = params.get("payment")
     if (payment) out.push(label(payment) ?? "one payment")
   } else if (screenLabel === "Graph" || screenLabel === "Map") {

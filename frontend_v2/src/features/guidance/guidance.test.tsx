@@ -159,6 +159,22 @@ describe("first-visit tours", () => {
     expect(screen.getByText("Financial · 2 of 5")).toBeTruthy()
   })
 
+  it("steps aside while another dialog is open and comes back when it closes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    server()
+    wrap(<TourHost caseId="c1" />, "/cases/c1/evidence")
+    await act(async () => void vi.advanceTimersByTime(1500))
+    expect(await screen.findByTestId("tour-popup")).toBeTruthy()
+    const other = document.createElement("div")
+    other.setAttribute("role", "dialog")
+    document.body.appendChild(other)
+    await act(async () => void vi.advanceTimersByTime(600))
+    expect(screen.queryByTestId("tour-popup")).toBeNull()
+    other.remove()
+    await act(async () => void vi.advanceTimersByTime(600))
+    expect(screen.getByTestId("tour-popup")).toBeTruthy()
+  })
+
   it("turning guidance off stops popups for that person across sessions", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const s = server()

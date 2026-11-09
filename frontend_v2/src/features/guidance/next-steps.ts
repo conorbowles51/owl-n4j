@@ -97,7 +97,7 @@ export function nextSteps(caseId: string, facts: ActionFacts): NextStepsCard | n
       steps = [
         facts.names > 0 && { id: "names", text: `Check the ${plural(facts.names, "name")} found, one row each.`, label: "Review the names", to: `${base}/table` },
         facts.links > 0 && { id: "graph", text: `See the ${plural(facts.links, "link")} between them as a network.`, label: "Open the graph", to: `${base}/graph` },
-        facts.names > 0 && { id: "timeline", text: "Dated events from the files sit on the case timeline.", label: "See the timeline", to: `${base}/timeline` },
+        facts.names > 0 && { id: "timeline", text: "Look for dated events from the files on the case timeline.", label: "See the timeline", to: `${base}/timeline` },
         facts.names > 0 && { id: "agent", text: "Ask the case agent what the new files say and how they fit.", label: "Ask the agent", to: `${base}/agent` },
         facts.evidenceId && { id: "file", text: `Read ${facts.fileName || "the file"} with what was found in it.`, label: "Open the file", to: `${base}/evidence?file=${encodeURIComponent(facts.evidenceId)}` },
       ]
@@ -132,7 +132,7 @@ export function nextSteps(caseId: string, facts: ActionFacts): NextStepsCard | n
       title = `${facts.what} saved${facts.count > 1 ? ` on ${plural(facts.count, "payment")}` : ""}. The original stays visible beside it.`
       steps = [
         facts.paymentId && { id: "payment", text: "See the payment with its correction and the statement line it came from.", label: "See the payment", to: paymentPath(caseId, facts.paymentId) },
-        { id: "unnamed", text: "Work through the payments whose other side has no name yet.", label: "Name the next payments", to: `${base}/financial?view=transactions` },
+        { id: "payments", text: "Go back to the payments to check or correct the next one.", label: "See the payments", to: `${base}/financial?view=transactions` },
         { id: "follow", text: "See how the corrected figures change the money flows.", label: "Follow the money", to: `${base}/financial?view=follow-money` },
       ]
       break
@@ -140,7 +140,7 @@ export function nextSteps(caseId: string, facts: ActionFacts): NextStepsCard | n
       title = `${plural(facts.count, "reading")} confirmed. ${facts.count === 1 ? "It counts" : "They count"} as a person's reading from now on.`
       steps = [
         facts.paymentId && { id: "payment", text: "See the payment with the confirmed reading.", label: "See the payment", to: paymentPath(caseId, facts.paymentId) },
-        { id: "next", text: "Confirm the next names Claude read that no person has checked.", label: "Confirm the next", to: `${base}/financial?view=transactions` },
+        { id: "next", text: "Go back to the payments to confirm the next name Claude read.", label: "See the payments", to: `${base}/financial?view=transactions` },
       ]
       break
     case "import-done":

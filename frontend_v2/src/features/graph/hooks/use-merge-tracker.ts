@@ -30,7 +30,8 @@ interface UseMergeTrackerOptions {
 function announceMerge(mergedKey: string | null, sourceKeys: string[]) {
   const caseId = /^\/cases\/([^/]+)/.exec(window.location.pathname)?.[1]
   const qc = guidanceQueryClient()
-  const name = (mergedKey && qc && labelFromCache(qc, mergedKey)) || "one entry"
+  // the merged entry's own name once loaded, else the name of the first entry merged into it
+  const name = (qc && ((mergedKey && labelFromCache(qc, mergedKey)) || (sourceKeys[0] && labelFromCache(qc, sourceKeys[0])))) || "the merged entry"
   announce(caseId ? decodeURIComponent(caseId) : null, { kind: "merge-done", name, entityKey: mergedKey, merged: sourceKeys.length })
 }
 

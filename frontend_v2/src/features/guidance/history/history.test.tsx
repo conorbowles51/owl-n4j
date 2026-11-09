@@ -27,6 +27,8 @@ describe("step names", () => {
     expect(stepName({ pathname: "/cases/c1/financial", search: "?view=statements", label, state: { document: { evidenceId: "f6", name: "11 ARRENDO BBVA USD NOV 2022.pdf", page: 2, pages: 6 } } }))
       .toBe("Statement page 2 of 6 · 11 ARRENDO BBVA USD NOV 2022.pdf")
     expect(stepName({ pathname: "/cases/c1/evidence", search: "?file=f6", label, state: {} })).toBe("Evidence · x.pdf")
+    expect(stepName({ pathname: "/cases/c1/financial", search: "?view=transactions", label, state: { financial: { drafts: { "payment-table:x": { search: "ORDEN DE PAGO" } }, scope: {} } } }))
+      .toBe('Transactions · "ORDEN DE PAGO"')
     expect(rangeWords("2022-11-01", "2023-02-28")).toBe("Nov 2022 to Feb 2023")
   })
 })
