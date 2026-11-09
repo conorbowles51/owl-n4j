@@ -394,7 +394,7 @@ describe("FinancialPage", () => {
     ).toBeInTheDocument()
     expect(
       screen.queryByText(
-        /No (?:admitted rows in the ledger|imported payments yet)/i
+        /No (?:included rows in the ledger|imported payments yet)/i
       )
     ).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Statement files" }))
@@ -485,7 +485,7 @@ describe("FinancialPage", () => {
     expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {}, true)
     expect(
       screen.getAllByText(
-        /No (?:admitted rows in the ledger|imported payments yet)/i
+        /No (?:included rows in the ledger|imported payments yet)/i
       )[0]
     ).toBeInTheDocument()
   })
@@ -528,7 +528,7 @@ describe("FinancialPage", () => {
     expect(screen.getAllByRole("tab")).toHaveLength(7)
     expect(
       screen.getAllByText(
-        /No (?:admitted rows in the ledger|imported payments yet)/i
+        /No (?:included rows in the ledger|imported payments yet)/i
       )[0]
     ).toBeInTheDocument()
   })
@@ -541,7 +541,7 @@ describe("FinancialPage", () => {
     expect(screen.getAllByRole("tab")).toHaveLength(7)
     expect(
       screen.getAllByText(
-        /No (?:admitted rows in the ledger|imported payments yet)/i
+        /No (?:included rows in the ledger|imported payments yet)/i
       )[0]
     ).toBeInTheDocument()
   })
@@ -991,7 +991,7 @@ describe("FinancialPage, the row adjudication dialog", () => {
 
     expect(
       screen.getAllByText(
-        /No (?:admitted rows in the ledger|imported payments yet)/i
+        /No (?:included rows in the ledger|imported payments yet)/i
       )[0]
     ).toBeInTheDocument()
     expect(screen.getByTestId("adjudication-row")).toHaveAttribute(
@@ -1113,7 +1113,7 @@ describe("FinancialPage authoritative Transactions", () => {
       selectTab("Transactions")
       expect(
         screen.getAllByText(
-          /No (?:admitted rows in the ledger|imported payments yet)/i
+          /No (?:included rows in the ledger|imported payments yet)/i
         )[0]
       ).toBeInTheDocument()
       expect(
@@ -1137,7 +1137,7 @@ describe("FinancialPage authoritative Transactions", () => {
     )
     expect(
       screen.queryByText(
-        /No (?:admitted rows in the ledger|imported payments yet)/i
+        /No (?:included rows in the ledger|imported payments yet)/i
       )
     ).not.toBeVisible()
     expect(
@@ -1150,7 +1150,7 @@ describe("FinancialPage authoritative Transactions", () => {
     )
     expect(
       screen.getAllByText(
-        /No (?:admitted rows in the ledger|imported payments yet)/i
+        /No (?:included rows in the ledger|imported payments yet)/i
       )[0]
     ).toBeInTheDocument()
   })
