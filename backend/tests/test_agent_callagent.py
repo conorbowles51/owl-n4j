@@ -184,23 +184,26 @@ class ModelChoiceTests(unittest.TestCase):
         with self._configured({"deepseek", "openai"}):
             offered, default = model_choice.choices(None, workload_model=_policy)
         self.assertEqual(offered[0], default)
-        self.assertEqual(default.key, "deepseek-v4-pro:off")
+        self.assertEqual(default.key, "deepseek-v4-pro:high")
         self.assertNotIn("openai", {c.provider for c in offered})
-        self.assertIn("deepseek-v4-pro:high", {c.key for c in offered})
+        self.assertIn("deepseek-v4-pro:off", {c.key for c in offered})
+        self.assertEqual([c.label for c in offered if c.model_id == "deepseek-v4-pro"],
+                         ["DeepSeek V4 Pro · thinks longer", "DeepSeek V4 Pro · answers faster",
+                          "DeepSeek V4 Pro · thinks longest"])
 
     def test_a_pick_is_resolved_and_marked_as_a_persons_choice(self):
         from services.agent import model_choice
         with self._configured({"deepseek"}):
-            choice, chosen = model_choice.resolve(None, model="deepseek-v4-pro", provider=None, reasoning="high",
+            choice, chosen = model_choice.resolve(None, model="deepseek-v4-pro", provider=None, reasoning="max",
                                                   workload_model=_policy)
             default, by_person = model_choice.resolve(None, model=None, provider=None, reasoning=None,
                                                       workload_model=_policy)
             with self.assertRaisesRegex(ValueError, "OpenAI"):
                 model_choice.resolve(None, model="gpt-5", provider="openai", reasoning=None, workload_model=_policy)
-        self.assertEqual((choice.reasoning, chosen), ("high", True))
-        self.assertEqual((default.key, by_person), ("deepseek-v4-pro:off", False))
+        self.assertEqual((choice.reasoning, chosen), ("max", True))
+        self.assertEqual((default.key, by_person), ("deepseek-v4-pro:high", False))
         self.assertEqual(model_choice.written_by(choice.model_name, choice.reasoning),
-                         "Written by DeepSeek V4 Pro · thinks longer")
+                         "Written by DeepSeek V4 Pro · thinks longest")
 
     def test_the_answer_shows_the_model_recorded_on_its_run(self):
         from services.agent.storage import _written_by
@@ -308,17 +311,16 @@ if RunRecordFixture is not None:
         def test_the_picked_model_runs_and_the_answer_says_so(self):
             for path in ("stream", "handle"):
                 with self.subTest(path=path):
-                    captured, response, run = self.run_service(path, model="deepseek-v4-pro", reasoning="high")
-                    self.assertEqual(captured["init"]["reasoning"], "high")
-                    self.assertEqual(run.extra_metadata["model_choice"]["reasoning"], "high")
+                    captured, response, run = self.run_service(path, model="deepseek-v4-pro", reasoning="off")
+                    self.assertEqual(captured["init"]["reasoning"], "off")
+                    self.assertEqual(run.extra_metadata["model_choice"]["reasoning"], "off")
                     self.assertTrue(run.extra_metadata["model_choice"]["chosen_by_person"])
-                    self.assertEqual(response["model_info"]["written_by"],
-                                     "Written by DeepSeek V4 Pro · thinks longer")
+                    self.assertEqual(response["model_info"]["written_by"], "Written by DeepSeek V4 Pro")
                     from services.agent.storage import get_thread_detail
                     with patch("services.agent.storage.check_case_access"):
                         detail = get_thread_detail(self.fx.db, thread_id=run.thread_id, user=self.fx.user)
                     answers = [m for m in detail.messages if m.role == "assistant"]
-                    self.assertEqual(answers[-1].written_by, "Written by DeepSeek V4 Pro · thinks longer")
+                    self.assertEqual(answers[-1].written_by, "Written by DeepSeek V4 Pro")
 
         def test_an_out_of_steps_answer_keeps_the_answer_and_the_offer(self):
             from services.agent.graph import _budget_continuation_clarification
@@ -329,7 +331,8 @@ if RunRecordFixture is not None:
 
         def test_the_default_needs_no_pick(self):
             captured, response, run = self.run_service("stream")
-            self.assertEqual(captured["init"]["reasoning"], "off")
+            self.assertEqual(captured["init"]["reasoning"], "high")
+            self.assertEqual(response["model_info"]["written_by"], "Written by DeepSeek V4 Pro · thinks longer")
             self.assertFalse(run.extra_metadata["model_choice"]["chosen_by_person"])
 
         def test_the_focus_reaches_both_prompts(self):

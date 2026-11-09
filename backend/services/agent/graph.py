@@ -36,10 +36,15 @@ logger = logging.getLogger(__name__)
 
 
 # How hard the model reasons before it answers (AG-07). DeepSeek V4 takes thinking on/off plus an effort of low, high
-# or max; "off" is what every run used before 9 Nov. The setting is AGENT_REASONING (Settings → AI settings stores
-# it as the agent workload's reasoning); a person may pick another per message in the chat.
+# or max; "off" is what every run used before 9 Nov. AGENT_REASONING in the environment overrides the default; a
+# person may pick another level per message in the chat (services.agent.model_choice).
+# Decision (lx-callagent D, measured 9 Nov 2026 by read-only replays of the two team-call questions): "high" is the
+# default. Hidden assets (BNB2): 517 words, 3 page citations, 797 s, about 0.66 USD, against off: 301 words, 2 row
+# links, 701 s, 0.24 USD. Erica Hopper tally: 12 citations and the six payments to Hopper-named payees found, 1,183 s,
+# 0.48 USD, against off: 0 citations, 300 s, 0.39 USD. Every step shows its own progress line, so the wait is exact
+# progress. Reverse (AGENT_REASONING=off) if live runs on high often pass 15 minutes, or testers find the wait too long.
 REASONING_LEVELS = ("off", "high", "max")
-DEFAULT_REASONING = "off"
+DEFAULT_REASONING = "high"
 
 # A model request that fails for a reason worth trying again (no answer in time, the service unreachable, busy or
 # erroring) is tried again by the run itself, never silently by the client, so the reader is told (AG-06).
@@ -884,7 +889,7 @@ parties use get_money_between; for any other money total use the ledger tools.
 
 class AgentGraphRunner:
     def __init__(self, *, provider: str, model_id: str, api_key: str | None = None,
-                 reasoning: str = DEFAULT_REASONING):
+                 reasoning: str = "off"):
         self.provider = provider
         self.model_id = model_id
         self.reasoning = reasoning if provider == "deepseek" else "off"

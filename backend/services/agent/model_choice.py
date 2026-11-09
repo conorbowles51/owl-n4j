@@ -30,6 +30,8 @@ _CLIENT_MODULE = {"deepseek": "langchain_openai", "anthropic": "langchain_anthro
 # Models that are image readers, not agents.
 _NOT_AGENT_MODELS = frozenset({"deepseek-flash", "gemini-3.5-flash-lite"})
 REASONING_LABELS = {"off": "", "high": "thinks longer", "max": "thinks longest"}
+# The faster level, named only where it is a choice in the list (not on old answers, which all used it).
+CHOICE_LABELS = {**REASONING_LABELS, "off": "answers faster"}
 
 
 def default_reasoning() -> str:
@@ -51,7 +53,7 @@ class Choice:
 
     @property
     def label(self) -> str:
-        extra = REASONING_LABELS.get(self.reasoning) or ""
+        extra = (CHOICE_LABELS if self.provider == "deepseek" else REASONING_LABELS).get(self.reasoning) or ""
         return f"{self.model_name} · {extra}" if extra else self.model_name
 
 
