@@ -387,7 +387,8 @@ def test_nginx_serves_the_site_and_a_frontend_release_then_stops_nothing(release
     site = release_sandbox / 'nginx/sites-enabled/loupe-frontend'
     assert site.is_symlink()
     text = site.read_text()
-    assert 'listen 5174;' in text and str(release_sandbox.parent / 'loupe-frontend') + '/current' in text
+    # Keepalive on browser connections: a request over 10 minutes still reaches the browser (cloud idle drop).
+    assert 'listen 5174 so_keepalive=60s:30s:5;' in text and str(release_sandbox.parent / 'loupe-frontend') + '/current' in text
     assert 'proxy_pass http://0.0.0.0:8002;' in text and '@' not in text.split('server {')[1].split('}')[0]
     assert 'systemctl stop owl-frontend-v2' in events and 'systemctl reload nginx' in events
     env_file = release_sandbox / '.env'
