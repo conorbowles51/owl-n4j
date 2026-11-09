@@ -1,11 +1,12 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const expertPacketSchema = z.object({
+const expertPacketSchema = lazySchema(() => z.object({
   completeness: z.enum(["complete_expert_packet", "incomplete_expert_packet"]),
   byte_count: z.number().int().nonnegative(),
   sentence: z.string(),
   parts: z.array(z.object({ label: z.string(), holds: z.boolean() })),
-})
+}))
 
 export type ExpertPacket = z.infer<typeof expertPacketSchema>
 

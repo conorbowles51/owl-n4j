@@ -2,8 +2,9 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const pageReview = z.object({
+const pageReview = lazySchema(() => z.object({
   id: z.string(),
   page_number: z.number(),
   disposition: z.string(),
@@ -15,12 +16,12 @@ const pageReview = z.object({
   origin: z.record(z.string(), z.unknown()).nullable(),
   undone_at: z.string().nullable(),
   undone_by: z.string().nullable(),
-})
+}))
 export type PageReview = z.infer<typeof pageReview>
-const pageReviews = z.object({
+const pageReviews = lazySchema(() => z.object({
   reviews: z.array(pageReview),
   history: z.array(pageReview),
-})
+}))
 
 export const pageReviewKey = (caseId: string, fileId: string) => [
   "statement-page-reviews",
