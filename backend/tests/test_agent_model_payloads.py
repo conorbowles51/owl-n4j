@@ -187,6 +187,20 @@ class MapTotalTests(unittest.TestCase):
         self.assertEqual((second["returned"], second["has_more"], second["next_offset"]), (25, False, None))
         self.assertEqual((built["location_count"], built["total_locations"]), (50, 75))
 
+    def test_places_in_one_country_are_counted_over_every_page(self):
+        # 33 places in Spain among 80: the first page of 50 holds only some of them.
+        locations = ([{"key": f"a-{i:03d}", "name": f"Spain place {i}", "location_formatted": f"Calle {i}, Madrid, Spain"}
+                      for i in range(33)]
+                     + [{"key": f"0-{i:03d}", "name": f"Mexico place {i}", "location_formatted": f"Av {i}, CDMX, Mexico"}
+                        for i in range(47)])
+        context = AgentToolContext(case_id="00000000-0000-0000-0000-0000000000aa")
+        tools = {t.name: t for t in make_agent_tools(context)}
+        with patch("services.agent.tools.geo_service.get_entities_with_locations", return_value=locations):
+            spain = tools["get_map_locations"].invoke({"place": "spain"})["data"]
+            first = tools["get_map_locations"].invoke({"limit": 50})["data"]
+        self.assertEqual((spain["total"], spain["returned"]), (33, 33))
+        self.assertEqual(first["places_by_country"], {"Mexico": 47, "Spain": 33})
+
 
 if __name__ == "__main__":
     unittest.main()

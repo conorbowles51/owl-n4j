@@ -301,9 +301,29 @@ class FinancialAnalysisArgs(FinancialQueryArgs):
     group_by: Literal["account", "month", "counterparty", "category"] = "account"
 
 
+def _map_place_text(location: dict[str, Any]) -> str:
+    return " ".join(str(location.get(k) or "") for k in ("name", "location_name", "location_formatted",
+                                                           "geocoding_formatted_address")).casefold()
+
+
+def _map_countries(locations: list[dict[str, Any]]) -> dict[str, int]:
+    """Mapped places per country, read as the last part of each formatted address (most first)."""
+    counts: dict[str, int] = {}
+    for location in locations:
+        address = str(location.get("geocoding_formatted_address") or location.get("location_formatted") or "").strip()
+        country = address.rsplit(",", 1)[-1].strip() if address else ""
+        if country and not any(ch.isdigit() for ch in country):
+            counts[country] = counts.get(country, 0) + 1
+        else:
+            counts["(no country in the address)"] = counts.get("(no country in the address)", 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
 class MapArgs(BaseModel):
     entity_types: list[str] | None = None
     entity_keys: list[str] | None = None
+    place: str | None = Field(None, description="Only places whose name or address contains this text, e.g. a country "
+                              "or town ('Spain', 'Galway'); total then counts every match.")
     limit: int = Field(50, ge=1, le=200)
     offset: int = Field(0, ge=0)
 
@@ -2472,6 +2492,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def get_map_locations(
         entity_types: list[str] | None = None,
         entity_keys: list[str] | None = None,
+        place: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -2487,6 +2508,12 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         keys = set(entity_keys or [])
         if keys:
             locations = [location for location in locations if location.get("key") in keys]
+        # Counted over every mapped place, not one page: an answer counting "places in Spain" from the first 50 of
+        # a case's places said 17 where the map shows 33 (lx-agentlive coverage, 8 Nov 2026).
+        countries = _map_countries(locations)
+        wanted = (place or "").strip().casefold()
+        if wanted:
+            locations = [location for location in locations if wanted in _map_place_text(location)]
         # A stable order, so pages by offset neither skip nor repeat a place.
         locations = sorted(locations, key=lambda location: str(location.get("key") or ""))
         total = len(locations)
@@ -2497,8 +2524,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             "get_map_locations",
             {"locations": page, "count": len(page), "total": total, "returned": len(page), "offset": offset,
              "has_more": more, "next_offset": offset + len(page) if more else None,
+             "places_by_country": countries, **({"place": place} if wanted else {}),
              **({"phone_note": note} if note else {})},
-            summary=(f"Loaded {len(page)} of {total} mapped location(s)"
+            summary=(f"Loaded {len(page)} of {total} mapped location(s)" + (f" matching '{place}'" if wanted else "")
                      + (f"; {total - offset - len(page)} more from offset {offset + len(page)}." if more else ".")
                      + (f" {note}" if note else "")),
         )
@@ -3222,7 +3250,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             get_map_locations,
             name="get_map_locations",
             description=("Retrieve geocoded case entities for map reasoning. States total, returned and next_offset; "
-                "read further pages with offset."),
+                "read further pages with offset. places_by_country counts every mapped place; to count or list the "
+                "places in one country or town, pass place (e.g. 'Spain') and read total."),
             args_schema=MapArgs,
         ),
         wrap(
