@@ -950,6 +950,24 @@ def backfill_case_ids_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+STATUS_PAGE_SIZE = 5000
+
+
+def _iter_metadatas(collection, page_size: int | None = None):
+    """Every metadata of a Chroma collection, read page by page (limit/offset)."""
+    page_size = page_size or STATUS_PAGE_SIZE
+    offset = 0
+    while True:
+        page = collection.get(include=["metadatas"], limit=page_size, offset=offset)
+        ids = page.get("ids") or []
+        metadatas = page.get("metadatas") or []
+        for i in range(len(ids)):
+            yield metadatas[i] if i < len(metadatas) else None
+        if len(ids) < page_size:
+            return
+        offset += len(ids)
+
+
 @router.get("/status", response_model=BackfillStatusResponse)
 def get_backfill_status(
     user: dict = Depends(get_current_user),
@@ -975,24 +993,18 @@ def get_backfill_status(
         docs_with_summary = doc_result[0]["with_summary"] if doc_result else 0
         docs_with_case_id = doc_result[0]["with_case_id"] if doc_result else 0
 
-        # Count documents that have chunks
-        try:
-            chunk_collection = vector_db_service.chunk_collection
-            all_chunks = chunk_collection.get(include=["metadatas"])
-            chunk_ids = all_chunks.get("ids", [])
-            chunk_metadatas = all_chunks.get("metadatas", [])
-
-            # Count unique doc_ids that have chunks
-            docs_with_chunks = set()
-            for metadata in chunk_metadatas:
-                if metadata and metadata.get("doc_id"):
-                    docs_with_chunks.add(metadata["doc_id"])
-
-            total_chunks = len(chunk_ids)
-            docs_with_chunk_count = len(docs_with_chunks)
-        except Exception:
-            total_chunks = 0
-            docs_with_chunk_count = 0
+        # Count documents that have chunks. Paged: one unpaged get of a large collection fails
+        # ("too many SQL variables"), and a failed read must not show as 0.
+        docs_with_chunks = set()
+        total_chunks = 0
+        chunks_with_case_id = 0
+        for metadata in _iter_metadatas(vector_db_service.chunk_collection):
+            total_chunks += 1
+            if metadata and metadata.get("doc_id"):
+                docs_with_chunks.add(metadata["doc_id"])
+            if metadata and metadata.get("case_id"):
+                chunks_with_case_id += 1
+        docs_with_chunk_count = len(docs_with_chunks)
 
         # Entity stats (including case_id in Neo4j)
         entity_cypher = """
@@ -1005,28 +1017,13 @@ def get_backfill_status(
         total_entities_neo4j = entity_result[0]["total"] if entity_result else 0
         entities_neo4j_with_case_id = entity_result[0]["with_case_id"] if entity_result else 0
 
-        # Check ChromaDB entity metadata for case_id
-        try:
-            entity_collection = vector_db_service.entity_collection
-            all_entities = entity_collection.get(include=["metadatas"])
-            entity_ids = all_entities.get("ids", [])
-            entity_metadatas = all_entities.get("metadatas", [])
-
-            total_entities_chromadb = len(entity_ids)
-            entities_with_case_id = sum(
-                1 for m in entity_metadatas if m and m.get("case_id")
-            )
-        except Exception:
-            total_entities_chromadb = 0
-            entities_with_case_id = 0
-
-        # Check ChromaDB chunk metadata for case_id
-        try:
-            chunks_with_case_id = sum(
-                1 for m in chunk_metadatas if m and m.get("case_id") and m["case_id"] != ""
-            )
-        except Exception:
-            chunks_with_case_id = 0
+        # Check ChromaDB entity metadata for case_id (paged, as above)
+        total_entities_chromadb = 0
+        entities_with_case_id = 0
+        for metadata in _iter_metadatas(vector_db_service.entity_collection):
+            total_entities_chromadb += 1
+            if metadata and metadata.get("case_id"):
+                entities_with_case_id += 1
 
         return BackfillStatusResponse(
             documents={
