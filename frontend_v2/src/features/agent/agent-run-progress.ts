@@ -106,3 +106,13 @@ export function useFollowServerRun(caseId: string | undefined) {
     }
   }, [caseId, runId, following])
 }
+
+/** The thread's last question when it has no answer after it (its run was stopped or ended without one), else null.
+ * Callers show it only when nothing is running for the thread. */
+export function unansweredQuestion(
+  messages: ReadonlyArray<{ role: "user" | "assistant"; content: string; pending?: boolean }>
+): string | null {
+  const last = messages.length > 0 ? messages[messages.length - 1] : null
+  if (!last || last.role !== "user" || last.pending || !last.content.trim()) return null
+  return last.content
+}

@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { AgentRunProgress } from "./AgentRunProgress"
-import { formatElapsed, progressLine, useFollowServerRun } from "../agent-run-progress"
+import { AgentRunProgress, AgentUnansweredNote } from "./AgentRunProgress"
+import { formatElapsed, progressLine, unansweredQuestion, useFollowServerRun } from "../agent-run-progress"
 import { agentAPI } from "../api"
 import { useAgentRunStore, type AgentRunNavigationState } from "../stores/agent-run.store"
 import { ChatWaitingLine } from "@/features/chat/components/ChatWaitingLine"
@@ -120,4 +120,18 @@ it("shows a retried step in plain words with the time so far and Stop (lx-callag
   expect(screen.getByTestId("agent-run-progress").closest("[data-phase]")?.getAttribute("data-phase")).toBe("retrying")
   fireEvent.click(screen.getByRole("button", { name: /stop/i }))
   expect(onStop).toHaveBeenCalled()
+})
+
+it("a stopped run's question gets a plain note with Ask again, not silence", () => {
+  const q = { id: "m2", role: "user" as const, content: "List every phone contact" }
+  const a = { id: "m1", role: "assistant" as const, content: "Three accounts" }
+  expect(unansweredQuestion([a, q])).toBe("List every phone contact")
+  expect(unansweredQuestion([q, a])).toBeNull()
+  expect(unansweredQuestion([a, { ...q, pending: true }])).toBeNull()
+  expect(unansweredQuestion([])).toBeNull()
+  const retry = vi.fn()
+  render(<AgentUnansweredNote onRetry={retry} />)
+  expect(screen.getByText(/stopped before it finished/)).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: /Ask again/ }))
+  expect(retry).toHaveBeenCalled()
 })

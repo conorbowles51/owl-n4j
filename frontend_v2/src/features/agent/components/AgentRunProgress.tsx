@@ -76,3 +76,24 @@ export function AgentRunProgress({
     </div>
   )
 }
+
+/** The thread's last question has no answer and nothing is running for it: the run was stopped or did not finish.
+ * The stored thread has no record of why, so the note says both and offers to ask again. */
+export function AgentUnansweredNote({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="flex gap-3" role="status" data-testid="agent-unanswered-note">
+      <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <Bot className="size-4" />
+      </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+        <span>No answer: this question was stopped before it finished. Nothing already saved is lost.</span>
+        {onRetry && (
+          <Button type="button" size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={onRetry}>
+            <RotateCcw className="mr-1 size-3" />
+            Ask again
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}

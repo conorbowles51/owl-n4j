@@ -89,10 +89,10 @@ import {
 import { cn } from "@/lib/cn"
 import { agentAPI } from "../api"
 import { localStartMs, useAgentRunStore } from "../stores/agent-run.store"
-import { AgentRunProgress } from "./AgentRunProgress"
+import { AgentRunProgress, AgentUnansweredNote } from "./AgentRunProgress"
 import { AgentModelPicker } from "./AgentModelPicker"
 import { modelParams, useAgentModelChoices } from "../agent-model-choice"
-import { useFollowServerRun } from "../agent-run-progress"
+import { unansweredQuestion, useFollowServerRun } from "../agent-run-progress"
 import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import { MandateUsageBanner } from "@/features/workspace/components/MandateUsageBanner"
 import { useCaseContext } from "@/features/workspace/hooks/use-workspace"
@@ -1002,6 +1002,8 @@ export function AgentPage() {
     useAgentRunStore.getState().clearRun(caseId)
     setRetryQuestion(question)
   }
+  // The last question in the thread has no answer and nothing runs for it (stopped, or ended without one).
+  const unanswered = unansweredQuestion(messages)
   useEffect(() => {
     if (!retryQuestion || isLoading) return
     setRetryQuestion(null)
@@ -1219,6 +1221,9 @@ export function AgentPage() {
                       }
                     />
                   ))}
+                  {!isLoading && unanswered !== null && (
+                    <AgentUnansweredNote onRetry={() => setRetryQuestion(unanswered)} />
+                  )}
                   {isLoading && sharedRun && (
                     <AgentRunProgress
                       run={sharedRun}
