@@ -92,7 +92,8 @@ import { paymentFilterKey } from "../lib/payment-table-draft"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import { PaymentNamingPanel } from "./PaymentNamingPanel"
 import { ReadingCheckContext, showReadingRow } from "../hooks/reading-check-context"
-import { needsConfirm, needsName } from "../lib/payment-naming"
+import { needsConfirm, needsName, unconfirmedNamesLabel } from "../lib/payment-naming"
+import { BulkConfirmReadings } from "./BulkConfirmReadings"
 import type { LedgerTransaction } from "../api"
 const TABLE_VIEW_KEY = "financial-transactions-table-view"
 // The first view's rows before it arrives (one value, so memos over the rows do not recompute each render).
@@ -611,6 +612,10 @@ export function LedgerRowBrowser({
   const pageRows = firstData ? rows : rows.slice(index * pageSize, (index + 1) * pageSize)
   const unnamedCount = firstData ? firstData.unnamed : unnamedRows.length
   const unconfirmedCount = firstData ? firstData.unconfirmed : unconfirmedRows.length
+  // Once shown, the "not confirmed" bar stays (saying all are confirmed) when the last one in view is confirmed:
+  // removing it would move every row under it while the person is working there.
+  const [readingsShown, setReadingsShown] = useState(false)
+  if (unconfirmedCount > 0 && !readingsShown) setReadingsShown(true)
   // Open a payment beside the table for naming, and turn the table to the page it is on.
   const openNaming = (id: string, mode?: "name" | "confirm") => {
     if (mode) setNamingMode(mode)
@@ -1898,7 +1903,7 @@ export function LedgerRowBrowser({
           )}
         </div>
       )}
-      {investigation && exportContext && !waiting && (unconfirmedCount > 0 || view.unconfirmedOnly) && (
+      {investigation && exportContext && !waiting && (unconfirmedCount > 0 || view.unconfirmedOnly || readingsShown) && (
         <div
           className="flex flex-wrap items-center gap-2 rounded border border-status-warning border-l-4 bg-status-warning-soft px-3 py-2 text-sm"
           role="group"
@@ -1906,10 +1911,11 @@ export function LedgerRowBrowser({
         >
           <CheckTag />
           <span role="status">
-            <strong>{unconfirmedCount.toLocaleString()}</strong>{" "}
-            {unconfirmedCount === 1 ? "name" : "names"} in view read
-            by Claude and not confirmed by a person
+            {unconfirmedCount > 0
+              ? unconfirmedNamesLabel(unconfirmedCount, firstData ? null : unconfirmedRows)
+              : "Every name in view that Claude read is now confirmed or corrected by a person"}
           </span>
+          {(unconfirmedCount > 0 || view.unconfirmedOnly) && (
           <Button
             size="sm"
             variant="outline"
@@ -1920,6 +1926,7 @@ export function LedgerRowBrowser({
           >
             {view.unconfirmedOnly ? "Show all payments" : "Show only these"}
           </Button>
+          )}
           {canEdit && unconfirmedCount > 0 && (
             <Button
               size="sm"
@@ -1927,6 +1934,13 @@ export function LedgerRowBrowser({
             >
               Confirm them one by one
             </Button>
+          )}
+          {canEdit && selection.length > 0 && (
+            <BulkConfirmReadings
+              caseId={exportContext.caseId}
+              rows={selectedHere}
+              notLoaded={selection.length - selectedHere.length}
+            />
           )}
         </div>
       )}

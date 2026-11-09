@@ -10,6 +10,7 @@ import { usePaymentCategoryLibrary } from "../hooks/use-payment-category-library
 import { correctionAnswer, correctionMinor, correctionMoney, correctionPreview, type CorrectionPreview } from "../lib/correction-contract"
 import { cardValues, fieldChanges, stopsClosing, whatChanges, type CardValues } from "../lib/card-edit"
 import { otherSide, payerPayeeQuestion, withPersonName } from "../lib/payment-naming"
+import { replaceLedgerRows } from "../lib/patch-ledger"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 
 const plainMoney = (minor: string, currency: string) => correctionMoney(minor, currency).replace(` ${currency}`, "")
@@ -165,13 +166,25 @@ export function PaymentCardEdit({
     },
     onSuccess: (current) => {
       // The row is replaced where it stands, so the list keeps its order and position; then the server's truth.
-      client.setQueriesData<{ transactions: LedgerTransaction[] }>({ queryKey: ["financial-ledger", caseId] }, (data) =>
-        data?.transactions ? { ...data, transactions: data.transactions.map((item) => (item.key === row.key ? current : item)) } : data
-      )
-      for (const key of ["financial-ledger", "ledger-source", "financial-decisions", "financial-proof-standing", "financial-linked-payments"])
+      replaceLedgerRows(client, caseId, new Map([[row.key, current]]))
+      // The list is marked stale, never read again in full here (a large ledger takes tens of seconds); the row
+      // already shows the saved values. A changed amount, direction or date changes the figures: only the
+      // large-ledger first view (one page and its figures) is read again for them; the full list's figures are
+      // worked out from its rows on screen.
+      void client.invalidateQueries({ queryKey: ["financial-ledger", caseId], refetchType: "none" })
+      if (valuesChanged)
+        void client.invalidateQueries({
+          queryKey: ["financial-ledger", caseId],
+          predicate: (query) => query.queryKey.includes("first-view"),
+        })
+      for (const key of ["ledger-source", "financial-decisions", "financial-proof-standing", "financial-linked-payments"])
         void client.invalidateQueries({ queryKey: [key, caseId] })
       if (categoryChanged) void client.invalidateQueries({ queryKey: ["financial-category-library"] })
-      toast.success("Saved your changes. The statement's reading stays visible beside them.")
+      toast.success(
+        valuesChanged
+          ? "Saved your correction. The account's figures are being worked out again; the statement's reading stays visible."
+          : "Saved your changes. The statement's reading stays visible beside them."
+      )
       announce(caseId, { kind: "correction-saved", what: "Your changes", count: 1, paymentId: current.key })
       onSaved(current.key)
     },

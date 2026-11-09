@@ -382,7 +382,10 @@ export function PaymentNamingPanel({
               <span>{row.account_type === "credit_card" ? (incoming ? "Card credit" : "Card charge") : incoming ? "Money in" : "Money out"}</span>
               <span>{row.ordering_date_context === "statement_end_ordering_only" ? `Date not printed (statement ends ${row.ordering_date})` : row.ordering_date}</span>
             </p>
-            <p className="text-xs text-muted-foreground">{row.account_label || row.account_holder || row.account_id}</p>
+            <p className="text-xs text-muted-foreground" data-testid="card-account-holder">
+              <span className="font-semibold">Account holder:</span> {row.account_holder || "not recorded"}
+              {row.account_label ? ` · ${row.account_label}` : ""}
+            </p>
             <p className="break-words font-mono text-[13px]">{row.description || "No description recorded"}</p>
             {corrected && (
               <p className="text-xs text-muted-foreground" data-testid="card-corrected">

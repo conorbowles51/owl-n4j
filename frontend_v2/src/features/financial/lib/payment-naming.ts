@@ -214,3 +214,27 @@ export function payerPayeeQuestion(row?: Pick<LedgerTransaction, "direction" | "
   const holder = row?.account_holder || row?.account_label || "the account holder"
   return row?.direction === "credit" ? `Who sent this money to ${holder}? (the payer)` : `Who did ${holder} pay? (the payee)`
 }
+
+/**
+ * What the "not confirmed" count counts, by kind: the other side of the payment (the counterparty: payer of money
+ * in, payee of money out) or the account's own side (the account holder). Null kinds when the rows are not all
+ * loaded (the count then comes from the server and is described by both kinds).
+ */
+export function unconfirmedNamesLabel(count: number, rows: LedgerTransaction[] | null) {
+  const plural = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`
+  if (!rows || rows.length !== count)
+    return `${plural(count, "name", "names")} (counterparty or account holder) in view read by Claude and not confirmed by a person`
+  let counterparty = 0
+  let holder = 0
+  for (const row of rows) {
+    const other = otherSide(row)
+    const own: NameField = other === "from_name" ? "to_name" : "from_name"
+    if (row.label_sources?.[other]?.source === "model_reading") counterparty += 1
+    if (row.label_sources?.[own]?.source === "model_reading") holder += 1
+  }
+  const parts = [
+    counterparty ? plural(counterparty, "counterparty name", "counterparty names") : "",
+    holder ? plural(holder, "account holder name", "account holder names") : "",
+  ].filter(Boolean)
+  return `${parts.join(" and ") || plural(count, "name", "names")} in view read by Claude and not confirmed by a person`
+}

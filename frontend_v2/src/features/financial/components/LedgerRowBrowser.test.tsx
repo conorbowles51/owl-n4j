@@ -640,3 +640,21 @@ it("opens all judgement calls inside the app, so Back finds the ledger it alread
     "/cases/case/financial?view=statements&judgements=1&jStatus=all"
   )
 })
+
+it("names what the not-confirmed count counts, and keeps its bar in place once the last one is confirmed", () => {
+  const origin = { kind: "model" as const, model: "Claude", for: { name: "Neil" }, at: "2026-11-08T10:00:00+00:00" }
+  const reading = row("r", {
+    direction: "debit",
+    to_name: "PAYEE",
+    from_name: "HOLDER",
+    label_sources: { from_name: { source: "account" }, to_name: { source: "model_reading", label: "Read by Claude · not confirmed", origin } },
+  })
+  const mounted = render(<LedgerRowBrowser investigation exportContext={{ caseId: "case", params: {} }} transactions={[reading]} />)
+  const bar = screen.getByRole("group", { name: "Names read by Claude, not confirmed" })
+  expect(bar).toHaveTextContent("1 counterparty name in view read by Claude and not confirmed by a person")
+  const confirmed = { ...reading, label_sources: { ...reading.label_sources, to_name: { source: "investigator" as const } } }
+  mounted.rerender(<LedgerRowBrowser investigation exportContext={{ caseId: "case", params: {} }} transactions={[confirmed]} />)
+  expect(screen.getByRole("group", { name: "Names read by Claude, not confirmed" })).toHaveTextContent(
+    "Every name in view that Claude read is now confirmed or corrected by a person"
+  )
+})

@@ -230,3 +230,43 @@ it("words a direction flip and a date move plainly", () => {
   expect(whatChanges(row, { ...cardValues(row), date: "2024-04-01" })[0]).toMatch(/^This moves the payment from 2024-03-01 to 2024-04-01/)
   expect(correctedLine(row, { statement_read: { amount_minor: "10000", direction: "debit" }, statement_ref_id: "x", corrections: [] })).toMatch(/now match/)
 })
+
+it("names the account holder on the card", async () => {
+  mount()
+  expect((await screen.findByTestId("card-account-holder")).textContent).toContain("Account holder: ARRENDO SERV")
+})
+
+it("a save updates the row in place without reading the whole ledger again, in both list shapes", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const rows = [payment("a"), payment("b")]
+  const FIRST = ["financial-ledger", "case", null, "first-view", 0, 50]
+  client.setQueryData(FIRST, { rows, total: 2 })
+  function Live() {
+    // An active ledger read, as on the page: a refetch would show up as another GET /api/financial/ledger.
+    const { data } = useQuery({
+      queryKey: KEY,
+      queryFn: () => fetchAPI<{ transactions: LedgerTransaction[] }>("/api/financial/ledger?case_id=case"),
+      staleTime: Infinity,
+    })
+    if (!data) return null
+    return <PaymentNamingPanel caseId="case" rows={data.transactions} queue={data.transactions} currentId="a" onMove={() => {}} onClose={() => {}} />
+  }
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).startsWith("/api/financial/ledger?") ? { transactions: rows, total: 2 } : base(url, options)
+  )
+  render(
+    <QueryClientProvider client={client}>
+      <Live />
+    </QueryClientProvider>
+  )
+  fireEvent.click(await screen.findByRole("button", { name: "Edit" }))
+  fireEvent.change(screen.getByLabelText("Category"), { target: { value: "Rent" } })
+  fireEvent.click(screen.getByRole("button", { name: "Save" }))
+  await waitFor(() => expect(screen.queryByRole("form", { name: "Edit this payment" })).toBeNull())
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const reads = vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).startsWith("/api/financial/ledger?"))
+  expect(reads).toHaveLength(1)
+  expect((client.getQueryData(KEY) as { transactions: LedgerTransaction[] }).transactions[0].category).toBe("Rent")
+  expect((client.getQueryData(FIRST) as { rows: LedgerTransaction[] }).rows[0].category).toBe("Rent")
+})
