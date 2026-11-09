@@ -78,6 +78,11 @@ printf 'RESULT PASS\n' > "${ok}"
 : > "${test_root}/sent"
 alerts "${d1}" "${d1}" "${d2}" "${d2}"
 [[ "$(wc -l < "${test_root}/sent")" -eq 1 ]] || { cat "${test_root}/sent"; fail "the same result was sent more than once"; }
+# The board (backup-check.sh) reads the reason from the first ALERT: line, sent or not.
+out="$(env LIB="${source_dir}/backup-lib.sh" STATE="${test_root}/alert-state" SENDER="${test_root}/sender" bash -c '
+    . "${LIB}"; ALERT_STATE_DIR="${STATE}"; BACKUP_ALERT_CMD="${SENDER}"
+    alert_once restore-drill "$(cat "${STATE}/restore-drill")" "did not pass: same"')"
+grep -m1 'ALERT:' <<< "${out}" | grep -q 'ALERT: did not pass: same (same result' || fail "a repeat has no ALERT: line for the board"
 alerts "${d3}"
 [[ "$(wc -l < "${test_root}/sent")" -eq 2 ]] || fail "a new missing file was not sent"
 grep -q '1 new' "${test_root}/sent" || fail "the alert does not say what failed"

@@ -30,7 +30,8 @@ alert_once() {  # <key> <signature> <reason>
     local dir="${ALERT_STATE_DIR:-${BACKUP_DIR:-/mnt/owl-data/backups}/.alert-state}" file
     file="${dir}/$1"
     if [[ -f "${file}" && "$(cat "${file}")" == "$2" ]]; then
-        log "ALERT (same result as already sent, not sent again): $3"
+        # Still an ALERT: line, which backup-check.sh reads into the status board, so the failure stays visible there.
+        log "ALERT: $3 (same result as already sent; not sent again)"
         return 0
     fi
     mkdir -p "${dir}" && printf '%s' "$2" > "${file}" || log "alert state not written: ${file}"
