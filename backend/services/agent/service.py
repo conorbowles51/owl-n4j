@@ -249,7 +249,10 @@ class AgentService:
             )
             answer = self._name_other_cases(db, run, final_result, request.case_id)
             if runner_clarification:
-                answer = runner_clarification.question
+                # Out of steps: the partial answer stays, followed by the offer to continue.
+                answer = (f"{answer}\n\n{runner_clarification.question}"
+                          if answer and self._is_tool_budget_clarification(runner_clarification)
+                          else runner_clarification.question)
             if not answer:
                 answer = "I could not produce an answer from the available case data."
             answer, plain_check = plain_answer.checked(answer)  # internal terms in plain words (lx-agentlive C)
@@ -547,7 +550,10 @@ class AgentService:
             )
             answer = self._name_other_cases(db, run, result, request.case_id)
             if runner_clarification:
-                answer = runner_clarification.question
+                # Out of steps: the partial answer stays, followed by the offer to continue.
+                answer = (f"{answer}\n\n{runner_clarification.question}"
+                          if answer and self._is_tool_budget_clarification(runner_clarification)
+                          else runner_clarification.question)
             if not answer:
                 answer = "I could not produce an answer from the available case data."
             answer, plain_check = plain_answer.checked(answer)  # internal terms in plain words (lx-agentlive C)

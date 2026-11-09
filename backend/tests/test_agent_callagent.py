@@ -106,6 +106,36 @@ class RetryShownTests(unittest.TestCase):
         self.assertEqual(final["answer"], "No tools needed: the answer.")
 
 
+class OutOfStepsTests(unittest.TestCase):
+    def test_running_out_of_steps_still_writes_the_answer_and_offers_continue(self):
+        """Both team-call questions, replayed on 97f1779d9, used all 28 steps and ended with no answer at all."""
+        from langchain_core.messages import AIMessage, HumanMessage
+        from services.agent import graph
+
+        class Planner:
+            def invoke(self, messages):
+                return AIMessage(content="", tool_calls=[{"name": "no_such_tool", "args": {}, "id": "c%d" % len(messages)}])
+
+        class Writer:
+            requests = []
+
+            def bind_tools(self, tools, **_k):
+                return Planner()
+
+            def invoke(self, messages):
+                Writer.requests.append(messages[-1].content)
+                return AIMessage(content="Partial: two accounts found so far.")
+
+        runner = graph.AgentGraphRunner.__new__(graph.AgentGraphRunner)
+        runner.provider, runner.model_id, runner.base_model = "deepseek", "deepseek-v4-pro", Writer()
+        events = list(runner.stream(case_id="00000000-0000-0000-0000-000000000001", thread_id="t", max_tool_calls=2,
+                                    messages=[HumanMessage(content="Which accounts?")]))
+        final = [e for e in events if e.get("type") == "final"][-1]["result"]
+        self.assertEqual(final["answer"], "Partial: two accounts found so far.")
+        self.assertEqual(final["clarification"]["context"]["reason"], "tool_budget_exhausted")
+        self.assertIn("start with one line saying what it could not yet cover", Writer.requests[-1])
+
+
 class ReasoningClientTests(unittest.TestCase):
     def test_higher_reasoning_sends_thinking_and_effort_and_returns_the_reasoning(self):
         from langchain_core.messages import AIMessage, HumanMessage
@@ -217,12 +247,13 @@ if RunRecordFixture is not None:
         """Through both service paths: the picked model runs, is recorded on the run and shown on the answer; the
         question's focus reaches the planning and final-answer prompts."""
 
-        def run_service(self, path, **request_fields):
+        def run_service(self, path, _result=None, **request_fields):
             from services.agent import service as svc
             from services.agent.schemas import AgentMessageRequest
             from postgres.models.agent import AgentRun
             captured = {}
-            result = {"answer": "Erica Hopper holds two accounts.", "tool_trace": [], "artifacts": [], "usage": None}
+            result = {"answer": "Erica Hopper holds two accounts.", "tool_trace": [], "artifacts": [], "usage": None,
+                      **(_result or {})}
 
             class Runner:
                 def __init__(self, **kwargs):
@@ -277,6 +308,13 @@ if RunRecordFixture is not None:
                         detail = get_thread_detail(self.fx.db, thread_id=run.thread_id, user=self.fx.user)
                     answers = [m for m in detail.messages if m.role == "assistant"]
                     self.assertEqual(answers[-1].written_by, "Written by DeepSeek V4 Pro · thinks longer")
+
+        def test_an_out_of_steps_answer_keeps_the_answer_and_the_offer(self):
+            from services.agent.graph import _budget_continuation_clarification
+            captured, response, run = self.run_service("stream", _result={
+                "answer": "Partial: two accounts found so far.",
+                "clarification": _budget_continuation_clarification(28)})
+            self.assertTrue(response["answer"].startswith("Partial: two accounts found so far.\n\nI reached the limit"))
 
         def test_the_default_needs_no_pick(self):
             captured, response, run = self.run_service("stream")

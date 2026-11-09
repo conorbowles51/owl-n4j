@@ -341,6 +341,11 @@ _FINAL_ANSWER_REQUEST = (
     "Reply with the answer only, not a comment about an earlier reply."
 )
 
+_OUT_OF_STEPS_REQUEST = (
+    " The step limit for one answer ended the search before it finished. Write the answer from what was found, and "
+    "start with one line saying what it could not yet cover."
+)
+
 def _final_answer_system_prompt(rules: str = "") -> str:
     """The finalizer's system prompt; a guided workflow's closing rules follow it (services.agent.workflows)."""
     return writing_standard.system_prompt(_FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + rules if rules else ""))
@@ -1050,11 +1055,13 @@ class AgentGraphRunner:
             tool_calls = getattr(last_message, "tool_calls", []) or []
             if state.get("clarifications"):
                 return {"final_answer": ""}
-            if _tool_budget_exhausted(state):
-                return {
-                    "clarifications": [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))],
-                    "final_answer": "",
-                }
+            # The step limit ends the search, not the answer: what was found is written up, said to be partial,
+            # and Continue is still offered (lx-callagent: both team-call questions ended with no answer at all).
+            out_of_steps = _tool_budget_exhausted(state)
+            budget_clarifications = (
+                [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))]
+                if out_of_steps else []
+            )
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
@@ -1065,12 +1072,13 @@ class AgentGraphRunner:
                 [
                     SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
                     *final_messages,
-                    HumanMessage(content=_FINAL_ANSWER_REQUEST),
+                    HumanMessage(content=_FINAL_ANSWER_REQUEST + (_OUT_OF_STEPS_REQUEST if out_of_steps else "")),
                 ],
                 step=int(state.get("tool_iterations") or 0),
             )
             replies, text = _in_plain_words(self.base_model, response)
-            return {"messages": replies, "final_answer": link_document_citations(text)}
+            return {"messages": replies, "final_answer": link_document_citations(text),
+                    **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
         workflow.add_node("agent", agent_node)
@@ -1287,11 +1295,13 @@ class AgentGraphRunner:
             tool_calls = getattr(last_message, "tool_calls", []) or []
             if state.get("clarifications"):
                 return {"final_answer": ""}
-            if _tool_budget_exhausted(state):
-                return {
-                    "clarifications": [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))],
-                    "final_answer": "",
-                }
+            # The step limit ends the search, not the answer: what was found is written up, said to be partial,
+            # and Continue is still offered (lx-callagent: both team-call questions ended with no answer at all).
+            out_of_steps = _tool_budget_exhausted(state)
+            budget_clarifications = (
+                [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))]
+                if out_of_steps else []
+            )
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
@@ -1303,12 +1313,13 @@ class AgentGraphRunner:
                 [
                     SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
                     *final_messages,
-                    HumanMessage(content=_FINAL_ANSWER_REQUEST),
+                    HumanMessage(content=_FINAL_ANSWER_REQUEST + (_OUT_OF_STEPS_REQUEST if out_of_steps else "")),
                 ],
                 note=note, step=int(state.get("tool_iterations") or 0), should_cancel=should_cancel,
             )
             replies, text = _in_plain_words(self.base_model, response)
-            return {"messages": replies, "final_answer": link_document_citations(text)}
+            return {"messages": replies, "final_answer": link_document_citations(text),
+                    **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
         workflow.add_node("agent", agent_node)
