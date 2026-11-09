@@ -170,7 +170,9 @@ def run_case_reconciliation(
     new timestamp.
 
     A period whose stored data will not support the arithmetic is reported
-    ``refused`` with the reason, and the sweep continues.  Its previously
+    ``refused`` with the reason, and the sweep continues.  A period whose
+    statement is no longer admitted (replaced as a whole, quarantined or
+    rejected) is reported ``set_aside`` and not re-scored.  Its previously
     recorded verdict is left untouched rather than reset, because that verdict
     was a real result when it was taken and a failure to re-derive it today is
     not evidence that it was wrong.

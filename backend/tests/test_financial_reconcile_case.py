@@ -53,6 +53,7 @@ from sqlalchemy.orm import sessionmaker
 from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.enums import (
+    DocumentStatus,
     ExtractionLayer,
     GlobalRole,
     LedgerStatus,
@@ -268,6 +269,7 @@ class CaseReconciliationTests(unittest.TestCase):
                 "unbalanced": 1,
                 "unavailable": 0,
                 "refused": 0,
+                "set_aside": 0,
             },
         )
 
@@ -747,7 +749,13 @@ class SweepResultTests(ReconcileCaseTestCase):
         self.assertTrue(result.applied)
         self.assertEqual(
             result.counts(),
-            {"balanced": 1, "unbalanced": 1, "unavailable": 1, "refused": 0},
+            {
+                "balanced": 1,
+                "unbalanced": 1,
+                "unavailable": 1,
+                "refused": 0,
+                "set_aside": 0,
+            },
         )
 
 
@@ -857,6 +865,44 @@ class SweepRefusalTests(ReconcileCaseTestCase):
         self.assertIs(result.outcome, CaseOutcome.completed)
         self.assertFalse(result.applied)
         self.assertEqual(result.counts()["refused"], 1)
+
+
+class SweepReplacedStatementTests(ReconcileCaseTestCase):
+    """A statement replaced as a whole keeps the verdict it earned.
+
+    Live, 9 Nov 2026: a dry run of the sweep on a case with 100 replaced
+    statements moved every one of them from balanced to unbalanced, because
+    their rows are superseded and the identity summed nothing.
+    """
+
+    def test_a_superseded_statement_is_set_aside_and_keeps_its_verdict(self):
+        period = self.make_period(
+            opening=printed(100_00), closing=printed(380_00)
+        )
+        self.add_row(period, amount=280_00)
+        first = reconcile_case(self.db, self.case.id)
+        self.assertIs(first.periods[0].outcome, PeriodOutcome.balanced)
+
+        self.db.query(FinancialTransaction).update(
+            {"ledger_status": LedgerStatus.superseded.value}
+        )
+        document = self.db.get(FinancialSourceDocument, self.document.id)
+        document.status = DocumentStatus.superseded.value
+        self.db.commit()
+
+        result = reconcile_case(self.db, self.case.id)
+
+        (only,) = result.periods
+        self.assertIs(only.outcome, PeriodOutcome.set_aside)
+        self.assertFalse(only.recorded)
+        self.assertFalse(result.applied)
+        self.assertIn("superseded", only.reason)
+        self.assertEqual(result.counts()["set_aside"], 1)
+        stored = self.stored(period.id)
+        self.assertEqual(
+            stored.reconciliation_status, ReconciliationStatus.balanced.value
+        )
+        self.assertEqual(stored.credit_total_minor, 280_00)
 
 
 class SweepDatabaseFailureTests(ReconcileCaseTestCase):

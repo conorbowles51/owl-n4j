@@ -54,8 +54,11 @@ from typing import TYPE_CHECKING, Any, Optional, Sequence
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from postgres.models.enums import BalanceSource, ReconciliationStatus
-from postgres.models.financial import FinancialStatementPeriod
+from postgres.models.enums import BalanceSource, DocumentStatus, ReconciliationStatus
+from postgres.models.financial import (
+    FinancialSourceDocument,
+    FinancialStatementPeriod,
+)
 from services.financial.money import MoneyError
 from services.financial.periods import PeriodError
 from services.financial.reconcile import (
@@ -101,11 +104,17 @@ class PeriodOutcome(str, Enum):
     #: The identity could not be computed from what is stored.  Nothing was
     #: written and the previous stored verdict, if any, survives.
     refused = "refused"
+    #: The period's statement is no longer admitted (replaced as a whole,
+    #: quarantined or rejected), so none of its rows count toward any total.
+    #: Re-scoring it would sum nothing and record a statement that read
+    #: completely as one that does not add up.  Nothing is written; the
+    #: verdict recorded while the statement was admitted survives.
+    set_aside = "set_aside"
 
     @property
     def recorded(self) -> bool:
         """Whether this outcome was written to the period."""
-        return self is not PeriodOutcome.refused
+        return self not in (PeriodOutcome.refused, PeriodOutcome.set_aside)
 
 
 class CaseOutcome(str, Enum):
@@ -269,8 +278,45 @@ def reconcile_case(
             reason=None,
         )
 
+    try:
+        document_status = dict(
+            session.execute(
+                select(FinancialSourceDocument.id, FinancialSourceDocument.status)
+                .where(
+                    FinancialSourceDocument.id.in_(
+                        {period.source_document_id for period in periods}
+                    )
+                )
+            ).all()
+        )
+    except SQLAlchemyError as exc:
+        session.rollback()
+        logger.exception("Failed to read statement documents for case %s", case_id)
+        return CaseReconciliation(
+            case_id=case_id,
+            outcome=CaseOutcome.write_failed,
+            periods=(),
+            reason=str(exc),
+        )
+
     results: list[PeriodReconciliation] = []
     for period in periods:
+        status = document_status.get(period.source_document_id)
+        if status != DocumentStatus.admitted.value:
+            results.append(
+                PeriodReconciliation(
+                    period_id=period.id,
+                    account_id=period.account_id,
+                    currency=period.currency,
+                    period_start=period.period_start,
+                    period_end=period.period_end,
+                    outcome=PeriodOutcome.set_aside,
+                    stored_status=period.reconciliation_status,
+                    identity=None,
+                    reason=f"The statement is {status or 'missing'}, so its rows count toward no total.",
+                )
+            )
+            continue
         try:
             identity = reconcile_period(session, period, now=stamp)
         except _REFUSABLE as exc:
