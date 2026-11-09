@@ -213,8 +213,8 @@ describe("LedgerPanel with no rows returned", () => {
 
     render(<LedgerPanel caseId="case-1" />)
 
-    expect(screen.getByText("No admitted rows in the ledger")).toBeTruthy()
-    const description = screen.getByText(/status "admitted"/)
+    expect(screen.getByText("No included rows in the ledger")).toBeTruthy()
+    const description = screen.getByText(/status "included"/)
     expect(description.textContent).toContain("quarantined")
     expect(description.textContent).toContain("not counted here")
     expect(screen.queryByTestId("ledger-table")).toBeNull()
@@ -250,7 +250,7 @@ describe("LedgerPanel with rows", () => {
     render(<LedgerPanel caseId="case-1" />)
 
     expect(screen.getByTestId("ledger-summary").textContent).toBe(
-      "2 rows, admitted."
+      "2 rows, included."
     )
     expect(screen.getAllByTestId("ledger-row")).toHaveLength(2)
   })
@@ -261,7 +261,7 @@ describe("LedgerPanel with rows", () => {
     render(<LedgerPanel caseId="case-1" />)
 
     expect(screen.getByTestId("ledger-summary").textContent).toBe(
-      "1 row, admitted."
+      "1 row, included."
     )
   })
 
@@ -294,9 +294,9 @@ describe("LedgerPanel filtered and incomplete empty answers", () => {
     useLedgerTransactions.mockReturnValue(settled([]))
     render(<LedgerPanel caseId="case-1" params={params} />)
     expect(
-      screen.getByText("No admitted rows match these filters")
+      screen.getByText("No included rows match these filters")
     ).toBeTruthy()
-    expect(screen.queryByText("No admitted rows in the ledger")).toBeNull()
+    expect(screen.queryByText("No included rows in the ledger")).toBeNull()
     expect(
       screen.getByText(/does not establish that no transactions occurred/)
     ).toBeTruthy()
