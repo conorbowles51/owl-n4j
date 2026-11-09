@@ -8,6 +8,7 @@ resumed downloads and streaming behave exactly as before. Level 1 keeps compress
 compressed in a worker thread so the event loop (event streams, other requests) never waits for it.
 """
 import gzip
+import inspect
 import time
 
 import anyio
@@ -31,19 +32,36 @@ class _JSONGZipResponder(GZipResponder):
     def __init__(self, app, minimum_size, compresslevel=9):
         super().__init__(app, minimum_size, compresslevel=compresslevel)
         self.compresslevel = compresslevel
+        self.passing_through = False
 
     def apply_compression(self, body, *, more_body):
         began = time.perf_counter()
+        compressed = super().apply_compression(body, more_body=more_body)
+        if inspect.isawaitable(compressed):  # newer Starlette compresses asynchronously
+            return self._timed(compressed, began)
+        note_gzip(time.perf_counter() - began)
+        return compressed
+
+    @staticmethod
+    async def _timed(compressing, began):
         try:
-            return super().apply_compression(body, more_body=more_body)
+            return await compressing
         finally:
             note_gzip(time.perf_counter() - began)
 
     async def send_with_compression(self, message):
+        # A response that passes through is sent here, start first, without the base class: when the base class
+        # sends a held start differs between Starlette versions, and a body sent before its start breaks the
+        # response (Starlette 1.10 holds the start of a 304 or a text download and never sends it).
+        if message['type'] == 'http.response.start' and _passes_through(message):
+            self.passing_through = True
+            await self.send(message)
+            return
+        if self.passing_through:
+            await self.send(message)
+            return
         if message['type'] == 'http.response.start':
             await super().send_with_compression(message)
-            if _passes_through(message):
-                self.content_type_is_excluded = True
             return
         body = message.get('body', b'')
         if (message['type'] == 'http.response.body' and not self.started and not message.get('more_body', False)
