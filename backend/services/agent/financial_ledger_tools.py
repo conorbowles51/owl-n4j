@@ -702,9 +702,6 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         applied=False, limitation=LIMITATION)
 
 
-_RUN_LEDGER_CACHE = None  # set below: the run's capture cache (services.agent.ledger_run_cache) for a miss
-
-
 def kept_read_financial_ledger(session, *, case_id, ledger_cache=None, **params):
     """read_financial_ledger through the Financial view cache (view_cache.cached_view): the same read of an unchanged
     case is computed once, for the agent and across its runs, as the Financial screens' views are. Measured on BNB2
