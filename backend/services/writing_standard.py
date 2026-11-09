@@ -170,12 +170,38 @@ def post_check(text: str | None) -> PostCheck:
         if pieces:
             pieces.append(cleaned[last:])
             cleaned = "".join(pieces)
+    cleaned = _no_spaced_em_dash(cleaned, changed)
     if cleaned != text:
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip() if cleaned.strip() != text.strip() else cleaned
     flagged = find_problems(cleaned, internal_terms=False)
     if changed or flagged:
         logger.info("writing standard post-check: %d changed, %d flagged", len(changed), len(flagged))
     return PostCheck(cleaned, changed, flagged)
+
+
+_SPACED_EM_DASH = re.compile(r"[ \t]+\u2014[ \t]+")
+
+
+def _no_spaced_em_dash(text: str, changed: list[str]) -> str:
+    """A spaced em dash in prose becomes a comma (the standard: no em dashes; live agent answer 8df85211 used them as
+    asides). Table rows keep theirs (a lone dash is an empty cell); quotes, code and links are never touched."""
+    if "\u2014" not in text:
+        return text
+    spans = _protected_spans(text)
+    out, last, start = [], 0, 0
+    for line in text.splitlines(keepends=True):
+        if not line.lstrip().startswith("|"):
+            for m in _SPACED_EM_DASH.finditer(line):
+                a, b = start + m.start(), start + m.end()
+                if _inside(spans, a, b):
+                    continue
+                out.append(text[last:a])
+                out.append(", ")
+                last = b
+                changed.append("\u2014 -> ,")
+        start += len(line)
+    out.append(text[last:])
+    return "".join(out)
 
 
 def clean(text: str | None) -> str:

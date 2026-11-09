@@ -224,6 +224,15 @@ def test_post_check_keeps_every_fact_and_cleans_the_boilerplate():
     assert [p.match for p in result.flagged] == ["It's important to note"]
 
 
+def test_post_check_turns_a_spaced_em_dash_into_a_comma_outside_tables_and_quotes():
+    text = ("The account \u2014 held by the subject \u2014 received 12,345.00 MXN.\n\n"
+            "| Month | Credits |\n|---|---|\n| Jan | \u2014 |\n\nThe memo reads \"paid \u2014 thanks\".")
+    out = writing_standard.post_check(text).text
+    assert "The account, held by the subject, received 12,345.00 MXN." in out
+    assert "| Jan | \u2014 |" in out
+    assert '"paid \u2014 thanks"' in out
+
+
 def test_post_check_on_empty_text():
     assert writing_standard.post_check(None).text == ""
     assert writing_standard.clean("") == ""
