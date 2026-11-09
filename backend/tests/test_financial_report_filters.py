@@ -6,10 +6,22 @@ from routers import financial
 from fastapi import HTTPException
 
 
+# Case ids are UUIDs: the route reads production numbers by UUID(case_id).
+CASE_ID = '0b3c2f8e-6a8d-4b44-9a3e-6f1d2c7a9e10'
+
+
+def _route_defaults():
+    """The route's query defaults, as FastAPI would fill them. The database session (added by b1d8c48f9 for the
+    production numbers beside each citation) is not a query value: no record here names a source document, so the
+    production-number lookup returns before reading it, and None stands in."""
+    return {name: None if name == 'db' else value.default.default
+            for name, value in inspect.signature(financial.export_financial_pdf).parameters.items()}
+
+
 class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
     async def test_amount_bounds_match_the_table_and_are_written_in_the_report(self):
-        kwargs = {name: value.default.default for name, value in inspect.signature(financial.export_financial_pdf).parameters.items()}
-        kwargs.update(case_id='case-a', case_name='Case Ω', mode='intelligence', include_entity_notes=False, min_amount=100, max_amount=200)
+        kwargs = _route_defaults()
+        kwargs.update(case_id=CASE_ID, case_name='Case Ω', mode='intelligence', include_entity_notes=False, min_amount=100, max_amount=200)
         records = [dict(key='low', amount=99), dict(key='negative', amount=-150), dict(key='edge', amount=200), dict(key='high', amount=201)]
         with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF', media_type='application/pdf', extension='pdf')) as render:
             response = financial.export_financial_pdf(**kwargs)
@@ -31,8 +43,8 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({r['currency']: (r['count'],r['totalAmount']) for r in rows}, {'EUR':(2,150),'USD':(1,200)})
 
     async def test_category_and_sender_names_with_commas_stay_intact(self):
-        kwargs = {name: value.default.default for name, value in inspect.signature(financial.export_financial_pdf).parameters.items()}
-        kwargs.update(case_id='case-a', mode='intelligence', include_entity_notes=False,
+        kwargs = _route_defaults()
+        kwargs.update(case_id=CASE_ID, mode='intelligence', include_entity_notes=False,
                       category_names=['Review, priority'], sender_values=['Example, Ltd'])
         records = [dict(key='wanted',amount=100,category='Review, priority',from_entity=dict(name='Example, Ltd')),
                    dict(key='other',amount=100,category='Review',from_entity=dict(name='Example'))]
@@ -41,8 +53,8 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([r['key'] for r in render.call_args.args[0]], ['wanted'])
 
     async def test_end_date_includes_timestamps_on_the_recorded_last_day(self):
-        kwargs = {name: value.default.default for name, value in inspect.signature(financial.export_financial_pdf).parameters.items()}
-        kwargs.update(case_id='case-a', mode='intelligence', include_entity_notes=False, start_date='2026-09-02', end_date='2026-09-02')
+        kwargs = _route_defaults()
+        kwargs.update(case_id=CASE_ID, mode='intelligence', include_entity_notes=False, start_date='2026-09-02', end_date='2026-09-02')
         records = [dict(key=str(i), date=value, amount=100) for i, value in enumerate([
             '2026-09-01', '2026-09-02', '2026-09-02T23:59:59-04:00', '2026-09-03', 'Sep 2', '2026-02-30'])]
         with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF', media_type='application/pdf', extension='pdf')) as render:
@@ -62,7 +74,7 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_endpoint_refuses_invalid_date_range_before_reading(self):
         with patch.object(financial.neo4j_service, 'get_financial_transactions') as read:
             with self.assertRaises(HTTPException) as failure:
-                financial.get_financial_transactions(case_id='case-a', mode='intelligence', types=None, start_date='2026-09-03', end_date='2026-09-02', categories=None, db=None)
+                financial.get_financial_transactions(case_id=CASE_ID, mode='intelligence', types=None, start_date='2026-09-03', end_date='2026-09-02', categories=None, db=None)
             self.assertEqual(failure.exception.status_code, 422)
             read.assert_not_called()
 
@@ -76,15 +88,15 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
             dict(key=str(i), date=value) for i, value in enumerate([
                 '2026-09-02', '2026-09-02T23:59:59-04:00', '2026-09-02T24:00', '2026-09-03', 'Sep 2'])]
         with patch.object(module, 'driver', connection), patch.object(module, 'financial_graph_reads', SimpleNamespace(read=lambda session, key, compute: compute())), patch.object(service, '_get_dataset_metadata', return_value={'uses_legacy_financial_model': False}), patch.object(service, '_record_to_transaction', side_effect=lambda row, **kw: row), patch.object(service, '_sanitize_transaction', side_effect=lambda row: row):
-            result = service.get_financial_transactions(case_id='case-a', mode='intelligence', start_date='2026-09-02', end_date='2026-09-02')
+            result = service.get_financial_transactions(case_id=CASE_ID, mode='intelligence', start_date='2026-09-02', end_date='2026-09-02')
         self.assertEqual([row['key'] for row in result['transactions']], ['0', '1'])
         self.assertEqual(result['total'], 2)
         query = connection.session.return_value.__enter__.return_value.run.call_args.args[0]
         self.assertIn('substring(trim(toString(n.date)), 0, 10) <= $end_date', query)
 
     async def test_numeric_filters_exclude_unreadable_values_instead_of_treating_them_as_zero(self):
-        kwargs = {name: value.default.default for name, value in inspect.signature(financial.export_financial_pdf).parameters.items()}
-        kwargs.update(case_id='case-a', mode='intelligence', include_entity_notes=False, max_amount=100)
+        kwargs = _route_defaults()
+        kwargs.update(case_id=CASE_ID, mode='intelligence', include_entity_notes=False, max_amount=100)
         records=[dict(key='unknown',amount=None,raw_amount='not stated'),dict(key='zero',amount=0),dict(key='known',amount=50)]
         with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF',media_type='application/pdf',extension='pdf')) as render:
             financial.export_financial_pdf(**kwargs)
