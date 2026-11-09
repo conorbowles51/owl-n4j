@@ -111,6 +111,15 @@ _TOOL_LINES: dict[str, tuple[str, str]] = {
     "phone_colocation_results": ("Checking when {s} were in the same place", "Checking who was in the same place"),
     "phone_record": ("Opening a phone record", "Opening a phone record"),
     "request_clarification": ("Preparing a question for you", "Preparing a question for you"),
+    "get_evidence_files": ("Checking the evidence files for “{s}”", "Checking the evidence files and how far each was processed"),
+    "get_interviews": ("Reading the interviews with {s}", "Reading the interviews"),
+    "get_transcript": ("Reading a transcript", "Reading a transcript"),
+    "list_dossiers": ("Listing the dossiers", "Listing the dossiers"),
+    "get_theory": ("Reading the theory “{s}”", "Reading the theories and what was added to them"),
+    "get_significant_layer": ("Reading what is marked significant", "Reading what is marked significant"),
+    "get_reports": ("Reading the reports on {s}", "Reading the reports"),
+    "get_decisions": ("Reading the decisions on {s}", "Reading the decisions made in the case"),
+    "get_casework": ("Reading the casework notes on {s}", "Reading the casework notes and findings"),
 }
 _SUBJECT_KEYS = ("account_holders", "person", "party", "name", "entity_name", "query", "words", "search", "subject",
                  "dossier", "party_a", "names", "entity_keys", "account", "phrase", "title")
