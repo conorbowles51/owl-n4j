@@ -254,9 +254,13 @@ def test_mixed_batch_processes_documents_and_only_transcribes_audio(transcript_d
 
 def test_viewer_cannot_edit_review_execute_or_read_another_case(transcript_client):
     from postgres.permissions import VIEWER_PERMISSIONS
+    from postgres.models.enums import CaseMembershipRole
     client, db, file, owner = transcript_client
     capture_source(db, file, job_id=str(uuid.uuid4()), text='Original', segments=[])
     membership = db.query(CaseMembership).filter_by(case_id=file.case_id, user_id=owner.id).one()
+    # A viewer is a collaborator holding viewer rights. The owner's own membership cannot be one: the app refuses
+    # to change an owner's permissions, and an owner holds every owner right whatever is stored (bc0ad983b).
+    membership.membership_role = CaseMembershipRole.collaborator
     membership.permissions = VIEWER_PERMISSIONS; db.commit()
     current = client.get(f'/api/evidence/{file.id}/transcript')
     assert current.status_code == 200
