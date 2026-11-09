@@ -175,10 +175,13 @@ from services.financial.tracing import TracingError
 
 
 @router.get("/ledger-trace-inputs")
+@cached_view('ledger-trace-inputs')
 def get_ledger_trace_inputs(case_id: UUID = Query(...), account_id: UUID = Query(...),
         start_date: date = Query(...), end_date: date = Query(...), population: str = Query("verified"), db: Session = Depends(get_db)):
     try:
-        return ledger_trace_inputs(capture_ledger_export(db.get_bind(), case_id=case_id,
+        # The ledger scope only: the readings and decision log, fingerprinted as read. The run (POST) captures the
+        # full export it records and accepts this fingerprint through snapshot_matches.
+        return ledger_trace_inputs(capture_ledger_scope(db.get_bind(), case_id=case_id,
             account_id=account_id, start_date=start_date, end_date=end_date), population=population)
     except (LedgerSummaryError, TracingError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

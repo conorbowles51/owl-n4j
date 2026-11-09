@@ -28,7 +28,8 @@ class LedgerScopeTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def export(self, review='none', **scope):
         # Notes are an export-only section whose table the SQLite fixture does not create.
         with self.consistent(), patch('services.financial.ledger_review_history.capture_pdf_review_history', _review_history(review)), \
-                patch('services.financial.transaction_notes.capture_transaction_notes', return_value=[]):
+                patch('services.financial.transaction_notes.capture_transaction_notes', return_value=[]), \
+                patch('services.production_numbers.numbers_by_file', return_value={}):  # nor the production-number tables
             return capture_ledger_export(self.db.connection(), case_id=self.case.id, **scope)
 
     def scope(self, **scope):
@@ -155,3 +156,57 @@ class LedgerScopeTests(_test_financial_ledger_summary.LedgerSummaryTests):
             self.export()
         with self.assertRaises(LedgerSummaryError):
             self.scope()
+
+
+    # Trace funds' "Load tracing inputs" reads the ledger scope, not the full export (8.5-11 s for one BNB2 account,
+    # most of it provenance, notes and exhibits the inputs never use). The run records the full export and accepts
+    # the scope fingerprint; replay recomputes it from the embedded snapshot.
+    def trace_request(self, inputs, ids):
+        from datetime import date
+        from services.financial.ledger_tracing import LedgerTraceInput
+        from services.financial.tracing import Doctrine
+        return LedgerTraceInput(account_id=self.account.id, start_date=date(2026, 1, 1), end_date=date(2026, 1, 31),
+            expected_snapshot_sha256=inputs['snapshot_sha256'], opening_balance_minor='0', opening_basis='Synthetic zero opening.',
+            order_basis='Synthetic same-day order.', ordered_transaction_ids=ids,
+            attributions=[dict(transaction_id=ids[0], claim_id='claim-a', amount_minor='500000', basis='Synthetic deposit.')],
+            doctrines=list(Doctrine))
+
+    def test_inputs_from_the_scope_run_against_the_export_and_replay(self):
+        from datetime import date
+        from services.financial.ledger_tracing import evaluate_ledger_trace, ledger_trace_inputs
+        from services.financial.trace_replay import replay_trace
+        first, _ = self.add(500000); second, _ = self.add(500000); third, _ = self.add(500000, TransactionDirection.debit)
+        scope = dict(account_id=self.account.id, start_date=date(2026, 1, 1), end_date=date(2026, 1, 31))
+        inputs = ledger_trace_inputs(self.scope(**scope))
+        export = self.export(**scope)
+        self.assertEqual(inputs['digest_covers'], LEDGER_SCOPE_COVERS)
+        self.assertEqual(inputs['snapshot_sha256'], export.ledger_scope_sha256)
+        self.assertEqual(inputs['included_rows'], 3)
+        request = self.trace_request(inputs, [first.id, second.id, third.id])
+        content = evaluate_ledger_trace(export, request)['scenario_json'].encode('utf-8')
+        self.assertEqual(json.loads(content)['ledger_snapshot'], json.loads(export.snapshot.content))
+        self.assertEqual(replay_trace(content)['status'], 'matching_calculations')
+        # a decision made after the inputs were loaded still refuses the run
+        self.decide(second, 'Changed after loading')
+        with self.assertRaisesRegex(LedgerSummaryError, 'changed'):
+            evaluate_ledger_trace(self.export(**scope), request)
+
+    def test_load_tracing_inputs_route_reads_the_scope_not_the_export(self):
+        from datetime import date
+        from types import SimpleNamespace
+        from routers import financial_ledger
+        self.add(500000)
+        scope = self.scope(account_id=self.account.id, start_date=date(2026, 1, 1), end_date=date(2026, 1, 31))
+        with patch.object(financial_ledger, 'capture_ledger_scope', return_value=scope) as light, \
+                patch.object(financial_ledger, 'capture_ledger_export', side_effect=AssertionError('full export built')):
+            out = financial_ledger.get_ledger_trace_inputs(case_id=self.case.id, account_id=self.account.id,
+                start_date=date(2026, 1, 1), end_date=date(2026, 1, 31), population='verified', db=SimpleNamespace(get_bind=lambda: None))
+        light.assert_called_once()
+        self.assertEqual(out['snapshot_sha256'], scope.sha256)
+
+    def test_load_tracing_inputs_is_kept_while_its_rows_are_unchanged(self):
+        # computed once per unchanged case state, like the other Financial views (view_cache): the second load of
+        # the same account and dates is served from the stored response
+        from routers import financial_ledger
+        from services.financial import view_cache
+        self.assertIs(view_cache.handlers.get('ledger-trace-inputs'), financial_ledger.get_ledger_trace_inputs)

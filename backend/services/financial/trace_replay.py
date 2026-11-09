@@ -6,11 +6,22 @@ or a determination that a tracing doctrine legally applies.
 import hashlib
 import json
 
-from services.financial.ledger_snapshot import LedgerExport, LedgerSnapshot, MAX_EXPORT_BYTES
+from services.financial.ledger_snapshot import LedgerExport, LedgerScopeDigest, LedgerSnapshot, MAX_EXPORT_BYTES
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.ledger_tracing import LedgerTraceInput, evaluate_ledger_trace
 from services.financial.network_tracing import evaluate_network_trace
 
+
+
+def _ledger_scope_hash(snapshot):
+    """The ledger-scope fingerprint of an embedded export snapshot, or None when it has no decision log."""
+    if not isinstance(snapshot.get('decisions'), list) or not isinstance(snapshot.get('ledger'), dict):
+        return None
+    digest = LedgerScopeDigest()
+    for reading in snapshot['ledger'].get('readings') or []:
+        digest.reading(reading)
+    digest.decisions(snapshot['decisions'])
+    return digest.finish(snapshot['ledger'])
 
 def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
@@ -65,13 +76,17 @@ provide an independent byte-integrity check. No supplied code is executed.
             snapshot_text = _canonical(snapshot)
             snapshot_bytes = snapshot_text.encode('utf-8')
             snapshot_hash = hashlib.sha256(snapshot_bytes).hexdigest()
+            # A scenario's inputs name the fingerprint they were loaded with: the full document's, or (tracing inputs
+            # read as a ledger scope) the readings-and-decisions fingerprint, recomputed here from the embedded snapshot.
+            scope_hash = _ledger_scope_hash(snapshot)
             if (manifest['document_sha256'] != snapshot_hash
                     or type(manifest['byte_count']) is not int
                     or manifest['byte_count'] != len(snapshot_bytes)
-                    or original['inputs']['expected_snapshot_sha256'] != snapshot_hash):
+                    or original['inputs']['expected_snapshot_sha256'] not in {snapshot_hash, scope_hash}):
                 raise ValueError('Captured snapshot digest or size differs.')
             captured_version = manifest.get('code_version')
-            export = LedgerExport(LedgerSnapshot(snapshot_text, snapshot_hash, len(snapshot_bytes)), _canonical(manifest))
+            export = LedgerExport(LedgerSnapshot(snapshot_text, snapshot_hash, len(snapshot_bytes)), _canonical(manifest),
+                                  ledger_scope_sha256=scope_hash)
             if schema == 'loupe.financial.conditional_trace/1':
                 envelope = evaluate_ledger_trace(export, LedgerTraceInput.model_validate(original['inputs']))
             else:

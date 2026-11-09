@@ -198,11 +198,11 @@ class LedgerTraceRouterTests(unittest.TestCase):
         from fastapi import HTTPException
         from unittest.mock import Mock
         db=Mock(); case,account=uuid4(),uuid4()
-        with patch.object(router,'capture_ledger_export',return_value='captured') as capture, patch.object(router,'ledger_trace_inputs',return_value={'applied':False}):
+        with patch.object(router,'capture_ledger_scope',return_value='captured') as capture, patch.object(router,'ledger_trace_inputs',return_value={'applied':False}):
             result=router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),"verified",db)
             self.assertFalse(result['applied'])
             capture.assert_called_once_with(db.get_bind(),case_id=case,account_id=account,start_date=date(2026,1,1),end_date=date(2026,1,31))
-        with patch.object(router,'capture_ledger_export',side_effect=RuntimeError('private')):
+        with patch.object(router,'capture_ledger_scope',side_effect=RuntimeError('private')):
             with self.assertRaises(HTTPException) as caught:router.get_ledger_trace_inputs(case,account,date(2026,1,1),date(2026,1,31),"verified",db)
             self.assertEqual(caught.exception.status_code,500)
             self.assertNotIn('private',caught.exception.detail)

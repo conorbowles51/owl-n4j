@@ -14,7 +14,7 @@ from postgres.models.enums import ProofClass, TransactionDirection
 from services.financial.money import Money
 from services.financial.proof_class import DEFAULT_TOTAL_CLASSES
 from services.financial.ledger_summary import LedgerSummaryError
-from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
+from services.financial.ledger_snapshot import MAX_EXPORT_BYTES, snapshot_matches, view_capture
 from services.financial.tracing import Movement, Attribution, Doctrine, compare_doctrines
 
 from services.financial.trace_assets import TraceAssetUseInput, validate_asset_uses, trace_asset_uses
@@ -77,10 +77,13 @@ def _no_trace_rows(ledger, population):
             "Check Statements & accounts for a missing period, or choose other dates.")
 
 
-def ledger_trace_inputs(export, *, population="verified"):
+def ledger_trace_inputs(capture, *, population="verified"):
+    """The readings a single-account trace may use, from a full export or from a ledger scope (the readings and
+    decision log only, without the export document's provenance, notes and exhibits). The stamp names what its
+    fingerprint covers; the trace run compares like with like (``snapshot_matches``)."""
     if population not in ("working", "verified"):
         raise LedgerSummaryError("Choose working or verified readings for tracing.")
-    document = json.loads(export.snapshot.content)
+    document, stamp = view_capture(capture)
     ledger = document['ledger']
     if not document.get('export_ready') or not ledger.get('history_captured'):
         raise LedgerSummaryError('Tracing requires a consistent captured ledger and history.')
@@ -95,7 +98,7 @@ def ledger_trace_inputs(export, *, population="verified"):
     if len(currencies) != 1:
         raise LedgerSummaryError('An account tracing scenario must have one currency; currencies cannot be combined.')
     return dict(population=population, case_id=ledger['case_id'], account_id=ledger['account_id'], start_date=ledger['start_date'],
-        end_date=ledger['end_date'], currency=next(iter(currencies)), snapshot_sha256=export.snapshot.sha256,
+        end_date=ledger['end_date'], currency=next(iter(currencies)), snapshot_sha256=stamp['snapshot_sha256'], digest_covers=stamp['digest_covers'],
         included_rows=len(rows), excluded_rows=len(ledger['readings'])-len(rows), readings=rows,
         applied=False, limitation='Opening funds, deposit attribution and same-day order require explicit investigator assumptions. This input list does not establish evidence completeness or the applicable tracing method.')
 
@@ -122,7 +125,7 @@ def _exact_json(value):
 
 def evaluate_ledger_trace(export, request: LedgerTraceInput):
     scope = ledger_trace_inputs(export, population=request.population)
-    if request.expected_snapshot_sha256 != export.snapshot.sha256:
+    if snapshot_matches(export, request.expected_snapshot_sha256) is None:
         raise LedgerSummaryError('Ledger readings or decisions changed. Reload tracing inputs and review assumptions.')
     if (str(request.account_id) != scope['account_id'] or request.start_date.isoformat() != scope['start_date']
             or request.end_date.isoformat() != scope['end_date']):
