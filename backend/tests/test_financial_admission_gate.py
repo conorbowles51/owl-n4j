@@ -547,6 +547,13 @@ class AdmissionGateTestCase(unittest.TestCase):
         self.assertEqual(len(self.events()), 1)
 
 
+class _NoRows(list):
+    """An empty scalars() result, read either way a caller reads one."""
+
+    def all(self):
+        return []
+
+
 class ProcessingRouteRefusalTestCase(unittest.TestCase):
     """The refusal as the processing service applies it.
 
@@ -618,7 +625,9 @@ class ProcessingRouteRefusalTestCase(unittest.TestCase):
                 self.commits += 1
 
             def scalars(self, _statement):
-                return SimpleNamespace(all=lambda: [])
+                # Nothing found: the gate reads ``.all()``; the held-file
+                # split before it (5500dc0fb) iterates the result.
+                return _NoRows()
 
         session = FakeSession()
 
