@@ -379,7 +379,7 @@ def test_an_rsmf_export_prints_every_note_because_its_rows_hold_the_originals_on
                           options={})
     seen = {}
 
-    def capture(engine_, e, options, contains, days):
+    def capture(engine_, e, export_id, options, contains, days):
         seen["contains"] = contains
         return b"synthetic", {}
     monkeypatch.setattr(jobs, "_rsmf", capture)
