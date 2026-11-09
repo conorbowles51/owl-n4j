@@ -592,6 +592,14 @@ def _gap_cases(session) -> list[str]:
         .group_by(EvidenceFile.case_id).order_by(func.count())).all()]
 
 
+def _entity_cases(session) -> list[str]:
+    """Every case the entity pass visits: entity vectors go stale by graph edits, so a case with no document gap
+    (a phone-only or spreadsheet-only case) still has vectors to refresh."""
+    from sqlalchemy import select
+    from postgres.models.case import Case
+    return [str(c) for c in session.execute(select(Case.id).where(Case.deleted_at.is_(None)).order_by(Case.id)).scalars()]
+
+
 @contextmanager
 def _backfill_lock():
     """One gap backfill at a time across workers: a session-level advisory lock on a dedicated autocommit
@@ -642,9 +650,11 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
             return summary
         if case_ids is not None:
             cases = list(case_ids)
+            entity_cases = cases
         else:
             with factory() as db:
                 cases = _gap_cases(db)
+                entity_cases = _entity_cases(db)
         log("info", "Meaning-search gap backfill started over %d case(s)" % len(cases))
         for case_id in cases:
             found = gap(case_id, fresh=True)
@@ -667,7 +677,7 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
                 summary["stopped"] = result["stopped"]
                 break
         if summary["stopped"] is None and entities is not None:
-            for case_id in cases:
+            for case_id in entity_cases:
                 result = entities(case_id, log=log) or {}
                 summary["entities_embedded"] += int(result.get("embedded") or 0)
                 if result.get("stopped"):

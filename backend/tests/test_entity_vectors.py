@@ -192,6 +192,18 @@ def test_recovery_backfill_stops_and_keeps_pending_when_an_entity_embed_is_refus
     assert entities.calls == ["c1"] and out["stopped"].startswith("entity vectors: 429")
 
 
+def test_recovery_backfill_refreshes_entity_vectors_of_cases_with_no_document_gap():
+    # Live 9 Nov: 154 of 165 stale entity vectors sat in 5 cases with no document text, never visited.
+    entities = _Entities()
+    with patch.object(meaning_search, "_gap_cases", return_value=["docs"]), \
+            patch.object(meaning_search, "_entity_cases", return_value=["docs", "phones-only"]):
+        out = meaning_search.run_gap_backfill(
+            gap=lambda case_id, fresh=True: {"missing_evidence_file_ids": []},
+            backfill=lambda **k: pytest.fail("no documents are missing"), log=lambda lvl, msg: None,
+            lock=False, entities=entities, session_factory=_Session)
+    assert entities.calls == ["docs", "phones-only"] and out["entities_embedded"] == 4
+
+
 def test_restore_rebuild_uses_the_same_text():
     from services.neo4j.entity_service import EntityService
     vectors, calls = FakeVectors(), []
