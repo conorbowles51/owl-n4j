@@ -212,3 +212,37 @@ it("a POST flagged as a read is counted by the loading panel and never switches 
   await fetchAPI("/api/financial/counterparty-parties?case_id=c1")
   expect(fetch.mock.calls[3][1].headers["X-Financial-View-Accept"]).toBeUndefined()
 })
+it("says the request took too long when its own time limit stops it, not the browser's abort text", async () => {
+  vi.useFakeTimers()
+  try {
+    const fetch = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new DOMException("signal is aborted without reason", "AbortError")))
+        })
+    )
+    vi.stubGlobal("fetch", fetch)
+    const request = fetchAPI("/api/graph/merge?case_id=c1", { method: "POST", body: {}, timeout: 1000 }).catch(
+      (error: Error) => error
+    )
+    vi.advanceTimersByTime(1001)
+    const error = (await request) as Error
+    expect(error.name).toBe("AbortError")
+    expect(error.message).toBe("Took too long and was stopped")
+  } finally {
+    vi.useRealTimers()
+  }
+})
+it("still rejects with the caller's abort when the caller stops the request", async () => {
+  const fetch = vi.fn(
+    (_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("stopped", "AbortError")))
+      })
+  )
+  vi.stubGlobal("fetch", fetch)
+  const caller = new AbortController()
+  const request = fetchAPI("/api/evidence?case_id=c1", { signal: caller.signal }).catch((error: Error) => error)
+  caller.abort()
+  expect(((await request) as Error).name).toBe("AbortError")
+})

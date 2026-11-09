@@ -59,6 +59,8 @@ export function apiRequestsInFlight() {
   return inFlight
 }
 
+export const TIMED_OUT_MESSAGE = "Took too long and was stopped"
+
 export async function fetchAPI<T>(
   endpoint: string,
   options: FetchOptions = {}
@@ -86,7 +88,11 @@ export async function fetchAPI<T>(
   if (callerSignal?.aborted) abortFromCaller()
   else callerSignal?.addEventListener("abort", abortFromCaller, { once: true })
   const timeoutMs = timeout ?? (endpoint.includes("/auth/") ? 10000 : 300000)
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  let timedOut = false
+  const timeoutId = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
   inFlight += 1
   // Reads (GET, or any method flagged as a read) are recorded for the loading panel; writes and the page-speed
   // posts are not page loads.
@@ -161,8 +167,13 @@ export async function fetchAPI<T>(
     failure = null
     return value
   } catch (error) {
-    if (failure === "Stopped before an answer" && error instanceof Error)
-      failure = controller.signal.aborted && !callerSignal?.aborted ? "Took too long and was stopped" : error.message
+    // Stopped by our own time limit: the person reads why, not the browser's 'signal is aborted without reason'.
+    // The name stays AbortError, so callers that word their own time-limit message still recognise it.
+    if (timedOut && !callerSignal?.aborted) {
+      failure = TIMED_OUT_MESSAGE
+      throw new DOMException(TIMED_OUT_MESSAGE, "AbortError")
+    }
+    if (failure === "Stopped before an answer" && error instanceof Error) failure = error.message
     throw error
   } finally {
     // A read the caller cancelled (the person left, or React Query dropped it) is not a failure to show.
