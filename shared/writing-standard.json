@@ -1,0 +1,273 @@
+{
+ "version": 1,
+ "source": "docs/writing-standard.md; /root/.claude/skills/writing-clearly-and-concisely (Strunk, The Elements of Style, and Wikipedia 'Signs of AI writing') with Loupe's overrides",
+ "prompt_block": [
+  "Write every sentence a person will read in plain, direct English:",
+  "- Use the active voice and positive statements. Say what was found, by whom, from which source.",
+  "- Use definite, specific, concrete words: names, dates, amounts, counts. Omit needless words; one idea per sentence.",
+  "- Put the important fact at the end of the sentence or first in the answer. No preamble, no closing summary, no offers of more help.",
+  "- Never write: 'It's important to note', 'It is worth noting', 'In summary', 'In conclusion', 'I hope this helps', 'Let me know if', 'Feel free to', 'As an AI', 'Not only ... but also', 'plays a key role'.",
+  "- Use they/them for a person whose pronouns are unknown.",
+  "- Never show internal codes, field names, tool names or IDs to the reader; say what they mean.",
+  "- Give true numbers with their units. When you are unsure, say what is unknown and why, once.",
+  "- Copy names, numbers, dates, account numbers, quotes, file names and links exactly as they appear in the source; a quote is never reworded.",
+  "- When the text is your own reading, say so and give its source; never present it as a person's finding."
+ ],
+ "data_block": [
+  "Free-text fields a person will read (summary, description, reason, note) follow these rules: plain direct words, active voice, no filler or promotional words, no preamble.",
+  "Copy names, numbers, dates, account numbers and quoted text exactly as they appear in the source."
+ ],
+ "banned_words": [
+  "delve",
+  "delves",
+  "delving",
+  "tapestry",
+  "multifaceted",
+  "realm",
+  "testament",
+  "pivotal",
+  "seamless",
+  "seamlessly",
+  "leverage",
+  "leverages",
+  "leveraging",
+  "leveraged",
+  "utilize",
+  "utilizes",
+  "utilizing",
+  "utilized",
+  "utilise",
+  "utilises",
+  "utilising",
+  "utilised",
+  "utilization",
+  "showcase",
+  "showcases",
+  "showcasing",
+  "fostering",
+  "groundbreaking",
+  "cutting-edge",
+  "game-changer",
+  "intricacies",
+  "interplay",
+  "garnered",
+  "garnering",
+  "embark",
+  "embarking",
+  "unleash",
+  "supercharge",
+  "effortless",
+  "effortlessly",
+  "elevate",
+  "elevates",
+  "empower",
+  "empowers",
+  "empowering",
+  "whopping",
+  "nestled",
+  "vibrant",
+  "crucial",
+  "robust",
+  "notably"
+ ],
+ "banned_phrases": [
+  "it's important to note",
+  "it is important to note",
+  "it's worth noting",
+  "it is worth noting",
+  "it's important to remember",
+  "it is important to remember",
+  "it's crucial to",
+  "it is crucial to",
+  "in summary,",
+  "in conclusion,",
+  "to summarize,",
+  "i hope this helps",
+  "let me know if",
+  "feel free to",
+  "don't hesitate to",
+  "as an ai",
+  "as a large language model",
+  "as of my last",
+  "great question",
+  "certainly!",
+  "of course!",
+  "absolutely!",
+  "dive into",
+  "deep dive",
+  "dive deep",
+  "plays a crucial role",
+  "plays a key role",
+  "plays a vital role",
+  "plays a pivotal role",
+  "a testament to",
+  "stands as a",
+  "serves as a reminder",
+  "based on the available information",
+  "based on available information",
+  "in today's",
+  "at the end of the day",
+  "the fact that",
+  "please be advised",
+  "kindly note",
+  "rest assured",
+  "successfully",
+  "something went wrong",
+  "an error occurred",
+  "oops",
+  "please note",
+  "in order to",
+  "due to the fact",
+  "at this point in time",
+  "unexpected error occurred",
+  "an unexpected error"
+ ],
+ "internal_terms": [
+  {
+   "pattern": "\\bP[0-4]\\b",
+   "why": "proof-class code; say what it means (checked against the statement's totals, not checked, a claim)"
+  },
+  {
+   "pattern": "\\bStage [A-Z]\\b",
+   "why": "internal pipeline stage name"
+  },
+  {
+   "pattern": "\\b(?:case|payment|txn|batch|document|entity|thread|user)_id\\b",
+   "why": "field name"
+  },
+  {
+   "pattern": "\\bnull\\b|\\bundefined\\b|\\bNaN\\b",
+   "why": "a programming value, not a word"
+  },
+  {
+   "pattern": "\\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\\b",
+   "why": "a constant or setting name"
+  }
+ ],
+ "safe_rewrites": [
+  [
+   "utilize",
+   "use"
+  ],
+  [
+   "utilizes",
+   "uses"
+  ],
+  [
+   "utilizing",
+   "using"
+  ],
+  [
+   "utilized",
+   "used"
+  ],
+  [
+   "utilise",
+   "use"
+  ],
+  [
+   "utilises",
+   "uses"
+  ],
+  [
+   "utilising",
+   "using"
+  ],
+  [
+   "utilised",
+   "used"
+  ],
+  [
+   "in order to",
+   "to"
+  ],
+  [
+   "prior to",
+   "before"
+  ],
+  [
+   "delve into",
+   "look at"
+  ],
+  [
+   "delves into",
+   "looks at"
+  ]
+ ],
+ "drop_sentences": [
+  "i hope this helps",
+  "let me know if",
+  "feel free to",
+  "don't hesitate to",
+  "is there anything else",
+  "great question",
+  "as an ai",
+  "as a large language model",
+  "certainly!",
+  "of course!",
+  "absolutely!"
+ ],
+ "lint_exempt": [
+  {
+   "file": "frontend_v2/src/features/graph/components/CypherPanel.tsx",
+   "why": "query-language examples a person types; code, not prose"
+  },
+  {
+   "file": "frontend_v2/src/features/graph/components/CreateRelationshipDialog.tsx",
+   "match": [
+    "WORKS_FOR",
+    "LOCATED_AT"
+   ],
+   "why": "examples of the relationship-type form a person types"
+  },
+  {
+   "file": "backend/routers/query.py",
+   "match": [
+    "case_id"
+   ],
+   "why": "$case_id is the query-language parameter a person types in the query console"
+  }
+ ],
+ "report_generators": [
+  "backend/services/case_cost_report.py",
+  "backend/services/casework_report.py",
+  "backend/services/dossier_service.py",
+  "backend/services/financial_export_service.py",
+  "backend/services/snapshot_report.py",
+  "backend/services/financial/exhibit.py",
+  "backend/services/financial/expert_packet.py",
+  "backend/services/financial/ledger_exhibits.py",
+  "backend/services/financial/ledger_pdf.py",
+  "backend/services/financial/review_package_report.py",
+  "backend/services/financial/trace_scenario_report.py",
+  "backend/services/agent/exports.py",
+  "backend/services/agent/run_record_export.py"
+ ],
+ "prompt_words": [
+  "delve",
+  "tapestry",
+  "multifaceted",
+  "realm",
+  "testament",
+  "pivotal",
+  "crucial",
+  "robust",
+  "seamless",
+  "leverage",
+  "utilize",
+  "showcase",
+  "foster",
+  "notably",
+  "groundbreaking",
+  "cutting-edge",
+  "empower",
+  "elevate",
+  "intricacies",
+  "interplay",
+  "vibrant",
+  "embark",
+  "effortless",
+  "game-changer"
+ ],
+ "report_internal_terms": false
+}
