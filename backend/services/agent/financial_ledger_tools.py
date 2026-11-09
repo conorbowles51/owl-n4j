@@ -508,13 +508,17 @@ def _why_not_verified(session, readings) -> str:
 
 def read_financial_ledger(session, *, case_id, account_ids=None, account_holders=None,
         start_date=None, end_date=None, filters=None, population='working', view='transactions',
-        group_by='account', offset=0, limit=50, expected_revision=None, expected_ledger_revision=None):
+        group_by='account', offset=0, limit=50, expected_revision=None, expected_ledger_revision=None,
+        ledger_cache=None):
     """Complete filtered totals and a revision-bound page, using Financial rules.
 
     Coverage/incomplete/excluded views accept only account, date, source and
     currency scope. Payment-specific filters are rejected, never silently lost.
     Exclusion counts describe the captured account/date scope, separately from
     the matching included payments. Missing dates remain explicit.
+
+    ``ledger_cache`` (services.agent.ledger_run_cache, one per agent run): the payment capture of a scope is read
+    once and used again only while every row it read is unchanged.
     """
     case_id = _uuid(case_id)
     if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= MAX_PAGE_SIZE:
@@ -541,8 +545,15 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
     with session.no_autoflush:
         # The case's accounts, read once for the ledger's party state, its matched names and the coverage below.
         accounts = _case_accounts(session, case_id)
-        ledger = ledger_summary(session, case_id=case_id, account_ids=account_ids,
-            account_holders=account_holders, start_date=start, end_date=end, capture_readings=True, case_accounts=accounts)
+        def capture():
+            return ledger_summary(session, case_id=case_id, account_ids=account_ids, account_holders=account_holders,
+                start_date=start, end_date=end, capture_readings=True, case_accounts=accounts)
+        if ledger_cache is None:
+            ledger = capture()
+        else:
+            scope = (str(case_id), tuple(sorted(str(value) for value in account_ids or [])),
+                tuple(account_holders or []), start, end)
+            ledger = ledger_cache.read(session, scope, case_id, capture)
         if not ledger['available']:
             return _unavailable(case_id, ledger['reason'])
         working = working_totals_from_readings(ledger)
@@ -691,7 +702,10 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         applied=False, limitation=LIMITATION)
 
 
-def kept_read_financial_ledger(session, *, case_id, **params):
+_RUN_LEDGER_CACHE = None  # set below: the run's capture cache (services.agent.ledger_run_cache) for a miss
+
+
+def kept_read_financial_ledger(session, *, case_id, ledger_cache=None, **params):
     """read_financial_ledger through the Financial view cache (view_cache.cached_view): the same read of an unchanged
     case is computed once, for the agent and across its runs, as the Financial screens' views are. Measured on BNB2
     d5b330d1 (8 Nov): one run made 4 whole-case reads of 47-59 s each, two of them the same read.
@@ -706,6 +720,9 @@ def kept_read_financial_ledger(session, *, case_id, **params):
 
     def read():
         view_cache.not_a_visit.set(True)
+        # Not part of the key: a stored copy serves any run; on a miss the run's own capture is reused
+        # (lx-agentlive B: a different read of the same unchanged case in one run, 15 s instead of 47-59 s).
+        _RUN_LEDGER_CACHE.set(ledger_cache)
         return _kept_ledger_read(case_id=_uuid(case_id), db=session, params=key)
     result = contextvars.Context().run(read)
     body = getattr(result, 'body', None)
@@ -713,8 +730,10 @@ def kept_read_financial_ledger(session, *, case_id, **params):
 
 
 def _kept_ledger_read(*, case_id, db, params):
-    return read_financial_ledger(db, case_id=case_id, **json.loads(params))
+    return read_financial_ledger(db, case_id=case_id, ledger_cache=_RUN_LEDGER_CACHE.get(), **json.loads(params))
 
 
+import contextvars as _contextvars  # noqa: E402
+_RUN_LEDGER_CACHE = _contextvars.ContextVar('agent_run_ledger_cache', default=None)
 from services.financial.view_cache import cached_view as _cached_view  # noqa: E402
 _kept_ledger_read = _cached_view('agent-ledger-read')(_kept_ledger_read)

@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from services.agent.cypher_safety import UnsafeCypherError, repair_common_cypher, run_readonly_cypher
 from services.agent.citations import link_document_citations
 from services.agent.json_utils import sanitize_text, to_jsonable, truncate_payload, truncate_text
+from services.agent.ledger_run_cache import LedgerRunCache
 from services.neo4j.driver import driver
 from services.neo4j.financial_service import financial_service
 from services.neo4j.geo_service import geo_service
@@ -76,6 +77,8 @@ class AgentToolContext:
     model_views: dict[str, Any] = field(default_factory=dict)
     # Characters the next tool message may use (the runner sets it from the run's context budget).
     page_budget_chars: int | None = None
+    # The run's ledger captures, reused while the rows they read are unchanged (services.agent.ledger_run_cache).
+    ledger_cache: Any = field(default_factory=LedgerRunCache)
     # Who the run is for and which model runs it (services.agent.proposal_tools): a proposal records it as the
     # model's work for that person. None: the run cannot propose.
     proposer: dict[str, Any] | None = None
@@ -2304,7 +2307,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                         "no_financial_evidence": True, "reason": reason, "total_matching": None, "returned": 0},
                         summary=reason)
                 data = kept_read_financial_ledger(db, case_id=uuid.UUID(context.case_id),
-                    view=view, filters=filters or None, **kwargs)
+                    view=view, filters=filters or None, ledger_cache=context.ledger_cache, **kwargs)
         except ValueError as exc:
             return context.result(tool_name,
                 {"available": False, "applied": False, "reason": str(exc)},

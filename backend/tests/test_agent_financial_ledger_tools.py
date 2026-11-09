@@ -392,6 +392,41 @@ class FinancialAgentLedgerTests(LedgerToolFixture):
         self.assertEqual(result['coverage']['incomplete_records'], 0)
 
 
+class SharedCaptureTests(LedgerToolFixture):
+    """One agent run shares a ledger capture across its calls (services.agent.ledger_run_cache, uncopied): every view
+    must read it without changing it, and give what a fresh capture gives."""
+
+    def test_every_view_reads_a_shared_capture_without_changing_it(self):
+        import json
+
+        class Shared:
+            def __init__(self):
+                self.kept = {}
+
+            def read(self, session, key, case_id, compute):
+                if key not in self.kept:
+                    self.kept[key] = compute()
+                return self.kept[key]
+        self.source(rows=7, amount=1000)
+        self.source(self.card, currency='USD', rows=3, amount=10)
+        shared = Shared()
+        views = [dict(view='coverage'), dict(view='groups', group_by='month'), dict(view='groups', group_by='account'),
+                 dict(view='groups', group_by='counterparty'), dict(view='transactions'),
+                 dict(view='transactions', population='verified'), dict(view='excluded'), dict(view='incomplete'),
+                 dict(view='transactions', filters={'search': 'Exact'})]
+        dump = lambda value: json.dumps(value, sort_keys=True, default=str)
+        fresh = [self.read(**options) for options in views]
+        for options, expected in zip(views, fresh):
+            with self.subTest(**{k: str(v) for k, v in options.items()}):
+                got = self.read(ledger_cache=shared, **options)
+                before = dump(list(shared.kept.values()))
+                again = self.read(ledger_cache=shared, **options)
+                self.assertEqual(dump(list(shared.kept.values())), before)
+                self.assertEqual(dump(got), dump(expected))
+                self.assertEqual(dump(again), dump(expected))
+        self.assertEqual(len(shared.kept), 1)
+
+
 class CorrectedFinancialAgentLedgerTests(unittest.TestCase):
     def test_actual_saved_amount_correction_is_current_and_original_stays_excluded(self):
         from tests.test_financial_payment_edits import PaymentEditTests
