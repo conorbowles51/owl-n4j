@@ -196,6 +196,6 @@ def cost_report_pdf(report: dict) -> bytes:
                               "Choose a shorter date range; no partial PDF was made.")
     from weasyprint import HTML
 
-    def deny(url, *args, **kwargs):
-        raise ValueError("The cost report cannot load outside resources.")
+    from services.pdf_fetch import deny_all
+    deny = deny_all("The cost report cannot load outside resources.")
     return HTML(string=cost_report_html(report), url_fetcher=deny).write_pdf()

@@ -23,8 +23,8 @@ def render_ledger_pdf(snapshot, html, *, part_words=None):
     if len(json.loads(snapshot.content)['ledger']['readings']) > MAX_PDF_READINGS:
         raise LedgerSummaryError(PDF_READINGS_REFUSAL)
     from weasyprint import HTML, CSS
-    def deny_resource(url, *args, **kwargs):
-        raise ValueError('Ledger PDF reports cannot load external or local resources.')
+    from services.pdf_fetch import deny_all
+    deny_resource = deny_all('Ledger PDF reports cannot load external or local resources.')
     if part_words:
         from html import escape
         html = html.replace('<h1>Loupe ledger report</h1>', '<h1>Loupe ledger report</h1><p><strong>' + escape(part_words) + '</strong></p>')

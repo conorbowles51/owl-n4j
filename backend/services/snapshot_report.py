@@ -230,9 +230,9 @@ def render_snapshot_report_html(
 def render_snapshot_report_pdf(snapshot: dict[str, Any], **kwargs: Any) -> bytes:
     from weasyprint import HTML
 
-    def deny_resource(url: str, *args: Any, **kw: Any):
-        # The graph is inline SVG in the page, so the report never needs to fetch anything.
-        raise ValueError("Snapshot reports cannot load external or local resources.")
+    from services.pdf_fetch import deny_all
+    # The graph is inline SVG in the page, so the report never needs to fetch anything.
+    deny_resource = deny_all("Snapshot reports cannot load external or local resources.")
 
     return HTML(string=render_snapshot_report_html(snapshot, **kwargs), url_fetcher=deny_resource).write_pdf()
 

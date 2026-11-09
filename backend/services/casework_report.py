@@ -191,7 +191,7 @@ def render_casework_report_html(
 def render_casework_report_pdf(entries_by_section: dict[str, list[dict[str, Any]]], **kwargs: Any) -> bytes:
     from weasyprint import HTML
 
-    def deny_resource(url: str, *args: Any, **kw: Any):
-        raise ValueError("Casework reports cannot load external or local resources.")
+    from services.pdf_fetch import deny_all
+    deny_resource = deny_all("Casework reports cannot load external or local resources.")
 
     return HTML(string=render_casework_report_html(entries_by_section, **kwargs), url_fetcher=deny_resource).write_pdf()
