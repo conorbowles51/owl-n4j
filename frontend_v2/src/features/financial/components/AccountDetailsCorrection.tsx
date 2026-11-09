@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -185,6 +186,7 @@ function MergedHistory({
     onMutate: () => setNotice(""),
     onSuccess: () => {
       setNotice("Correction confirmed as yours. Claude's correction stays in that record's history.")
+      announce(caseId, { kind: "confirmation-saved", count: 1 })
       onChanged()
     },
   })
@@ -359,6 +361,7 @@ export function AccountDetailsCorrection({
       setNotice(
         `Account corrected for ${count(result.statements.length, "statement", "statements")}. The earlier values remain in the account history.`
       )
+      announce(caseId, { kind: "correction-saved", what: "The account details", count: 1 })
       void client.invalidateQueries()
     },
   })
@@ -402,6 +405,7 @@ export function AccountDetailsCorrection({
         return next
       })
       setNotice("Correction confirmed as yours. Claude's correction stays in the account history.")
+      announce(caseId, { kind: "confirmation-saved", count: 1 })
     },
   })
   if (query.isPending) return <p role="status">Loading account…</p>

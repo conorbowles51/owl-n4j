@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useState, useMemo } from "react"
 import { toast } from "sonner"
 import {
@@ -263,6 +264,7 @@ function SnapshotReportExport({ snapshot }: { snapshot: Snapshot }) {
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       toast.success(`Report downloaded: ${filename}`)
+      announce(snapshot.case_id, { kind: "report-built", fileName: filename })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Report not produced")
     } finally {

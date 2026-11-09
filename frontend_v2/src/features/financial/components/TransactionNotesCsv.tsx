@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { sha256 } from "@noble/hashes/sha2.js"
@@ -96,6 +97,7 @@ export function TransactionNotesCsv({
         )
       }
       await client.invalidateQueries({ queryKey: ["casework", caseId] })
+      announce(caseId, { kind: "notes-imported", saved, skipped })
     } catch (e) {
       setError(
         `${e instanceof Error ? e.message : "Could not save notes."} Completed notes are retained. Retry checks for notes already saved.`

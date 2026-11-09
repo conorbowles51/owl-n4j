@@ -84,6 +84,10 @@ describe("next steps after an action", () => {
     const statement = nextSteps("c1", { kind: "statement-imported", payments: 40, needsLook: 0 })!
     expect(statement.steps.map((s) => s.id)).toEqual(["payments", "follow"])
     expect(nextSteps("c1", { kind: "export-done", fileName: "x.zip", href: null })).toBeNull()
+    const notes = nextSteps("c1", { kind: "notes-imported", saved: 3, skipped: 1 })!
+    expect(notes.title).toBe("3 notes saved to the case work, each linked to its payment. 1 note was there already.")
+    expect(notes.steps.map((s) => s.to)).toEqual(["/cases/c1/workspace?view=casework"])
+    expect(nextSteps("c1", { kind: "notes-imported", saved: 0, skipped: 4 })).toBeNull()
   })
 
   it("the card stays until a step is followed, and the step goes where it says", async () => {

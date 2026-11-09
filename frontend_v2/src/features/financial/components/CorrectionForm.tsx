@@ -1,3 +1,4 @@
+import { announce } from "@/features/guidance/announce"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { readProofClass } from "../lib/ledger-format"
 import type { LedgerTransaction } from "../api"
@@ -164,7 +165,8 @@ function CorrectionFormForm({
         throw new Error("The response did not confirm the reviewed correction.")
       return data
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      announce(variables.reviewed.case_id, { kind: "correction-saved", what: "Your correction", count: 1, paymentId: data.replacement_id })
       setCompletedDraft(savedDraft)
       clearDraft()
     },

@@ -48,6 +48,7 @@ export type ActionFacts =
   | { kind: "theory-addition"; title: string; entryId: string; added: number; trail?: boolean }
   | { kind: "deleted"; count: number; noun: string; where: "evidence" | "graph" }
   | { kind: "export-done"; fileName: string; href?: string | null }
+  | { kind: "notes-imported"; saved: number; skipped: number }
 
 export type ActionKind = ActionFacts["kind"]
 
@@ -67,6 +68,7 @@ export const ACTION_WORDS: Record<ActionKind, string> = {
   "theory-addition": "Added to a theory",
   deleted: "Moved to Deleted items",
   "export-done": "Exports ready",
+  "notes-imported": "Notes imported from a spreadsheet",
 }
 
 const n = (v: number) => v.toLocaleString("en-US")
@@ -176,6 +178,12 @@ export function nextSteps(caseId: string, facts: ActionFacts): NextStepsCard | n
       steps = [
         facts.count > 0 && facts.where === "evidence" && { id: "undo", text: "Changed your mind? Restore from Deleted items.", label: "Undo from Deleted items", to: `${base}/evidence`, effect: { event: OPEN_DELETED_ITEMS } },
         facts.count > 0 && facts.where === "graph" && { id: "undo", text: "Changed your mind? Restore from the graph's recycle bin.", label: "Open the recycle bin", to: `${base}/graph`, effect: { event: OPEN_RECYCLE_BIN } },
+      ]
+      break
+    case "notes-imported":
+      title = `${plural(facts.saved, "note")} saved to the case work, each linked to its payment.${facts.skipped ? ` ${plural(facts.skipped, "note")} ${facts.skipped === 1 ? "was" : "were"} there already.` : ""}`
+      steps = [
+        facts.saved > 0 && { id: "notes", text: "Read the notes in the case work, where they can join a theory or finding.", label: "Open the case work", to: `${base}/workspace?view=casework` },
       ]
       break
     case "export-done":
