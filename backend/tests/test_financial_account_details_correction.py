@@ -468,7 +468,10 @@ class AccountNumberCorrectionTests(AccountDetailsCorrectionTests):
 
     # BNB2 2026-10-30, ECOTERRA BBVA USD Sep-Dec 2022: one statement produced twice, one copy saved under the CLABE
     # and one under the printed number, so on two accounts. The number correction joins them; the copy is set aside at
-    # once by the duplicates rule, linked to the copy kept, and undoing the correction restores it.
+    # once by the duplicates rule, linked to the copy kept, and undoing the correction restores it. Since E26 such a
+    # second copy is held at import (it repeats the first's payments under another number), and a person who records
+    # why both are needed keeps both for the duplicates rule too. The BNB2 copies were saved before that hold, with no
+    # reason; the copy here is saved the same way, with the hold switched off.
     def saved_copy(self, number):
         from postgres.models.evidence import IngestionLog
         from postgres.models.financial_judgements import FinancialJudgement
@@ -491,7 +494,14 @@ class AccountNumberCorrectionTests(AccountDetailsCorrectionTests):
         f.db.commit()
         f.file = copy
         try:
-            return UUID(f.confirm({**f.request(), 'account_number': number})['source_document_id'])
+            from unittest.mock import patch
+            from services.financial import repeated_activity
+            request = {**f.request(), 'account_number': number}
+            with self.assertRaises(PdfMappingError) as held:
+                f.confirm(request)
+            self.assertEqual(str(held.exception), repeated_activity.HOLD_MESSAGE)
+            with patch.object(repeated_activity, 'HOLD', False):
+                return UUID(f.confirm(request)['source_document_id'])
         finally:
             f.file = original
 
