@@ -149,7 +149,7 @@ describe("formatLedgerAmount", () => {
 describe("reading a closed vocabulary", () => {
   it("names the members it knows", () => {
     expect(readLedgerStatus("admitted").value).toBe("admitted")
-    expect(readLedgerStatus("admitted").label).toBe("Admitted")
+    expect(readLedgerStatus("admitted").label).toBe("Included")
     expect(readProofClass("p2").value).toBe("p2")
     expect(readDirection("debit").label).toBe("Debit")
     expect(readDateSource("value").label).toBe("Value date")

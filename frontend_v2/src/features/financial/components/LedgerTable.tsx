@@ -63,6 +63,7 @@
 import { CircleHelp, TriangleAlert } from "lucide-react"
 import { RowJudgementMarkers } from "./JudgementCalls"
 import { priorityRowClass } from "../lib/judgements"
+import { PaymentBank } from "./PaymentBank"
 import { useRowPriority } from "../hooks/use-judgement-rows"
 
 import { Badge } from "@/components/ui/badge"
@@ -373,9 +374,29 @@ function LedgerRow({
             className="text-xs text-muted-foreground"
             data-testid="ledger-counterparty"
           >
-            {transaction.counterparty_raw}
+            {/* Explicit From / To: the account's own side is its label, the other side is the printed counterparty. */}
+            {transaction.direction === "credit" || transaction.direction === "debit" ? (
+              <>
+                <span className="font-semibold uppercase tracking-wide">
+                  {transaction.direction === "credit" ? "From" : "To"}
+                </span>{" "}
+                {transaction.counterparty_raw}
+                {(transaction.account_label || transaction.account_holder) && (
+                  <>
+                    {" · "}
+                    <span className="font-semibold uppercase tracking-wide">
+                      {transaction.direction === "credit" ? "To" : "From"}
+                    </span>{" "}
+                    {transaction.account_label || transaction.account_holder}
+                  </>
+                )}
+              </>
+            ) : (
+              transaction.counterparty_raw
+            )}
           </div>
         )}
+        <PaymentBank institution={transaction.account_institution} />
         {transaction.bank_reference !== null && (
           <div
             className="font-mono text-xs text-muted-foreground"

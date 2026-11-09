@@ -1676,7 +1676,7 @@ export const financialAPI = {
   /**
    * The Transactions page's first view over exactly the rows `getLedgerTransactions` returns for the same filters:
    * per currency its payments and money in and out, the count of payments, of those a judgement call touches, of
-   * those with the other side not identified and with a name read by Claude and not confirmed, and one page of
+   * those with the counterparty not identified and with a name read by Claude and not confirmed, and one page of
    * rows in the ledger's order. Each figure is the browser's own calculation, done on the server so the page does
    * not wait for every payment. `available: false` means the page must read every row (as before).
    */

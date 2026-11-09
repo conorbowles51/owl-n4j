@@ -202,7 +202,7 @@ export function TransactionsOverview({
                     key={month}
                     type="button"
                     aria-pressed={active}
-                    title={`${month}: ${exact(m.credit, currency)} in, ${exact(m.debit, currency)} out, ${m.count} payments. Click to show this month.`}
+                    title={`${month}: ${exact(m.credit, currency)} in, ${exact(m.debit, currency)} out, net ${exact(m.credit - m.debit, currency)}, ${m.count} payments. Click to show this month.`}
                     onClick={() => onMonth(active ? "" : month)}
                     className={`flex h-full flex-col justify-end gap-[3px] rounded-md ${active ? "outline outline-2 outline-[#f7f7f8]" : "hover:bg-white/5"}`}
                   >
@@ -213,9 +213,10 @@ export function TransactionsOverview({
               })}
             </div>
             <div className="mt-2 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${months.length}, minmax(22px, 1fr))`, minWidth: months.length * 26 }}>
-              {months.map(({ month }) => (
+              {months.map(({ month }, index) => (
+                // Long ranges: the bars stay one per month, the labels thin out to every Nth month.
                 <span key={month} className="text-center font-mono text-[10px] uppercase text-[#9a9da5]">
-                  {months.length > 14 ? month.slice(2).replace("-", "/") : new Date(`${month}-01T00:00:00Z`).toLocaleString("en", { month: "short", timeZone: "UTC" })}
+                  {months.length > 24 && index % Math.ceil(months.length / 24) !== 0 ? "" : months.length > 14 ? month.slice(2).replace("-", "/") : new Date(`${month}-01T00:00:00Z`).toLocaleString("en", { month: "short", timeZone: "UTC" })}
                 </span>
               ))}
             </div>

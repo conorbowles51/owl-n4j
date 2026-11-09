@@ -208,7 +208,7 @@ export function TransactionTable({
                 className="flex items-center gap-1 text-xs"
                 onClick={(e) => handleSort("name", e)}
               >
-                Record {renderSortIcon("name")}
+                Description {renderSortIcon("name")}
               </button>
             </TableHead>
             <TableHead>
@@ -216,7 +216,7 @@ export function TransactionTable({
                 className="flex items-center gap-1 text-xs"
                 onClick={(e) => handleSort("from", e)}
               >
-                Sender {renderSortIcon("from")}
+                From {renderSortIcon("from")}
               </button>
             </TableHead>
             <TableHead />
@@ -225,7 +225,7 @@ export function TransactionTable({
                 className="flex items-center gap-1 text-xs"
                 onClick={(e) => handleSort("to", e)}
               >
-                Receiver {renderSortIcon("to")}
+                To {renderSortIcon("to")}
               </button>
             </TableHead>
             <TableHead className="text-right">
@@ -429,7 +429,7 @@ function TransactionRow({
               <button
                 onClick={onToggleExpand}
                 aria-expanded={isExpanded}
-                className="max-w-[200px] text-left text-xs block hover:underline"
+                className="max-w-[200px] break-words text-left text-xs block hover:underline"
               >
                 {tx.name || "Unnamed record"}
               </button>
@@ -443,7 +443,7 @@ function TransactionRow({
           <div className="group/from flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="max-w-[120px] truncate text-xs block">
+                <span className="max-w-[120px] break-words text-xs block">
                   {tx.from_entity?.name || "—"}
                 </span>
               </TooltipTrigger>
@@ -480,7 +480,7 @@ function TransactionRow({
           <div className="group/to flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="max-w-[120px] truncate text-xs block">
+                <span className="max-w-[120px] break-words text-xs block">
                   {tx.to_entity?.name || "—"}
                 </span>
               </TooltipTrigger>

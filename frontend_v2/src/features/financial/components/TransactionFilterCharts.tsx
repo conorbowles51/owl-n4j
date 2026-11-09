@@ -243,7 +243,7 @@ export function TransactionFilterCharts({
                   <button
                     type="button"
                     className="mt-1 whitespace-nowrap rounded py-1 text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
-                    aria-label={`${m.month}: ${m.count} transactions, credits ${money(m.credit)}, debits ${money(m.debit)}`}
+                    aria-label={`${m.month}: ${m.count} transactions, credits ${money(m.credit)}, debits ${money(m.debit)}, net ${money(m.credit - m.debit)}`}
                     aria-pressed={
                       filters.analysisPeriod === m.month &&
                       filters.analysisGroup === group &&
@@ -313,8 +313,9 @@ export function TransactionFilterCharts({
             </div>
             {monthData.omittedEmptyMonths && (
               <p className="text-xs text-muted-foreground">
-                Only months with dated matching transactions are shown. Missing
-                months do not mean zero activity.
+                Every month from the first to the last matching payment is
+                shown. A month drawn empty has no matching payment in the
+                payments loaded.
               </p>
             )}
           </section>

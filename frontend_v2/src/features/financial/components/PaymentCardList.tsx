@@ -10,6 +10,7 @@ import { useRowPriority } from "../hooks/use-judgement-rows"
 import { cn } from "@/lib/cn"
 import type { ReactNode } from "react"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+import { PaymentBank } from "./PaymentBank"
 import { DescriptionCorrectionNote } from "./DescriptionCorrectionNote"
 import { MONEY, SourceTag } from "@/lib/data-colour"
 import { dayTotals } from "./day-totals"
@@ -208,13 +209,14 @@ export function PaymentCardList({
                         )}
                         <button
                           type="button"
-                          className="block min-w-0 max-w-full truncate text-left text-[13px] text-muted-foreground hover:text-foreground hover:underline"
+                          className="block min-w-0 max-w-full break-words text-left text-[13px] text-muted-foreground hover:text-foreground hover:underline"
                           title={row.description ? `${row.description}. Open the original statement.` : "Open the original statement"}
                           onClick={() => onOpen?.(row)}
                         >
                           {row.description || "Open transaction"}
                         </button>
                       </div>
+                      <PaymentBank institution={row.account_institution} className="mt-0.5" />
                       <RowJudgementMarkers transaction={row} />
                     </div>
                     <div className="col-start-3 flex flex-wrap items-center gap-1.5 sm:col-start-auto">

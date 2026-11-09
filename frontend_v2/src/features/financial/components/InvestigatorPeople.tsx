@@ -92,7 +92,7 @@ function UnidentifiedBreakdown({
             Download what to ask the bank for
           </Button>
           <p className="text-xs text-muted-foreground">
-            Every payment in this case with no name for the other side, with the line as printed and what the bank holds
+            Every payment in this case with no name for the counterparty, with the line as printed and what the bank holds
             that the statement does not show.
           </p>
           {downloadError && <p className="text-xs text-destructive">{downloadError}</p>}

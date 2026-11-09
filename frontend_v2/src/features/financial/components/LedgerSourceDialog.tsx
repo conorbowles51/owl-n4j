@@ -7,6 +7,7 @@ import { InAppLink } from "./InAppLink"
 import { InfoTip } from "./InfoTip"
 import { RowJudgementMarkers } from "./JudgementCalls"
 import { useRowJudgementLookup } from "../hooks/use-judgement-rows"
+import { PRIORITY_LABELS } from "../lib/judgements"
 import { categoryTone } from "../lib/category-palette"
 import {
   absentPaymentBalance,
@@ -658,6 +659,16 @@ function PaymentHeader({
     transaction.currency
   )
   const status = readLedgerStatus(ledgerStatus)
+  const calls = useRowJudgementLookup()?.(transaction) ?? []
+  // An included payment that carries a judgement call says so beside "Included" (it reads "Included, check first"
+  // rather than a plain "Admitted" above a warning). The tiers are the review queue's own words.
+  const callTier = calls.length ? String(Math.min(...calls.map((call) => call.priority || 1))) : ""
+  const pillLabel =
+    status.value === "admitted" && callTier
+      ? `Included — ${(PRIORITY_LABELS[callTier] || "worth a look").toLowerCase()}`
+      : status.value === "admitted"
+        ? "Included in totals"
+        : status.label
   const proof = readProofClass(transaction.proof_class)
   const layer = readExtractionLayer(transaction.extraction_layer)
   const directionWord =
@@ -692,7 +703,7 @@ function PaymentHeader({
           className={`rounded-full px-2 py-0.5 font-semibold ${statusTone}`}
           title={status.description}
         >
-          {status.label}
+          {pillLabel}
         </span>
       </div>
       {transaction.account_label && (

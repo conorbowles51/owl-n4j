@@ -131,7 +131,7 @@ describe("connected transaction analysis", () => {
       { key: "name:A B", count: 1, fromCount: 1, toCount: 1 },
     ])
   })
-  it("charts all exact amounts and missing months without inventing dates", () => {
+  it("charts all exact amounts and draws empty months as zero without inventing dates", () => {
     const series = activitySeries([
       row("jan", { amount_minor: "9007199254740993", category: "Rent" }),
       row("march", { ordering_date: "2026-03-03", category: "Rent" }),
@@ -143,8 +143,10 @@ describe("connected transaction analysis", () => {
     ])
     expect(series.months.map((m) => [m.month, m.count])).toEqual([
       ["2026-01", 1],
+      ["2026-02", 0],
       ["2026-03", 1],
     ])
+    expect(series.months[1]).toMatchObject({ credit: 0n, debit: 0n })
     expect(series.omittedEmptyMonths).toBe(true)
     expect(series.categories[0].debit).toBe(9007199254741093n)
     expect(series.undated).toBe(1)

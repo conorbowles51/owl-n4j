@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { cleanup, render, screen } from "@testing-library/react"
 import { expect, it } from "vitest"
 import type { LedgerTransaction } from "../api"
 import { paymentFixture } from "../lib/payment-fixture.test-support"
@@ -14,22 +14,29 @@ const row = (explanation: string) =>
 it("marks a name a person read from the statement as theirs, in the table and in the details", () => {
   const named = row("Named by Alex Rivera from the statement on 2026-10-29.")
   const { unmount } = render(<PaymentLabelOrigin row={named} field="to_name" />)
-  const note = screen.getByText("Named by Alex Rivera from the statement")
-  expect(note.getAttribute("title")).toBe("Named by Alex Rivera from the statement on 2026-10-29.")
+  expect(screen.getByText("Named by Alex Rivera from the statement").getAttribute("title")).toBe(
+    "Named by Alex Rivera from the statement on 2026-10-29."
+  )
   unmount()
   render(<PaymentLabelOrigin row={named} field="to_name" detail />)
   expect(screen.getByText("Named by Alex Rivera from the statement on 2026-10-29.")).toBeTruthy()
 })
 
-it("marks other person labels with who saved or linked them", () => {
-  render(
+it("shows no 'Saved by' on the list line, whoever saved it, but keeps what Claude read first", () => {
+  const { container } = render(
     <>
       <PaymentLabelOrigin row={row("Saved by Alex Rivera on 2026-10-01. Invoice on file.")} field="to_name" />
-      <PaymentLabelOrigin row={row("Linked by an investigator to an existing party.")} field="to_name" />
       <PaymentLabelOrigin row={row("")} field="to_name" />
     </>
   )
-  expect(screen.getByText("Saved by Alex Rivera")).toBeTruthy()
-  expect(screen.getByText("Linked by an investigator")).toBeTruthy()
-  expect(screen.getByText("Saved by a person")).toBeTruthy()
+  expect(container.textContent).toBe("")
+  cleanup()
+  render(<PaymentLabelOrigin row={row('Saved by Alex. Claude read: "GRUAS DEL NRTE"')} field="to_name" />)
+  expect(screen.queryByText(/Saved by/)).toBeNull()
+  cleanup()
+  render(<PaymentLabelOrigin row={row("Saved by Alex Rivera on 2026-10-01.")} field="to_name" detail />)
+  expect(screen.getByText("Saved by Alex Rivera on 2026-10-01.")).toBeTruthy()
+  cleanup()
+  render(<PaymentLabelOrigin row={row('Saved by Alex. Claude read: "GRUAS DEL NRTE"')} field="to_name" />)
+  expect(screen.getByTestId("claude-read").textContent).toContain('Claude read: "GRUAS DEL NRTE"')
 })

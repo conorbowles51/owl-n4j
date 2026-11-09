@@ -171,7 +171,7 @@ export function formatLedgerAmount(
 
 const LEDGER_STATUS_COPY: Record<LedgerStatus, TermCopy> = {
   admitted: {
-    label: "Admitted",
+    label: "Included",
     description: "Counts toward totals and can be traced back to its source.",
   },
   quarantined: {

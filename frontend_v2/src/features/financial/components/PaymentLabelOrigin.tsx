@@ -58,6 +58,15 @@ export function PaymentLabelOrigin({
         ? "Suggested"
         : SHORT[origin.source]
   const read = origin.source === "investigator" ? claudeRead(origin.explanation) : null
+  // "Saved by …" takes room on every payment line and says nothing about the money. Who saved a value stays in the
+  // payment's detail (card, source dialog: detail), stored with the label. "Named / Confirmed / Corrected by" and
+  // what Claude read first stay on the line: they say how the name came to be.
+  if (origin.source === "investigator" && !detail && /^Saved by\b/.test(short))
+    return read ? (
+      <span className="block text-xs font-normal text-muted-foreground" title={origin.explanation} data-testid="claude-read">
+        {read}
+      </span>
+    ) : null
   return (
     <span
       className="block text-xs font-normal text-muted-foreground"

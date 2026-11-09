@@ -175,10 +175,12 @@ it("leads with the next step, the journey, money by currency and every old panel
   expect(screen.getByText("1 payment has no category yet")).toBeTruthy()
   // currency switch: MXN first (2 payments), USD selectable
   expect(screen.getByRole("button", { name: "MXN · 2" }).getAttribute("aria-pressed")).toBe("true")
-  expect(screen.getByText("+5.00 k")).toBeTruthy()
+  const figures = () => screen.getByTestId("overview-figures").textContent || ""
+  expect(figures()).toContain("+5,000.00 MXN")
+  expect(figures()).toContain("−1,200.00 MXN")
+  expect(figures()).toContain("Net movement+3,800.00 MXN")
   fireEvent.click(screen.getByRole("button", { name: "USD · 1" }))
-  expect(screen.getAllByText("−10").length).toBeGreaterThan(0)
-  expect(screen.getByText("Net")).toBeTruthy()
+  expect(figures()).toContain("−10.00 USD")
   // kept panels
   for (const text of ["Scope", "Connections over 3 payments", "Coverage grid", "Imported payments in the selected accounts and dates", "Saved investigation work", "Your statements", "Explore activity over time"])
     expect(screen.getByText(text)).toBeTruthy()
@@ -198,7 +200,7 @@ it("shows the top figures from the server's totals while the panels are still lo
   expect(progress.textContent).toContain("3 payments · 1 uncategorised")
   expect(screen.getByText("1 payment has no category yet")).toBeTruthy()
   expect(screen.getByRole("button", { name: "MXN · 2" }).getAttribute("aria-pressed")).toBe("true")
-  expect(screen.getByText("+5.00 k")).toBeTruthy()
+  expect(screen.getByTestId("overview-figures").textContent).toContain("+5,000.00 MXN")
   expect(screen.getByRole("status").textContent).toBe("Loading this case’s payments (3 payments)…")
 })
 
@@ -449,4 +451,24 @@ it("a case with no payments (phones only, so far) says so and never shows 0 paym
   } finally {
     totals.payments = was
   }
+})
+
+it("puts money in, money out, net movement and outstanding items before the next step and the shortcuts (FIN-02)", () => {
+  render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
+  const figures = screen.getByTestId("overview-figures")
+  for (const label of ["Money in", "Money out", "Net movement", "Outstanding items"]) expect(figures.textContent).toContain(label)
+  // 2 statements to check + 7 of Loupe's calls waiting + 1 uncategorised payment, each still shown on its own
+  expect(screen.getByTestId("outstanding-total").textContent).toBe("10")
+  expect(screen.getByTestId("outstanding-parts").textContent).toContain("2 statements to check")
+  expect(screen.getByTestId("outstanding-parts").textContent).toContain("7 calls waiting")
+  const next = screen.getByRole("region", { name: "Next for you" })
+  const jump = screen.getByRole("region", { name: "Jump in" })
+  expect(figures.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(next.compareDocumentPosition(jump) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  // the big shortcut cards are no longer the first thing on the page
+  expect(jump.querySelector('[class*="min-h-[170px]"]')).toBeNull()
 })

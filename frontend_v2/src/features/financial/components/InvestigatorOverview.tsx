@@ -15,7 +15,6 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useJudgementCounts } from "../hooks/use-judgements"
 import { useLedgerOverview, useLedgerOverviewPanels, usePanelFigureKeys } from "../hooks/use-ledger-overview"
 import { unnamedFigureId, type FigureGroup, type PanelFigure } from "../lib/overview-panels"
-import { compactMoney, minorToNumber } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { overviewFigures } from "../lib/overview-figures"
 import { InfoTip } from "./InfoTip"
@@ -212,6 +211,70 @@ export function InvestigatorOverview({
           </button>
         </p>
       )}
+      <section aria-label="Money in, money out, net movement and outstanding items" className="space-y-3 rounded-xl border bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+          <h2 className="text-base font-semibold text-foreground">Money in this scope{currency ? ` · ${currency}` : ""}</h2>
+          {currencies.length > 1 && (
+            <div role="group" aria-label="Currency" className="inline-flex rounded-lg border bg-background p-[3px]">
+              {currencies.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  aria-pressed={code === currency}
+                  onClick={() => setChosenCurrency(code)}
+                  className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${code === currency ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {code} · {n(currencyCounts.get(code) ?? 0)}
+                </button>
+              ))}
+            </div>
+          )}
+          {totalsReady && (
+            <>
+              <span>{plural(accountCount, "account")} · {span}</span>
+              <button type="button" onClick={() => navigate("transactions")} className="font-semibold text-foreground hover:underline">
+                Open →
+              </button>
+            </>
+          )}
+        </div>
+        {!totalsReady && !totals.isError ? (
+          <p role="status" className="text-sm text-muted-foreground">Adding up payments…</p>
+        ) : !totalsReady ? (
+          <p role="alert" className="text-sm text-muted-foreground">Payments could not be added up. Open Transactions to try again.</p>
+        ) : (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-4" data-testid="overview-figures">
+            <div title={exact(money?.credit ?? 0n)}>
+              <dt className="text-sm text-muted-foreground"><span aria-hidden="true">↓ </span>Money in</dt>
+              <dd className="break-words text-2xl font-semibold tabular-nums text-[#1d6a3a] sm:text-3xl dark:text-[#5fd39a]" style={heading}>
+                +{exact(money?.credit ?? 0n)}
+              </dd>
+            </div>
+            <div title={exact(money?.debit ?? 0n)}>
+              <dt className="text-sm text-muted-foreground"><span aria-hidden="true">↑ </span>Money out</dt>
+              <dd className="break-words text-2xl font-semibold tabular-nums sm:text-3xl" style={heading}>
+                −{exact(money?.debit ?? 0n)}
+              </dd>
+            </div>
+            <div title={exact((money?.credit ?? 0n) - (money?.debit ?? 0n))}>
+              <dt className="text-sm text-muted-foreground">Net movement</dt>
+              <dd className="break-words text-2xl font-semibold tabular-nums sm:text-3xl" style={heading}>
+                {(money?.credit ?? 0n) >= (money?.debit ?? 0n) ? "+" : "−"}
+                {exact(((money?.credit ?? 0n) >= (money?.debit ?? 0n)) ? (money?.credit ?? 0n) - (money?.debit ?? 0n) : (money?.debit ?? 0n) - (money?.credit ?? 0n))}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">Outstanding items</dt>
+              <dd className="text-2xl font-semibold tabular-nums sm:text-3xl" style={heading} data-testid="outstanding-total">
+                {n(toCheck + (held(judgements) ? openCalls : 0) + uncategorised)}
+              </dd>
+              <dd className="text-[13px] text-muted-foreground" data-testid="outstanding-parts">
+                {plural(toCheck, "statement")} to check · {held(judgements) ? plural(openCalls, "call") : "calls counting"} waiting · {n(uncategorised)} uncategorised
+              </dd>
+            </div>
+          </dl>
+        )}
+      </section>
       <section
         aria-label="Next for you"
         className="space-y-3 rounded-xl p-3 text-[#f7f7f8] sm:p-4"
@@ -220,83 +283,32 @@ export function InvestigatorOverview({
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="flex min-w-0 flex-[1_1_320px] flex-wrap items-center gap-x-3 gap-y-2">
             <span className={`${eyebrow} text-[#e33b4c]`}>Next for you</span>
-            <h2 className="min-w-0 flex-[1_1_220px] text-[15px] font-semibold leading-snug">
+            <h2 className="min-w-0 flex-[1_1_220px] text-sm font-semibold leading-snug">
               {next.title} <span className="font-normal text-[#9a9da5]">{next.sub}</span>
             </h2>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={next.onClick}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#b41624] px-3 py-1.5 text-[14px] font-semibold text-white hover:bg-[#9a121f]"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#b41624] px-2.5 py-1 text-[13px] font-semibold text-white hover:bg-[#9a121f]"
               >
                 {next.action}
               </button>
               <button
                 type="button"
                 onClick={() => navigate("transactions")}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-3 py-1.5 text-[14px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-2.5 py-1 text-[13px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
               >
                 Skip to transactions
               </button>
               <button
                 type="button"
                 onClick={() => navigate("statements")}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-3 py-1.5 text-[14px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-2.5 py-1 text-[13px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
               >
                 Add or review statements
               </button>
             </div>
-          </div>
-          <div className="flex min-w-0 flex-[1_1_360px] flex-wrap items-center gap-x-5 gap-y-2 text-[14px]">
-            <span className={`${eyebrow} text-[#9a9da5]`}>
-              Money in this scope{currency ? ` · ${currency}` : ""}
-            </span>
-            {currencies.length > 1 && (
-              <div role="group" aria-label="Currency" className="inline-flex rounded-lg border border-[#292b32] bg-[#0b0c0f] p-[3px]">
-                {currencies.map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    aria-pressed={code === currency}
-                    onClick={() => setChosenCurrency(code)}
-                    className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${code === currency ? "bg-[#f7f7f8] text-[#0b0c0f]" : "text-[#bfc1c8] hover:text-white"}`}
-                  >
-                    {code} · {n(currencyCounts.get(code) ?? 0)}
-                  </button>
-                ))}
-              </div>
-            )}
-            {!totalsReady && !totals.isError ? (
-              <p role="status" className="text-[#bfc1c8]">Adding up payments…</p>
-            ) : !totalsReady ? (
-              <p role="alert" className="text-[#bfc1c8]">Payments could not be added up. Open Transactions to try again.</p>
-            ) : (
-              <>
-                <span className="inline-flex items-baseline gap-2" title={exact(money?.credit ?? 0n)}>
-                  <span className="text-[#bfc1c8]"><span aria-hidden="true">↓ </span>In</span>
-                  <span className="text-lg font-semibold tabular-nums text-[#5fd39a]">
-                    +{compactMoney(minorToNumber(money?.credit ?? 0n, currency))}
-                  </span>
-                </span>
-                <span className="inline-flex items-baseline gap-2" title={exact(money?.debit ?? 0n)}>
-                  <span className="text-[#bfc1c8]"><span aria-hidden="true">↑ </span>Out</span>
-                  <span className="text-lg font-semibold tabular-nums">
-                    −{compactMoney(minorToNumber(money?.debit ?? 0n, currency))}
-                  </span>
-                </span>
-                <span className="inline-flex items-baseline gap-2" title={exact((money?.credit ?? 0n) - (money?.debit ?? 0n))}>
-                  <span className="text-[#bfc1c8]">Net</span>
-                  <span className="text-lg font-semibold tabular-nums">
-                    {(money?.credit ?? 0n) >= (money?.debit ?? 0n) ? "+" : "−"}
-                    {compactMoney(Math.abs(minorToNumber((money?.credit ?? 0n) - (money?.debit ?? 0n), currency)))}
-                  </span>
-                </span>
-                <span className="text-[#bfc1c8]">{plural(accountCount, "account")} · {span}</span>
-                <button type="button" onClick={() => navigate("transactions")} className="font-semibold text-[#f7f7f8] hover:underline">
-                  Open →
-                </button>
-              </>
-            )}
           </div>
         </div>
         <ol aria-label="Your progress on this case" className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-2">
@@ -327,7 +339,7 @@ export function InvestigatorOverview({
                   </span>
                   <span className="sr-only">{state === "done" ? "(done)" : state === "now" ? "(now)" : "(to do)"}</span>
                 </span>
-                <span className="pl-8 text-[13px] text-[#9a9da5]">{step.detail}</span>
+                <span className="pl-8 text-xs text-[#9a9da5]">{step.detail}</span>
               </li>
             )
           })}
@@ -335,36 +347,36 @@ export function InvestigatorOverview({
       </section>
       <WorkspaceScope caseId={caseId} />
       <section aria-label="Jump in" className="space-y-3">
-        <h2 className="text-[26px] font-semibold" style={heading}>Jump in</h2>
-        <div className="grid gap-3.5 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-          <button type="button" onClick={() => navigate("follow-money")} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#3a6fd8] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
+        <h2 className="text-lg font-semibold" style={heading}>Jump in</h2>
+        <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+          <button type="button" onClick={() => navigate("follow-money")} className="flex min-h-[84px] flex-col gap-1.5 rounded-[10px] bg-[#3a6fd8] p-3 text-left text-white transition-transform hover:-translate-y-[3px]">
             <span className={`${eyebrow} text-[#dbe6ff]`}>Follow the money</span>
-            <span className="text-[22px] font-semibold leading-tight" style={heading}>Where did the money go?</span>
+            <span className="text-[15px] font-semibold leading-snug" style={heading}>Where did the money go?</span>
             <span className="mt-auto text-sm text-[#dbe6ff]">Trace a payment across accounts →</span>
           </button>
           <button
             type="button"
             onClick={() => navigate("transactions")}
-            className={`flex min-h-[170px] flex-col gap-3 rounded-[14px] p-5 text-left transition-transform hover:-translate-y-[3px] ${!totalsReady ? "bg-[#ecebe6] text-[#3b3d44]" : uncategorised ? "border-2 border-dashed border-[#d99a2b] bg-[#fdf0d5] text-[#5c3800]" : "bg-[#e4f4e9] text-[#1d6a3a]"}`}
+            className={`flex min-h-[84px] flex-col gap-1.5 rounded-[10px] p-3 text-left transition-transform hover:-translate-y-[3px] ${!totalsReady ? "bg-[#ecebe6] text-[#3b3d44]" : uncategorised ? "border-2 border-dashed border-[#d99a2b] bg-[#fdf0d5] text-[#5c3800]" : "bg-[#e4f4e9] text-[#1d6a3a]"}`}
           >
             <span className={`${eyebrow} ${!totalsReady ? "text-[#3b3d44]" : uncategorised ? "text-[#8a5300]" : "text-[#1d6a3a]"}`}>Categorise</span>
-            <span className="text-[22px] font-semibold leading-tight tabular-nums" style={heading}>
+            <span className="text-[15px] font-semibold leading-snug tabular-nums" style={heading}>
               {!totalsReady ? (totals.isError ? "Payments could not be counted" : "Counting payments…") : uncategorised ? `${plural(uncategorised, "payment has", "payments have")} no category yet` : payments ? "Every payment has a category" : "No payments to categorise yet"}
             </span>
             <span className="mt-auto text-sm">{totalsReady && uncategorised ? "Categorise them in bulk →" : "See where the money went →"}</span>
           </button>
-          <button type="button" onClick={() => go(judgementsHref(openCalls ? "open" : "all", openCalls && guesses ? "inferred" : undefined))} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#0f8a7e] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
+          <button type="button" onClick={() => go(judgementsHref(openCalls ? "open" : "all", openCalls && guesses ? "inferred" : undefined))} className="flex min-h-[84px] flex-col gap-1.5 rounded-[10px] bg-[#0f8a7e] p-3 text-left text-white transition-transform hover:-translate-y-[3px]">
             <span className={`${eyebrow} text-[#c9efe9]`}>Spot-check Loupe</span>
-            <span className="text-[22px] font-semibold leading-tight tabular-nums" style={heading}>
+            <span className="text-[15px] font-semibold leading-snug tabular-nums" style={heading}>
               {held(judgements) ? `${plural(Number(calls.total ?? 0), "call")} Loupe made for you` : judgements.isError ? "Loupe's calls could not be counted" : "Counting Loupe's calls…"}
             </span>
             <span className="mt-auto text-sm text-[#c9efe9]">
               {openCalls ? `${n(openCalls)} open${guesses ? ` · start with the ${n(guesses)} guesses` : ""} →` : "See them all →"}
             </span>
           </button>
-          <button type="button" onClick={() => navigate("findings")} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#14161b] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
+          <button type="button" onClick={() => navigate("findings")} className="flex min-h-[84px] flex-col gap-1.5 rounded-[10px] bg-[#14161b] p-3 text-left text-white transition-transform hover:-translate-y-[3px]">
             <span className={`${eyebrow} text-[#9a9da5]`}>Findings</span>
-            <span className="text-[22px] font-semibold leading-tight" style={heading}>Turn what you find into a report</span>
+            <span className="text-[15px] font-semibold leading-snug" style={heading}>Turn what you find into a report</span>
             <span className="mt-auto text-sm text-[#bfc1c8]">{held(findings) ? `${plural(findingCount, "finding")} so far →` : "Open Findings & Observations →"}</span>
           </button>
         </div>

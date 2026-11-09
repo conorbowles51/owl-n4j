@@ -701,7 +701,7 @@ export function LedgerRowBrowser({
       () => setCategories(categories.filter((other) => other !== name)),
     ]),
     ...(view.unnamedOnly && investigation && exportContext
-      ? [["unnamed", "Only payments with the other side not identified", () => changeView({ unnamedOnly: false })] as [string, string, () => void]]
+      ? [["unnamed", "Only payments with the counterparty not identified", () => changeView({ unnamedOnly: false })] as [string, string, () => void]]
       : []),
     ...(view.unconfirmedOnly && investigation && exportContext
       ? [["unconfirmed", "Only names read by Claude, not confirmed", () => changeView({ unconfirmedOnly: false })] as [string, string, () => void]]
@@ -1883,7 +1883,7 @@ export function LedgerRowBrowser({
           <span role="status">
             <strong>{unnamedCount.toLocaleString()}</strong>{" "}
             {unnamedCount === 1 ? "payment" : "payments"} in view with
-            the other side not identified
+            the counterparty not identified
           </span>
           <Button
             size="sm"

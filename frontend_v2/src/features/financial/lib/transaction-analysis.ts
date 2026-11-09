@@ -305,20 +305,26 @@ export function activitySeries(rows: LedgerTransaction[]) {
     period.count++
     months.set(month, period)
   }
-  // Only source-backed payment months belong on the axis. An absent month is
-  // unknown, not a zero-valued financial observation.
+  // Every month from the first to the last dated payment is on the axis. A month with no matching payment is
+  // drawn as zero (count 0): a long quiet stretch followed by a spike is itself a signal, so it is never skipped.
   const sorted = [...months.keys()].sort()
   const ordinal = (key: string) => {
     const [year, month] = key.split("-").map(Number)
     return year * 12 + month - 1
   }
-  const omittedEmptyMonths = sorted.some(
-    (month, index) =>
-      index > 0 && ordinal(month) - ordinal(sorted[index - 1]) > 1
-  )
+  const filled: { month: string; credit: bigint; debit: bigint; count: number }[] = []
+  if (sorted.length) {
+    const first = ordinal(sorted[0]),
+      last = ordinal(sorted[sorted.length - 1])
+    for (let at = first; at <= last; at++) {
+      const key = `${Math.floor(at / 12)}-${String((at % 12) + 1).padStart(2, "0")}`
+      filled.push(months.get(key) ?? { month: key, credit: 0n, debit: 0n, count: 0 })
+    }
+  }
   return {
-    omittedEmptyMonths,
-    months: [...months.values()].sort((a, b) => a.month.localeCompare(b.month)),
+    /** True when at least one month in the range has no matching payment (drawn as zero, never skipped). */
+    omittedEmptyMonths: filled.some((period) => period.count === 0),
+    months: filled,
     categories: [...categories.values()].sort(
       (a, b) => b.count - a.count || a.category.localeCompare(b.category)
     ),

@@ -272,8 +272,8 @@ describe("LedgerTable row detail", () => {
         ]}
       />
     )
-    expect(screen.getByTestId("ledger-counterparty").textContent).toBe(
-      "ACME LTD"
+    expect(screen.getByTestId("ledger-counterparty").textContent).toMatch(
+      /^(From|To)\s*ACME LTD/
     )
     expect(screen.getByTestId("ledger-bank-reference").textContent).toBe(
       "BR-99"
@@ -601,4 +601,25 @@ it("places each exact payment in its credit or debit column without creating a s
   expect(within(rows[1]).getAllByRole("cell")[2]).toHaveTextContent("-")
   expect(within(rows[1]).getAllByRole("cell")[3]).toHaveTextContent("1.00")
   expect(screen.getAllByTestId("ledger-amount")).toHaveLength(2)
+})
+
+describe("FIN-15 payment line: description, From, To and bank", () => {
+  it("labels both sides and names the bank on a ledger row", () => {
+    render(
+      <LedgerTable
+        transactions={[
+          makeRow({
+            direction: "credit",
+            counterparty_raw: "PAYER CO",
+            account_label: "Acme Ltd · 0110",
+            account_institution: "BBVA Mexico",
+          }),
+        ]}
+      />
+    )
+    const line = screen.getByTestId("ledger-counterparty").textContent || ""
+    expect(line).toMatch(/From\s*PAYER CO/)
+    expect(line).toMatch(/To\s*Acme Ltd · 0110/)
+    expect(screen.getByTestId("payment-bank").textContent).toMatch(/Bank\s*BBVA Mexico/)
+  })
 })

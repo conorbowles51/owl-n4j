@@ -55,3 +55,13 @@ it("table rows lead with From and To columns", () => {
   expect(cells[1]!.textContent).toBe("Payer Co")
   expect(cells[2]!.textContent).toBe("Acme Ltd")
 })
+it("card and table lines show the bank, and the printed line wraps instead of being cut off (FIN-15)", () => {
+  const withBank = { ...out, account_institution: "BBVA Mexico", description: "A".repeat(160) } as LedgerTransaction
+  cards([withBank])
+  expect(screen.getByTestId("payment-bank").textContent).toMatch(/Bank\s*BBVA Mexico/)
+  const printed = screen.getByText("A".repeat(160))
+  expect(printed.className).not.toMatch(/\btruncate\b/)
+  expect(printed.className).toMatch(/break-words/)
+  render(<InvestigationTransactionTable rows={[withBank]} selected={[]} onToggle={vi.fn()} />)
+  expect(screen.getAllByTestId("payment-bank").length).toBe(2)
+})

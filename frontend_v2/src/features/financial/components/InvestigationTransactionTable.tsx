@@ -11,6 +11,7 @@ import { memo, useMemo, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AccountHistory } from "./AccountHistory"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+import { PaymentBank } from "./PaymentBank"
 import {
   absentPaymentBalance,
   paymentBalanceExplanation,
@@ -352,6 +353,7 @@ export function InvestigationTransactionTable({
                 >
                   {row.description || "Open transaction"}
                 </button>
+                <PaymentBank institution={row.account_institution} className="mt-1" />
                 {notes.has(row.key) && (
                   <p
                     className="finance-badge mt-1"
