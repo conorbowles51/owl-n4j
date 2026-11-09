@@ -24,6 +24,8 @@ COPY evidence-engine/alembic.ini .
 COPY evidence-engine/alembic/ alembic/
 COPY evidence-engine/app/ app/
 COPY backend/ /backend/
+# Loupe's writing standard (backend/services/writing_standard.py finds it at /shared).
+COPY shared/ /shared/
 
 EXPOSE 8000
 

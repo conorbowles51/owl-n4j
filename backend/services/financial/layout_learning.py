@@ -1208,6 +1208,8 @@ def ask_model(provider, model, prompt, api_key, timeout=900):
     2026-10-28: drafting compared with deepseek-v4-pro at max thinking). Text only: no image is sent here."""
     import time
     import requests
+    from services import writing_standard
+    prompt = writing_standard.reading_prompt(prompt)  # a layout draft is values for a parser, not prose
     started = time.monotonic()
     if provider == 'deepseek':
         response = requests.post('https://api.deepseek.com/chat/completions', timeout=(10, timeout),

@@ -217,6 +217,8 @@ def backfill_document_summaries(
 
             log("info", f"  Generating summary via {provider}/{model}...")
             summary = llm.call(prompt, temperature=0.3)
+            from services import writing_standard
+            summary = writing_standard.clean(summary)
 
             if not summary or not summary.strip():
                 log("warning", f"  LLM returned empty summary for {doc_name}")

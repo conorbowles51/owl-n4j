@@ -86,6 +86,38 @@ def get_openai_client() -> AsyncOpenAI:
     return _client
 
 
+def _writing_standard():
+    """Loupe's writing standard (docs/writing-standard.md), shared with the backend: /backend is on the image's
+    path and the standard's JSON is copied to /shared beside it."""
+    try:
+        from services import writing_standard  # the backend module (PYTHONPATH=/app:/backend)
+    except ImportError:  # a checkout outside the image: the repo's backend folder
+        import sys
+        from pathlib import Path
+
+        backend = Path(__file__).resolve().parents[3] / "backend"
+        if str(backend) not in sys.path:
+            sys.path.insert(0, str(backend))
+        from services import writing_standard
+    return writing_standard
+
+
+def with_writing_standard(messages: list[dict[str, Any]], response_format: Any = None) -> list[dict[str, Any]]:
+    """Every request's system message carries the writing standard: the full block for prose (summaries), the short
+    block for JSON answers (their free-text fields). A request with page images is a reading and is left unchanged."""
+    if any(isinstance(m.get("content"), list) and any(isinstance(i, dict) and i.get("type") == "image_url"
+                                                         for i in m["content"]) for m in messages):
+        return messages
+    kind = "data" if response_format else "prose"
+    standard = _writing_standard()
+    out = [dict(m) for m in messages]
+    for message in out:
+        if message.get("role") == "system" and isinstance(message.get("content"), str):
+            message["content"] = standard.system_prompt(message["content"], kind)
+            return out
+    return [{"role": "system", "content": standard.system_prompt("", kind)}, *out]
+
+
 @checkpointed("services/openai_client.py:chat_completion:v1")
 async def chat_completion(
     messages: list[dict[str, Any]],
@@ -102,6 +134,7 @@ async def chat_completion(
         model=model,
         provider=provider,
     )
+    messages = with_writing_standard(messages, response_format)
     async with _semaphore:
         try:
             content, usage = await _provider_completion(

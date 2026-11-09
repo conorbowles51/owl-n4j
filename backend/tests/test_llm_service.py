@@ -85,7 +85,8 @@ class LLMExecutionContextTests(unittest.TestCase):
         kwargs = responses.create.call_args.kwargs
         self.assertEqual(kwargs["model"], "gpt-5-mini")
         self.assertEqual(kwargs["input"], "Return JSON")
-        self.assertEqual(kwargs["instructions"], context.system_context)
+        self.assertEqual(kwargs["instructions"], context._system(True))  # profile context + writing standard
+        self.assertTrue(kwargs["instructions"].startswith(context.system_context))
         self.assertEqual(kwargs["text"], {"format": {"type": "json_object"}})
         self.assertFalse(kwargs["store"])
         self.assertNotIn("temperature", kwargs)

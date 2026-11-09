@@ -15,6 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+from services import writing_standard
 from services.agent.citations import link_document_citations
 from services.agent.all_cases import ALL_CASES_PROMPT
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
@@ -217,7 +218,7 @@ _FINAL_ANSWER_REQUEST = (
 
 def _final_answer_system_prompt(rules: str = "") -> str:
     """The finalizer's system prompt; a guided workflow's closing rules follow it (services.agent.workflows)."""
-    return _FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + rules if rules else "")
+    return writing_standard.system_prompt(_FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + rules if rules else ""))
 
 
 _FINAL_ANSWER_SYSTEM_PROMPT = (
@@ -288,12 +289,19 @@ def _has_jargon(text: str) -> bool:
 
 
 def _in_plain_words(model: Any, response: AnyMessage) -> tuple[list[AnyMessage], str]:
+    """The finalizer's reply in plain words, passed through the writing standard's post-check (chatbot openers and
+    closers dropped, safe word swaps; quotes, code and links untouched; services.writing_standard)."""
+    messages, text = _in_plain_words_model(model, response)
+    return messages, writing_standard.clean(text)
+
+
+def _in_plain_words_model(model: Any, response: AnyMessage) -> tuple[list[AnyMessage], str]:
     """The finalizer's reply, and one rewrite of it when it still speaks in internal codes or field names."""
     text = message_content_to_text(response.content)
     if not _has_jargon(text):
         return [response], text
     try:
-        rewrite = model.invoke([SystemMessage(content=_PLAIN_WORDS_REQUEST), HumanMessage(content=text)])
+        rewrite = model.invoke([SystemMessage(content=writing_standard.system_prompt(_PLAIN_WORDS_REQUEST)), HumanMessage(content=text)])
     except Exception:  # noqa: BLE001 - the unrewritten answer is still the answer; never lose it to a failed rewrite
         logger.warning("Plain-words rewrite of the final answer failed; the answer is kept as written", exc_info=True)
         return [response], text
@@ -636,7 +644,7 @@ def render_system_prompt(*, case_id: str, significant: bool, mandate_context_blo
     (services.agent.run_record.prompt_version) and the two runners can never drift apart."""
     allowed_entity_keys = [] if significant else None
     state = {"artifact_preference": artifact_preference}
-    return f"""You are the OWL AI Agent, an investigative case analyst.
+    return writing_standard.system_prompt(f"""You are the OWL AI Agent, an investigative case analyst.
 
 You are working inside one case only. Every tool is already scoped to case_id={case_id}.
 {"You are additionally restricted to the Significant layer. Use only its entities and relationships between those entities; do not infer from or request case-wide data." if allowed_entity_keys is not None else "You may use the full case dataset."}{(chr(10) + ALL_CASES_PROMPT) if all_cases else ""}
@@ -699,7 +707,7 @@ COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER
 Actual labels and fields vary by case, so inspect the schema when field choice matters.
 TRANSFERRED_TO and graph transaction amounts are navigation, never a total: never sum them. For money between two
 parties use get_money_between; for any other money total use the ledger tools.
-"""
+""")
 
 
 class AgentGraphRunner:

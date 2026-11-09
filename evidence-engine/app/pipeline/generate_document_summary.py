@@ -443,6 +443,9 @@ async def generate_document_summary(
                 logger.exception("Document summary review failed for %s", file_name)
                 doc.metadata["document_summary_quality_status"] = "review_failed"
                 doc.metadata["document_summary_quality_error"] = str(review_exc)[:1000]
+            # The summary a person reads passes the writing standard's post-check (quotes, citations untouched).
+            from app.services.openai_client import _writing_standard
+            rendered = _writing_standard().clean(rendered) or rendered
             doc.metadata["document_summary_status"] = "generated"
             doc.metadata.pop("document_summary_error", None)
             return rendered

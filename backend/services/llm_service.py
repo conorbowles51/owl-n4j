@@ -23,6 +23,7 @@ from config import (
 from models.llm_models import LLMProvider, get_default_model, get_model_by_id
 from profile_loader import get_chat_config
 from utils.prompt_trace import log_section
+from services import writing_standard
 
 
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -65,6 +66,11 @@ class LLMExecutionContext:
         self.last_response_metadata: dict[str, str] = {}
         # True while a caller writes this call's cost record itself (chat's answer: record linked to the conversation).
         self.caller_records_cost = False
+
+    def _system(self, json_mode: bool) -> str:
+        """The system prompt sent with every text request: the profile's context plus Loupe's writing standard
+        (docs/writing-standard.md); JSON answers get the short block for their free-text fields."""
+        return writing_standard.system_prompt(self.system_context, "data" if json_mode else "prose")
 
     def call(
         self,
@@ -127,7 +133,7 @@ class LLMExecutionContext:
         kwargs: Dict[str, Any] = {
             "model": self.model_id,
             "messages": [
-                {"role": "system", "content": self.system_context},
+                {"role": "system", "content": self._system(json_mode)},
                 {"role": "user", "content": prompt},
             ],
             "timeout": timeout,
@@ -187,6 +193,7 @@ class LLMExecutionContext:
         """
         import base64
 
+        prompt = writing_standard.reading_prompt(prompt)
         self.last_prompt = prompt
         self.last_raw_response = None
         self.last_usage = None
@@ -368,7 +375,7 @@ class LLMExecutionContext:
         payload: Dict[str, Any] = {
             "model": self.model_id,
             "max_tokens": 8192,
-            "system": self.system_context,
+            "system": self._system(json_mode),
             "messages": [{"role": "user", "content": user_prompt}],
         }
         if not self.model_id.startswith(("claude-sonnet-5", "claude-opus-4-8", "claude-fable-5")):
@@ -418,7 +425,7 @@ class LLMExecutionContext:
         if json_mode:
             generation_config["responseMimeType"] = "application/json"
         payload = {
-            "systemInstruction": {"parts": [{"text": self.system_context}]},
+            "systemInstruction": {"parts": [{"text": self._system(json_mode)}]},
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": generation_config,
         }
@@ -462,7 +469,7 @@ class LLMExecutionContext:
         payload: Dict[str, Any] = {
             "model": self.model_id,
             "messages": [
-                {"role": "system", "content": self.system_context},
+                {"role": "system", "content": self._system(json_mode)},
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": temperature,
@@ -518,7 +525,7 @@ class LLMExecutionContext:
 
         kwargs: Dict[str, Any] = {
             "model": self.model_id,
-            "instructions": self.system_context,
+            "instructions": self._system(json_mode),
             "input": prompt,
             "store": False,
             "timeout": timeout,
@@ -738,7 +745,8 @@ Answer:"""
             self.caller_records_cost = False
         if not answer or not answer.strip():
             raise ValueError("LLM returned empty answer")
-        return answer, prompt
+        # The answer a person reads passes the writing standard's post-check (services.writing_standard).
+        return writing_standard.clean(answer) or answer, prompt
 
 
 class LLMService:
