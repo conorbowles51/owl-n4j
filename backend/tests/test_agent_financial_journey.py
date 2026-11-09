@@ -28,7 +28,8 @@ class ScriptedFinancialModel:
     def record(self, messages):
         for message in messages:
             if isinstance(message, ToolMessage):
-                self.outputs[message.tool_call_id] = json.loads(message.content)
+                # The message as first sent (later turns carry its digest: services.agent.lean_history).
+                self.outputs.setdefault(message.tool_call_id, json.loads(message.content))
 
     def bind_tools(self, tools):
         self.names = {tool.name for tool in tools}

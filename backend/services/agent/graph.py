@@ -20,6 +20,7 @@ from services import writing_standard
 from services.agent.citations import link_document_citations
 from services.agent.all_cases import ALL_CASES_PROMPT
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
+from services.agent.lean_history import RepeatedResults, finalizer_messages, lean_messages, tools_for_binding
 from services.agent.model_payloads import (
     context_window_for,
     message_budget_chars,
@@ -829,7 +830,9 @@ class AgentGraphRunner:
         tools_by_name = {tool.name: tool for tool in tools}
         # Tool results may use a share of the model's context over the run; each result is whole when it fits.
         run_budget = run_budget_chars(context_window_for(getattr(self, "model_id", None)))
-        model_with_tools = self.base_model.bind_tools(tools)
+        # The tools as sent to the model: optional fields without the repeated null alternative (lean_history).
+        model_with_tools = self.base_model.bind_tools(tools_for_binding(self.base_model, tools))
+        repeated = RepeatedResults()
 
         def build_system_prompt(state: AgentState) -> str:
             return render_system_prompt(
@@ -843,7 +846,7 @@ class AgentGraphRunner:
 
         def agent_node(state: AgentState) -> dict[str, Any]:
             response = model_with_tools.invoke(
-                [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
+                [SystemMessage(content=build_system_prompt(state)), *lean_messages(state["messages"])]
             )
             return {"messages": [response]}
 
@@ -914,7 +917,8 @@ class AgentGraphRunner:
                                                      artifact=artifact, budget_chars=budget)
                 # The run record (disclosure): totals, pages, revisions and the items this call returned.
                 trace[-1]["record"] = call_facts(name, args, output, model_payload)
-                content = json.dumps(model_payload, ensure_ascii=False, separators=(",", ":"))
+                # A result identical to an earlier one in this run is sent as a pointer to it (lean_history).
+                content = repeated.content(model_payload)
                 used_chars += len(content)
                 tool_messages.append(
                     ToolMessage(
@@ -953,7 +957,8 @@ class AgentGraphRunner:
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
-            final_messages = _messages_for_finalizer(state)
+            # Every result whole unless the lean finalizer is switched on (lean_history.finalizer_messages).
+            final_messages = finalizer_messages(_messages_for_finalizer(state))
             response = self.base_model.invoke(
                 [
                     SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
@@ -1042,7 +1047,9 @@ class AgentGraphRunner:
         tools_by_name = {tool.name: tool for tool in tools}
         # Tool results may use a share of the model's context over the run; each result is whole when it fits.
         run_budget = run_budget_chars(context_window_for(getattr(self, "model_id", None)))
-        model_with_tools = self.base_model.bind_tools(tools)
+        # The tools as sent to the model: optional fields without the repeated null alternative (lean_history).
+        model_with_tools = self.base_model.bind_tools(tools_for_binding(self.base_model, tools))
+        repeated = RepeatedResults()
 
         def build_system_prompt(state: AgentState) -> str:
             return render_system_prompt(
@@ -1059,7 +1066,7 @@ class AgentGraphRunner:
                 raise AgentRunCancelled("Agent run cancelled")
             note(live_runs.progress_thinking(step=int(state.get("tool_iterations") or 0)))
             response = model_with_tools.invoke(
-                [SystemMessage(content=build_system_prompt(state)), *state["messages"]]
+                [SystemMessage(content=build_system_prompt(state)), *lean_messages(state["messages"])]
             )
             return {"messages": [response]}
 
@@ -1135,7 +1142,8 @@ class AgentGraphRunner:
                                                      artifact=artifact, budget_chars=budget)
                 # The run record (disclosure): totals, pages, revisions and the items this call returned.
                 trace[-1]["record"] = call_facts(name, args, output, model_payload)
-                content = json.dumps(model_payload, ensure_ascii=False, separators=(",", ":"))
+                # A result identical to an earlier one in this run is sent as a pointer to it (lean_history).
+                content = repeated.content(model_payload)
                 used_chars += len(content)
                 tool_messages.append(
                     ToolMessage(
@@ -1178,7 +1186,8 @@ class AgentGraphRunner:
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
-            final_messages = _messages_for_finalizer(state)
+            # Every result whole unless the lean finalizer is switched on (lean_history.finalizer_messages).
+            final_messages = finalizer_messages(_messages_for_finalizer(state))
             note(live_runs.progress_writing(step=int(state.get("tool_iterations") or 0)))
             response = self.base_model.invoke(
                 [

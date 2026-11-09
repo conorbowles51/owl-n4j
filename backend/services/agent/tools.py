@@ -374,9 +374,10 @@ class PhoneRecordArgs(BaseModel):
 
 
 class ResultPageArgs(BaseModel):
-    result_id: str = Field(..., description="The result_id named in a _paging note.")
-    path: list[str | int] = Field(..., description="The path named in the _paging note, e.g. [\"data\", \"rows\"].")
-    offset: int = Field(..., ge=0, description="The offset named in next_page.")
+    result_id: str = Field(..., description="The result_id named in a _paging note or a digest.")
+    path: list[str | int] | None = Field(None, description="The path named in the _paging note, e.g. [\"data\", "
+                                         "\"rows\"]. Leave out to read the whole result again (a digest).")
+    offset: int = Field(0, ge=0, description="The offset named in next_page.")
 
 
 class GraphArtifactArgs(BaseModel):
@@ -2442,13 +2443,20 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         summary = " ".join(str(x) for x in (data.get("coverage"), data.get("limitation")) if x)
         return context.result(tool_name, data, summary=summary or "Read the case material.")
 
-    def read_tool_result_page(result_id: str, path: list[str | int], offset: int) -> dict[str, Any]:
+    def read_tool_result_page(result_id: str, path: list[str | int] | None = None, offset: int = 0) -> dict[str, Any]:
         from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model
         view = context.model_views.get(result_id)
         if view is None:
             return context.result("read_tool_result_page", {"error": "No result with that id in this run."},
                 summary="That result is not in this run; repeat the original tool call.", status="error",
                 error="Unknown result_id.")
+        if path is None:
+            # A digest's result read again: whole when it fits this message's budget, otherwise a stated page.
+            page = page_for_model(view, budget_chars=(context.page_budget_chars or MAX_MESSAGE_CHARS) - 2_000,
+                result_id=result_id)
+            return context.result("read_tool_result_page", {"page_of": result_id, **page},
+                summary=(f"Read result {result_id} again" + (" in part; _paging states what is not shown."
+                                                             if page.get("_paging") else " in full.")))
         try:
             page = page_for_model(view, budget_chars=(context.page_budget_chars or MAX_MESSAGE_CHARS) - 2_000,
                 result_id=result_id, offset=offset, path=list(path))
@@ -3221,8 +3229,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             read_tool_result_page,
             name="read_tool_result_page",
             description=("Read the part of an earlier tool result that was not shown. When a tool message has a "
-                "_paging note with next_page, call this with its result_id, path and offset. Do not repeat the "
-                "original tool call to see more."),
+                "_paging note with next_page, call this with its result_id, path and offset. For a digest of an "
+                "earlier result (digest_of), call it with the result_id alone to read the whole result again. Do not "
+                "repeat the original tool call to see more."),
             args_schema=ResultPageArgs,
         ),
         wrap(
