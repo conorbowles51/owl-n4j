@@ -4,7 +4,8 @@ import { renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 const { addProtocol } = vi.hoisted(() => ({ addProtocol: vi.fn() }))
-vi.mock("maplibre-gl", () => ({ default: { addProtocol } }))
+// basemap-style.ts imports maplibre-gl as a namespace (6.x has no default export), so addProtocol is a named export
+vi.mock("maplibre-gl", () => ({ addProtocol }))
 
 import { useMapTheme } from "./use-map-theme"
 import { buildBasemapStyle, outsideCoverage, styleUrls } from "../lib/basemap-style"
