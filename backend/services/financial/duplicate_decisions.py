@@ -216,17 +216,45 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
         # A matching historical reading is insufficient if retaining it would
         # remove the last verified occurrence of a payment. Compare counts,
         # not sets, because identical payments can occur more than once.
+        #
+        # A payment is compared by its money (amount, direction, currency,
+        # date), the same key the saved-copy rule compares ledgers by, not by
+        # ``content_hash``: two saves of one file number their identical rows
+        # apart (``occurrence``) so their references stay distinct, and a
+        # second reader may word a description differently. Since statement
+        # readings that add up to their printed balances count as verified
+        # (721ed9b45), both copies are often verified, and a hash comparison
+        # refused every such pair. A copy proved to be the same document in
+        # another ledger account is compared without the account: its
+        # payments move to the retained account, which is the point.
         account_keys = dict(session.execute(select(FinancialAccount.id, FinancialAccount.identity_key)
             .where(FinancialAccount.case_id == case_id,
                    FinancialAccount.id.in_({r.account_id for r in rows}))).all())
+        across_accounts = match in ("same_printed_statement", "same_document_across_accounts")
 
         def verified_readings(source_document, source_rows):
             if not counts_toward_totals(ProofClass(source_document.proof_class)):
                 return Counter()
-            return Counter((account_keys[r.account_id], r.currency, r.content_hash) for r in source_rows
-                           if counts_toward_totals(ProofClass(r.proof_class)))
+            return Counter((None if across_accounts else account_keys[r.account_id], r.currency,
+                            r.amount_minor, r.direction,
+                            str(r.transaction_date or r.posted_date or r.value_date or r.ordering_date))
+                           for r in source_rows if counts_toward_totals(ProofClass(r.proof_class)))
 
-        if verified_readings(document, changed) - verified_readings(primary, primary_rows):
+        if match == "reader_replacement":
+            # Two readings of the same bytes, linked by a replacement: their
+            # payments differ by design (the current reader proved the saved
+            # reading wrong), so the guard is on the readings as a whole. The
+            # system never sets a verified reading aside for one that is not;
+            # a person restoring the earlier reading (the replacement's undo)
+            # may, and the restored reading shows its own class.
+            from services.financial.saved_reading_replacement import RESTORED_BASIS
+            if (basis != RESTORED_BASIS and counts_toward_totals(ProofClass(document.proof_class))
+                    and not counts_toward_totals(ProofClass(primary.proof_class))):
+                raise DuplicateDecisionError(
+                    "The retained copy would remove verified payments from the verified totals. "
+                    "Keep the verified copy instead."
+                )
+        elif verified_readings(document, changed) - verified_readings(primary, primary_rows):
             raise DuplicateDecisionError(
                 "The retained copy would remove verified payments from the verified totals. "
                 "Keep the verified copy instead."
