@@ -17,6 +17,9 @@ from services.case_service import CaseAccessDenied, CaseNotFound, check_case_acc
 from services.neo4j_service import neo4j_service
 from services.significant_service import (
     add_significant_entities,
+    add_significant_relationships,
+    normalize_relationships,
+    remove_significant_relationships,
     clear_significant_entities,
     list_significant_entities,
     normalize_entity_keys,
@@ -42,8 +45,28 @@ class SignificantItemResponse(BaseModel):
     updated_at: str | None = None
 
 
+class SignificantRelationshipResponse(BaseModel):
+    id: str
+    source_key: str
+    type: str
+    target_key: str
+    addition_source: str
+    context: dict[str, Any] = Field(default_factory=dict)
+    added_by_user_id: str | None = None
+    added_by_name: str | None = None
+    added_by_email: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class SignificantManifestResponse(BaseModel):
     case_id: str
+    relationships: list[SignificantRelationshipResponse] = Field(default_factory=list)
+    added_relationship_count: int | None = None
+    already_significant_relationship_count: int | None = None
+    missing_relationship_count: int | None = None
+    removed_relationship_count: int | None = None
+    not_significant_relationship_count: int | None = None
     entity_keys: list[str] = Field(default_factory=list)
     items: list[SignificantItemResponse] = Field(default_factory=list)
     count: int
@@ -65,6 +88,28 @@ class SignificantBatchAddRequest(BaseModel):
 
 class SignificantBatchRemoveRequest(BaseModel):
     entity_keys: list[str] = Field(..., min_length=1, max_length=10_000)
+
+
+class RelationshipRef(BaseModel):
+    source_key: str = Field(..., min_length=1, max_length=512)
+    type: str = Field(..., min_length=1, max_length=255)
+    target_key: str = Field(..., min_length=1, max_length=512)
+
+
+class SignificantRelationshipAddRequest(BaseModel):
+    relationships: list[RelationshipRef] = Field(..., min_length=1, max_length=10_000)
+    source: AdditionSource = "manual"
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class SignificantRelationshipRemoveRequest(BaseModel):
+    relationships: list[RelationshipRef] = Field(..., min_length=1, max_length=10_000)
+
+
+def _rel_subject(c) -> str:
+    rels = c['body'].get('relationships') or []
+    return ','.join('%s-%s->%s' % (r.get('source_key'), r.get('type'), r.get('target_key'))
+                    for r in rels if isinstance(r, dict))[:200]
 
 
 def _handle_error(exc: Exception) -> None:
@@ -174,6 +219,50 @@ def clear_significant_manifest(
             db,
             case_id=case_id,
             current_user=current_user,
+        )
+    except Exception as exc:
+        db.rollback()
+        _handle_error(exc)
+
+
+@router.post("/{case_id}/relationships:batch", response_model=SignificantManifestResponse)
+@records('significant_relationship_add', 'confirm', subject_type='relationship', subject=_rel_subject, field='significant')
+def add_relationships_to_significant(
+    case_id: UUID,
+    request: SignificantRelationshipAddRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Mark relationships significant (GR-01). Only relationships that exist in the case graph are marked; the
+    rest are counted back as missing, never dropped silently."""
+    try:
+        check_case_access(db=db, case_id=case_id, user=current_user, required_permission=("case", "edit"))
+        requested = [{"source_key": s, "type": y, "target_key": t}
+                     for s, y, t in normalize_relationships([r.model_dump() for r in request.relationships])]
+        existing = neo4j_service.get_existing_relationships(str(case_id), requested)
+        result = add_significant_relationships(
+            db, case_id=case_id, current_user=current_user, relationships=existing,
+            addition_source=request.source, context=request.context,
+        )
+        return {**result, "missing_relationship_count": len(requested) - len(existing)}
+    except Exception as exc:
+        db.rollback()
+        _handle_error(exc)
+
+
+@router.post("/{case_id}/relationships:remove", response_model=SignificantManifestResponse)
+@records('significant_relationship_remove', 'set_aside', subject_type='relationship', subject=_rel_subject, field='significant')
+def remove_relationships_from_significant(
+    case_id: UUID,
+    request: SignificantRelationshipRemoveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        check_case_access(db=db, case_id=case_id, user=current_user, required_permission=("case", "edit"))
+        return remove_significant_relationships(
+            db, case_id=case_id, current_user=current_user,
+            relationships=[r.model_dump() for r in request.relationships],
         )
     except Exception as exc:
         db.rollback()

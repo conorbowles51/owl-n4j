@@ -52,6 +52,35 @@ class GraphService:
             found = {record["key"] for record in result if record["key"]}
         return [key for key in clean_keys if key in found]
 
+    def get_existing_relationships(self, case_id: str, relationships: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Return the requested (source_key, type, target_key) relationships that exist between active entities of
+        the case. Every node and relationship is matched with the case id, never on key alone."""
+        clean = []
+        seen = set()
+        for rel in relationships:
+            triple = (str(rel.get("source_key") or "").strip(), str(rel.get("type") or "").strip(),
+                      str(rel.get("target_key") or "").strip())
+            if all(triple) and triple not in seen:
+                seen.add(triple)
+                clean.append({"s": triple[0], "y": triple[1], "t": triple[2]})
+        if not clean:
+            return []
+        with driver.session() as session:
+            result = session.run(
+                f"""
+                UNWIND $rels AS rel
+                MATCH (a)-[r]->(b)
+                WHERE {active_node_predicate("a")} AND {active_node_predicate("b")}
+                  AND a.key = rel.s AND b.key = rel.t AND type(r) = rel.y AND r.case_id = $case_id
+                RETURN DISTINCT rel.s AS s, rel.y AS y, rel.t AS t
+                """,
+                case_id=case_id,
+                rels=clean,
+            )
+            found = {(r["s"], r["y"], r["t"]) for r in result}
+        return [{"source_key": c["s"], "type": c["y"], "target_key": c["t"]}
+                for c in clean if (c["s"], c["y"], c["t"]) in found]
+
     def get_full_graph(
         self,
         case_id: str,

@@ -29,7 +29,7 @@ from routers.auth import get_current_user
 from routers.case_access import authorize_case, case_access_dependency
 from routers.users import get_current_db_user
 from postgres.session import get_db
-from services.significant_service import get_significant_entity_keys
+from services.significant_service import get_significant_layer_keys
 from services.significant_service import (
     restore_significant_entity_after_restore,
     suspend_significant_entity_for_delete,
@@ -512,7 +512,7 @@ def get_graph(
     """
     try:
         scoped_entity_keys = (
-            get_significant_entity_keys(db, case_id=UUID(case_id))
+            get_significant_layer_keys(db, case_id=UUID(case_id))
             if scope == "significant"
             else None
         )
@@ -773,7 +773,7 @@ def get_entities_with_locations(
         if types:
             entity_types = [t.strip() for t in types.split(",")]
         scoped_entity_keys = (
-            get_significant_entity_keys(db, case_id=UUID(case_id))
+            get_significant_layer_keys(db, case_id=UUID(case_id))
             if scope == "significant"
             else None
         )
@@ -803,7 +803,7 @@ def get_locations_needing_review(
     """
     try:
         scoped_entity_keys = (
-            get_significant_entity_keys(db, case_id=UUID(case_id))
+            get_significant_layer_keys(db, case_id=UUID(case_id))
             if scope == "significant"
             else None
         )
@@ -842,7 +842,7 @@ def get_shortest_paths_subgraph(
     try:
         allowed_entity_keys = None
         if request.scope == "significant":
-            allowed_entity_keys = get_significant_entity_keys(
+            allowed_entity_keys = get_significant_layer_keys(
                 db,
                 case_id=UUID(request.case_id),
             )
@@ -900,7 +900,7 @@ def get_pagerank(
         node_keys = request.node_keys if request.node_keys else None
         induced_only = request.scope == "significant"
         if induced_only:
-            node_keys = get_significant_entity_keys(
+            node_keys = get_significant_layer_keys(
                 db,
                 case_id=UUID(request.case_id),
             )
@@ -949,7 +949,7 @@ def get_louvain_communities(
         node_keys = request.node_keys if request.node_keys else None
         induced_only = request.scope == "significant"
         if induced_only:
-            node_keys = get_significant_entity_keys(
+            node_keys = get_significant_layer_keys(
                 db,
                 case_id=UUID(request.case_id),
             )
@@ -991,7 +991,7 @@ def get_betweenness_centrality(
         node_keys = request.node_keys if request.node_keys else None
         induced_only = request.scope == "significant"
         if induced_only:
-            node_keys = get_significant_entity_keys(
+            node_keys = get_significant_layer_keys(
                 db,
                 case_id=UUID(request.case_id),
             )

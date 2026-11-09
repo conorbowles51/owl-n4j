@@ -383,23 +383,28 @@ def significant_layer(db, case_id, *, names: Callable[[list[str]], dict[str, dic
                       search=None, offset=0, limit=50) -> dict[str, Any]:
     """The items marked significant: each with its name and kind from the graph, how and when it was added and by
     whom. ``names`` reads the graph (key -> {name, type}); without it the keys are given and that is said."""
-    from postgres.models.significant import SignificantEntity
+    from postgres.models.significant import SignificantEntity, SignificantRelationship
     from postgres.models.user import User
     offset, limit = _page(offset, limit, default=50)
     rows = db.scalars(select(SignificantEntity).where(SignificantEntity.case_id == case_id,
                                                       SignificantEntity.removed_at.is_(None))
                       .order_by(SignificantEntity.created_at, SignificantEntity.id)).all()
+    # Relationships marked significant (GR-01): read beside the entities, named from the graph by their two ends.
+    rel_rows = db.scalars(select(SignificantRelationship).where(SignificantRelationship.case_id == case_id,
+                                                                SignificantRelationship.removed_at.is_(None))
+                          .order_by(SignificantRelationship.created_at, SignificantRelationship.id)).all()
     graph: dict[str, dict[str, Any]] = {}
     graph_note = None
-    if names is not None and rows:
+    wanted = list(dict.fromkeys([r.entity_key for r in rows] + [k for r in rel_rows for k in (r.source_key, r.target_key)]))
+    if names is not None and wanted:
         try:
-            graph = names([r.entity_key for r in rows]) or {}
+            graph = names(wanted) or {}
         except Exception:  # the graph could not be read: keys are still given, and the result says so
             graph_note = "The graph could not be read just now, so names are missing; the keys are given."
-    elif rows:
+    elif wanted:
         graph_note = "Names were not read from the graph; the keys are given."
-    people = {str(i): n for i, n in db.execute(select(User.id, User.name).where(
-        User.id.in_({r.added_by_user_id for r in rows if r.added_by_user_id})))} if rows else {}
+    adders = {r.added_by_user_id for r in list(rows) + list(rel_rows) if r.added_by_user_id}
+    people = {str(i): n for i, n in db.execute(select(User.id, User.name).where(User.id.in_(adders)))} if adders else {}
     items = []
     for r in rows:
         g = graph.get(r.entity_key) or {}
@@ -420,6 +425,17 @@ def significant_layer(db, case_id, *, names: Callable[[list[str]], dict[str, dic
                  coverage="%d items are in the Significant layer%s." % (
                      len(rows), (" (%d match '%s')" % (total, search.strip())) if search and search.strip() else ""),
                  not_in_graph=("%d of them are no longer in the graph." % missing) if missing else None)
+    rels = [{"from_key": r.source_key, "from": (graph.get(r.source_key) or {}).get("name"), "type": r.rel_type,
+             "to_key": r.target_key, "to": (graph.get(r.target_key) or {}).get("name"),
+             "how_added": SOURCE_WORDS.get(r.addition_source, r.addition_source),
+             "added_by": people.get(str(r.added_by_user_id)), "added_at": _iso(r.created_at)} for r in rel_rows]
+    if search and search.strip():
+        s_ = search.strip().lower()
+        rels = [r for r in rels if any(s_ in (r[k] or "").lower() for k in ("from", "to", "type", "from_key", "to_key"))]
+    out["relationships"] = rels[:limit]
+    out["relationship_coverage"] = "%d relationships are in the Significant layer%s." % (
+        len(rel_rows), (" (%d match)" % len(rels)) if search and search.strip() else "") + (
+        " The first %d are listed." % limit if len(rels) > limit else "")
     if graph_note:
         out["names_note"] = graph_note
     return out

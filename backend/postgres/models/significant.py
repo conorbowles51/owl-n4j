@@ -85,3 +85,37 @@ class SignificantEntity(Base, TimestampMixin):
 
     added_by = relationship("User", foreign_keys=[added_by_user_id])
     removed_by = relationship("User", foreign_keys=[removed_by_user_id])
+
+
+class SignificantRelationship(Base, TimestampMixin):
+    """A case-level mark on one relationship (GR-01), beside SignificantEntity.
+
+    Graph reads give a relationship as source key, type and target key, with no stable id, so the mark is keyed by
+    that triple within the case. As for entities, rows are kept on removal with who and when.
+    """
+
+    __tablename__ = "significant_relationships"
+    __table_args__ = (
+        UniqueConstraint("case_id", "source_key", "rel_type", "target_key",
+                         name="uq_significant_relationships_case_triple"),
+        Index("ix_significant_relationships_case_active", "case_id", "removed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"),
+                                               nullable=False)
+    source_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    rel_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    added_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    addition_source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual",
+                                                 server_default="manual")
+    context: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict, server_default="{}")
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    removed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    removal_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    added_by = relationship("User", foreign_keys=[added_by_user_id])
+    removed_by = relationship("User", foreign_keys=[removed_by_user_id])

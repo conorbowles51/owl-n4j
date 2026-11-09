@@ -24,7 +24,7 @@ from postgres.models.dossier import (DossierAssessment, DossierAssessmentLink, D
                                      DossierInterviewEvidenceLink, DossierLink, DossierMedia, DossierRole)
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
 from postgres.models.evidence import EvidenceFile
-from postgres.models.significant import SignificantEntity
+from postgres.models.significant import SignificantEntity, SignificantRelationship
 from postgres.models.theory_narrative import TheoryNarrative
 from postgres.models.transcript import TranscriptRevision, TranscriptSource, TranscriptState
 from postgres.models.work import CaseTask
@@ -36,7 +36,7 @@ from tests.test_financial_duplicates import DuplicateTestCase
 
 EXTRA = [CaseProfile, CaseDeadline, CaseTask, WorkspaceEntry, WorkspaceEntryRevision, WorkspaceEntryLink,
          WorkspaceEntryEvent, WorkspaceLegacyMapping, CaseSelection, CollectionMembership, TheoryNarrative,
-         SignificantEntity, DossierRole, DossierLink, DossierAssessment, DossierAssessmentLink, DossierMedia,
+         SignificantEntity, SignificantRelationship, DossierRole, DossierLink, DossierAssessment, DossierAssessmentLink, DossierMedia,
          DossierInterview, DossierInterviewEvidenceLink, TranscriptSource, TranscriptRevision, TranscriptState]
 
 
@@ -249,6 +249,25 @@ class CaseMaterialToolTests(DuplicateTestCase):
             self.assertEqual((item["name"], item["kind"], item["how_added"]), ("Ann", "Person", "added by a person"))
             self.assertEqual(item["added_by"], self.user.name)
             self.assertEqual(data["counts_by_kind"], {"Person": 1})
+
+    def test_significant_layer_includes_relationships_marked_significant(self):
+        # GR-01: a relationship marked significant is read by the agent beside the entities, named by its two ends.
+        self.db.add_all([
+            SignificantRelationship(case_id=self.case.id, source_key="person:ann", rel_type="DIRECTOR_OF",
+                                    target_key="company:acme", added_by_user_id=self.user.id,
+                                    addition_source="manual", context={}),
+            SignificantRelationship(case_id=self.case.id, source_key="person:ann", rel_type="OWNS",
+                                    target_key="company:acme", addition_source="manual", context={},
+                                    removed_at=datetime(2026, 11, 8, tzinfo=timezone.utc)),
+            SignificantRelationship(case_id=self.other_case.id, source_key="person:zed", rel_type="KNOWS",
+                                    target_key="person:zed", addition_source="manual", context={})])
+        self.db.commit()
+        data = self.call("get_significant_layer")["data"]
+        self.assertEqual(len(data["relationships"]), 1)
+        rel = data["relationships"][0]
+        self.assertEqual((rel["from"], rel["type"], rel["to"]), ("Ann", "DIRECTOR_OF", "Acme"))
+        self.assertEqual((rel["how_added"], rel["added_by"]), ("added by a person", self.user.name))
+        self.assertIn("1 relationships are in the Significant layer", data["relationship_coverage"])
 
     def test_significant_layer_gives_the_keys_and_says_so_when_the_graph_cannot_be_read(self):
         self.db.add(SignificantEntity(case_id=self.case.id, entity_key="person:ann", addition_source="manual",
