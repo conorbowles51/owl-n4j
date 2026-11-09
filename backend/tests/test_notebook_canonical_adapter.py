@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, func, select
@@ -64,7 +65,15 @@ class NotebookCanonicalAdapterTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_create_update_list_and_delete_use_only_canonical_storage(self):
-        with self.SessionLocal() as db:
+        # A new graph-entity link is checked against the case's graph by key and case (2e1d29942); this stands in for
+        # the graph, holding Henry in this case.
+        graph_asked = []
+
+        def graph_keys_in_case(case_id, keys):
+            graph_asked.append((case_id, list(keys)))
+            return {"person:henry"} & set(keys) if case_id == str(self.case_id) else set()
+
+        with self.SessionLocal() as db, patch("services.case_selections.graph_keys_in_case", graph_keys_in_case):
             user = db.get(User, self.user_id)
             created = create_note(
                 db,
@@ -132,6 +141,7 @@ class NotebookCanonicalAdapterTests(unittest.TestCase):
         self.assertEqual(listed["total"], 1)
         self.assertEqual(visible_after_delete["total"], 0)
         self.assertIsNotNone(canonical.deleted_at)
+        self.assertEqual(graph_asked, [(str(self.case_id), ["person:henry"])])
 
 
 if __name__ == "__main__":
