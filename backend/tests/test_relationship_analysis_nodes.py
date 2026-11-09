@@ -6,6 +6,10 @@ from routers import graph
 from services.neo4j.graph_service import GraphService
 
 
+# The route meters model calls against the case by UUID (c1e88a8b0), as every real case id is.
+CASE_ID = "5d0e1c2a-3b4f-4a6e-9c8d-7f1e2d3c4b5a"
+
+
 class _Result(list):
     pass
 
@@ -26,6 +30,13 @@ class _Session:
 
 
 class RelationshipAnalysisNodesTests(unittest.TestCase):
+    def setUp(self):
+        # The route checks the case's AI spend limit first (c1e88a8b0), reading it from PostgreSQL. These tests are
+        # about which nodes reach the model, so the case is under its limit; the check itself is asserted below.
+        budget = patch("services.ai_budget.check_new_session")
+        self.budget_check = budget.start()
+        self.addCleanup(budget.stop)
+
     def test_node_index_keeps_first_row_per_key_and_reads_no_property_map(self):
         captured = []
         rows = [
@@ -43,14 +54,15 @@ class RelationshipAnalysisNodesTests(unittest.TestCase):
         self.assertNotIn("-[", captured[0])
 
     def test_analysis_does_not_read_the_full_graph(self):
-        request = graph.AnalyzeRelationshipsRequest(case_id="case-1")
+        request = graph.AnalyzeRelationshipsRequest(case_id=CASE_ID)
         with (
             patch.object(graph.neo4j_service, "get_node_details", return_value={"key": "a", "name": "A", "type": "Person"}),
             patch.object(graph.neo4j_service, "get_full_graph", side_effect=AssertionError("full graph read")),
             patch.object(graph.neo4j_service, "get_case_node_index", return_value=[{"key": "a", "name": "A", "type": "Person", "summary": None}]) as index,
         ):
             result = graph.analyze_node_relationships("a", request)
-        index.assert_called_once_with("case-1")
+        index.assert_called_once_with(CASE_ID)
+        self.budget_check.assert_called_once_with(CASE_ID, "these relationship suggestions")
         self.assertEqual(result["relationships"], [])
         self.assertTrue(result["success"])
 
@@ -76,7 +88,7 @@ class RelationshipAnalysisNodesTests(unittest.TestCase):
                 import json
                 return json.loads(text)
 
-        request = graph.AnalyzeRelationshipsRequest(case_id="case-1")
+        request = graph.AnalyzeRelationshipsRequest(case_id=CASE_ID)
         with (
             patch.object(graph.neo4j_service, "get_node_details", return_value={"key": "x", "name": "X", "type": "Person"}),
             patch.object(graph.neo4j_service, "get_case_node_index", return_value=nodes),
