@@ -853,12 +853,23 @@ def _extract_text_tesseract(file_path: str) -> str:
     from PIL import Image
 
     img = Image.open(file_path)
-    text = pytesseract.image_to_string(
-        img,
-        lang=settings.tesseract_lang,
-        timeout=settings.pdf_ocr_page_timeout_seconds,
-    )
-    img.close()
+    try:
+        # Tesseract accepts only some container labels. Camera photos are often MPO (a JPEG carrying extra
+        # preview frames, e.g. Nikon Coolpix) and are refused as "Unsupported image format/type" although the
+        # picture is an ordinary JPEG. Read the main frame as plain pixels instead.
+        from pytesseract.pytesseract import SUPPORTED_FORMATS
+
+        page = img
+        if img.format and img.format not in SUPPORTED_FORMATS:
+            img.seek(0)
+            page = img.convert("RGB")
+        text = pytesseract.image_to_string(
+            page,
+            lang=settings.tesseract_lang,
+            timeout=settings.pdf_ocr_page_timeout_seconds,
+        )
+    finally:
+        img.close()
     return text.strip()
 
 
