@@ -93,6 +93,16 @@ class DemoCase(unittest.TestCase):
                 with self.subTest(entry=e["id"], absent=c["text"]):
                     self.assertFalse(self.found(c["file"], c["text"]), f"{e['id']}: {c['text']!r} is in {c['file']}")
 
+    def test_every_name_or_number_an_agent_answer_must_give_is_in_the_case(self):
+        # an expected word no file carries can never be found: the key, not the product, would be wrong
+        corpus = " ".join(_text(p) for p in self.out.rglob("*")
+                          if p.is_file() and p.suffix in (".xml", ".pdf", ".docx", ".csv", ".txt"))
+        for q in KEY["agent_questions"]:
+            for word in q["expect"]:
+                if re.search(r"[A-Z0-9]", word):
+                    with self.subTest(question=q["id"], word=word):
+                        self.assertIn(word, corpus, f"{q['id']} expects {word!r}, which no file of the case carries")
+
     def test_photo_labels_and_received_photos_are_as_the_key_says(self):
         self.assertTrue(self.manifest["photos_made"])
         f20 = next(e for e in KEY["entries"] if e["id"] == "F20")

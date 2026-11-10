@@ -150,6 +150,6 @@
   {"id": "Q5", "question": "Who rented storage unit 212 and who paid for it?", "expect": ["Brianna Cole", "Travis Kell", "4471"], "must_not": ["Mateo Ruiz"], "cites": ["Stowell"], "key": ["F19"]},
   {"id": "Q6", "question": "What are the $650 monthly payments into the Ruiz Auto & Tire account?", "expect": ["bay 4", "rent", "October 2023"], "must_not": ["payment for stolen goods is established"], "cites": ["lease"], "key": ["F01", "F02"]},
   {"id": "Q7", "question": "Which of Travis Kell's proffer statements are contradicted by other records in the case?", "expect": ["storage", "garage", "warehouse"], "must_not": [], "cites": ["proffer"], "key": ["F31"]},
-  {"id": "Q8", "question": "Is the contact 'Mateo 🔧' on Desmond Okafor's phone Mateo Ruiz?", "expect": ["Mateo Garza", "different"], "must_not": ["yes"], "cites": ["PH4"], "key": ["F27"]}
+  {"id": "Q8", "question": "Is the contact 'Mateo 🔧' on Desmond Okafor's phone Mateo Ruiz?", "expect": ["0181", "not"], "must_not": ["yes"], "cites": ["PH4"], "key": ["F27"], "expect_as_first_written": ["Mateo Garza", "different"], "key_change": "The case never names the contact Mateo Garza (his saved name is 'Mateo 🔧', number +1 443-555-0181), so the first expectation could not be met by any answer. The first walk (10 Nov 2026) scored Q8 against it, and that score stands as recorded."}
  ]
 }

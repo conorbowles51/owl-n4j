@@ -195,7 +195,7 @@ const checks = {
   },
   async F11() {
     const rows = await streamRows("PH2", "tonight. 11. same as before")
-    const first = rows.map((x) => x.time).sort()[0]
+    const first = rows.map((x) => x.time?.instant ?? x.time).filter(Boolean).sort()[0]
     found("F11", "phones", first === undefined ? false : true, `first 'tonight' message at ${first} (key: 2024-03-15T20:10Z)`, first !== undefined && !String(first).startsWith("2024-03-15T20:10"))
   },
   async F12() {
@@ -278,7 +278,11 @@ const checks = {
     const d = (await get(`/api/dossiers?case_id=${C}`))?.dossiers?.find((x) => x.display_name === "Desmond Okafor")
     const r = d ? await get(`/api/phones/people/${d.id}/phones?case_id=${C}`) : null
     const ph = new Set((r?.phones || []).map((p) => labelOf[p.label]))
-    found("F26", "dossiers", ph.size >= 3, `Okafor's dossier reaches ${ph.size} phones (${[...ph].join(",")})`)
+    // Linking a number to a person is a person's decision; the job never confirms one. The product's part is to
+    // offer the dossier's numbers as suggestions, so a dossier showing them counts, labelled as awaiting a person.
+    const suggested = r?.suggested_identities || 0
+    found("F26", "dossiers", ph.size >= 3 || suggested >= 2,
+      `Okafor's dossier reaches ${ph.size} phones by confirmed links; ${suggested} identities suggested, awaiting a person`)
     const names = [...(await identities("5550141")), ...(await identities("5550142"))].flatMap((i) => (i.names || []).map((n) => n.name))
     found("F26", "identities", ["Dee", "D.O."].every((n) => names.includes(n)), `names seen for his numbers: ${[...new Set(names)].join(" | ")}`)
   },
@@ -326,7 +330,11 @@ const checks = {
   async F37() {
     const checksR = await get(`/api/financial/statement-checks?case_id=${C}`)
     const may = (checksR?.items || []).filter((i) => /kell-2024-05/.test(i.filename || ""))
-    found("F37", "financial", may.length > 0 && may.every((i) => i.recorded_status !== "balanced"), `May statement: ${may.map((i) => i.recorded_status).join(",") || "not found"}`, may.some((i) => i.recorded_status === "balanced"))
+    // A statement held for a person sits in the review queue's waiting list, not in the checks list.
+    const q = await get(`/api/financial/statement-import/review/queue?case_id=${C}&page_list=waiting`)
+    const waiting = (q?.items || []).filter((i) => /kell-2024-05/.test(i.filename || ""))
+    const shown = [...may.map((i) => i.recorded_status), ...waiting.map((i) => `waiting (${(i.reasons || []).join("+")})`)]
+    found("F37", "financial", shown.length > 0 && may.every((i) => i.recorded_status !== "balanced"), `May statement: ${shown.join(",") || "not found"}`, may.some((i) => i.recorded_status === "balanced"))
   },
   async F38() {
     const r = ledger(/CASH DEPOSIT BR 014/)
@@ -400,14 +408,16 @@ async function coloc(id, a, b, from, to, expect, minDays = 1) {
       if ((r?.items || []).length < 200) break
     }
   }
-  const ea = PH[a]?.extraction_id, eb = PH[b]?.extraction_id
-  const pair = runResults.filter((r) => { const s = JSON.stringify(r); return s.includes(ea) && s.includes(eb) })
-  const inWin = pair.filter((r) => (r.period_start || "").slice(0, 10) <= to && (r.period_end || r.period_start || "").slice(0, 10) >= from)
-  const strengths = inWin.map((r) => r.strength)
-  const days = new Set(inWin.filter((r) => expect.includes(r.strength)).map((r) => (r.period_start || "").slice(0, 10))).size
+  // One result per pair of phones over the whole period, named by phone label, with quarter-hour bins (UTC starts).
+  // The key's window is in Baltimore dates, so each bin is dated in America/New_York before it is compared.
+  const pair = runResults.filter((r) => { const p = (r.measures?.phones || []).map((l) => labelOf[l]); return p.includes(a) && p.includes(b) })
+  const localDate = (iso) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(iso))
+  const together = pair.flatMap((r) => (r.measures?.bins || []).filter((x) => x.verdict === "together").map((x) => localDate(x.start)))
+  const days = new Set(together.filter((d) => d >= from && d <= to)).size
+  const strengths = pair.map((r) => r.strength)
   const wrong = expect.includes("weak") && strengths.some((s) => s === "strong" || s === "moderate")
-  found(id, "pattern_of_life", days >= minDays || (inWin.length > 0 && expect.includes("weak") && !wrong),
-    `${a}-${b} ${from}..${to}: ${inWin.length} co-location results (${[...new Set(strengths)].join(",") || "none"}); run total ${runResults.length}`, wrong)
+  found(id, "pattern_of_life", pair.length > 0 && !wrong && strengths.some((s) => expect.includes(s)) && days >= minDays,
+    `${a}-${b} ${from}..${to}: graded ${[...new Set(strengths)].join(",") || "none"}, together on ${days} days in the window; run total ${runResults.length}`, wrong)
 }
 
 for (const e of KEY.entries) {

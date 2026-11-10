@@ -68,9 +68,22 @@ OpenStreetMap's Nominatim (US) for the name: the box runs no Nominatim of its ow
 
    Uploads do not start processing; select the files and Process (the API form is
    `POST /api/evidence/process/background {"case_id", "file_ids"}`).
-3. The person-built items (dossiers, tasks, deadline, notes, theories, pins, the proffer interview and its drafted claims):
-   `node journeys/live-demo-seed.mjs` (see the script head). Each is made through the app's routes by the jobs login and
-   marked as a seed entry. Drafted claims stay "Drafted by <model>, not confirmed"; nothing is confirmed by a script.
+3. Financial: on the Financial page, Add statements, choose the `statements` folder and send it. The PDFs are read; the
+   Penn CSV is taken in as a source, but Loupe has no reader for a bank CSV export yet, so its rows do not reach the
+   ledger. Kell's May statement waits for a person (its planted missing page), so its rows stay out of the ledger until
+   someone reviews it.
+4. The person-built items, through the app's routes as the jobs login, each marked as a seed entry:
+
+   ```
+   python3 evidence-engine/tests/phone/demo_seed.py stage1          # dossiers, tasks, deadline, notes
+   python3 evidence-engine/tests/phone/demo_seed.py stage2 --draft  # after step 1-3 are read: theories, pins,
+                                                                    # the proffer interview and its drafted claims
+   python3 evidence-engine/tests/phone/demo_seed.py machine-text    # image text and the voice-note transcript
+   ```
+
+   Each step adds only what is missing. Drafted claims stay "Drafted by <model>, not confirmed" and machine text stays
+   labelled as machine text; nothing is confirmed by a script. Number-to-person links are never confirmed either: the
+   dossiers show them as suggestions.
 
 Releases pause scripted uploads for about two minutes; a paused upload is resumed by the same command.
 
@@ -86,7 +99,20 @@ and scores each answer against its expected words and citations. It prints one t
 pass: a miss stays a miss until the product finds it.
 
 Re-run the walk after a release to find cross-module regressions: compare its table with the last one recorded in
-`headless/LX-DEMO-STATUS.md`.
+`headless/LX-DEMO-STATUS.md`. The agent questions take about 25 minutes; `--no-agent` skips them and `--only F06,F08`
+walks chosen entries.
+
+Two readings in the walk are easy to get wrong. Co-location results are one per pair of phones, named by phone label,
+with quarter-hour bins in UTC; the key's windows are Baltimore dates, so a bin is dated in America/New_York first.
+A statement held for a person is in the review queue's waiting list, not in the statement checks.
+
+To look at every module's screen on the case, signed in over plain http, with a screenshot each and the console errors:
+
+```
+node journeys/live-demo-screens.mjs --shots <dir> --out <dir>/screens.json [--only map,graph] [--settle 30]
+```
+
+On a loaded box the map can stay black for half a minute before it paints; use `--settle 30` before calling it empty.
 
 ## Using it from another job
 
