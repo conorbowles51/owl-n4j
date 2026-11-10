@@ -109,6 +109,13 @@ async def _update_job_status(
     )
 
 
+def file_counts(file_name: str, entities, relationships) -> tuple[int, int]:
+    """Entities and relationships that cite one file of a batch. A batch resolves all its files together, so the
+    batch totals belong to no single file; each file's job shows only what its own text supports."""
+    return (sum(1 for entity in entities if file_name in entity.source_files),
+            sum(1 for rel in relationships if file_name in rel.source_files))
+
+
 async def _write_job_status(job_id, status, progress, message, error_message, entity_count, relationship_count,
                             document_summary, transcription, transcription_segments, quality_report,
                             staged_revision) -> None:
@@ -724,14 +731,14 @@ async def run_batch_pipeline(
             await _record_embedding_skips(active_job_ids, skipped_steps)
 
         for jid, fname in zip(active_job_ids, active_file_names):
-            ent_count = len([entity for entity in resolved_ents if fname in entity.source_files])
+            ent_count, rel_count = file_counts(fname, resolved_ents, resolved_rels)
             await _update_job_status(
                 jid,
                 JobStatus.WRITING_GRAPH,
                 0.95,
                 "Publishing search index...",
                 entity_count=ent_count,
-                relationship_count=len(resolved_rels),
+                relationship_count=rel_count,
             )
 
         pending_publications = await _activate_chunk_revisions(
@@ -742,14 +749,14 @@ async def run_batch_pipeline(
         for jid, fname in zip(active_job_ids, active_file_names):
             if str(jid) in pending_publications:
                 continue
-            ent_count = len([entity for entity in resolved_ents if fname in entity.source_files])
+            ent_count, rel_count = file_counts(fname, resolved_ents, resolved_rels)
             await _update_job_status(
                 jid,
                 JobStatus.COMPLETED,
                 1.0,
                 "Processing complete",
                 entity_count=ent_count,
-                relationship_count=len(resolved_rels),
+                relationship_count=rel_count,
                 document_summary=job_summaries.get(jid),
                 transcription=job_transcriptions.get(jid),
                 transcription_segments=job_transcription_segments.get(jid),
