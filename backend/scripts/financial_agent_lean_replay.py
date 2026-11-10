@@ -55,8 +55,31 @@ class Recorder:
     def __init__(self, batches, draft, answer):
         self.batches, self.draft, self.answer = batches, draft, answer
         self.requests, self.tool_chars, self.turn, self.texts = [], 0, 0, []
+        self.units, self.tools_text = [], ''
 
-    def record(self, kind, messages, tools_chars):
+    def cache_estimate(self, messages, tools_text):
+        """Characters DeepSeek's cache would serve, by the rule measured on 10 Nov 2026: a request is read from the
+        cache up to the end of the longest earlier request it starts with, or else up to the end of an earlier
+        identical system message (the tool definitions follow the system message). An estimate from that rule,
+        not a measured hit."""
+        parts = []
+        for m in messages:
+            content = m.content if isinstance(m.content, str) else json.dumps(m.content, default=str)
+            calls = getattr(m, 'tool_calls', None) or []
+            parts.append('%s|%s|%s|%s' % (type(m).__name__, getattr(m, 'tool_call_id', ''), content,
+                                          json.dumps([[c['name'], c['args']] for c in calls], default=str)))
+        system = parts[0] if parts and isinstance(messages[0], SystemMessage) else ''
+        text = system + '\x02' + tools_text + '\x02' + '\x00'.join(parts[1:] if system else parts)
+        hit = 0
+        for earlier_system, earlier in self.units:
+            if text.startswith(earlier):
+                hit = max(hit, len(earlier))
+            elif system and system == earlier_system:
+                hit = max(hit, len(system))
+        self.units.append((system, text))
+        return min(hit, len(text)), len(text)
+
+    def record(self, kind, messages, tools_chars, tools_text=''):
         parts = dict(system=0, human=0, assistant=0, tool_full=0, tool_digest=0)
         tools = []
         for m in messages:
@@ -84,7 +107,9 @@ class Recorder:
         self.texts.append(text)
         if kind == 'finalizer' and not hasattr(self, 'final_text'):  # the finalizer's request, not a rewrite
             self.final_text = '\n'.join(str(m.content) for m in messages)
+        hit, sim_total = self.cache_estimate(messages, tools_text)
         self.requests.append(dict(kind=kind, total_chars=total, prefix_shared_chars_estimate=shared,
+                                  cache_rule_hit_chars=hit, cache_rule_total_chars=sim_total,
                                   tool_definitions=tools_chars, **parts,
                                   tool_messages=tools))
         return messages
@@ -99,11 +124,22 @@ class _Bound:
             definitions = tool_definitions(tools)
         except ImportError:
             definitions = [convert_to_openai_tool(t) for t in tools]
-        self.tools_chars = len(json.dumps(definitions, ensure_ascii=False, separators=(',', ':')))
+        self.tools_text = json.dumps(definitions, ensure_ascii=False, separators=(',', ':'))
+        self.tools_chars = len(self.tools_text)
+
+    def bind(self, **kwargs):
+        """The finalizer on the agent's prefix (tool_choice none): recorded as the finalizer, with the tools."""
+        bound = self
+
+        class _Final:
+            def invoke(self, messages):
+                bound.recorder.record('finalizer', messages, bound.tools_chars, bound.tools_text)
+                return AIMessage(content=bound.recorder.answer)
+        return _Final()
 
     def invoke(self, messages):
         r = self.recorder
-        r.record('agent', messages, self.tools_chars)
+        r.record('agent', messages, self.tools_chars, self.tools_text)
         turn, r.turn = r.turn, r.turn + 1
         if turn < len(r.batches):
             calls = [dict(name=c['name'], args=c['args'], id='call_%d' % c['seq'], type='tool_call')
@@ -265,12 +301,21 @@ def main():
         with open(args.finalizer_dump, 'w') as f:
             f.write(getattr(recorder, 'final_text', ''))
     for i, r in enumerate(recorder.requests):
-        print('%2d %-9s total %8d sys %6d tooldefs %6d human %4d ai %6d tool_full %7d tool_digest %6d prefix~ %7d' % (
+        print('%2d %-9s total %8d sys %6d tooldefs %6d human %4d ai %6d tool_full %7d tool_digest %6d cache~ %7d' % (
             i + 1, r['kind'], r['total_chars'], r['system'], r['tool_definitions'], r['human'], r['assistant'],
-            r['tool_full'], r['tool_digest'], r['prefix_shared_chars_estimate']))
+            r['tool_full'], r['tool_digest'], r['cache_rule_hit_chars']))
     print('ledger cache', report['ledger_cache'])
     print('total chars %d; shared prefix (estimate, not measured) %d; tool time %.1f s; wall %.1f s' % (
         total, shared, report['tool_ms'] / 1000, wall))
+    hit = sum(r['cache_rule_hit_chars'] for r in recorder.requests)
+    sim = sum(r['cache_rule_total_chars'] for r in recorder.requests)
+    report.update(cache_rule_hit_chars=hit, cache_rule_total_chars=sim)
+    with open(args.out, 'w') as f:
+        json.dump(report, f, indent=1, default=str)
+    print('cache rule (estimate from the 10 Nov probes, not measured): %d of %d characters read from the cache, %.1f %%; '
+          'per request: %s' % (hit, sim, 100.0 * hit / max(sim, 1),
+                               ' '.join('%s:%d/%d' % (r['kind'][0], r['cache_rule_hit_chars'] // 1000,
+                                                       r['cache_rule_total_chars'] // 1000) for r in recorder.requests)))
     if args.tokens:
         print('chars per token %.3f against %d measured prompt tokens (a calibration only when this replays the code '
               'that ran live)' % (report['chars_per_token'], args.tokens))

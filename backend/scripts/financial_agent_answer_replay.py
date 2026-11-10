@@ -113,15 +113,22 @@ def main():
         import uuid
         mandate = mandate_context_service.resolve(s, case_id=uuid.UUID(run['case_id']),
                                                   version_id=run['mandate_version_id'], override=run['mandate_override'])
+        # A plan run (a guided workflow) is asked again with its plan and closing rules, as the service sends them.
+        from services.agent import workflows
+        from services.agent.service import DEFAULT_AGENT_MAX_TOOL_CALLS
+        workflow_id = ((run['extra_metadata'] or {}).get('workflow') or {}).get('id')
+        plan = workflows.render_block(workflows.get(workflow_id), budget=DEFAULT_AGENT_MAX_TOOL_CALLS) if workflow_id else ''
+        plan_rules = workflows.final_rules(workflows.get(workflow_id)) if workflow_id else ''
         hidden, note = AgentService._tools_not_offered(
-            s, SimpleNamespace(all_cases=False, case_id=run['case_id'], workflow_id=None))
+            s, SimpleNamespace(all_cases=False, case_id=run['case_id'], workflow_id=workflow_id))
         focus = focus_plan = ''
         if hasattr(AgentService, '_question_focus'):  # lx-callagent B; absent on the code before it
             focus = AgentService._question_focus(s, SimpleNamespace(case_id=run['case_id'],
                                                                     message=args.question or run['input_message']))
             # (planning, final answer) since the name search line; one block for both before it.
             focus_plan, focus = focus if isinstance(focus, tuple) else (focus, focus)
-    block = '\n\n'.join(x for x in (mandate.block, note, focus_plan) if x)
+    block = '\n\n'.join(x for x in (mandate.block, plan, note, focus_plan) if x)
+    focus = '\n\n'.join(x for x in (plan_rules, focus) if x)
 
     from services.agent import graph
     real = graph.make_agent_tools

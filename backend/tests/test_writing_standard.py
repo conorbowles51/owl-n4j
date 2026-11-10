@@ -128,7 +128,9 @@ def test_every_agent_system_message_carries_the_standard():
     text = (BACKEND / "services" / "agent" / "graph.py").read_text(encoding="utf-8")
     contents = re.findall(r"SystemMessage\(content=([^\n]+)", text)
     assert contents
-    allowed = ("writing_standard.system_prompt(", "build_system_prompt(state)", "_final_answer_system_prompt(")
+    # agent_system_prompt: the finalizer on the agent's prefix is given build_system_prompt(state) (graph._finalizer_request).
+    allowed = ("writing_standard.system_prompt(", "build_system_prompt(state)", "_final_answer_system_prompt(",
+               "agent_system_prompt)")
     assert all(c.startswith(allowed) for c in contents), contents
     from services.agent import graph
     assert writing_standard.MARKER in graph._final_answer_system_prompt("rules")

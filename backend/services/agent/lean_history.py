@@ -126,8 +126,24 @@ def _last_tool_request(messages: list[AnyMessage]) -> int:
     return -1
 
 
+# DeepSeek reads a prompt from its cache (about a thirtieth of the price) only up to the end of an earlier request
+# (measured 10 Nov 2026: a 12,789-token request whose first result had become a digest read 4,736 from the cache,
+# the first request only; the same request with the result left whole read 8,704). Digesting a result the model was
+# already sent therefore makes every later turn pay for the whole history again. With this switch on, nothing already
+# sent is rewritten: each turn's request starts with the previous one, byte for byte.
+CACHE_STABLE_SETTING = "LOUPE_AGENT_CACHE_STABLE_HISTORY"
+
+
+def cache_stable_history() -> bool:
+    import os
+    return os.getenv(CACHE_STABLE_SETTING, "").strip() == "1"
+
+
 def lean_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
-    """The conversation for the next model request: the latest tool batch whole, earlier tool results as digests."""
+    """The conversation for the next model request: the latest tool batch whole, earlier tool results as digests
+    (every message as sent before when the cache-stable switch is on)."""
+    if cache_stable_history():
+        return list(messages)
     boundary = _last_tool_request(messages)
     lean: list[AnyMessage] = []
     for index, message in enumerate(messages):
@@ -159,6 +175,17 @@ LEAN_FINALIZER_SETTING = "LOUPE_AGENT_LEAN_FINALIZER"
 def lean_finalizer() -> bool:
     import os
     return os.getenv(LEAN_FINALIZER_SETTING, "").strip() == "1"
+
+
+# The finalizer's request starts as the agent's own does (its system prompt, its tools, the conversation as the agent
+# last sent it), so DeepSeek reads all of that from its cache; the final-answer rules follow as the last message and
+# tools are offered with tool_choice "none". Off until a side-by-side shows the same facts, figures and citations.
+FINALIZER_ON_AGENT_PREFIX_SETTING = "LOUPE_AGENT_FINALIZER_ON_AGENT_PREFIX"
+
+
+def finalizer_on_agent_prefix() -> bool:
+    import os
+    return os.getenv(FINALIZER_ON_AGENT_PREFIX_SETTING, "").strip() == "1"
 
 
 def finalizer_messages(messages: list[AnyMessage]) -> list[AnyMessage]:

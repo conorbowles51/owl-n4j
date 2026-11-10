@@ -20,7 +20,13 @@ from services import writing_standard
 from services.agent.citations import link_document_citations, link_named_files
 from services.agent.all_cases import ALL_CASES_PROMPT
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
-from services.agent.lean_history import RepeatedResults, finalizer_messages, lean_messages, tools_for_binding
+from services.agent.lean_history import (
+    RepeatedResults,
+    finalizer_messages,
+    finalizer_on_agent_prefix,
+    lean_messages,
+    tools_for_binding,
+)
 from services.agent.model_payloads import (
     context_window_for,
     message_budget_chars,
@@ -377,6 +383,26 @@ _OUT_OF_STEPS_REQUEST = (
     "start with one line saying what it could not yet cover, in an investigator's words (which accounts, people or "
     "periods were not yet looked at), not as counts of groups, rows or pages a tool read."
 )
+
+def _finalizer_request(*, state_messages: list[AnyMessage], final_answer_rules: str, out_of_steps: bool,
+                       agent_system_prompt: str, agent_model: Any, base_model: Any) -> tuple[Any, list[AnyMessage]]:
+    """(model, messages) of the finalizer's request.
+
+    Default: its own system prompt, then every result whole (or the agent's selection with the lean finalizer).
+    With LOUPE_AGENT_FINALIZER_ON_AGENT_PREFIX=1 (lean_history.finalizer_on_agent_prefix): the agent's system prompt,
+    tools and conversation exactly as the agent last sent them, so the provider reads them from its cache, then the
+    final-answer rules and request as the last message, with tools offered and none allowed. The agent's view holds
+    every result whole only with the cache-stable history on, so the two switches go on together."""
+    request = _FINAL_ANSWER_REQUEST + (_OUT_OF_STEPS_REQUEST if out_of_steps else "")
+    if finalizer_on_agent_prefix() and agent_model is not None:
+        rules = _FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + final_answer_rules if final_answer_rules else "")
+        binder = getattr(agent_model, "bind", None)
+        model = binder(tool_choice="none") if callable(binder) else agent_model
+        return model, [SystemMessage(content=agent_system_prompt), *lean_messages(state_messages),
+                       HumanMessage(content=rules + "\n\n" + request)]
+    return base_model, [SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
+                        *finalizer_messages(state_messages), HumanMessage(content=request)]
+
 
 def _final_answer_system_prompt(rules: str = "") -> str:
     """The finalizer's system prompt; a guided workflow's closing rules follow it (services.agent.workflows)."""
@@ -1103,16 +1129,11 @@ class AgentGraphRunner:
                 return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
             # Every result whole unless the lean finalizer is switched on (lean_history.finalizer_messages).
-            final_messages = finalizer_messages(_messages_for_finalizer(state))
-            response = invoke_model(
-                self.base_model,
-                [
-                    SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
-                    *final_messages,
-                    HumanMessage(content=_FINAL_ANSWER_REQUEST + (_OUT_OF_STEPS_REQUEST if out_of_steps else "")),
-                ],
-                step=int(state.get("tool_iterations") or 0),
-            )
+            final_model, final_request = _finalizer_request(
+                state_messages=_messages_for_finalizer(state), final_answer_rules=final_answer_rules,
+                out_of_steps=out_of_steps, agent_system_prompt=build_system_prompt(state),
+                agent_model=model_with_tools, base_model=self.base_model)
+            response = invoke_model(final_model, final_request, step=int(state.get("tool_iterations") or 0))
             replies, text = _in_plain_words(self.base_model, response)
             return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
@@ -1343,17 +1364,13 @@ class AgentGraphRunner:
                 return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
             # Every result whole unless the lean finalizer is switched on (lean_history.finalizer_messages).
-            final_messages = finalizer_messages(_messages_for_finalizer(state))
+            final_model, final_request = _finalizer_request(
+                state_messages=_messages_for_finalizer(state), final_answer_rules=final_answer_rules,
+                out_of_steps=out_of_steps, agent_system_prompt=build_system_prompt(state),
+                agent_model=model_with_tools, base_model=self.base_model)
             note(live_runs.progress_writing(step=int(state.get("tool_iterations") or 0)))
-            response = invoke_model(
-                self.base_model,
-                [
-                    SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
-                    *final_messages,
-                    HumanMessage(content=_FINAL_ANSWER_REQUEST + (_OUT_OF_STEPS_REQUEST if out_of_steps else "")),
-                ],
-                note=note, step=int(state.get("tool_iterations") or 0), should_cancel=should_cancel,
-            )
+            response = invoke_model(final_model, final_request, note=note, step=int(state.get("tool_iterations") or 0),
+                                    should_cancel=should_cancel)
             replies, text = _in_plain_words(self.base_model, response)
             return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
