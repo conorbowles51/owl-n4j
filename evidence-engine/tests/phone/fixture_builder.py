@@ -21,6 +21,7 @@ Command line (writes report folders, ``manifest.json`` and ``ui-fixture.json``):
     python3 fixture_builder.py training OUT_DIR
     python3 fixture_builder.py phone OUT_DIR --like P08 --scale 1.0   # one phone at real scale
     python3 fixture_builder.py check-seed OUT_DIR                     # the phone docs/check-case-seed.md uploads
+    python3 fixture_builder.py demo OUT_DIR                           # the demo case, docs/demo-case.md
 
 Other forms (zip, split sections, protected single-file reports) are added to this module by the
 units that test them (01 unit 1.2); they are not separate generators.
@@ -128,6 +129,55 @@ class PhoneSpec:
     # accuracy on each day, so a routine place forms. Empty leaves every fixture as before.
     routine_place: tuple = ()
     report_name: str = "Report.xml"
+    # per-night no-data windows ``((start, end), ...)`` in UTC (a phone powered off on given nights, not one long gap):
+    # no generated record falls inside one. Empty leaves every fixture as before.
+    gaps: tuple = ()
+    # False: no generated Location records (a phone whose every position is scripted). True leaves every fixture as before.
+    random_locations: bool = True
+    # named conversations, calls, positions, notifications, mails, contacts and photos (``Script``), written after every
+    # generated record with their own random streams. None leaves every fixture as before.
+    script: "Script | None" = None
+    device_name: str | None = None  # None: "Phone <label>"
+    os_type: str = "Android"
+    extraction_type: str = "FileSystem"
+
+
+@dataclass
+class ScriptFile:
+    """A photo or other file the script places on the phone: ``device_path`` as the report lists it, ``meta`` extra
+    metadata items ``(name, value)`` (EXIF camera, GPS), ``position`` (lat, lon) adds a Media Locations record."""
+    key: str
+    name: str
+    device_path: str
+    data: bytes
+    time: dt.datetime
+    kind: str = "Image"
+    content_type: str = "image/jpeg"
+    meta: tuple = ()
+    position: tuple | None = None
+
+
+@dataclass
+class ScriptChat:
+    """One named conversation: ``lines`` are ``(utc time, sender key or "owner", text, deleted_state, file key or
+    None)``."""
+    app: str
+    members: list[str]
+    lines: list[tuple]
+    name: str | None = None
+    owner_ident: str | None = None  # the owner's identifier in this conversation (a second number), else the first
+
+
+@dataclass
+class Script:
+    chats: list[ScriptChat] = field(default_factory=list)
+    calls: list[tuple] = field(default_factory=list)  # (utc time, person key, "Incoming"/"Outgoing", status, seconds)
+    tracks: list[tuple] = field(default_factory=list)  # (utc time, lat, lon, GPS accuracy metres or None)
+    notifications: list[tuple] = field(default_factory=list)  # (utc time, service identifier, title, body)
+    emails: list[tuple] = field(default_factory=list)  # (utc time, from key or "owner", [to keys], subject, body, folder)
+    contacts: list[tuple] = field(default_factory=list)  # (saved name, [numbers], {app: account})
+    saved_names: dict = field(default_factory=dict)  # person key -> the name this phone shows for them
+    files: list[ScriptFile] = field(default_factory=list)
 
 
 @dataclass
@@ -307,7 +357,7 @@ class PhoneBuild:
             t = self.start + dt.timedelta(days=day, hours=hour, minutes=self.rng.randrange(60),
                                           seconds=self.rng.randrange(60),
                                           milliseconds=self.rng.randrange(1000))
-            if t < self.end:
+            if t < self.end and not any(a <= t < b for a, b in self.spec.gaps):
                 return t
 
     def owner(self) -> Person | None:
@@ -322,7 +372,9 @@ class PhoneBuild:
         m.f("Identifier", "String", ident)
         if role:
             m.f("Role", "PartyRole", role)
-        m.f("Name", "String", person.name)
+        name = self.spec.script.saved_names.get(person.key, person.name) if self.spec.script else person.name
+        if name:
+            m.f("Name", "String", name)
         m.f("IsPhoneOwner", "Boolean", "True" if is_owner else "False")
         return m
 
@@ -514,6 +566,8 @@ class PhoneBuild:
         return out
 
     def contacts(self) -> list[str]:
+        if self.spec.script and self.spec.script.contacts:
+            return self.script_contacts()
         out = []
         people = [self.people[k] for k in self.spec.contacts]
         n = self.target("Contact", len(people))
@@ -539,7 +593,7 @@ class PhoneBuild:
 
     def locations(self) -> list[str]:
         out = []
-        for i in range(self.target("Location", 6)):
+        for i in range(self.target("Location", 6) if self.spec.random_locations else 0):
             t = self.instant()
             loc = Model(self, "Location", False)
             loc.f("Source", "String", "Synthetic Maps")
@@ -655,6 +709,9 @@ class PhoneBuild:
             if mtype not in NESTED_ONLY and mtype not in BUILT:
                 model_types[mtype] = self.generic(mtype)
         model_types.setdefault("Email", []).extend(self.owner_mail())
+        if self.spec.script:
+            for mtype, models in self.script_records().items():
+                model_types[mtype] = list(model_types.get(mtype, [])) + models
         # the report id is drawn here, before any bank alert, so a phone with alerts keeps the id it had without them
         project_id = self.ids.guid()
         if self.alert_rows:
@@ -673,18 +730,19 @@ class PhoneBuild:
         top = sum(len(v) for v in model_types.values())
         spec = self.spec
         own = self.owner()
-        device = [("DeviceInfoSelectedManufacturer", "Synthetic"), ("DeviceInfoSelectedDeviceName", f"Phone {spec.label}"),
-                  ("DeviceInfoOSType", "Android"), ("DeviceInfoExtractionStartDateTime", self.reported_end.strftime("%m/%d/%Y %I:%M:%S %p +00:00"))]
+        device = [("DeviceInfoSelectedManufacturer", "Synthetic"),
+                  ("DeviceInfoSelectedDeviceName", spec.device_name or f"Phone {spec.label}"),
+                  ("DeviceInfoOSType", spec.os_type), ("DeviceInfoExtractionStartDateTime", self.reported_end.strftime("%m/%d/%Y %I:%M:%S %p +00:00"))]
         if own:
             device.append(("MSISDN", own.numbers[0]))
         with open(out / spec.report_name, "w", encoding="utf-8", newline="\n") as fh:
             w = fh.write
             w('<?xml version="1.0" encoding="utf-8"?>\n')
             w(f'<project id="{project_id}" name="Synthetic {spec.label}" reportVersion="{REPORT_VERSION}" '
-              f'containsGarbage="False" extractionType="FileSystem" NodeCount="{len(self.files)}" '
+              f'containsGarbage="False" extractionType="{spec.extraction_type}" NodeCount="{len(self.files)}" '
               f'ModelCount="{top}" xmlns="{NS}">\n')
-            w(f'  <sourceExtractions>\n    <extractionInfo id="0" name="File System" isCustomName="False" '
-              f'type="FileSystem" deviceName="Phone {spec.label}" fullName="Synthetic phone {spec.label}" index="0" '
+            w(f'  <sourceExtractions>\n    <extractionInfo id="0" name="{"File System" if spec.extraction_type == "FileSystem" else spec.extraction_type}" isCustomName="False" '
+              f'type="{spec.extraction_type}" deviceName="Phone {spec.label}" fullName="Synthetic phone {spec.label}" index="0" '
               f'IsPartialData="False" IsSelectiveExtraction="False" IsStoppedByUser="False" />\n  </sourceExtractions>\n')
             w("  <caseInformation>\n")
             for name in ["Case number", "Case name", "Evidence number", "Examiner name", "Department",
@@ -720,6 +778,176 @@ class PhoneBuild:
             "top_level_total": top,
         }
 
+    # -- scripted records (the demo case): named people, fixed times, written after everything generated ----------
+    def script_contacts(self) -> list[str]:
+        out = []
+        script = self.spec.script
+        for saved, numbers, accounts in script.contacts:
+            c = Model(self, "Contact", False)
+            c.f("Source", "String", "Phone").f("Name", "String", saved)
+            entries = []
+            for num in numbers:
+                e = Model(self, "PhoneNumber", True)
+                e.f("Category", "String", "Mobile").f("Value", "String", num).f("Domain", "String", "Phone")
+                entries.append(e)
+            for app, account in (accounts or {}).items():
+                e = Model(self, "UserID", True)
+                e.f("Category", "String", app).f("Value", "String", account).f("Domain", "String", "User ID")
+                entries.append(e)
+            c.nest("multiModelField", "Entries", entries)
+            out.append(c.xml())
+        # filler contacts up to the catalogue's scale, invented as the generated ones are
+        for i in range(len(script.contacts), self.target("Contact", len(script.contacts))):
+            c = Model(self, "Contact", False)
+            c.f("Source", "String", "Phone").f("Name", "String", f"{self.rng.choice(FIRST)} {self.rng.choice(LAST)[0]}.")
+            e = Model(self, "PhoneNumber", True)
+            e.f("Category", "String", "Mobile").f("Value", "String", _number(1000 + self.spec.seed * 300 + i))
+            e.f("Domain", "String", "Phone")
+            c.nest("multiModelField", "Entries", [e])
+            out.append(c.xml())
+        return out
+
+    def script_records(self) -> dict[str, list[str]]:
+        script = self.spec.script
+        kept = (self.rng, self.ids)
+        self.rng, self.ids = random.Random(self.spec.seed * 31 + 8), Ids(self.spec.seed * 31 + 9)
+        try:
+            files = {}
+            for sf in script.files:
+                fid = self.ids.guid()
+                files[sf.key] = (fid, sf)
+                self.files.append({"id": fid, "name": sf.name, "path": f"files\\{sf.kind}\\{sf.name}", "time": sf.time,
+                                   "kind": sf.kind, "data": sf.data, "device_path": sf.device_path, "meta": sf.meta})
+            chats = [self.script_chat(i, c, files) for i, c in enumerate(script.chats)]
+            calls = [self.script_call(*c) for c in script.calls]
+            locs = [self.script_fix(*t) for t in script.tracks]
+            for fid, sf in files.values():
+                if sf.position:
+                    loc = Model(self, "Location", False, file_id=fid)
+                    loc.f("Source", "String", "Photos").t("TimeStamp", sf.time).f("Category", "String", "Media Locations")
+                    co = Model(self, "Coordinate", True)
+                    co.f("Longitude", "Double", f"{sf.position[1]:.6f}").f("Latitude", "Double", f"{sf.position[0]:.6f}")
+                    loc.nest("modelField", "Position", [co])
+                    self.count.fact("locations_positioned")
+                    self.count.fact("media_locations")
+                    locs.append(loc.xml())
+            notes = []
+            for t, service, title, body in script.notifications:
+                m = Model(self, "Notification", False)
+                m.f("ServiceIdentifier", "String", service)
+                if title:
+                    m.f("Title", "String", title)
+                m.f("Body", "String", body).t("TimeStamp", t)
+                self.count.fact("script_notifications")
+                notes.append(m.xml())
+            mails = [self.script_mail(*e) for e in script.emails]
+        finally:
+            self.rng, self.ids = kept
+        return {"Chat": chats, "Call": calls, "Location": locs, "Notification": notes, "Email": mails}
+
+    def _person_party(self, key: str, role: str | None, app: str, owner_ident: str | None = None) -> Model:
+        if key == "owner" and owner_ident:
+            m = Model(self, "Party", True)
+            m.f("Identifier", "String", owner_ident)
+            if role:
+                m.f("Role", "PartyRole", role)
+            if self.owner() and self.owner().name:
+                m.f("Name", "String", self.owner().name)
+            m.f("IsPhoneOwner", "Boolean", "True")
+            return m
+        return self.owner_party(role, app) if key == "owner" else self.party(self.people[key], role, False, app)
+
+    def script_chat(self, c: int, chat: ScriptChat, files: dict) -> str:
+        thread_id = f"{self.spec.label}-s{c}"
+        group = len(chat.members) > 1 or bool(chat.name)
+        m = Model(self, "Chat", False)
+        m.f("Source", "String", chat.app).f("Id", "String", self.ids.guid())
+        times = [line[0] for line in chat.lines]
+        m.t("StartTime", min(times)).t("LastActivity", max(times))
+        m.f("ChatType", "ChatType", "Group" if group else "OneOnOne")
+        if chat.name:
+            m.f("Name", "String", chat.name)
+        m.nest("multiModelField", "Participants",
+               [self._person_party("owner", None, chat.app, chat.owner_ident)] + [self.party(self.people[k], None, False, chat.app) for k in chat.members])
+        msgs = []
+        everyone = ["owner"] + list(chat.members)
+        for i, (t, sender, body, deleted, file_key) in enumerate(chat.lines):
+            msg = Model(self, "InstantMessage", True, deleted or "Intact")
+            msg.f("Source", "String", chat.app)
+            msg.f("Body", "String", body) if body else msg.f("Body", "String", None)
+            msg.t("TimeStamp", t)
+            msg.f("Status", "MessageStatus", "Sent" if sender == "owner" else "Read")
+            msg.f("Type", "InstantMessageType", "Sms" if chat.app == "Native Messages" else "AppMessage")
+            msg.f("Platform", "Platform", "Mobile")
+            msg.nest("modelField", "From", [self._person_party(sender, "From", chat.app, chat.owner_ident)])
+            msg.nest("multiModelField", "To", [self._person_party(k, "To", chat.app, chat.owner_ident)
+                                               for k in everyone if k != sender])
+            if file_key:
+                fid, sf = files[file_key]
+                a = Model(self, "Attachment", True, file_id=fid)
+                a.f("Filename", "String", sf.name).f("ContentType", "String", sf.content_type)
+                a.f("attachment_extracted_path", "String", f"files\\{sf.kind}\\{sf.name}")
+                msg.nest("multiModelField", "Attachments", [a])
+                self.count.fact("attachments_present")
+            if (deleted or "Intact") != "Intact":
+                self.count.fact(f"messages_{deleted.lower()}")
+            self.count.fact("messages")
+            self.count.fact("script_messages")
+            msgs.append(msg)
+            self.ui_messages.append({
+                "id": f"{thread_id}-m{i}", "thread": thread_id, "phone": self.spec.label, "app": chat.app,
+                "time": ts(t), "from": (self.spec.owner or "owner") if sender == "owner" else sender,
+                "to": [k for k in everyone if k != sender], "direction": "outgoing" if sender == "owner" else "incoming",
+                "body": body, "deleted": deleted or "Intact"})
+        m.nest("multiModelField", "Messages", msgs)
+        self.ui_threads.append({"id": thread_id, "phone": self.spec.label, "app": chat.app, "group": group,
+                                "participants": list(chat.members), "count": len(msgs)})
+        return m.xml()
+
+    def script_call(self, t: dt.datetime, key: str, direction: str, status: str, seconds: int) -> str:
+        c = Model(self, "Call", False)
+        c.f("Source", "String", "Phone").f("Direction", "ModelDirections", direction)
+        c.f("Status", "TelephonyCallStatus", status).t("TimeStamp", t)
+        c.f("Duration", "TimeSpan", f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}")
+        other = self.party(self.people[key], "To" if direction == "Outgoing" else "From", False, "Phone")
+        own = self.owner_party("From" if direction == "Outgoing" else "To", "Phone")
+        c.nest("multiModelField", "Parties", [own, other] if direction == "Outgoing" else [other, own])
+        self.ui_calls.append({"phone": self.spec.label, "time": ts(t), "other": key, "direction": direction.lower(),
+                              "status": status, "seconds": seconds})
+        self.count.fact("script_calls")
+        return c.xml()
+
+    def script_fix(self, t: dt.datetime, lat: float, lon: float, accuracy) -> str:
+        loc = Model(self, "Location", False)
+        loc.f("Source", "String", "Synthetic Maps").t("TimeStamp", t).f("Category", "String", "Locations")
+        co = Model(self, "Coordinate", True)
+        co.f("Longitude", "Double", f"{lon:.6f}").f("Latitude", "Double", f"{lat:.6f}")
+        if accuracy is not None:
+            co.f("GpsHorizontalAccuracy", "Double", str(accuracy))
+        loc.nest("modelField", "Position", [co])
+        self.count.fact("locations_positioned")
+        self.count.fact("script_fixes")
+        return loc.xml()
+
+    def script_mail(self, t, sender, to, subject, body, folder="Sent") -> str:
+        mail = Model(self, "Email", False)
+        mail.f("Source", "String", "Emails").f("Folder", "String", folder).f("Subject", "String", subject)
+        mail.f("Body", "String", body).t("TimeStamp", t)
+
+        def mparty(key, role):
+            m = Model(self, "Party", True)
+            person = self.owner() if key == "owner" else self.people[key]
+            m.f("Identifier", "String", person.email).f("Role", "PartyRole", role)
+            name = self.spec.script.saved_names.get(person.key, person.name)
+            if name:
+                m.f("Name", "String", name)
+            m.f("IsPhoneOwner", "Boolean", "True" if key == "owner" else "False")
+            return m
+        mail.nest("modelField", "From", [mparty(sender, "From")])
+        mail.nest("multiModelField", "To", [mparty(k, "To") for k in to])
+        self.count.fact("script_emails")
+        return mail.xml()
+
     def bank_alerts(self) -> list[str]:
         """One notification per chosen ledger row, the same day at 10:00 UTC: the amount, money in or out, the
         statement's account ending and the payee as the statement prints it. Invented bank, invented people."""
@@ -747,13 +975,17 @@ class PhoneBuild:
             data = f.get("data") or _tiny_png(f["name"])
             (folder / f["name"]).write_bytes(data)
             t = f["time"]
+            meta = "".join(f'<item name="{escape(k)}">{escape(str(v))}</item>' for k, v in f.get("meta", ()))
+            if meta:
+                meta = f'<metadata section="EXIF">{meta}</metadata>'
+            device_path = f.get("device_path") or f"/sdcard/DCIM/{f['name']}"
             parts.append(
-                f'    <file fs="Synthetic" fsid="0" path="/sdcard/DCIM/{f["name"]}" size="{len(data)}" id="{f["id"]}" '
+                f'    <file fs="Synthetic" fsid="0" path="{escape(device_path)}" size="{len(data)}" id="{f["id"]}" '
                 f'extractionId="0" deleted="Intact" embedded="false" isrelated="False">'
                 f'<accessInfo><timestamp name="CreationTime">{ts(t)}</timestamp></accessInfo>'
                 f'<metadata section="File"><item name="Local Path">{escape(f["path"])}</item>'
                 f'<item name="SHA256">{hashlib.sha256(data).hexdigest()}</item>'
-                f'<item name="MD5">{hashlib.md5(data).hexdigest()}</item><item name="Tags">{kind}</item></metadata>'
+                f'<item name="MD5">{hashlib.md5(data).hexdigest()}</item><item name="Tags">{kind}</item></metadata>{meta}'
                 f"</file>\n")
         return "".join(parts)
 
@@ -870,7 +1102,9 @@ def _pdf_text(value: str) -> str:
 
 
 def write_statement_pdf(rows: list[dict], path: Path, *, opening: float, start: dt.date, end: dt.date,
-                        per_page: int = 34) -> None:
+                        per_page: int = 34, holder: str = "EMRYS JUNIPER", account: str = "000555010/0100",
+                        bank: str = "Synthetic Community Bank", page_mark: str | None = None, paginate: bool = False,
+                        omit_pages: tuple = (), split_amounts: tuple = (), title_case: bool = True) -> None:
     """The same ledger as a text-layer PDF bank statement, so the training case's ledger goes through Loupe's real
     Financial intake (Evidence upload, statement detection, statement reading). Stdlib only and deterministic:
     no creation date, fixed fonts. Every name and number in it is invented (SYNTHETIC_MARK is printed)."""
@@ -882,9 +1116,9 @@ def write_statement_pdf(rows: list[dict], path: Path, *, opening: float, start: 
     head = [
         (25, 810, 14, "BANK STATEMENT"),
         (25, 793, 8, f"{SYNTHETIC_MARK}. No real customer or payment."),
-        (25, 775, 10, "Account Name: EMRYS JUNIPER"),
-        (25, 757, 10, "Account Number: 000555010/0100"),
-        (25, 739, 10, "Bank: Synthetic Community Bank"),
+        (25, 775, 10, f"Account Name: {holder}"),
+        (25, 757, 10, f"Account Number: {account}"),
+        (25, 739, 10, f"Bank: {bank}"),
         (25, 721, 10, f"Statement Period: {start:%Y-%m-%d} - {end:%Y-%m-%d}"),
         (25, 703, 10, "Currency: USD"),
     ]
@@ -892,29 +1126,47 @@ def write_statement_pdf(rows: list[dict], path: Path, *, opening: float, start: 
     for r in rows:
         amount = float(r["Amount"])
         month, day, year = r["Date"].split("/")
-        body.append(dict(date=f"{year}-{month}-{day}", desc=r["Description"].title()[:40],
+        desc = r["Description"].title() if title_case else r["Description"]
+        body.append(dict(date=f"{year}-{month}-{day}", desc=desc[:40],
                          credit=f"{amount:.2f}" if amount > 0 else "", debit=f"{-amount:.2f}" if amount < 0 else "",
                          balance=f"{float(r['Balance']):.2f}"))
     body.append(dict(date=end.strftime("%Y-%m-%d"), desc="Closing Balance", credit="", debit="", balance=f"{closing:.2f}"))
     pages = []
-    if len(body) > 26:
+    if paginate:  # the demo case: 22 lines on page 1, 30 on later pages, "Page n of N" on each
+        parts, rest = [body[:22]], body[22:]
+        while rest:
+            parts.append(rest[:30])
+            rest = rest[30:]
+    elif len(body) > 26:
         raise ValueError("a statement page holds 24 payments; split by month")
-    parts = [body]
+    else:
+        parts = [body]
     for n, part in enumerate(parts):
+        if n + 1 in omit_pages:  # a page the production left out: the printed count still says it exists
+            continue
         lines = list(head) if n == 0 else []
+        if page_mark:
+            lines.append((25, 828, 8, page_mark))
+        if paginate:
+            lines.append((520, 828, 8, f"Page {n + 1} of {len(parts)}"))
         y = 660 if n == 0 else 800
         lines += [(31, y, 9, "Date"), (113, y, 9, "Description"), (391, y, 9, "Credit"), (464, y, 9, "Debit"), (537, y, 9, "Balance")]
         y -= 26
         for row in part:
             lines += [(31, y, 9, row["date"]), (113, y, 9, row["desc"])]
-            if row["credit"]:
+            if row["credit"] and row["credit"] in split_amounts:  # printed as two runs with a gap after the comma
+                head_txt, tail_txt = row["credit"][:-6], row["credit"][-6:]
+                lines.append((right(452, tail_txt), y, 9, tail_txt))
+                lines.append((right(452, tail_txt) - 9 - sum(0.278 if c in ".," else 0.556 for c in head_txt) * 9, y, 9,
+                              head_txt))
+            elif row["credit"]:
                 lines.append((right(452, row["credit"]), y, 9, row["credit"]))
             if row["debit"]:
                 lines.append((right(525, row["debit"]), y, 9, row["debit"]))
             lines.append((right(598, row["balance"]), y, 9, row["balance"]))
             y -= 20
         stream = "\n".join(f"BT /F1 {size} Tf 1 0 0 1 {x} {yy} Tm ({_pdf_text(text)}) Tj ET" for x, yy, size, text in lines)
-        pages.append(stream.encode("latin-1"))
+        pages.append(stream.encode("cp1252"))
     objects: list[bytes] = []
     kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(len(pages)))
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
@@ -934,6 +1186,16 @@ def write_statement_pdf(rows: list[dict], path: Path, *, opening: float, start: 
     data += "".join(f"{o:010d} 00000 n \n" for o in offsets).encode()
     data += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     path.write_bytes(bytes(data))
+
+
+def demo_case():
+    """The demo case "Demo: State v. Mateo Ruiz (synthetic)" (lx-demo): six scripted phones; its ledgers, documents
+    and answer key are in the companion module ``demo_case.py`` beside this one (``build_demo`` writes them all)."""
+    try:
+        from . import demo_case as dc
+    except ImportError:
+        import demo_case as dc
+    return dc.demo_case()[0]
 
 
 def build_case(case: CaseSpec, out: Path) -> dict:
@@ -1108,7 +1370,7 @@ def protected_ufdr(out: Path, kind: str, seed: int = 7) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("shape", choices=["phones-only", "training", "phone", "c1-later", "check-seed"])
+    ap.add_argument("shape", choices=["phones-only", "training", "phone", "c1-later", "check-seed", "demo"])
     ap.add_argument("out", type=Path)
     ap.add_argument("--scale", type=float, default=0.02)
     ap.add_argument("--like", default="P06")
@@ -1118,6 +1380,16 @@ def main(argv=None) -> int:
     ap.add_argument("--typed", action="append", default=[],
                     help="MODEL_TYPE:FIELD:TEXT, an extra invented typed or searched value (phone shape only)")
     a = ap.parse_args(argv)
+    if a.shape == "demo":  # the whole demo case: phones, statements, documents (docs/demo-case.md)
+        try:
+            from . import demo_case as dc
+        except ImportError:
+            import demo_case as dc
+        m = dc.build_demo(a.out)
+        print(json.dumps({"case": m["case"], "phones": [{"label": p["label"], "top_level_total": p["top_level_total"],
+                                                          "messages": p["facts"].get("messages", 0)} for p in m["phones"]],
+                          "voice_note_made": m["voice_note_made"], "photos_made": m["photos_made"]}))
+        return 0
     if a.shape == "phones-only":
         case = phones_only_case(a.scale)
     elif a.shape == "c1-later":  # a newer report of the phones-only C1: the same records and 3 later messages

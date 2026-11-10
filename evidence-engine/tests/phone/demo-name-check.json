@@ -1,0 +1,236 @@
+{
+ "checked": "2026-11-10 (lx-demo)",
+ "how": "Live cases: case-insensitive substring count over financial_transactions.counterparty_raw, phone_participations.name_in_record, phone_identity_names.name, phone_identity_sightings.name_alongside, financial_accounts holder and institution names, financial_source_documents.institution_name, users.name, case_profiles.display_name, graph_recycle_bin_items.original_name, evidence_files.original_filename (owl_db, read-only), and every Neo4j node name; counts only, no value printed. Map: the box runs no Nominatim (no GEOCODER setting, nothing on :8080), so OpenStreetMap's public Nominatim search, US only, a hit being a result whose name contains the invented name. Four street names first chosen (Granby Court, Oriel Lane, Quarrystone Lane, Sutter Mill Road) had map hits outside Maryland and were renamed before this record. Re-run per docs/demo-case.md when a name is added.",
+ "names": [
+  {
+   "name": "Benchyard",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Bramble Cafe",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Brianna Cole",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Brightwater Logistics",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Calder County",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Calder Mill Road",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Carla Ruiz",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Corbel Auto Parts",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Cradlemere Lane",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Curtis Fallowby",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Desmond Okafor",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Elkmere Home Lending",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Elkmere Insurance",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Fenwick Ridge Industrial Park",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Ferrow Avenue",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Ferrowmere Medical Center",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Gary Penn",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Greenhollow Grocers",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Harold Vint",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Hobbet Mill Road",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Joan Marsh",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Keldar",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Kestrel Point Bank",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Larkfield Tradesmen Credit Union",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Larkmont Apartments",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Lena Marsh",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Lucía Ruiz",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Lumetra",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Mateo Garza",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Mateo Ruiz",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Old Ferrow Savings Bank",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Paula Grennan",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Penn's Used Tools",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Pocketwire",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Quillan's Home Supply",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Rosa Ruiz",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Ruiz Auto & Tire",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Stowell Self Storage",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Tallow Creek Mart",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Tallow Creek Road",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Tessaly Properties",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Tessaly Quarry Lane",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Torvane",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Travis Kell",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Wexmoor Court",
+   "live_case_hits": 0,
+   "map_hits": 0
+  },
+  {
+   "name": "Wexmoor Fuel",
+   "live_case_hits": 0,
+   "map_hits": 0
+  }
+ ]
+}
