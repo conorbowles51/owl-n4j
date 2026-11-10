@@ -90,9 +90,24 @@ def bare_share(counts):
     return counts[BARE] / counts['rows'] if counts.get('rows') else 0.0
 
 
-def compare(current, baseline, *, tolerance=TOLERANCE_POINTS, new_layout_limit=NEW_LAYOUT_LIMIT, min_rows=MIN_ROWS):
-    """Failures (plain sentences) of ``current`` against the released ``baseline``; empty when the release may go."""
+def compare(current, baseline, *, running=None, notes=None, tolerance=TOLERANCE_POINTS,
+            new_layout_limit=NEW_LAYOUT_LIMIT, min_rows=MIN_ROWS):
+    """Failures (plain sentences) of ``current`` against the released ``baseline``; empty when the release may go.
+
+    ``running``: the same stored payments measured with the code that is running now. A rise or a mostly bare new
+    layout that the running code shows just as much came from payments stored since the last release, not from the
+    code being released: it is not a failure, and its sentence goes to ``notes`` (a list) so the release log says so."""
     failures = []
+
+    def judge(kind, key, counts, sentence):
+        before = (running or {}).get(kind, {}).get(key)
+        if before and before.get('rows') and bare_share(counts) <= bare_share(before) + 1e-9:
+            if notes is not None:
+                notes.append(f'{sentence} The running code shows {bare_share(before) * 100:.1f}% of {before["rows"]} '
+                             f'on the same payments: stored since the last release, not caused by this release.')
+            return
+        failures.append(sentence)
+
     for bank, counts in sorted(current['banks'].items()):
         if counts['rows'] < min_rows:
             continue
@@ -100,14 +115,14 @@ def compare(current, baseline, *, tolerance=TOLERANCE_POINTS, new_layout_limit=N
         now = bare_share(counts) * 100
         was = bare_share(before) * 100 if before else None
         if was is not None and now > was + tolerance:
-            failures.append(f'{bank}: {now:.1f}% of {counts["rows"]} payments show a bare "Not identified" '
-                            f'(released baseline {was:.1f}%, tolerance {tolerance:g} points).')
+            judge('banks', bank, counts, f'{bank}: {now:.1f}% of {counts["rows"]} payments show a bare "Not identified" '
+                                         f'(released baseline {was:.1f}%, tolerance {tolerance:g} points).')
     for layout, counts in sorted(current['layouts'].items()):
         if counts['rows'] < min_rows or layout in baseline.get('layouts', {}):
             continue
         if bare_share(counts) > new_layout_limit:
-            failures.append(f'{layout}: a newly read layout with {bare_share(counts) * 100:.1f}% of {counts["rows"]} '
-                            f'payments showing a bare "Not identified" (limit {new_layout_limit * 100:.0f}%).')
+            judge('layouts', layout, counts, f'{layout}: a newly read layout with {bare_share(counts) * 100:.1f}% of '
+                                             f'{counts["rows"]} payments showing a bare "Not identified" (limit {new_layout_limit * 100:.0f}%).')
     return failures
 
 

@@ -414,12 +414,25 @@ success "Release plan: ${RELEASE_PLAN} (frontend build ${FRONTEND_ID:0:12}, serv
 PARTY_GATE="${BACKEND_DIR}/benchmarks/statement_automation/party_coverage_gate.py"
 PARTY_BASELINE="${LOG_DIR}/party-coverage-baseline.json"
 PARTY_CANDIDATE="${LOG_DIR}/party-coverage-candidate.json"
-rm -f "${PARTY_CANDIDATE}"
+# The same payments are first measured with the running backend's own tree: a rise it shows just as much came from
+# payments stored since the last release (a new case's statements), not from this release, and is printed as a NOTE.
+PARTY_RUNNING="${LOG_DIR}/party-coverage-running.json"
+# The tree the running backend's processes work in (backend_tree_in_use); none or two (a handover): baseline only.
+PARTY_RUNNING_NAMES="$(backend_tree_in_use 2>/dev/null || true)"
+PARTY_RUNNING_TREE=""
+[ -n "${PARTY_RUNNING_NAMES}" ] && [ "$(printf '%s\n' "${PARTY_RUNNING_NAMES}" | wc -l)" -eq 1 ] && PARTY_RUNNING_TREE="${BACKEND_TREES}/${PARTY_RUNNING_NAMES}"
+rm -f "${PARTY_CANDIDATE}" "${PARTY_RUNNING}"
 if [ -f "${PARTY_GATE}" ]; then
     step "Party coverage gate (payments that name the other side)"
+    if [ -n "${PARTY_RUNNING_TREE}" ] && [ -f "${PARTY_RUNNING_TREE}/backend/benchmarks/statement_automation/party_coverage_gate.py" ] \
+            && [ -x "${PARTY_RUNNING_TREE}/.venv/bin/python" ]; then
+        (cd "${PARTY_RUNNING_TREE}/backend" && $RUN_AS env PYTHONPATH=. "${PARTY_RUNNING_TREE}/.venv/bin/python" \
+            -m benchmarks.statement_automation.party_coverage_gate --write-baseline "${PARTY_RUNNING}" > /dev/null) \
+            || { warn "Party coverage with the running code could not be measured; the gate compares with the baseline only."; rm -f "${PARTY_RUNNING}"; }
+    fi
     PARTY_RC=0
     (cd "${BACKEND_DIR}" && $RUN_AS env PYTHONPATH=. "${VENV_DIR}/bin/python" -m benchmarks.statement_automation.party_coverage_gate \
-        --baseline "${PARTY_BASELINE}" --out "${PARTY_CANDIDATE}") || PARTY_RC=$?
+        --baseline "${PARTY_BASELINE}" --running "${PARTY_RUNNING}" --out "${PARTY_CANDIDATE}") || PARTY_RC=$?
     if [ "${PARTY_RC}" -eq 1 ]; then
         fail "Party coverage gate failed: more payments would show a bare \"Not identified\". Release stopped."
         if [ -n "${ROLLBACK_TARGET}" ] && [ "${ROLLBACK_TARGET}" != "${NEW_COMMIT}" ]; then

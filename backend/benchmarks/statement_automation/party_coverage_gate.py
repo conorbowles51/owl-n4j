@@ -5,7 +5,9 @@ identified" (no name and no stated reason; services.financial.party_coverage)
 per bank and per printed layout, with the code being released. The release
 fails when a bank's bare share rises above the last released baseline by more
 than the tolerance, or when a layout the baseline has not seen lands with more
-than half of its payments bare.
+than half of its payments bare. With ``--running`` (the same payments measured by the code that runs now, written
+by ``--write-baseline`` from the running tree), a rise the running code shows just as much is printed as a note and
+does not fail: it came from payments stored since the last release, not from the code being released.
 
 The baseline is the last released measure (``--baseline``, written by
 ``--write-baseline`` after a healthy release); without one, the committed seed
@@ -49,6 +51,7 @@ def main(argv=None):
     parser.add_argument('--baseline', help='last released measure (falls back to the committed seed)')
     parser.add_argument('--rows-json', help='measure a saved export instead of the database')
     parser.add_argument('--out', help='write this measure here (JSON)')
+    parser.add_argument('--running', help='the same payments measured by the running code (optional)')
     parser.add_argument('--write-baseline', help='write this measure as the new released baseline, then exit 0')
     args = parser.parse_args(argv)
     try:
@@ -71,7 +74,14 @@ def main(argv=None):
     baseline_path = args.baseline if args.baseline and os.path.exists(args.baseline) else SEED
     with open(baseline_path) as handle:
         baseline = json.load(handle)
-    failures = compare(current, baseline)
+    running = None
+    if args.running and os.path.exists(args.running):
+        with open(args.running) as handle:
+            running = json.load(handle)
+    notes = []
+    failures = compare(current, baseline, running=running, notes=notes)
+    for note in notes:
+        print('  NOTE: ' + note)
     if failures:
         print(f'PARTY COVERAGE GATE: FAIL against {baseline_path}')
         for failure in failures:

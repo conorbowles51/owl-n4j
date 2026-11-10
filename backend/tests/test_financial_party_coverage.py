@@ -51,6 +51,28 @@ class PartyCoverageTests(unittest.TestCase):
         self.assertEqual(tally([r('a', 'XQZ 1', superseded_by='gone')])['total'][BARE], 1)
         self.assertEqual(tally([r('a', 'XQZ 1', superseded_by='b'), r('b', 'ACME', raw='ACME', superseded_by='a')])['total']['rows'], 2)
 
+    def test_a_rise_the_running_code_shows_as_much_is_a_note_not_a_failure(self):
+        # 10 Nov 21:54: a new case's statements (two layouts, 187 payments, all bare with the running code too) stopped
+        # an unrelated phone release. Payments stored since the last release are not caused by the code being released.
+        baseline = tally([row('XQZ 1')] * 2 + [row('ACME', raw='ACME')] * 38)
+        stored = [row('XQZ 1')] * 2 + [row('ACME', raw='ACME')] * 38 + [row('XQZ 1', institution='Kestrel Point Bank')] * 60
+        current = tally(stored)
+        self.assertTrue(compare(current, baseline))                      # without the running measure: fails as before
+        notes = []
+        self.assertEqual(compare(current, baseline, running=tally(stored), notes=notes), [])
+        self.assertEqual(len(notes), 1)
+        self.assertIn('KESTREL/checking', notes[0])
+        self.assertIn('not caused by this release', notes[0])
+        # The code being released reads fewer names than the running code on the same payments: still a failure.
+        running = tally([row('XQZ 1')] * 2 + [row('ACME', raw='ACME')] * 38 + [row('XQZ 1', institution='Kestrel Point Bank')] * 20
+                        + [row('ACME', institution='Kestrel Point Bank', raw='ACME')] * 40)
+        failures = compare(current, baseline, running=running, notes=[])
+        self.assertTrue(any('KESTREL/checking' in f for f in failures))
+        # A bank's rise from new payments: a note when the running code shows it as much, a failure when this code adds to it.
+        drift = [row('XQZ 1')] * 6 + [row('ACME', raw='ACME')] * 38
+        self.assertEqual(compare(tally(drift), baseline, running=tally(drift)), [])
+        self.assertEqual(len(compare(tally(drift), baseline, running=baseline)), 1)
+
 
 def _args(r):
     return dict(description=r['description'], direction=r['direction'], account_type=r['account_type'],
