@@ -41,3 +41,38 @@ def link_named_files(text: str, returned: str) -> str:
         return f"[{name}](doc://{quote(name, safe='')})"
 
     return "".join(part if part.startswith("```") else _TICKED_FILE.sub(one, part) for part in parts)
+
+
+# A tool result's handle (res_<hex>, services/agent/tools.py) written as a citation: demo case Q3, 10 Nov 2026, cited
+# all 7 sources as doc://res_<hex>, which open nothing in the case. The handle is swapped for the one source link that
+# result returned; a result with none or several gives no single source, so its label stays as plain text.
+_RESULT_LINK = re.compile(r"\[([^\]\n]*)\]\(\s*<?(?:[A-Za-z]+://)?(res_[0-9a-f]{6,32})(?:/[^)>\s]*)?>?\s*\)")
+_REAL_CITE = re.compile(r"^(?:txn|doc|rec)://(?!res_)\S+$")
+
+
+def _cites_in(value, found: set, depth: int = 0) -> None:
+    if depth > 6 or len(found) > 1:
+        return
+    if isinstance(value, str):
+        if _REAL_CITE.match(value.strip()):
+            found.add(value.strip())
+    elif isinstance(value, dict):
+        for item in value.values():
+            _cites_in(item, found, depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _cites_in(item, found, depth + 1)
+
+
+def replace_result_handles(text: str, results: dict | None) -> str:
+    """Rewrite each ``[label](scheme://res_<hex>)`` to the result's own source link, or to ``label`` when it has none."""
+    if not text or "res_" not in text:
+        return text or ""
+
+    def one(match: re.Match) -> str:
+        label, handle = match.group(1), match.group(2)
+        found: set = set()
+        _cites_in((results or {}).get(handle), found)
+        return f"[{label}]({found.pop()})" if len(found) == 1 else label
+
+    return _RESULT_LINK.sub(one, text)

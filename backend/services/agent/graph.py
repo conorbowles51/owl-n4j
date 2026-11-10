@@ -17,7 +17,7 @@ from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from services import writing_standard
-from services.agent.citations import link_document_citations, link_named_files
+from services.agent.citations import link_document_citations, link_named_files, replace_result_handles
 from services.agent.all_cases import ALL_CASES_PROMPT
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.lean_history import (
@@ -1175,7 +1175,8 @@ class AgentGraphRunner:
             # A reply asked again was still billed: its tokens stay in the run's usage, its tool call does not.
             replies = [AIMessage(content="", usage_metadata=getattr(m, "usage_metadata", None),
                                  response_metadata=getattr(m, "response_metadata", {}) or {}) for m in spent] + replies
-            return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
+            return {"messages": replies, "final_answer": link_named_files(link_document_citations(
+                replace_result_handles(text, state.get("tool_results"))), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
@@ -1424,7 +1425,8 @@ class AgentGraphRunner:
             # A reply asked again was still billed: its tokens stay in the run's usage, its tool call does not.
             replies = [AIMessage(content="", usage_metadata=getattr(m, "usage_metadata", None),
                                  response_metadata=getattr(m, "response_metadata", {}) or {}) for m in spent] + replies
-            return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
+            return {"messages": replies, "final_answer": link_named_files(link_document_citations(
+                replace_result_handles(text, state.get("tool_results"))), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
