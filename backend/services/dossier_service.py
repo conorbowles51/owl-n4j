@@ -447,6 +447,12 @@ def _contact_source(db: Session, case_id: uuid.UUID, raw: Any, evidence_id: str 
     return {"type": "manual"}
 
 
+def _phone_suggestions(db: Session, case_id: uuid.UUID, why: str) -> None:
+    """Suggested phone identity links read dossier names and contacts: recompute them once the change is saved."""
+    from services.phone import identity_decisions
+    identity_decisions.refresh_after_change(db, case_id, why)
+
+
 def contacts_for_suggestions(db: Session, case_id: uuid.UUID) -> list[dict[str, Any]]:
     """The dossier contact details that identity suggestions may match against (07 sections 6.4 item 6 and 7.1).
 
@@ -524,6 +530,7 @@ def create_dossier(db: Session, *, case_id: uuid.UUID, user: User, data: dict[st
         return {"id": str(dossier.id), "display_name": dossier.display_name}
     if key:
         add_significant_entities(db, case_id=case_id, current_user=user, entity_keys=[key], addition_source="dossier", context={"dossier_id": str(dossier.id)})
+    _phone_suggestions(db, case_id, "a new dossier")
     return serialize_dossier(db, _load(db, dossier.id))
 
 
@@ -551,6 +558,8 @@ def update_dossier(db: Session, *, dossier_id: uuid.UUID, user: User, data: dict
         _replace_roles(db, dossier, data.get("roles") or [], user)
     dossier.updated_by_user_id = user.id
     db.commit()
+    if "contacts" in data or "display_name" in data:
+        _phone_suggestions(db, dossier.case_id, "a dossier edit")
     return serialize_dossier(db, _load(db, dossier.id))
 
 
@@ -597,6 +606,7 @@ def archive_dossier(db: Session, *, dossier_id: uuid.UUID, user: User, archived:
     except IntegrityError as exc:
         db.rollback()
         raise DossierConflict("An active Dossier already exists for this graph entity") from exc
+    _phone_suggestions(db, dossier.case_id, "a dossier archived" if archived else "a dossier restored")
     return serialize_dossier(db, _load(db, dossier.id))
 
 

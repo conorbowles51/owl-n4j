@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from collections import defaultdict
 
@@ -30,6 +31,8 @@ from sqlalchemy import text
 
 from services.phone import fold as F
 from services.phone import identifiers
+
+log = logging.getLogger(__name__)
 
 SUGGESTION_NS = uuid.UUID("2f7a9c41-0d6b-4e3a-9a52-8c1e7b3d5f60")
 WEIGHTS = {"same_card": (0.6, 0.8), "owner_accounts": 0.7, "dossier_contact": 0.9, "financial_identifier": 0.8,
@@ -143,6 +146,25 @@ def compute_suggestions(conn, case_id) -> dict:
     rows = candidate_rows(conn, case_id)
     conn.execute(text("DELETE FROM phone_identity_suggestions WHERE case_id = :c AND state = 'open'"), {"c": case_id})
     return _store(conn, case_id, rows)
+
+
+def refresh_after_change(db, case_id, why: str) -> bool:
+    """Recompute the case's open suggestions after a dossier's name, contacts or archive state changed, in a
+    savepoint after the change has committed. Before this ran only when Phone review was opened (lx-demo F26, 10 Nov
+    2026: a dossier opened first showed 0 suggested phone identities; Phone review then computed 33). A failure leaves
+    the change standing and is logged; Phone review recomputes on open as before."""
+    bind = db.get_bind()
+    if getattr(getattr(bind, "dialect", None), "name", "") != "postgresql":
+        return False  # the phone tables are PostgreSQL only
+    try:
+        with db.begin_nested():
+            compute_suggestions(db.connection(), case_id)
+        db.commit()
+        return True
+    except Exception:  # noqa: BLE001 - the dossier change has committed; suggestions are recomputed on review
+        db.rollback()
+        log.warning("phone identity suggestions not recomputed for case %s after %s", case_id, why, exc_info=True)
+        return False
 
 
 def candidate_rows(conn, case_id) -> list:

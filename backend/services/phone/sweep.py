@@ -254,9 +254,27 @@ def interpret_one(engine, extraction_id) -> dict:
     deleted = generic.purge_generations_before(engine, extraction_id, new_gen) if generation else {}
     done = {"deleted_previous": sum(deleted.values()), "phase_seconds:purge_previous": round(time.monotonic() - t0, 1)}
     _purged(engine, extraction_id, new_gen, done)
+    done.update(_suggestions_after_reading(engine, ext["case_id"]))
     prog(ext.get("record_count") or 0, finished=True)
     counts.pop("purge_pending", None)
     return dict(counts, status="done", generation=new_gen, **done)
+
+
+def _suggestions_after_reading(engine, case_id) -> dict:
+    """The case's suggested identity links, recomputed from the new reading in a transaction of its own. Before this
+    they were computed only when Phone review was opened, so a dossier opened first was told nothing matched
+    (lx-demo F26, 10 Nov 2026: 0 suggestions for the Okafor dossier after six phones were read; Phone review then
+    computed 33). The reading stands if this fails; Phone review recomputes on open."""
+    from services.phone import identity_decisions
+    t0 = time.monotonic()
+    try:
+        with engine.begin() as conn:
+            n = identity_decisions.compute_suggestions(conn, case_id)["suggestions"]
+    except Exception:  # noqa: BLE001 - the reading has committed; the review page recomputes
+        log.warning("phone identity suggestions not recomputed for case %s", case_id, exc_info=True)
+        return {"suggestions_recomputed": False}
+    return {"suggestions_recomputed": True, "suggestions_open_added": n,
+            "phase_seconds:suggestions": round(time.monotonic() - t0, 1)}
 
 
 def _progress(engine, extraction_id, total):

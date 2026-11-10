@@ -258,3 +258,30 @@ def test_strength_rule_lists_every_score_on_the_one_scale():
     # nothing in the module drops a suggestion on its score
     import inspect
     assert "< THRESHOLD" not in inspect.getsource(idd)
+
+
+@needs_template
+def test_suggestions_are_stored_when_a_phone_is_read_and_when_a_dossier_contact_changes(people):
+    """lx-demo F26 (10 Nov 2026): a dossier opened before Phone review was told 0 suggested identities, because
+    suggestions were computed only when Phone review was opened."""
+    from unittest.mock import patch
+    from postgres.models.user import User
+    from services import dossier_service
+    with fresh_engine() as engine:
+        case, _, _, owner = _setup(engine, [_contact(0, "Same Name", "+12025550143")],
+                                   [_contact(0, "Same Name", "+12025550144")])
+        with engine.connect() as c:  # no review route has run: the reading itself stored the suggestion
+            s = idd.suggestions(c, case)
+        assert len(s) == 1 and [r["reason"] for r in s[0]["reasons"]] == ["name_only"]
+        with Session(engine) as db, \
+                patch.object(dossier_service, "check_case_access", return_value=(None, None)), \
+                patch.object(dossier_service, "get_case_if_allowed", return_value=None), \
+                patch.object(dossier_service, "_case_member_ids", return_value=set()):
+            user = db.get(User, owner)
+            dossier = dossier_service.create_dossier(db, case_id=case, user=user, data={"display_name": "Synthetic"})
+            dossier_service.update_dossier(db, dossier_id=__import__("uuid").UUID(dossier["id"]), user=user,
+                                           data={"contacts": [{"kind": "phone", "value": "+12025550143"}]})
+        with engine.connect() as c:
+            s = idd.suggestions(c, case)
+        assert [(r["reason"], x["dossier_id"] == dossier["id"]) for x in s for r in x["reasons"]
+                if r["reason"] == "dossier_contact"] == [("dossier_contact", True)]
