@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/cn"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 import type {
   CaseworkEntry,
   CaseworkEntryType,
@@ -66,9 +67,11 @@ interface CaseworkComposerProps {
   canEdit?: boolean
   compact?: boolean
   saving?: boolean
+  submitDisabled?: boolean
   submitLabel?: string
   onSubmit: (value: CaseworkComposerValue) => Promise<void> | void
   onCancel?: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 const RELATIONSHIPS: Array<{
@@ -170,9 +173,11 @@ export function CaseworkComposer({
   canEdit = true,
   compact = false,
   saving = false,
+  submitDisabled = false,
   submitLabel,
   onSubmit,
   onCancel,
+  onDirtyChange,
 }: CaseworkComposerProps) {
   const [value, setValue] = useState(() =>
     initialValue(initialEntry, initialType, initialLinks)
@@ -181,6 +186,15 @@ export function CaseworkComposer({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const dirty =
+    JSON.stringify(value) !==
+      JSON.stringify(initialValue(initialEntry, initialType, initialLinks)) ||
+    !!tagDraft.trim()
+
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+  useUnsavedHistoryGuard(dirty, "Discard your unsaved casework and leave this page?")
 
   useEffect(() => {
     setValue(initialValue(initialEntry, initialType, initialLinks))
@@ -235,7 +249,7 @@ export function CaseworkComposer({
   }
 
   const submit = async () => {
-    if (!canEdit || saving) return
+    if (!canEdit || saving || submitDisabled) return
     if (Object.keys(validation).length) {
       setErrors(validation)
       return
@@ -257,11 +271,14 @@ export function CaseworkComposer({
   }
 
   return (
-    <div className={cn("space-y-4", compact && "space-y-3")}>
+    <fieldset
+      disabled={saving}
+      className={cn("min-w-0 space-y-4", compact && "space-y-3")}
+    >
       {!initialEntry && (
         <fieldset disabled={!canEdit}>
           <legend className="sr-only">Casework type</legend>
-          <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-muted/35 p-1">
+          <div className="grid grid-cols-3 gap-1 border-b border-border/70 pb-3">
             {(["note", "finding", "theory"] as CaseworkEntryType[]).map(
               (type) => (
                 <button
@@ -277,9 +294,9 @@ export function CaseworkComposer({
                     }))
                   }
                   className={cn(
-                    "rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                    "min-h-10 rounded-md px-2 py-2 text-sm font-medium transition-colors",
                     value.entry_type === type
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border"
+                      ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -288,6 +305,13 @@ export function CaseworkComposer({
               )
             )}
           </div>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            {value.entry_type === "note"
+              ? "Capture an observation or a detail to come back to."
+              : value.entry_type === "theory"
+                ? "Develop an explanation to test against the evidence."
+                : "Record a conclusion and link the material that supports it."}
+          </p>
         </fieldset>
       )}
 
@@ -332,7 +356,7 @@ export function CaseworkComposer({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  className="size-7"
+                  className="size-10"
                   title={label}
                   aria-label={label}
                   disabled={!canEdit}
@@ -538,7 +562,7 @@ export function CaseworkComposer({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 text-[11px]"
+                className="h-10 text-xs"
                 onClick={() =>
                   setValue((current) => ({
                     ...current,
@@ -554,7 +578,7 @@ export function CaseworkComposer({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 text-[11px]"
+                className="h-10 text-xs"
                 aria-expanded={pickerOpen}
                 onClick={() => setPickerOpen((open) => !open)}
               >
@@ -647,8 +671,9 @@ export function CaseworkComposer({
             })}
           </div>
         ) : (
-          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-            No linked material. Search the case or attach the current selection.
+          <p className="border-l-2 border-border py-2 pl-3 text-xs leading-relaxed text-muted-foreground">
+            Connect this work to a dossier, evidence or another piece of
+            casework using Search.
           </p>
         )}
 
@@ -665,16 +690,22 @@ export function CaseworkComposer({
         )}
       </section>
 
-      <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+      <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border bg-background py-3">
         {onCancel && (
-          <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10"
+            disabled={saving}
+            onClick={onCancel}
+          >
             Cancel
           </Button>
         )}
         <Button
           type="button"
-          size="sm"
-          disabled={!canEdit || saving}
+          className="h-10"
+          disabled={!canEdit || saving || submitDisabled}
           onClick={submit}
         >
           {saving ? (
@@ -688,6 +719,6 @@ export function CaseworkComposer({
               : `Save ${ENTRY_LABELS[value.entry_type].toLowerCase()}`)}
         </Button>
       </div>
-    </div>
+    </fieldset>
   )
 }

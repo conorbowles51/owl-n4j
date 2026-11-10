@@ -58,9 +58,10 @@ export interface OpenTarget {
 }
 
 /** Opens a group (or single graph item) on the page it came from, in that page's own terms. */
-export function useOpenGroup(caseId: string) {
+export function useOpenGroup(caseId: string, onBeforeNavigate?: () => boolean) {
   const navigate = useNavigate()
   return (t: OpenTarget) => {
+    if (onBeforeNavigate?.() === false) return
     const keys = t.members.filter((m) => m.type === "graph_entity").map((m) => m.id)
     const rows = t.members.filter((m) => m.type === "financial_transaction").map((m) => m.id)
     if (t.targetType === "map_selection") {

@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts"
+import { confirmUnsavedNavigation } from "./use-unsaved-history-guard"
 
 export function useGlobalShortcuts(caseIdOverride?: string | null) {
   const navigate = useNavigate()
@@ -46,7 +47,9 @@ export function useGlobalShortcuts(caseIdOverride?: string | null) {
         base.push({
           key: String(i + 1),
           meta: true,
-          handler: () => navigate(`/cases/${caseId}/${view}`),
+          handler: () => {
+            if (confirmUnsavedNavigation()) navigate(`/cases/${caseId}/${view}`)
+          },
         })
       })
     }

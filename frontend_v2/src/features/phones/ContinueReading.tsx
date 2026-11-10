@@ -98,3 +98,27 @@ export function ContinueReadingFeed({ caseId }: { caseId: string }) {
     </section>
   )
 }
+
+/** Assigned review work is useful on the workspace even without a browsing-history feed. */
+export function AssignedReviewsFeed({ caseId }: { caseId: string }) {
+  const query = useQuery({
+    queryKey: ["phone-continue-reading", caseId, []],
+    queryFn: () => getContinueWork(caseId, []),
+    retry: false,
+    staleTime: 60_000,
+  })
+  if (query.isError) return <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">Assigned phone reviews could not be loaded.<button type="button" onClick={() => void query.refetch()} className="min-h-10 underline underline-offset-2">Retry reviews</button></div>
+  if (!query.data?.assigned.length) return null
+  return <section aria-label="Assigned phone reviews" className="mt-3 border-t border-border/60 pt-3">
+    <h3 className="text-xs font-medium text-muted-foreground">Assigned phone reviews</h3>
+    <ul className="mt-1 divide-y divide-border/60">{query.data.assigned.map(assignment => {
+      const next = assignment.items[0] || assignment.next[0]
+      const href = assignment.kind === "readings" || !next
+        ? `/cases/${encodeURIComponent(caseId)}/phone-review`
+        : threadLink(caseId, next.extraction_id, next.thread_key, next.position?.event_uid)
+      return <li key={assignment.task_id}><Link to={href} className="flex min-h-12 items-center gap-3 rounded-sm py-3 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring">
+        <BookOpenCheck aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{assignment.title}</span><span className="mt-1 block text-xs text-muted-foreground">{fmt(assignment.open)} of {fmt(assignment.total)} still open</span></span>
+      </Link></li>
+    })}</ul>
+  </section>
+}

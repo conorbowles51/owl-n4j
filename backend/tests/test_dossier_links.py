@@ -19,7 +19,7 @@ from postgres.models.case_profile import CaseProfile
 from postgres.models.collection_membership import CollectionMembership
 from postgres.models.dossier import DossierLink
 from postgres.models.user import User
-from postgres.models.workspace_entry import WorkspaceEntry
+from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from services import dossier_service
 
 from tests.test_dossier_service import TABLES as DOSSIER_TABLES
@@ -84,6 +84,55 @@ def test_add_is_append_only_and_idempotent_with_counts_and_an_event(world):
         assert events[0]["origin"] == "Added from Conversations"
 
 
+def test_entry_memberships_are_case_scoped_and_follow_unlink_and_archive(world):
+    factory, owner, _, case_id, dossier_id, entries = world
+    with factory() as db:
+        user = db.get(User, owner)
+        added = dossier_service.add_links(db, dossier_id=dossier_id, user=user, links=_entry_links(entries[:1]))
+        result = dossier_service.list_dossiers(db, case_id=case_id, user=user, linked_entry_id=entries[0])
+        assert [item["id"] for item in result["dossiers"]] == [str(dossier_id)]
+        assert dossier_service.list_dossiers(db, case_id=case_id, user=user, linked_entry_id=entries[1])["total"] == 0
+        assert dossier_service.list_dossiers(db, case_id=uuid.uuid4(), user=user, linked_entry_id=entries[0])["total"] == 0
+        dossier_service.archive_dossier(db, dossier_id=dossier_id, user=user, archived=True)
+        assert dossier_service.list_dossiers(db, case_id=case_id, user=user, linked_entry_id=entries[0])["total"] == 0
+        assert dossier_service.list_dossiers(db, case_id=case_id, user=user, linked_entry_id=entries[0], include_archived=True)["total"] == 1
+        dossier_service.remove_link(db, dossier_id=dossier_id, user=user, link_id=uuid.UUID(added["added_link_ids"][0]))
+        assert dossier_service.list_dossiers(db, case_id=case_id, user=user, linked_entry_id=entries[0], include_archived=True)["total"] == 0
+        assert db.get(WorkspaceEntry, entries[0]) is not None
+
+
+def test_entry_membership_lookup_checks_case_access_before_reading(world):
+    from services.case_service import CaseAccessDenied
+
+    factory, owner, _, case_id, _, entries = world
+    with factory() as db, patch.object(dossier_service, "get_case_if_allowed", side_effect=CaseAccessDenied("Denied")):
+        with pytest.raises(CaseAccessDenied):
+            dossier_service.list_dossiers(db, case_id=case_id, user=db.get(User, owner), linked_entry_id=entries[0])
+
+
+def test_dossier_reads_incoming_casework_without_copying_or_exposing_other_cases(world):
+    from datetime import datetime, timezone
+
+    factory, owner, _, case_id, dossier_id, entries = world
+    with factory() as db:
+        user = db.get(User, owner)
+        foreign_case_id = uuid.uuid4()
+        db.add(Case(id=foreign_case_id, title="Another case", created_by_user_id=owner, owner_user_id=owner))
+        db.get(WorkspaceEntry, entries[1]).deleted_at = datetime.now(timezone.utc)
+        db.get(WorkspaceEntry, entries[2]).case_id = foreign_case_id
+        for entry_id in entries:
+            db.add(WorkspaceEntryLink(entry_id=entry_id, case_id=case_id, target_type="dossier",
+                                      target_id=str(dossier_id), relationship_type="context"))
+        db.commit()
+        result = dossier_service.get_dossier(db, dossier_id=dossier_id, user=user)
+        assert result["incoming_casework"] == [{"id": str(entries[0]), "title": "synthetic", "entry_type": "note", "relationship": "context"}]
+        assert result["links"] == []  # inverse reads create no duplicate dossier-owned links
+        link = db.scalar(select(WorkspaceEntryLink).where(WorkspaceEntryLink.entry_id == entries[0]))
+        db.delete(link)
+        db.commit()
+        assert dossier_service.get_dossier(db, dossier_id=dossier_id, user=user)["incoming_casework"] == []
+
+
 def test_bulk_add_of_12345_in_parts_reports_every_add_and_clips_nothing(world):
     """CO-2 (API): 'Added 12,342; 3 were already there'."""
     factory, owner, _, case_id, dossier_id, _ = world
@@ -114,7 +163,7 @@ def test_more_than_the_limit_in_one_request_is_refused_and_nothing_is_added(worl
 
 
 def test_remove_one_link_writes_an_event_and_leaves_the_rest(world):
-    factory, owner, _, _, dossier_id, entries = world
+    factory, owner, _, case_id, dossier_id, entries = world
     with factory() as db:
         user = db.get(User, owner)
         dossier_service.add_links(db, dossier_id=dossier_id, user=user, links=_entry_links(entries))
@@ -173,7 +222,7 @@ def test_routes_add_and_delete(world):
     from routers import dossiers
     from routers.users import get_current_db_user
 
-    factory, owner, _, _, dossier_id, entries = world
+    factory, owner, _, case_id, dossier_id, entries = world
     app = FastAPI()
     app.include_router(dossiers.router)
 
@@ -187,6 +236,9 @@ def test_routes_add_and_delete(world):
     response = client.post(f"/api/dossiers/{dossier_id}/links:add", json={"links": _entry_links(entries[:2])})
     assert response.status_code == 200, response.text
     assert (response.json()["added"], response.json()["skipped"]) == (2, 0)
+    membership = client.get("/api/dossiers", params={"case_id": str(case_id), "linked_entry_id": str(entries[0])})
+    assert membership.status_code == 200
+    assert [item["id"] for item in membership.json()["dossiers"]] == [str(dossier_id)]
     again = client.post(f"/api/dossiers/{dossier_id}/links:add", json={"links": _entry_links(entries[:2])})
     assert (again.json()["added"], again.json()["skipped"]) == (0, 2)
     refused = client.post(f"/api/dossiers/{dossier_id}/links:add",

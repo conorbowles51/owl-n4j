@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { SearchResult } from "../api"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 
 /** Loupe-wide search dialog (03 section 11.4) with the server stubbed. Synthetic data only. */
 const api = vi.hoisted(() => ({ searchCase: vi.fn() }))
@@ -37,13 +38,18 @@ function Where() {
   )
 }
 
-function page() {
+function DirtyGuard({ dirty }: { dirty: boolean }) {
+  useUnsavedHistoryGuard(dirty)
+  return null
+}
+
+function page(dirty = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/cases/case-1/graph"]}>
         <Routes>
-          <Route path="*" element={<><SearchDialog caseId="case-1" /><Where /></>} />
+          <Route path="*" element={<><DirtyGuard dirty={dirty} /><SearchDialog caseId="case-1" /><Where /></>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -58,6 +64,18 @@ async function openAndType(text: string) {
 }
 
 describe("Search dialog", () => {
+  it("keeps unsaved work and search results when leaving through a hit is cancelled", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
+    page(true)
+    await openAndType("jose")
+    const target = await screen.findByRole("option", { name: /^C3 WhatsApp message/ })
+    fireEvent.click(target)
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(screen.getByTestId("where")).toHaveTextContent("/cases/case-1/graph")
+    expect(screen.getByPlaceholderText("Search words, names, numbers or accounts")).toBeInTheDocument()
+    confirm.mockRestore()
+  })
+
   beforeEach(() => {
     // cmdk and the dialog measure their lists; jsdom has no ResizeObserver and no scrollIntoView
     window.ResizeObserver = class {

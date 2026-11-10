@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { renderHook, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, expect, it, vi } from "vitest"
@@ -77,4 +77,19 @@ it("a note saved or edited in casework shows on the entity's Notebook card witho
   await update.result.current.mutateAsync({ entryId: "n-1", input: { body: "y" } as never })
   await waitFor(() => expect(card.result.current.data?.total).toBe(2))
   expect(listTarget).toHaveBeenCalledTimes(3)
+})
+
+it("refreshes open dossiers when a casework reference is changed", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const w = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  let references = 0
+  const detail = renderHook(() => useQuery({ queryKey: ["dossiers", "detail", "dossier-1"], queryFn: async () => ({ references }) }), { wrapper: w })
+  const list = renderHook(() => useQuery({ queryKey: ["dossiers", "list", "case-a", {}], queryFn: async () => ({ references }) }), { wrapper: w })
+  await waitFor(() => expect(detail.result.current.data?.references).toBe(0))
+  await waitFor(() => expect(list.result.current.data?.references).toBe(0))
+  vi.spyOn(caseworkAPI, "update").mockImplementation(async () => { references = 1; return { id: "n-1" } as never })
+  const update = renderHook(() => useUpdateCaseworkEntry("case-a"), { wrapper: w })
+  await update.result.current.mutateAsync({ entryId: "n-1", input: { expected_version: 1, body: "Updated" } })
+  await waitFor(() => expect(detail.result.current.data?.references).toBe(1))
+  expect(list.result.current.data?.references).toBe(1)
 })

@@ -79,6 +79,7 @@ export function useCreateTask(caseId: string) {
     onSuccess: () => Promise.all([
       qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
       qc.invalidateQueries({ queryKey: keys.work(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "work-item"] }),
       qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
     ]),
   })
@@ -97,6 +98,7 @@ export function useUpdateTask(caseId: string) {
     onSuccess: () => Promise.all([
       qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
       qc.invalidateQueries({ queryKey: keys.work(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "work-item"] }),
       qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
     ]),
   })
@@ -109,6 +111,7 @@ export function useDeleteTask(caseId: string) {
     onSuccess: () => Promise.all([
       qc.invalidateQueries({ queryKey: keys.tasks(caseId) }),
       qc.invalidateQueries({ queryKey: keys.work(caseId) }),
+      qc.invalidateQueries({ queryKey: ["workspace", caseId, "work-item"] }),
       qc.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
     ]),
   })

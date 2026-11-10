@@ -149,6 +149,24 @@ def _find(items, source_id: UUID | str):
     return next(item for item in items if item["source_id"] == str(source_id))
 
 
+def test_completed_deadlines_leave_attention_and_upcoming_work_until_reopened(db):
+    case, owner, editor, _viewer = _case_with_members(db)
+    now = datetime(2026, 11, 10, 12, tzinfo=timezone.utc)
+    overdue = CaseDeadline(case_id=case.id, name="Filed yesterday", due_date=date(2026, 11, 9), completed_at=now)
+    upcoming = CaseDeadline(case_id=case.id, name="Filed early", due_date=date(2026, 11, 11), completed_at=now)
+    db.add_all([overdue, upcoming])
+    db.commit()
+    overview = get_workspace_overview(db, case_id=case.id, user=editor, now=now)
+    assert not any(item["source_type"] == "deadline" for item in overview["shared_attention"])
+    assert overview["upcoming_work"]["deadlines"] == []
+    assert overview["upcoming_work"]["past_deadline_total"] == 0
+    from services.deadline_service import update_deadline
+    update_deadline(db, upcoming.id, case.id, owner, completed=False)
+    reopened = get_workspace_overview(db, case_id=case.id, user=editor, now=now)
+    assert reopened["upcoming_work"]["upcoming_deadline_total"] == 1
+    assert _find(reopened["shared_attention"], upcoming.id)["reason_code"] == "deadline_due_soon"
+
+
 def test_ranking_is_deterministic_and_respects_boundary_dates_and_ties(db):
     case, owner, editor, _viewer = _case_with_members(db)
     now = datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)

@@ -28,7 +28,7 @@ from postgres.models.timeline_view import TimelineViewEvent
 from postgres.models.user import User
 from postgres.models.work import CaseTask
 from postgres import link_types
-from postgres.models.workspace_entry import WorkspaceEntry
+from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from services.case_service import check_case_access, get_case_if_allowed
 from services.significant_service import add_significant_entities
 
@@ -272,8 +272,20 @@ def serialize_dossier(db: Session, dossier: CaseProfile, *, detail: bool = True,
         assessments = db.scalars(select(DossierAssessment).where(DossierAssessment.dossier_id == dossier.id).order_by(DossierAssessment.created_at.desc())).all()
         media = db.scalars(select(DossierMedia).where(DossierMedia.dossier_id == dossier.id).order_by(DossierMedia.ordinal, DossierMedia.created_at)).all()
         interviews = db.scalars(select(DossierInterview).where(DossierInterview.dossier_id == dossier.id).order_by(DossierInterview.interview_date.desc().nullslast(), DossierInterview.created_at.desc())).all()
+        incoming_casework = db.execute(
+            select(WorkspaceEntry.id, WorkspaceEntry.title, WorkspaceEntry.entry_type,
+                   func.substr(WorkspaceEntry.body, 1, 100).label("excerpt"), WorkspaceEntryLink.relationship_type.label("relationship"))
+            .join(WorkspaceEntryLink, WorkspaceEntryLink.entry_id == WorkspaceEntry.id)
+            .where(WorkspaceEntry.case_id == dossier.case_id, WorkspaceEntry.deleted_at.is_(None),
+                   WorkspaceEntryLink.case_id == dossier.case_id, WorkspaceEntryLink.target_type == "dossier",
+                   WorkspaceEntryLink.target_id == str(dossier.id))
+            .order_by(WorkspaceEntry.updated_at.desc(), WorkspaceEntry.id)
+        ).all()
         result.update({
             "links": [_serialize_link(link) for link in links],
+            "incoming_casework": [{"id": str(row.id), "title": row.title or row.excerpt or "Untitled casework",
+                                   "entry_type": row.entry_type, "relationship": row.relationship}
+                                  for row in incoming_casework],
             "assessments": [_serialize_assessment(db, item) for item in assessments],
             "media": [_serialize_media(item) for item in media],
             "interviews": [_serialize_interview(db, item) for item in interviews],
@@ -284,6 +296,7 @@ def serialize_dossier(db: Session, dossier: CaseProfile, *, detail: bool = True,
 def list_dossiers(db: Session, *, case_id: uuid.UUID, user: User, query: str | None = None,
                   dossier_type: str | None = None, linkage_state: str | None = None,
                   linked_evidence_file_id: uuid.UUID | None = None, canonical_entity_key: str | None = None,
+                  linked_entry_id: uuid.UUID | None = None,
                   include_archived: bool = False, limit: int = 50, offset: int = 0) -> dict[str, Any]:
     get_case_if_allowed(db, case_id, user)
     conditions = [CaseProfile.case_id == case_id]
@@ -302,6 +315,16 @@ def list_dossiers(db: Session, *, case_id: uuid.UUID, user: User, query: str | N
                     DossierLink.case_id == case_id,
                     DossierLink.target_type == "evidence",
                     DossierLink.target_id == str(linked_evidence_file_id),
+                )
+            )
+        )
+    if linked_entry_id:
+        conditions.append(
+            CaseProfile.id.in_(
+                select(DossierLink.dossier_id).where(
+                    DossierLink.case_id == case_id,
+                    DossierLink.target_type == "entry",
+                    DossierLink.target_id == str(linked_entry_id),
                 )
             )
         )

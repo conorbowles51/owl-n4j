@@ -23,13 +23,13 @@ from postgres.models.dossier import (
 from postgres.models.evidence import EvidenceFile
 from postgres.models.user import User
 from postgres.models.work import CaseTask
-from postgres.models.workspace_entry import WorkspaceEntry
+from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from services import dossier_service
 from services.case_service import CaseAccessDenied
 
 
 TABLES = [
-    User.__table__, Case.__table__, EvidenceFile.__table__, WorkspaceEntry.__table__,
+    User.__table__, Case.__table__, EvidenceFile.__table__, WorkspaceEntry.__table__, WorkspaceEntryLink.__table__,
     CaseDeadline.__table__, CaseTask.__table__,
     CaseProfile.__table__, DossierRole.__table__, DossierLink.__table__,
     DossierAssessment.__table__, DossierAssessmentLink.__table__, DossierMedia.__table__,

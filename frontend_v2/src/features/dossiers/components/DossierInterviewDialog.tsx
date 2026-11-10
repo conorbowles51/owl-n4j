@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 import { phoneLinkSummary } from "@/features/phones/phone-links"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -41,13 +42,20 @@ export function DossierInterviewDialog({
   const [participants, setParticipants] = useState(
     interview ? initialPeople.names.join(", ") : dossier.display_name
   )
-  const [interviewedBy, setInterviewedBy] = useState(initialPeople.interviewedBy)
+  const [interviewedBy, setInterviewedBy] = useState(
+    initialPeople.interviewedBy
+  )
   const [notes, setNotes] = useState(interview?.working_notes ?? "")
   const [error, setError] = useState("")
   // Evidence files are edited here; phone records, analyses and statement checks attached elsewhere are kept
   // unchanged and listed, so an edit never drops them.
   const [sources, setSources] = useState<
-    Array<{ id: string; label: string; source_anchor: Record<string, unknown>; target_type?: string }>
+    Array<{
+      id: string
+      label: string
+      source_anchor: Record<string, unknown>
+      target_type?: string
+    }>
   >(
     (interview?.evidence_links ?? []).map((link) =>
       link.evidence_file_id
@@ -80,12 +88,20 @@ export function DossierInterviewDialog({
             : date
       const input = {
         date_value: value,
-        participants: buildParticipants(participants, interviewedBy, interview?.participants),
+        participants: buildParticipants(
+          participants,
+          interviewedBy,
+          interview?.participants
+        ),
         working_notes: notes || null,
         status: interview?.status ?? "completed",
         evidence_links: sources.map((item) =>
           item.target_type
-            ? { target_type: item.target_type, target_id: item.id, source_anchor: item.source_anchor }
+            ? {
+                target_type: item.target_type,
+                target_id: item.id,
+                source_anchor: item.source_anchor,
+              }
             : { evidence_file_id: item.id, source_anchor: item.source_anchor }
         ),
       }
@@ -94,6 +110,22 @@ export function DossierInterviewDialog({
         : dossiersAPI.createInterview(dossier.id, input)
     }
   )
+  const snapshot = JSON.stringify([
+    precision,
+    date,
+    participants,
+    interviewedBy,
+    notes,
+    sources,
+  ])
+  const [original] = useState(snapshot)
+  const dirty = snapshot !== original
+  const discardMessage = "Discard your unsaved interview or statement changes?"
+  useUnsavedHistoryGuard(dirty || mutation.isPending, discardMessage)
+  const close = () => {
+    if (!mutation.isPending && (!dirty || window.confirm(discardMessage)))
+      onClose()
+  }
   const save = async (event: React.FormEvent) => {
     event.preventDefault()
     setError("")
@@ -113,10 +145,13 @@ export function DossierInterviewDialog({
     <Dialog
       open
       onOpenChange={(value) => {
-        if (!value && !mutation.isPending) onClose()
+        if (!value) close()
       }}
     >
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
+      <DialogContent
+        guardTypedContent={false}
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl"
+      >
         <DialogHeader>
           <DialogTitle>
             {interview
@@ -129,147 +164,149 @@ export function DossierInterviewDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => void save(event)} className="space-y-4">
-          <div className="grid gap-2">
-            <Label htmlFor="interview-precision">Date precision</Label>
-            <select
-              id="interview-precision"
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={precision}
-              disabled={mutation.isPending}
-              onChange={(event) => {
-                setPrecision(event.target.value as InterviewDatePrecision)
-                setDate("")
-              }}
-            >
-              <option value="unknown">Date unknown</option>
-              <option value="year">Year only</option>
-              <option value="month">Month and year</option>
-              <option value="day">Full date</option>
-              <option value="time">Date and time</option>
-            </select>
-          </div>
-          {precision !== "unknown" && (
+          <fieldset disabled={mutation.isPending} className="min-w-0 space-y-4">
             <div className="grid gap-2">
-              <Label htmlFor="interview-date">
-                {precision === "year"
-                  ? "Year"
-                  : precision === "month"
-                    ? "Month and year"
-                    : precision === "day"
-                      ? "Date"
-                      : "Date and time"}
-              </Label>
-              <Input
-                id="interview-date"
-                required
+              <Label htmlFor="interview-precision">Date precision</Label>
+              <select
+                id="interview-precision"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={precision}
                 disabled={mutation.isPending}
-                type={
-                  precision === "year"
-                    ? "text"
-                    : precision === "time"
-                      ? "datetime-local"
+                onChange={(event) => {
+                  setPrecision(event.target.value as InterviewDatePrecision)
+                  setDate("")
+                }}
+              >
+                <option value="unknown">Date unknown</option>
+                <option value="year">Year only</option>
+                <option value="month">Month and year</option>
+                <option value="day">Full date</option>
+                <option value="time">Date and time</option>
+              </select>
+            </div>
+            {precision !== "unknown" && (
+              <div className="grid gap-2">
+                <Label htmlFor="interview-date">
+                  {precision === "year"
+                    ? "Year"
+                    : precision === "month"
+                      ? "Month and year"
                       : precision === "day"
-                        ? "date"
-                        : "month"
-                }
-                inputMode={precision === "year" ? "numeric" : undefined}
-                pattern={precision === "year" ? "[0-9]{4}" : undefined}
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                placeholder={precision === "year" ? "2025" : undefined}
+                        ? "Date"
+                        : "Date and time"}
+                </Label>
+                <Input
+                  id="interview-date"
+                  required
+                  disabled={mutation.isPending}
+                  type={
+                    precision === "year"
+                      ? "text"
+                      : precision === "time"
+                        ? "datetime-local"
+                        : precision === "day"
+                          ? "date"
+                          : "month"
+                  }
+                  inputMode={precision === "year" ? "numeric" : undefined}
+                  pattern={precision === "year" ? "[0-9]{4}" : undefined}
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  placeholder={precision === "year" ? "2025" : undefined}
+                />
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Label htmlFor="interview-participants">Participants</Label>
+              <Input
+                id="interview-participants"
+                value={participants}
+                disabled={mutation.isPending}
+                onChange={(event) => setParticipants(event.target.value)}
+                placeholder="Comma-separated names"
               />
             </div>
-          )}
-          <div className="grid gap-2">
-            <Label htmlFor="interview-participants">Participants</Label>
-            <Input
-              id="interview-participants"
-              value={participants}
-              disabled={mutation.isPending}
-              onChange={(event) => setParticipants(event.target.value)}
-              placeholder="Comma-separated names"
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="interview-interviewed-by">Interviewed by</Label>
-            <Input
-              id="interview-interviewed-by"
-              value={interviewedBy}
-              disabled={mutation.isPending}
-              onChange={(event) => setInterviewedBy(event.target.value)}
-              placeholder="e.g. county police, deposition, trial testimony, our investigator"
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="interview-notes">Working notes</Label>
-            <Textarea
-              id="interview-notes"
-              rows={5}
-              value={notes}
-              disabled={mutation.isPending}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Source evidence</Label>
-            {sources.map((item) => (
-              <div
-                key={item.id}
-                className="flex min-w-0 items-center gap-2 rounded border p-2 text-xs"
-              >
-                <span className="min-w-0 flex-1 break-all">{item.label}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={mutation.isPending}
-                  onClick={() =>
-                    setSources((items) =>
-                      items.filter((value) => value.id !== item.id)
-                    )
-                  }
+            <div className="grid gap-2">
+              <Label htmlFor="interview-interviewed-by">Interviewed by</Label>
+              <Input
+                id="interview-interviewed-by"
+                value={interviewedBy}
+                disabled={mutation.isPending}
+                onChange={(event) => setInterviewedBy(event.target.value)}
+                placeholder="e.g. county police, deposition, trial testimony, our investigator"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="interview-notes">Working notes</Label>
+              <Textarea
+                id="interview-notes"
+                rows={5}
+                value={notes}
+                disabled={mutation.isPending}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Source evidence</Label>
+              {sources.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex min-w-0 items-center gap-2 rounded border p-2 text-xs"
                 >
-                  Remove
-                </Button>
-              </div>
-            ))}
-            <DossierEvidencePicker
-              caseId={dossier.case_id}
-              selectedIds={sources.map((item) => item.id)}
-              onSelect={(item) =>
-                setSources((items) => [
-                  ...items,
-                  { ...item, source_anchor: {} },
-                ])
-              }
-            />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={mutation.isPending}
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={mutation.isPending || !sources.length}
-            >
-              {mutation.isPending
-                ? "Saving…"
-                : interview
-                  ? "Save interview"
-                  : "Add interview"}
-            </Button>
-          </DialogFooter>
+                  <span className="min-w-0 flex-1 break-all">{item.label}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={mutation.isPending}
+                    onClick={() =>
+                      setSources((items) =>
+                        items.filter((value) => value.id !== item.id)
+                      )
+                    }
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <DossierEvidencePicker
+                caseId={dossier.case_id}
+                selectedIds={sources.map((item) => item.id)}
+                onSelect={(item) =>
+                  setSources((items) => [
+                    ...items,
+                    { ...item, source_anchor: {} },
+                  ])
+                }
+              />
+            </div>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={mutation.isPending}
+                onClick={close}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={mutation.isPending || !sources.length}
+              >
+                {mutation.isPending
+                  ? "Saving…"
+                  : interview
+                    ? "Save interview"
+                    : "Add interview"}
+              </Button>
+            </DialogFooter>
+          </fieldset>
         </form>
       </DialogContent>
     </Dialog>

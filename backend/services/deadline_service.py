@@ -6,7 +6,7 @@ Provides deadline management with permission checks via case_service.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import func
@@ -63,8 +63,9 @@ def update_deadline(
     user: User,
     name: str | None = None,
     due_date: date | None = None,
+    completed: bool | None = None,
 ) -> CaseDeadline:
-    """Update a deadline's name and/or due_date. Requires case.edit."""
+    """Edit, complete or reopen a deadline. Requires case.edit."""
     check_case_access(db, case_id, user, required_permission=("case", "edit"))
 
     deadline = (
@@ -79,6 +80,10 @@ def update_deadline(
         deadline.name = name
     if due_date is not None:
         deadline.due_date = due_date
+    if completed is True and deadline.completed_at is None:
+        deadline.completed_at = datetime.now(timezone.utc)
+    elif completed is False:
+        deadline.completed_at = None
 
     db.commit()
     db.refresh(deadline)
@@ -131,6 +136,7 @@ def get_next_deadline_for_cases(
         .filter(
             CaseDeadline.case_id.in_(case_ids),
             CaseDeadline.due_date >= today,
+            CaseDeadline.completed_at.is_(None),
         )
         .group_by(CaseDeadline.case_id)
         .subquery()
@@ -144,6 +150,7 @@ def get_next_deadline_for_cases(
             (CaseDeadline.case_id == subq.c.case_id)
             & (CaseDeadline.due_date == subq.c.min_date),
         )
+        .filter(CaseDeadline.completed_at.is_(None))
         .all()
     )
 

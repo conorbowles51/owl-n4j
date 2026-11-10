@@ -134,6 +134,7 @@ export interface CaseWorkResponse {
     case_id: string
     name: string
     due_date: string
+    completed_at?: string | null
     created_by_user_id?: string | null
     created_at?: string | null
     updated_at?: string | null
@@ -333,6 +334,14 @@ export const workspaceAPI = {
     fetchAPI<{ tasks: InvestigationTask[]; total: number }>(
       `/api/workspace/${caseId}/tasks`,
     ).then((r) => r.tasks ?? []),
+
+  getParentTaskOptions: (caseId: string, search = "", offset = 0) => {
+    const params = new URLSearchParams({ parent_candidates: "true", limit: "50", offset: String(offset) })
+    if (search.trim()) params.set("search", search.trim())
+    return fetchAPI<{ tasks: InvestigationTask[]; total: number; limit: number; offset: number }>(
+      `/api/workspace/${caseId}/tasks?${params}`,
+    )
+  },
 
   getTask: (caseId: string, taskId: string) => fetchAPI<InvestigationTask>(`/api/workspace/${caseId}/tasks/${encodeURIComponent(taskId)}`),
 

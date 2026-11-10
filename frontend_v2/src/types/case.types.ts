@@ -29,6 +29,7 @@ export interface CaseDeadline {
   case_id: string
   name: string
   due_date: string
+  completed_at?: string | null
   created_by_user_id: string | null
   created_at: string
   updated_at: string

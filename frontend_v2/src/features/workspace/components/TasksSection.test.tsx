@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { CaseWorkResponse } from "../api"
 import { TasksSection } from "./TasksSection"
 import { workDateLabel } from "../work-date"
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  updateDeadline: vi.fn(),
 }))
 
 const work: CaseWorkResponse = {
@@ -75,20 +76,47 @@ vi.mock("@/features/cases/hooks/use-case-members", () => ({
   }),
 }))
 
-vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: null }) }))
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: ({ queryKey }: { queryKey: string[] }) => ({
+    data:
+      queryKey[0] === "deadlines"
+        ? work.deadlines
+        : queryKey.includes("parent-options")
+          ? {
+              tasks: work.tasks,
+              total: work.tasks.length,
+              limit: 50,
+              offset: 0,
+            }
+          : null,
+  }),
+}))
 vi.mock("@/features/cases/hooks/use-deadlines", () => ({
   useCreateDeadline: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateDeadline: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateDeadline: () => ({
+    mutateAsync: mocks.updateDeadline,
+    isPending: false,
+  }),
   useDeleteDeadline: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 describe("TasksSection", () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    )
     mocks.work.mockReset().mockReturnValue({ data: work, isLoading: false })
     mocks.create.mockReset().mockResolvedValue({ id: "new-task" })
     mocks.update.mockReset().mockResolvedValue({})
     mocks.remove.mockReset().mockResolvedValue({})
+    mocks.updateDeadline.mockReset().mockResolvedValue({})
   })
+  afterEach(() => vi.unstubAllGlobals())
   it("includes tasks without due dates alongside deadlines by default", () => {
     render(<TasksSection caseId="case-1" canEdit />)
     expect(
@@ -101,7 +129,7 @@ describe("TasksSection", () => {
       screen.getByRole("button", { name: "Open Review statement" })
     ).toBeInTheDocument()
     expect(
-      screen.getByRole("heading", { name: "No due date" })
+      screen.getByRole("heading", { name: "Completed" })
     ).toBeInTheDocument()
   })
   it("creates a task from the shared Add new action and retains its links", async () => {
@@ -178,5 +206,102 @@ describe("TasksSection", () => {
       /^Overdue/
     )
     expect(workDateLabel(null)).toBe("No due date")
+    expect(
+      workDateLabel("2026-10-18", new Date(2026, 9, 19, 16), true)
+    ).not.toContain("Overdue")
+    expect(workDateLabel("invalid-date")).toBe("Date unavailable")
+  })
+
+  it("completes a deadline without deleting it or completing its linked tasks", async () => {
+    render(<TasksSection caseId="case-1" canEdit />)
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark Disclosure complete" })
+    )
+    await waitFor(() =>
+      expect(mocks.updateDeadline).toHaveBeenCalledWith({
+        deadlineId: "deadline-1",
+        data: { completed: true },
+      })
+    )
+    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.remove).not.toHaveBeenCalled()
+  })
+
+  it("keeps a failed completion visible and retries the same change", async () => {
+    mocks.updateDeadline.mockRejectedValueOnce(
+      new Error("Connection interrupted")
+    )
+    render(<TasksSection caseId="case-1" canEdit />)
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Mark Disclosure complete" })
+    )
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "was not changed"
+    )
+    expect(
+      screen.getByRole("checkbox", { name: "Mark Disclosure complete" })
+    ).not.toBeChecked()
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    await waitFor(() => expect(mocks.updateDeadline).toHaveBeenCalledTimes(2))
+    expect(mocks.updateDeadline.mock.calls[1][0]).toEqual({
+      deadlineId: "deadline-1",
+      data: { completed: true },
+    })
+  })
+
+  it("reopens completed deadlines and does not call their old dates overdue", async () => {
+    mocks.work.mockReturnValue({
+      data: {
+        ...work,
+        deadlines: [
+          { ...work.deadlines[0], completed_at: "2026-10-01T12:00:00Z" },
+        ],
+      },
+    })
+    render(<TasksSection caseId="case-1" canEdit />)
+    expect(
+      screen.getByRole("button", { name: "Open Disclosure" })
+    ).not.toHaveTextContent("Overdue")
+    fireEvent.click(screen.getByRole("checkbox", { name: "Reopen Disclosure" }))
+    await waitFor(() =>
+      expect(mocks.updateDeadline).toHaveBeenCalledWith({
+        deadlineId: "deadline-1",
+        data: { completed: false },
+      })
+    )
+  })
+
+  it("clears task-only filters when selecting deadlines", () => {
+    render(<TasksSection caseId="case-1" canEdit />)
+    fireEvent.change(screen.getByLabelText("Assignee"), {
+      target: { value: "editor-1" },
+    })
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "in_progress" },
+    })
+    fireEvent.change(screen.getByLabelText("Type"), {
+      target: { value: "deadlines" },
+    })
+    expect(
+      screen.getByRole("button", { name: "Open Disclosure" })
+    ).toBeVisible()
+    expect(screen.getByLabelText("Assignee")).toBeDisabled()
+    expect(screen.getByLabelText("Status")).toHaveValue("all")
+  })
+
+  it("uses case-wide linking choices even when the work list is filtered empty", () => {
+    mocks.work.mockReturnValue({ data: { ...work, tasks: [], deadlines: [] } })
+    render(<TasksSection caseId="case-1" canEdit />)
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "in_progress" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Add new" }))
+    fireEvent.click(screen.getByRole("button", { name: "Task" }))
+    expect(
+      screen.getByRole("option", { name: /Disclosure/ })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("option", { name: "Trace transfers" })
+    ).toBeInTheDocument()
   })
 })

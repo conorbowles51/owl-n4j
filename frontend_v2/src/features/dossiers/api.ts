@@ -83,7 +83,11 @@ export interface InterviewEvidenceLink {
 }
 export type InterviewEvidenceInput =
   | { evidence_file_id: string; source_anchor?: Record<string, unknown> }
-  | { target_type: string; target_id: string; source_anchor?: Record<string, unknown> }
+  | {
+      target_type: string
+      target_id: string
+      source_anchor?: Record<string, unknown>
+    }
 export interface DossierInterview {
   id: string
   date_value?: string | null
@@ -143,6 +147,8 @@ export interface Dossier {
   created_at?: string | null
   updated_at?: string | null
   links?: DossierLink[]
+  /** Entry-owned references. Managed in the entry, never removed through dossier links. */
+  incoming_casework?: Array<{ id: string; title: string; entry_type: "note" | "finding" | "theory"; relationship: string }>
   assessments?: DossierAssessment[]
   media?: DossierMedia[]
   interviews?: DossierInterview[]
@@ -189,12 +195,13 @@ export const dossiersAPI = {
     linkageState?: string
     canonicalEntityKey?: string
     linkedEvidenceFileId?: string
+    linkedEntryId?: string
     includeArchived?: boolean
     limit?: number
     offset?: number
   }) =>
     fetchAPI<DossierListResponse>(
-      `/api/dossiers?${query({ case_id: params.caseId, q: params.q, dossier_type: params.dossierType, linkage_state: params.linkageState, linked_evidence_file_id: params.linkedEvidenceFileId, canonical_entity_key: params.canonicalEntityKey, include_archived: params.includeArchived, limit: params.limit, offset: params.offset })}`
+      `/api/dossiers?${query({ case_id: params.caseId, q: params.q, dossier_type: params.dossierType, linkage_state: params.linkageState, linked_evidence_file_id: params.linkedEvidenceFileId, linked_entry_id: params.linkedEntryId, canonical_entity_key: params.canonicalEntityKey, include_archived: params.includeArchived, limit: params.limit, offset: params.offset })}`
     ),
   get: (id: string) =>
     fetchAPI<Dossier>(`/api/dossiers/${encodeURIComponent(id)}`),
@@ -225,6 +232,17 @@ export const dossiersAPI = {
     fetchAPI<Dossier>(`/api/dossiers/${encodeURIComponent(id)}/links`, {
       method: "PUT",
       body: { links },
+    }),
+  addLinks: (id: string, links: LinkInput[]) =>
+    fetchAPI<{
+      dossier_id: string
+      added: number
+      skipped: number
+      added_link_ids: string[]
+      total_links: number
+    }>(`/api/dossiers/${encodeURIComponent(id)}/links:add`, {
+      method: "POST",
+      body: { links, origin: "dossier_casework" },
     }),
   addEvidence: (id: string, evidenceFileIds: string[]) =>
     fetchAPI<Dossier>(`/api/dossiers/${encodeURIComponent(id)}/evidence`, {

@@ -244,6 +244,8 @@ def list_tasks(
     assignee_user_id: UUID | None = None,
     due_before: datetime | None = None,
     include_deleted: bool = False,
+    parent_candidates: bool = False,
+    search: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -259,11 +261,16 @@ def list_tasks(
         conditions.append(CaseTask.assignee_user_id == assignee_user_id)
     if due_before:
         conditions.append(CaseTask.due_at <= due_before)
+    if parent_candidates:
+        conditions.extend([CaseTask.parent_task_id.is_(None), CaseTask.status != "done"])
+    if search and search.strip():
+        conditions.append(CaseTask.title.icontains(search.strip(), autoescape=True))
     total = int(db.scalar(select(func.count()).select_from(CaseTask).where(*conditions)) or 0)
     rows = db.scalars(
         select(CaseTask)
         .where(*conditions)
         .order_by(
+            CaseTask.status == "done",
             CaseTask.due_at.is_(None),
             CaseTask.due_at,
             CaseTask.created_at.desc(),
@@ -679,19 +686,24 @@ def get_work_view(
         )
     deadlines: list[dict[str, Any]] = []
     deadline_total = 0
-    if include_deadlines:
+    if include_deadlines and not assignee_user_id and task_status != "in_progress":
+        deadline_conditions = [CaseDeadline.case_id == case_id]
+        if task_status == "done":
+            deadline_conditions.append(CaseDeadline.completed_at.is_not(None))
+        elif task_status == "todo":
+            deadline_conditions.append(CaseDeadline.completed_at.is_(None))
         deadline_total = int(
             db.scalar(
                 select(func.count()).select_from(CaseDeadline).where(
-                    CaseDeadline.case_id == case_id
+                    *deadline_conditions
                 )
             )
             or 0
         )
         rows = db.scalars(
             select(CaseDeadline)
-            .where(CaseDeadline.case_id == case_id)
-            .order_by(CaseDeadline.due_date, CaseDeadline.name, CaseDeadline.id)
+            .where(*deadline_conditions)
+            .order_by(CaseDeadline.completed_at.is_not(None), CaseDeadline.due_date, CaseDeadline.name, CaseDeadline.id)
             .offset(max(offset, 0))
             .limit(min(max(limit, 1), 250))
         ).all()
@@ -701,6 +713,7 @@ def get_work_view(
                 "case_id": str(row.case_id),
                 "name": row.name,
                 "due_date": row.due_date.isoformat(),
+                "completed_at": row.completed_at.isoformat() if row.completed_at else None,
                 "created_by_user_id": str(row.created_by_user_id) if row.created_by_user_id else None,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,

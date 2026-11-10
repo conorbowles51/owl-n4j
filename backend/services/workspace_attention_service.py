@@ -245,7 +245,7 @@ def _shared_candidates(
 
     deadlines = (
         db.query(CaseDeadline)
-        .filter(CaseDeadline.case_id == case_id)
+        .filter(CaseDeadline.case_id == case_id, CaseDeadline.completed_at.is_(None))
         .order_by(CaseDeadline.due_date.asc(), CaseDeadline.id.asc())
         .limit(50)
         .all()
@@ -852,7 +852,9 @@ def _upcoming_work(
 ) -> dict[str, Any]:
     """The next deadlines (today onwards) and the open tasks, soonest first, with true totals."""
     local_today = now.astimezone(zone).date()
-    deadline_base = db.query(CaseDeadline).filter(CaseDeadline.case_id == case_id)
+    deadline_base = db.query(CaseDeadline).filter(
+        CaseDeadline.case_id == case_id, CaseDeadline.completed_at.is_(None)
+    )
     upcoming = (
         deadline_base.filter(CaseDeadline.due_date >= local_today)
         .order_by(CaseDeadline.due_date.asc(), CaseDeadline.id.asc())

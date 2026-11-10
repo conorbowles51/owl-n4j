@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { dossiersAPI } from "../api"
 import { useEffect, useState } from "react"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 import { GitBranch, Link2Off, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -69,7 +70,27 @@ export function DossierCreateSheet({
   const [importance, setImportance] = useState("")
   const [roles, setRoles] = useState<string[]>([])
   const [customRole, setCustomRole] = useState("")
+  const [error, setError] = useState("")
+  const snapshot = JSON.stringify([
+    mode,
+    entity,
+    name,
+    type,
+    summary,
+    importance,
+    roles,
+    customRole,
+  ])
+  const [original, setOriginal] = useState(snapshot)
+  const dirty = snapshot !== original
   const create = useCreateDossier(caseId)
+  const discardMessage = "Discard your unsaved new dossier?"
+  useUnsavedHistoryGuard(open && (dirty || create.isPending), discardMessage)
+  const canLeave = () =>
+    !create.isPending && (!dirty || window.confirm(discardMessage))
+  const changeOpen = (next: boolean) => {
+    if (next || canLeave()) onOpenChange(next)
+  }
   const existing = useQuery({
     queryKey: ["dossiers", "existing", caseId, entity?.key],
     queryFn: () =>
@@ -87,6 +108,19 @@ export function DossierCreateSheet({
       setImportance("")
       setRoles([])
       setCustomRole("")
+      setError("")
+      setOriginal(
+        JSON.stringify([
+          initialEntity ? "linked" : "unlinked",
+          initialEntity ?? null,
+          initialEntity?.name ?? "",
+          "person",
+          "",
+          "",
+          [],
+          "",
+        ])
+      )
     }
   }, [initialEntity, open])
   const canSave =
@@ -95,6 +129,7 @@ export function DossierCreateSheet({
       : Boolean(name.trim())
 
   const save = async () => {
+    setError("")
     try {
       await create.mutateAsync({
         dossier_type: type,
@@ -107,8 +142,8 @@ export function DossierCreateSheet({
       toast.success("Dossier created")
       onOpenChange(false)
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not create Dossier"
+      setError(
+        `${error instanceof Error ? error.message : "Could not create dossier"}. Your entries are kept; try again.`
       )
     }
   }
@@ -120,8 +155,11 @@ export function DossierCreateSheet({
         : [...current, role]
     )
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-xl">
+    <Sheet open={open} onOpenChange={changeOpen}>
+      <SheetContent
+        guardTypedContent={false}
+        className="w-full overflow-y-auto p-0 sm:max-w-xl"
+      >
         <SheetHeader className="border-b border-border px-5 py-4">
           <SheetTitle>New Dossier</SheetTitle>
           <SheetDescription>
@@ -129,7 +167,7 @@ export function DossierCreateSheet({
             subject and connect it later.
           </SheetDescription>
         </SheetHeader>
-        <div className="space-y-5 p-5">
+        <fieldset disabled={create.isPending} className="min-w-0 space-y-5 p-5">
           <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-1">
             {(["linked", "unlinked"] as const).map((value) => (
               <button
@@ -230,6 +268,7 @@ export function DossierCreateSheet({
                       size="sm"
                       className="mt-2"
                       onClick={() => {
+                        if (!canLeave()) return
                         onOpenChange(false)
                         onOpenExisting(existingDossier.id)
                       }}
@@ -240,6 +279,10 @@ export function DossierCreateSheet({
                     <a
                       className="mt-2 block underline"
                       href={`/cases/${caseId}/dossiers?dossier=${encodeURIComponent(existingDossier.id)}`}
+                      onClick={(event) => {
+                        if (!event.metaKey && !event.ctrlKey && !canLeave())
+                          event.preventDefault()
+                      }}
                     >
                       Open existing dossier
                     </a>
@@ -337,9 +380,18 @@ export function DossierCreateSheet({
                 </button>
               ))}
           </div>
-        </div>
+        </fieldset>
+        {error && (
+          <p role="alert" className="px-5 pb-4 text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-background/95 p-4 backdrop-blur">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="ghost"
+            disabled={create.isPending}
+            onClick={() => changeOpen(false)}
+          >
             Cancel
           </Button>
           <Button

@@ -43,6 +43,7 @@ class DeadlineUpdateRequest(BaseModel):
 
     name: str | None = None
     due_date: date | None = None
+    completed: bool | None = None
 
 
 class DeadlineResponse(BaseModel):
@@ -52,6 +53,7 @@ class DeadlineResponse(BaseModel):
     case_id: UUID
     name: str
     due_date: date
+    completed_at: datetime | None = None
     created_by_user_id: UUID | None
     created_at: datetime
     updated_at: datetime
@@ -141,6 +143,7 @@ def update_existing_deadline(
             user=current_user,
             name=request.name,
             due_date=request.due_date,
+            completed=request.completed,
         )
         return deadline
     except CaseNotFound:

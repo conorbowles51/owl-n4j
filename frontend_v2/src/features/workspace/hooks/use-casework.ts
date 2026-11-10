@@ -56,6 +56,10 @@ function useRefreshCasework(caseId: string) {
     // The graph's per-entity Notebook card reads the same entries through the notebook queries; without this a
     // note saved here stays missing from that card until its cache expires (BUG-007, "notes disappearing").
     queryClient.invalidateQueries({ queryKey: ["notebook", caseId] }),
+    // Dossiers also read entry-owned references. Reflect changes made here in
+    // both the dossier index and any dossier that is already open.
+    queryClient.invalidateQueries({ queryKey: ["dossiers", "list", caseId] }),
+    queryClient.invalidateQueries({ queryKey: ["dossiers", "detail"] }),
   ])
 }
 

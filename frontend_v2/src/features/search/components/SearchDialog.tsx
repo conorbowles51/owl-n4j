@@ -8,6 +8,7 @@ import { saveKeywordList, searchCase, splitTerms, type PaymentTotals, type Searc
 import { formatLedgerAmount } from "@/features/financial/lib/ledger-format"
 import { GROUP_KINDS, GROUP_NAMES, rememberQuery, recentQueries } from "../lib/search-words"
 import { conversationsWithText, hitPath } from "../lib/open-hit"
+import { confirmUnsavedNavigation } from "@/hooks/use-unsaved-history-guard"
 
 /**
  * Loupe-wide search (03 section 11.4): Cmd/Ctrl+K anywhere in a case. Every group shows its exact total and its
@@ -80,6 +81,7 @@ export function SearchDialog({ caseId, initialOpen = false }: { caseId: string; 
   }, [shown])
 
   const go = (path: string) => {
+    if (!confirmUnsavedNavigation()) return
     rememberQuery(q)
     // this entry remembers the search, so Back to it shows the same results at the same place (S-9)
     navigate(`${location.pathname}${location.search}${location.hash}`, {

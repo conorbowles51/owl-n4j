@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useDossiers } from "@/features/dossiers/hooks"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 import {
   useCaseContext,
   useCreateMandateVersion,
@@ -199,24 +200,12 @@ export function CaseContextSection({ caseId, canEdit, onDirtyChange }: Props) {
   const dirty =
     (editingContext && JSON.stringify(draft) !== baseline) ||
     (editingMandate && JSON.stringify(mandate) !== baseline)
+  useUnsavedHistoryGuard(dirty, "Discard your unsaved setup changes?")
 
   useEffect(() => {
     onDirtyChange?.(dirty)
     return () => onDirtyChange?.(false)
   }, [dirty, onDirtyChange])
-
-  useEffect(() => {
-    if (!dirty) return
-
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ""
-    }
-
-    window.addEventListener("beforeunload", warn)
-
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [dirty])
 
   const activeTemplate = useMemo(
     () =>
@@ -373,8 +362,8 @@ export function CaseContextSection({ caseId, canEdit, onDirtyChange }: Props) {
   ] as const
 
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-2">
-      <section className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm">
+    <div className="grid items-start gap-10 xl:grid-cols-2">
+      <section className="min-w-0 border-t border-border/70 pt-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Case Summary</h2>
@@ -573,7 +562,7 @@ export function CaseContextSection({ caseId, canEdit, onDirtyChange }: Props) {
         )}
       </section>
 
-      <section className="min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <section className="min-w-0 border-t border-border/70 pt-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Objective</h2>

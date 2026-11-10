@@ -37,7 +37,7 @@ function addedWords(a: Addition): string {
   return `Added by ${a.added_by || "someone"}${when ? ` · ${when}` : ""}`
 }
 
-export function TheoryReadingSection({ caseId, entryId }: { caseId: string; entryId: string }) {
+export function TheoryReadingSection({ caseId, entryId, onBeforeNavigate }: { caseId: string; entryId: string; onBeforeNavigate?: () => boolean }) {
   const reading = useQuery({ queryKey: ["theory-reading", caseId, entryId], queryFn: () => theoryAPI.reading(caseId, entryId), enabled: !!entryId })
   const [lens, setLens] = useState<Addition | null>(null)
   const [whole, setWhole] = useState<"timeline" | "graph" | "map" | null>(null)
@@ -74,7 +74,7 @@ export function TheoryReadingSection({ caseId, entryId }: { caseId: string; entr
               </Button>
             ))}
           </div>
-          {whole && <TheoryWhole caseId={caseId} entryId={entryId} view={whole} />}
+          {whole && <TheoryWhole caseId={caseId} entryId={entryId} view={whole} onBeforeNavigate={onBeforeNavigate} />}
         </div>
       )}
       <h3 className="text-sm font-semibold">
@@ -91,7 +91,7 @@ export function TheoryReadingSection({ caseId, entryId }: { caseId: string; entr
                   <Button size="sm" variant="outline" onClick={() => setLens(a)}>
                     View through the Loupe
                   </Button>
-                  <OpenSource caseId={caseId} entryId={entryId} a={a} />
+                  <OpenSource caseId={caseId} entryId={entryId} a={a} onBeforeNavigate={onBeforeNavigate} />
                 </div>
               </div>
               {a.why && <p className="text-sm">Why: {a.why}</p>}
@@ -113,22 +113,22 @@ export function TheoryReadingSection({ caseId, entryId }: { caseId: string; entr
           ))}
         </div>
       ))}
-      {lens && <LoupeDialog caseId={caseId} entryId={entryId} addition={lens} onClose={() => setLens(null)} />}
+      {lens && <LoupeDialog caseId={caseId} entryId={entryId} addition={lens} onClose={() => setLens(null)} onBeforeNavigate={onBeforeNavigate} />}
     </section>
   )
 }
 
-function OpenSource({ caseId, entryId, a }: { caseId: string; entryId: string; a: Addition }) {
+function OpenSource({ caseId, entryId, a, onBeforeNavigate }: { caseId: string; entryId: string; a: Addition; onBeforeNavigate?: () => boolean }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const open = useOpenGroup(caseId)
+  const open = useOpenGroup(caseId, onBeforeNavigate)
   const [error, setError] = useState<string | null>(null)
   const href = a.kind === "single" && a.target_type !== "graph_entity" ? memberHref(caseId, a.target_type, a.target_id, a.source_anchor) : null
   if (href) return <a className="self-center text-xs underline underline-offset-2" href={href}>Open where it came from</a>
   if (a.target_type === "step_trail") {
     const first = ((a.how?.steps ?? []) as Step[])[0]
     return first ? (
-      <button type="button" className="self-center text-xs underline underline-offset-2" onClick={() => returnTo(caseId, first, navigate)}>
+      <button type="button" className="self-center text-xs underline underline-offset-2" onClick={() => { if (onBeforeNavigate?.() !== false) returnTo(caseId, first, navigate) }}>
         Open the first step
       </button>
     ) : null
@@ -238,8 +238,8 @@ function MemberLink({ caseId, m, words }: { caseId: string; m: Member; words: st
   return href ? <a className="underline underline-offset-2" href={href}>{words}</a> : <span>{words}</span>
 }
 
-export function LoupeDialog({ caseId, entryId, addition, onClose }: { caseId: string; entryId: string; addition: Addition; onClose: () => void }) {
-  const open = useOpenGroup(caseId)
+export function LoupeDialog({ caseId, entryId, addition, onClose, onBeforeNavigate }: { caseId: string; entryId: string; addition: Addition; onClose: () => void; onBeforeNavigate?: () => boolean }) {
+  const open = useOpenGroup(caseId, onBeforeNavigate)
   const view = useQuery({ queryKey: ["theory-loupe", caseId, entryId, addition.link_id], queryFn: () => theoryAPI.loupe(caseId, entryId, addition.link_id) })
   const data: LoupeView | undefined = view.data
   const a = data?.addition ?? addition
@@ -266,7 +266,7 @@ export function LoupeDialog({ caseId, entryId, addition, onClose }: { caseId: st
                 </p>
               )}
               {data.missing && <p role="alert" className="text-sm">{data.missing}</p>}
-              {a.target_type === "step_trail" && <TrailSteps caseId={caseId} how={data.group?.how ?? a.how} />}
+              {a.target_type === "step_trail" && <TrailSteps caseId={caseId} how={data.group?.how ?? a.how} onBeforeNavigate={onBeforeNavigate} />}
               {opensAsGroup(a.target_type) && data.members.length > 0 && (
                 <div>
                   <Button size="sm" variant="outline" onClick={() => open({ label: a.label, linkId: a.link_id, targetType: a.target_type, how: data.group?.how ?? a.how, members: data.members })}>
@@ -310,8 +310,8 @@ function describeHow(how: Record<string, unknown>): string {
   return parts.join(" · ") || "chosen by hand"
 }
 
-function TheoryWhole({ caseId, entryId, view }: { caseId: string; entryId: string; view: "timeline" | "graph" | "map" }) {
-  const open = useOpenGroup(caseId)
+function TheoryWhole({ caseId, entryId, view, onBeforeNavigate }: { caseId: string; entryId: string; view: "timeline" | "graph" | "map"; onBeforeNavigate?: () => boolean }) {
+  const open = useOpenGroup(caseId, onBeforeNavigate)
   const q = useQuery({ queryKey: ["theory-members", caseId, entryId], queryFn: () => theoryMembersAPI.get(caseId, entryId) })
   if (q.isLoading) return <p className="text-sm">Gathering what the theory holds…</p>
   if (q.error || !q.data) return <p role="alert" className="text-sm text-status-error">{q.error instanceof Error ? q.error.message : "Not available"}</p>

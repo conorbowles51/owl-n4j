@@ -2,6 +2,8 @@
 
 > Status: Implemented through Phase 8 application cutover. This remains the source of truth for the Workspace product model, acceptance criteria, verification record, and the separately gated legacy-table contract migration.
 
+> The 10 November 2026 experience revision is tracked in [Workspace and dossiers experience](workspace-experience-2026-11-10.md). Its overview and navigation decisions supersede the earlier presentation below while retaining the canonical data model.
+
 ## Reader and intended outcome
 
 This document is for the product and engineering team designing and implementing the new case workspace. A reader should be able to understand the intended role of the workspace, see what has already been agreed, identify unresolved product decisions, and eventually implement the redesign without relying on meeting memory or chat history.

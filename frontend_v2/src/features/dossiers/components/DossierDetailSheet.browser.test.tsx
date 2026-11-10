@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
 import type { Dossier } from "../api"
 import { DossierDetailSheet } from "./DossierDetailSheet"
+import { CitationProvider } from "@/components/citations/citations"
 import { page } from "vitest/browser"
 import "@/styles/globals.css"
 vi.mock("@/lib/protected-file", () => ({
@@ -97,7 +98,8 @@ const fixture: Dossier = {
   ],
 }
 
-vi.mock("../hooks", () => ({
+vi.mock("../hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks")>()),
   useDossier: () => ({ data: fixture, isLoading: false, refetch: vi.fn() }),
   useDossierMutation: () => ({
     mutate: vi.fn(),
@@ -118,6 +120,14 @@ vi.mock("@/features/workspace-ai/components/WorkspaceAIPanel", () => ({
 beforeEach(() => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
+    if (url.includes("/api/phones/people/"))
+      return new Response(JSON.stringify({ phones_in_case: 0 }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    if (url.includes("/api/citations/resolve"))
+      return new Response(JSON.stringify({ items: [] }), {
+        headers: { "Content-Type": "application/json" },
+      })
     if (/\/page\/\d+\/image/.test(url))
       return new Response(
         Uint8Array.from(
@@ -149,13 +159,15 @@ function renderDetail(canEdit = true) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <DossierDetailSheet
-          caseId="case-1"
-          dossierId="dossier-1"
-          open
-          canEdit={canEdit}
-          onOpenChange={vi.fn()}
-        />
+        <CitationProvider caseId="case-1">
+          <DossierDetailSheet
+            caseId="case-1"
+            dossierId="dossier-1"
+            open
+            canEdit={canEdit}
+            onOpenChange={vi.fn()}
+          />
+        </CitationProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -209,6 +221,7 @@ describe("Dossier detail in Chromium", () => {
     ]) {
       it(`keeps ${tab} controls inside the dialog at ${width}px`, async () => {
         await page.viewport(width, 720)
+        const discard = vi.spyOn(window, "confirm").mockReturnValue(true)
         const user = userEvent.setup()
         renderDetail()
         await user.click(screen.getByRole("tab", { name: tab }))
@@ -238,6 +251,10 @@ describe("Dossier detail in Chromium", () => {
         expect(saveBounds.right).toBeLessThanOrEqual(bounds.right)
         expect(saveBounds.bottom).toBeLessThanOrEqual(720)
         await user.click(screen.getByRole("button", { name: "Cancel" }))
+        if (tab === "Interviews")
+          expect(discard).toHaveBeenCalledWith(
+            "Discard your unsaved interview or statement changes?"
+          )
         expect(
           screen.queryByRole("dialog", { name: title })
         ).not.toBeInTheDocument()

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-import { BriefcaseBusiness, Bot, FolderKanban, LayoutDashboard, FileText, Lightbulb, ShieldCheck } from "lucide-react"
+import { Bot, CheckCheck, FilePenLine, House, Settings2 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useCase } from "@/features/cases/hooks/use-cases"
@@ -9,6 +9,8 @@ import { CanonicalWorkspaceOverview } from "./CanonicalWorkspaceOverview"
 import { CaseworkListView } from "./CaseworkListView"
 import { TasksSection } from "./TasksSection"
 import { AgentProposalsPanel } from "@/features/workspace-ai/components/AgentProposalsPanel"
+import { CaseContextSection } from "./CaseContextSection"
+import { confirmUnsavedNavigation } from "@/hooks/use-unsaved-history-guard"
 
 export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -17,74 +19,149 @@ export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
     if (!setupDirty) return
     const warn = (event: MouseEvent) => {
       const link = (event.target as Element)?.closest?.("a[href]")
-      if (link && !window.confirm("Discard your unsaved setup changes?")) { event.preventDefault(); event.stopPropagation() }
+      if (link && !window.confirm("Discard your unsaved setup changes?")) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
     }
     document.addEventListener("click", warn, true)
     return () => document.removeEventListener("click", warn, true)
   }, [setupDirty])
   const requestedView = searchParams.get("view")
-  const section = requestedView === "casework" || requestedView === "work" || requestedView === "proposals" ? requestedView : "overview"
-  const caseworkSection = searchParams.get("kind") === "theory" ? "theories" : searchParams.get("kind") === "note" ? "notes" : "findings"
-  const selectedEntryId = section === "casework" ? searchParams.get("entry") : null
-  const selectedWorkItemId = section === "work" ? searchParams.get("item") : null
+  const section =
+    requestedView === "casework" ||
+    requestedView === "work" ||
+    requestedView === "proposals" ||
+    requestedView === "setup"
+      ? requestedView
+      : "overview"
+  const kind = searchParams.get("kind")
+  const caseworkType =
+    kind === "theory" || kind === "note" || kind === "finding" ? kind : "all"
+  const selectedEntryId =
+    section === "casework" ? searchParams.get("entry") : null
+  const selectedWorkItemId =
+    section === "work" ? searchParams.get("item") : null
   const caseQuery = useCase(caseId)
   const { canEdit } = useCasePermissions(caseQuery.data)
 
   const setSection = (view: string) => {
-    if (setupDirty && !window.confirm("Discard your unsaved setup changes?")) return
+    if (!confirmUnsavedNavigation()) return
     const next = new URLSearchParams(searchParams)
     if (view === "overview") next.delete("view")
     else next.set("view", view)
     next.delete("item")
     next.delete("entry")
-    setSearchParams(next, { replace: true })
+    next.delete("kind")
+    setSearchParams(next)
   }
 
   const setCaseworkSection = (value: string) => {
     const next = new URLSearchParams(searchParams)
-    if (value === "theories") next.set("kind", "theory")
-    else if (value === "notes") next.set("kind", "note")
-    else next.delete("kind")
+    if (value === "all") next.delete("kind")
+    else next.set("kind", value)
     next.delete("entry")
-    setSearchParams(next, { replace: true })
+    setSearchParams(next)
   }
 
   return (
-    <Tabs value={section} onValueChange={setSection} className="flex h-full flex-col bg-background">
-      <div className="border-b border-border bg-card/95 px-3 backdrop-blur-sm sm:px-4">
-        <TabsList variant="line" className="h-11">
-          <TabsTrigger value="overview"><LayoutDashboard className="size-3.5" /> Overview</TabsTrigger>
-          <TabsTrigger value="casework"><FolderKanban className="size-3.5" /> Casework</TabsTrigger>
-          <TabsTrigger value="work"><BriefcaseBusiness className="size-3.5" /> Deadlines</TabsTrigger>
-          <TabsTrigger value="proposals"><Bot className="size-3.5" /> Agent proposals</TabsTrigger>
+    <Tabs
+      value={section}
+      onValueChange={setSection}
+      className="flex h-full flex-col bg-background"
+    >
+      <div className="shrink-0 overflow-x-auto border-b border-border/70 px-4 sm:px-8">
+        <TabsList
+          variant="line"
+          className="h-12 min-w-max gap-2 sm:gap-5"
+          aria-label="Workspace sections"
+        >
+          <TabsTrigger value="overview" className="min-h-10">
+            <House className="size-3.5" /> Overview
+          </TabsTrigger>
+          <TabsTrigger value="casework" className="min-h-10">
+            <FilePenLine className="size-3.5" /> Casework
+          </TabsTrigger>
+          <TabsTrigger value="work" className="min-h-10">
+            <CheckCheck className="size-3.5" /> Tasks & deadlines
+          </TabsTrigger>
+          <TabsTrigger value="setup" className="min-h-10">
+            <Settings2 className="size-3.5" /> Case setup
+          </TabsTrigger>
+          <TabsTrigger value="proposals" className="min-h-10">
+            <Bot className="size-3.5" /> Agent proposals
+          </TabsTrigger>
         </TabsList>
       </div>
 
       <TabsContent value="overview" className="min-h-0 flex-1 overflow-hidden">
-        <ScrollArea className="h-full"><CanonicalWorkspaceOverview caseId={caseId} canEdit={canEdit} onDirtyChange={setSetupDirty} onOpenCasework={() => setSection("casework")} /></ScrollArea>
+        <ScrollArea className="h-full">
+          <CanonicalWorkspaceOverview
+            key={caseId}
+            caseId={caseId}
+            caseName={caseQuery.data?.title}
+            canEdit={canEdit}
+            onOpenCasework={() => setSection("casework")}
+          />
+        </ScrollArea>
       </TabsContent>
 
       <TabsContent value="casework" className="min-h-0 flex-1 overflow-hidden">
-        <Tabs value={caseworkSection} onValueChange={setCaseworkSection} className="flex h-full flex-col">
-          <div className="border-b border-border bg-muted/15 px-4">
-            <TabsList variant="line" className="h-9">
-              <TabsTrigger value="notes"><FileText className="size-3.5" /> Notes</TabsTrigger>
-              <TabsTrigger value="findings"><ShieldCheck className="size-3.5" /> Findings</TabsTrigger>
-              <TabsTrigger value="theories"><Lightbulb className="size-3.5" /> Theories</TabsTrigger>
-            </TabsList>
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-[1200px] px-5 py-8 sm:px-9 lg:px-12">
+            <CaseworkListView
+              key={caseId}
+              caseId={caseId}
+              entryType={caseworkType}
+              onEntryTypeChange={setCaseworkSection}
+              canEdit={canEdit}
+              initialSelectedEntryId={selectedEntryId}
+            />
           </div>
-          <TabsContent value="notes" className="min-h-0 flex-1 overflow-hidden"><ScrollArea className="h-full"><div className="mx-auto max-w-6xl p-4 sm:p-5"><CaseworkListView caseId={caseId} entryType="note" canEdit={canEdit} initialSelectedEntryId={selectedEntryId} /></div></ScrollArea></TabsContent>
-          <TabsContent value="findings" className="min-h-0 flex-1 overflow-hidden"><ScrollArea className="h-full"><div className="mx-auto max-w-6xl p-4 sm:p-5"><CaseworkListView caseId={caseId} entryType="finding" canEdit={canEdit} initialSelectedEntryId={selectedEntryId} /></div></ScrollArea></TabsContent>
-          <TabsContent value="theories" className="min-h-0 flex-1 overflow-hidden"><ScrollArea className="h-full"><div className="mx-auto max-w-6xl p-4 sm:p-5"><CaseworkListView caseId={caseId} entryType="theory" canEdit={canEdit} initialSelectedEntryId={selectedEntryId} /></div></ScrollArea></TabsContent>
-        </Tabs>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="setup" className="min-h-0 flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-[1200px] px-5 py-8 sm:px-9 lg:px-12">
+            <header className="mb-8">
+              <h1 className="font-display text-2xl font-semibold tracking-tight">
+                Case setup
+              </h1>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                The context and objective that guide the investigation. Existing
+                details stay with the case as your work develops.
+              </p>
+            </header>
+            <CaseContextSection
+              key={caseId}
+              caseId={caseId}
+              canEdit={canEdit}
+              onDirtyChange={setSetupDirty}
+            />
+          </div>
+        </ScrollArea>
       </TabsContent>
 
       <TabsContent value="proposals" className="min-h-0 flex-1 overflow-hidden">
-        <ScrollArea className="h-full"><div className="mx-auto max-w-5xl p-4 sm:p-5"><AgentProposalsPanel caseId={caseId} canEdit={canEdit} /></div></ScrollArea>
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-[1200px] px-5 py-8 sm:px-9 lg:px-12">
+            <AgentProposalsPanel caseId={caseId} canEdit={canEdit} />
+          </div>
+        </ScrollArea>
       </TabsContent>
 
       <TabsContent value="work" className="min-h-0 flex-1 overflow-hidden">
-        <ScrollArea className="h-full"><div className="mx-auto max-w-5xl p-4 sm:p-5"><TasksSection caseId={caseId} canEdit={canEdit} initialItemId={selectedWorkItemId} /></div></ScrollArea>
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-[1200px] px-5 py-8 sm:px-9 lg:px-12">
+            <TasksSection
+              key={caseId}
+              caseId={caseId}
+              canEdit={canEdit}
+              initialItemId={selectedWorkItemId}
+            />
+          </div>
+        </ScrollArea>
       </TabsContent>
     </Tabs>
   )

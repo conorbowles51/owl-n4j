@@ -6,6 +6,10 @@ import { appRouteTree } from "@/app/route-table"
 import { startBuildVersionGuard } from "@/lib/build-version"
 import { registerRouteTree } from "@/lib/route-preload"
 import { applySwitchesAtStart } from "@/lib/ui-switches"
+import { initializeUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
+
+// The history listener must precede BrowserRouter so cancelling Back keeps forms mounted.
+initializeUnsavedHistoryGuard()
 
 // Before routing: a redirect (e.g. /cases/:id to its workspace) drops the query, so ?phone-prototype=on is read here.
 applySwitchesAtStart()

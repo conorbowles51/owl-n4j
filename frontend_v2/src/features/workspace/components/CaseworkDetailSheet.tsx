@@ -1,18 +1,30 @@
 import { CaseworkHistory } from "./CaseworkHistory"
 import { TheoryKeywordLists } from "@/features/search/components/KeywordListsPage"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
+import { useDossiers } from "@/features/dossiers/hooks"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
 import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
-import { passageHref, passageReaderWords } from "@/features/evidence/lib/text-workbench-link"
+import {
+  passageHref,
+  passageReaderWords,
+} from "@/features/evidence/lib/text-workbench-link"
 import { LinkStateNote } from "@/features/phones/LinkStateNote"
 import { useLinkChoice, useLinkStates } from "@/features/phones/link-states"
-import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
+import {
+  isPhoneLinkType,
+  phoneLinkHref,
+  phoneLinkSummary,
+} from "@/features/phones/phone-links"
 import {
   ArchiveRestore,
   ArrowRight,
+  CalendarClock,
+  CheckSquare,
   Edit3,
   FileText,
+  FolderOpen,
   GitBranch,
   Landmark,
   Link2,
@@ -92,6 +104,7 @@ interface CaseworkDetailSheetProps {
   ) => void
   onOpenDossier?: (id: string) => void
   onOpenEntry?: (entryId: string) => void
+  onBeforeNavigate?: () => boolean
 }
 
 function labelState(value?: string | null) {
@@ -104,7 +117,12 @@ function labelState(value?: string | null) {
 function anchorLabel(anchor: Record<string, unknown>) {
   const parts: string[] = []
   if (anchor.page) parts.push(`Page ${anchor.page}`)
-  if (anchor.timestamp) parts.push(String(anchor.timestamp))
+  if (anchor.timestamp !== null && anchor.timestamp !== undefined)
+    parts.push(
+      typeof anchor.timestamp === "number"
+        ? `${anchor.timestamp}s`
+        : String(anchor.timestamp)
+    )
   if (anchor.quote) parts.push(`“${String(anchor.quote).slice(0, 80)}”`)
   if (anchor.segment_id) parts.push(`Segment ${anchor.segment_id}`)
   return parts.join(" · ")
@@ -119,21 +137,53 @@ export function CaseworkDetailSheet({
   onOpenEntry,
   onOpenEvidence,
   onOpenDossier,
+  onBeforeNavigate,
 }: CaseworkDetailSheetProps) {
-  const navigate = useNavigate()
+  const navigateTo = useNavigate()
   const [editing, setEditing] = useState(false)
+  const [editDirty, setEditDirty] = useState(false)
+  const [mutationError, setMutationError] = useState<string | null>(null)
+  const [dossierOffset, setDossierOffset] = useState(0)
+  const [analysisOpen, setAnalysisOpen] = useState(false)
   const [lifecycleDialog, setLifecycleDialog] = useState(false)
   const [nextLifecycle, setNextLifecycle] = useState("")
   const [lifecycleRationale, setLifecycleRationale] = useState("")
+  const [lifecycleBase, setLifecycleBase] = useState("")
   const [conversionDialog, setConversionDialog] = useState(false)
   const [conversionTitle, setConversionTitle] = useState("")
   const [conversionBody, setConversionBody] = useState("")
+  const [conversionBase, setConversionBase] = useState({ title: "", body: "" })
+  const [dialogSaving, setDialogSaving] = useState(false)
+  const dialogSaveInFlight = useRef(false)
   const [conversionSignificance, setConversionSignificance] =
     useState<FindingSignificance | null>(null)
   const entryQuery = useCaseworkEntry(caseId, entryId ?? undefined, true)
   const entry = entryQuery.data
-  const linkStates = useLinkStates(caseId, "entry", entryId ?? undefined, !!entry)
-  const linkChoice = useLinkChoice(caseId, "entry", entryId ?? undefined, () => void entryQuery.refetch())
+  const containingDossiers = useDossiers({
+    caseId: open && entryId ? caseId : "",
+    linkedEntryId: entryId ?? undefined,
+    includeArchived: true,
+    limit: 10,
+    offset: dossierOffset,
+  })
+  useEffect(() => {
+    const total = containingDossiers.data?.total
+    if (total !== undefined && dossierOffset > 0 && dossierOffset >= total) {
+      setDossierOffset(Math.max(0, Math.ceil(total / 10) - 1) * 10)
+    }
+  }, [containingDossiers.data?.total, dossierOffset])
+  const linkStates = useLinkStates(
+    caseId,
+    "entry",
+    entryId ?? undefined,
+    open && !!entry?.links.some((link) => isPhoneLinkType(link.target_type))
+  )
+  const linkChoice = useLinkChoice(
+    caseId,
+    "entry",
+    entryId ?? undefined,
+    () => void entryQuery.refetch()
+  )
   const lifecycleMutation = useChangeCaseworkLifecycle(caseId)
   const conversionMutation = useConvertTheory(caseId)
   const deleteMutation = useDeleteCaseworkEntry(caseId)
@@ -142,17 +192,85 @@ export function CaseworkDetailSheet({
   const selectNodes = useGraphStore((state) => state.selectNodes)
   const expandGraphPanelTo = useUIStore((state) => state.expandGraphPanelTo)
   const openEvidenceDetail = useEvidenceStore((state) => state.openDetail)
+  const lifecycleDirty =
+    lifecycleDialog &&
+    (nextLifecycle !== lifecycleBase || !!lifecycleRationale.trim())
+  const conversionDirty =
+    conversionDialog &&
+    (conversionTitle !== conversionBase.title ||
+      conversionBody !== conversionBase.body ||
+      conversionSignificance !== null)
+  useUnsavedHistoryGuard(
+    lifecycleDirty || conversionDirty || dialogSaving,
+    conversionDialog
+      ? "Discard your unsaved finding draft and leave this page?"
+      : "Discard your unsaved status changes and leave this page?"
+  )
+
+  const allowLeavingDrafts = () => {
+    if (dialogSaveInFlight.current) return false
+    if (
+      conversionDirty &&
+      !window.confirm("Discard your unsaved finding draft?")
+    )
+      return false
+    if (
+      lifecycleDirty &&
+      !window.confirm("Discard your unsaved status changes?")
+    )
+      return false
+    if (editDirty && !window.confirm("Discard your unsaved casework?"))
+      return false
+    return true
+  }
+  const beforeNavigate = () =>
+    allowLeavingDrafts() && onBeforeNavigate?.() !== false
+  const navigate = (href: string) => {
+    if (!beforeNavigate()) return false
+    navigateTo(href)
+    return true
+  }
+  const closeLifecycleDialog = (next: boolean) => {
+    if (dialogSaveInFlight.current) return
+    if (
+      !next &&
+      lifecycleDirty &&
+      !window.confirm("Discard your unsaved status changes?")
+    )
+      return
+    setLifecycleDialog(next)
+  }
+  const closeConversionDialog = (next: boolean) => {
+    if (dialogSaveInFlight.current) return
+    if (
+      !next &&
+      conversionDirty &&
+      !window.confirm("Discard your unsaved finding draft?")
+    )
+      return
+    setConversionDialog(next)
+  }
 
   useEffect(() => {
-    if (!open) setEditing(false)
-  }, [open])
+    setEditing(false)
+    setEditDirty(false)
+    setLifecycleDialog(false)
+    setConversionDialog(false)
+    setMutationError(null)
+    setDossierOffset(0)
+    setAnalysisOpen(false)
+  }, [open, entryId])
 
-  useEffect(() => {
-    if (entry) {
-      setConversionTitle(entry.title ?? "")
-      setConversionBody(entry.body)
-    }
-  }, [entry])
+  const closeSheet = (nextOpen: boolean) => {
+    if (!nextOpen && !allowLeavingDrafts()) return
+    onOpenChange(nextOpen)
+  }
+
+  const cancelEdit = () => {
+    if (editDirty && !window.confirm("Discard your unsaved casework?")) return
+    setEditDirty(false)
+    setEditing(false)
+  }
 
   const evidenceGroups = useMemo(() => {
     const groups = {
@@ -163,7 +281,10 @@ export function CaseworkDetailSheet({
     }
     if (!entry) return groups
     for (const link of entry.links.filter(
-      (item) => item.target_type === "evidence" || isPhoneLinkType(item.target_type)
+      (item) =>
+        item.target_type === "evidence" ||
+        item.target_type === "evidence_passage" ||
+        isPhoneLinkType(item.target_type)
     )) {
       groups[link.relationship ?? "unclassified"].push(link)
     }
@@ -171,6 +292,18 @@ export function CaseworkDetailSheet({
   }, [entry])
 
   const openLink = (targetType: string, targetId: string) => {
+    if (targetType === "timeline_event") {
+      navigate(
+        `/cases/${caseId}/timeline?event=${encodeURIComponent(targetId)}`
+      )
+      return
+    }
+    if (targetType === "task" || targetType === "deadline") {
+      navigate(
+        `/cases/${caseId}/workspace?view=work&item=${encodeURIComponent(targetId)}`
+      )
+      return
+    }
     if (isFinancialLinkType(targetType)) {
       navigate(financialLinkHref(caseId, targetType, targetId))
       return
@@ -203,10 +336,10 @@ export function CaseworkDetailSheet({
         )
         return
       }
-      navigate(`/cases/${caseId}/evidence`)
+      if (!navigate(`/cases/${caseId}/evidence`)) return
       openEvidenceDetail(targetId)
     } else if (targetType === "graph_entity") {
-      navigate(`/cases/${caseId}/graph`)
+      if (!navigate(`/cases/${caseId}/graph`)) return
       selectNodes([targetId])
       expandGraphPanelTo("detail")
     } else if (targetType === "dossier") {
@@ -218,12 +351,25 @@ export function CaseworkDetailSheet({
         `/cases/${caseId}/dossiers?dossier=${encodeURIComponent(targetId)}`
       )
     } else if (targetType === "entry") {
-      onOpenEntry?.(targetId)
+      if (onOpenEntry) onOpenEntry(targetId)
+      else
+        navigate(
+          `/cases/${caseId}/workspace?view=casework&entry=${encodeURIComponent(targetId)}`
+        )
     }
   }
 
   const changeLifecycle = async () => {
-    if (!entry || !nextLifecycle) return
+    if (
+      !entry ||
+      !nextLifecycle ||
+      nextLifecycle === entry.lifecycle_state ||
+      dialogSaveInFlight.current
+    )
+      return
+    dialogSaveInFlight.current = true
+    setDialogSaving(true)
+    setMutationError(null)
     try {
       await lifecycleMutation.mutateAsync({
         entryId: entry.id,
@@ -236,14 +382,29 @@ export function CaseworkDetailSheet({
       setLifecycleRationale("")
       toast.success("Lifecycle updated")
     } catch (error) {
+      setMutationError(
+        error instanceof Error ? error.message : "Could not update lifecycle"
+      )
       toast.error(
         error instanceof Error ? error.message : "Could not update lifecycle"
       )
+    } finally {
+      dialogSaveInFlight.current = false
+      setDialogSaving(false)
     }
   }
 
   const convertTheory = async () => {
-    if (!entry || !conversionTitle.trim() || !conversionBody.trim()) return
+    if (
+      !entry ||
+      !conversionTitle.trim() ||
+      !conversionBody.trim() ||
+      dialogSaveInFlight.current
+    )
+      return
+    dialogSaveInFlight.current = true
+    setDialogSaving(true)
+    setMutationError(null)
     try {
       const result = await conversionMutation.mutateAsync({
         entryId: entry.id,
@@ -253,11 +414,21 @@ export function CaseworkDetailSheet({
       })
       setConversionDialog(false)
       toast.success("Finding created and linked to the source theory")
-      onOpenEntry?.(result.finding.id)
+      if (onOpenEntry) onOpenEntry(result.finding.id)
+      else if (onBeforeNavigate?.() !== false)
+        navigateTo(
+          `/cases/${caseId}/workspace?view=casework&kind=finding&entry=${encodeURIComponent(result.finding.id)}`
+        )
     } catch (error) {
+      setMutationError(
+        error instanceof Error ? error.message : "Could not convert theory"
+      )
       toast.error(
         error instanceof Error ? error.message : "Could not convert theory"
       )
+    } finally {
+      dialogSaveInFlight.current = false
+      setDialogSaving(false)
     }
   }
 
@@ -299,10 +470,28 @@ export function CaseworkDetailSheet({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-[min(920px,96vw)] gap-0 p-0 sm:max-w-[920px]">
-          <SheetHeader className="border-b border-border px-5 py-4 pr-12">
-            <SheetTitle>{entry ? caseworkTitle(entry) : "Casework"}</SheetTitle>
+      <Sheet open={open} onOpenChange={closeSheet}>
+        <SheetContent
+          guardTypedContent={false}
+          className="w-full gap-0 p-0 sm:w-[min(920px,96vw)] sm:max-w-[920px]"
+          onClickCapture={(event) => {
+            const anchor = (event.target as HTMLElement).closest?.("a[href]")
+            if (
+              anchor &&
+              anchor.getAttribute("target") !== "_blank" &&
+              !event.metaKey &&
+              !event.ctrlKey &&
+              !beforeNavigate()
+            ) {
+              event.preventDefault()
+              event.stopPropagation()
+            }
+          }}
+        >
+          <SheetHeader className="border-b border-border/70 px-5 py-6 pr-12 sm:px-8 sm:pr-14">
+            <SheetTitle className="font-display text-xl leading-snug [overflow-wrap:anywhere]">
+              {entry ? caseworkTitle(entry) : "Casework"}
+            </SheetTitle>
             <SheetDescription>
               {entry
                 ? `${labelState(entry.entry_type)} · version ${entry.version}`
@@ -314,28 +503,40 @@ export function CaseworkDetailSheet({
               <div className="flex min-h-72 items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Loading casework
               </div>
-            ) : entryQuery.isError || !entry ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                This entry could not be loaded.
+            ) : !entry ? (
+              <div
+                role="alert"
+                className="p-8 text-center text-sm text-muted-foreground"
+              >
+                <p>This entry could not be loaded.</p>
+                <Button
+                  variant="outline"
+                  className="mt-4 h-10"
+                  onClick={() => void entryQuery.refetch()}
+                >
+                  Try again
+                </Button>
               </div>
             ) : editing ? (
-              <div className="p-5">
+              <div className="p-5 sm:p-8">
                 <CaseworkEditor
-                  key={`${entry.id}:${entry.version}`}
+                  key={entry.id}
                   caseId={caseId}
                   entry={entry}
                   currentSelection={currentSelection}
                   canEdit={canEdit && !entry.deleted_at}
-                  onCancel={() => setEditing(false)}
+                  onCancel={cancelEdit}
+                  onDirtyChange={setEditDirty}
                   onReload={() => entryQuery.refetch()}
                   onSaved={async () => {
                     await entryQuery.refetch()
+                    setEditDirty(false)
                     setEditing(false)
                   }}
                 />
               </div>
             ) : (
-              <div className="space-y-7 p-5">
+              <div className="space-y-6 p-5 sm:p-8">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">
                     {labelState(entry.entry_type)}
@@ -347,7 +548,9 @@ export function CaseworkDetailSheet({
                   )}
                   {entry.entry_type === "finding" && (
                     <Badge variant="outline">
-                      {entry.significance ? `${labelState(entry.significance)} significance` : "Unrated significance"}
+                      {entry.significance
+                        ? `${labelState(entry.significance)} significance`
+                        : "Unrated significance"}
                     </Badge>
                   )}
                   {entry.confidence !== null &&
@@ -367,7 +570,7 @@ export function CaseworkDetailSheet({
 
                 <div className="flex flex-wrap gap-2">
                   {canEdit && !entry.deleted_at && (
-                    <Button size="sm" onClick={() => setEditing(true)}>
+                    <Button className="h-10" onClick={() => setEditing(true)}>
                       <Edit3 className="size-3.5" /> Edit
                     </Button>
                   )}
@@ -375,8 +578,12 @@ export function CaseworkDetailSheet({
                     <Button
                       variant="outline"
                       size="sm"
+                      className="h-10"
                       onClick={() => {
+                        setMutationError(null)
+                        setLifecycleRationale("")
                         setNextLifecycle(entry.lifecycle_state ?? "")
+                        setLifecycleBase(entry.lifecycle_state ?? "")
                         setLifecycleDialog(true)
                       }}
                     >
@@ -390,7 +597,18 @@ export function CaseworkDetailSheet({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setConversionDialog(true)}
+                        className="h-10"
+                        onClick={() => {
+                          setMutationError(null)
+                          setConversionTitle(entry.title ?? "")
+                          setConversionBody(entry.body)
+                          setConversionBase({
+                            title: entry.title ?? "",
+                            body: entry.body,
+                          })
+                          setConversionSignificance(null)
+                          setConversionDialog(true)
+                        }}
                       >
                         <ArrowRight className="size-3.5" /> Convert to finding
                       </Button>
@@ -400,6 +618,7 @@ export function CaseworkDetailSheet({
                       <Button
                         variant="outline"
                         size="sm"
+                        className="h-10"
                         onClick={restoreEntry}
                         disabled={restoreMutation.isPending}
                       >
@@ -409,7 +628,7 @@ export function CaseworkDetailSheet({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-muted-foreground hover:text-destructive"
+                        className="h-10 text-muted-foreground hover:text-destructive"
                         onClick={deleteEntry}
                         disabled={deleteMutation.isPending}
                       >
@@ -420,9 +639,13 @@ export function CaseworkDetailSheet({
 
                 {entry.origin_label && (
                   <p
-                    className="flex items-center gap-2 rounded-lg border border-border bg-muted/25 px-3 py-2 text-xs"
+                    className="flex items-center gap-2 border-l-2 border-border pl-3 text-xs text-muted-foreground"
                     data-testid="entry-origin"
-                    title={entry.actor_origin?.model_id ? `Model ${entry.actor_origin.model_id}` : undefined}
+                    title={
+                      entry.actor_origin?.model_id
+                        ? `Model ${entry.actor_origin.model_id}`
+                        : undefined
+                    }
                   >
                     <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
                     {entry.origin_label}
@@ -433,7 +656,9 @@ export function CaseworkDetailSheet({
                   <button
                     type="button"
                     className="flex w-full items-center gap-3 rounded-lg border border-violet-200 bg-violet-50/70 p-3 text-left dark:border-violet-900 dark:bg-violet-950/30"
-                    onClick={() => onOpenEntry?.(entry.source_theory_entry_id!)}
+                    onClick={() =>
+                      openLink("entry", entry.source_theory_entry_id!)
+                    }
                   >
                     <Sparkles className="size-4 shrink-0 text-violet-600 dark:text-violet-300" />
                     <span className="min-w-0 flex-1">
@@ -467,7 +692,7 @@ export function CaseworkDetailSheet({
 
                 {entry.entry_type === "theory" &&
                   entry.confidence_rationale && (
-                    <section className="rounded-lg border border-border bg-muted/25 p-3">
+                    <section className="border-l-2 border-status-warning/30 pl-4">
                       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Latest confidence rationale
                       </h3>
@@ -477,40 +702,114 @@ export function CaseworkDetailSheet({
                     </section>
                   )}
 
-                {entry.entry_type === "theory" && !entry.deleted_at ? (
-                  <TheoryKeywordLists caseId={caseId} theoryId={entry.id} />
-                ) : null}
-
-                {entry.entry_type === "theory" && !entry.deleted_at ? (
-                  <WorkspaceAIPanel
-                    caseId={caseId}
-                    targetType="theory"
-                    targetId={entry.id}
-                    canEdit={canEdit}
-                  />
-                ) : null}
-
-                {entry.entry_type === "theory" && !entry.deleted_at ? (
-                  <RedCellPanel caseId={caseId} theoryId={entry.id} canEdit={canEdit} />
-                ) : null}
-                {entry.entry_type === "theory" && !entry.deleted_at ? (
-                  <DisconfirmPanel caseId={caseId} theoryId={entry.id} canEdit={canEdit} />
-                ) : null}
-
-                {!entry.deleted_at && (entry.entry_type === "theory" || entry.links.length > 0) ? (
-                  // Each addition with why it was chosen, its narrative and its Loupe; the theory read as a whole.
-                  <TheoryReadingSection caseId={caseId} entryId={entry.id} />
-                ) : null}
+                {(containingDossiers.isLoading ||
+                  containingDossiers.isError ||
+                  !!containingDossiers.data?.dossiers.length) && (
+                  <section
+                    className="border-t border-border/70 pt-5"
+                    aria-label="Containing dossiers"
+                  >
+                    <h3 className="text-sm font-semibold">Collected in</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Dossiers that include this casework. Manage the collection
+                      from the dossier.
+                    </p>
+                    {containingDossiers.isLoading ? (
+                      <p
+                        role="status"
+                        className="mt-3 text-xs text-muted-foreground"
+                      >
+                        Loading dossiers…
+                      </p>
+                    ) : containingDossiers.isError ? (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        Couldn’t load dossiers.
+                        <Button
+                          variant="ghost"
+                          className="h-10"
+                          onClick={() => void containingDossiers.refetch()}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-2 divide-y divide-border/60">
+                        {containingDossiers.data?.dossiers.map((dossier) => (
+                          <button
+                            key={dossier.id}
+                            type="button"
+                            onClick={() => openLink("dossier", dossier.id)}
+                            className="flex min-h-11 w-full items-center gap-3 rounded-md py-2 text-left text-sm hover:bg-muted/40"
+                          >
+                            <FolderOpen className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                              {dossier.display_name}
+                              {dossier.archived_at && (
+                                <span className="ml-2 text-xs text-muted-foreground">
+                                  Archived
+                                </span>
+                              )}
+                            </span>
+                            <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {(containingDossiers.data?.total ?? 0) > 10 && (
+                      <nav
+                        aria-label="Containing dossiers pagination"
+                        className="mt-2 flex items-center justify-between"
+                      >
+                        <Button
+                          variant="ghost"
+                          className="h-10"
+                          disabled={dossierOffset === 0}
+                          onClick={() =>
+                            setDossierOffset((value) => Math.max(0, value - 10))
+                          }
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          {dossierOffset + 1}–
+                          {Math.min(
+                            dossierOffset + 10,
+                            containingDossiers.data?.total ?? 0
+                          )}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          className="h-10"
+                          disabled={
+                            dossierOffset + 10 >=
+                            (containingDossiers.data?.total ?? 0)
+                          }
+                          onClick={() =>
+                            setDossierOffset((value) => value + 10)
+                          }
+                        >
+                          Next
+                        </Button>
+                      </nav>
+                    )}
+                  </section>
+                )}
 
                 {!!entry.links.length && (
-                  <section className="space-y-3">
+                  <section className="space-y-3 border-t border-border/70 pt-5">
                     <div>
                       <h3 className="text-sm font-semibold">Linked material</h3>
                       <p className="text-xs text-muted-foreground">
                         Relationship assessments apply only to this entry.
                       </p>
                     </div>
-                    {entry.links.some((link) => ["phone_record", "phone_selection", "phone_thread"].includes(link.target_type)) && (
+                    {entry.links.some((link) =>
+                      [
+                        "phone_record",
+                        "phone_selection",
+                        "phone_thread",
+                      ].includes(link.target_type)
+                    ) && (
                       <EntryPhoneExport caseId={caseId} entryId={entry.id} />
                     )}
                     <div className="divide-y divide-border">
@@ -518,70 +817,92 @@ export function CaseworkDetailSheet({
                         const anchor = anchorLabel(link.source_anchor)
                         return (
                           <div key={link.id}>
-                          <button
-                            type="button"
-                            disabled={
-                              !(
-                                [
-                                  "evidence",
-                                  "evidence_passage",
-                                  "graph_entity",
-                                  "entry",
-                                  "dossier",
-                                ] as string[]
-                              ).includes(link.target_type) &&
-                              !isPhoneLinkType(link.target_type) &&
-                              !isFinancialLinkType(link.target_type)
-                            }
-                            className="flex min-h-10 w-full min-w-0 items-center gap-2 py-2 text-left transition-colors enabled:hover:bg-muted/35 disabled:cursor-default"
-                            onClick={() =>
-                              openLink(link.target_type, link.target_id)
-                            }
-                          >
-                            {isPhoneLinkType(link.target_type) ? (
-                              <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                            ) : link.target_type === "evidence" || link.target_type === "evidence_passage" ? (
-                              <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                            ) : isFinancialLinkType(link.target_type) ? (
-                              <Landmark className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                            ) : link.target_type === "graph_entity" ? (
-                              <GitBranch className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                            ) : (
-                              <Link2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                            <button
+                              type="button"
+                              disabled={
+                                !(
+                                  [
+                                    "evidence",
+                                    "evidence_passage",
+                                    "graph_entity",
+                                    "entry",
+                                    "dossier",
+                                    "task",
+                                    "deadline",
+                                    "timeline_event",
+                                  ] as string[]
+                                ).includes(link.target_type) &&
+                                !isPhoneLinkType(link.target_type) &&
+                                !isFinancialLinkType(link.target_type)
+                              }
+                              className="flex min-h-10 w-full min-w-0 items-center gap-2 py-2 text-left transition-colors enabled:hover:bg-muted/35 disabled:cursor-default"
+                              onClick={() =>
+                                openLink(link.target_type, link.target_id)
+                              }
+                            >
+                              {isPhoneLinkType(link.target_type) ? (
+                                <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              ) : link.target_type === "evidence" ||
+                                link.target_type === "evidence_passage" ? (
+                                <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              ) : isFinancialLinkType(link.target_type) ? (
+                                <Landmark className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              ) : link.target_type === "graph_entity" ? (
+                                <GitBranch className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              ) : link.target_type === "dossier" ? (
+                                <FolderOpen className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              ) : link.target_type === "task" ? (
+                                <CheckSquare className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              ) : link.target_type === "deadline" ||
+                                link.target_type === "timeline_event" ? (
+                                <CalendarClock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              ) : (
+                                <Link2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              )}
+                              <span className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
+                                <span className="truncate text-xs font-semibold">
+                                  {link.target_label || "Linked item"}
+                                </span>
+                                <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  <RelationshipBadge
+                                    relationship={link.relationship}
+                                  />
+                                  {anchor && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {anchor}
+                                    </span>
+                                  )}
+                                  {link.target_type === "evidence_passage" && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {passageReaderWords(link.source_anchor)}
+                                    </span>
+                                  )}
+                                  {isPhoneLinkType(link.target_type) && (
+                                    <PhoneLinkDetail link={link} />
+                                  )}
+                                </span>
+                              </span>
+                            </button>
+                            <LinkStateNote
+                              caseId={caseId}
+                              state={linkStates[link.id]}
+                              busy={linkChoice.isPending}
+                              onChoose={(state, choice) =>
+                                linkChoice.mutateAsync({
+                                  state,
+                                  choice,
+                                  expectedVersion: entry.version,
+                                })
+                              }
+                            />
+                            {link.target_type === "phone_selection" && (
+                              <CollectedPhoneExport
+                                caseId={caseId}
+                                source="collection"
+                                id={link.target_id}
+                                label="Export this collection"
+                              />
                             )}
-                            <span className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
-                              <span className="truncate text-xs font-semibold">
-                                {link.target_label || "Linked item"}
-                              </span>
-                              <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <RelationshipBadge
-                                  relationship={link.relationship}
-                                />
-                                {anchor && (
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {anchor}
-                                  </span>
-                                )}
-                                {link.target_type === "evidence_passage" && (
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {passageReaderWords(link.source_anchor)}
-                                  </span>
-                                )}
-                                {isPhoneLinkType(link.target_type) && (
-                                  <PhoneLinkDetail link={link} />
-                                )}
-                              </span>
-                            </span>
-                          </button>
-                          <LinkStateNote
-                            caseId={caseId}
-                            state={linkStates[link.id]}
-                            busy={linkChoice.isPending}
-                            onChoose={(state, choice) => linkChoice.mutateAsync({ state, choice, expectedVersion: entry.version })}
-                          />
-                          {link.target_type === "phone_selection" && (
-                            <CollectedPhoneExport caseId={caseId} source="collection" id={link.target_id} label="Export this collection" />
-                          )}
                           </div>
                         )
                       })}
@@ -590,7 +911,10 @@ export function CaseworkDetailSheet({
                 )}
 
                 {entry.links.some(
-                  (link) => link.target_type === "evidence" || isPhoneLinkType(link.target_type)
+                  (link) =>
+                    link.target_type === "evidence" ||
+                    link.target_type === "evidence_passage" ||
+                    isPhoneLinkType(link.target_type)
                 ) && (
                   <details className="space-y-3 border-t border-border pt-3">
                     <summary className="cursor-pointer text-xs font-semibold">
@@ -615,7 +939,10 @@ export function CaseworkDetailSheet({
                                       openLink(link.target_type, link.target_id)
                                     }
                                   >
-                                    {link.target_label || (isPhoneLinkType(link.target_type) ? phoneLinkSummary(link).kind : "Evidence")}
+                                    {link.target_label ||
+                                      (isPhoneLinkType(link.target_type)
+                                        ? phoneLinkSummary(link).kind
+                                        : "Evidence")}
                                   </button>
                                 ))
                               ) : (
@@ -638,6 +965,54 @@ export function CaseworkDetailSheet({
                     )}
                   </details>
                 )}
+
+                {!entry.deleted_at &&
+                  (entry.entry_type === "theory" || entry.links.length > 0) && (
+                    <details
+                      open={analysisOpen}
+                      onToggle={(event) =>
+                        setAnalysisOpen(event.currentTarget.open)
+                      }
+                      className="group border-t border-border/70 pt-5"
+                    >
+                      <summary className="cursor-pointer py-1 text-sm font-semibold">
+                        Reading & analysis
+                      </summary>
+                      {analysisOpen && (
+                        <div className="mt-5 space-y-6">
+                          <TheoryReadingSection
+                            caseId={caseId}
+                            entryId={entry.id}
+                            onBeforeNavigate={beforeNavigate}
+                          />
+                          {entry.entry_type === "theory" && (
+                            <>
+                              <TheoryKeywordLists
+                                caseId={caseId}
+                                theoryId={entry.id}
+                              />
+                              <WorkspaceAIPanel
+                                caseId={caseId}
+                                targetType="theory"
+                                targetId={entry.id}
+                                canEdit={canEdit}
+                              />
+                              <RedCellPanel
+                                caseId={caseId}
+                                theoryId={entry.id}
+                                canEdit={canEdit}
+                              />
+                              <DisconfirmPanel
+                                caseId={caseId}
+                                theoryId={entry.id}
+                                canEdit={canEdit}
+                              />
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </details>
+                  )}
 
                 <CaseworkHistory
                   key={`${entry.id}-revisions`}
@@ -697,8 +1072,8 @@ export function CaseworkDetailSheet({
         </SheetContent>
       </Sheet>
 
-      <Dialog open={lifecycleDialog} onOpenChange={setLifecycleDialog}>
-        <DialogContent>
+      <Dialog open={lifecycleDialog} onOpenChange={closeLifecycleDialog}>
+        <DialogContent guardTypedContent={false}>
           <DialogHeader>
             <DialogTitle>Change lifecycle</DialogTitle>
             <DialogDescription>
@@ -706,11 +1081,16 @@ export function CaseworkDetailSheet({
               event remains in its audit history.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <fieldset disabled={dialogSaving} className="min-w-0 space-y-4">
+            {mutationError && (
+              <p role="alert" className="text-sm text-destructive">
+                {mutationError}
+              </p>
+            )}
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label htmlFor="lifecycle-status">Status</Label>
               <Select value={nextLifecycle} onValueChange={setNextLifecycle}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="lifecycle-status" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -718,7 +1098,11 @@ export function CaseworkDetailSheet({
                     ? FINDING_STATES
                     : THEORY_STATES
                   ).map((state) => (
-                    <SelectItem key={state} value={state}>
+                    <SelectItem
+                      key={state}
+                      value={state}
+                      disabled={state === "converted"}
+                    >
                       {labelState(state)}
                     </SelectItem>
                   ))}
@@ -734,26 +1118,32 @@ export function CaseworkDetailSheet({
                 placeholder="What changed in the case?"
               />
             </div>
-          </div>
+          </fieldset>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setLifecycleDialog(false)}>
+            <Button
+              variant="outline"
+              disabled={dialogSaving}
+              onClick={() => closeLifecycleDialog(false)}
+            >
               Cancel
             </Button>
             <Button
               onClick={changeLifecycle}
-              disabled={!nextLifecycle || lifecycleMutation.isPending}
+              disabled={
+                !nextLifecycle ||
+                nextLifecycle === entry?.lifecycle_state ||
+                dialogSaving
+              }
             >
-              {lifecycleMutation.isPending && (
-                <Loader2 className="size-3.5 animate-spin" />
-              )}{" "}
+              {dialogSaving && <Loader2 className="size-3.5 animate-spin" />}{" "}
               Save lifecycle
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={conversionDialog} onOpenChange={setConversionDialog}>
-        <DialogContent className="sm:max-w-xl">
+      <Dialog open={conversionDialog} onOpenChange={closeConversionDialog}>
+        <DialogContent guardTypedContent={false} className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Create finding from theory</DialogTitle>
             <DialogDescription>
@@ -761,7 +1151,12 @@ export function CaseworkDetailSheet({
               Converted only once this finding is saved.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <fieldset disabled={dialogSaving} className="min-w-0 space-y-4">
+            {mutationError && (
+              <p role="alert" className="text-sm text-destructive">
+                {mutationError}
+              </p>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="conversion-title">Finding title</Label>
               <Input
@@ -784,7 +1179,9 @@ export function CaseworkDetailSheet({
               <Select
                 value={conversionSignificance ?? "unrated"}
                 onValueChange={(value) =>
-                  setConversionSignificance(value === "unrated" ? null : value as FindingSignificance)
+                  setConversionSignificance(
+                    value === "unrated" ? null : (value as FindingSignificance)
+                  )
                 }
               >
                 <SelectTrigger className="w-full">
@@ -798,11 +1195,12 @@ export function CaseworkDetailSheet({
                 </SelectContent>
               </Select>
             </div>
-          </div>
+          </fieldset>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setConversionDialog(false)}
+              disabled={dialogSaving}
+              onClick={() => closeConversionDialog(false)}
             >
               Cancel
             </Button>
@@ -811,10 +1209,10 @@ export function CaseworkDetailSheet({
               disabled={
                 !conversionTitle.trim() ||
                 !conversionBody.trim() ||
-                conversionMutation.isPending
+                dialogSaving
               }
             >
-              {conversionMutation.isPending ? (
+              {dialogSaving ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <ArrowRight className="size-3.5" />

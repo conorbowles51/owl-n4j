@@ -51,3 +51,14 @@ it("shows who drafted and accepted an entry, and opens its payment on the Financ
   fireEvent.click(payment)
   expect(screen.getByTestId("where")).toHaveTextContent(`/cases/case-1/financial?view=transactions&payment=${TXN}`)
 })
+
+it("keeps the underlying work open when its draft blocks navigation from linked material", () => {
+  const onBeforeNavigate = vi.fn().mockReturnValue(false)
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/cases/case-1/workspace?view=work"]}><CaseworkDetailSheet caseId="case-1" entryId="finding-1" open canEdit onOpenChange={vi.fn()} onBeforeNavigate={onBeforeNavigate} /><Where /></MemoryRouter></QueryClientProvider>)
+  fireEvent.click(screen.getByRole("button", { name: /Wire to ACME/ }))
+  expect(onBeforeNavigate).toHaveBeenCalledOnce()
+  expect(screen.getByTestId("where")).toHaveTextContent("/cases/case-1/workspace?view=work")
+  onBeforeNavigate.mockReturnValue(true)
+  fireEvent.click(screen.getByRole("button", { name: /Wire to ACME/ }))
+  expect(screen.getByTestId("where")).toHaveTextContent(`/cases/case-1/financial?view=transactions&payment=${TXN}`)
+})

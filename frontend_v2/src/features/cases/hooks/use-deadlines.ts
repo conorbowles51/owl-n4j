@@ -14,12 +14,20 @@ export function useCreateDeadline(caseId: string) {
   return useMutation({
     mutationFn: (data: { name: string; due_date: string }) =>
       deadlinesAPI.create(caseId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "work"] })
-      queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["cases"] })
-      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "work"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "work-item"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] }),
+        queryClient.invalidateQueries({ queryKey: ["cases"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "overview"],
+        }),
+      ]),
   })
 }
 
@@ -31,27 +39,42 @@ export function useUpdateDeadline(caseId: string) {
       data,
     }: {
       deadlineId: string
-      data: { name?: string; due_date?: string }
+      data: { name?: string; due_date?: string; completed?: boolean }
     }) => deadlinesAPI.update(caseId, deadlineId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "work"] })
-      queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["cases"] })
-      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "work"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "work-item"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] }),
+        queryClient.invalidateQueries({ queryKey: ["cases"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "overview"],
+        }),
+      ]),
   })
 }
 
 export function useDeleteDeadline(caseId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (deadlineId: string) =>
-      deadlinesAPI.delete(caseId, deadlineId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "work"] })
-      queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["cases"] })
-      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
-    },
+    mutationFn: (deadlineId: string) => deadlinesAPI.delete(caseId, deadlineId),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "work"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "work-item"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] }),
+        queryClient.invalidateQueries({ queryKey: ["cases"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["workspace", caseId, "overview"],
+        }),
+      ]),
   })
 }

@@ -1,5 +1,5 @@
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
-import { lazy, Suspense, useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import {
   Archive,
   ArrowDown,
@@ -20,13 +20,18 @@ import {
   UserRound,
 } from "lucide-react"
 import { toast } from "sonner"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
 import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
 import { passageHref } from "@/features/evidence/lib/text-workbench-link"
 import { LinkStateNote } from "@/features/phones/LinkStateNote"
 import { useLinkChoice, useLinkStates } from "@/features/phones/link-states"
-import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
+import {
+  isPhoneLinkType,
+  phoneLinkHref,
+  phoneLinkSummary,
+} from "@/features/phones/phone-links"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -52,6 +57,9 @@ import { DossierInterviewDialog } from "./DossierInterviewDialog"
 import { EditDossierDialog } from "./EditDossierDialog"
 import { DossierContacts } from "./DossierContacts"
 import { formatInterviewDate } from "../interview-date"
+import { DossierIcon } from "./DossierIcon"
+import { dossierTypeLabel } from "../dossier-type"
+import { AddDossierCaseworkDialog } from "./AddDossierCaseworkDialog"
 import { DossierBriefEditor } from "./DossierBriefEditor"
 import { evidenceAPI } from "@/features/evidence/api"
 import {
@@ -376,6 +384,10 @@ function MediaCard({
   onOpen: () => void
 }) {
   const [caption, setCaption] = useState(media.caption ?? "")
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const remove = useDossierMutation(dossier.case_id, dossier.id, () =>
+    dossiersAPI.deleteMedia(dossier.id, media.id)
+  )
   const mutation = useDossierMutation(
     dossier.case_id,
     dossier.id,
@@ -465,10 +477,7 @@ function MediaCard({
               variant="ghost"
               className="ml-auto size-7 text-destructive"
               aria-label="Remove image from Dossier"
-              onClick={async () => {
-                await dossiersAPI.deleteMedia(dossier.id, media.id)
-                refresh()
-              }}
+              onClick={() => setConfirmRemove(true)}
             >
               <Trash2 className="size-3" />
             </Button>
@@ -507,6 +516,46 @@ function MediaCard({
           </label>
         </div>
       </div>
+      <Dialog
+        open={confirmRemove}
+        onOpenChange={(value) => {
+          if (!remove.isPending) setConfirmRemove(value)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove image from dossier?</DialogTitle>
+            <DialogDescription>
+              {media.evidence.original_filename} will leave this gallery. The
+              original evidence stays saved and you can put the image back from
+              Removed from this dossier.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              disabled={remove.isPending}
+              onClick={() => setConfirmRemove(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={remove.isPending}
+              onClick={async () => {
+                try {
+                  await remove.mutateAsync(undefined)
+                  setConfirmRemove(false)
+                  refresh()
+                } catch {
+                  toast.error("Could not remove the image. Try again.")
+                }
+              }}
+            >
+              {remove.isPending ? "Removing…" : "Remove image"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </article>
   )
 }
@@ -517,21 +566,35 @@ export function DossierDetailSheet({
   open,
   onOpenChange,
   canEdit,
+  onBeforeNavigate,
 }: {
   caseId: string
   dossierId?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
   canEdit: boolean
+  onBeforeNavigate?: () => boolean
 }) {
   const query = useDossier(dossierId)
   const dossier = query.data
-  const linkStates = useLinkStates(caseId, "dossier", dossierId ?? undefined, !!dossier)
-  const linkChoice = useLinkChoice(caseId, "dossier", dossierId ?? undefined, () => void query.refetch())
+  const linkStates = useLinkStates(
+    caseId,
+    "dossier",
+    dossierId ?? undefined,
+    !!dossier
+  )
+  const linkChoice = useLinkChoice(
+    caseId,
+    "dossier",
+    dossierId ?? undefined,
+    () => void query.refetch()
+  )
   const [briefDirty, setBriefDirty] = useState(false)
+  useUnsavedHistoryGuard(open && briefDirty, "Leave this dossier and discard your unsaved brief?")
   const [discardOpen, setDiscardOpen] = useState(false)
   const [mediaOpen, setMediaOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [archiveBusy, setArchiveBusy] = useState(false)
   const [assessmentOpen, setAssessmentOpen] = useState(false)
   const [interviewOpen, setInterviewOpen] = useState(false)
   const [interviewToEdit, setInterviewToEdit] =
@@ -540,10 +603,24 @@ export function DossierDetailSheet({
     useState<DossierInterview | null>(null)
   const [linkOpen, setLinkOpen] = useState(false)
   const [addEvidenceOpen, setAddEvidenceOpen] = useState(false)
+  const [addCaseworkOpen, setAddCaseworkOpen] = useState(false)
+  const collectedRef = useRef<HTMLElement>(null)
   const [entryId, setEntryId] = useState<string | null>(null)
   const [linkedDossierId, setLinkedDossierId] = useState<string | null>(null)
   const [removeLink, setRemoveLink] = useState<DossierLink | null>(null)
   const navigate = useNavigate()
+  const location = useLocation()
+  const allowNavigation = () => {
+    if (
+      briefDirty &&
+      !window.confirm("Leave this dossier and discard your unsaved brief?")
+    )
+      return false
+    return onBeforeNavigate?.() ?? true
+  }
+  const navigateTo = (href: string) => {
+    if (allowNavigation()) navigate(href)
+  }
   const removeInterview = useDossierMutation(
     caseId,
     dossierId ?? "",
@@ -588,11 +665,15 @@ export function DossierDetailSheet({
             ? link.source_anchor.start_seconds
             : undefined,
       })
-    else if (link.target_type === "evidence_passage") navigate(passageHref(caseId, link.target_id, link.source_anchor))
+    else if (link.target_type === "evidence_passage")
+      navigateTo(passageHref(caseId, link.target_id, link.source_anchor))
     else if (isPhoneLinkType(link.target_type)) {
       const href = phoneLinkHref(caseId, link)
-      if (href) navigate(href)
-    }
+      if (href) navigateTo(href)
+    } else if (["task", "deadline"].includes(link.target_type))
+      navigateTo(
+        `/cases/${caseId}/workspace?view=work&item=${encodeURIComponent(link.target_id)}`
+      )
     else if (link.target_type === "entry") setEntryId(link.target_id)
     else if (link.target_type === "dossier" && link.target_id !== dossierId)
       setLinkedDossierId(link.target_id)
@@ -604,10 +685,18 @@ export function DossierDetailSheet({
         className="min-h-10 break-all text-left text-xs text-amber-600 underline underline-offset-2 hover:text-amber-700 dark:text-amber-400"
         onClick={() => openLinkedItem(link)}
       >
-        {link.label || (isPhoneLinkType(link.target_type) ? phoneLinkSummary(link).kind : "Open source evidence")}
+        {link.label ||
+          (isPhoneLinkType(link.target_type)
+            ? phoneLinkSummary(link).kind
+            : "Open source evidence")}
         {isPhoneLinkType(link.target_type) && <PhoneLinkDetail link={link} />}
       </button>
-      <LinkStateNote caseId={caseId} state={linkStates[link.id]} busy={linkChoice.isPending} onChoose={(state, choice) => linkChoice.mutateAsync({ state, choice })} />
+      <LinkStateNote
+        caseId={caseId}
+        state={linkStates[link.id]}
+        busy={linkChoice.isPending}
+        onChoose={(state, choice) => linkChoice.mutateAsync({ state, choice })}
+      />
     </span>
   )
   const queryClient = useQueryClient()
@@ -616,6 +705,14 @@ export function DossierDetailSheet({
     void queryClient.invalidateQueries({
       queryKey: dossierKeys.removed(dossierId ?? ""),
     })
+    void queryClient.invalidateQueries({ queryKey: dossierKeys.lists(caseId) })
+    void queryClient.invalidateQueries({
+      queryKey: ["dossiers", "picker", caseId],
+    })
+    void queryClient.invalidateQueries({
+      queryKey: ["workspace", caseId, "overview"],
+    })
+    void queryClient.invalidateQueries({ queryKey: ["significant", caseId] })
   }
   const moveMedia = async (from: number, to: number) => {
     if (!dossier?.media || to < 0 || to >= dossier.media.length) return
@@ -639,7 +736,8 @@ export function DossierDetailSheet({
     [dossier?.media]
   )
   const archive = async () => {
-    if (!dossier) return
+    if (!dossier || archiveBusy) return
+    setArchiveBusy(true)
     try {
       if (dossier.archived_at) await dossiersAPI.restore(dossier.id)
       else await dossiersAPI.archive(dossier.id)
@@ -651,6 +749,8 @@ export function DossierDetailSheet({
       toast.error(
         error instanceof Error ? error.message : "Could not update Dossier"
       )
+    } finally {
+      setArchiveBusy(false)
     }
   }
   return (
@@ -661,7 +761,26 @@ export function DossierDetailSheet({
         else onOpenChange(value)
       }}
     >
-      <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-3xl">
+      <SheetContent
+        guardTypedContent={false}
+        className="w-full gap-0 overflow-y-auto bg-background p-0 sm:max-w-3xl"
+        onClickCapture={(event) => {
+          const anchor =
+            event.target instanceof Element
+              ? event.target.closest("a[href]")
+              : null
+          const href = anchor?.getAttribute("href")
+          if (
+            href?.startsWith("/") &&
+            anchor?.getAttribute("target") !== "_blank" &&
+            href !== location.pathname + location.search &&
+            !allowNavigation()
+          ) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
+      >
         <SheetTitle className="sr-only">
           {dossier ? `${dossier.display_name} Dossier` : "Dossier details"}
         </SheetTitle>
@@ -684,96 +803,104 @@ export function DossierDetailSheet({
           </div>
         ) : (
           <>
-            <header className="relative min-h-56 overflow-hidden border-b border-border bg-slate-950 text-white">
-              {cover ? (
-                <EvidenceImage
-                  url={cover.evidence.file_url}
-                  alt={cover.caption || dossier.display_name}
-                  focalX={cover.focal_x}
-                  focalY={cover.focal_y}
-                  className="absolute inset-0 size-full opacity-55"
-                />
-              ) : (
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,.16),transparent_45%),linear-gradient(135deg,#172033,#090d16)]" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
-              <div className="relative flex min-h-56 flex-col justify-end p-5">
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {dossier.roles.map((role) => (
-                    <Badge
-                      key={role.id}
-                      className="border-white/15 bg-white/10 text-white"
-                    >
-                      {role.name}
-                    </Badge>
-                  ))}
-                  {dossier.linkage_state === "linked" ? (
-                    <Badge className="border-emerald-300/30 bg-emerald-400/15 text-emerald-100">
-                      <GitBranch className="size-3" /> Graph linked
-                    </Badge>
-                  ) : (
-                    <Badge className="border-amber-300/30 bg-amber-400/15 text-amber-100">
-                      <Link2Off className="size-3" />{" "}
-                      {dossier.graph_entity_deleted
-                        ? "Entity deleted"
-                        : "Unlinked"}
-                    </Badge>
-                  )}
-                  {dossier.needs_link_review ? (
-                    <Badge className="bg-red-500/20 text-red-100">
-                      Link review required
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="flex items-end justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="mb-1 text-xs text-white/60">
-                      {dossier.dossier_type} dossier
+            <header className="shrink-0 border-b border-border/75 px-5 pb-6 pt-10 sm:px-8">
+              <div className="flex items-start gap-4">
+                {cover ? (
+                  <EvidenceImage
+                    url={cover.evidence.file_url}
+                    alt={cover.caption || dossier.display_name}
+                    focalX={cover.focal_x}
+                    focalY={cover.focal_y}
+                    className="size-16 shrink-0 rounded-xl"
+                  />
+                ) : (
+                  <DossierIcon
+                    type={dossier.dossier_type}
+                    className="size-12"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[.16em] text-muted-foreground">
+                    {dossierTypeLabel(dossier.dossier_type)} dossier
+                  </p>
+                  <h2 className="break-words font-display text-2xl font-semibold tracking-tight">
+                    {dossier.display_name}
+                  </h2>
+                  {dossier.importance && (
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      {dossier.importance}
                     </p>
-                    <h2 className="truncate font-display text-2xl font-semibold">
-                      {dossier.display_name}
-                    </h2>
-                    {dossier.importance ? (
-                      <p className="mt-1 text-sm text-white/75">
-                        {dossier.importance}
-                      </p>
-                    ) : null}
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {dossier.roles.map((role) => (
+                      <Badge key={role.id} variant="outline">
+                        {role.name}
+                      </Badge>
+                    ))}
+                    {dossier.archived_at && (
+                      <Badge variant="outline">
+                        <Archive className="size-3" /> Archived
+                      </Badge>
+                    )}
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      {dossier.linkage_state === "linked" ? (
+                        <>
+                          <GitBranch className="size-3" /> Graph linked
+                        </>
+                      ) : (
+                        <>
+                          <Link2Off className="size-3" />
+                          {dossier.graph_entity_deleted
+                            ? "Graph entity deleted"
+                            : "Unlinked"}
+                        </>
+                      )}
+                    </span>
+                    {dossier.needs_link_review && (
+                      <Badge variant="warning">Link review required</Badge>
+                    )}
                   </div>
-                  {canEdit ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          size="icon"
-                          variant="secondary"
-                          aria-label="Dossier actions"
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setDetailsOpen(true)}>
-                          Edit dossier details
-                        </DropdownMenuItem>
-                        {!dossier.canonical_entity_key ? (
-                          <DropdownMenuItem onClick={() => setLinkOpen(true)}>
-                            <GitBranch className="size-4" /> Link graph entity
-                          </DropdownMenuItem>
-                        ) : null}
-                        <DropdownMenuItem onClick={() => void archive()}>
-                          <Archive className="size-4" />{" "}
-                          {dossier.archived_at
-                            ? "Restore Dossier"
-                            : "Archive Dossier"}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
                 </div>
+                {canEdit ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="secondary"
+                        aria-label="Dossier actions"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setDetailsOpen(true)}>
+                        Edit dossier details
+                      </DropdownMenuItem>
+                      {!dossier.canonical_entity_key ? (
+                        <DropdownMenuItem onClick={() => setLinkOpen(true)}>
+                          <GitBranch className="size-4" /> Link graph entity
+                        </DropdownMenuItem>
+                      ) : null}
+                      <DropdownMenuItem
+                        disabled={archiveBusy}
+                        onClick={() => void archive()}
+                      >
+                        <Archive className="size-4" />{" "}
+                        {dossier.archived_at
+                          ? "Restore Dossier"
+                          : "Archive Dossier"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
               </div>
             </header>
             <Tabs defaultValue="brief" className="shrink-0">
-              <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-5 backdrop-blur">
-                <TabsList variant="line" className="h-11">
+              <div className="sticky top-0 z-10 overflow-x-auto border-b border-border/75 bg-background/95 px-5 backdrop-blur sm:px-8">
+                <TabsList
+                  variant="line"
+                  className="h-12 w-max min-w-full justify-start gap-3"
+                >
                   <TabsTrigger value="brief">Brief</TabsTrigger>
                   <TabsTrigger value="media">
                     Media{" "}
@@ -788,7 +915,7 @@ export function DossierDetailSheet({
               <TabsContent
                 value="brief"
                 forceMount
-                className="space-y-6 p-5 data-[state=inactive]:hidden"
+                className="space-y-8 px-5 py-6 data-[state=inactive]:hidden sm:px-8"
               >
                 <section>
                   <div className="mb-2 flex items-center gap-2">
@@ -804,6 +931,165 @@ export function DossierDetailSheet({
                     onDirtyChange={setBriefDirty}
                   />
                 </section>
+                <section
+                  ref={collectedRef}
+                  tabIndex={-1}
+                  className="scroll-mt-20 border-t border-border/75 pt-6 outline-none"
+                >
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Link2 className="size-4" /> Collected work
+                    </h3>
+                    {dossier.links?.some((link) =>
+                      PHONE_EXPORTABLE.includes(link.target_type)
+                    ) && (
+                      <CollectedPhoneExport
+                        caseId={caseId}
+                        source="dossier"
+                        id={dossier.id}
+                      />
+                    )}
+                    {canEdit && (
+                      <div className="flex flex-wrap gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="min-h-10"
+                          onClick={() => setAddCaseworkOpen(true)}
+                        >
+                          <Plus className="size-3.5" /> Add casework
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="min-h-10"
+                          variant="outline"
+                          onClick={() => setAddEvidenceOpen(true)}
+                        >
+                          <Plus className="size-3.5" /> Add evidence
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  {dossier.links?.length ? (
+                    <div className="divide-y divide-border/60">
+                      {dossier.links.map((link) => (
+                        <div
+                          key={link.id}
+                          className="flex flex-wrap items-center gap-3 py-3"
+                        >
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                            {link.target_type === "entry"
+                              ? "Casework"
+                              : link.target_type.replaceAll("_", " ")}
+                          </span>
+                          {link.target_type === "evidence_passage" ? (
+                            <span className="min-w-0 flex-1 break-all text-xs">
+                              <button
+                                type="button"
+                                className="min-h-10 text-left font-medium underline underline-offset-2 hover:text-amber-600"
+                                onClick={() => openLinkedItem(link)}
+                              >
+                                {link.label || "Open quote"}
+                              </button>
+                              <LinkStateNote
+                                caseId={caseId}
+                                state={linkStates[link.id]}
+                              />
+                            </span>
+                          ) : [
+                              "evidence",
+                              "entry",
+                              "dossier",
+                              "task",
+                              "deadline",
+                            ].includes(link.target_type) ||
+                            isPhoneLinkType(link.target_type) ? (
+                            <button
+                              type="button"
+                              className="min-h-10 min-w-0 flex-1 break-all text-left text-xs font-medium underline underline-offset-2 hover:text-amber-600"
+                              onClick={() => openLinkedItem(link)}
+                            >
+                              {link.label || `Open ${link.target_type}`}
+                            </button>
+                          ) : (
+                            <span className="min-w-0 flex-1 break-all text-xs">
+                              {link.label || link.target_id}
+                              <LinkStateNote
+                                caseId={caseId}
+                                state={linkStates[link.id]}
+                                busy={linkChoice.isPending}
+                                onChoose={(state, choice) =>
+                                  linkChoice.mutateAsync({ state, choice })
+                                }
+                              />
+                            </span>
+                          )}
+                          {link.target_type === "phone_selection" && (
+                            <CollectedPhoneExport
+                              caseId={caseId}
+                              source="collection"
+                              id={link.target_id}
+                              label="Export"
+                            />
+                          )}
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Unlink ${link.label || (link.target_type === "evidence" ? "evidence" : "this item")}`}
+                              onClick={() => setRemoveLink(link)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          )}
+                          {link.relationship_type ? (
+                            <span className="text-[10px] text-muted-foreground">
+                              {link.relationship_type}
+                            </span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : !dossier.incoming_casework?.length ? (
+                    <p className="py-4 text-sm leading-relaxed text-muted-foreground">
+                      Collect the evidence, notes and findings relevant to this
+                      subject. Originals remain in their working views.
+                    </p>
+                  ) : null}
+                  {!!dossier.incoming_casework?.length && (
+                    <div className="mt-4 border-t border-border/60 pt-4">
+                      <p className="text-xs font-medium">
+                        Linked from casework
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        These references are managed in the original note,
+                        finding or theory.
+                      </p>
+                      <div className="mt-2 divide-y divide-border/60">
+                        {dossier.incoming_casework.map((item) => (
+                          <button
+                            type="button"
+                            key={item.id}
+                            onClick={() => setEntryId(item.id)}
+                            className="flex min-h-12 w-full items-center gap-3 py-3 text-left hover:text-brand-600"
+                          >
+                            <span className="text-[10px] capitalize text-muted-foreground">
+                              {item.entry_type}
+                            </span>
+                            <span className="min-w-0 flex-1 break-words text-sm font-medium">
+                              {item.title}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {item.relationship === "unclassified"
+                                ? ""
+                                : item.relationship}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
                 <DossierContacts
                   dossier={dossier}
                   canEdit={canEdit}
@@ -816,7 +1102,11 @@ export function DossierDetailSheet({
                     })
                   }
                 />
-                <OnThePhonesPanel caseId={caseId} dossierId={dossier.id} canEdit={canEdit} />
+                <OnThePhonesPanel
+                  caseId={caseId}
+                  dossierId={dossier.id}
+                  canEdit={canEdit}
+                />
                 <section className="space-y-3">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Accepted summaries & comparisons
@@ -830,7 +1120,7 @@ export function DossierDetailSheet({
                     .map((item) => (
                       <article
                         key={item.id}
-                        className="space-y-3 rounded-lg border bg-card p-4"
+                        className="space-y-3 border-l-2 border-brand-500/30 pl-4"
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="outline">
@@ -847,9 +1137,7 @@ export function DossierDetailSheet({
                             · {formatDate(item.created_at)}
                           </span>
                         </div>
-                        <MarkdownSummary
-                          content={item.content}
-                        />
+                        <MarkdownSummary content={item.content} />
                         <div className="flex flex-wrap gap-x-3">
                           {item.supporting_links.map(renderSourceLink)}
                         </div>
@@ -886,8 +1174,11 @@ export function DossierDetailSheet({
                             {item.evidence_links.map((link) =>
                               renderSourceLink({
                                 id: link.id,
-                                target_type: link.evidence_file_id ? "evidence" : (link.target_type ?? "evidence"),
-                                target_id: link.evidence_file_id ?? link.target_id ?? "",
+                                target_type: link.evidence_file_id
+                                  ? "evidence"
+                                  : (link.target_type ?? "evidence"),
+                                target_id:
+                                  link.evidence_file_id ?? link.target_id ?? "",
                                 label: link.evidence?.original_filename ?? null,
                                 source_anchor: link.source_anchor,
                               })
@@ -899,7 +1190,7 @@ export function DossierDetailSheet({
                   </section>
                 )}
                 {dossier.canonical_identity ? (
-                  <section className="rounded-xl border border-border bg-muted/20 p-4">
+                  <section className="border-t border-border/75 pt-6">
                     <div className="mb-3 flex items-center gap-2">
                       <GitBranch className="size-4 text-brand-600" />
                       <h3 className="text-sm font-semibold">
@@ -925,7 +1216,7 @@ export function DossierDetailSheet({
                     ) : null}
                   </section>
                 ) : (
-                  <section className="rounded-xl border border-dashed border-amber-300 bg-amber-50/50 p-4 dark:bg-amber-500/5">
+                  <section className="border-t border-border/75 pt-6">
                     <div className="flex gap-3">
                       <Link2Off className="mt-0.5 size-4 text-amber-600" />
                       <div>
@@ -950,86 +1241,6 @@ export function DossierDetailSheet({
                     </div>
                   </section>
                 )}
-                <section>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      <Link2 className="size-4" /> Evidence & connected casework
-                    </h3>
-                    {dossier.links?.some((link) => PHONE_EXPORTABLE.includes(link.target_type)) && (
-                      <CollectedPhoneExport caseId={caseId} source="dossier" id={dossier.id} />
-                    )}
-                    {canEdit && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAddEvidenceOpen(true)}
-                      >
-                        <Plus className="size-3.5" /> Add evidence
-                      </Button>
-                    )}
-                  </div>
-                  {dossier.links?.length ? (
-                    <div className="divide-y divide-border rounded-lg border border-border">
-                      {dossier.links.map((link) => (
-                        <div
-                          key={link.id}
-                          className="flex items-center gap-3 p-3"
-                        >
-                          <Badge variant="outline">{link.target_type}</Badge>
-                          {link.target_type === "evidence_passage" ? (
-                            <span className="min-w-0 flex-1 break-all text-xs">
-                              <button
-                                type="button"
-                                className="min-h-10 text-left font-medium underline underline-offset-2 hover:text-amber-600"
-                                onClick={() => openLinkedItem(link)}
-                              >
-                                {link.label || "Open quote"}
-                              </button>
-                              <LinkStateNote caseId={caseId} state={linkStates[link.id]} />
-                            </span>
-                          ) : ["evidence", "entry", "dossier"].includes(
-                            link.target_type
-                          ) ? (
-                            <button
-                              type="button"
-                              className="min-h-10 min-w-0 flex-1 break-all text-left text-xs font-medium underline underline-offset-2 hover:text-amber-600"
-                              onClick={() => openLinkedItem(link)}
-                            >
-                              {link.label || `Open ${link.target_type}`}
-                            </button>
-                          ) : (
-                            <span className="min-w-0 flex-1 break-all text-xs">
-                              {link.label || link.target_id}
-                              <LinkStateNote caseId={caseId} state={linkStates[link.id]} busy={linkChoice.isPending} onChoose={(state, choice) => linkChoice.mutateAsync({ state, choice })} />
-                            </span>
-                          )}
-                          {link.target_type === "phone_selection" && (
-                            <CollectedPhoneExport caseId={caseId} source="collection" id={link.target_id} label="Export" />
-                          )}
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`Unlink ${link.label || (link.target_type === "evidence" ? "evidence" : "this item")}`}
-                              onClick={() => setRemoveLink(link)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          )}
-                          {link.relationship_type ? (
-                            <span className="text-[10px] text-muted-foreground">
-                              {link.relationship_type}
-                            </span>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
-                      No connected casework yet.
-                    </p>
-                  )}
-                </section>
               </TabsContent>
               <TabsContent value="media" className="p-5">
                 <div className="mb-4 flex items-center justify-between">
@@ -1103,7 +1314,7 @@ export function DossierDetailSheet({
                   {dossier.assessments?.map((item) => (
                     <article
                       key={item.id}
-                      className="rounded-lg border border-border bg-card p-4"
+                      className="border-b border-border/75 py-5"
                     >
                       <div className="flex items-center gap-2">
                         <ShieldCheck className="size-4 text-amber-600" />
@@ -1114,7 +1325,8 @@ export function DossierDetailSheet({
                         {item.provenance_type === "ai_assisted" ? (
                           <Badge variant="info">
                             <Sparkles className="size-3" />{" "}
-                            {item.read_by ?? "AI-assisted · investigator accepted"}
+                            {item.read_by ??
+                              "AI-assisted · investigator accepted"}
                           </Badge>
                         ) : null}
                         <span className="ml-auto text-[10px] text-muted-foreground">
@@ -1168,7 +1380,7 @@ export function DossierDetailSheet({
                   {dossier.interviews?.map((item) => (
                     <article
                       key={item.id}
-                      className="rounded-lg border border-border bg-card px-3 py-2.5"
+                      className="border-b border-border/75 py-5"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <CalendarDays className="size-4 text-muted-foreground" />
@@ -1176,7 +1388,13 @@ export function DossierDetailSheet({
                           caseId={caseId}
                           surface="interview"
                           label="Theory…"
-                          items={[{ target_type: "interview", target_id: item.id, target_label: `Interview with ${dossier.display_name}, ${formatInterviewDate(item.date_value ?? item.interview_date)}` }]}
+                          items={[
+                            {
+                              target_type: "interview",
+                              target_id: item.id,
+                              target_label: `Interview with ${dossier.display_name}, ${formatInterviewDate(item.date_value ?? item.interview_date)}`,
+                            },
+                          ]}
                         />
                         {canEdit && (
                           <div className="ml-auto flex gap-1">
@@ -1209,54 +1427,65 @@ export function DossierDetailSheet({
                         {splitParticipants(item.participants).names.length ? (
                           <p className="text-xs text-muted-foreground sm:ml-auto">
                             <UserRound className="mr-1 inline size-3" />{" "}
-                            {splitParticipants(item.participants).names.join(", ")}
+                            {splitParticipants(item.participants).names.join(
+                              ", "
+                            )}
                           </p>
                         ) : null}
                       </div>
                       {splitParticipants(item.participants).interviewedBy ? (
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Interviewed by: {splitParticipants(item.participants).interviewedBy}
+                          Interviewed by:{" "}
+                          {splitParticipants(item.participants).interviewedBy}
                         </p>
                       ) : null}
-                      {item.working_notes ? <InterviewNotes text={item.working_notes} /> : null}
+                      {item.working_notes ? (
+                        <InterviewNotes text={item.working_notes} />
+                      ) : null}
                       {item.evidence_links.length ? (
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                          {item.evidence_links.map((link) => !link.evidence_file_id ? (
-                            renderSourceLink({
-                              id: link.id,
-                              target_type: link.target_type ?? "",
-                              target_id: link.target_id ?? "",
-                              label: null,
-                              source_anchor: link.source_anchor,
-                            })
-                          ) : (
-                            <button
-                              type="button"
-                              key={link.id}
-                              onClick={() =>
-                                setViewerDoc({
-                                  evidenceId: link.evidence_file_id!,
-                                  url: evidenceAPI.getFileUrl(
-                                    link.evidence_file_id!
-                                  ),
-                                  name: link.evidence?.original_filename ?? "Evidence file",
-                                  page:
-                                    typeof link.source_anchor?.page === "number"
-                                      ? link.source_anchor.page
-                                      : undefined,
-                                  time:
-                                    typeof link.source_anchor?.start_seconds ===
-                                    "number"
-                                      ? link.source_anchor.start_seconds
-                                      : undefined,
-                                })
-                              }
-                              className="inline-flex min-h-10 items-center gap-1.5 break-all text-left text-xs text-amber-500 underline underline-offset-2 hover:text-amber-400"
-                            >
-                              <FileText className="size-3" />{" "}
-                              {link.evidence?.original_filename ?? "Evidence file"}
-                            </button>
-                          ))}
+                          {item.evidence_links.map((link) =>
+                            !link.evidence_file_id ? (
+                              renderSourceLink({
+                                id: link.id,
+                                target_type: link.target_type ?? "",
+                                target_id: link.target_id ?? "",
+                                label: null,
+                                source_anchor: link.source_anchor,
+                              })
+                            ) : (
+                              <button
+                                type="button"
+                                key={link.id}
+                                onClick={() =>
+                                  setViewerDoc({
+                                    evidenceId: link.evidence_file_id!,
+                                    url: evidenceAPI.getFileUrl(
+                                      link.evidence_file_id!
+                                    ),
+                                    name:
+                                      link.evidence?.original_filename ??
+                                      "Evidence file",
+                                    page:
+                                      typeof link.source_anchor?.page ===
+                                      "number"
+                                        ? link.source_anchor.page
+                                        : undefined,
+                                    time:
+                                      typeof link.source_anchor
+                                        ?.start_seconds === "number"
+                                        ? link.source_anchor.start_seconds
+                                        : undefined,
+                                  })
+                                }
+                                className="inline-flex min-h-10 items-center gap-1.5 break-all text-left text-xs text-amber-500 underline underline-offset-2 hover:text-amber-400"
+                              >
+                                <FileText className="size-3" />{" "}
+                                {link.evidence?.original_filename ??
+                                  "Evidence file"}
+                              </button>
+                            )
+                          )}
                         </div>
                       ) : null}
                     </article>
@@ -1391,6 +1620,7 @@ export function DossierDetailSheet({
               })
             }
             onOpenDossier={setLinkedDossierId}
+            onBeforeNavigate={allowNavigation}
           />
         </Suspense>
       )}
@@ -1399,10 +1629,21 @@ export function DossierDetailSheet({
           key={linkedDossierId}
           caseId={caseId}
           dossierId={linkedDossierId}
+          onBeforeNavigate={allowNavigation}
           open
           canEdit={canEdit}
           onOpenChange={(value) => {
             if (!value) setLinkedDossierId(null)
+          }}
+        />
+      )}
+      {dossier && addCaseworkOpen && (
+        <AddDossierCaseworkDialog
+          dossier={dossier}
+          onClose={() => setAddCaseworkOpen(false)}
+          onSaved={() => {
+            collectedRef.current?.scrollIntoView({ block: "start" })
+            collectedRef.current?.focus()
           }}
         />
       )}
@@ -1422,9 +1663,9 @@ export function DossierDetailSheet({
           <DialogHeader>
             <DialogTitle>Remove interview from dossier?</DialogTitle>
             <DialogDescription>
-              The interview entry and its working notes will be removed. A
-              copy is kept: put it back from Removed from this dossier.
-              Original evidence files and accepted assessments remain saved.
+              The interview entry and its working notes will be removed. A copy
+              is kept: put it back from Removed from this dossier. Original
+              evidence files and accepted assessments remain saved.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1461,7 +1702,9 @@ export function DossierDetailSheet({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{unlinkingEvidence ? "Unlink evidence?" : "Unlink this item?"}</DialogTitle>
+            <DialogTitle>
+              {unlinkingEvidence ? "Unlink evidence?" : "Unlink this item?"}
+            </DialogTitle>
             <DialogDescription>
               {unlinkingEvidence
                 ? `Remove ${removeLink?.label || "this file"} from this dossier. The original evidence file and other dossier links stay unchanged.`
@@ -1481,16 +1724,29 @@ export function DossierDetailSheet({
               onClick={async () => {
                 if (!removeLink) return
                 try {
-                  if (unlinkingEvidence) await removeEvidence.mutateAsync(removeLink.target_id)
+                  if (unlinkingEvidence)
+                    await removeEvidence.mutateAsync(removeLink.target_id)
                   else await removeOtherLink.mutateAsync(removeLink.id)
                   setRemoveLink(null)
-                  toast.success(unlinkingEvidence ? "Evidence unlinked" : "Unlinked from this dossier")
+                  toast.success(
+                    unlinkingEvidence
+                      ? "Evidence unlinked"
+                      : "Unlinked from this dossier"
+                  )
                 } catch {
-                  toast.error(unlinkingEvidence ? "Could not unlink evidence. Try again." : "Could not unlink this item. Try again.")
+                  toast.error(
+                    unlinkingEvidence
+                      ? "Could not unlink evidence. Try again."
+                      : "Could not unlink this item. Try again."
+                  )
                 }
               }}
             >
-              {unlinking ? "Unlinking…" : unlinkingEvidence ? "Unlink evidence" : "Unlink"}
+              {unlinking
+                ? "Unlinking…"
+                : unlinkingEvidence
+                  ? "Unlink evidence"
+                  : "Unlink"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1505,9 +1761,17 @@ function InterviewNotes({ text }: { text: string }) {
   const long = text.length > 280 || text.split("\n").length > 3
   return (
     <div className="mt-2">
-      <p className={`whitespace-pre-wrap text-xs leading-relaxed ${open || !long ? "" : "line-clamp-3"}`}>{text}</p>
+      <p
+        className={`whitespace-pre-wrap text-xs leading-relaxed ${open || !long ? "" : "line-clamp-3"}`}
+      >
+        {text}
+      </p>
       {long ? (
-        <button type="button" className="mt-1 text-[11px] text-muted-foreground underline" onClick={() => setOpen(!open)}>
+        <button
+          type="button"
+          className="mt-1 text-[11px] text-muted-foreground underline"
+          onClick={() => setOpen(!open)}
+        >
           {open ? "Show less" : "Show full notes"}
         </button>
       ) : null}

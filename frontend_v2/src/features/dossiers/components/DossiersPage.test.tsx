@@ -81,6 +81,15 @@ function renderPage(initialEntry: string) {
 }
 
 describe("DossiersPage deep links", () => {
+  it("restores filters from a link and clears them without losing unrelated context", async () => {
+    const user = userEvent.setup()
+    renderPage("/cases/case-1/dossiers?source=workspace&q=Henry&type=person&linkage=linked")
+    expect(screen.getByRole("textbox", { name: "Search dossiers" })).toHaveValue("Henry")
+    expect(screen.getByRole("combobox", { name: "Subject type" })).toHaveTextContent("Person")
+    await user.click(screen.getByRole("button", { name: "Clear filters" }))
+    expect(screen.getByLabelText("location")).toHaveTextContent("/cases/case-1/dossiers?source=workspace")
+    expect(screen.getByRole("textbox", { name: "Search dossiers" })).toHaveValue("")
+  })
   it("opens a linked Dossier and keeps selection in the URL", () => {
     renderPage("/cases/case-1/dossiers?dossier=dossier-1")
     expect(screen.getByText("Open Dossier dossier-1")).toBeInTheDocument()

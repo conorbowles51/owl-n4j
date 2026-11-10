@@ -89,6 +89,8 @@ def list_case_tasks(
     assignee_user_id: UUID | None = None,
     due_before: datetime | None = None,
     include_deleted: bool = False,
+    parent_candidates: bool = False,
+    search: str | None = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=250),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -103,6 +105,8 @@ def list_case_tasks(
             assignee_user_id=assignee_user_id,
             due_before=due_before,
             include_deleted=include_deleted,
+            parent_candidates=parent_candidates,
+            search=search,
             limit=limit,
             offset=offset,
         )

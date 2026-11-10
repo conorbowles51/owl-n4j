@@ -21,7 +21,7 @@ export const deadlinesAPI = {
   update: (
     caseId: string,
     deadlineId: string,
-    data: { name?: string; due_date?: string }
+    data: { name?: string; due_date?: string; completed?: boolean }
   ) =>
     fetchAPI<CaseDeadline>(`/api/cases/${caseId}/deadlines/${deadlineId}`, {
       method: "PATCH",

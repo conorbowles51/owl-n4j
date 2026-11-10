@@ -3,6 +3,16 @@ import { dossiersAPI } from "./api"
 
 describe("dossiersAPI", () => {
   beforeEach(() => { localStorage.clear(); vi.restoreAllMocks() })
+  it("reads containing dossiers by entry and appends casework without replacing other links", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }))
+    await dossiersAPI.list({ caseId: "case-1", linkedEntryId: "entry-1", includeArchived: true })
+    expect(String(fetchMock.mock.calls[0][0])).toContain("linked_entry_id=entry-1")
+    expect(String(fetchMock.mock.calls[0][0])).toContain("case_id=case-1")
+    await dossiersAPI.addLinks("dossier-1", [{ target_type: "entry", target_id: "entry-1", label: "Follow-up" }])
+    expect(String(fetchMock.mock.calls[1][0])).toBe("/api/dossiers/dossier-1/links:add")
+    expect(fetchMock.mock.calls[1][1]?.method).toBe("POST")
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).links).toEqual([{ target_type: "entry", target_id: "entry-1", label: "Follow-up" }])
+  })
   it("uses bounded server-side list filters", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ dossiers: [], total: 0, limit: 25, offset: 50 }), { status: 200, headers: { "Content-Type": "application/json" } }))
     await dossiersAPI.list({ caseId: "case one", q: "henry", dossierType: "person", linkageState: "linked", limit: 25, offset: 50 })

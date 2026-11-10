@@ -44,6 +44,29 @@ const show = (canEdit = true) =>
   )
 
 describe("What changed brief", () => {
+  it("shows a failed check and lets the user retry without removing the current brief", async () => {
+    let checks = 0
+    mocks.fetchAPI.mockReset().mockImplementation((url: string) => {
+      if (url.endsWith("/run")) return ++checks === 1 ? Promise.reject(new Error("Offline")) : Promise.resolve({ requested: true })
+      return Promise.resolve({ brief: brief(), requested_at: null })
+    })
+    show()
+    await screen.findByText("Current")
+    fireEvent.click(screen.getByRole("button", { name: /Check now/ }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not request a new brief")
+    expect(screen.getByText("Current")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /Check now/ }))
+    await vi.waitFor(() => expect(checks).toBe(2))
+    await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+  })
+
+  it("retries loading a failed brief", async () => {
+    mocks.fetchAPI.mockReset().mockRejectedValueOnce(new Error("Offline")).mockResolvedValue({ brief: brief(), requested_at: null })
+    show(false)
+    fireEvent.click(await screen.findByRole("button", { name: "Retry brief" }))
+    expect(await screen.findByText("Current")).toBeInTheDocument()
+  })
+
   it("shows closed leads, newly testable days with the count left out, totals before and after with revisions", async () => {
     mocks.fetchAPI.mockResolvedValue({ brief: brief(), requested_at: null })
     show()

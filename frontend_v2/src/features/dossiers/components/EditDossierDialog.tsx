@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -42,6 +43,15 @@ export function EditDossierDialog({
       ].map((role) => ({ name: role })),
     })
   )
+  const snapshot = JSON.stringify([name, type, importance, roles])
+  const [original] = useState(snapshot)
+  const dirty = snapshot !== original
+  const discardMessage = "Discard your unsaved dossier details?"
+  useUnsavedHistoryGuard(dirty || update.isPending, discardMessage)
+  const close = () => {
+    if (!update.isPending && (!dirty || window.confirm(discardMessage)))
+      onClose()
+  }
   const save = async (event: React.FormEvent) => {
     event.preventDefault()
     setError("")
@@ -58,10 +68,13 @@ export function EditDossierDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !update.isPending) onClose()
+        if (!open) close()
       }}
     >
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <DialogContent
+        guardTypedContent={false}
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle>Edit dossier details</DialogTitle>
           <DialogDescription>
@@ -143,7 +156,7 @@ export function EditDossierDialog({
               type="button"
               variant="ghost"
               disabled={update.isPending}
-              onClick={onClose}
+              onClick={close}
             >
               Cancel
             </Button>

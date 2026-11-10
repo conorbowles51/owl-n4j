@@ -1,4 +1,10 @@
-import { render, screen, within, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+  waitFor,
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, useLocation } from "react-router-dom"
@@ -7,6 +13,7 @@ import { page } from "vitest/browser"
 import { CaseworkListView } from "@/features/workspace/components/CaseworkListView"
 import { DossierDetailSheet } from "./DossierDetailSheet"
 import { DossierCreateSheet } from "./DossierCreateSheet"
+import { EditDossierDialog } from "./EditDossierDialog"
 import { AddEvidenceToDossierDialog } from "./AddEvidenceToDossierDialog"
 import type { Dossier } from "../api"
 import "@/styles/globals.css"
@@ -26,6 +33,7 @@ vi.mock("@/lib/protected-file", () => ({
 let dossier: Dossier
 let workspaceLinkJourney: boolean
 let failSave: boolean
+let interviewSaveGate: Promise<void> | null
 let listTotal: number
 let requests: Array<{
   url: string
@@ -41,6 +49,7 @@ const json = (value: unknown, status = 200) =>
 beforeEach(() => {
   workspaceLinkJourney = false
   failSave = false
+  interviewSaveGate = null
   listTotal = 1
   requests = []
   dossier = {
@@ -167,6 +176,33 @@ beforeEach(() => {
       return json(dossier)
     }
     if (url === "/api/dossiers/dossier-1") return json(dossier)
+    if (url.endsWith("/dossier-1/links:add") && method === "POST") {
+      if (failSave) return json({ detail: "Temporary link failure" }, 503)
+      const links = body.links as Array<{
+        target_type: string
+        target_id: string
+        label: string
+      }>
+      for (const link of links)
+        if (
+          !dossier.links!.some(
+            (existing) =>
+              existing.target_type === link.target_type &&
+              existing.target_id === link.target_id
+          )
+        )
+          dossier.links!.push({
+            id: `link-${link.target_id}`,
+            ...link,
+            source_anchor: {},
+          })
+      return json({
+        added: links.length,
+        skipped: 0,
+        added_link_ids: links.map((link) => `link-${link.target_id}`),
+        total_links: dossier.links!.length,
+      })
+    }
     if (url.endsWith("/dossier-1/evidence") && method === "POST") {
       for (const id of body.evidence_file_ids as string[])
         if (!dossier.links!.some((link) => link.target_id === id))
@@ -185,6 +221,9 @@ beforeEach(() => {
       return json({ dossier_id: "dossier-1", removed: 1 })
     }
     if (url.endsWith("/interviews/interview-1") && method === "PATCH") {
+      if (interviewSaveGate) await interviewSaveGate
+      if (failSave)
+        return json({ detail: "Temporary interview save failure" }, 503)
       const interview = dossier.interviews![0]
       Object.assign(interview, body, {
         evidence_links: interview.evidence_links,
@@ -195,8 +234,34 @@ beforeEach(() => {
       dossier.interviews = []
       return new Response(null, { status: 204 })
     }
+    if (url.includes("/api/phones/people/")) return json({ phones_in_case: 0 })
     if (url.includes("/entries/authors")) return json({ authors: [] })
-    if (/\/entries\?/.test(url)) return json({ entries: [{ id: "entry-1", entry_type: "note", title: "Witness follow-up", body: "Follow up on the recorded discrepancy.", tags: [], links: [], review_state: "accepted", version: 1 }], total: 1 })
+    if (/\/entries\?/.test(url))
+      return json({
+        entries: [
+          {
+            id: "entry-2",
+            entry_type: "finding",
+            title: "Timestamp discrepancy",
+            body: "Recorded times differ.",
+            tags: [],
+            links: [],
+            review_state: "accepted",
+            version: 1,
+          },
+          {
+            id: "entry-1",
+            entry_type: "note",
+            title: "Witness follow-up",
+            body: "Follow up on the recorded discrepancy.",
+            tags: [],
+            links: [],
+            review_state: "accepted",
+            version: 1,
+          },
+        ],
+        total: 2,
+      })
     if (url.includes("/entries/entry-1") && !url.includes("history"))
       return json({
         id: "entry-1",
@@ -207,7 +272,26 @@ beforeEach(() => {
         version: 1,
         review_state: "accepted",
         tags: [],
-        links: workspaceLinkJourney ? [ { id: "source", target_type: "evidence", target_id: "evidence-1", target_label: "Original statement source", relationship: "context", source_anchor: { page: 2 } }, { id: "subject", target_type: "dossier", target_id: "dossier-1", target_label: "Witness dossier", relationship: "context", source_anchor: {} } ] : [],
+        links: workspaceLinkJourney
+          ? [
+              {
+                id: "source",
+                target_type: "evidence",
+                target_id: "evidence-1",
+                target_label: "Original statement source",
+                relationship: "context",
+                source_anchor: { page: 2 },
+              },
+              {
+                id: "subject",
+                target_type: "dossier",
+                target_id: "dossier-1",
+                target_label: "Witness dossier",
+                relationship: "context",
+                source_anchor: {},
+              },
+            ]
+          : [],
         needs_migration_review: false,
       })
     if (url.includes("history"))
@@ -226,7 +310,7 @@ function LocationProbe() {
     </output>
   )
 }
-function renderDossier(canEdit = true) {
+function renderDossier(canEdit = true, onBeforeNavigate?: () => boolean) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -241,6 +325,7 @@ function renderDossier(canEdit = true) {
           open
           canEdit={canEdit}
           onOpenChange={vi.fn()}
+          onBeforeNavigate={onBeforeNavigate}
         />
         <LocationProbe />
       </MemoryRouter>
@@ -295,6 +380,61 @@ describe("Connected dossier workflows", () => {
     )
   })
 
+  it("opens casework that references the dossier and returns without copying the reference", async () => {
+    const user = userEvent.setup()
+    dossier.links = dossier.links!.filter(
+      (link) => link.target_type !== "entry"
+    )
+    dossier.incoming_casework = [
+      {
+        id: "entry-1",
+        title: "Witness follow-up",
+        entry_type: "note",
+        relationship: "context",
+      },
+    ]
+    renderDossier()
+    expect(await screen.findByText("Linked from casework")).toBeVisible()
+    expect(
+      screen.queryByRole("button", { name: "Unlink Witness follow-up" })
+    ).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Witness follow-up/ }))
+    expect(
+      await screen.findByText("Follow up on the recorded discrepancy.")
+    ).toBeVisible()
+    await user.keyboard("{Escape}")
+    expect(screen.getByText("Linked from casework")).toBeVisible()
+    expect(
+      requests.some(
+        (request) =>
+          request.method === "POST" && request.url.endsWith("/links:add")
+      )
+    ).toBe(false)
+  })
+
+  it("protects an unsaved parent when a collected deadline leaves the dossier", async () => {
+    const user = userEvent.setup()
+    dossier.links!.push({
+      id: "deadline-link",
+      target_type: "deadline",
+      target_id: "deadline-1",
+      label: "Review due",
+      source_anchor: {},
+    })
+    const allow = vi.fn().mockReturnValue(false)
+    renderDossier(true, allow)
+    await user.click(await screen.findByRole("button", { name: "Review due" }))
+    expect(allow).toHaveBeenCalledTimes(1)
+    expect(screen.getByLabelText("location")).toHaveTextContent(
+      "/cases/case-1/dossiers?dossier=dossier-1"
+    )
+    allow.mockReturnValue(true)
+    await user.click(screen.getByRole("button", { name: "Review due" }))
+    expect(screen.getByLabelText("location")).toHaveTextContent(
+      "/cases/case-1/workspace?view=work&item=deadline-1"
+    )
+  })
+
   it("adds evidence from the Brief and retains existing casework links", async () => {
     const user = userEvent.setup()
     renderDossier()
@@ -328,6 +468,83 @@ describe("Connected dossier workflows", () => {
     ).toBe(false)
   })
 
+  it("collects existing casework, keeps failed selection, opens it and unlinks only the reference", async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
+    await page.viewport(1280, 900)
+    renderDossier()
+    await user.click(
+      await screen.findByRole("button", { name: "Add casework" })
+    )
+    const picker = screen.getByRole("dialog", {
+      name: "Add casework to Witness Example",
+    })
+    expect(
+      await within(picker).findByRole("button", { name: /Witness follow-up/ })
+    ).toBeDisabled()
+    await user.click(
+      within(picker).getByRole("button", { name: /Timestamp discrepancy/ })
+    )
+    await user.keyboard("{Escape}")
+    expect(confirm).toHaveBeenCalledWith(
+      "Discard your selected casework without linking it?"
+    )
+    expect(picker).toBeVisible()
+    failSave = true
+    await user.click(
+      within(picker).getByRole("button", { name: "Link 1 item" })
+    )
+    expect(await within(picker).findByRole("alert")).toHaveTextContent(
+      "Your selection is kept"
+    )
+    expect(
+      within(picker).getByRole("button", { name: /Timestamp discrepancy/ })
+    ).toHaveAttribute("aria-pressed", "true")
+    failSave = false
+    await user.click(
+      within(picker).getByRole("button", { name: "Retry linking" })
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", {
+          name: "Add casework to Witness Example",
+        })
+      ).not.toBeInTheDocument()
+    )
+    expect(
+      screen.getByRole("button", { name: "Timestamp discrepancy" })
+    ).toBeVisible()
+    expect(
+      screen.getByRole("button", { name: "Witness follow-up" })
+    ).toBeVisible()
+    expect(
+      requests.some(
+        (request) => request.method === "PUT" && request.url.endsWith("/links")
+      )
+    ).toBe(false)
+    await user.click(
+      screen.getByRole("button", { name: "Unlink Timestamp discrepancy" })
+    )
+    await user.click(
+      within(
+        screen.getByRole("dialog", { name: "Unlink this item?" })
+      ).getByRole("button", { name: "Unlink" })
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Timestamp discrepancy" })
+      ).not.toBeInTheDocument()
+    )
+    expect(dossier.links!.some((link) => link.target_id === "entry-1")).toBe(
+      true
+    )
+    expect(
+      requests
+        .filter((request) => request.method === "DELETE")
+        .map((request) => request.url)
+    ).toEqual(["/api/dossiers/dossier-1/links/link-entry-2"])
+  })
+
   it("unlinks a phone message from the dossier through its link, leaving the other links", async () => {
     dossier.links!.push({
       id: "phone-link",
@@ -339,19 +556,29 @@ describe("Connected dossier workflows", () => {
     const user = userEvent.setup()
     renderDossier()
     await user.click(
-      await screen.findByRole("button", { name: "Unlink Synthetic sender -> Owner of C1" })
+      await screen.findByRole("button", {
+        name: "Unlink Synthetic sender -> Owner of C1",
+      })
     )
     const confirm = screen.getByRole("dialog", { name: "Unlink this item?" })
-    expect(confirm).toHaveTextContent("The item itself and other dossier links stay unchanged.")
+    expect(confirm).toHaveTextContent(
+      "The item itself and other dossier links stay unchanged."
+    )
     await user.click(within(confirm).getByRole("button", { name: "Unlink" }))
     await waitFor(() =>
-      expect(screen.queryByText("Synthetic sender -> Owner of C1")).not.toBeInTheDocument()
+      expect(
+        screen.queryByText("Synthetic sender -> Owner of C1")
+      ).not.toBeInTheDocument()
     )
     expect(
       requests.filter((r) => r.method === "DELETE").map((r) => r.url)
     ).toEqual(["/api/dossiers/dossier-1/links/phone-link"])
-    expect(screen.getAllByRole("button", { name: "statement.pdf" })[0]).toBeVisible()
-    expect(screen.getByRole("button", { name: "Witness follow-up" })).toBeVisible()
+    expect(
+      screen.getAllByRole("button", { name: "statement.pdf" })[0]
+    ).toBeVisible()
+    expect(
+      screen.getByRole("button", { name: "Witness follow-up" })
+    ).toBeVisible()
   })
 
   it("keeps a failed brief save and unsaved writing through tab changes", async () => {
@@ -369,9 +596,9 @@ describe("Connected dossier workflows", () => {
     ).toHaveValue("Revised investigator analysis")
     failSave = true
     await user.click(screen.getByRole("button", { name: "Save brief" }))
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Your writing is kept"
-    )
+    expect(
+      await screen.findByText(/Your brief could not be saved/)
+    ).toHaveTextContent("Your writing is kept")
     failSave = false
     await user.click(screen.getByRole("button", { name: "Retry save" }))
     await waitFor(() =>
@@ -434,6 +661,99 @@ describe("Connected dossier workflows", () => {
     expect(saved.body.evidence_links).toEqual([
       { evidence_file_id: "evidence-1", source_anchor: { page: 2 } },
     ])
+  })
+
+  it("retains an interview draft after cancelled closes and failed saves, then reopens the saved changes", async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
+    renderDossier()
+    await user.click(await screen.findByRole("tab", { name: "Interviews" }))
+    await user.click(screen.getByRole("button", { name: /Edit interview/ }))
+    const dialog = screen.getByRole("dialog", {
+      name: "Edit interview or statement",
+    })
+    const notes = within(dialog).getByLabelText("Working notes")
+    await user.clear(notes)
+    await user.type(
+      notes,
+      "Witness clarified the meeting time; verify against the original statement."
+    )
+    await user.type(
+      within(dialog).getByLabelText("Participants"),
+      ", Investigator Example"
+    )
+    await user.type(
+      within(dialog).getByLabelText("Interviewed by"),
+      "Case investigator"
+    )
+    fireEvent.change(within(dialog).getByLabelText("Month and year"), {
+      target: { value: "2025-08" },
+    })
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await user.keyboard("{Escape}")
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(notes).toHaveValue(
+      "Witness clarified the meeting time; verify against the original statement."
+    )
+    expect(within(dialog).getByLabelText("Participants")).toHaveValue(
+      "Witness Example, Investigator Example"
+    )
+    expect(within(dialog).getByLabelText("Month and year")).toHaveValue(
+      "2025-08"
+    )
+    expect(requests.some((request) => request.method === "PATCH")).toBe(false)
+
+    failSave = true
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save interview" })
+    )
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Temporary interview save failure"
+    )
+    expect(notes).toHaveValue(
+      "Witness clarified the meeting time; verify against the original statement."
+    )
+    failSave = false
+    let finishSave!: () => void
+    interviewSaveGate = new Promise<void>((resolve) => {
+      finishSave = resolve
+    })
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save interview" })
+    )
+    expect(
+      within(dialog).getByRole("button", { name: "Saving…" })
+    ).toBeDisabled()
+    expect(within(dialog).getByRole("button", { name: "Add" })).toBeDisabled()
+    await user.keyboard("{Escape}")
+    expect(dialog).toBeVisible()
+    expect(confirm).toHaveBeenCalledTimes(2)
+    finishSave()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Edit interview or statement" })
+      ).not.toBeInTheDocument()
+    )
+
+    await user.click(screen.getByRole("button", { name: /Edit interview/ }))
+    const reopened = screen.getByRole("dialog", {
+      name: "Edit interview or statement",
+    })
+    expect(within(reopened).getByLabelText("Working notes")).toHaveValue(
+      "Witness clarified the meeting time; verify against the original statement."
+    )
+    expect(within(reopened).getByLabelText("Participants")).toHaveValue(
+      "Witness Example, Investigator Example"
+    )
+    expect(within(reopened).getByLabelText("Interviewed by")).toHaveValue(
+      "Case investigator"
+    )
+    expect(within(reopened).getByLabelText("Month and year")).toHaveValue(
+      "2025-08"
+    )
+    await user.click(within(reopened).getByRole("button", { name: "Cancel" }))
+    expect(confirm).toHaveBeenCalledTimes(2)
   })
 
   it("confirms interview removal and retains accepted summaries and evidence", async () => {
@@ -519,6 +839,82 @@ describe("Connected dossier workflows", () => {
     expect(requests.some((request) => request.method === "POST")).toBe(false)
   })
 
+  it("protects new dossier writing before closing or opening an existing subject", async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
+    const onOpenChange = vi.fn()
+    const onOpenExisting = vi.fn()
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <DossierCreateSheet
+          caseId="case-1"
+          initialEntity={{ key: "person:current", name: "Current name" }}
+          open
+          onOpenChange={onOpenChange}
+          onOpenExisting={onOpenExisting}
+        />
+      </QueryClientProvider>
+    )
+    await user.type(
+      screen.getByLabelText("Investigator summary"),
+      "Unsaved source context"
+    )
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+    await user.click(
+      await screen.findByRole("button", { name: "Open existing dossier" })
+    )
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(onOpenExisting).not.toHaveBeenCalled()
+    expect(screen.getByLabelText("Investigator summary")).toHaveValue(
+      "Unsaved source context"
+    )
+    confirm.mockReturnValue(true)
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("retains dossier details after a cancelled close and failed save", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, "confirm").mockReturnValue(false)
+    const onClose = vi.fn()
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <EditDossierDialog dossier={dossier} onClose={onClose} />
+      </QueryClientProvider>
+    )
+    await user.type(
+      screen.getByLabelText("Why this subject matters"),
+      "Can confirm the meeting time"
+    )
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(onClose).not.toHaveBeenCalled()
+    failSave = true
+    await user.click(
+      screen.getByRole("button", { name: "Save dossier details" })
+    )
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your changes are kept"
+    )
+    expect(screen.getByLabelText("Why this subject matters")).toHaveValue(
+      "Can confirm the meeting time"
+    )
+    failSave = false
+    await user.click(
+      screen.getByRole("button", { name: "Save dossier details" })
+    )
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(dossier.importance).toBe("Can confirm the meeting time")
+  })
+
   it("searches and pages through dossiers when attaching evidence", async () => {
     const user = userEvent.setup()
     listTotal = 101
@@ -563,20 +959,44 @@ describe("Connected dossier workflows", () => {
   })
 })
 
-
 it("opens Workspace note sources and dossiers in overlays and returns to the same note", async () => {
   workspaceLinkJourney = true
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   const user = userEvent.setup()
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/cases/case-1/workspace?view=casework&kind=note"]}><CaseworkListView caseId="case-1" entryType="note" canEdit /><LocationProbe /></MemoryRouter></QueryClientProvider>)
-  await user.click(await screen.findByRole("heading", { name: "Witness follow-up" }))
-  await user.click(await screen.findByRole("button", { name: /Original statement source/ }))
-  expect(await screen.findByRole("img", { name: "Page 2 of the original PDF" })).toBeVisible()
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter
+        initialEntries={["/cases/case-1/workspace?view=casework&kind=note"]}
+      >
+        <CaseworkListView caseId="case-1" entryType="note" canEdit />
+        <LocationProbe />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  await user.click(
+    await screen.findByRole("button", { name: /Witness follow-up/ })
+  )
+  await user.click(
+    await screen.findByRole("button", { name: /Original statement source/ })
+  )
+  expect(
+    await screen.findByRole("img", { name: "Page 2 of the original PDF" })
+  ).toBeVisible()
   await user.keyboard("{Escape}")
-  expect(screen.getByRole("heading", { name: "Witness follow-up" })).toBeVisible()
+  expect(
+    screen.getByRole("heading", { name: "Witness follow-up" })
+  ).toBeVisible()
   await user.click(screen.getByRole("button", { name: /Witness dossier/ }))
-  expect(await screen.findByRole("heading", { name: "Witness Example" })).toBeVisible()
+  expect(
+    await screen.findByRole("heading", { name: "Witness Example" })
+  ).toBeVisible()
   await user.keyboard("{Escape}")
-  expect(screen.getByRole("heading", { name: "Witness follow-up" })).toBeVisible()
-  expect(screen.getByLabelText("location")).toHaveTextContent("/cases/case-1/workspace?view=casework&kind=note")
+  expect(
+    screen.getByRole("heading", { name: "Witness follow-up" })
+  ).toBeVisible()
+  expect(screen.getByLabelText("location")).toHaveTextContent(
+    "/cases/case-1/workspace?view=casework&kind=note"
+  )
 })
