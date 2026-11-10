@@ -30,6 +30,7 @@ from app.services.openai_client import (
 )
 from app.utils.text_sanitize import sanitize_json, sanitize_text
 from app.pipeline import phone_media
+from app.pipeline.word_binary import is_ole_file, office_package_refusal, read_word_binary
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +96,54 @@ def _validate_text_input_size(file_path: str) -> None:
 # DOCX
 # ---------------------------------------------------------------------------
 
+WORD_EXTENSIONS = (".docx", ".dotx", ".docm", ".dotm", ".doc", ".dot")
+
+# python-docx opens only a part labelled as a document. A template (.dotx) or macro-enabled file (.docm, .dotm) is
+# the same zip with another label on its main part (live: OPDMD63's two .DOTX were refused as unsupported).
+_WORD_MAIN_CONTENT_TYPES = (
+    b"application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml",
+    b"application/vnd.ms-word.document.macroEnabled.main+xml",
+    b"application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
+)
+_WORD_DOCUMENT_CONTENT_TYPE = b"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+
+
+def _open_word_package(file_path: str):
+    with zipfile.ZipFile(file_path) as archive:
+        types = archive.read("[Content_Types].xml")
+        if not any(label in types for label in _WORD_MAIN_CONTENT_TYPES):
+            return docx.Document(file_path)
+        relabelled = io.BytesIO()
+        with zipfile.ZipFile(relabelled, "w", zipfile.ZIP_DEFLATED) as copy:
+            for entry in archive.infolist():
+                data = archive.read(entry)
+                if entry.filename == "[Content_Types].xml":
+                    for label in _WORD_MAIN_CONTENT_TYPES:
+                        data = data.replace(label, _WORD_DOCUMENT_CONTENT_TYPE)
+                copy.writestr(entry, data)
+    relabelled.seek(0)
+    return docx.Document(relabelled)
+
+
+def _extract_word_binary(file_path: str) -> ExtractedDocument:
+    read = read_word_binary(file_path)
+    return ExtractedDocument(
+        text=read["text"],
+        metadata={
+            "file_type": "doc",
+            "word_binary": {"body_characters": read["body_characters"],
+                            "other_characters": read["other_characters"]},
+        },
+    )
+
+
+def _refuse_ole_spreadsheet(file_path: str) -> None:
+    refusal = office_package_refusal(file_path)
+    raise ValueError(refusal or "This .xlsx is an Excel 97-2003 file, which is not supported; save it as .xlsx or CSV")
+
+
 def _extract_docx(file_path: str) -> ExtractedDocument:
-    doc = docx.Document(file_path)
+    doc = _open_word_package(file_path)
     paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
 
     tables: list[str] = []
@@ -1197,7 +1244,7 @@ def get_transcription_segments(doc: ExtractedDocument) -> list[dict[str, Any]]:
 
 
 _KNOWN_NON_MEDIA_EXTENSIONS = {
-    ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".html", ".htm", ".md", ".markdown", ".eml",
+    ".pdf", ".docx", ".dotx", ".docm", ".dotm", ".doc", ".dot", ".xlsx", ".xls", ".csv", ".html", ".htm", ".md", ".markdown", ".eml",
 } | PLAIN_TEXT_EXTENSIONS
 
 
@@ -1246,13 +1293,21 @@ async def extract_text(
             metadata=pdf.metadata,
             tables=pdf.tables,
         )
-    elif ext == ".docx":
-        await asyncio.to_thread(_validate_office_archive, file_path)
+    elif ext in WORD_EXTENSIONS and await asyncio.to_thread(is_ole_file, file_path):
+        # A Word 97-2003 file (also when saved with a .docx name), or an encrypted package refused with who
+        # locked it: the bytes decide, not the name (live: OPDMD63's rights-managed ".DOCX").
+        doc = await asyncio.to_thread(_extract_word_binary, file_path)
+    elif ext in WORD_EXTENSIONS:
+        try:
+            await asyncio.to_thread(_validate_office_archive, file_path)
+        except ValueError as exc:
+            if "not a valid ZIP" not in str(exc):
+                raise
+            raise ValueError(f"This {ext} file is not a Word document: its bytes are neither a Word .docx package "
+                             "nor a Word 97-2003 file") from exc
         doc = await asyncio.to_thread(_extract_docx, file_path)
-    elif ext == ".doc":
-        raise ValueError(
-            "Legacy .doc files are not supported; convert the file to .docx or PDF and retry"
-        )
+    elif ext == ".xlsx" and await asyncio.to_thread(is_ole_file, file_path):
+        await asyncio.to_thread(_refuse_ole_spreadsheet, file_path)
     elif ext == ".xlsx":
         await asyncio.to_thread(_validate_office_archive, file_path)
         doc = await asyncio.to_thread(_extract_xlsx, file_path)

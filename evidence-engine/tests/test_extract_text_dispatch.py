@@ -20,7 +20,7 @@ async def test_unknown_binary_extension_is_not_silently_ingested_as_text(
 @pytest.mark.parametrize(
     ("name", "message"),
     [
-        ("legacy.doc", "Legacy .doc files are not supported"),
+        ("legacy.doc", r"This \.doc file is not a Word document"),
         ("legacy.xls", "Legacy .xls files are not supported"),
     ],
 )

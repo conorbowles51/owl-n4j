@@ -623,17 +623,11 @@ def _render_dpi(page: fitz.Page) -> int:
     if configured_pixels <= max_pixels:
         return configured_dpi
 
+    # The 150 DPI floor keeps small print legible on paper-sized pages. A page too large for it (live: a 54 x 42
+    # inch poster page holding one 3005 x 3902 scan, OPDMD63) is read at the largest resolution that fits the
+    # limit instead of being refused; the page's ocr_dpi in the metadata records the resolution used.
     reduced_dpi = math.floor(configured_dpi * math.sqrt(max_pixels / configured_pixels))
-    effective_dpi = max(MIN_OCR_DPI, reduced_dpi)
-    minimum_pixels = (
-        page.rect.width * effective_dpi / 72.0
-        * page.rect.height * effective_dpi / 72.0
-    )
-    if minimum_pixels > max_pixels:
-        raise PdfOcrError(
-            "page exceeds the configured OCR pixel limit even at 150 DPI"
-        )
-    return effective_dpi
+    return max(1, reduced_dpi)
 
 
 def _text_and_confidence_from_tesseract(data: dict) -> tuple[str, float | None]:
