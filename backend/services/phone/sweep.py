@@ -27,6 +27,11 @@ log = logging.getLogger(__name__)
 
 IDLE_SECONDS = 30
 BACKOFF_SECONDS = (30, 60, 120, 300, 600)
+# An extraction whose pass failed is read again at once when anything it is read from changes (the failed_for mark);
+# with nothing changed it waits this long after its n-th failure in a row (1 h, 2 h, 4 h ... at most a day), and
+# then goes after every other extraction. A real phone failing each 20-min pass held every newer phone behind it.
+FAILED_RETRY_SECONDS = 3600
+FAILED_RETRY_MAX_SECONDS = 86400
 _hooks = {"mapping_set": None, "apply": [], "decision_revision": None, "sensitive": None, "planner": None,
           "after_pass": []}
 
@@ -115,29 +120,48 @@ def _extraction(conn, extraction_id, lock=False):
     return dict(row._mapping) if row else None
 
 
-def candidates(conn, limit=50, only=None):
-    """Extractions whose derived rows are missing or stale, oldest capture first (none of a deleted case)."""
+def candidates(conn, limit=50, only=None, now=None):
+    """Extractions whose derived rows are missing or stale, oldest capture first (none of a deleted case). One whose
+    last pass failed with nothing changed since waits out its retry delay and then goes last (FAILED_RETRY_SECONDS)."""
     from postgres.soft_delete import live_case_sql
     set_id, _ = mapping_set(conn)
     where = " AND e.id = :only" if only is not None else ""
     rows = conn.execute(text(
         "SELECT e.id, e.captured_at, e.record_count, e.capture_code_version, e.capture_state::text AS capture_state, "
-        "s.interpreter_version, s.mapping_set_id, s.capture_revision, s.decision_revision, s.status "
+        "s.interpreter_version, s.mapping_set_id, s.capture_revision, s.decision_revision, s.status, "
+        "s.counts->>'failed_for' AS failed_for, s.counts->>'failures' AS failures, s.updated_at "
         "FROM phone_extractions e LEFT JOIN phone_interpretation_state s ON s.extraction_id = e.id "
         "WHERE e.capture_state IN ('captured', 'captured_incomplete') AND e.standing IN ('pending', 'active') AND "
         + live_case_sql("e.case_id") + where + " ORDER BY e.captured_at NULLS LAST, e.id"), {"only": only} if only is not None else {}).fetchall()
-    out = []
+    out, retries = [], []
+    now = now or _now()
     for r in rows:
         m = r._mapping
-        if m["interpreter_version"] is None:
-            out.append(m["id"])
-        elif (m["interpreter_version"] != interpreter_version() or str(m["mapping_set_id"] or "") != str(set_id or "")
-              or m["capture_revision"] != capture_revision(m)
-              or (m["decision_revision"] or None) != (decision_revision(conn, m["id"]) or None)):
+        stale = m["interpreter_version"] is None or (
+            m["interpreter_version"] != interpreter_version() or str(m["mapping_set_id"] or "") != str(set_id or "")
+            or m["capture_revision"] != capture_revision(m)
+            or (m["decision_revision"] or None) != (decision_revision(conn, m["id"]) or None))
+        if not stale:
+            continue
+        if m["status"] == "failed" and m["failed_for"] and m["failed_for"] == _read_from(conn, m, set_id):
+            wait = min(FAILED_RETRY_MAX_SECONDS, FAILED_RETRY_SECONDS * 2 ** max(0, int(m["failures"] or 1) - 1))
+            if m["updated_at"] is not None and (now - m["updated_at"]).total_seconds() < wait:
+                continue
+            retries.append(m["id"])
+        else:
             out.append(m["id"])
         if limit is not None and len(out) >= limit:
             break
-    return out
+    out += retries
+    return out[:limit] if limit is not None else out
+
+
+def _read_from(conn, row, set_id=None):
+    """What an extraction's reading is a function of (the module docstring): changes when any of them does."""
+    if set_id is None:
+        set_id, _ = mapping_set(conn)
+    raw = "%s|%s|%s|%s" % (interpreter_version(), set_id or "", capture_revision(row), decision_revision(conn, row["id"]) or "")
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 def decided_device_zone(conn, extraction_id):
@@ -284,11 +308,23 @@ def purge_leftovers(engine) -> dict:
 
 
 def record_failure(engine, extraction_id, exc):
+    """Marks the extraction failed, with what it was read from (``failed_for``) and how many passes in a row failed.
+    The row is written even when the extraction has none yet (a first reading that failed), so the sweep can wait."""
     try:
         with engine.begin() as conn:
+            ext = _extraction(conn, extraction_id)
+            if ext is None:
+                return
+            mark = {"failed_for": _read_from(conn, ext)}
             conn.execute(text(
-                "UPDATE phone_interpretation_state SET status = 'failed', error = :err, updated_at = now() "
-                "WHERE extraction_id = :e"), {"e": extraction_id, "err": ("%s: %s" % (type(exc).__name__, exc))[:2000]})
+                "INSERT INTO phone_interpretation_state (extraction_id, case_id, status, error, counts) "
+                "VALUES (:e, :c, 'failed', :err, CAST(:mark AS jsonb) || jsonb_build_object('failures', 1)) "
+                "ON CONFLICT (extraction_id) DO UPDATE SET status = 'failed', error = EXCLUDED.error, updated_at = now(), "
+                "counts = phone_interpretation_state.counts || CAST(:mark AS jsonb) || jsonb_build_object('failures', "
+                "CASE WHEN phone_interpretation_state.status = 'failed' "
+                "THEN COALESCE((phone_interpretation_state.counts->>'failures')::int, 0) + 1 ELSE 1 END)"),
+                {"e": extraction_id, "c": ext["case_id"], "mark": json.dumps(mark),
+                 "err": ("%s: %s" % (type(exc).__name__, exc))[:2000]})
     except Exception:  # noqa: BLE001 - the failure is logged; the previous generation stays readable
         log.exception("could not record phone interpretation failure")
 

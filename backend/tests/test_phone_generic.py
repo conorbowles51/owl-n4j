@@ -221,3 +221,72 @@ def test_device_zone_is_the_device_setting_and_the_examiner_zone_is_kept_apart()
              for e in (c3, c9)}
         assert z[c3][0] is None and sweep.examiner_zone(z[c3][1]) == "Africa/Abidjan"
         assert z[c9][0] == "America/New_York"
+
+
+# 10 Nov: a real phone's mail sender, an identity key holding double quotes ("'Car lnsurance'" <info@...>), stopped
+# every interpretation pass at COPY ("malformed array literal"); the failure was never recorded (no state row), so each
+# 20-min pass ran that phone first again and the newer phones waited behind it.
+AWKWARD = ['app:emails:id:"\'Car lnsurance\'" <info@example.invalid>', 'back\\slash', 'tab\there', 'plain', 'new\nline']
+
+
+def test_an_array_value_goes_through_copy_escaping_after_array_escaping():
+    # COPY text format reads \x as x, so the array's \" must reach COPY as \\" (and its \\ as \\\\).
+    assert generic._copy_text(['a"b']) == '{"a\\\\"b"}'
+    assert generic._copy_text(['a\\b']) == '{"a\\\\\\\\b"}'
+    assert generic._copy_text(['a\tb']) == '{"a\\tb"}'
+
+
+@needs_template
+def test_array_elements_with_quotes_backslashes_and_tabs_come_back_as_written():
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            c.execute(text("CREATE TABLE copy_probe (k text[], n text)"))
+            w = generic.Writer(c, columns={"copy_probe": ["k", "n"]})
+            w.add("copy_probe", {"k": AWKWARD, "n": "after"})
+            w.flush()
+            assert c.execute(text("SELECT k, n FROM copy_probe")).one() == (AWKWARD, "after")
+
+
+def _failing_stage(conn, extraction_id, generation, plan):
+    raise RuntimeError("synthetic failure")
+
+
+@needs_template
+def test_a_failed_first_reading_is_recorded_and_waits_behind_newer_phones(monkeypatch):
+    from datetime import timedelta
+    monkeypatch.setitem(sweep._hooks, "apply", list(sweep._hooks["apply"]))
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            first = _unknown_type_extraction(c, case)
+        sweep.register_applier(_failing_stage)
+        assert [r for _, r in sweep.run_pass(engine)][0]["status"] == "failed"
+        with engine.connect() as c:
+            state = c.execute(text("SELECT status, error, counts, generation FROM phone_interpretation_state "
+                                   "WHERE extraction_id = :e"), {"e": first}).one()
+            assert state.status == "failed" and "synthetic failure" in state.error and state.generation == 0
+            assert state.counts["failures"] == 1 and state.counts["failed_for"]
+            # Nothing it is read from changed: it waits out the delay instead of running first every pass.
+            assert sweep.candidates(c) == []
+        with engine.begin() as c:
+            later = _unknown_type_extraction(c, case)
+        with engine.connect() as c:
+            assert [str(x) for x in sweep.candidates(c)] == [str(later)]
+            # After the delay it is read again, after every other phone.
+            soon = datetime.now(timezone.utc) + timedelta(seconds=sweep.FAILED_RETRY_SECONDS + 5)
+            assert [str(x) for x in sweep.candidates(c, now=soon)] == [str(later), str(first)]
+        sweep.record_failure(engine, first, RuntimeError("again"))
+        with engine.connect() as c:
+            assert c.execute(text("SELECT (counts->>'failures')::int FROM phone_interpretation_state WHERE "
+                                  "extraction_id = :e"), {"e": first}).scalar() == 2
+            # The second failure in a row waits twice as long.
+            assert str(first) not in [str(x) for x in sweep.candidates(c, now=soon)]
+        # A change to what it is read from (here the interpreter's stages) makes it due at once, and a good pass clears it.
+        sweep._hooks["apply"].remove(_failing_stage)
+        with engine.connect() as c:
+            assert str(first) in [str(x) for x in sweep.candidates(c)]
+        assert sweep.interpret_one(engine, first)["status"] == "done"
+        with engine.connect() as c:
+            assert c.execute(text("SELECT status, counts ? 'failed_for' FROM phone_interpretation_state WHERE "
+                                  "extraction_id = :e"), {"e": first}).one() == ("done", False)

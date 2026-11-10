@@ -131,8 +131,12 @@ def _copy_text(v):
     if isinstance(v, bool):
         return "t" if v else "f"
     if isinstance(v, (list, tuple)):
-        return "{" + ",".join('"%s"' % str(x).replace("\\", "\\\\").replace('"', '\\"') for x in v) + "}"
-    s = v.isoformat() if hasattr(v, "isoformat") else str(v)
+        # The array literal then goes through COPY's own escaping like any other value. Without it COPY read the
+        # array's backslash-quote as a bare quote, which ended the element early: a real phone's mail sender
+        # ("'Car lnsurance'" <info@...>, 10 Nov) failed every interpretation pass.
+        s = "{" + ",".join('"%s"' % str(x).replace("\\", "\\\\").replace('"', '\\"') for x in v) + "}"
+    else:
+        s = v.isoformat() if hasattr(v, "isoformat") else str(v)
     return s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
 
 
