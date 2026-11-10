@@ -32,6 +32,20 @@ class ParseTests(unittest.TestCase):
         self.assertEqual([c.href for c in C.citations_in(text)], [f"txn://{tid}", "doc://x.pdf/2"])
 
 
+    def test_bare_bracketed_citations_become_links_and_existing_links_stay(self):
+        fid, tid, rid, sid = (str(uuid.uuid4()) for _ in range(4))
+        text = (f"at the spot [rec://{rid}][rec://{sid}]; invoice [doc://{fid}/1]; paid [ txn://{tid} ]; "
+                f"kept [label](rec://{rid}) and [see [rec://{sid}]](doc://{fid}/2); web [https://example.com]")
+        out = C.link_bare_citations(text)
+        self.assertIn(f"[record](rec://{rid})[record](rec://{sid})", out)
+        self.assertIn(f"[document](doc://{fid}/1)", out)
+        self.assertIn(f"[payment](txn://{tid})", out)
+        self.assertIn(f"[label](rec://{rid})", out)
+        self.assertIn(f"[see [rec://{sid}]](doc://{fid}/2)", out)  # inside a link label: left as written
+        self.assertIn("[https://example.com]", out)
+        self.assertEqual(len(C.citations_in(out)), 5)
+
+
 class CaseCheckTests(LedgerToolFixture):
     def _file(self, name, case=None, **extra):
         self._file_index += 1
@@ -132,6 +146,18 @@ class CaseCheckTests(LedgerToolFixture):
         self.assertEqual((check["total"], check["ok"], check["not_in_case"]), (3, 2, 1))
         self.assertEqual(check["problems"][0]["href"], f"txn://{missing}")
         self.assertEqual(check["problems"][0]["reason"], C.NOT_IN_CASE)
+
+    def test_agent_answer_with_bare_citations_is_stored_as_links_and_checked(self):
+        # live 10 Nov 2026 (demo case, Q2): an answer citing [rec://..] and [doc://..] in bare brackets was stored with
+        # a check of 0 citations, and none of them could be opened
+        from services.agent.storage import checked_answer
+        unique = self._file("Unique.pdf")
+        _, _, rows = self.source(rows=1)
+        answer, check = checked_answer(self.db, case_id=self.case.id, answer=(
+            f"The invoice [doc://{unique.id}/1] and the payment [txn://{rows[0].id}]."))
+        self.assertIn(f"[document](doc://{unique.id}/1)", answer)
+        self.assertIn(f"[payment](txn://{rows[0].id})", answer)
+        self.assertEqual((check["total"], check["ok"]), (2, 2))
 
 
 class OtherCaseAndHostTests(LedgerToolFixture):

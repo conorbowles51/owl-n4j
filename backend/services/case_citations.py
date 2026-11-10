@@ -328,7 +328,7 @@ def canonicalize(session, case_id, text: str | None) -> str:
     becomes ``txn://``. A link to a Loupe page written with a host (``https://example.com/cases/...``) becomes the
     in-app path. A name several files share, anything not in the case, and a payment link that carries another case
     stay as written for the check to mark. Page numbers are never added or changed."""
-    text = _strip_link_hosts(text or "")
+    text = _strip_link_hosts(link_bare_citations(text or ""))
     citations = citations_in(text)
     wanted = [c for c in citations if (c.scheme == "doc" and c.by_name and not c.legacy) or
               (c.scheme == "txn" and c.legacy)]
@@ -349,6 +349,17 @@ def canonicalize(session, case_id, text: str | None) -> str:
         new = rewrite.get(match.group(1))
         return match.group(0).replace(match.group(1), new, 1) if new else match.group(0)
     return _LINK.sub(replace, text)
+
+
+_BARE = re.compile(r"\[\s*((?:doc|txn|rec)://[^\]\s()]+)\s*\](?![(\]])")
+_BARE_LABEL = {"doc": "document", "txn": "payment", "rec": "record"}
+
+
+def link_bare_citations(text: str) -> str:
+    """A citation the model wrote in brackets with no link (``[rec://<id>]``, ``[doc://<id>/3]``) cannot be opened and
+    is not seen by the check, which reads Markdown links only: it becomes ``[record](rec://<id>)``, so the screen can
+    open it and the check counts it. The target is never changed; a bracket that is already a link label is left."""
+    return _BARE.sub(lambda m: f"[{_BARE_LABEL[m.group(1).split(':', 1)[0]]}]({m.group(1)})", text)
 
 
 def _strip_link_hosts(text: str) -> str:
