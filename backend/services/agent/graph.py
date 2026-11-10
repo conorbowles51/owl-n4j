@@ -1468,19 +1468,25 @@ class AgentGraphRunner:
         return self._extract_usage(getattr(self, "messages_so_far", None) or [])
 
     @staticmethod
-    def _extract_usage(messages: list[AnyMessage]) -> dict[str, int] | None:
+    def _extract_usage(messages: list[AnyMessage]) -> dict[str, Any] | None:
+        """The run's billed tokens, summed over its model calls, with what DeepSeek read from its prompt cache
+        (``prompt_cache_hit_tokens``; None when no call reported it) and each call's (prompt, cache hit, completion)
+        in ``steps``, so the cost record prices hits apart and the hit share per step can be read back."""
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
+        hit_tokens = miss_tokens = 0
+        cache_reported = False
+        steps: list[list[int | None]] = []
         seen = False
 
         for message in messages:
             if not isinstance(message, AIMessage):
                 continue
+            response_metadata = getattr(message, "response_metadata", None) or {}
+            token_usage = response_metadata.get("token_usage") or {}
             usage = getattr(message, "usage_metadata", None) or {}
             if not usage:
-                response_metadata = getattr(message, "response_metadata", None) or {}
-                token_usage = response_metadata.get("token_usage") or {}
                 usage = {
                     "input_tokens": token_usage.get("prompt_tokens"),
                     "output_tokens": token_usage.get("completion_tokens"),
@@ -1494,6 +1500,15 @@ class AgentGraphRunner:
                 prompt_tokens += int(input_tokens or 0)
                 completion_tokens += int(output_tokens or 0)
                 total_tokens += int(message_total or 0)
+                hit = token_usage.get("prompt_cache_hit_tokens")
+                if hit is None:
+                    hit = (usage.get("input_token_details") or {}).get("cache_read")
+                miss = token_usage.get("prompt_cache_miss_tokens")
+                if hit is not None:
+                    cache_reported = True
+                    hit_tokens += int(hit)
+                    miss_tokens += int(miss) if miss is not None else max(int(input_tokens or 0) - int(hit), 0)
+                steps.append([int(input_tokens or 0), None if hit is None else int(hit), int(output_tokens or 0)])
 
         if not seen:
             return None
@@ -1501,4 +1516,7 @@ class AgentGraphRunner:
             "prompt_tokens": prompt_tokens or None,
             "completion_tokens": completion_tokens or None,
             "total_tokens": total_tokens or None,
+            "prompt_cache_hit_tokens": hit_tokens if cache_reported else None,
+            "prompt_cache_miss_tokens": miss_tokens if cache_reported else None,
+            "steps": steps,
         }

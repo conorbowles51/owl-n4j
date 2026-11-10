@@ -163,6 +163,46 @@ def resolve_pricing_rate(
     return matches[0]
 
 
+# DeepSeek's published prices, USD per million tokens, read from https://api-docs.deepseek.com/quick_start/pricing on
+# 2026-11-10: (cache hit, cache miss, output) at off-peak; peak is double ("Off-peak rates are half of the peak rates").
+# Peak: 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday. Chinese public holidays are off-peak too; this table does
+# not know them, so a call on one is priced at peak (too high, never too low). The rate table's DeepSeek rows
+# (deepseek_docs_2026_08_07: 0.435 in, 0.87 out for v4-pro) know no cache price and are out of date.
+DEEPSEEK_PUBLISHED_VERSION = "deepseek_published_2026_11_10"
+DEEPSEEK_PUBLISHED_OFFPEAK = (
+    ("deepseek-v4-pro", (Decimal("0.022"), Decimal("0.66"), Decimal("1.98"))),
+    # deepseek-v4-flash is a retired name, "billed at the Flash price".
+    ("deepseek-v4-flash", (Decimal("0.003"), Decimal("0.15"), Decimal("0.6"))),
+    ("deepseek-flash", (Decimal("0.003"), Decimal("0.15"), Decimal("0.6"))),
+)
+DEEPSEEK_PEAK_HOURS = ((1, 4), (6, 10))
+
+
+def deepseek_peak(at: datetime) -> bool:
+    """True when ``at`` (UTC) falls in DeepSeek's peak hours."""
+    if at.tzinfo is not None:
+        from datetime import timezone
+        at = at.astimezone(timezone.utc)
+    return at.weekday() < 5 and any(start <= at.hour < end for start, end in DEEPSEEK_PEAK_HOURS)
+
+
+def deepseek_published_cost(model_id: str, *, prompt_tokens: int | None, cache_hit_tokens: int | None,
+                            cache_miss_tokens: int | None, completion_tokens: int | None,
+                            at: datetime | None = None) -> Decimal | None:
+    """One DeepSeek call priced at the published rates, cache hits and misses apart. None for a model the table does
+    not list. Prompt tokens DeepSeek did not report as hit or miss are priced as misses."""
+    rates = next((r for prefix, r in DEEPSEEK_PUBLISHED_OFFPEAK if (model_id or "").startswith(prefix)), None)
+    if rates is None:
+        return None
+    from datetime import timezone
+    factor = Decimal(2) if deepseek_peak(at or datetime.now(timezone.utc)) else Decimal(1)
+    hit = int(cache_hit_tokens or 0)
+    miss = int(cache_miss_tokens) if cache_miss_tokens is not None else max(int(prompt_tokens or 0) - hit, 0)
+    million = Decimal("1000000")
+    return factor * (Decimal(hit) * rates[0] + Decimal(miss) * rates[1]
+                     + Decimal(int(completion_tokens or 0)) * rates[2]) / million
+
+
 def calculate_cost(rate: AIPricingRate | None, usage: UsageMetrics) -> Decimal:
     if rate is None:
         return Decimal("0")
@@ -206,9 +246,15 @@ def record_cost(
     extra_metadata: dict[str, Any] | None = None,
     priced_usd: float | None = None,
     pricing_version: str | None = None,
+    prompt_cache_hit_tokens: int | None = None,
+    prompt_cache_miss_tokens: int | None = None,
 ) -> CostRecord:
     """``priced_usd``: the caller's own price for this call, with its ``pricing_version``, for spend priced outside the
-    rate table (the statement page reader's). Without it the rate table prices the call."""
+    rate table (the statement page reader's). Without it the rate table prices the call.
+
+    ``prompt_cache_hit_tokens`` / ``prompt_cache_miss_tokens``: what DeepSeek reported of the prompt as read from its
+    cache. Kept on the record (extra_metadata); a DeepSeek chat call that reports them is priced at DeepSeek's
+    published rates, hits and misses apart (DEEPSEEK_PUBLISHED_VERSION)."""
     usage = _normalize_usage(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
@@ -222,8 +268,21 @@ def record_cost(
         operation_kind=operation_kind,
     )
     cost_usd = calculate_cost(rate, usage) if priced_usd is None else priced_usd
+    published = None
+    if (priced_usd is None and provider == "deepseek" and operation_kind == CostOperationKind.CHAT_COMPLETION
+            and prompt_cache_hit_tokens is not None):
+        published = deepseek_published_cost(model_id, prompt_tokens=usage.prompt_tokens,
+                                            cache_hit_tokens=prompt_cache_hit_tokens,
+                                            cache_miss_tokens=prompt_cache_miss_tokens,
+                                            completion_tokens=usage.completion_tokens)
+        if published is not None:
+            cost_usd = published
 
     payload = dict(extra_metadata or {})
+    if prompt_cache_hit_tokens is not None:
+        payload["prompt_cache_hit_tokens"] = int(prompt_cache_hit_tokens)
+        payload["prompt_cache_miss_tokens"] = (int(prompt_cache_miss_tokens) if prompt_cache_miss_tokens is not None
+                                               else max(int(usage.prompt_tokens or 0) - int(prompt_cache_hit_tokens), 0))
     if usage.duration_seconds is not None:
         payload.setdefault("duration_seconds", usage.duration_seconds)
 
@@ -238,7 +297,8 @@ def record_cost(
         operation_kind=operation_kind,
         engine_job_id=engine_job_id,
         evidence_file_id=evidence_file_id,
-        pricing_version=pricing_version or (rate.pricing_version if rate else None),
+        pricing_version=(DEEPSEEK_PUBLISHED_VERSION if published is not None
+                         else pricing_version or (rate.pricing_version if rate else None)),
         case_id=case_id,
         user_id=user_id,
         agent_run_id=agent_run_id,
@@ -272,6 +332,8 @@ def record_metered_call(provider: str, model_id: str, usage: dict[str, Any] | No
                 prompt_tokens=usage.get("prompt_tokens"),
                 completion_tokens=usage.get("completion_tokens"),
                 total_tokens=usage.get("total_tokens"),
+                prompt_cache_hit_tokens=usage.get("prompt_cache_hit_tokens"),
+                prompt_cache_miss_tokens=usage.get("prompt_cache_miss_tokens"),
                 case_id=context.case_id,
                 user_id=context.user_id,
                 description=context.description,

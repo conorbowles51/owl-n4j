@@ -242,6 +242,8 @@ def _record_cost(session, item, model, usage, what) -> float:
                          model_id=model['model_id'], operation_kind=CostOperationKind.CHAT_COMPLETION,
                          prompt_tokens=usage.get('prompt_tokens'), completion_tokens=usage.get('completion_tokens'),
                          total_tokens=usage.get('total_tokens'), case_id=item.case_id,
+                         prompt_cache_hit_tokens=usage.get('prompt_cache_hit_tokens'),
+                         prompt_cache_miss_tokens=usage.get('prompt_cache_miss_tokens'),
                          user_id=item.requested_by_user_id, description=f'Disconfirm sweep: {what}',
                          extra_metadata=dict(disconfirm_sweep=str(item.id)))
     return float(record.cost_usd or 0)

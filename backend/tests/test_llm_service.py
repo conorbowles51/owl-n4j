@@ -257,7 +257,8 @@ class LLMExecutionContextTests(unittest.TestCase):
         self.assertEqual(payload["thinking"], {"type": "disabled"})
         self.assertEqual(
             context.last_usage,
-            {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+            {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12,
+             "prompt_cache_hit_tokens": None, "prompt_cache_miss_tokens": None},
         )
 
 

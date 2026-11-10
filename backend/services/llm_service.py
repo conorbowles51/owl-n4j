@@ -346,6 +346,7 @@ class LLMExecutionContext:
             "total_tokens": usage.get("total_tokens"),
             "reasoning_tokens": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
             "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
+            "prompt_cache_miss_tokens": usage.get("prompt_cache_miss_tokens"),
         }
         choices = data.get("choices") or []
         if not choices:
@@ -504,6 +505,9 @@ class LLMExecutionContext:
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
+            # What DeepSeek read from its prompt cache, billed at about a thirtieth of a miss.
+            "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
+            "prompt_cache_miss_tokens": usage.get("prompt_cache_miss_tokens"),
         }
         if not content:
             raise ValueError("DeepSeek returned an empty response")

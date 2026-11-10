@@ -1086,6 +1086,8 @@ class AgentService:
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
             total_tokens=usage.get("total_tokens"),
+            prompt_cache_hit_tokens=usage.get("prompt_cache_hit_tokens"),
+            prompt_cache_miss_tokens=usage.get("prompt_cache_miss_tokens"),
             case_id=request.case_id,
             user_id=user.id,
             agent_run_id=run_id,
@@ -1095,6 +1097,8 @@ class AgentService:
                 "thread_id": str(thread_id),
                 "run_id": str(run_id),
                 "artifact_preference": request.artifact_preference,
+                # Each model call's [prompt tokens, of them read from the cache, completion tokens].
+                **({"steps": usage["steps"]} if usage.get("steps") else {}),
             },
         )
 
