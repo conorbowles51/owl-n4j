@@ -6,6 +6,11 @@
 #      known.ids beside them is the sweep's explained list and is never relinked):
 #      each is re-added from its stored copy, and the list is kept as <collection>.ids.done with the result beside it.
 #      A record still unreached is in the result and the printed line; it does not stop the release. A changed count does.
+#   3. Collections made with too few links per record (chroma_reach.py MAX_NEIGHBORS) are built again from their
+#      stored records and swapped in (`rebuild`); the old one stays as <name>__before_rebuild. `chroma-settings.sh
+#      catch-up`, run by deploy.sh once the backend has restarted, carries over what the old backend wrote to the old
+#      one meanwhile; the next release removes the old one. A rebuild that does not check out is refused and changes
+#      nothing. State in CHROMA_REBUILD_STATE.
 # A server that cannot be set or restarted stops the release.
 set -uo pipefail
 umask 077
@@ -16,6 +21,21 @@ CHROMA_CONTAINER="${CHROMA_CONTAINER:-owl-v2-chromadb}"
 CHROMA_RELINK_LISTS="${CHROMA_RELINK_LISTS:-/mnt/owl-data/backups/chroma-relink}"
 DOCKER="${DOCKER:-docker}"
 READY_TRIES="${READY_TRIES:-60}"
+CHROMA_REBUILD_STATE="${CHROMA_REBUILD_STATE:-/mnt/owl-data/backups/chroma-rebuild}"
+mkdir -p "${CHROMA_REBUILD_STATE}"
+
+rebuild_step() {  # catch-up | clean-up | rebuild
+    local extra=()
+    [[ "$1" == rebuild ]] && extra=(--apply)
+    python3 -I "${TOOL}" "$1" --url "${CHROMA_URL}" --state "${CHROMA_REBUILD_STATE}" "${extra[@]}" |
+        sed "s/^/chroma: $1 /"
+    return "${PIPESTATUS[0]}"
+}
+
+if [[ "${1:-}" == catch-up ]]; then
+    rebuild_step catch-up
+    exit
+fi
 
 ready() {
     local try
@@ -36,6 +56,11 @@ elif (( status != 0 )); then
     echo "chroma: settings could not be read or written" >&2
     exit 1
 fi
+
+# A catch-up the last release did not reach runs first; a caught-up old collection is then removed.
+rebuild_step catch-up || { echo "chroma: catch-up after a rebuild failed" >&2; exit 1; }
+rebuild_step clean-up || { echo "chroma: clean-up after a rebuild failed" >&2; exit 1; }
+rebuild_step rebuild || { echo "chroma: rebuild failed part way; see the line above" >&2; exit 1; }
 
 for list in "${CHROMA_RELINK_LISTS}"/*.ids; do
     [[ -f "${list}" ]] || continue

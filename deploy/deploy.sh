@@ -628,6 +628,11 @@ if [ "${STEP_BACKEND}" = run ]; then
 else
     success "Backend unchanged; not restarted"
 fi
+# A collection rebuilt in the Chroma step above was swapped in while the old backend still held the old one by its id;
+# what it wrote there until it stopped is carried over now. A failure leaves it for the next release's Chroma step.
+if [ "${STEP_BACKEND}" = run ] && [ "${HANDOVER_KEPT_OLD}" != true ]; then
+    bash "${PROJECT_DIR}/deploy/chroma-settings.sh" catch-up || warn "Chroma catch-up after a rebuild failed; the next release runs it"
+fi
 # The frontend switches after the backend, so a new frontend never talks to the old backend.
 FRONTEND_CHANGED=false
 FRONTEND_SWITCH_FAILED=false

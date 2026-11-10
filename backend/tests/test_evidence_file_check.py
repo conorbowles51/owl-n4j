@@ -181,3 +181,25 @@ def test_restore_never_replaces_a_file_that_arrived_meanwhile(world, tmp_path):
     with pytest.raises(FileExistsError):
         check._place(source, target, gone.sha256)
     assert target.read_bytes() == b"someone else"
+
+
+def test_the_daily_check_prints_its_result_last(world, capsys):
+    """evidence-file-check.sh keeps the last line as the day's result; 9 Nov the signature line came after it and
+    status.tsv read 'evidence-files ok: signatures: {}'."""
+    from contextlib import contextmanager
+    from scripts import evidence_file_check as cli
+
+    db, root, case_id = world
+    _row(db, root, case_id, "here.pdf")
+    _row(db, root, case_id, "gone.pdf", on_disk=False)
+
+    @contextmanager
+    def session():
+        yield db
+
+    with patch.object(cli, "get_background_session", session), patch.object(cli, "EVIDENCE_DATA_ROOT", root), \
+            patch.object(cli, "read_unread", lambda *a, **k: {"read": 0}):
+        code = cli.check(dry_run=True)
+    last = capsys.readouterr().out.strip().splitlines()[-1]
+    assert code == cli.FOUND
+    assert last == "ok: 2 rows checked, 1 have no file, 1 new, 0 back"

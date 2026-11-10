@@ -44,11 +44,12 @@ def check(dry_run: bool) -> int:
         print(f"missing {row.case_id} {row.id} {row.original_filename}")
     for row in result.back:
         print(f"back {row.case_id} {row.id} {row.original_filename}")
-    print(f"ok: {result.rows} rows checked, {result.missing} have no file, {len(result.new)} new, "
-          f"{len(result.back)} back")
     with get_background_session() as db:
         read = read_unread(db, EVIDENCE_DATA_ROOT, apply=not dry_run)
     print(f"signatures: {dict(read)}")
+    # Last: evidence-file-check.sh keeps the last line as the day's result (status.tsv, the hourly repeat).
+    print(f"ok: {result.rows} rows checked, {result.missing} have no file, {len(result.new)} new, "
+          f"{len(result.back)} back")
     return code
 
 

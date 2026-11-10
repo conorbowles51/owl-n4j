@@ -55,6 +55,16 @@ grep -q "FAIL evidence: 2 of 5 rows name a file that is not on disk: 1 known (li
 grep -q 'no file on disk: row r4 (known)' "${report}" || fail "known row not marked"
 grep -q 'no file on disk: row r5$' "${report}" || fail "new row not named"
 
+# Each gap is named: case, file, size, and when the daily check first found it gone (or that it has not yet).
+printf 'r6\t%s\tzz\tOPDMD66 - Test\tInterview.mp4\t401768097\t2026-11-06T01:50:38+00:00\n' "${ev}/gone-3" >> "${rows}"
+printf 'r7\t%s\tzz\tWL1\tsummary.csv\t3013\t\n' "${ev}/gone-4" >> "${rows}"
+printf 'r6\n' >> "${test_root}/known.ids"
+KNOWN="${test_root}/known.ids" drill
+grep -qF 'no file on disk: row r6 (known): OPDMD66 - Test, Interview.mp4, 401768097 bytes, missing since 2026-11-06T01:50:38+00:00' \
+    "${report}" || fail "known gap not named"
+grep -qF 'no file on disk: row r7: WL1, summary.csv, 3013 bytes, missing since not yet marked by the daily check' \
+    "${report}" || fail "new gap not named"
+
 # Alerts: the same result is sent once, a changed one again, and a pass forgets it so a return is sent again.
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> "%s"\n' "${test_root}/sent" > "${test_root}/sender"
 chmod +x "${test_root}/sender"

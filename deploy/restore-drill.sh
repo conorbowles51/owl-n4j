@@ -166,7 +166,10 @@ drill_evidence() {
     # Every live row of the restored database names a file that is there; a row can name a folder (a phone extraction
     # is one row over its folder), which is checked by being there. Then a random sample of the files is hashed.
     "${DOCKER}" exec "${SCRATCH_PG}" psql -U "${PG_USER}" -d "${PG_DB}" -AtqX -F $'\t' -c \
-        "SELECT id, stored_path, sha256 FROM evidence_files WHERE deleted_at IS NULL AND stored_path LIKE '/%' AND sha256 <> ''" > "${WORK}/rows.tsv"
+        "SELECT e.id, e.stored_path, e.sha256, replace(coalesce(c.title, e.case_id::text), E'\\t', ' '),
+                replace(e.original_filename, E'\\t', ' '), e.size, coalesce(e.metadata->'file_missing'->>'since', '')
+         FROM evidence_files e LEFT JOIN cases c ON c.id = e.case_id
+         WHERE e.deleted_at IS NULL AND e.stored_path LIKE '/%' AND e.sha256 <> ''" > "${WORK}/rows.tsv"
     local rows folders=0 missing=0 known=0 known_file="${EVIDENCE_KNOWN_MISSING:-/mnt/owl-data/backups/evidence-missing/known.ids}"
     rows="$(wc -l < "${WORK}/rows.tsv")"
     : > "${WORK}/present.tsv"
@@ -176,16 +179,19 @@ drill_evidence() {
     if [[ -f "${known_file}" ]]; then
         while read -r id _; do [[ -n "${id}" && "${id}" != \#* ]] && known_ids["${id}"]=1; done < "${known_file}"
     fi
-    while IFS=$'\t' read -r id path sha; do
+    local case_title name size since what
+    while IFS=$'\t' read -r id path sha case_title name size since; do
         if [[ -f "${path}" ]]; then printf '%s\t%s\t%s\n' "${id}" "${path}" "${sha}" >> "${WORK}/present.tsv"
         elif [[ -d "${path}" ]]; then folders=$(( folders + 1 ))
         else
             missing=$(( missing + 1 ))
+            # Each gap by name: case, file, size, and when the daily check first found it gone.
+            what="${case_title:+: ${case_title}, ${name}, ${size} bytes, missing since ${since:-not yet marked by the daily check}}"
             if [[ -n "${known_ids[${id}]:-}" ]]; then
                 known=$(( known + 1 ))
-                (( missing > 40 )) || note "  no file on disk: row ${id} (known)"
+                (( missing > 40 )) || note "  no file on disk: row ${id} (known)${what}"
             else
-                (( missing > 40 )) || note "  no file on disk: row ${id}"
+                (( missing > 40 )) || note "  no file on disk: row ${id}${what}"
             fi
         fi
     done < "${WORK}/rows.tsv"
