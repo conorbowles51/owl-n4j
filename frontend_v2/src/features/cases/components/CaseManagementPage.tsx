@@ -4,6 +4,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { CaseListSidebar } from "./CaseListSidebar"
 import { CaseDetailPanel } from "./CaseDetailPanel"
 import { DeleteCaseDialog } from "./DeleteCaseDialog"
@@ -11,14 +12,15 @@ import type { Case } from "@/types/case.types"
 
 export function CaseManagementPage() {
   const [deleteTarget, setDeleteTarget] = useState<Case | null>(null)
+  const stacked = useMediaQuery("(max-width: 639px)")
 
   return (
     <div className="h-full">
-      <ResizablePanelGroup orientation="horizontal">
+      <ResizablePanelGroup orientation={stacked ? "vertical" : "horizontal"}>
         <ResizablePanel
           id="case-list"
           order={1}
-          defaultSize="30"
+          defaultSize={stacked ? "38" : "30"}
           minSize="20"
           maxSize="50"
           className="bg-panel"
@@ -31,7 +33,7 @@ export function CaseManagementPage() {
         <ResizablePanel
           id="case-detail"
           order={2}
-          defaultSize="70"
+          defaultSize={stacked ? "62" : "70"}
           minSize="40"
           className="bg-background"
         >
