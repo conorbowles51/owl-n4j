@@ -55,6 +55,17 @@ class AIModelPolicyTests(unittest.TestCase):
                 self.assertEqual(set(configuration), set(DEFAULT_POLICY))
                 validate_policy(configuration, require_configured_provider=False)
 
+    def test_a_policy_saved_before_workspace_analysis_existed_sends_it_to_deepseek(self):
+        """The live policy (revision 3, 7 Aug) has no workspace_analysis entry; theory narratives took the code
+        default and went to OpenAI gpt-5.6-sol (2 calls, 8-9 Nov) against the standing DeepSeek-only decision."""
+        from services.ai_model_policy import _normalized_configuration
+        stored = {name: {"provider": "deepseek", "model_id": "deepseek-v4-pro"}
+                  for name in ("chat", "agent", "ingestion_quality", "ingestion_extraction", "ingestion_resolution",
+                               "ingestion_entity_summary", "ingestion_document_summary")}
+        policy = _normalized_configuration(stored)
+        self.assertEqual(policy["workspace_analysis"], {"provider": "deepseek", "model_id": "deepseek-v4-pro"})
+        self.assertEqual(PROVIDER_DEFAULTS["openai"]["workspace_analysis"]["provider"], "openai")
+
 
 if __name__ == "__main__":
     unittest.main()

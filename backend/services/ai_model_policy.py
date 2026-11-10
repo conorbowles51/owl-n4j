@@ -111,7 +111,9 @@ SWITCH_FIELDS = ("deepseek_only_changed_by", "deepseek_only_changed_at")
 DEFAULT_POLICY: dict[str, dict[str, str]] = {
     "chat": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     "agent": {"provider": "openai", "model_id": "gpt-5.6-sol"},
-    "workspace_analysis": {"provider": "openai", "model_id": "gpt-5.6-sol"},
+    # DeepSeek by default (Neil: "DeepSeek everywhere possible"). A stored policy saved before this workload existed
+    # takes this default: the live one did, and theory narratives went to OpenAI (2 calls, 8-9 Nov, lx-agentcost H).
+    "workspace_analysis": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
     "ingestion_extraction": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     "ingestion_resolution": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     "ingestion_entity_summary": {"provider": "openai", "model_id": "gpt-5.6-terra"},
@@ -129,6 +131,7 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
 FINANCIAL_VISION_PROFILE = {k: v for k, v in FINANCIAL_VISION_DEFAULT.items() if k != "deepseek_only"}
 PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
     "openai": {**deepcopy(DEFAULT_POLICY), "financial_vision": deepcopy(FINANCIAL_VISION_PROFILE),
+               "workspace_analysis": {"provider": "openai", "model_id": "gpt-5.6-sol"},
                "statement_claim_drafting": {"provider": "openai", "model_id": "gpt-5.6-sol"},
                "phone_mapping_draft": {"provider": "openai", "model_id": "gpt-5.6-sol"}},
     "anthropic": {
