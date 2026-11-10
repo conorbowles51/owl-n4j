@@ -391,17 +391,33 @@ def _finalizer_request(*, state_messages: list[AnyMessage], final_answer_rules: 
     Default: its own system prompt, then every result whole (or the agent's selection with the lean finalizer).
     With LOUPE_AGENT_FINALIZER_ON_AGENT_PREFIX=1 (lean_history.finalizer_on_agent_prefix): the agent's system prompt,
     tools and conversation exactly as the agent last sent them, so the provider reads them from its cache, then the
-    final-answer rules and request as the last message, with tools offered and none allowed. The agent's view holds
+    final-answer rules and request as the last message. The tools stay in the request as the agent sent them:
+    DeepSeek leaves them out of the prompt under tool_choice "none" (measured 10 Nov: 4,813 tokens became 1,369 and
+    the cache read fell to 0), so a tool call in the reply is dropped instead (_final_reply). The agent's view holds
     every result whole only with the cache-stable history on, so the two switches go on together."""
     request = _FINAL_ANSWER_REQUEST + (_OUT_OF_STEPS_REQUEST if out_of_steps else "")
     if finalizer_on_agent_prefix() and agent_model is not None:
         rules = _FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + final_answer_rules if final_answer_rules else "")
-        binder = getattr(agent_model, "bind", None)
-        model = binder(tool_choice="none") if callable(binder) else agent_model
-        return model, [SystemMessage(content=agent_system_prompt), *lean_messages(state_messages),
-                       HumanMessage(content=rules + "\n\n" + request)]
+        return agent_model, [SystemMessage(content=agent_system_prompt), *lean_messages(state_messages),
+                             HumanMessage(content=rules + "\n\n" + request)]
     return base_model, [SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
                         *finalizer_messages(state_messages), HumanMessage(content=request)]
+
+
+def _final_reply(response: Any, retry: Callable[[], Any]) -> Any:
+    """The finalizer's reply as an answer. On the agent's prefix the tools are in the request, so a reply may ask for
+    one: its text is the answer and the call is dropped; a reply with no text at all is asked again by ``retry`` (the
+    finalizer's own request, without tools)."""
+    calls = getattr(response, "tool_calls", None) or []
+    if not calls:
+        return response
+    if message_content_to_text(response.content).strip():
+        return AIMessage(content=response.content, additional_kwargs={
+            k: v for k, v in (response.additional_kwargs or {}).items() if k != "tool_calls"},
+            response_metadata=getattr(response, "response_metadata", {}) or {},
+            usage_metadata=getattr(response, "usage_metadata", None))
+    logger.warning("The finalizer asked for a tool on the agent's prefix; asking again without tools")
+    return retry()
 
 
 def _final_answer_system_prompt(rules: str = "") -> str:
@@ -1134,7 +1150,19 @@ class AgentGraphRunner:
                 out_of_steps=out_of_steps, agent_system_prompt=build_system_prompt(state),
                 agent_model=model_with_tools, base_model=self.base_model)
             response = invoke_model(final_model, final_request, step=int(state.get("tool_iterations") or 0))
+            spent: list[AnyMessage] = []
+            if final_model is not self.base_model:
+                def again():
+                    spent.append(response)
+                    return invoke_model(self.base_model, [
+                        SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
+                        *finalizer_messages(_messages_for_finalizer(state)), final_request[-1]],
+                        step=int(state.get("tool_iterations") or 0))
+                response = _final_reply(response, again)
             replies, text = _in_plain_words(self.base_model, response)
+            # A reply asked again was still billed: its tokens stay in the run's usage, its tool call does not.
+            replies = [AIMessage(content="", usage_metadata=getattr(m, "usage_metadata", None),
+                                 response_metadata=getattr(m, "response_metadata", {}) or {}) for m in spent] + replies
             return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
@@ -1371,7 +1399,19 @@ class AgentGraphRunner:
             note(live_runs.progress_writing(step=int(state.get("tool_iterations") or 0)))
             response = invoke_model(final_model, final_request, note=note, step=int(state.get("tool_iterations") or 0),
                                     should_cancel=should_cancel)
+            spent: list[AnyMessage] = []
+            if final_model is not self.base_model:
+                def again():
+                    spent.append(response)
+                    return invoke_model(self.base_model, [
+                        SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
+                        *finalizer_messages(_messages_for_finalizer(state)), final_request[-1]],
+                        note=note, step=int(state.get("tool_iterations") or 0), should_cancel=should_cancel)
+                response = _final_reply(response, again)
             replies, text = _in_plain_words(self.base_model, response)
+            # A reply asked again was still billed: its tokens stay in the run's usage, its tool call does not.
+            replies = [AIMessage(content="", usage_metadata=getattr(m, "usage_metadata", None),
+                                 response_metadata=getattr(m, "response_metadata", {}) or {}) for m in spent] + replies
             return {"messages": replies, "final_answer": link_named_files(link_document_citations(text), _tool_text(state)),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 

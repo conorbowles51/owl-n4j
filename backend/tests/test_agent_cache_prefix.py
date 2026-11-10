@@ -23,7 +23,10 @@ def starts_with(longer, shorter):
 
 
 class PrefixRecorder(Recorder):
-    """The scripted model, with ``bind`` (tool_choice) on the tool-bound model as a chat model has."""
+    """The scripted model: the request after the draft (the agent's prefix plus the final request) is the finalizer's.
+    ``final_reply`` is what that request returns."""
+
+    final_reply = None
 
     def bind_tools(self, tools):
         bound = super().bind_tools(tools)
@@ -31,16 +34,13 @@ class PrefixRecorder(Recorder):
 
         class WithBind:
             def invoke(self, messages):
+                if isinstance(messages[-1], HumanMessage) and "Now write the final answer" in messages[-1].content:
+                    owner.requests.append(("finalizer-on-prefix", list(messages)))
+                    return owner.final_reply or AIMessage(content="Final answer.")
                 return bound.invoke(messages)
 
             def bind(self, **kwargs):
-                owner.final_kwargs = kwargs
-
-                class Final:
-                    def invoke(self, messages):
-                        owner.requests.append(("finalizer-on-prefix", list(messages)))
-                        return AIMessage(content="Final answer.")
-                return Final()
+                raise AssertionError("the finalizer must not rebind the tools (tool_choice none drops them)")
         return WithBind()
 
 
@@ -70,7 +70,6 @@ class CacheStableTests(unittest.TestCase):
             run(recorder)
         kind, final = recorder.requests[-1]
         self.assertEqual(kind, "finalizer-on-prefix")
-        self.assertEqual(recorder.final_kwargs, {"tool_choice": "none"})
         last_agent = [messages for kind, messages in recorder.requests if kind == "agent"][-1]
         self.assertTrue(starts_with(final, last_agent))
         # Then the draft the agent wrote, then the rules and the request.
@@ -90,6 +89,23 @@ class CacheStableTests(unittest.TestCase):
         text = "\n".join(str(m.content) for m in final)
         self.assertNotIn('"%s"' % lean_history.DIGEST_MARK, text)
         self.assertIn("014790605468140368", text)
+
+    def test_a_tool_call_in_the_final_reply_is_dropped_and_its_text_kept(self):
+        recorder = PrefixRecorder(BATCHES)
+        recorder.final_reply = AIMessage(content="The answer.", tool_calls=[{"id": "z", "name": "groups", "args": {}}])
+        with patch.dict("os.environ", BOTH):
+            result = run(recorder)
+        self.assertEqual(result["answer"], "The answer.")
+
+    def test_a_final_reply_with_only_a_tool_call_is_asked_again_without_tools(self):
+        recorder = PrefixRecorder(BATCHES)
+        recorder.final_reply = AIMessage(content="", tool_calls=[{"id": "z", "name": "groups", "args": {}}],
+                                         usage_metadata={"input_tokens": 1000, "output_tokens": 5, "total_tokens": 1005})
+        with patch.dict("os.environ", BOTH):
+            result = run(recorder)
+        self.assertEqual(recorder.requests[-1][0], "finalizer")
+        self.assertEqual(result["answer"], "Final answer.")
+        self.assertGreaterEqual(result["usage"]["prompt_tokens"], 1000)  # the reply asked again was still billed
 
     def test_the_default_finalizer_is_unchanged(self):
         recorder = PrefixRecorder(BATCHES)
