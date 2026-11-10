@@ -202,6 +202,23 @@ def test_truncated_document_keeps_everything_read_and_reconciles():
     assert reconcile(source, captured) == ("exact", [])
 
 
+def test_the_budget_reads_memory_held_now_not_the_worker_process_high_water_mark(monkeypatch):
+    """A long-lived worker whose earlier job peaked above the budget still reads a small report (10 Nov 2026)."""
+    import resource
+    import app.phone.capture as capture_mod
+    real = resource.getrusage
+
+    class Usage:
+        def __init__(self, u):
+            self._u = u
+        def __getattr__(self, name):
+            return (600 * 1024) if name == "ru_maxrss" else getattr(self._u, name)  # 600 MB high-water mark, in KiB
+    monkeypatch.setattr(capture_mod.resource, "getrusage", lambda who: Usage(real(who)))
+    res = Capture(MemorySink()).run(io.BytesIO(REPORT.encode()))
+    assert res["parse_state"] == "complete"
+    assert res["peak_rss"] < capture_mod.MEMORY_BUDGET_BYTES
+
+
 def test_memory_budget_stops_with_the_stated_message():
     sink = MemorySink(flush_rows=1)
     with pytest.raises(CaptureMemoryBudgetExceeded) as e:

@@ -69,7 +69,15 @@ def _is_ws(text: str) -> bool:
 
 
 def rss_bytes() -> int:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+    """The memory this process holds now. ``ru_maxrss`` is the process's high-water mark since it started, and the
+    phone worker is a long-lived process: after one large report took it past the budget, every later capture in it
+    stopped at its first flush (10 Nov 2026: high-water 541 MB, current 84 MB, a 2,000-record report refused). The
+    current figure comes from ``/proc/self/statm``; the high-water mark is the fallback where /proc is absent."""
+    try:
+        with open("/proc/self/statm") as fh:
+            return int(fh.read().split()[1]) * resource.getpagesize()
+    except (OSError, ValueError, IndexError):
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
 
 
 def encode(el, open_ids=frozenset()):
