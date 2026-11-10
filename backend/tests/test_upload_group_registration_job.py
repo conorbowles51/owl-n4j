@@ -28,12 +28,12 @@ def held(groups, monkeypatch):
     f.release, f.entered, f.prepares = threading.Event(), threading.Event(), []
     original = api.prepare_payload
 
-    def prepare(group, rows, detect, progress=None):
+    def prepare(group, rows, detect, progress=None, sources=None):
         f.prepares.append(group.id)
         progress('checking', 1)
         f.entered.set()
         assert f.release.wait(60)
-        return original(group, rows, detect, progress)
+        return original(group, rows, detect, progress, sources)
     monkeypatch.setattr(api, 'prepare_payload', prepare)
     yield f
     f.release.set()

@@ -34,7 +34,7 @@ from postgres.session import get_db
 from routers.case_access import authorize_case
 from routers.users import get_current_db_user
 from routers import evidence_uploads as uploads
-from services import evidence_archive, evidence_signature
+from services import evidence_archive, evidence_signature, shared_source
 from services.evidence_db_storage import EvidenceDBStorage
 
 router = APIRouter(prefix='/api/evidence-upload-groups', tags=['evidence'])
@@ -450,7 +450,7 @@ def checked(manifest, copies):
         yield from zip(manifest, checkers.map(verified_source, copies))
 
 
-def prepare_payload(group, rows, detect, progress=None):
+def prepare_payload(group, rows, detect, progress=None, sources=None):
     """Verified copy into the payload root. ``detect(case_relative_path)`` is the engine's phone classification
     (01 section 2.5). A phone container is never unpacked here: a zip or UFDR holding a phone report, readable or
     protected, is copied whole (01 section 4.2 step 3); an ordinary zip is unpacked as before. Returns the ordinary
@@ -479,8 +479,17 @@ def prepare_payload(group, rows, detect, progress=None):
                 messages=found.get('messages') or [])])
         target = root / safe_path(member['path'])
         place_verified(source, target, member['sha256'], member['size'])
+        if sources is not None:
+            # An identical file already on this disk (corpus or other stored evidence) is kept once, as a read-only
+            # link (services/shared_source.py); the verified upload copy is then released with the upload parts.
+            sources.adopt(target, member['sha256'], member['size'], relative=member['path'])
         prepared.append(dict(path=member['path'], size=member['size'], sha256=member['sha256'], stored_path=str(target)))
         progress('checking', len(prepared))
+    shared = None
+    if sources is not None and sources.linked:
+        sources.write_links(root.parent / shared_source.LINKS_NAME)
+        shared = sources.summary()
+        shared['record'] = shared_source.LINKS_NAME
     progress('phones', len(prepared))
     found = detect(case_relative(group, root))
     phones = []
@@ -494,7 +503,8 @@ def prepare_payload(group, rows, detect, progress=None):
                                             for m in inside]),
             size=sum(m['size'] for m in inside), name=PurePosixPath(rp).name if rp else group.name,
             kind='folder', outcome=found['outcome'], roots=[''], member_paths=[m['path'] for m in inside],
-            messages=[m for m in found.get('messages') or [] if m.get('code') != 'several_roots']))
+            messages=[m for m in found.get('messages') or [] if m.get('code') != 'several_roots'],
+            shared_source=shared))
     claimed = {p for phone in phones for p in phone['member_paths']}
     return dict(members=[m for m in prepared if m['path'] not in claimed], phones=phones)
 
@@ -536,7 +546,8 @@ def register_payload(db, group, user, prepared):
                 size=phone['size'], source_type='phone_extraction',
                 metadata={'upload_group_id': str(group.id), 'relative_path': phone['path'],
                           'phone_container_kind': phone['kind'], 'phone_detect_outcome': phone['outcome'],
-                          'phone_detect_messages': phone['messages']})])
+                          'phone_detect_messages': phone['messages'],
+                          **({'shared_source': phone['shared_source']} if phone.get('shared_source') else {})})])
         # Never offered to document processing: the phone reading owns it, and the engine sets processed or failed
         # when the reading ends (evidence-engine app/phone/job.py).
         record.status = 'processing'
@@ -1012,7 +1023,12 @@ async def _complete(db, identity, user, registration):
         return answer
     if not group.receipt:
         try:
-            prepared = await run_in_threadpool(prepare_payload, group, rows, engine_detector(group.case_id), progress)
+            sources = shared_source.for_group(db.get_bind(), payload_root(group).parent, uploads.EVIDENCE_DATA_ROOT)
+            try:
+                prepared = await run_in_threadpool(prepare_payload, group, rows, engine_detector(group.case_id),
+                                                   progress, sources)
+            finally:
+                sources.close()
         except HTTPException as exc:
             if exc.status_code == 409:
                 def mark_unfinished():
