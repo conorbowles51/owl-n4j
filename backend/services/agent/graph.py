@@ -498,7 +498,15 @@ def _tool_text(state: Any) -> str:
 def _has_jargon(text: str) -> bool:
     # Link targets carry ids and file names, not words a person reads.
     readable = re.sub(r"\]\([^)]*\)", "]", text or "")
-    return any(pattern.search(readable) for pattern in _JARGON_PATTERNS)
+    return any(pattern.search(readable) for pattern in _JARGON_PATTERNS) or bool(_standard_breaks(text))
+
+
+def _standard_breaks(text: str) -> list[str]:
+    """What the writing standard's check still finds once its own safe swaps are made (services.writing_standard):
+    banned words and phrases, graph link names (TRANSFERRED_TO), "null", codes in a longer word (P3-level). In the 7
+    days to 10 Nov, 15 of 238 live answers kept one after every post-check (lx-agentcost I)."""
+    found = writing_standard.find_problems(writing_standard.clean(text or ""))
+    return sorted({p.match for p in found})
 
 
 def _in_plain_words(model: Any, response: AnyMessage) -> tuple[list[AnyMessage], str]:
@@ -514,7 +522,11 @@ def _in_plain_words_model(model: Any, response: AnyMessage) -> tuple[list[AnyMes
     if not _has_jargon(text):
         return [response], text
     try:
-        rewrite = model.invoke([SystemMessage(content=writing_standard.system_prompt(_PLAIN_WORDS_REQUEST)), HumanMessage(content=text)])
+        breaks = _standard_breaks(text)
+        request = _PLAIN_WORDS_REQUEST + (
+            " These words break the writing standard; write each in plain words or leave it out: %s."
+            % ", ".join(breaks) if breaks else "")
+        rewrite = model.invoke([SystemMessage(content=writing_standard.system_prompt(request)), HumanMessage(content=text)])
     except Exception:  # noqa: BLE001 - the unrewritten answer is still the answer; never lose it to a failed rewrite
         logger.warning("Plain-words rewrite of the final answer failed; the answer is kept as written", exc_info=True)
         return [response], text

@@ -88,9 +88,13 @@ def _patterns():
     return words, phrases, internal
 
 
-# Spans never judged or changed: quoted text, code, Markdown link targets and bare links (evidence and citations).
+# Spans never judged or changed: quoted text, code, Markdown link targets, bare links (evidence and citations) and
+# evidence file names (a phone photo "IMG_00001.jpg" is the file's own name, not an internal term).
+_FILE_NAME = (r"\b[\w.-]*\w\.(?i:pdf|jpe?g|png|gif|heic|webp|tiff?|bmp|mp4|mov|m4a|mp3|wav|aac|opus|amr|3gp|csv|xlsx?"
+              r"|docx?|txt|rtf|eml|msg|zip|json|xml|html?|vcf)\b")
 _PROTECTED = re.compile(
-    r"\"[^\"\n]{1,2000}\"|“[^”\n]{1,2000}”|`[^`\n]*`|```.*?```|\]\([^)]*\)|\b(?:https?|txn|doc|rec|file)://\S+",
+    r"\"[^\"\n]{1,2000}\"|“[^”\n]{1,2000}”|`[^`\n]*`|```.*?```|\]\([^)]*\)|\b(?:https?|txn|doc|rec|file)://\S+|"
+    + _FILE_NAME,
     re.S,
 )
 
