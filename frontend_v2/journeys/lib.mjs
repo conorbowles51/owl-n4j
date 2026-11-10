@@ -7,6 +7,8 @@ export const CASES = {
   phonesOnly: "4aa79795-1076-4c75-985f-784936abb71f",
   training: "d9945277-6c80-4a39-82c7-93a95d420384",
   verification: "cded78d0-e659-44cc-940d-d8f8c8012760",
+  // "Demo: State v. Mateo Ruiz (synthetic)": the invented defence case, the primary test environment (docs/demo-case.md)
+  demo: "b75f3f2c-ffa1-4260-8fe9-6f5db4e9d4df",
 }
 /** Writes and screenshots happen only in these cases (CB-INDEX rule 6). */
 export const SYNTHETIC = new Set(Object.values(CASES))
