@@ -173,3 +173,17 @@ def test_release_leaves_a_file_that_is_not_the_replaced_copy(world):
     s = sources(world)
     assert s.adopt(stored, digest(BIG), len(BIG))
     assert s.release_upload_copy(other) == 0 and other.exists()
+
+
+def test_alias_through_the_mount_that_holds_the_source():
+    """evidence-data is mounted on its own and also inside /mnt/owl-data: one disk, two mounts, and a hard link
+    cannot cross them (measured live: EXDEV on every link)."""
+    mounts = [('8:16', '/', '/mnt/owl-data'), ('8:16', '/evidence-data', '/srv/app/evidence-data'),
+              ('8:17', '/', '/other')]
+    corpus = '/mnt/owl-data/ingestion-data/x/file.bin'
+    stored = '/srv/app/evidence-data/case/_upload_groups/g/payload/file.bin'
+    assert ss.alias_on_mount_of(stored, corpus, mounts) == '/mnt/owl-data/evidence-data/case/_upload_groups/g/payload/file.bin'
+    assert ss.alias_on_mount_of(corpus, corpus, mounts) == corpus
+    assert ss.alias_on_mount_of('/other/a', corpus, mounts) is None
+    # a mount that shows only a subfolder cannot reach files outside it
+    assert ss.alias_on_mount_of(corpus, stored, mounts) is None

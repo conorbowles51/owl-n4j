@@ -64,6 +64,49 @@ def make_read_only(path):
         return False
 
 
+def _mounts():
+    """(device, root inside the device, mount point) of every mount, from /proc/self/mountinfo."""
+    found = []
+    try:
+        with open('/proc/self/mountinfo') as handle:
+            for line in handle:
+                fields = line.split()
+                found.append((fields[2], fields[3], fields[4].replace('\\040', ' ')))
+    except OSError:
+        pass
+    return found
+
+
+def _mount_of(path, mounts):
+    best = None
+    for device, root, point in mounts:
+        if path == point or path.startswith(point.rstrip('/') + '/'):
+            if best is None or len(point) >= len(best[2]):
+                best = (device, root, point)
+    return best
+
+
+def alias_on_mount_of(path, anchor, mounts=None):
+    """A hard link cannot cross mount points, even for two views of one disk (evidence-data is mounted on its own
+    as well as inside /mnt/owl-data). The name of ``path`` as seen through the mount that holds ``anchor``, or None."""
+    mounts = _mounts() if mounts is None else mounts
+    path, anchor = os.path.abspath(path), os.path.abspath(anchor)
+    mine, theirs = _mount_of(path, mounts), _mount_of(anchor, mounts)
+    if mine is None or theirs is None or mine[0] != theirs[0]:
+        return None
+    if mine == theirs:
+        return path
+    inside = posixpath_join(mine[1], path[len(mine[2]):].lstrip('/'))
+    root = theirs[1].rstrip('/')
+    if not (inside == root or inside.startswith(root + '/')):
+        return None
+    return os.path.join(theirs[2], inside[len(root):].lstrip('/'))
+
+
+def posixpath_join(root, rest):
+    return (root.rstrip('/') + '/' + rest) if rest else root
+
+
 def _walk_files(root):
     stack = [str(root)]
     while stack:
@@ -137,6 +180,7 @@ class SharedSources:
         self.min_size = min_size
         self.max_age = max_age
         self._connection = None
+        self._mounts = _mounts()
         self.replaced_inode = None  # inode of the stored copy the last successful adopt replaced
         self.linked = []          # dict(path, source, size, sha256)
         self.skipped = {}         # reason -> count
@@ -214,6 +258,11 @@ class SharedSources:
             if other.st_dev != mine.st_dev:
                 self._skip('other_device')
                 continue
+            alias = alias_on_mount_of(target, candidate, self._mounts)
+            if alias is None:
+                self._skip('other_mount')
+                continue
+            dest = Path(alias)
             if (other.st_dev, other.st_ino) == (mine.st_dev, mine.st_ino):
                 return self._skip('already_one_file')
             if os.path.realpath(candidate) != os.path.abspath(candidate) and os.path.islink(candidate):
@@ -221,21 +270,22 @@ class SharedSources:
             if file_sha256(candidate) != sha256:
                 self._skip('content_differs')
                 continue
-            if not make_read_only(candidate):
-                self._skip('not_read_only')
-                continue
-            temporary = target.parent / (PARTIAL_PREFIX + uuid4().hex)
+            temporary = dest.parent / (PARTIAL_PREFIX + uuid4().hex)
             try:
                 os.link(candidate, temporary)
             except OSError:
                 self._skip('link_refused')
                 continue
             try:
+                # Read-only is set only once the link exists, so a refused link changes nothing in the source.
+                if not make_read_only(candidate):
+                    self._skip('not_read_only')
+                    continue
                 joined, again = os.stat(temporary), os.stat(candidate)
                 if (joined.st_dev, joined.st_ino) != (again.st_dev, again.st_ino) or not is_read_only(temporary):
                     self._skip('not_read_only')
                     continue
-                os.replace(temporary, target)
+                os.replace(temporary, dest)
             finally:
                 if os.path.lexists(temporary):
                     os.unlink(temporary)
