@@ -259,3 +259,30 @@ async def test_stored_progress_records_when_the_stage_and_the_counts_last_change
     assert phone()["stage_started_at"] == "2026-11-01T10:00:00+00:00"
     await phone_job._publish(job, db, JobStatus.RECONCILING, 0.7, "m", stage="reconciling", counts={"records": 9})
     assert phone()["stage_started_at"] == phone()["changed_at"] == "2026-11-01T10:00:03+00:00"
+
+
+def test_a_failed_capture_keeps_its_reason_on_the_extraction(monkeypatch):
+    """10 Nov 2026: a P01 capture failed with the reason only in the job row; the extraction said just 'failed'."""
+    import json
+    from contextlib import nullcontext
+    from app.phone import job as phone_job
+    ran = []
+
+    class Conn:
+        def transaction(self):
+            return nullcontext()
+
+        def execute(self, sql, params=()):
+            ran.append((sql, params))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(phone_job, "connect", lambda url: Conn())
+    monkeypatch.setattr(phone_job, "_extraction_for_job", lambda conn, job_id: "ext-1")
+    phone_job._mark_extraction_failed("job-1", "memory_budget", "Reading stopped: too much memory.", "capturing")
+    states = [p for sql, p in ran if "capture_state = 'failed'" in sql and "flags" not in sql]
+    flags = [json.loads(p[0]) for sql, p in ran if "flags = flags ||" in sql]
+    assert states == [("ext-1",)]
+    assert flags == [{"failure": {"code": "memory_budget", "message": "Reading stopped: too much memory.",
+                                  "stage": "capturing"}}]

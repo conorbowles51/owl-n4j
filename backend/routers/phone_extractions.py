@@ -93,6 +93,7 @@ def describe(db: Session, extractions: list[PhoneExtraction]) -> list[dict]:
             superseded_at=_iso(e.superseded_at), superseded_reason=e.superseded_reason,
             superseded_by=people.get(e.superseded_by_user_id),
             replaced_by_id=replaced_by.get(e.id),
+            failure=flags.get("failure") if e.capture_state == "failed" else None,
             possible_same_device=[dict(extraction_id=str(p.get("extraction_id")), name=p.get("name"))
                                   for p in flags.get("possible_same_device") or []],
         ))

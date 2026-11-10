@@ -233,13 +233,13 @@ async def _fail(job, db, code, message, reference=None):
     state["phone"] = phone
     job.pipeline_state = state
     await db.commit()
-    await asyncio.to_thread(_mark_extraction_failed, job.id)
+    await asyncio.to_thread(_mark_extraction_failed, job.id, code, message, phone.get("stage"))
     await _evidence_status(job, "failed", message)
     await _publish(job, db, JobStatus.FAILED, job.progress or 0.0, message, stage=phone.get("stage"),
                    error_message=message)
 
 
-def _mark_extraction_failed(job_id):
+def _mark_extraction_failed(job_id, code=None, message=None, stage=None):
     conn = connect(settings.database_url)
     try:
         ext = _extraction_for_job(conn, job_id)
@@ -247,6 +247,11 @@ def _mark_extraction_failed(job_id):
             with conn.transaction():
                 conn.execute("UPDATE phone_extractions SET capture_state = 'failed' WHERE id = %s AND capture_state "
                              "NOT IN ('captured', 'captured_incomplete', 'reconciliation_failed')", (ext,))
+                if code:
+                    # the reason stays on the extraction, so a person reading it never has to open the worker log
+                    conn.execute("UPDATE phone_extractions SET flags = flags || %s::jsonb WHERE id = %s AND "
+                                 "capture_state = 'failed'", (json.dumps({"failure": {
+                                     "code": code, "message": message, "stage": stage}}), ext))
     finally:
         conn.close()
 
