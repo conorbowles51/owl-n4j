@@ -128,6 +128,7 @@ def test_prepare_payload_links_a_stored_folder_member(world, monkeypatch):
 
         def adopt(self, target, sha, size, relative=None):
             seen.append((Path(target).name, relative))
+            return None
 
     import types
     tmp, corpus, payload = world
@@ -144,3 +145,31 @@ def test_prepare_payload_links_a_stored_folder_member(world, monkeypatch):
                                   chunk_size=1)]
     out = api.prepare_payload(group, rows, lambda p: {'outcome': api.NOT_A_PHONE_REPORT}, None, Fake())
     assert seen == [('f.txt', 'Dir/f.txt')] and out['members'][0]['path'] == 'Dir/f.txt'
+
+
+def test_upload_copy_is_released_so_the_bytes_live_once(world):
+    tmp, corpus, payload = world
+    source = corpus / 'v1' / 'big.bin'
+    source.write_bytes(BIG)
+    assembled = tmp / 'case' / '_uploads' / 's1' / 'big.bin'
+    assembled.parent.mkdir(parents=True)
+    assembled.write_bytes(BIG)
+    stored = payload / 'big.bin'
+    os.link(assembled, stored)  # how the upload step places a verified file
+    s = sources(world)
+    assert s.adopt(stored, digest(BIG), len(BIG))
+    assert s.release_upload_copy(assembled) == len(BIG)
+    assert not assembled.exists() and stored.read_bytes() == BIG
+    assert os.stat(source).st_nlink == 2 and s.summary()['bytes_freed'] == len(BIG)
+
+
+def test_release_leaves_a_file_that_is_not_the_replaced_copy(world):
+    tmp, corpus, payload = world
+    (corpus / 'big.bin').write_bytes(BIG)
+    stored = payload / 'big.bin'
+    stored.write_bytes(BIG)
+    other = tmp / 'other.bin'
+    other.write_bytes(BIG)
+    s = sources(world)
+    assert s.adopt(stored, digest(BIG), len(BIG))
+    assert s.release_upload_copy(other) == 0 and other.exists()

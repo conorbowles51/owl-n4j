@@ -482,7 +482,9 @@ def prepare_payload(group, rows, detect, progress=None, sources=None):
         if sources is not None:
             # An identical file already on this disk (corpus or other stored evidence) is kept once, as a read-only
             # link (services/shared_source.py); the verified upload copy is then released with the upload parts.
-            sources.adopt(target, member['sha256'], member['size'], relative=member['path'])
+            if sources.adopt(target, member['sha256'], member['size'], relative=member['path']):
+                # The bytes now live once, in the source: the upload's own assembled name is released.
+                sources.release_upload_copy(source)
         prepared.append(dict(path=member['path'], size=member['size'], sha256=member['sha256'], stored_path=str(target)))
         progress('checking', len(prepared))
     shared = None

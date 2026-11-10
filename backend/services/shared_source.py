@@ -137,6 +137,7 @@ class SharedSources:
         self.min_size = min_size
         self.max_age = max_age
         self._connection = None
+        self.replaced_inode = None  # inode of the stored copy the last successful adopt replaced
         self.linked = []          # dict(path, source, size, sha256)
         self.skipped = {}         # reason -> count
 
@@ -240,8 +241,23 @@ class SharedSources:
                     os.unlink(temporary)
             self.linked.append(dict(path=relative or str(target), source=candidate, size=size, sha256=sha256,
                                     inode=again.st_ino))
+            self.replaced_inode = mine.st_ino
             return candidate
         return None
+
+    def release_upload_copy(self, path):
+        """Remove the upload's own assembled name for the bytes the last adopt replaced. Only that inode is removed
+        (never a file that has since changed), and only after the link to the source is in place: the bytes then
+        live once, in the source. Returns the bytes freed (0 when the file was not that inode)."""
+        try:
+            found = os.stat(path)
+            if found.st_ino != self.replaced_inode or not stat.S_ISREG(found.st_mode):
+                return 0
+            os.unlink(path)
+        except OSError:
+            return 0
+        self.freed = getattr(self, 'freed', 0) + (found.st_size if found.st_nlink <= 1 else 0)
+        return found.st_size if found.st_nlink <= 1 else 0
 
     def write_links(self, path):
         """Record each link beside the container (never inside it: a file there would change a folder's digest)."""
@@ -255,7 +271,8 @@ class SharedSources:
         return path
 
     def summary(self):
-        return dict(files=len(self.linked), bytes=sum(i['size'] for i in self.linked), skipped=dict(self.skipped))
+        return dict(files=len(self.linked), bytes=sum(i['size'] for i in self.linked), skipped=dict(self.skipped),
+                    bytes_freed=getattr(self, 'freed', 0))
 
 
 def stored_lookup_for(bind, data_root):
@@ -286,6 +303,15 @@ def for_group(bind, group_dir, data_root, roots=None):
                          exclude=[group_dir])
 
 
+def upload_copy(payload, relative):
+    """Where the upload kept its assembled file for this member: <case>/_uploads/<uuid5(group, path)>/<name>."""
+    from uuid import UUID, uuid5
+    payload = Path(payload)
+    group = payload.parent.name
+    case_root = payload.parent.parent.parent
+    return case_root / '_uploads' / str(uuid5(UUID(group), relative.replace(os.sep, '/'))) / Path(relative).name
+
+
 def _convert(argv=None):
     """python -m services.shared_source convert PAYLOAD_DIR [--apply]: link the files of a stored folder to
     identical files in the sources, through ``adopt``. Dry run by default (reports what would be freed)."""
@@ -310,7 +336,8 @@ def _convert(argv=None):
         digest = file_sha256(path)
         relative = os.path.relpath(path, payload)
         if args.apply:
-            sources.adopt(path, digest, size, relative=relative)
+            if sources.adopt(path, digest, size, relative=relative):
+                sources.release_upload_copy(upload_copy(payload, relative))
         else:
             for candidate in sources.candidates(size, os.path.basename(path), digest):
                 if os.path.isfile(candidate) and file_sha256(candidate) == digest:
