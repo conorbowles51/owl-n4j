@@ -222,5 +222,14 @@ class NotesAndRereadCapTests(unittest.TestCase):
         self.assertEqual(context.free_calls, graph.REREAD_CAP + 1)
 
 
+class CacheStableSwitchTests(unittest.TestCase):
+    def test_k_turns_on_the_cache_stable_history_and_the_finalizer_on_the_agents_prefix_together(self):
+        with patch.dict(os.environ, {"LOUPE_AGENT_FIT": "", lean_history.CACHE_STABLE_SETTING: "",
+                                     lean_history.FINALIZER_ON_AGENT_PREFIX_SETTING: ""}):
+            self.assertFalse(lean_history.cache_stable_history() or lean_history.finalizer_on_agent_prefix())
+        with patch.dict(os.environ, {"LOUPE_AGENT_FIT": "K"}):
+            self.assertTrue(lean_history.cache_stable_history() and lean_history.finalizer_on_agent_prefix())
+
+
 if __name__ == "__main__":
     unittest.main()

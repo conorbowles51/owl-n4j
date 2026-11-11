@@ -150,8 +150,10 @@ CACHE_STABLE_SETTING = "LOUPE_AGENT_CACHE_STABLE_HISTORY"
 
 
 def cache_stable_history() -> bool:
+    """On with its own setting, or with agent-fit K (this and the finalizer on the agent's prefix, together)."""
     import os
-    return os.getenv(CACHE_STABLE_SETTING, "").strip() == "1"
+    from services.agent import fit
+    return os.getenv(CACHE_STABLE_SETTING, "").strip() == "1" or fit.on("K")
 
 
 def lean_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
@@ -200,7 +202,8 @@ FINALIZER_ON_AGENT_PREFIX_SETTING = "LOUPE_AGENT_FINALIZER_ON_AGENT_PREFIX"
 
 def finalizer_on_agent_prefix() -> bool:
     import os
-    return os.getenv(FINALIZER_ON_AGENT_PREFIX_SETTING, "").strip() == "1"
+    from services.agent import fit
+    return os.getenv(FINALIZER_ON_AGENT_PREFIX_SETTING, "").strip() == "1" or fit.on("K")
 
 
 def finalizer_messages(messages: list[AnyMessage]) -> list[AnyMessage]:

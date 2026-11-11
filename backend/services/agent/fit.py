@@ -8,14 +8,15 @@ a factual question. W: the answer at the tool limit keeps its sources (services.
 Round 2 (each measured alone): R compact tool results (model_payloads.compact_for_model); T tool descriptions and
 errors written for the model (tool_errors, the Cypher checker's literal lists, page paths mended); P plan, batch
 and stop lines in the system prompt; M several names or searches in one call; G graph tools for several entities;
-X a step's tool calls run side by side; N working notes capped and the free re-read allowance from measurement. The default is set from the before-and-after measurement recorded in headless/LX-AGENTFIT-STATUS.md.
+X a step's tool calls run side by side; N working notes capped and the free re-read allowance from measurement;
+K the cache-stable history and the finalizer on the agent's prefix together (lean_history). The default is set from the before-and-after measurement recorded in headless/LX-AGENTFIT-STATUS.md.
 """
 from __future__ import annotations
 
 import os
 
 SETTING = "LOUPE_AGENT_FIT"
-ITEMS = ("B", "C", "D", "F", "W", "R", "T", "P", "M", "G", "X", "N")
+ITEMS = ("B", "C", "D", "F", "W", "R", "T", "P", "M", "G", "X", "N", "K")
 # Off (11 Nov 2026): the release gate failed on what could be measured before the DeepSeek balance ran out (demo 21 of
 # 24 answered as the key says, not 24; simple real requests took longer in 9 of 12 single-sample replays; 2 of 3
 # measured defence questions still stopped at the budget). Reverse per item when its measured runs pass the gate.
