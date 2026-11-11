@@ -183,3 +183,87 @@ def link_bare_targets(text: str) -> str:
         last = m.end()
     out.append(text[last:])
     return "".join(out)
+
+
+# An answer figure 10x or 100x the amount of the payment it cites is a minor-unit slip, not a second figure (BNB2 run
+# 59672695 replays, 11 Nov 2026: 146,353,683.00 written beside the payment of MXN 1,463,536.83; 6 maintenance rows
+# 100x). Such figures are listed under the answer with the record's own amount. The answer text is not changed.
+SCALED_HEADING = "**Figures to check against their records**"
+_SCALES = (10, 100)
+# A money figure: grouped (24,300,000) or with decimals (3500000.00); a bare 2024 or reference number is not one.
+_STATED = re.compile(r"(?<![\d.,/])\d{1,3}(?:,\d{3})+(?:\.\d{1,4})?(?![\d,/])|(?<![\d.,/])\d+\.\d{1,4}(?![\d,/])")
+_SEGMENT = re.compile(r"(?<=[.;:])\s+(?=[^\s\d])|\n")
+
+
+def _minor_of(row: dict) -> tuple[int, int, str] | None:
+    exponent = row.get("currency_exponent")
+    exponent = exponent if isinstance(exponent, int) and not isinstance(exponent, bool) and 0 <= exponent <= 4 else 2
+    try:
+        minor = abs(int(str(row.get("amount_minor"))))
+    except ValueError:
+        return None
+    currency = row.get("currency") if isinstance(row.get("currency"), str) else ""
+    return minor, exponent, currency
+
+
+def _as_minor(text: str, exponent: int) -> int | None:
+    whole, _, frac = text.replace(",", "").partition(".")
+    if len(frac) > exponent:
+        if frac[exponent:].strip("0"):
+            return None
+        frac = frac[:exponent]
+    try:
+        return int(whole) * 10 ** exponent + int(frac.ljust(exponent, "0") or 0)
+    except ValueError:
+        return None
+
+
+def _money(minor: int, exponent: int, currency: str) -> str:
+    text = "{:,.{p}f}".format(minor / 10 ** exponent, p=exponent) if exponent else "{:,}".format(minor)
+    return ("%s %s" % (currency, text)).strip()
+
+
+def scaled_figures(answer: str, views: dict[str, Any]) -> list[dict]:
+    """Each figure the answer writes in the same line or sentence as a payment link (txn://) that is 10x or 100x
+    that payment's amount (or a tenth or hundredth of it) and is not the amount of any payment linked there."""
+    rows: dict[str, dict] = {}
+    for view in (views or {}).values():
+        for link, row in _rows_with_links(view):
+            if link.startswith("txn://") and "amount_minor" in row:
+                rows.setdefault(link, row)
+    found, seen = [], set()
+    for segment in _SEGMENT.split(answer or ""):
+        linked = [rows[link] | {"_link": link} for link in dict.fromkeys(LINK.findall(segment)) if link in rows]
+        amounts = [(row, _minor_of(row)) for row in linked]
+        amounts = [(row, a) for row, a in amounts if a is not None and a[0]]
+        if not amounts:
+            continue
+        text = LINK.sub(" ", segment)
+        for stated in _STATED.findall(text):
+            values = {_as_minor(stated, a[1]) for _, a in amounts}
+            if any(v == a[0] for v in values for _, a in amounts):
+                continue
+            for row, (minor, exponent, currency) in amounts:
+                value = _as_minor(stated, exponent)
+                if value is None or sum(c.isdigit() for c in stated) < MIN_FIGURE_DIGITS:
+                    continue
+                if any(value == minor * k or value * k == minor for k in _SCALES):
+                    key = (stated, row["_link"])
+                    if key not in seen:
+                        seen.add(key)
+                        found.append({"stated": stated, "link": row["_link"],
+                                      "record": _money(minor, exponent, currency)})
+                    break
+    return found
+
+
+def check_scaled_figures(answer: str, views: dict[str, Any]) -> tuple[str, list[dict]]:
+    """``answer`` with the figures of ``scaled_figures`` listed under it, each with its payment's own amount."""
+    found = scaled_figures(answer, views)
+    if not found:
+        return answer, found
+    lines = ["- %s is written beside [this payment](%s); its record says %s." % (f["stated"], f["link"], f["record"])
+             for f in found[:MAX_LISTED]]
+    if len(found) > MAX_LISTED:
+        lines.append("- %d more figures differ from their records in the same way." % (len(found) - MAX_LISTED))
+    return (answer.rstrip() + "\n\n" + SCALED_HEADING + "\n" + "\n".join(lines)), found

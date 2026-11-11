@@ -39,7 +39,7 @@ DIGEST_NOTE = ("Digest of a result shown in full earlier in this run; the full r
                "path) to read it again; each result is read again in full once." % PAGE_TOOL)
 # The fields of one grouped ledger figure (services.agent.financial_ledger_tools, view groups) kept in a digest.
 GROUP_FIELDS = ("group", "currency", "account_type", "currency_exponent", "transaction_count", "credits_minor",
-                "debits_minor", "net_minor", "account_count")
+                "credits", "debits_minor", "debits", "net_minor", "net", "account_count")
 LEDGER_SCHEMA = "loupe.agent.financial_ledger/1"
 
 

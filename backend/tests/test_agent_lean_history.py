@@ -168,7 +168,9 @@ class LeanRunTests(unittest.TestCase):
         self.assertEqual(len(tools), sum(len(b) for b in BATCHES))
         self.assertFalse([t for t in tools if DIGEST_MARK in t])
         groups = [t for t, m in zip(tools, [m for m in messages if isinstance(m, ToolMessage)]) if m.name == "groups"]
-        self.assertEqual(groups[-1]["data"], ledger_groups())
+        # Whole: the model's view of the result (readable amounts beside the minor figures), nothing dropped.
+        from services.agent.model_payloads import model_view
+        self.assertEqual(groups[-1]["data"], model_view(ledger_groups())["data"])
 
     def test_the_lean_finalizer_gets_the_draft_the_last_batch_and_the_ledger_figures(self):
         recorder = Recorder(BATCHES)
@@ -184,7 +186,8 @@ class LeanRunTests(unittest.TestCase):
         self.assertEqual(len(figures), 100)
         self.assertEqual(figures[5], {"group": "2019-06-005", "currency": "MXN", "account_type": "checking",
                                       "currency_exponent": 2, "transaction_count": 15, "credits_minor": "100005",
-                                      "debits_minor": "90005", "net_minor": "10000", "account_count": 1,
+                                      "credits": "MXN 1,000.05", "debits_minor": "90005", "debits": "MXN 900.05",
+                                      "net_minor": "10000", "net": "MXN 100.00", "account_count": 1,
                                       "open_judgement_calls": 1})
 
     def test_without_a_draft_the_finalizer_gets_every_result_whole(self):

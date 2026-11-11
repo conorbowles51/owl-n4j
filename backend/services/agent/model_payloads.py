@@ -171,11 +171,49 @@ def sequence_paths(view):
 
 
 def model_view(data, artifact=None):
-    """What one tool call puts before the model, before paging: its data, and the artifact it built if any."""
-    view = {"data": to_jsonable(data)}
+    """What one tool call puts before the model, before paging: its data, and the artifact it built if any, each
+    with a readable amount beside every minor-unit figure (``with_readable_amounts``)."""
+    view = {"data": with_readable_amounts(to_jsonable(data))}
     if artifact:
-        view["artifact"] = to_jsonable(artifact)
+        view["artifact"] = with_readable_amounts(to_jsonable(artifact))
     return view
+
+
+def _readable(value, currency):
+    from services.phone.link_edges import format_minor
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    text = str(value).strip()
+    if not (text.isdigit() or (text.startswith("-") and text[1:].isdigit())):
+        return None
+    try:
+        return format_minor(int(text), currency)
+    except Exception:  # noqa: BLE001 - an unknown currency keeps the minor figure alone
+        return None
+
+
+def with_readable_amounts(value, currency=None):
+    """``value`` with ``amount: "MXN 1,463,536.83"`` beside ``amount_minor: "146353683"`` (``credits`` beside
+    ``credits_minor``, and so on) wherever the record, or the record holding it, states its currency. A field of
+    that name already present is kept. Measured 11 Nov 2026 (BNB2 run 59672695 replays): the ledger tools gave
+    only minor units and answers stated payments 100x their amount (146,353,683.00 for MXN 1,463,536.83)."""
+    if isinstance(value, list):
+        return [with_readable_amounts(item, currency) for item in value]
+    if not isinstance(value, dict):
+        return value
+    own = value.get("currency")
+    if isinstance(own, str) and len(own.strip()) == 3:
+        currency = own.strip().upper()
+    out = {}
+    for key, item in value.items():
+        out[key] = with_readable_amounts(item, currency) if isinstance(item, (dict, list)) else item
+        if currency and isinstance(key, str) and key.endswith("_minor") and len(key) > 6:
+            base = key[:-6]
+            if base not in value:
+                text = _readable(item, currency)
+                if text is not None:
+                    out[base] = text
+    return out
 
 
 def context_window_for(model_id):
