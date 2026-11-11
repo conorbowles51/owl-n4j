@@ -31,21 +31,34 @@ import socket
 import sys
 import time
 
-os.environ['PGOPTIONS'] = (os.environ.get('PGOPTIONS', '') + ' -c default_transaction_read_only=on').strip()
-_getaddrinfo = socket.getaddrinfo
+_READ_ONLY = '-c default_transaction_read_only=on'
 _REFUSED = ('openai.com', 'anthropic.com', 'googleapis.com')
-# Document search embeds the query with OpenAI; a replay that refuses it measures a search the user never gets.
-if os.environ.get('LOUPE_FIT_ALLOW_EMBEDDINGS') == '1':
-    _REFUSED = ('anthropic.com', 'googleapis.com')
 
 
-def _guarded(host, *args, **kwargs):
-    if host and any(name in str(host) for name in _REFUSED):
-        raise OSError('replay: this model service may not be called')
-    return _getaddrinfo(host, *args, **kwargs)
+def guard_process():
+    """Read-only Postgres sessions and no model service for this process. Called when a replay runs, never on
+    import: a test that imports this file to reach a helper (expect_hit) must not turn the rest of its process
+    read-only (head 080c7be0: 970 later tests refused CREATE DATABASE)."""
+    global _REFUSED
+    options = os.environ.get('PGOPTIONS', '')
+    if _READ_ONLY not in options:
+        os.environ['PGOPTIONS'] = (options + ' ' + _READ_ONLY).strip()
+    # Document search embeds the query with OpenAI; a replay that refuses it measures a search the user never gets.
+    if os.environ.get('LOUPE_FIT_ALLOW_EMBEDDINGS') == '1':
+        _REFUSED = ('anthropic.com', 'googleapis.com')
+    if getattr(socket.getaddrinfo, '_replay_guard', False):
+        return
+    inner = socket.getaddrinfo
+
+    def _guarded(host, *args, **kwargs):
+        if host and any(name in str(host) for name in _REFUSED):
+            raise OSError('replay: this model service may not be called')
+        return inner(host, *args, **kwargs)
+
+    _guarded._replay_guard = True
+    socket.getaddrinfo = _guarded
 
 
-socket.getaddrinfo = _guarded
 sys.path.insert(0, '.')
 
 PAGE_TOOL = 'read_tool_result_page'
@@ -171,6 +184,7 @@ def record_spend(path: str, run, usage: dict, error: str | None) -> None:
 def prepare(args):
     """The run's question, thread, mandate, guided workflow and hidden tools as the service would send them, read
     through read-only sessions; (tool budget, the pieces runner.stream takes)."""
+    guard_process()
     import uuid
     from types import SimpleNamespace
     from sqlalchemy import text
@@ -234,6 +248,7 @@ def stub_proposals():
 
 
 def main():
+    guard_process()
     ap = argparse.ArgumentParser()
     ap.add_argument('--run')
     ap.add_argument('--case')

@@ -27,7 +27,7 @@ import pickle
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location('fit_replay', os.path.join(_HERE, 'financial_agent_fit_replay.py'))
 fit_replay = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(fit_replay)  # read-only Postgres sessions and the socket guard
+_spec.loader.exec_module(fit_replay)
 
 LIVE = {'read_tool_result_page', 'record_working_notes'}
 FOLDABLE = {'search_graph_entities', 'get_entity_details', 'get_entity_neighborhood', 'get_financial_transactions'}
@@ -129,6 +129,7 @@ def _strings(value):
 
 
 def main():
+    fit_replay.guard_process()  # read-only Postgres sessions and the socket guard
     ap = argparse.ArgumentParser()
     ap.add_argument('--recorded', required=True)
     ap.add_argument('--outputs', required=True)

@@ -38,18 +38,24 @@ from typing import Any
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location('fit_replay', os.path.join(_HERE, 'financial_agent_fit_replay.py'))
 fit_replay = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(fit_replay)  # read-only Postgres sessions and the socket guard are set on import
-
-_inner = socket.getaddrinfo
+_spec.loader.exec_module(fit_replay)
 
 
-def _no_model(host, *args, **kwargs):
-    if host and 'deepseek.com' in str(host):
-        raise OSError('trace replay: no model service may be called')
-    return _inner(host, *args, **kwargs)
+def guard_process():
+    """fit_replay's guards (read-only sessions, no model service) and no DeepSeek either. Called by main(), never
+    on import (a test importing this file must keep its own process writable)."""
+    fit_replay.guard_process()
+    if getattr(socket.getaddrinfo, '_trace_guard', False):
+        return
+    inner = socket.getaddrinfo
 
+    def _no_model(host, *args, **kwargs):
+        if host and 'deepseek.com' in str(host):
+            raise OSError('trace replay: no model service may be called')
+        return inner(host, *args, **kwargs)
 
-socket.getaddrinfo = _no_model
+    _no_model._trace_guard = _no_model._replay_guard = True  # it calls fit_replay's guard inside
+    socket.getaddrinfo = _no_model
 
 CITE = re.compile(r'(?:txn|doc|rec)://[^\s"\')\]\\]+')
 PAGE_TOOL = 'read_tool_result_page'
@@ -215,6 +221,7 @@ def simulate_cache(token_lists: list[list[int]], output_ends: list[int | None]) 
 
 
 def main():
+    guard_process()
     ap = argparse.ArgumentParser()
     ap.add_argument('--recorded', required=True, help='a run json written by financial_agent_fit_replay.py')
     ap.add_argument('--out', required=True)
