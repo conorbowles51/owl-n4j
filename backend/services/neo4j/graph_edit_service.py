@@ -462,6 +462,23 @@ class GraphEditService:
             ).data()
         return int(total or 0), rows
 
+    def case_address_texts(self, case_id: str) -> list[str]:
+        """Every address text of a case's entities (the evidence address unless blank, else the ingestion query):
+        what the case's own state is read from (services.address_auto_rules.case_region)."""
+        address = (
+            "trim(CASE WHEN trim(coalesce(n.location_raw, '')) <> '' THEN n.location_raw "
+            "ELSE coalesce(n.geocoding_query, '') END)"
+        )
+        with driver.session() as session:
+            rows = session.run(
+                f"""MATCH (n) WHERE n.case_id = $case_id AND {active_node_predicate('n')}
+                      AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(n.system_node, false) <> true AND {address} <> ''
+                    RETURN {address} AS address""",
+                case_id=case_id,
+            ).data()
+        return [r["address"] for r in rows]
+
     def apply_looked_up_location(
         self,
         node_key: str,
@@ -473,6 +490,7 @@ class GraphEditService:
         requested_by_name: str | None,
         service: str,
         mode: str = "flag",
+        region_added: str | None = None,
     ) -> dict[str, Any]:
         requested_at = datetime.now(timezone.utc).isoformat()
         updates: dict[str, Any] = {
@@ -490,6 +508,9 @@ class GraphEditService:
             # 'flag': a person clicked Look up; 'auto': sent on its own because the case's lookup is automatic
             "geocoding_lookup_mode": mode,
         }
+        if region_added:
+            # the case's own state was added to the evidence text before it was sent (address_auto_rules)
+            updates["geocoding_region_added"] = region_added
         if result.get("confidence"):
             updates["geocoding_confidence"] = result["confidence"]
         if result.get("location_granularity"):
@@ -514,6 +535,57 @@ class GraphEditService:
             raise LookupError(f"Node not found or no longer waiting for a lookup: {node_key}")
         return {"success": True, "node_key": node_key, **{k: updates[k] for k in (
             "latitude", "longitude", "geocoding_formatted_address", "geocoding_requested_at")}}
+
+    def automatic_pins(self, case_id: str) -> list[dict[str, Any]]:
+        """Pins an automatic lookup placed in a case that no person has confirmed or moved: key, the address text,
+        and the service's address for the pin."""
+        address = (
+            "trim(CASE WHEN trim(coalesce(n.location_raw, '')) <> '' THEN n.location_raw "
+            "ELSE coalesce(n.geocoding_query, '') END)"
+        )
+        with driver.session() as session:
+            return session.run(
+                f"""MATCH (n) WHERE n.case_id = $case_id AND {active_node_predicate('n')}
+                      AND n.geocoding_status = $looked_up AND n.geocoding_lookup_mode = 'auto'
+                      AND n.geocoding_requested_by = 'automatic'
+                      AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL
+                      AND NONE(field IN coalesce(n.manual_fields, [])
+                               WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted'])
+                    RETURN n.key AS key, {address} AS address,
+                           n.geocoding_formatted_address AS formatted_address
+                    ORDER BY n.key""",
+                case_id=case_id, looked_up=self.LOOKED_UP_STATUS,
+            ).data()
+
+    def withdraw_automatic_pin(self, node_key: str, *, case_id: str, outcome: str | None, status: str,
+                               reason: str) -> bool:
+        """Take an unconfirmed automatic pin off the map. The pin stays on the entity as withdrawn (where, the
+        service's address, when and why); ``status`` 'not_run' sends it to the automatic lookup again, 'failed'
+        leaves it for a person with ``outcome`` saying why."""
+        with driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                WHERE {active_node_predicate('n')}
+                  AND n.geocoding_status = $looked_up AND n.geocoding_lookup_mode = 'auto'
+                  AND n.geocoding_requested_by = 'automatic'
+                  AND NONE(field IN coalesce(n.manual_fields, [])
+                           WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted'])
+                SET n.geocoding_withdrawn_latitude = n.latitude,
+                    n.geocoding_withdrawn_longitude = n.longitude,
+                    n.geocoding_withdrawn_formatted_address = n.geocoding_formatted_address,
+                    n.geocoding_withdrawn_query = n.geocoding_query,
+                    n.geocoding_withdrawn_at = $at,
+                    n.geocoding_withdrawn_reason = $reason,
+                    n.latitude = null, n.longitude = null,
+                    n.geocoding_status = $status,
+                    n.geocoding_lookup_outcome = $outcome
+                RETURN n.key AS key
+                """,
+                key=node_key, case_id=case_id, looked_up=self.LOOKED_UP_STATUS, status=status, outcome=outcome,
+                reason=reason, at=datetime.now(timezone.utc).isoformat(),
+            ).single()
+        return record is not None
 
     def record_lookup_outcome(
         self, node_key: str, *, case_id: str, outcome: str, requested_by: str, requested_by_name: str | None,

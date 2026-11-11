@@ -61,6 +61,7 @@ export interface LocationConfidenceInput {
   manual_fields?: string[] | null
   geocoding_lookup_outcome?: string | null
   geocoding_lookup_mode?: string | null
+  geocoding_withdrawn_formatted_address?: string | null
 }
 
 /** Status of a pin placed by an address lookup a person asked for: a machine placement until a person confirms it. */
@@ -115,8 +116,21 @@ export function needsReview(input: LocationConfidenceInput): boolean {
   return getConfidenceTier(input) === "low"
 }
 
+/** Why the automatic lookup left an address for a person (backend services/address_auto_rules.py). */
+const AUTOMATIC_OUTCOME_WORDS: Record<string, string> = {
+  not_a_place: "Not looked up automatically: the text names no place on its own",
+  no_case_region: "Not looked up automatically: the case has no state to look it up in",
+  outside_case_region: "Looked up: the only match was outside the state the case names",
+}
+
 /** Human-readable reason a location is in the review queue. */
 export function reviewReason(input: LocationConfidenceInput): string {
+  const reason = reviewReasonWords(input)
+  const withdrawn = input.geocoding_withdrawn_formatted_address
+  return withdrawn ? `${reason} · earlier automatic pin removed: ${withdrawn}` : reason
+}
+
+function reviewReasonWords(input: LocationConfidenceInput): string {
   const status = input.geocoding_status?.toLowerCase()
   if (status === LOOKED_UP_STATUS) {
     return input.geocoding_lookup_mode === "auto"
@@ -124,6 +138,7 @@ export function reviewReason(input: LocationConfidenceInput): string {
       : "Placed by address lookup · not confirmed"
   }
   const outcome = input.geocoding_lookup_outcome?.toLowerCase()
+  if (outcome && AUTOMATIC_OUTCOME_WORDS[outcome]) return AUTOMATIC_OUTCOME_WORDS[outcome]
   if (outcome === "no_match") return "Looked up: no match found"
   if (outcome === "unavailable") return "Looked up: the address service did not answer"
   if (status === "ambiguous") return "Ambiguous at ingestion"

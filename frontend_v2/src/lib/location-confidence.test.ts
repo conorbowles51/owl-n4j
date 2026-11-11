@@ -124,4 +124,21 @@ describe("addresses looked up only when a person asks", () => {
       "Looked up: the address service did not answer"
     )
   })
+
+  it("says why the automatic lookup left an address for a person, and keeps a removed pin in view", async () => {
+    // lx-demo 10 Nov 2026: "gate house" was pinned in Norwich by the automatic lookup
+    const { reviewReason: rr } = await import("./location-confidence")
+    expect(rr({ geocoding_status: "failed", geocoding_lookup_outcome: "not_a_place" })).toBe(
+      "Not looked up automatically: the text names no place on its own"
+    )
+    expect(
+      rr({
+        geocoding_status: "failed",
+        geocoding_lookup_outcome: "outside_case_region",
+        geocoding_withdrawn_formatted_address: "Kent County, Texas, United States",
+      })
+    ).toBe(
+      "Looked up: the only match was outside the state the case names · earlier automatic pin removed: Kent County, Texas, United States"
+    )
+  })
 })

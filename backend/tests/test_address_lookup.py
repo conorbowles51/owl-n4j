@@ -9,9 +9,11 @@ from unittest.mock import MagicMock, patch
 
 from services import address_lookup, geo_rescan_service
 
-WAITING = [{"key": "a", "address": "1600 Pennsylvania Ave"}, {"key": "b", "address": "10 Downing St"},
-           {"key": "c", "address": "Nowhere 99"}]
-FOUND = [{"lat": "38.8977", "lon": "-77.0365", "display_name": "White House", "importance": 0.8, "type": "house"}]
+WAITING = [{"key": "a", "address": "1600 Pennsylvania Ave, Washington, DC 20500"},
+           {"key": "b", "address": "10 Downing St, London"}, {"key": "c", "address": "Nowhere 99, Atlantis"}]
+FOUND = [{"lat": "38.8977", "lon": "-77.0365", "importance": 0.8, "type": "house",
+          "display_name": "White House, 1600, Pennsylvania Avenue Northwest, Washington, District of Columbia, 20500, "
+                          "United States"}]
 
 
 def _answer(payload):
@@ -26,6 +28,7 @@ class AddressLookupModeTests(unittest.TestCase):
     def setUp(self):
         self.neo = MagicMock()
         self.neo.addresses_waiting.return_value = (len(WAITING), WAITING)
+        self.neo.case_address_texts.return_value = [w["address"] for w in WAITING]
         for item in (
             patch("services.neo4j_service.neo4j_service", self.neo),
             patch.object(geo_rescan_service, "_rate_limit"),
@@ -56,6 +59,21 @@ class AddressLookupModeTests(unittest.TestCase):
         self.assertEqual(kwargs["mode"], "auto")
         self.assertEqual(kwargs["requested_by"], geo_rescan_service.AUTOMATIC)
         self.assertEqual(self.neo.record_lookup_outcome.call_args.kwargs["status"], "failed")
+
+    def test_auto_sends_a_fragment_nowhere_and_pins_only_inside_the_cases_state(self):
+        # lx-demo 10 Nov 2026: 'gate house' pinned in Norwich; 'Calder County' in Idaho for a Maryland case
+        self.neo.addresses_waiting.return_value = (2, [{"key": "g", "address": "gate house"},
+                                                       {"key": "k", "address": "Calder County"}])
+        self.neo.case_address_texts.return_value = ["Rockville, MD 20850", "Bethesda, Maryland", "Laurel, MD"]
+        idaho = [{"lat": "47.2", "lon": "-116.2", "importance": 0.5, "type": "county",
+                  "display_name": "Calder, Shoshone County, Idaho, United States", "address": {"state": "Idaho"}}]
+        counts, sent = self._run(["auto"] * 2, [idaho])
+        self.assertEqual(sent.call_count, 1)
+        self.assertIn("Calder%20County%2C%20Maryland%2C%20United%20States", sent.call_args.args[0].full_url)
+        self.assertEqual(counts, {"not_a_place": 1, "outside_case_region": 1})
+        self.neo.apply_looked_up_location.assert_not_called()
+        self.assertEqual([c.kwargs["outcome"] for c in self.neo.record_lookup_outcome.call_args_list],
+                         ["not_a_place", "outside_case_region"])
 
     def test_switching_to_flag_stops_at_once(self):
         counts, sent = self._run(["auto", "flag"], [FOUND])

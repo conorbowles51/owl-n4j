@@ -206,7 +206,8 @@ class GeoService:
                     n.geocoding_requested_by_name AS geocoding_requested_by_name,
                     n.geocoding_requested_at AS geocoding_requested_at,
                     n.geocoding_lookup_outcome AS geocoding_lookup_outcome,
-                    n.geocoding_query AS geocoding_query
+                    n.geocoding_query AS geocoding_query,
+                    n.geocoding_withdrawn_formatted_address AS geocoding_withdrawn_formatted_address
                 ORDER BY n.name
             """
             result = session.run(query, **params)
@@ -223,6 +224,7 @@ class GeoService:
                     "geocoding_requested_at": record.get("geocoding_requested_at"),
                     "geocoding_lookup_outcome": record.get("geocoding_lookup_outcome"),
                     "geocoding_query": record.get("geocoding_query"),
+                    "geocoding_withdrawn_formatted_address": record.get("geocoding_withdrawn_formatted_address"),
                 }
                 for record in result
             ]

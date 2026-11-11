@@ -249,6 +249,7 @@ def geocode_with_cache(location: str, *, requested_by: Optional[str] = None) -> 
         "formatted_address": r.get("display_name", location),
         "confidence": confidence,
         "location_granularity": _location_granularity(r),
+        "state": (r.get("address") or {}).get("state"),
     }
     _save_geocode_cache(cache_key, location, result, requested_by=requested_by)
     return result

@@ -190,6 +190,8 @@ export interface ReviewQueueItem {
   geocoding_requested_at?: string | null
   geocoding_lookup_outcome?: string | null
   geocoding_query?: string | null
+  /** An automatic pin taken off the map by the lookup rule: the address service's address for it, kept. */
+  geocoding_withdrawn_formatted_address?: string | null
 }
 
 /** Locations flagged at ingestion (no coordinates, so no pin). */

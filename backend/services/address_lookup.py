@@ -72,22 +72,36 @@ def look_up_waiting(case_id: str, stop: Event | None = None) -> dict[str, int]:
     from services.geo_rescan_service import AUTOMATIC, LOOKUP_SERVICE_NAME, GeocoderUnavailable, geocode_with_cache
     from services.neo4j_service import neo4j_service
 
+    from services import address_auto_rules as rules
+
     counts: dict[str, int] = {}
     _, waiting = neo4j_service.addresses_waiting(case_id, limit=BATCH)
+    region = rules.case_region(neo4j_service.case_address_texts(case_id))[0] if waiting else None
     for row in waiting:
         if (stop is not None and stop.is_set()) or case_mode(case_id)[0] != AUTO:
             counts["stopped"] = counts.get("stopped", 0) + 1
             break
+        # Only text that names a place is sent, bounded to the case's own state (services.address_auto_rules).
+        plan = rules.plan(row["address"], region)
+        if plan.action != rules.SEND:
+            _not_placed(neo4j_service, case_id, row["key"], plan.action)
+            counts[plan.action] = counts.get(plan.action, 0) + 1
+            continue
         try:
-            found = geocode_with_cache(row["address"], requested_by=AUTOMATIC)
+            found = geocode_with_cache(plan.query, requested_by=AUTOMATIC)
         except GeocoderUnavailable:
             counts["unavailable"] = counts.get("unavailable", 0) + 1
             break  # the service is not answering: the address stays waiting and is tried on a later pass
+        if found and not rules.in_state(found, plan.expect_state):
+            _not_placed(neo4j_service, case_id, row["key"], rules.OUTSIDE_REGION)
+            counts[rules.OUTSIDE_REGION] = counts.get(rules.OUTSIDE_REGION, 0) + 1
+            continue
         if found:
             try:
                 neo4j_service.apply_looked_up_location(
-                    row["key"], case_id=case_id, query=row["address"], result=found, requested_by=AUTOMATIC,
+                    row["key"], case_id=case_id, query=plan.query, result=found, requested_by=AUTOMATIC,
                     requested_by_name=None, service=LOOKUP_SERVICE_NAME, mode=AUTO,
+                    region_added=region if plan.region_added else None,
                 )
                 counts["placed"] = counts.get("placed", 0) + 1
             except LookupError:
@@ -100,6 +114,13 @@ def look_up_waiting(case_id: str, stop: Event | None = None) -> dict[str, int]:
             )
             counts["no_match"] = counts.get("no_match", 0) + 1
     return counts
+
+
+def _not_placed(neo4j_service, case_id: str, key: str, outcome: str) -> None:
+    """Not sent, or answered outside the case's state: listed in Needs review with why, for a person to place."""
+    neo4j_service.record_lookup_outcome(
+        key, case_id=case_id, outcome=outcome, requested_by="automatic", requested_by_name=None, status="failed",
+    )
 
 
 def _take_host_lock():
@@ -161,3 +182,52 @@ async def run_auto_lookups_forever():
         except Exception:
             log.exception("Automatic address lookups will retry")
         await asyncio.sleep(pause if lock is not None else PASS_SECONDS)
+
+
+def recheck_automatic_pins(case_id: str, apply: bool = False) -> dict:
+    """Unconfirmed automatic pins checked against the rule that now decides what is sent (services.address_auto_rules).
+
+    A pin the rule would not have sent, or whose answer lies outside the state the text or the case names, is taken
+    off the map; the pin stays on the entity as withdrawn. One whose text gets the case's state added is looked up
+    again by the automatic lookup; the others wait in Needs review for a person. Dry run unless ``apply``.
+    """
+    from services import address_auto_rules as rules
+    from services.neo4j_service import neo4j_service
+
+    region, basis = rules.case_region(neo4j_service.case_address_texts(case_id))
+    out: dict = {"case_id": case_id, "region": region, "region_basis": basis, "apply": apply, "pins": 0,
+                 "kept": 0, "look_up_again": 0, "withdrawn": {}, "examples": {}}
+    for pin in neo4j_service.automatic_pins(case_id):
+        out["pins"] += 1
+        plan = rules.plan(pin["address"], region)
+        answer = {"formatted_address": pin.get("formatted_address") or ""}
+        if plan.action == rules.SEND and rules.in_state(answer, plan.expect_state):
+            out["kept"] += 1
+            continue
+        if plan.action == rules.SEND and plan.region_added:
+            status, outcome, label = "not_run", None, "look_up_again"
+            out["look_up_again"] += 1
+        else:
+            status = "failed"
+            outcome = plan.action if plan.action != rules.SEND else rules.OUTSIDE_REGION
+            label = outcome
+            out["withdrawn"][outcome] = out["withdrawn"].get(outcome, 0) + 1
+        out["examples"].setdefault(label, [])
+        if len(out["examples"][label]) < 8:
+            out["examples"][label].append("%s -> %s" % (pin["address"], (pin.get("formatted_address") or "")[:60]))
+        if apply:
+            neo4j_service.withdraw_automatic_pin(
+                pin["key"], case_id=case_id, outcome=outcome, status=status,
+                reason="automatic lookup rule: %s" % label)
+    return out
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Check a case's unconfirmed automatic pins against the lookup rule")
+    parser.add_argument("--recheck", required=True, metavar="CASE_ID")
+    parser.add_argument("--apply", action="store_true", help="withdraw them (default: dry run)")
+    args = parser.parse_args()
+    print(json.dumps(recheck_automatic_pins(args.recheck, apply=args.apply), indent=1, ensure_ascii=False))
