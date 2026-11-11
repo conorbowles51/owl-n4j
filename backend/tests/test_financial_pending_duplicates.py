@@ -356,6 +356,17 @@ class PendingDuplicateTests(TestCase):
             reopened = self.fixture.b.status(batch)
         self.assertEqual(reopened['counts'], state['counts'])
 
+    def test_a_copy_read_in_a_later_worker_turn_is_still_set_aside(self):
+        """One worker turn reads one file here (TURN_SECONDS 0), as on a loaded box; the batch still sets the copy
+        aside once the worker's later turn reads it (head 663587b3 failed with the copy left waiting)."""
+        from unittest.mock import patch
+        from services.financial import import_batches
+        with patch.object(import_batches, 'TURN_SECONDS', 0):
+            other, batch = self.masked_copy_batch(identical=False)
+        state = self.fixture.b.status(batch)
+        self.assertEqual(state['counts']['duplicate_ignored'], 1, state)
+        self.assertEqual(state['available_transactions'], 12)
+
     def test_masked_identity_and_equal_money_in_other_bytes_is_a_duplicate(self):
         """A card statement prints four digits; another production of it is
         still the same statement when its money is equal (decision r1-reproduced;

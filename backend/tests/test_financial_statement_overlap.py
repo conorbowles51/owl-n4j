@@ -102,8 +102,24 @@ class StatementOverlapTests(TestCase):
         with self.f.SessionLocal() as db:
             batch = batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
                 file_ids=[file.id for file in files], folder_ids=[], actor=self.f.actor)
-        self.b.advance(batch)
+        self.prepare(batch)
         return batch
+
+    def prepare(self, batch, turns=20):
+        """Worker turns until no file waits, as the batch worker runs them. One turn stops after
+        import_batches.TURN_SECONDS once a file is read, so on a loaded box one turn can leave the second file
+        waiting (head 663587b3, 11 Nov 2026). Stops when a turn changes nothing."""
+        def files():
+            with self.f.SessionLocal() as db:
+                found = batches.batch_for(db, self.f.case.id, batch)
+                return found.status, [file.get('status') for file in found.files or []]
+        before = None
+        for _ in range(turns):
+            self.b.advance(batch)
+            status, now = files()
+            if status != 'preparing' or 'waiting' not in now or now == before:
+                return
+            before = now
 
     def review(self, file, request=None):
         self.f.file = file
