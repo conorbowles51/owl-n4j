@@ -32,8 +32,8 @@ MAX_FACT_TEXT = 300
 MAX_FACT_MAPPING = 3_000
 # The note without agent-fit B (no working notes, re-reads not capped): the wording before lx-agentfit.
 DIGEST_NOTE_PLAIN = ("Digest of a result shown in full earlier in this run; the full result is unchanged. Before "
-                     "relying on a detail not in this digest, call %s with this result_id (no path) to read it again."
-                     % PAGE_TOOL)
+                     "relying on a detail not in this digest, call %s with this result_id (no path) to read it again; "
+                     "each result is read again in full once." % PAGE_TOOL)
 DIGEST_NOTE = ("Digest of a result shown in full earlier in this run; the full result is unchanged. Facts you kept "
                "with record_working_notes stay in full. For a detail in neither, call %s with this result_id (no "
                "path) to read it again; each result is read again in full once." % PAGE_TOOL)

@@ -77,10 +77,12 @@ class AgentToolContext:
     model_views: dict[str, Any] = field(default_factory=dict)
     # Characters the next tool message may use (the runner sets it from the run's context budget).
     page_budget_chars: int | None = None
-    # lx-agentfit B: how often each result was read again whole (by the result it came from; a re-read's own id
-    # maps to its source), and the facts the agent noted with their citations (record_working_notes).
+    # How often each result was read again whole, by the tool result it came from: every read_tool_result_page
+    # output's own id maps to that first result, so a read of a re-read is the same result. The page reads made,
+    # by (that result, path, offset). Also the facts the agent noted with their citations (lx-agentfit B).
     rereads: dict[str, int] = field(default_factory=dict)
     reread_source: dict[str, str] = field(default_factory=dict)
+    page_reads: set[tuple[str, tuple, int]] = field(default_factory=set)
     working_notes: list[dict[str, Any]] = field(default_factory=list)
     # Calls made of the tools that do not count against the investigative budget (graph.FREE_TOOLS).
     free_calls: int = 0
@@ -2644,8 +2646,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
 
     def read_tool_result_page(result_id: str, path: list[str | int] | None = None, offset: int = 0) -> dict[str, Any]:
         from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model, sequence_paths
+        # A re-read's own id names the result it was read from (the digest of a re-read points at the re-read; live
+        # runs cd778814, d091677f and b1b87209 on 10-11 Nov each spent 9-12 of 28 calls reading the newest re-read
+        # of a result they had already read). Every read is of that first result, and is counted against it.
         source = context.reread_source.get(result_id, result_id)
-        view = context.model_views.get(result_id) or context.model_views.get(source)
+        view = context.model_views.get(source) or context.model_views.get(result_id)
         if view is None:
             return context.result("read_tool_result_page", {"error": "No result with that id in this run."},
                 summary="That result is not in this run; repeat the original tool call.", status="error",
@@ -2656,23 +2661,25 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             # results again). A second whole read of the same result is refused with its digest and a pointer to the
             # working notes, so the run spends its calls on new evidence.
             from services.agent import fit
-            if fit.on("B") and context.rereads.get(source, 0) >= 1:
+            if context.rereads.get(source, 0) >= 1:
                 from services.agent.lean_history import digest_payload
-                stored = context.model_views.get(source) or view
-                digest = digest_payload({"result_id": source, "summary": None, "data": stored.get("data"),
-                                         "artifact": stored.get("artifact")}) or {}
+                digest = digest_payload({"result_id": source, "summary": None, "data": view.get("data"),
+                                         "artifact": view.get("artifact")}) or {}
                 digest.pop("note", None)
+                notes = fit.on("B")
                 out = context.result("read_tool_result_page", {"not_read_again": source, "digest": digest,
-                    "working_notes": len(context.working_notes)},
+                    **({"working_notes": len(context.working_notes)} if notes else {})},
                     summary=(f"Result {source} was already read again in full in this run; it is not sent a third "
-                             "time. Use its digest here, the facts in your working notes (record_working_notes), "
-                             "or read one part of it with a path from its _paging note."))
+                             "time. Use its digest here"
+                             + (", the facts in your working notes (record_working_notes)," if notes else ",")
+                             + " or read one part of it with a path from its _paging note."))
+                context.reread_source[out["result_id"]] = source
                 return out
             context.rereads[source] = context.rereads.get(source, 0) + 1
             # A digest's result read again: whole when it fits this message's budget, otherwise a stated page.
-            page = page_for_model(view, budget_chars=budget, result_id=result_id)
-            out = context.result("read_tool_result_page", {"page_of": result_id, **page},
-                summary=(f"Read result {result_id} again" + (" in part; _paging states what is not shown."
+            page = page_for_model(view, budget_chars=budget, result_id=source)
+            out = context.result("read_tool_result_page", {"page_of": source, **page},
+                summary=(f"Read result {source} again" + (" in part; _paging states what is not shown."
                                                              if page.get("_paging") else " in full.")
                          + (" Note the facts you will use with record_working_notes: it is not sent again in full."
                             if fit.on("B") else "")))
@@ -2694,7 +2701,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             # A list sent as a table (model_payloads.compact_for_model) is paged by the list's own path.
             fixed = path = path[:-1]
         try:
-            page = page_for_model(view, budget_chars=budget, result_id=result_id, offset=offset, path=path)
+            page = page_for_model(view, budget_chars=budget, result_id=source, offset=offset, path=path)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             fixed = None
             if not (fit.on("B") or fit.on("T")):
@@ -2715,14 +2722,29 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                     "reason": str(exc) or "That path is not in the result.",
                     "paths": [dict(path=p, items=n) for p, n in options[:20]]},
                     summary=("That path is not in result %s. Its parts that can be read by page are listed in "
-                             "paths; call again with one of them." % result_id))
-            page = page_for_model(view, budget_chars=budget, result_id=result_id, offset=offset, path=fixed)
+                             "paths; call again with one of them." % source))
+            page = page_for_model(view, budget_chars=budget, result_id=source, offset=offset, path=fixed)
         note = page["_paging"][0]
-        return context.result("read_tool_result_page", {"page_of": result_id, **page,
-                                                        **({"path_used": fixed} if fixed else {})},
+        where = "/".join(map(str, note["path"]))
+        key = (source, tuple(note["path"]), int(note["offset"]))
+        if key in context.page_reads:
+            # The same page of the same result again returns the same records: refused with what that read covered.
+            out = context.result("read_tool_result_page", {"not_read_again": source, "path": note["path"],
+                "offset": note["offset"], "total": note["total"], "remaining": note["remaining"]},
+                summary=(f"Items {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} at "
+                         f"{where} of result {source} were already read in this run; they are not sent again. "
+                         + (f"{note['remaining']} remain from offset {note['offset'] + note['returned']}."
+                            if note["remaining"] else "Nothing else remains at that path.")))
+            context.reread_source[out["result_id"]] = source
+            return out
+        context.page_reads.add(key)
+        out = context.result("read_tool_result_page", {"page_of": source, **page,
+                                                       **({"path_used": fixed} if fixed else {})},
             summary=(f"Read items {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} "
-                     f"at {'/'.join(map(str, note['path']))}; {note['remaining']} remain."
+                     f"at {where}; {note['remaining']} remain."
                      + (f" The path is {fixed}, not {asked}." if fixed else "")))
+        context.reread_source[out["result_id"]] = source
+        return out
 
     def read_question(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
         """Question-shaped tools built from the simple ones (services.agent.question_tools). Read only."""
