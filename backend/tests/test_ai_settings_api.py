@@ -78,10 +78,10 @@ class AISettingsAPITests(unittest.TestCase):
         chain = payload["routing"]["financial_vision"]["chain"]
         self.assertEqual([e["provider"] for e in chain], ["deepseek", "openai"])
         # The chain workload does not turn a one-provider profile into a mix; statement claim drafting runs on
-        # DeepSeek by default (04 section 9.2 step 4), and so do phone mapping drafts (02 6.8 step 2), so the shipped
-        # policy is a mix of two providers.
+        # DeepSeek by default (04 section 9.2 step 4), and so do phone mapping drafts (02 6.8 step 2) and theory
+        # narratives (workspace_analysis, the standing DeepSeek decision), so the shipped policy mixes two providers.
         routing = payload["routing"]
-        deepseek_by_default = {"statement_claim_drafting", "phone_mapping_draft"}
+        deepseek_by_default = {"statement_claim_drafting", "phone_mapping_draft", "workspace_analysis"}
         for w in deepseek_by_default:
             self.assertEqual(routing[w]["provider"], "deepseek")
         self.assertEqual({e["provider"] for w, e in routing.items()
