@@ -342,7 +342,9 @@ def _normalize_deepseek_structured_content(
 def _add_token_usage(total: dict[str, Any], usage: Any) -> None:
     if not isinstance(usage, dict):
         return
-    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+    # DeepSeek reports how much of the prompt it read from its cache; those tokens are priced apart.
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens", "prompt_cache_hit_tokens",
+                "prompt_cache_miss_tokens"):
         value = usage.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             total[key] = total.get(key, 0) + value

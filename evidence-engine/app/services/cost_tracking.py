@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.dependencies import async_session
 from app.models.cost_tracking import AIPricingRate, CostRecord
+from app.services.deepseek_pricing import DEEPSEEK_PUBLISHED_VERSION, deepseek_published_cost
 
 
 class CostOperationKind:
@@ -111,12 +112,26 @@ def normalize_usage(usage: Any, duration_seconds: float | None = None) -> dict[s
     if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
         total_tokens = prompt_tokens + completion_tokens
 
-    return {
+    if isinstance(usage, dict):
+        cache_hit = usage.get("prompt_cache_hit_tokens")
+        cache_miss = usage.get("prompt_cache_miss_tokens")
+    else:
+        cache_hit = getattr(usage, "prompt_cache_hit_tokens", None)
+        cache_miss = getattr(usage, "prompt_cache_miss_tokens", None)
+
+    normalized = {
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,
         "duration_seconds": resolved_duration,
     }
+    if isinstance(cache_hit, (int, float)) and not isinstance(cache_hit, bool):
+        normalized["prompt_cache_hit_tokens"] = int(cache_hit)
+        normalized["prompt_cache_miss_tokens"] = (
+            int(cache_miss) if isinstance(cache_miss, (int, float)) and not isinstance(cache_miss, bool)
+            else max(int(prompt_tokens or 0) - int(cache_hit), 0)
+        )
+    return normalized
 
 
 async def _resolve_pricing_rate(provider: str, model_id: str, operation_kind: str) -> AIPricingRate | None:
@@ -182,11 +197,28 @@ async def record_ai_cost(
     context = _current_context.get()
     normalized_usage = normalize_usage(usage, duration_seconds=duration_seconds)
     rate = await _resolve_pricing_rate(provider, model_id, operation_kind)
+    cost_usd = _calculate_cost(rate, normalized_usage)
+    pricing_version = rate.pricing_version if rate else None
     metadata = {
         "source": "evidence_engine",
         **(context.extra_metadata if context else {}),
         **(extra_metadata or {}),
     }
+    if "prompt_cache_hit_tokens" in normalized_usage:
+        metadata["prompt_cache_hit_tokens"] = normalized_usage["prompt_cache_hit_tokens"]
+        metadata["prompt_cache_miss_tokens"] = normalized_usage["prompt_cache_miss_tokens"]
+        if provider == "deepseek" and operation_kind == CostOperationKind.CHAT_COMPLETION:
+            # DeepSeek bills cache hits at a fraction of a miss; the rate table knows no cache price.
+            published = deepseek_published_cost(
+                model_id,
+                prompt_tokens=normalized_usage.get("prompt_tokens"),
+                cache_hit_tokens=normalized_usage["prompt_cache_hit_tokens"],
+                cache_miss_tokens=normalized_usage["prompt_cache_miss_tokens"],
+                completion_tokens=normalized_usage.get("completion_tokens"),
+            )
+            if published is not None:
+                cost_usd = published
+                pricing_version = DEEPSEEK_PUBLISHED_VERSION
     async with async_session() as db:
         db.add(
             CostRecord(
@@ -196,11 +228,11 @@ async def record_ai_cost(
                 prompt_tokens=normalized_usage.get("prompt_tokens"),
                 completion_tokens=normalized_usage.get("completion_tokens"),
                 total_tokens=normalized_usage.get("total_tokens"),
-                cost_usd=float(_calculate_cost(rate, normalized_usage)),
+                cost_usd=float(cost_usd),
                 operation_kind=operation_kind,
                 engine_job_id=context.engine_job_id if context else None,
                 evidence_file_id=_parse_uuid(context.source_evidence_file_id if context else None),
-                pricing_version=rate.pricing_version if rate else None,
+                pricing_version=pricing_version,
                 case_id=_parse_uuid(context.case_id if context else None),
                 user_id=_parse_uuid(context.requested_by_user_id if context else None),
                 description=description or (context.description if context else None),
