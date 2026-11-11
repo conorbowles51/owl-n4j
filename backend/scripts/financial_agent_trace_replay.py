@@ -166,6 +166,17 @@ def _render(payload: dict) -> list[str]:
     return parts
 
 
+def _output_unit(payload: dict, nxt: dict) -> dict | None:
+    """The prefix unit DeepSeek stores for a request's output: that request as it was sent, followed by its reply
+    (the last assistant message of the next request). It is never the next request's own wording, which differs
+    when an earlier result became a digest or when the next request is the finalizer's, on its own system prompt."""
+    msgs = nxt.get('messages') or []
+    last_ai = max((k for k, m in enumerate(msgs) if m.get('role') == 'assistant'), default=None)
+    if last_ai is None:
+        return None
+    return dict(payload, messages=list(payload.get('messages') or []) + [msgs[last_ai]])
+
+
 def _agent_request(payload: dict) -> bool:
     """A request on the agent's own system prompt carries its tools (the agent's steps, and the finalizer on the
     agent's prefix, lean_history.finalizer_on_agent_prefix); the finalizer's own request and the plain-words
@@ -271,27 +282,23 @@ def main():
     wall = time.perf_counter() - started
 
     # Each request as DeepSeek would be sent it, tokenized; the assistant reply that followed it is its output.
-    requests, token_lists, output_ends = [], [], []
+    requests, token_lists, output_ends, payloads = [], [], [], []
     for n, entry in enumerate(log):
         payload = builder._get_request_payload(entry['messages'])
         if entry['tools'] is not None and _agent_request(payload):
             payload['tools'] = entry['tools']
+        payloads.append(payload)
         parts = _render(payload)
         ids = encode(parts)
         token_lists.append(ids)
         requests.append({'messages': len(payload.get('messages') or []), 'chars': sum(map(len, parts)),
                          'kind': payload['messages'][0]['content'][:40] if payload.get('messages') else ''})
         output_ends.append(None)
-    # the output unit of request i is request i+1's prefix up to the end of its last assistant message
+    # the output unit of request i: request i as sent, then its reply (taken from request i+1)
     for i in range(len(log) - 1):
-        nxt = builder._get_request_payload(log[i + 1]['messages'])
-        msgs = nxt.get('messages') or []
-        last_ai = max((k for k, m in enumerate(msgs) if m.get('role') == 'assistant'), default=None)
-        if last_ai is not None:
-            cut = dict(nxt, messages=msgs[:last_ai + 1])
-            if log[i + 1]['tools'] is not None and _agent_request(nxt):
-                cut['tools'] = log[i + 1]['tools']
-            output_ends[i] = encode(_render(cut))
+        unit = _output_unit(payloads[i], builder._get_request_payload(log[i + 1]['messages']))
+        if unit is not None:
+            output_ends[i] = encode(_render(unit))
     cache = simulate_cache(token_lists, output_ends)
     for r, c in zip(requests, cache):
         r.update(c)
