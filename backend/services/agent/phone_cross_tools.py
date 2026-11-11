@@ -27,6 +27,7 @@ Phone text goes to the model in full (Neil 2026-11-03); sensitive values stay ma
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import text
@@ -123,15 +124,82 @@ def _subject(conn, case_id, person=None, phone=None, role="subject"):
             raise _Missing("%s There is no phone %s." % (NOT_IN_CASE, phone))
         subj = {"kind": "extraction", "extraction_id": ids[0]}
     else:
-        subj = {"kind": "dossier", "dossier_id": _dossier(conn, case_id, person).id}
+        subj = {"kind": "dossier", "dossier_id": str(_dossier(conn, case_id, person).id)}
     try:
         r = subjects.resolve(conn, str(case_id), subj)
     except subjects.SubjectError as exc:
         raise _Missing("%s %s" % (NOT_IN_CASE, exc)) from None
     if not r["extraction_ids"]:
-        raise ValueError("No phone in this case is linked to %s yet: a phone's owner must be linked to the person "
-                         "on People first." % (r.get("name") or "this person"))
+        from services.agent import fit
+        name = r.get("name") or getattr(_dossier(conn, case_id, person), "display_name", None) or "this person"
+        suggested = suggested_phones(conn, case_id, subj["dossier_id"]) if fit.on("C") else []
+        if not suggested:
+            raise ValueError("No phone in this case is linked to %s yet, and no identity suggestion ties a phone's "
+                             "owner to them: a phone's owner must be linked to the person on People first." % name)
+        best = suggested[0]
+        link = {"by": "identity suggestion", "strength": best["strength"], "phones": best["phones"],
+                "reasons": best["reasons"], "other_suggestions": [dict(phones=x["phones"], strength=x["strength"])
+                                                                 for x in suggested[1:5]],
+                "words": ("No person has linked a phone to %s. This reads %s, whose owner a %s identity suggestion "
+                          "ties to them (%s); say so beside every fact from it, and that a person decides on "
+                          "People." % (name, ", ".join(best["phones"]), best["strength"], "; ".join(best["reasons"][:3])))}
+        r = dict(r, extraction_ids=best["extraction_ids"], name=name, subject=dict(r["subject"], link=link))
     return r
+
+
+def suggested_identities(conn, case_id, dossier_id) -> list:
+    """Phone identities an open identity suggestion ties to the person, strongest first:
+    ``[{identity_key, shown_as, strength, reasons}]`` (the suggestions' own rule; nothing is linked or stored)."""
+    from services.match_strength import LEVELS
+    from services.phone import identity_decisions as idd
+    rows = [r for r in idd.candidate_rows(conn, str(case_id)) if str(r.get("dossier") or "") == str(dossier_id)]
+    ids = sorted({str(i) for r in rows for i in r["ids"]})
+    shown = {str(i): (k, v) for i, k, v in conn.execute(text(
+        "SELECT id::text, identity_key, value_display FROM phone_identities WHERE id = ANY(CAST(:i AS uuid[]))"),
+        {"i": ids})} if ids else {}
+    best = {}
+    for r in rows:
+        level, _ = idd.strength(r["score"], r["reasons"])
+        for i in r["ids"]:
+            key, value = shown.get(str(i), (None, None))
+            if key and (key not in best or LEVELS.index(level) < LEVELS.index(best[key]["strength"])):
+                best[key] = {"identity_key": key, "shown_as": value, "strength": level,
+                             "reasons": [idd.READING.get(str(x.get("reason")), str(x.get("reason")))
+                                         for x in r["reasons"] if x.get("reason")]}
+    return sorted(best.values(), key=lambda x: (LEVELS.index(x["strength"]), x["identity_key"]))
+
+
+def suggested_phones(conn, case_id, dossier_id) -> list:
+    """Phones whose owner identity an open identity suggestion ties to the person, strongest first (lx-agentfit C):
+    ``[{extraction_ids, phones, strength, reasons}]``. The suggestions' own rule grades them
+    (``identity_decisions.strength``); nothing is linked or stored."""
+    from services.match_strength import LEVELS
+    from services.pattern_of_life import subjects
+    from services.phone import identity_decisions as idd
+    owners = {}
+    for e in subjects._owners(conn, str(case_id)):
+        if e["owner_identity_key"]:
+            owners.setdefault(e["owner_identity_key"], []).append(e["extraction_id"])
+    if not owners:
+        return []
+    keys = {str(i): k for i, k in conn.execute(text(
+        "SELECT id, identity_key FROM phone_identities WHERE case_id = :c AND identity_key = ANY(:k)"),
+        {"c": str(case_id), "k": list(owners)})}
+    labels = _labels(conn, case_id)
+    found = {}
+    for row in idd.candidate_rows(conn, str(case_id)):
+        if str(row.get("dossier") or "") != str(dossier_id):
+            continue
+        exts = sorted({x for i in row["ids"] if str(i) in keys for x in owners[keys[str(i)]]})
+        if not exts:
+            continue
+        level, _ = idd.strength(row["score"], row["reasons"])
+        key = tuple(exts)
+        if key not in found or LEVELS.index(level) < LEVELS.index(found[key]["strength"]):
+            found[key] = {"extraction_ids": exts, "phones": [labels.get(x) or x for x in exts], "strength": level,
+                          "reasons": [idd.READING.get(str(x.get("reason")), str(x.get("reason")))
+                                      for x in row["reasons"] if x.get("reason")]}
+    return sorted(found.values(), key=lambda x: LEVELS.index(x["strength"]))
 
 
 def _labels(conn, case_id):
@@ -305,6 +373,78 @@ def day_activity(conn, case_id, day, *, person=None, phone=None, lanes=("communi
     return _guard(tool, case_id, run)
 
 
+PERIOD_MAX_DAYS = 62
+
+
+def period_activity(conn, case_id, start, end, *, person=None, phone=None,
+                    lanes=("communications", "places", "money"), zone="device", offset=0, limit=DEFAULT_LIMIT) -> dict:
+    """A person or phone over a period, as the Day view reads a day (``day.window`` with the money lane), for every
+    day of the period: per day each lane's count, the items of the lanes asked for (oldest first, paged), and, for a
+    person, the case's documents and records that name them (Search's own total) (lx-agentfit D)."""
+    from sqlalchemy.orm import Session
+
+    from services.pattern_of_life import day as day_view
+    from services.pattern_of_life import money
+    tool = "period_activity"
+
+    def run():
+        r = _subject(conn, case_id, person, phone)
+        try:
+            d0, d1 = date.fromisoformat(str(start)[:10]), date.fromisoformat(str(end)[:10])
+        except ValueError:
+            raise ValueError("Give start and end as dates, YYYY-MM-DD.") from None
+        if d1 < d0:
+            raise ValueError("The end is before the start.")
+        if (d1 - d0).days + 1 > PERIOD_MAX_DAYS:
+            raise ValueError("Read up to %d days in one call; split a longer period." % PERIOD_MAX_DAYS)
+        z, zname = _zone(conn, case_id, r["extraction_ids"], zone)
+        a, _ = day_view.day_bounds(d0, z)
+        _, b = day_view.day_bounds(d1, z)
+        with Session(bind=conn) as db:
+            m = money.lane(db, case_id, start_date=d0, end_date=d1, zone=z, limit=5000)
+        out = day_view.window(conn, r["extraction_ids"], _labels(conn, case_id), a, b, money_rows=m["items"])
+        want = [x for x in (lanes or DAY_LANES) if x in DAY_LANES]
+        per_day, items = {}, []
+        for lane in DAY_LANES:
+            for it in out["lanes"].get(lane) or []:
+                when = it.get("at") or it.get("day")
+                day = str(when)[:10] if when else "no time"
+                if when and len(str(when)) > 10:
+                    try:
+                        day = datetime.fromisoformat(str(when).replace("Z", "+00:00")).astimezone(z).date().isoformat()
+                    except ValueError:
+                        pass
+                per_day.setdefault(day, {}).setdefault(lane, 0)
+                per_day[day][lane] += 1
+                if lane not in want:
+                    continue
+                it = _clean(dict(it, lane=lane))
+                if it.get("record_uid"):
+                    it["rec"] = _rec(it["record_uid"])
+                if lane == "money":
+                    tid = it.get("transaction_id") or it.get("id")
+                    it["txn"] = _txn(tid) if tid else None
+                    it["note"] = "A ledger row has a day, never a time of day. " + CARD_NOT_PERSON
+                if lane == "places":
+                    it["label"] = PLACE_LABEL
+                items.append(it)
+        items.sort(key=lambda x: (str(x.get("at") or x.get("day") or ""), x["lane"]))
+        mentions = None
+        name = r.get("name") or (person if person else None)
+        if person and name:
+            found = search_case(conn, case_id, name, group="documents", limit=10)
+            mentions = {"query": name, "total": found.get("total_matching"), "items": found.get("items") or [],
+                        "note": "Documents and machine text that name them (Search); read more with search_case."}
+        totals = {k: sum(v.get(k, 0) for v in per_day.values()) for k in DAY_LANES}
+        return _paged(tool, case_id, items, offset, limit, "items", subject=r["subject"],
+                      period={"start": d0.isoformat(), "end": d1.isoformat()}, zone=zname, totals=totals,
+                      per_day=dict(sorted(per_day.items())), documents_naming_them=mentions,
+                      coverage="%s to %s in %s: %s." % (d0.isoformat(), d1.isoformat(), zname, ", ".join(
+                          "%s %d" % (day_view.LANE_WORDS[k], totals.get(k, 0)) for k in DAY_LANES)),
+                      limitation=out.get("limit_words"))
+    return _guard(tool, case_id, run)
+
+
 def together_apart(conn, case_id, start, end, *, person_a=None, phone_a=None, person_b=None, phone_b=None,
                    window_minutes=5, include_synced=False, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """Together and apart for two subjects by 04's pair rule (the code a Together run stores), computed and not
@@ -353,6 +493,110 @@ def together_apart(conn, case_id, start, end, *, person_a=None, phone_a=None, pe
                       note="Compatible means the positions could overlap; only a tight pair (radii within 150 m) "
                            "reads as together. Separated means they could not be in one place. Positions are where "
                            "the phones recorded themselves, not where the people were.")
+    return _guard(tool, case_id, run)
+
+
+# Nights run from 18:00 to 06:00 local time and are named by their evening's date (lx-agentfit C: "on 14 of 14
+# evenings"). Reverse if a case needs another split; the hours are stated in every result.
+NIGHT_FROM, NIGHT_TO = 18, 6
+COMPANY_MAX_DAYS = 400
+
+
+def _night_or_day(instant, z):
+    local = instant.astimezone(z)
+    if local.hour >= NIGHT_FROM:
+        return "night", local.date()
+    if local.hour < NIGHT_TO:
+        return "night", local.date() - timedelta(days=1)
+    return "day", local.date()
+
+
+def phone_company(conn, case_id, start, end, *, phone=None, person=None, other_phone=None, other_person=None,
+                  zone="case", offset=0, limit=DEFAULT_LIMIT) -> dict:
+    """Which phones were with one phone (or one person's phones) over a window, or how two compare, by the phone
+    analysis's together-and-apart rule (``device_users.bin_verdicts`` and ``place_results``, the code its stored run
+    uses), computed for this request and not stored: per companion the graded strength, quarter hours together and
+    apart, the nights and days with a together quarter hour, the distances, and records cited."""
+    from statistics import median
+
+    from services.phone_analysis import device_users as DU
+    from services.phone_analysis import fields as FV
+    from services.phone_analysis import framework as F
+    tool = "phone_company"
+
+    def run():
+        r = _subject(conn, case_id, person, phone)
+        a, b = _instant(start), _instant(end, end=True)
+        if not (a and b) or b <= a:
+            raise ValueError("Give a start and an end, the end after the start.")
+        if b - a > timedelta(days=COMPANY_MAX_DAYS):
+            raise ValueError("Compare up to %d days in one call; split a longer period." % COMPANY_MAX_DAYS)
+        phones = FV.active_phones(conn, str(case_id))
+        mine = [e for e in r["extraction_ids"] if e in phones]
+        if other_phone or other_person:
+            ro = _subject(conn, case_id, other_person, other_phone, "other phone")
+            others = [e for e in ro["extraction_ids"] if e in phones and e not in mine]
+            other_subject = ro["subject"]
+        else:
+            others = [e for e in phones if e not in mine]
+            other_subject = None
+        z, zname = _zone(conn, case_id, mine, zone)
+        params = F.validate_parameters(DU, {})
+        exts = set(mine) | set(others)
+        obs = {e: DU._observations(conn, e, params["include_synced"], a, b) for e in exts}
+        inter = {e: DU._interactions(conn, e) for e in exts}
+        lo, hi = DU._bin(a), DU._bin(b)
+        wifi = {k: {bn: v for bn, v in bins.items() if lo <= bn <= hi}
+                for k, bins in DU._wifi_bins(conn, case_id, exts).items()}
+        counts = defaultdict(int)
+        items = []
+        for x in mine:
+            for y in others:
+                verdicts = DU.bin_verdicts(obs[x], obs[y], params, wifi.get((x, y), {}))
+                graded = [g for g in DU.place_results(x, y, phones, verdicts, inter, counts) if g["kind"] == "co_location"]
+                together = sorted(bn for bn, v in verdicts.items() if v["verdict"] == "together")
+                apart = [bn for bn, v in verdicts.items() if v["verdict"] == "apart"]
+                spans = defaultdict(set)
+                for bn in together:
+                    kind, day = _night_or_day(datetime.fromtimestamp(bn * DU.BIN_S, tz=timezone.utc), z)
+                    spans[kind].add(day.isoformat())
+                apart_nights = {_night_or_day(datetime.fromtimestamp(bn * DU.BIN_S, tz=timezone.utc), z)[1].isoformat()
+                                for bn in apart if _night_or_day(datetime.fromtimestamp(bn * DU.BIN_S, tz=timezone.utc),
+                                                                 z)[0] == "night"}
+                dist = [verdicts[bn]["distance_m"] for bn in together if verdicts[bn]["distance_m"] is not None]
+                cited = []
+                for bn in together[:6]:
+                    cited += [_rec(u) for u in (verdicts[bn]["x"][:1] + verdicts[bn]["y"][:1])]
+                g = graded[0] if graded else None
+                m = (g or {}).get("measures") or {}
+                items.append({
+                    "phone": phones[x], "companion": phones[y],
+                    "strength": g["strength"] if g else None,
+                    "quarter_hours_both_placed": len(verdicts), "together": m.get("together", len(together)),
+                    "together_tight": m.get("together_tight"), "apart": m.get("apart", len(apart)),
+                    "undecided": m.get("indeterminate"), "share_together": m.get("C"),
+                    "nights_together": len(spans["night"]), "night_dates": sorted(spans["night"])[:60],
+                    "days_together": len(spans["day"]), "day_dates": sorted(spans["day"])[:60],
+                    "nights_apart_only": len(apart_nights - spans["night"]),
+                    "distance_m_when_together": ({"median": round(median(dist), 1), "max": round(max(dist), 1)}
+                                                 if dist else None),
+                    "first_together": DU._bin_iso(together[0]) if together else None,
+                    "last_together": DU._bin_iso(together[-1]) if together else None,
+                    "supports": [d.get("detail") for d in ((g or {}).get("directions") or {}).get("supports") or []],
+                    "undercuts": [d.get("detail") for d in ((g or {}).get("directions") or {}).get("undercuts") or []],
+                    "records": cited})
+        items.sort(key=lambda i: (-(i["together"] or 0), i["companion"] or ""))
+        placed = {phones[e]: len(obs[e]) for e in sorted(exts, key=lambda e: phones[e])}
+        return _paged(tool, case_id, items, offset, limit, "companions", subject=r["subject"],
+                      other=other_subject, window={"start": a.isoformat(), "end": b.isoformat()}, zone=zname,
+                      nights="%02d:00 to %02d:00 %s, named by the evening's date" % (NIGHT_FROM, NIGHT_TO, zname),
+                      place_observations=placed, label=PLACE_LABEL,
+                      computed=("Computed for this answer by the phone analysis's together-and-apart rule (quarter "
+                                "hours, graded strong, moderate, weak or faint by its stated rule); not stored, and a "
+                                "lead, not who carried a phone."),
+                      coverage="Compared %s with %d other phone(s) over %s to %s: %d with a quarter hour together." % (
+                          ", ".join(phones[e] for e in mine), len(others), a.date().isoformat(), b.date().isoformat(),
+                          sum(1 for i in items if i["together"])))
     return _guard(tool, case_id, run)
 
 
@@ -416,8 +660,69 @@ def _edge_subject(conn, case_id, person=None, identity=None):
     return {"dossier_id": _dossier(conn, case_id, person).id}
 
 
+BETWEEN_RECORDS = 25
+
+
+def _side_sightings(conn, case_id, keys, per_side=3):
+    """Where each side's identities appear on the phones (contact cards and the records naming them), cited, so an
+    answer of no contact can name what was searched (lx-agentfit D)."""
+    if not keys:
+        return []
+    return [{"identity_key": r.identity_key, "shown_as": r.value_display, "name_beside_it": r.name_alongside,
+             "rec": _rec(r.card_record_uid or r.record_uid)} for r in conn.execute(text(
+                 "SELECT DISTINCT ON (identity_key) identity_key, value_display, name_alongside, card_record_uid, "
+                 "record_uid FROM pv_identity_sighting WHERE case_id = :c AND identity_key = ANY(:k) ORDER BY "
+                 "identity_key, (card_record_uid IS NULL), instant NULLS LAST"), {"c": str(case_id), "k": list(keys)})
+            ][:per_side * max(1, len(keys))]
+
+
+def _between_records(conn, case_id, link_edges, sa, sb, a, b):
+    """The messages, calls and emails behind the edge's counts, oldest first, each with its text and rec:// link."""
+    out = {}
+    for kind in ("messages", "calls", "emails"):
+        got = link_edges.edge_records(conn, case_id, sa, sb, kind, from_instant=a, to_instant=b, offset=0,
+                                      limit=BETWEEN_RECORDS)
+        texts = {str(r.event_uid): r for r in conn.execute(text(
+            "SELECT event_uid, body, subject, app, call_duration_s FROM pv_comm_event WHERE case_id = :c AND "
+            "event_uid = ANY(CAST(:e AS uuid[]))"), {"c": str(case_id), "e": [i["event_uid"] for i in got["items"]]})
+        } if got["items"] else {}
+        items = []
+        for i in got["items"]:
+            t = texts.get(i["event_uid"])
+            items.append({"at": i["instant"], "phone": i["phone"], "direction": i["direction"], "rec": i["link"],
+                          "app": t.app if t else None, "text": ((t.body or t.subject or "") if t else "")[:600] or None,
+                          "call_seconds": float(t.call_duration_s) if t and t.call_duration_s is not None else None})
+        out[kind] = {"total": got["total"], "shown": len(items), "items": items}
+    return out
+
+
+def _between_suggested(conn, case_id, sa, sb, suggested, a, b, with_records):
+    """Each pair of identities when a side is read through its suggested identities: every pair's counts, with the
+    suggestion and its strength beside it."""
+    from services.phone import link_edges
+
+    def options(tag, subject):
+        if tag not in suggested:
+            return [dict(subject=subject)]
+        return [dict(subject={"identity_key": x["identity_key"]}, suggestion=x) for x in suggested[tag]["identities"]]
+    pairs = []
+    for x in options("a", sa)[:6]:
+        for y in options("b", sb)[:6]:
+            try:
+                out = link_edges.edges(conn, case_id, [x["subject"], y["subject"]], from_instant=a, to_instant=b)
+            except link_edges.NotInCase:
+                continue
+            edge = out["edges"][0]
+            item = {"a": edge["a"]["label"], "b": edge["b"]["label"], "communication": edge["communication"],
+                    "label_line": edge["label"], "a_suggested": x.get("suggestion"), "b_suggested": y.get("suggestion")}
+            if with_records:
+                item["records"] = _between_records(conn, case_id, link_edges, x["subject"], y["subject"], a, b)
+            pairs.append(item)
+    return pairs
+
+
 def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, person_b=None, identity_b=None,
-                              start=None, end=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
+                              start=None, end=None, with_records=False, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """One edge between two people (02 11.2): messages, calls and emails between them on every phone, and the money
     between them from the ledger (verified p0-p2 summed per currency, p3 stated beside it, never summed across
     currencies), with the payments behind the money listed and cited."""
@@ -428,6 +733,20 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
         sa = _edge_subject(conn, case_id, person_a, identity_a)
         sb = _edge_subject(conn, case_id, person_b, identity_b)
         a, b = _instant(start), _instant(end, end=True)
+        # A person with no phone identity linked is read through the identities an identity suggestion ties to them
+        # (each counted as its own side, the link and its strength stated), never counted as no contact
+        # (lx-agentfit D: the demo's "did Mateo ever contact Okafor" was answered from a count over no identity).
+        from services.agent import fit
+        suggested, unlinked = {}, []
+        for tag, subject in (("a", sa), ("b", sb)):
+            if subject.get("dossier_id") and fit.on("D"):
+                side = link_edges.resolve_side(conn, case_id, subject)
+                if not side["keys"]:
+                    found = suggested_identities(conn, case_id, subject["dossier_id"])
+                    if found:
+                        suggested[tag] = dict(person=side["label"], identities=found)
+                    else:
+                        unlinked.append(side["label"])
         try:
             out = link_edges.edges(conn, case_id, [sa, sb], from_instant=a, to_instant=b)
         except link_edges.NotInCase as exc:
@@ -441,12 +760,36 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
                       paid_ba=link_edges.format_minor(m["paid_ba_minor"], m["currency"])) for m in edge["money"]]
         c = edge["communication"]
         limits = [x["message"] for x in out["limits"]]
-        return _paged(tool, case_id, rows, offset, limit, "payments", a=edge["a"], b=edge["b"], communication=c,
+        # A side with no phone identity linked has no contact to count: said, never a silent zero (lx-agentfit D).
+        sides = {}
+        for tag, subject in (("a", sa), ("b", sb)):
+            side = link_edges.resolve_side(conn, case_id, subject)
+            sides[tag] = {"label": side["label"], "identities": len(side["keys"]),
+                          "where_seen": _side_sightings(conn, case_id, side["keys"])}
+            if not side["keys"] and side["label"] in unlinked:
+                limits.append("No phone identity is linked to %s and no identity suggestion ties one to them, so no "
+                              "message, call or email of theirs can be counted here; find their numbers with "
+                              "phone_find_people and read phone_messages." % side["label"])
+        extra = {"sides": sides} if fit.on("D") else {}
+        label = edge["label"]
+        if suggested:
+            pairs = _between_suggested(conn, case_id, sa, sb, suggested, a, b, with_records)
+            people = " or ".join(v["person"] for v in suggested.values())
+            extra["suggested_pairs"] = pairs
+            label = ("No person has linked a phone identity to %s, so contact is counted through the identities an "
+                     "identity suggestion ties to them (say so, with the strength, beside every count): %s" % (
+                         people, "; ".join("%s and %s: %s" % (p["a"], p["b"], p["label_line"]) for p in pairs)))
+            limits = [x for x in limits if not any(v["person"] in x for v in suggested.values())]
+        elif unlinked:
+            label = "Contact cannot be counted: no phone identity is linked to %s." % " or ".join(unlinked)
+        if with_records and not suggested and fit.on("D"):
+            extra["records"] = _between_records(conn, case_id, link_edges, sa, sb, a, b)
+        return _paged(tool, case_id, rows, offset, limit, "payments", a=edge["a"], b=edge["b"], communication=c, **extra,
                       money=money, money_mentioned_on_phones=edge["money_mentioned_on_phones"],
                       money_readings_available=edge["money_readings_available"], label_line=edge["label"],
                       money_absent=out["money_absent"], zone=out["zone"],
                       coverage="%s and %s: %s. Money: %s." % (
-                          edge["a"]["label"], edge["b"]["label"], edge["label"],
+                          edge["a"]["label"], edge["b"]["label"], label,
                           "; ".join("%s A to B %s (%d), B to A %s (%d), p3 stated apart" % (
                               m["currency"], m["paid_ab"], m["payments_ab"], m["paid_ba"], m["payments_ba"])
                               for m in money) or (out["money_absent"] or "no payment between them in the ledger")),
@@ -795,6 +1138,67 @@ def glossary_terms(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
 ANALYSES = ("deletion_timeline", "relationships", "awareness", "device_users")
 
 
+# lx-agentfit C: an analysis never run in the case is computed for the question, by its own code on the run's read-only
+# connection, and nothing is stored. Bounded so one answer never holds the live database long: the module's own
+# cancellation check after COMPUTE_SECONDS, and a statement timeout per query; a computation that is stopped says so
+# and returns nothing partial. Reverse (raise or lower) if a measured case needs it.
+COMPUTE_SECONDS = 90
+COMPUTED_LABEL = ("Computed for this answer by the analysis's own code and its stated grading rule; not stored, and "
+                  "nobody has reviewed it. A lead for enquiry, never who did what.")
+
+
+class _ComputeCtx:
+    def __init__(self, seconds):
+        import time as _t
+        self._t, self.until, self.stopped = _t, _t.monotonic() + seconds, False
+
+    def progress(self, *args, **kwargs):
+        return None
+
+    def cancelled(self):
+        if self._t.monotonic() > self.until:
+            self.stopped = True
+        return self.stopped
+
+
+def computed_results(conn, case_id, approach):
+    """``(results, None)`` from computing the approach now, or ``(None, reason)`` when it could not finish in the
+    bound. Results are the module's own (kind, strength, measures, directions, records)."""
+    from services.phone_analysis import approaches, framework as F
+    approaches.install()
+    module = F.approach(approach)
+    ctx = _ComputeCtx(COMPUTE_SECONDS)
+    try:
+        with conn.begin_nested():
+            conn.execute(text("SET LOCAL statement_timeout = '%ds'" % COMPUTE_SECONDS))
+            results = module.run(conn, str(case_id), F.validate_parameters(module, {}), ctx)
+    except Exception as exc:  # noqa: BLE001 - a computation that fails is reported, never a silent empty result
+        if "statement timeout" in str(exc) or "canceling statement" in str(exc):
+            return None, ("It is too large to compute within one answer (a query ran past %d s). Run it from the "
+                          "phone analyses screen." % COMPUTE_SECONDS)
+        raise
+    if ctx.stopped:
+        return None, ("It is too large to compute within one answer (stopped after %d s, nothing partial is shown). "
+                      "Run it from the phone analyses screen." % COMPUTE_SECONDS)
+    return results, None
+
+
+def _not_current_words(approach, run):
+    if run is None:
+        return "%s has not been run in this case." % approach
+    return ("The last run of %s (finished %s) read the phones, identities or ledger as they were then, not as the case "
+            "holds them now." % (approach, _iso(run.finished_at)))
+
+
+def _computed_out(r):
+    recs = [{"rec": _rec(x["record_uid"]) + ("#%s" % x["field_path"] if x.get("field_path") else ""), "role": x["role"]}
+            if x.get("record_uid") else {"txn": _txn(x.get("ledger_transaction_id")), "role": x["role"]}
+            for x in (r.get("records") or [])[:50]]
+    return {"kind": r["kind"], "strength": r["strength"], "measures": _clean(r.get("measures") or {}),
+            "directions": r.get("directions"), "period_start": _iso(r.get("period_start")),
+            "period_end": _iso(r.get("period_end")), "records": recs}
+
+
 def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=None, end=None, offset=0,
                      limit=DEFAULT_LIMIT, strength=None) -> dict:
     """The last completed run of a phone analysis (approaches 2 to 13 that are built), its results under a filter
@@ -816,6 +1220,29 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
             return _not_in_case(tool, case_id, "There is no phone %s." % phone)
         ext = ids[0]
     run = _last_run(conn, case_id, approach)
+    # A stored run on older inputs is read as stored, with that said (measured 11 Nov: 30 of 33 stored runs on the
+    # check and reference cases read older inputs; computing each again would cost every such call up to 90 s).
+    from services.agent import fit
+    stale = fit.on("C") and run is not None and not F.run_is_current(conn, case_id, approach, run.id)
+    if run is None and fit.on("C"):
+        results, reason = computed_results(conn, case_id, approach)
+        if results is None:
+            return _base(tool, case_id, approach=approach, available=False, total_matching=0, returned=0,
+                         has_more=False, next_offset=None, items=[], reason="%s %s" % (
+                             _not_current_words(approach, run), reason))
+        a, b = _instant(start), _instant(end, end=True)
+        keep = [r for r in results if (not kind or r["kind"] == kind) and (not strength or r["strength"] == strength)
+                and (not ext or any(str(x.get("extraction_id")) == ext for x in r.get("records") or []))
+                and (not a or not r.get("period_end") or _instant(_iso(r["period_end"]), end=True) >= a)
+                and (not b or not r.get("period_start") or _instant(_iso(r["period_start"])) <= b)]
+        by_strength = {}
+        for r in keep:
+            by_strength[r["strength"]] = by_strength.get(r["strength"], 0) + 1
+        return _paged(tool, case_id, [_computed_out(r) for r in keep], offset, limit, "results", approach=approach,
+                      computed=COMPUTED_LABEL, kinds=list(getattr(module, "KINDS", ())), by_strength=by_strength,
+                      strength_rule=getattr(module, "RULE_OF_THUMB", None),
+                      coverage="%s Computed now for this answer: %d result(s)%s." % (
+                          _not_current_words(approach, run), len(keep), (" of kind %s" % kind) if kind else ""))
     if run is None:
         return _base(tool, case_id, approach=approach, total_matching=0, returned=0, has_more=False,
                      next_offset=None, items=[], coverage="%s has not been run in this case." % approach,
@@ -843,7 +1270,8 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
                  items=items, kinds=list(getattr(module, "KINDS", ())), by_strength=by_strength,
                  coverage_notes=list(cov.get("notes") or []),
                  strength_rule=getattr(module, "RULE_OF_THUMB", None),
-                 coverage="%s, last completed run: %d results%s%s. %s%s" % (
+                 coverage="%s%s, last completed run: %d results%s%s. %s%s" % (
+                     (_not_current_words(approach, run) + " ") if stale else "",
                      approach, res["total"], (" of kind %s" % kind) if kind else "",
                      (" of strength %s" % strength) if strength else "", cov.get("sentence") or "",
                      (" " + " ".join(cov.get("notes") or [])) if cov.get("notes") else ""),
@@ -1467,6 +1895,23 @@ class TogetherArgs(_Page):
     include_synced: bool = False
 
 
+class PeriodArgs(SubjectArgs):
+    start: str = Field(..., description="First local day, YYYY-MM-DD.")
+    end: str = Field(..., description="Last local day, YYYY-MM-DD (up to 62 days after the start).")
+    lanes: list[Literal["communications", "interaction", "places", "money", "device_state", "others", "passive"]] = \
+        Field(default_factory=lambda: ["communications", "places", "money"])
+    zone: Literal["device", "case", "UTC"] = "device"
+
+
+class CompanyArgs(SubjectArgs):
+    start: str = Field(..., description="Start of the window, YYYY-MM-DD or an ISO time.")
+    end: str = Field(..., description="End of the window, YYYY-MM-DD or an ISO time.")
+    other_phone: str | None = Field(None, description="Compare with this phone only; leave out to compare with every "
+                                    "other phone in the case.")
+    other_person: str | None = Field(None, description="Compare with this person's phone only.")
+    zone: Literal["device", "case", "UTC"] = "case"
+
+
 class RoutineArgs(SubjectArgs):
     start_date: str | None = None
     end_date: str | None = None
@@ -1486,6 +1931,8 @@ class BetweenArgs(_Page):
     identity_b: str | None = None
     start: str | None = None
     end: str | None = None
+    with_records: bool = Field(False, description="Also return the messages, calls and emails behind the counts "
+                               "(up to 25 of each, oldest first, with their text). Leave off for counts and money.")
 
 
 class MatchesArgs(_Page):
@@ -1565,6 +2012,17 @@ TOOLS = [
     ("get_together_apart", "together_apart", TogetherArgs,
      "Whether two people's (or phones') positions were together or apart in a window, by the Patterns pair rule: "
      "counts, episodes and compared pairs. Positions are where phones recorded themselves."),
+    ("get_period_activity", "period_activity", PeriodArgs,
+     "For: where a person or phone was and what they did over a period (several days or nights, a month): per day "
+     "the count in each lane, then the items oldest first (messages and calls, places, payments by default), and for "
+     "a person the documents that name them. Not for: one day (get_day_activity) or a search for words "
+     "(search_case)."),
+    ("get_phone_company", "phone_company", CompanyArgs,
+     "For: whose phone a device was with, who was near a phone or a person over a period, and how two phones' "
+     "movements compare. One phone (or person) against every other phone, or against one: per companion the graded "
+     "strength (strong, moderate, weak, faint by the phone analysis's stated rule), quarter hours together and apart, "
+     "the nights and days together with their dates, distances, and records cited. Computed on request, not stored. "
+     "Not for: one day's activity (get_day_activity) or one exact pair of moments (get_together_apart)."),
     ("get_routine_deviations", "routine_deviations", RoutineArgs,
      "A person's or phone's routine places and the days that broke the routine, with the hours and places."),
     ("get_phone_map_summary", "phone_map_summary", MapSummaryArgs,
@@ -1572,7 +2030,8 @@ TOOLS = [
     ("get_contact_and_money_between", "contact_and_money_between", BetweenArgs,
      "Did two people talk, and did money move between them: messages, calls and emails on every phone, and the "
      "ledger money between them (verified rows summed per currency, p3 stated apart) with each payment's txn:// "
-     "link. Use it for any 'between A and B' question."),
+     "link, and where each side's numbers appear on the phones. Use it for any 'between A and B' question; "
+     "with_records adds the messages, calls and emails themselves, so everything between two people is one call."),
     ("get_money_signal_matches", "money_signal_matches", MatchesArgs,
      "Every phone alert or message that pairs with a ledger row at any strength (approach 1), strongest first: the "
      "alert's rec://, each candidate row's txn://, the strength (strong, moderate, weak, faint) with the reasons "

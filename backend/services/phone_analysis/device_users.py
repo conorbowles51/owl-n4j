@@ -274,13 +274,21 @@ def _bin(t):
     return int(t.timestamp() // BIN_S)
 
 
-def _observations(conn, ext, include_synced):
-    """04 presence observations of one phone, in time order (Synced points left out unless asked for)."""
+def _observations(conn, ext, include_synced, start=None, end=None):
+    """04 presence observations of one phone, in time order (Synced points left out unless asked for); ``start`` and
+    ``end`` (UTC instants) keep those that start in the window (the agent's comparison over a period)."""
     q = ("SELECT id, record_uid::text AS record_uid, lat, lon, radius_m, start_utc AS start, end_utc AS \"end\", "
          "offset_status, attribution_flags FROM pol_place_observation WHERE extraction_id = :e AND kind = 'presence'")
+    params = {"e": ext}
     if not include_synced:
         q += " AND NOT ('synced_from_account' = ANY(attribution_flags))"
-    return [dict(r._mapping) for r in conn.execute(text(q + " ORDER BY start_utc, id"), {"e": ext})]
+    if start is not None:
+        q += " AND start_utc >= :a"
+        params["a"] = start
+    if end is not None:
+        q += " AND start_utc <= :b"
+        params["b"] = end
+    return [dict(r._mapping) for r in conn.execute(text(q + " ORDER BY start_utc, id"), params)]
 
 
 def bin_verdicts(ox, oy, params, wifi=()) -> dict:

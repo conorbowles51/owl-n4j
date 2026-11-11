@@ -530,7 +530,11 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
     try:
         table = LedgerTableView.model_validate(filters or {})
     except ValueError as exc:
-        raise FinancialLedgerToolError('Invalid transaction filters.') from exc
+        # The reason, so the caller can correct the filter (lx-agentfit: the demo's Q6 sent an amount range without a
+        # currency twice and was told only that the filters were invalid).
+        errors = exc.errors() if hasattr(exc, 'errors') else []
+        reasons = '; '.join(str(e.get('msg') or '').removeprefix('Value error, ') for e in errors[:3]) or str(exc)
+        raise FinancialLedgerToolError('Invalid transaction filters: %s' % reasons) from exc
     if view in ('coverage', 'incomplete', 'excluded'):
         changed = table.model_dump(exclude_defaults=True)
         if set(changed) - {'currency', 'account_id', 'account_holder', 'source_document_id'}:

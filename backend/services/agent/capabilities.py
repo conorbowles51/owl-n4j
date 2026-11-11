@@ -46,7 +46,7 @@ DATA_TYPES: list[dict[str, Any]] = [
         ],
         "tools": ["phone_find_people", "phone_messages", "phone_contact_summary", "phone_coverage", "phone_places",
                   "phone_money_readings", "phone_colocation_results", "phone_record", "get_person_phones",
-                  "get_day_activity", "get_together_apart", "get_routine_deviations", "get_phone_map_summary",
+                  "get_day_activity", "get_together_apart", "get_phone_company", "get_period_activity", "get_routine_deviations", "get_phone_map_summary",
                   "get_contact_and_money_between", "get_money_signal_matches", "get_money_signal_leads",
                   "evaluate_statement", "get_analysis_results", "get_monitoring_app_indicators", "get_glossary",
                   "get_near_identical_pictures", "get_payment_conversation", "draft_payment_purpose",
@@ -97,7 +97,7 @@ DATA_TYPES: list[dict[str, Any]] = [
             "Find the exact words of this reference.",
             "What does this statement say the closing balance was?",
         ],
-        "tools": ["search_documents", "search_exact_words", "search_case"],
+        "tools": ["search_documents", "search_exact_words", "search_case", "check_statements"],
     },
     {
         "id": "interviews",

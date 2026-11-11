@@ -114,10 +114,37 @@ SEARCH_NAMES = ("Before you answer, search the whole case for each person or com
                 "the name): payment and statement text can name accounts the ledger does not hold.")
 
 
-def block(scope: Scope, *, planning: bool = False) -> str:
+# lx-agentfit F: a factual where / whose / who / did / is-it-true question is answered only after the other side is
+# checked. The demo's Q1 ("whose phone was it with") gave only the State's version and never compared the phone with
+# the other phones. Requests to build, update or revise a table, graph, diagram, chart or report are not tested this
+# way (they would pay for searches nobody asked for). Reverse if a measured run shows the check costing a simple
+# factual question calls without changing its answer.
+_FACTUAL = re.compile(r"^\s*(?:where|whose|who|whom|when|did|does|do|was|were|is|are|has|had|have|can|could)\b"
+                      r"|\bis it true\b|\bwas it\b|\bwhose\b", re.I)
+_BUILD = re.compile(r"\b(?:build|make|create|draw|update|revise|rebuild|redo|add|include|remove|export|table|graph|"
+                    r"diagram|chart|map|report|timeline|list all|summari[sz]e|crea\w*|actualiza\w*|diagrama\w*|"
+                    r"grafo|gr[aá]fic\w*|tabla\w*|reporte|informe|incluir|incluye)\b", re.I)
+TEST_OTHER_SIDE = ("This is a factual question. Before you answer, test the other side: write the answer you are "
+                   "about to give and its strongest alternative (another person, another phone, another place, the "
+                   "other party's version) as statements and check both with check_statements, or with the "
+                   "comparison tool that settles it (for whose phone or who was with whom: the phone comparisons). "
+                   "Give the alternative and what the records say about it in the answer, not only the version you "
+                   "found first.")
+
+
+def is_factual(question: str) -> bool:
+    """A where / whose / who / did / is-it-true question, and not a request to build or change a view or report."""
+    text = question or ""
+    return bool(_FACTUAL.search(text)) and not _BUILD.search(text)
+
+
+def block(scope: Scope, *, planning: bool = False, question: str | None = None) -> str:
     """The focus lines for the prompts; empty when the question names nothing the case holds. ``planning``: the
     agent's planning prompt, which also asks for a case-wide search of each name (the final answer has no tools)."""
     lines = [STAY_ON_THE_QUESTION]
+    from services.agent import fit
+    if planning and question is not None and fit.on("F") and is_factual(question):
+        lines.append(TEST_OTHER_SIDE)
     if scope.empty:
         return "\n".join(lines)
     lines.append("What the question names (answer about these first):")
@@ -159,4 +186,4 @@ def focus_for(session, case_id, question: str) -> tuple[str, str]:
         logging.getLogger(__name__).warning("Question scope: case accounts could not be read", exc_info=True)
         accounts = []
     scope = build(question, accounts)
-    return block(scope, planning=True), block(scope)
+    return block(scope, planning=True, question=question), block(scope)

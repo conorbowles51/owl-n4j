@@ -122,6 +122,14 @@ def input_manifest(conn, case_id, module) -> dict:
             **(extra or {})}
 
 
+def run_is_current(conn, case_id, code, run_id) -> bool:
+    """Whether a completed run read the inputs the case holds now (the same check ``execute`` makes before it
+    reads): the phones, the identity decisions and the approach's own inputs (the ledger for Money on the phones)."""
+    recorded = conn.execute(text("SELECT input_revision FROM phone_analysis_runs WHERE id = :i AND case_id = :c"),
+                            {"i": run_id, "c": str(case_id)}).scalar()
+    return recorded is not None and recorded == sha256(input_manifest(conn, str(case_id), approach(code)))
+
+
 def result_key(code, records) -> str:
     parts = sorted("%s|%s|%s|%s" % (r.get("extraction_id") or "", r.get("record_uid") or "", r.get("field_path") or "",
                                     r.get("ledger_transaction_id") or "") for r in records)

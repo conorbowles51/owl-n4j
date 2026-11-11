@@ -418,6 +418,23 @@ class WorkingNotesArgs(BaseModel):
     facts: list[WorkingNote] = Field(..., min_length=1, max_length=20)
 
 
+class StatementToCheck(BaseModel):
+    claim: str = Field(..., description="The statement in plain words: one claim, one version of events, or one line "
+                       "of a witness's account.")
+    people: list[str] = Field(default_factory=list, max_length=6, description="People or companies it names.")
+    terms: list[str] = Field(default_factory=list, max_length=8, description="Words, numbers or places to search "
+                             "for: an amount, an account ending, an address, an app, a code word.")
+    document_queries: list[str] = Field(default_factory=list, max_length=4, description="Questions to search the "
+                                        "documents by meaning, e.g. 'who rented the storage unit'.")
+    start: str | None = Field(None, description="Start of the period it is about, YYYY-MM-DD.")
+    end: str | None = Field(None, description="End of the period it is about, YYYY-MM-DD.")
+    about_place: bool = Field(False, description="True when it turns on where someone or something was.")
+
+
+class CheckStatementsArgs(BaseModel):
+    statements: list[StatementToCheck] = Field(..., min_length=1, max_length=8)
+
+
 class GraphArtifactArgs(BaseModel):
     node_keys: list[str] = Field(default_factory=list)
     title: str | None = None
@@ -2430,8 +2447,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 error="The phone records could not be read.")
         if data.get("available") is False:
             return {**context.result(tool_name, data, summary=str(data.get("reason"))), "phone_generation": generation}
-        summary = " ".join(x for x in (data.get("coverage"), data.get("limitation"), data.get("unconfirmed_sentence"),
-                                       data.get("group_sentence")) if x)
+        # A person read through a suggested phone (no person linked one) says so first (lx-agentfit C).
+        subjects = [data.get("subject")] + list(data.get("subjects") or [])
+        links = [s["link"]["words"] for s in subjects if isinstance(s, dict) and isinstance(s.get("link"), dict)]
+        summary = " ".join(x for x in (*links, data.get("coverage"), data.get("limitation"),
+                                       data.get("unconfirmed_sentence"), data.get("group_sentence")) if x)
         return {**context.result(tool_name, data, summary=summary or "Read the phones."), "phone_generation": generation}
 
     def read_casework(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
@@ -2494,7 +2514,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             # A whole result read again once is enough (lx-agentfit B: the demo's Q4 spent 13 calls in a row reading
             # results again). A second whole read of the same result is refused with its digest and a pointer to the
             # working notes, so the run spends its calls on new evidence.
-            if context.rereads.get(source, 0) >= 1:
+            from services.agent import fit
+            if fit.on("B") and context.rereads.get(source, 0) >= 1:
                 from services.agent.lean_history import digest_payload
                 stored = context.model_views.get(source) or view
                 digest = digest_payload({"result_id": source, "summary": None, "data": stored.get("data"),
@@ -2512,7 +2533,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             out = context.result("read_tool_result_page", {"page_of": result_id, **page},
                 summary=(f"Read result {result_id} again" + (" in part; _paging states what is not shown."
                                                              if page.get("_paging") else " in full.")
-                         + " Note the facts you will use with record_working_notes: it is not sent again in full."))
+                         + (" Note the facts you will use with record_working_notes: it is not sent again in full."
+                            if fit.on("B") else "")))
             context.reread_source[out["result_id"]] = source
             return out
         path = list(path)
@@ -2520,6 +2542,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         try:
             page = page_for_model(view, budget_chars=budget, result_id=result_id, offset=offset, path=path)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
+            from services.agent import fit
+            if not fit.on("B"):
+                return context.result("read_tool_result_page", {"error": str(exc) or "That path is not in the result."},
+                    summary="That page could not be read; use the path and offset from the _paging note.",
+                    status="error", error=str(exc) or "Invalid path.")
             # A wrong path is answered with the right one (lx-agentfit B: 4 demo page reads named a path the result
             # does not have). The path without its "data" or "artifact" root is read at that root; otherwise the
             # result's pageable parts are listed with their lengths.
@@ -2542,6 +2569,28 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             summary=(f"Read items {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} "
                      f"at {'/'.join(map(str, note['path']))}; {note['remaining']} remain."
                      + (f" The path is {fixed}, not {path}." if fixed else "")))
+
+    def read_question(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
+        """Question-shaped tools built from the simple ones (services.agent.question_tools). Read only."""
+        if context.significant_scope:
+            return scope_error(tool_name, "This check")
+        from services.agent import question_tools as QT
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                data = getattr(QT, func_name)(db, uuid.UUID(context.case_id), **kwargs)
+        except ValueError as exc:
+            return context.result(tool_name, {"available": False, "reason": str(exc)},
+                summary=str(exc), status="error", error=str(exc))
+        except Exception:
+            logger.exception("Agent question tool %s failed for case %s", func_name, context.case_id)
+            return context.result(tool_name, {"available": False,
+                "reason": "This could not be read just now. Retry; nothing partial was returned."},
+                summary="This could not be read; no partial result was returned.", status="error",
+                error="The case could not be read.")
+        if data.get("available") is False:
+            return context.result(tool_name, data, summary=str(data.get("reason")))
+        summary = " ".join(str(x) for x in (data.get("coverage"), data.get("limitation")) if x)
+        return context.result(tool_name, data, summary=summary or "Read the case.")
 
     def record_working_notes(facts: list[dict[str, Any]]) -> dict[str, Any]:
         """The agent's own notes: facts it established, each with the citation it rests on. Never a finding of
@@ -3327,6 +3376,18 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "read further pages with offset. places_by_country counts every mapped place; to count or list the "
                 "places in one country or town, pass place (e.g. 'Spain') and read total."),
             args_schema=MapArgs,
+        ),
+        wrap(
+            lambda **kw: read_question("check_statements", "check_statements", **kw),
+            name="check_statements",
+            description=("For: testing statements against the records in one call: a claim, each side's version "
+                "(the State's and the defence's), each line of a witness's account, a proffer, or the other side of "
+                "your own answer. Each statement is searched on the ledger, the phones, the documents and the graph "
+                "by its people, terms and document questions (and period), and comes back with candidate records, "
+                "each cited, and what was searched or out of reach. You then say which records support and which "
+                "contradict each statement, as your reading. Not for: one lookup of one name or number (use "
+                "search_case), reading a known record, or building a table or report."),
+            args_schema=CheckStatementsArgs,
         ),
         wrap(
             record_working_notes,

@@ -659,6 +659,14 @@ def _source_cite(fact, files) -> Optional[str]:
     return f'doc://{file_id}' + (f'/{page}' if isinstance(page, int) and page >= 1 else '')
 
 
+def case_files(session, case_id) -> dict:
+    """The case's evidence files by their names, so a graph fact naming its source document can cite it."""
+    from postgres.models.evidence import EvidenceFile
+    files = dict(session.execute(select(EvidenceFile.original_filename, EvidenceFile.id).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.deleted_at.is_(None))).all())
+    return {k: str(v) for k, v in files.items()}
+
+
 def search_graph(tools: Tools, exp: dict, files: dict) -> tuple[list[dict], dict]:
     found: dict = {}
     seen, matched = set(), 0
@@ -1002,9 +1010,7 @@ def plan(session, *, sweep_id, reader: Optional[Reader] = None, tools=None) -> d
         tools = tools or Tools(item.case_id)
         content['census'] = census = _census(session, tools, item.case_id)
         session.rollback()  # the census's read transaction; nothing is pending here
-        files = dict(session.execute(select(EvidenceFile.original_filename, EvidenceFile.id).where(
-            EvidenceFile.case_id == item.case_id, EvidenceFile.deleted_at.is_(None))).all())
-        files = {k: str(v) for k, v in files.items()}
+        files = case_files(session, item.case_id)
         candidates = {}
         for i, exp in enumerate(expectations, 1):
             session.refresh(item, attribute_names=['cancel_requested'])

@@ -19,7 +19,7 @@ RECORDED = {
     "deletion_timeline": ("3.3", "a20035b3cefc95f2"),
     "relationships": ("11.3", "99a53d9d7ded8624"),
     "awareness": ("4.2-aware", "6fa3a12d0cdd5709"),
-    "device_users": ("5.4-graded-use", "7b73667105388270"),
+    "device_users": ("5.4-graded-use", "1e1d759f8b44d379"),  # lx-agentfit: _observations takes an optional window; results unchanged
     "typed_words": ("7.3", "e323b05b2b998e4a"),
     "intent": ("9.4", "fea034deb1e463be"),
     "common_contacts": ("14.1", "46ee93fe71781001"),
@@ -27,7 +27,7 @@ RECORDED = {
     "contact_matrix": ("15.1", "49cad534aa52a2bf"),
     "number_switching": ("16.2", "a70e7b04ce0370c5"),
     "extraction_comparison": ("12.1", "919fdb03776732f1"),
-    "other_devices": ("6.2", "12f2561e59ff2f19"),
+    "other_devices": ("6.2", "b5b45990eeab0153"),  # lx-agentfit: device_users source only, results unchanged
     "plans": ("10.4", "ed90ecb590af854e"),
 }
 

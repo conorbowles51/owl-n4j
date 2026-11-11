@@ -410,6 +410,11 @@ def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT
     run = conn.execute(text(
         "SELECT id, finished_at FROM phone_analysis_runs WHERE case_id = :c AND approach = 'money_signals' AND status "
         "= 'completed' ORDER BY finished_at DESC NULLS LAST LIMIT 1"), {"c": str(case_id)}).first()
+    from services.phone_analysis import approaches, framework as F
+    approaches.install()
+    from services.agent import fit
+    if fit.on("C") and (run is None or not F.run_is_current(conn, case_id, "money_signals", run.id)):
+        return _computed_money_readings(conn, case_id, outcome, offset, limit, run)
     if run is None:
         return _base("money_readings", case_id, total_matching=0, returned=0, has_more=False, next_offset=None,
                      items=[], coverage="Money on the phones has not been run in this case.",
@@ -475,6 +480,49 @@ def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT
                       "gains a link.")
 
 
+def _computed_money_readings(conn, case_id, outcome, offset, limit, run=None) -> dict:
+    """Money on the phones never run in the case: computed now by its own code (lx-agentfit C), not stored; the
+    same item fields as a stored run's readings. A person's rejected pairing cannot exist without a run."""
+    from services.agent.phone_cross_tools import COMPUTED_LABEL, computed_results
+    words = ("Money on the phones has not been run in this case." if run is None else
+             "The last run of Money on the phones read the phones or the ledger as they were then, not as the case "
+             "holds them now.")
+    results, reason = computed_results(conn, case_id, "money_signals")
+    if results is None:
+        return _base("money_readings", case_id, available=False, total_matching=0, returned=0, has_more=False,
+                     next_offset=None, items=[], reason=words + " " + reason)
+    readings = [r for r in results if r["kind"] == "money_reading"
+                and (not outcome or (r.get("measures") or {}).get("outcome") == outcome)]
+    tids = sorted({str(x["ledger_transaction_id"]) for r in readings for x in r.get("records") or []
+                   if x.get("ledger_transaction_id")})
+    refs = {str(i): ref for i, ref in conn.execute(text(
+        "SELECT id, ref_id FROM financial_transactions WHERE case_id = :c AND id = ANY(CAST(:t AS uuid[]))"),
+        {"c": str(case_id), "t": tids})} if tids else {}
+    offset, lim = max(0, int(offset or 0)), _limit(limit)
+    items = []
+    for r in readings[offset:offset + lim]:
+        m = r.get("measures") or {}
+        xs = r.get("records") or []
+        items.append({
+            "rec": next((_rec(x["record_uid"]) for x in xs if x.get("record_uid")), None),
+            "phone": m.get("phone_label"), "source": m.get("source"), "instant": m.get("event_instant"),
+            "amount_minor": m.get("amount_minor"), "currency": m.get("currency"), "amount_text": m.get("amount_text"),
+            "direction": m.get("direction"), "institution": (m.get("institution") or {}).get("name"),
+            "account": m.get("account_ref"), "outcome": m.get("outcome"), "reason": m.get("reason"),
+            "strength": r["strength"], "proof_class": "p4",
+            "ledger_rows": [{"payment": str(x["ledger_transaction_id"]), "ref": refs.get(str(x["ledger_transaction_id"])),
+                             "role": x["role"]} for x in xs if x.get("ledger_transaction_id")]})
+    total = len(readings)
+    nxt = offset + len(items) if offset + len(items) < total else None
+    return _base("money_readings", case_id, computed=COMPUTED_LABEL, total_matching=total, returned=len(items),
+                 has_more=nxt is not None, next_offset=nxt, items=items,
+                 coverage="%s Computed now for this answer: %d money reading(s)." % (words, total),
+                 limitation=("Only %d of %d are in this result; read on with offset %d." % (len(items), total, nxt))
+                 if nxt is not None else None,
+                 note="A money reading is what a phone shows, not a bank statement; a ledger row it matches only "
+                      "gains a link.")
+
+
 def colocation_results(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """Together and apart runs already made in this case (the pattern-of-life pair rule), newest first."""
     total = int(conn.execute(text("SELECT count(*) FROM pol_colocation_run WHERE case_id = :c"),
@@ -495,7 +543,8 @@ def colocation_results(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
     return _base("colocation_results", case_id, total_matching=total, returned=len(items), has_more=nxt is not None,
                  next_offset=nxt, items=items,
                  coverage="Every together-and-apart run made in this case (%d)." % total,
-                 limitation=None if total else "No together-and-apart run has been made in this case.")
+                 limitation=None if total else ("No together-and-apart run has been made in this case; "
+                                                "get_phone_company compares the phones for a period now."))
 
 
 def record(conn, case_id, record_uid) -> dict:
