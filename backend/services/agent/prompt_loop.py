@@ -75,7 +75,7 @@ def decide(current: dict[str, dict], candidate: dict[str, dict], *, held: set[st
             lost.append(f"key {before_key} → {after_key}")
         if lost:
             losses[q] = lost
-        won = AQ.losses(candidate[q], current[q])
+        won = AQ.gains(current[q], candidate[q])
         if _KEY_RANK.get(after_key, 1) > _KEY_RANK.get(before_key, 1):
             won.append(f"key {before_key} → {after_key}")
         if won:

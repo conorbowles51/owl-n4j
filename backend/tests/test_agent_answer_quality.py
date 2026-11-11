@@ -163,3 +163,10 @@ def test_the_prompt_version_changes_with_a_round_two_part():
         on = run_record.prompt_version_source()["prompts"]
     assert off["answer_requirements"] == "" and on["answer_requirements"]
     assert on["case_briefing"] and on["agent_fit"] == ["W", "S", "A"]
+
+
+def test_decide_writes_gains_before_to_after_like_losses():
+    """R10 record 11 Nov 23:21: gains were written candidate → current ("cited 12 → 5" for a rise from 5 to 12).
+    Fails on that code."""
+    d = PL.decide({"q1": _s(cited=5, citations=5)}, {"q1": _s(cited=12, citations=5)}, held={"q1"})
+    assert d["gains"]["q1"] == ["cited 5 → 12"]

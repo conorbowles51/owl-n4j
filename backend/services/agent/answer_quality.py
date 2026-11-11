@@ -195,6 +195,15 @@ def losses(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
     return lost
 
 
+def gains(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    """Each count on which ``after`` is better than ``before``, written before → after like ``losses``."""
+    won = [f"{k} {before.get(k, 0)} → {after.get(k, 0)}" for k in WORSE_HIGHER
+           if int(after.get(k, 0) or 0) < int(before.get(k, 0) or 0)]
+    won += [f"{k} {before.get(k, 0)} → {after.get(k, 0)}" for k in BETTER_HIGHER
+            if int(after.get(k, 0) or 0) > int(before.get(k, 0) or 0)]
+    return won
+
+
 UNSUPPORTED_HEADING = "**Figures to check: not found in the records cited beside them**"
 MAX_MARKED = 20
 
