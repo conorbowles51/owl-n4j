@@ -107,10 +107,12 @@ backend_venv_dir() {
 }
 
 # Hard-links the tree <source> as <dest>. The kernel refuses a hard link to a file the release user does not own
-# (fs.protected_hardlinks=1): on 11 Nov 35 pytest caches a root test run left in the running venv on 9 Nov stopped a
-# release that changed backend/requirements.txt. Those files alone are copied instead; any other error still fails.
+# (fs.protected_hardlinks=1): on 11 Nov 35 pytest caches a root test run left in the running venv on 9 Nov (mode 600,
+# root) stopped every release that changed backend/requirements.txt. Such a file is copied when the release user can
+# read it; a bytecode cache (__pycache__/*.pyc) it cannot read is left out, since Python rebuilds a missing cache. Any
+# other error still fails.
 backend_link_copy() {
-    local source="$1" dest="$2" errors line from to copied=0
+    local source="$1" dest="$2" errors line from to copied=0 skipped=0
     errors="$($RUN_AS env LC_ALL=C cp -al "${source}" "${dest}" 2>&1 >/dev/null)" && return 0
     [ -n "${errors}" ] || return 1
     while IFS= read -r line; do
@@ -120,11 +122,18 @@ backend_link_copy() {
         esac
         to="${line#"cp: cannot create hard link '"}"; to="${to%%"' to '"*}"
         from="${line#*"' to '"}"; from="${from%"': Operation not permitted"}"
-        [ -f "${from}" ] && [ ! -e "${to}" ] || { printf '%s\n' "${line}" >&2; return 1; }
-        $RUN_AS cp --preserve=mode,timestamps -- "${from}" "${to}" || return 1
-        copied=$((copied + 1))
+        [ ! -e "${to}" ] || { printf '%s\n' "${line}" >&2; return 1; }
+        if $RUN_AS test -r "${from}"; then
+            $RUN_AS cp --preserve=mode,timestamps -- "${from}" "${to}" || return 1
+            copied=$((copied + 1))
+        else
+            case "${from}" in
+                */__pycache__/*.pyc) skipped=$((skipped + 1)) ;;
+                *) printf 'cannot read %s\n' "${from}" >&2; return 1 ;;
+            esac
+        fi
     done <<< "${errors}"
-    echo "  copied ${copied} file(s) the release user may not hard-link (owned by another user)" >&2
+    echo "  venv copy: ${copied} file(s) of another user copied, ${skipped} unreadable bytecode cache(s) left out" >&2
 }
 
 # Builds venvs/<hash> beside the venv in use, unless it is complete already. Prints nothing; fails with the venv in use

@@ -122,6 +122,30 @@ check "the refused file is a copy of its own" "$([ "$(stat -c %i "${built}/lib/"
 check "with the same content" "$(cmp -s "${built}/lib/"python*/site-packages/pip/__init__.py \
     "${in_use}/lib/"python*/site-packages/pip/__init__.py && echo yes)" yes
 check "and the venv works" "$("${built}/bin/python" -c 'import pip, pkgx; print(pkgx.VERSION)')" 2
+# An unreadable bytecode cache of another user is left out (Python rebuilds it); an unreadable module is a failure.
+cache="$(cd "${in_use}" && find . -path '*site-packages/pip/__pycache__/__init__*.pyc' | head -1)"
+cat > "${test_root}/fakebin/cp" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = "-al" ]; then
+    /bin/cp -al "\$2" "\$3" || exit 1
+    rm -f "\$3/${cache#./}"
+    echo "cp: cannot create hard link '\$3/${cache#./}' to '\$2/${cache#./}': Operation not permitted" >&2
+    exit 1
+fi
+for arg in "\$@"; do
+    if [ "\$arg" = "${in_use}/${cache#./}" ]; then
+        echo "cp: cannot open '\$arg' for reading: Permission denied" >&2; exit 1
+    fi
+done
+exec /bin/cp "\$@"
+SH
+test() { if [ "$1" = "-r" ] && [ "$2" = "${in_use}/${cache#./}" ]; then return 1; fi; builtin test "$@"; }
+echo "# cache" >> backend/requirements.txt; echo 7 > backend/code.py; git add -A; gitc commit -qm cache; cached="$(git rev-parse HEAD)"
+if PATH="${test_root}/fakebin:${PATH}" backend_tree_stage "${cached}" 2>/dev/null; then staged=yes; else staged=no; fi
+check "an unreadable bytecode cache is left out and the stage goes on" "${staged}" yes
+built="${BACKEND_TREES}/venvs/$(git rev-parse "${cached}:backend/requirements.txt")"
+check "and Python still imports the module" "$("${built}/bin/python" -c 'import pip; print(1)')" 1
+unset -f test
 cat > "${test_root}/fakebin/cp" <<'SH'
 #!/usr/bin/env bash
 if [ "$1" = "-al" ]; then echo "cp: cannot create directory '$3': No space left on device" >&2; exit 1; fi
