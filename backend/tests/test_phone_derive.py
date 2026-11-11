@@ -296,3 +296,33 @@ def test_s12_an_empty_placeholder_is_refused_in_words_before_any_work(world):
             derive.request(c, case, LINKED, "transcript")
         assert str(e.value) == derive.EMPTY
         assert c.execute(text("SELECT count(*) FROM phone_derived_texts")).scalar() == 0
+
+
+@pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract is not installed")
+def test_a_small_photo_is_enlarged_before_it_is_read_and_the_reading_says_so(tmp_path):
+    """lx-demo m111023194731418 (10 Nov 2026): the demo case's four 480x360 photos of serial labels read 1 of 8
+    serials exactly at their own size; with the shorter side enlarged to 1,000 px they read 8 of 8. The reading with
+    more confident words is kept, so a photo that reads better at its own size keeps that reading."""
+    from services.phone import derive
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "evidence-engine" / "tests" / "phone"))
+    import demo_case
+    found = 0
+    for name, serials in demo_case.PHOTO_SERIALS.items():
+        data, made = demo_case._photo(serials, name)
+        if not made:
+            pytest.skip("Pillow could not draw the demo photos")
+        path = tmp_path / name
+        path.write_bytes(data)
+        got = derive._ocr(path)
+        found += sum(s in got["text"] for s in serials)
+        e = got["parameters"]["enlarged"]
+        assert {k: e[k] for k in ("factor", "from_px", "to_px", "filter")} == {
+            "factor": 2.78, "from_px": [480, 360], "to_px": [1333, 1000], "filter": "Lanczos"}
+        own, bigger = e["confident_words"]["own_size"], e["confident_words"]["enlarged"]
+        assert e["used"] == ("enlarged" if bigger > own else "own size")
+        assert path.read_bytes() == data  # the original is unchanged
+    assert found >= 7, found
+    big = tmp_path / "big.png"
+    from PIL import Image
+    Image.new("RGB", (1600, 1200), "white").save(big)
+    assert derive._ocr(big)["parameters"]["enlarged"] == "no: the shorter side is 1200 px"

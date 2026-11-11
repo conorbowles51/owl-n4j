@@ -228,6 +228,59 @@ def _tesseract_version():
     return first[0].split()[-1] if first else None
 
 
+# A small photo is also read enlarged, and the reading with more confident words is kept (lx-demo m111023194731418,
+# 10 Nov 2026): serial labels about 20 px high in 480x360 photos read 1 of 8 exactly at their own size and 8 of 8
+# with the shorter side enlarged to 1,000 px. Enlarging alone is not better everywhere: on 180 sampled images of
+# the three phone reference cases (20 with text) it gave fewer confident words on 7 (278 -> 260 on one), so the
+# own-size reading stays unless the enlarged one has more words read with confidence 60 or more.
+ENLARGE_SHORT_SIDE = 1000
+ENLARGE_MAX_FACTOR = 3.0
+ENLARGE_MAX_PIXELS = 40_000_000
+CONFIDENT = 60
+
+
+def _enlarged(path):
+    """(the enlarged copy or None, what was done). The original is never changed; an image Pillow cannot open, or
+    one already large, is not enlarged and says why."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            w, h = im.size
+            short = min(w, h)
+            if not short or short >= ENLARGE_SHORT_SIDE:
+                return None, {"enlarged": "no: the shorter side is %d px" % short}
+            f = min(ENLARGE_MAX_FACTOR, ENLARGE_SHORT_SIDE / short)
+            size = (round(w * f), round(h * f))
+            if size[0] * size[1] > ENLARGE_MAX_PIXELS:
+                return None, {"enlarged": "no: %dx%d px is too large to enlarge" % (w, h)}
+            im = im.convert("RGB") if im.mode not in ("RGB", "L") else im
+            out = path.with_name(path.stem + "-enlarged.png")
+            im.resize(size, Image.LANCZOS).save(out, "PNG")
+    except Exception:  # noqa: BLE001 - the reader opens formats Pillow does not (JPEG 2000, PNM): read as it is
+        return None, {"enlarged": "no: this image could not be opened to enlarge it"}
+    return out, {"enlarged": {"factor": round(f, 2), "from_px": [w, h], "to_px": list(size), "filter": "Lanczos"}}
+
+
+def _tesseract(path, tessdata, langs, cap):
+    """(text, words read with confidence CONFIDENT or more) from one run writing the text and the word table."""
+    base = path.with_name(path.name + "-read")
+    r = subprocess.run(["tesseract", str(path), str(base), "--tessdata-dir", str(tessdata), "-l", langs,
+                        "-c", "tessedit_create_txt=1", "-c", "tessedit_create_tsv=1"],
+                       capture_output=True, text=True,
+                       timeout=TIMEOUT_SECONDS["ocr"], preexec_fn=cap, env={"PATH": os.environ.get("PATH", ""),
+                                                                            "OMP_THREAD_LIMIT": "1"})
+    if r.returncode != 0:
+        raise DeriveError("The text reader could not read this image. The original is unchanged.")
+    words = 0
+    for line in Path(str(base) + ".tsv").read_text(errors="replace").splitlines()[1:]:
+        cells = line.split("\t")
+        try:
+            words += len(cells) == 12 and bool(cells[11].strip()) and float(cells[10]) >= CONFIDENT
+        except ValueError:
+            continue
+    return Path(str(base) + ".txt").read_text(errors="replace").strip(), words
+
+
 def _ocr(path):
     version = _tesseract_version()
     pm = phone_media()
@@ -244,15 +297,19 @@ def _ocr(path):
     def cap():
         mb = int(os.environ.get("LOUPE_PHONE_DERIVE_MEMORY_MB", "6144"))
         resource.setrlimit(resource.RLIMIT_AS, (mb * 1024 * 1024, mb * 1024 * 1024))
-    r = subprocess.run(["tesseract", str(path), "stdout", "--tessdata-dir", str(tessdata), "-l", langs],
-                       capture_output=True, text=True,
-                       timeout=TIMEOUT_SECONDS["ocr"], preexec_fn=cap, env={"PATH": os.environ.get("PATH", ""),
-                                                                            "OMP_THREAD_LIMIT": "1"})
-    if r.returncode != 0:
-        raise DeriveError("The text reader could not read this image. The original is unchanged.")
-    return dict(ident, text=r.stdout.strip(), segments=[], version=ident["model_version"],
+    path = Path(path)
+    text, confident = _tesseract(path, tessdata, langs, cap)
+    big, enlarged = _enlarged(path)
+    if big is not None:
+        big_text, big_confident = _tesseract(big, tessdata, langs, cap)
+        use = big_confident > confident
+        enlarged["enlarged"].update(confident_words={"own_size": confident, "enlarged": big_confident},
+                                    used="enlarged" if use else "own size")
+        if use:
+            text = big_text
+    return dict(ident, text=text, segments=[], version=ident["model_version"],
                 parameters={"languages": langs, "page_segmentation": "automatic (tesseract default 3)",
-                            "engine": "tesseract default", "threads": 1})
+                            "engine": "tesseract default", "threads": 1, **enlarged})
 
 
 def _transcribe(path):
