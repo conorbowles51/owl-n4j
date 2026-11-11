@@ -21,6 +21,11 @@ from postgres.models.financial_recovery import FinancialRecoveryItem as Item, Fi
 from services.financial import deployment_recovery as recovery, recovery_preparation as preparation
 from tests.test_financial_deployment_recovery import f, partial_import, snapshot
 
+# A run that yields returns at once once another session holds the lock; one that waits takes the whole 5 s
+# lock_timeout below. Timed from the moment the lock is held: the preparation before it is ordinary work that a
+# loaded box slows (head suites 7bf53001/16d97819: 3.49 s and 4.32 s for the whole call, the yield itself in ms).
+YIELD_WITHIN = 2.5
+
 pytestmark = pytest.mark.skipif(os.getenv('LOUPE_TEST_LOCAL_POSTGRES') != '1', reason='Requires isolated local PostgreSQL')
 
 
@@ -145,12 +150,13 @@ def test_final_freeze_yields_without_waiting_for_extraction_writer(pg, monkeypat
         else:
             writer.execute(update(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == pg.file_id)
                 .values(extracted_at=text('now()')))
+        held.append(monotonic())
         return result
+    held = []
     monkeypatch.setattr(preparation, 'prepare_readings', prepared)
     try:
-        start = monotonic()
         recovery.recover_one(pg.SessionLocal, pg.item_id, Path)
-        assert monotonic() - start < 3
+        assert monotonic() - held[0] < YIELD_WITHIN
         assert saved(pg) == (before, 'pending', 'running')
         with pg.SessionLocal() as db:
             assert recovery.control(db, pg.case_id, 'pause')['status'] == 'paused'
@@ -199,12 +205,13 @@ def test_final_entry_yields_to_recovery_record_owner_and_releases_case(pg, monke
             owner.execute(select(Run.id).where(Run.id == run_id).with_for_update()).all()
         else:
             owner.execute(select(Item.id).where(Item.id == pg.item_id).with_for_update()).all()
+        held.append(monotonic())
         return result
+    held = []
     monkeypatch.setattr(preparation, 'prepare_readings', prepared)
     try:
-        start = monotonic()
         recovery.recover_one(pg.SessionLocal, pg.item_id, Path)
-        assert monotonic() - start < 3
+        assert monotonic() - held[0] < YIELD_WITHIN
         assert saved(pg) == before
         with pg.SessionLocal() as other:
             assert other.scalar(select(Case.id).where(Case.id == pg.case_id)
