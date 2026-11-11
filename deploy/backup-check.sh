@@ -22,6 +22,8 @@ REACH_TOOL="${REACH_TOOL:-${HERE}/../backend/scripts/chroma_reach.py}"
 REACH_STATE="${REACH_STATE:-/mnt/owl-data/backups/chroma-reach.txt}"
 REACH_KNOWN="${REACH_KNOWN:-/mnt/owl-data/backups/chroma-relink/known.ids}"
 REACH_EVERY_HOURS="${REACH_EVERY_HOURS:-24}"
+# Unreached records go on the relink list the next release applies (deploy/chroma-settings.sh CHROMA_RELINK_LISTS).
+REACH_QUEUE="${REACH_QUEUE:-/mnt/owl-data/backups/chroma-relink}"
 
 tmp="$(mktemp "${STATUS_FILE}.XXXXXX")" || exit 1
 failed=0
@@ -49,7 +51,7 @@ chroma_reach() {
     fi
     local out
     if out="$("${PY}" -I "${REACH_TOOL}" sweep --url "${CHROMA_LIVE_URL}" \
-              --known "${REACH_KNOWN}" --out "${REACH_STATE}.json" 2>&1)"; then
+              --known "${REACH_KNOWN}" --queue "${REACH_QUEUE}" --out "${REACH_STATE}.json" 2>&1)"; then
         printf '%s\n' "${out//$'\n'/; }" > "${REACH_STATE}"
     else
         printf 'ALERT: stored records search cannot reach, listed in %s.json: %s\n' "${REACH_STATE}" \

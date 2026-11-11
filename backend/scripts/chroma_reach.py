@@ -8,6 +8,8 @@ searches, so a record found here is a record the app can find.
 
     chroma_reach.py check  --url URL [--collection chunks] [--out FILE] [--known FILE]   exit 1 on an unreached record
     chroma_reach.py sweep  --url URL [--collection chunks] [--out FILE]     the same at any depth, one search per case
+                           [--queue DIR]   unreached records not in --known are added to DIR/<collection>.ids,
+                                           the list the next release relinks (deploy/chroma-settings.sh)
     chroma_reach.py relink --url URL --collection NAME --ids FILE [--keep FILE] [--apply]  re-add from the stored copy
     chroma_reach.py settings --url URL [--apply]                            exit 10 when the setting was changed
     chroma_reach.py rebuild --url URL --state DIR [--apply] [--build-only]   a collection made with too few links,
@@ -419,6 +421,23 @@ def clean_up(chroma, name, state):
     return "removed"
 
 
+def queue(folder, name, ids):
+    """Add ids to the relink list of a collection, once each. Records found by the sweep were only reported (11 Nov:
+    18 chunks unreached for days); listed here, the next release re-adds them from their stored copy and sweeps."""
+    if not ids:
+        return
+    path = os.path.join(folder, f"{name}.ids")
+    listed = []
+    if os.path.exists(path):
+        with open(path) as current:
+            listed = [line.strip() for line in current if line.strip()]
+    fresh = [rid for rid in dict.fromkeys(ids) if rid not in set(listed)]
+    if fresh:
+        os.makedirs(folder, exist_ok=True)
+        with open(path, "a") as out:
+            out.write("".join(f"{rid}\n" for rid in fresh))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=["check", "sweep", "relink", "settings", "rebuild", "catch-up", "clean-up"])
@@ -427,6 +446,8 @@ def main(argv=None):
     parser.add_argument("--ids")
     parser.add_argument("--out")
     parser.add_argument("--known", help="ids (first column) already listed with why: shown, and not a failure")
+    parser.add_argument("--queue", help="check, sweep: unreached records not in --known are added to "
+                                        "<queue>/<collection>.ids, which the next release relinks")
     parser.add_argument("--keep", help="relink: each record is appended here before it is deleted")
     parser.add_argument("--state", help="rebuild, catch-up, clean-up: the folder that keeps what a rebuild copied")
     parser.add_argument("--apply", action="store_true")
@@ -469,6 +490,8 @@ def main(argv=None):
     for report in reports:
         missing = [u for u in report["unreached"] if u["searched"]]
         failed += sum(u["id"] not in known for u in missing)
+        if args.queue:
+            queue(args.queue, report["collection"], [u["id"] for u in missing if u["id"] not in known])
         where = Counter(str(u["case"]) for u in missing).most_common(3)
         print(f"{report['collection']}: {report['rows'] - len(report['unreached'])} of {report['rows']} found at depth "
               f"{report['depth']}, {len(missing)} searched records unreached "

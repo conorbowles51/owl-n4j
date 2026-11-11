@@ -503,3 +503,27 @@ def test_release_step_leaves_the_sweeps_known_list_alone(chroma, tmp_path):
 def test_release_step_stops_when_chroma_does_not_answer(tmp_path):
     done = release_step("http://127.0.0.1:9", tmp_path)
     assert done.returncode != 0
+
+
+def test_sweep_queues_what_it_cannot_reach_and_the_release_repairs_it(chroma, tmp_path):
+    """11 Nov: the daily sweep listed 18 unreached chunks and alerted, and nothing repaired them."""
+    store, url = chroma
+    for i in range(3):
+        store.add("c1", f"a{i}", "case-a")
+    store.orphans.update({"a1", "a2"})
+    known = tmp_path / "known.ids"
+    known.write_text("a2\tan outlier its neighbours prune\n")
+    for _ in range(2):   # a second sweep before the release lists nothing twice
+        done = run("sweep", "--url", url, "--collection", "chunks", "--known", str(known), "--queue", str(tmp_path))
+        assert done.returncode == 1, done.stdout + done.stderr
+    assert (tmp_path / "chunks.ids").read_text() == "a1\n"
+    released = release_step(url, tmp_path)
+    assert released.returncode == 0, released.stdout + released.stderr
+    assert "a1" not in store.orphans and (tmp_path / "chunks.ids.done").exists()
+
+
+def test_a_clean_sweep_queues_nothing(chroma, tmp_path):
+    store, url = chroma
+    store.add("c1", "a0", "case-a")
+    assert run("sweep", "--url", url, "--queue", str(tmp_path)).returncode == 0
+    assert not list(tmp_path.glob("*.ids"))
