@@ -159,7 +159,10 @@ def main():
         old = set()
         for i in group:
             out = outputs[i]
-            old |= _facts(name, (out or {}).get('data') if isinstance(out, dict) else None)
+            data = (out or {}).get('data') if isinstance(out, dict) else None
+            if name == 'get_financial_transactions' and isinstance(data, dict) and 'searches' not in data:
+                data = {**data, 'search': calls[i]['args'].get('search') or ''}  # labelled as the folded call labels it
+            old |= _facts(name, data)
         args = folded_args(name, [calls[i]['args'] for i in group])
         try:
             new_out = tools[name].invoke(args)

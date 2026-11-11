@@ -166,6 +166,15 @@ def _render(payload: dict) -> list[str]:
     return parts
 
 
+def _agent_request(payload: dict) -> bool:
+    """A request on the agent's own system prompt carries its tools (the agent's steps, and the finalizer on the
+    agent's prefix, lean_history.finalizer_on_agent_prefix); the finalizer's own request and the plain-words
+    rewrite carry none."""
+    messages = payload.get('messages') or []
+    first = messages[0].get('content') if messages else ''
+    return isinstance(first, str) and first.startswith('You are the OWL AI Agent')
+
+
 def simulate_cache(token_lists: list[list[int]], output_ends: list[int | None]) -> list[dict]:
     """Per request: tokens, strict and loose simulated cache hits (see the module docstring)."""
     import numpy as np
@@ -265,7 +274,7 @@ def main():
     requests, token_lists, output_ends = [], [], []
     for n, entry in enumerate(log):
         payload = builder._get_request_payload(entry['messages'])
-        if entry['tools'] is not None and n < len(steps) + 1:
+        if entry['tools'] is not None and _agent_request(payload):
             payload['tools'] = entry['tools']
         parts = _render(payload)
         ids = encode(parts)
@@ -280,7 +289,7 @@ def main():
         last_ai = max((k for k, m in enumerate(msgs) if m.get('role') == 'assistant'), default=None)
         if last_ai is not None:
             cut = dict(nxt, messages=msgs[:last_ai + 1])
-            if log[i + 1]['tools'] is not None:
+            if log[i + 1]['tools'] is not None and _agent_request(nxt):
                 cut['tools'] = log[i + 1]['tools']
             output_ends[i] = encode(_render(cut))
     cache = simulate_cache(token_lists, output_ends)
