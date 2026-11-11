@@ -128,6 +128,16 @@ class BudgetTests(unittest.TestCase):
         self.assertIn("digest_of", searches[0])
 
 
+class DigestNoteTests(unittest.TestCase):
+    def test_switched_off_the_digest_note_is_the_old_wording_and_names_no_notes_tool(self):
+        from services.agent import lean_history
+        payload = {"result_id": "r", "status": "success", "summary": "s", "data": big(1)}
+        with patch.dict("os.environ", {"LOUPE_AGENT_FIT": ""}):
+            off = lean_history.digest_payload(payload)
+        self.assertNotIn("record_working_notes", off["note"])
+        self.assertIn("record_working_notes", lean_history.digest_payload(payload)["note"])
+
+
 class PageToolTests(unittest.TestCase):
     def tool(self):
         context = AgentToolContext(case_id=CASE, page_budget_chars=100_000)
