@@ -94,6 +94,44 @@ if backend_tree_stage "${bad}" 2>/dev/null; then check "a failed pip fails the s
 check "and leaves no half-built venv" "$(ls "${BACKEND_TREES}/venvs" | grep -c building || true)" 0
 check "current still names working packages" "$("${BACKEND_TREES}/current/.venv/bin/python" -c 'import pkgx; print(pkgx.VERSION)')" 2
 
+# A file the release user may not hard-link (another user's, fs.protected_hardlinks) is copied, not a failed release.
+# A cp on PATH refuses one link exactly as the kernel does, after linking the rest.
+mkdir -p "${test_root}/fakebin"
+cat > "${test_root}/fakebin/cp" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "-al" ]; then
+    /bin/cp -al "$2" "$3" || exit 1
+    victim="$(cd "$3" && find . -path '*site-packages/pip/__init__.py' | head -1)"
+    rm -f "$3/${victim}"
+    echo "cp: cannot create hard link '$3/${victim#./}' to '$2/${victim#./}': Operation not permitted" >&2
+    exit 1
+fi
+exec /bin/cp "$@"
+SH
+chmod +x "${test_root}/fakebin/cp"
+git checkout -q "${three}"
+requirements 2; echo "# five" >> backend/requirements.txt; echo 5 > backend/code.py; git add -A; gitc commit -qm five
+five="$(git rev-parse HEAD)"
+sed -i '/./d' "${test_root}/cgroup/unit/cgroup.procs"
+in_use="$(readlink -f "${BACKEND_TREES}/current/.venv")"
+if PATH="${test_root}/fakebin:${PATH}" backend_tree_stage "${five}" 2>/dev/null; then staged=yes; else staged=no; fi
+check "a refused hard link is copied and the stage goes on" "${staged}" yes
+built="${BACKEND_TREES}/venvs/$(git rev-parse "${five}:backend/requirements.txt")"
+check "the refused file is a copy of its own" "$([ "$(stat -c %i "${built}/lib/"python*/site-packages/pip/__init__.py)" != \
+    "$(stat -c %i "${in_use}/lib/"python*/site-packages/pip/__init__.py)" ] && echo yes)" yes
+check "with the same content" "$(cmp -s "${built}/lib/"python*/site-packages/pip/__init__.py \
+    "${in_use}/lib/"python*/site-packages/pip/__init__.py && echo yes)" yes
+check "and the venv works" "$("${built}/bin/python" -c 'import pip, pkgx; print(pkgx.VERSION)')" 2
+cat > "${test_root}/fakebin/cp" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "-al" ]; then echo "cp: cannot create directory '$3': No space left on device" >&2; exit 1; fi
+exec /bin/cp "$@"
+SH
+echo "# six" >> backend/requirements.txt; echo 6 > backend/code.py; git add -A; gitc commit -qm six; six="$(git rev-parse HEAD)"
+if PATH="${test_root}/fakebin:${PATH}" backend_tree_stage "${six}" 2>/dev/null; then staged=yes; else staged=no; fi
+check "any other copy error still fails the stage" "${staged}" no
+check "and leaves no half-built venv either" "$(ls "${BACKEND_TREES}/venvs" | grep -c building || true)" 0
+
 # Pruning keeps what the trees link to.
 blue="$(readlink -f "${BACKEND_TREES}/blue/.venv")"; green="$(readlink -f "${BACKEND_TREES}/green/.venv")"
 mkdir "${BACKEND_TREES}/venvs/old"

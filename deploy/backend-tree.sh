@@ -106,6 +106,27 @@ backend_venv_dir() {
     echo "${BACKEND_TREES}/venvs/$1"
 }
 
+# Hard-links the tree <source> as <dest>. The kernel refuses a hard link to a file the release user does not own
+# (fs.protected_hardlinks=1): on 11 Nov 35 pytest caches a root test run left in the running venv on 9 Nov stopped a
+# release that changed backend/requirements.txt. Those files alone are copied instead; any other error still fails.
+backend_link_copy() {
+    local source="$1" dest="$2" errors line from to copied=0
+    errors="$($RUN_AS env LC_ALL=C cp -al "${source}" "${dest}" 2>&1 >/dev/null)" && return 0
+    [ -n "${errors}" ] || return 1
+    while IFS= read -r line; do
+        case "${line}" in
+            "cp: cannot create hard link '"*"' to '"*"': Operation not permitted") ;;
+            *) printf '%s\n' "${line}" >&2; return 1 ;;
+        esac
+        to="${line#"cp: cannot create hard link '"}"; to="${to%%"' to '"*}"
+        from="${line#*"' to '"}"; from="${from%"': Operation not permitted"}"
+        [ -f "${from}" ] && [ ! -e "${to}" ] || { printf '%s\n' "${line}" >&2; return 1; }
+        $RUN_AS cp --preserve=mode,timestamps -- "${from}" "${to}" || return 1
+        copied=$((copied + 1))
+    done <<< "${errors}"
+    echo "  copied ${copied} file(s) the release user may not hard-link (owned by another user)" >&2
+}
+
 # Builds venvs/<hash> beside the venv in use, unless it is complete already. Prints nothing; fails with the venv in use
 # untouched. <requirements>: the list to install, from the tree being staged.
 backend_venv_build() {
@@ -117,7 +138,7 @@ backend_venv_build() {
     tmp="${dir}.building"
     $RUN_AS mkdir -p "${BACKEND_TREES}/venvs" || return 1
     $RUN_AS rm -rf -- "${tmp}"
-    $RUN_AS cp -al "${source}" "${tmp}" || { $RUN_AS rm -rf -- "${tmp}"; return 1; }
+    backend_link_copy "${source}" "${tmp}" || { $RUN_AS rm -rf -- "${tmp}"; return 1; }
     installed="$(cat "${source}/.loupe-venv" 2>/dev/null || true)"
     if [ "${installed}" != "${hash}" ] && [ -f "${requirements}" ]; then
         if ! $(release_build_scope 2>/dev/null) $RUN_AS "${tmp}/bin/python" -m pip install -r "${requirements}" --quiet; then
