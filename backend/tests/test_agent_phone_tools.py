@@ -154,11 +154,18 @@ def test_whose_phone_questions_read_the_stored_phone_comparison_first():
     """lx-demo m111023214728433 (10 Nov 2026, demo case Q1 'Where was the glovebox phone ... and whose phone was it
     with?'): the agent read the phone's own places and a proffer, never the stored device-users result that grades
     Phone 2 with Phone 3 together in 42 of 42 quarter hours. Every tool the rule names is one the agent has."""
-    from services.agent.graph import _PHONE_PROMPT
+    import os
+    from unittest import mock
+    from services.agent.graph import _phone_prompt
     from services.agent.workflows import registered_tool_names
-    rule = next(line for line in _PHONE_PROMPT.splitlines() if "whose phone a device was" in line)
-    for tool in ("get_analysis_results", "device_users", "co_location", "phone_colocation_results",
-                 "get_together_apart"):
-        assert tool in rule
+    # The rule is read as sent: its comparison tool depends on agent-fit C (get_phone_company with C on).
+    for fit_items, compare_tool in (("", "get_together_apart"), ("C", "get_phone_company")):
+        with mock.patch.dict(os.environ, {"LOUPE_AGENT_FIT": fit_items}):
+            rule = next(line for line in _phone_prompt().splitlines() if "whose phone a device was" in line)
+        assert "{_company_words()}" not in rule
+        for tool in ("get_analysis_results", "device_users", "co_location", "phone_colocation_results",
+                     compare_tool):
+            assert tool in rule
     names = set(registered_tool_names())
-    assert {"get_analysis_results", "phone_colocation_results", "get_together_apart"} <= names
+    assert {"get_analysis_results", "phone_colocation_results", "get_together_apart",
+            "get_phone_company"} <= names
