@@ -162,53 +162,16 @@ def build_entity_extraction_prompt(
     if ontology is None:
         ontology = load_ontology()
 
+    # Order matters for cost: DeepSeek reads a prompt's longest repeated opening from its cache at a small fraction
+    # of the price. The fixed instructions come first, then what is the same for the whole case, then what changes
+    # per file and per chunk, just above the text. A per-chunk line near the top (the page) made every chunk's
+    # instructions a cache miss (CHAT JARZ EMPRESA.pdf, 11 Nov 2026: 280 chunks, about 9,000 prompt tokens each).
     parts: list[str] = [
         "You are an expert investigative analyst extracting structured entities from documents.",
         "",
-        f"DOCUMENT: {file_name}",
+        "Extract entities from the text at the end of this prompt. Be SELECTIVE — only extract entities "
+        "relevant to the investigation.",
     ]
-    if file_type:
-        parts.append(f"FILE TYPE: {file_type}")
-
-    instruction_section = format_mandatory_rules_section(
-        mandatory_instructions,
-        title="MANDATORY EXTRACTION INSTRUCTIONS",
-    )
-    if instruction_section:
-        parts.extend(
-            [
-                "",
-                instruction_section,
-                "Before responding, verify that every extracted entity complies with these rules.",
-                "Do not leave an entity in the output if it still reflects the default behavior instead of the mandatory rules.",
-            ]
-        )
-
-    parts.extend(
-        [
-            "",
-            f"BACKGROUND CONTEXT:\n{case_context or 'General investigation'}",
-        ]
-    )
-
-    if page_start is not None:
-        if page_end is not None and page_end != page_start:
-            parts.append(f"PAGES: {page_start}-{page_end}")
-        else:
-            parts.append(f"PAGE: {page_start}")
-
-    if is_table:
-        sheet_label = f" (Sheet: {sheet_name})" if sheet_name else ""
-        parts.append(f"\nThis is structured TABULAR data{sheet_label}. Pay attention to:")
-        parts.append("- Each row may represent a separate entity (transaction, person, record)")
-        parts.append("- Column headers define property names")
-        parts.append("- Preserve structure — extract one entity per meaningful row where appropriate")
-        parts.append("")
-
-    parts.append(
-        "Extract entities from the text below. Be SELECTIVE — only extract entities "
-        "relevant to the investigation."
-    )
 
     parts.append("\nCATEGORIES (assign exactly one per entity):")
     parts.append(_category_block(ontology))
@@ -221,15 +184,6 @@ def build_entity_extraction_prompt(
 
     parts.append("\n" + _geo_field_guidance(ontology))
     parts.append("\n" + _financial_provenance_guidance())
-
-    focus_block = _focus_entity_block(special_entity_types)
-    if focus_block:
-        parts.append(
-            "\nFOCUS ENTITY TYPES:\n"
-            "In addition to the ontology categories, pay special attention to these investigation-specific entity types.\n"
-            "Use them when they are a more precise fit for the evidence, typically as the specific_type value:\n"
-            f"{focus_block}"
-        )
 
     parts.append(
         "\nFor each entity also provide:\n"
@@ -262,10 +216,60 @@ def build_entity_extraction_prompt(
         "\nVERIFIED FACTS VS AI INSIGHTS:\n"
         "- verified_facts must be directly supported by the text in this chunk\n"
         "- Every verified fact must include an exact supporting quote\n"
-        "- Use the page number shown above when available; otherwise use null\n"
+        "- Use the page number shown with the text when available; otherwise use null\n"
         "- ai_insights must be []; analysis and hypotheses belong in investigator-controlled workspace tools, not evidence ingestion\n"
         "- If a statement is not explicitly supported by the document text, it must NOT appear in verified_facts"
     )
+
+    # The same for every file of the case.
+    instruction_section = format_mandatory_rules_section(
+        mandatory_instructions,
+        title="MANDATORY EXTRACTION INSTRUCTIONS",
+    )
+    if instruction_section:
+        parts.extend(
+            [
+                "",
+                instruction_section,
+                "Before responding, verify that every extracted entity complies with these rules.",
+                "Do not leave an entity in the output if it still reflects the default behavior instead of the mandatory rules.",
+            ]
+        )
+
+    focus_block = _focus_entity_block(special_entity_types)
+    if focus_block:
+        parts.append(
+            "\nFOCUS ENTITY TYPES:\n"
+            "In addition to the ontology categories, pay special attention to these investigation-specific entity types.\n"
+            "Use them when they are a more precise fit for the evidence, typically as the specific_type value:\n"
+            f"{focus_block}"
+        )
+
+    # Changes per file and per chunk (a transcript's speakers are added to the background per chunk).
+    parts.extend(
+        [
+            "",
+            f"BACKGROUND CONTEXT:\n{case_context or 'General investigation'}",
+            "",
+            f"DOCUMENT: {file_name}",
+        ]
+    )
+    if file_type:
+        parts.append(f"FILE TYPE: {file_type}")
+
+    if page_start is not None:
+        if page_end is not None and page_end != page_start:
+            parts.append(f"PAGES: {page_start}-{page_end}")
+        else:
+            parts.append(f"PAGE: {page_start}")
+
+    if is_table:
+        sheet_label = f" (Sheet: {sheet_name})" if sheet_name else ""
+        parts.append(f"\nThis is structured TABULAR data{sheet_label}. Pay attention to:")
+        parts.append("- Each row may represent a separate entity (transaction, person, record)")
+        parts.append("- Column headers define property names")
+        parts.append("- Preserve structure — extract one entity per meaningful row where appropriate")
+        parts.append("")
 
     parts.append(f"\nTEXT:\n{chunk_text}")
 
@@ -289,48 +293,18 @@ def build_relationship_extraction_prompt(
     if ontology is None:
         ontology = load_ontology()
 
+    # Fixed instructions first, the case's next, then the per-chunk entity list and text: see the entity prompt.
     parts: list[str] = [
         "You are an expert investigative analyst extracting relationships between known entities.",
         "",
-        f"DOCUMENT: {file_name}",
-        "",
-        "The following entities have been identified in this text:",
-        entities_json,
-        "",
-        "Extract relationships BETWEEN these entities based on the text below. "
+        "Extract relationships BETWEEN the entities listed at the end of this prompt, based on the text there. "
         "Use the entity IDs provided.",
         "",
         "CORE RELATIONSHIP TYPES (prefer these, but create custom types if none fit):",
         _relationship_block(ontology),
         "",
-    ]
-
-    instruction_section = format_mandatory_rules_section(
-        mandatory_instructions,
-        title="MANDATORY EXTRACTION INSTRUCTIONS",
-    )
-    if instruction_section:
-        parts.extend(
-            [
-                "",
-                instruction_section,
-                "Before responding, verify that every extracted relationship complies with these rules.",
-                "Do not emit a relationship that still reflects the default behavior instead of the mandatory rules.",
-                "",
-            ]
-        )
-
-    parts.extend(
-        [
-            f"BACKGROUND CONTEXT:\n{case_context or 'General investigation'}",
-            "",
-        ]
-    )
-
-    parts.extend(
-        [
         "For each relationship provide:",
-        "- source_entity_id and target_entity_id (from the entity list above)",
+        "- source_entity_id and target_entity_id (from the entity list)",
         "- type: one of the core types above, or a custom UPPER_SNAKE_CASE type",
         "- detail: brief description of the specific nature of this relationship",
         "- properties: any additional structured data (dates, amounts, etc.)",
@@ -348,9 +322,34 @@ def build_relationship_extraction_prompt(
         "- Both entities in a relationship must be from the provided list",
         "- Prefer specific relationship types over ASSOCIATED_WITH when possible",
         "",
-        f"TEXT:\n{chunk_text}",
-        "",
-        "Respond with JSON matching the required schema.",
+    ]
+
+    instruction_section = format_mandatory_rules_section(
+        mandatory_instructions,
+        title="MANDATORY EXTRACTION INSTRUCTIONS",
+    )
+    if instruction_section:
+        parts.extend(
+            [
+                instruction_section,
+                "Before responding, verify that every extracted relationship complies with these rules.",
+                "Do not emit a relationship that still reflects the default behavior instead of the mandatory rules.",
+                "",
+            ]
+        )
+
+    parts.extend(
+        [
+            f"BACKGROUND CONTEXT:\n{case_context or 'General investigation'}",
+            "",
+            f"DOCUMENT: {file_name}",
+            "",
+            "The following entities have been identified in this text:",
+            entities_json,
+            "",
+            f"TEXT:\n{chunk_text}",
+            "",
+            "Respond with JSON matching the required schema.",
         ]
     )
 
