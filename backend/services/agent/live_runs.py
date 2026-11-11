@@ -111,6 +111,7 @@ _TOOL_LINES: dict[str, tuple[str, str]] = {
     "phone_colocation_results": ("Checking when {s} were in the same place", "Checking who was in the same place"),
     "phone_record": ("Opening a phone record", "Opening a phone record"),
     "request_clarification": ("Preparing a question for you", "Preparing a question for you"),
+    "record_working_notes": ("Keeping notes of what was found", "Keeping notes of what was found"),
     "get_evidence_files": ("Checking the evidence files for “{s}”", "Checking the evidence files and how far each was processed"),
     "get_interviews": ("Reading the interviews with {s}", "Reading the interviews"),
     "get_transcript": ("Reading a transcript", "Reading a transcript"),

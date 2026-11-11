@@ -201,6 +201,7 @@ DATA_TYPES: list[dict[str, Any]] = [
 SUPPORT_TOOLS: dict[str, str] = {
     "request_clarification": "asks the person a question",
     "read_tool_result_page": "reads the rest of an earlier result",
+    "record_working_notes": "keeps its working notes",
     "build_graph_artifact": "builds a view", "build_table_artifact": "builds a view",
     "build_table_artifact_from_rows": "builds a view", "build_chart_artifact": "builds a view",
     "build_report_artifact": "builds a view", "build_map_artifact": "builds a view",

@@ -30,8 +30,9 @@ MIN_DIGEST_CHARS = 2_000
 # A short text field or a small mapping (totals, coverage counts, exclusions) of the result is kept in the digest.
 MAX_FACT_TEXT = 300
 MAX_FACT_MAPPING = 3_000
-DIGEST_NOTE = ("Digest of a result shown in full earlier in this run; the full result is unchanged. Before relying "
-               "on a detail not in this digest, call %s with this result_id (no path) to read it again." % PAGE_TOOL)
+DIGEST_NOTE = ("Digest of a result shown in full earlier in this run; the full result is unchanged. Facts you kept "
+               "with record_working_notes stay in full. For a detail in neither, call %s with this result_id (no "
+               "path) to read it again; each result is read again in full once." % PAGE_TOOL)
 # The fields of one grouped ledger figure (services.agent.financial_ledger_tools, view groups) kept in a digest.
 GROUP_FIELDS = ("group", "currency", "account_type", "currency_exponent", "transaction_count", "credits_minor",
                 "debits_minor", "net_minor", "account_count")

@@ -164,6 +164,12 @@ def page_for_model(data, *, budget_chars, result_id=None, offset=0, path=None):
     return safe
 
 
+def sequence_paths(view):
+    """Every part of a stored result that can be read by page, with its number of items, largest first."""
+    found = [(list(path), len(sequence)) for path, sequence in _sequences(to_jsonable(view))]
+    return sorted(found, key=lambda item: -item[1])
+
+
 def model_view(data, artifact=None):
     """What one tool call puts before the model, before paging: its data, and the artifact it built if any."""
     view = {"data": to_jsonable(data)}

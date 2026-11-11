@@ -273,6 +273,7 @@ _INTERNAL_TOOL_MARKERS = (
     "build_map_artifact",
     "request_clarification",
     "read_tool_result_page",
+    "record_working_notes",
     "phone_find_people",
     "phone_messages",
     "phone_contact_summary",
@@ -672,6 +673,9 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
     elif safe_name == "analyze_financial_transactions":
         title = "Analysed imported payments"
         detail = "I'm calculating across all matching payments, keeping currencies and bank/card accounts separate."
+    elif safe_name == "record_working_notes":
+        title = "Kept working notes"
+        detail = "I'm noting the facts found so far, each with its source, so I need not read them again."
     elif safe_name == "read_tool_result_page":
         title = "Read the rest of an earlier result"
         detail = "The earlier result was too large to show at once, so I'm reading the part not yet shown."
@@ -790,6 +794,30 @@ def _last_message_wants_more_tools(state: AgentState) -> bool:
     if isinstance(last_message, AIMessage):
         return _looks_like_tool_planning_text(message_content_to_text(last_message.content))
     return False
+
+
+# lx-agentfit B: reading again what the run already holds (a page, a whole result once more) and keeping working
+# notes are not investigation, so they do not count against the tool budget. They have their own cap per run; a call
+# past it is not run and counts as an ordinary call, so a run that only re-reads still ends. Measured 11 Nov on the
+# demo case: 94 of 258 calls were re-reads and page reads (7 of 11 runs stopped at the budget). The cap, 16, is the
+# most such calls one demo run made (13 re-reads in a row in Q4) plus room for notes; reverse if a run is measured
+# stopping at it with pages still unread that its answer needed.
+FREE_TOOLS = frozenset({"read_tool_result_page", "record_working_notes"})
+FREE_CALL_CAP = 16
+
+
+def _free_call_refusal(name: str | None, tool_context: AgentToolContext) -> dict[str, Any] | None:
+    """None when the call runs: an investigative tool, or a free one under its cap (counted here). Past the cap, the
+    refusal the model reads instead of a result."""
+    if name not in FREE_TOOLS:
+        return None
+    if tool_context.free_calls < FREE_CALL_CAP:
+        tool_context.free_calls += 1
+        return None
+    return {"status": "success", "summary": (
+        f"This run has made its {FREE_CALL_CAP} calls for reading results again and keeping notes; this one was not "
+        "run and counts as a tool step. Answer from your working notes and the results already shown."),
+        "data": {"not_run": name, "free_call_cap": FREE_CALL_CAP}}
 
 
 def _tool_budget_exhausted(state: AgentState) -> bool:
@@ -914,6 +942,7 @@ Your job:
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
 - Answers are read by an investigator who is not technical: never write a check-status code (p0 to p4), the words proof class or population, a tool name, a tool call or a field name in the answer; say what it means in plain words.
 - When using document search results, cite each passage with its cite field as a link: [filename, p.N](doc://<evidence file id>/N) when it has a page, or [filename](doc://<evidence file id>) when it has none. Copy the cite; never invent a page or a link.
+- Earlier results reach you as digests. When a result gives facts the answer will use, keep them with record_working_notes (each with its citation) in the same turn as your next tools: the notes stay in full, it costs no tool step, and you need not read the result again.
 - A tool message with a _paging note is shown in part: _paging states total, returned and next_page. Read the rest with read_tool_result_page before drawing a conclusion that depends on the whole result. If you stop before reading every page (for example, the tool budget), the answer must say it covers <returned> of <total> and which result is partial.
 
 {_FINANCIAL_ANALYSIS_PROMPT}
@@ -1057,6 +1086,7 @@ class AgentGraphRunner:
             clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
             used_chars = _tool_message_chars(state["messages"])
+            free_before = tool_context.free_calls
 
             for tool_call in tool_calls:
                 name = tool_call.get("name")
@@ -1073,7 +1103,7 @@ class AgentGraphRunner:
                     tool_context.page_budget_chars = budget
                     if name not in tools_by_name:
                         raise ValueError(f"Unknown tool: {name}")
-                    raw = tools_by_name[name].invoke(args)
+                    raw = _free_call_refusal(name, tool_context) or tools_by_name[name].invoke(args)
                     output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
                     status = str(output.get("status") or "success")
                     error = output.get("error")
@@ -1132,7 +1162,8 @@ class AgentGraphRunner:
                 "artifacts": artifacts,
                 "clarifications": clarifications,
                 "tool_results": tool_results,
-                "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
+                "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls)
+                - (tool_context.free_calls - free_before),
             }
 
         def route_after_agent(state: AgentState) -> str:
@@ -1296,6 +1327,7 @@ class AgentGraphRunner:
             clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
             used_chars = _tool_message_chars(state["messages"])
+            free_before = tool_context.free_calls
 
             done_before = int(state.get("tool_iterations") or 0)
             for position, tool_call in enumerate(tool_calls, start=1):
@@ -1317,7 +1349,7 @@ class AgentGraphRunner:
                     tool_context.page_budget_chars = budget
                     if name not in tools_by_name:
                         raise ValueError(f"Unknown tool: {name}")
-                    raw = tools_by_name[name].invoke(args)
+                    raw = _free_call_refusal(name, tool_context) or tools_by_name[name].invoke(args)
                     output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
                     status = str(output.get("status") or "success")
                     error = output.get("error")
@@ -1376,7 +1408,8 @@ class AgentGraphRunner:
                 "artifacts": artifacts,
                 "clarifications": clarifications,
                 "tool_results": tool_results,
-                "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
+                "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls)
+                - (tool_context.free_calls - free_before),
             }
 
         def route_after_agent(state: AgentState) -> str:

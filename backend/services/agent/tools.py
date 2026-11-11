@@ -77,6 +77,13 @@ class AgentToolContext:
     model_views: dict[str, Any] = field(default_factory=dict)
     # Characters the next tool message may use (the runner sets it from the run's context budget).
     page_budget_chars: int | None = None
+    # lx-agentfit B: how often each result was read again whole (by the result it came from; a re-read's own id
+    # maps to its source), and the facts the agent noted with their citations (record_working_notes).
+    rereads: dict[str, int] = field(default_factory=dict)
+    reread_source: dict[str, str] = field(default_factory=dict)
+    working_notes: list[dict[str, Any]] = field(default_factory=list)
+    # Calls made of the tools that do not count against the investigative budget (graph.FREE_TOOLS).
+    free_calls: int = 0
     # The run's ledger captures, reused while the rows they read are unchanged (services.agent.ledger_run_cache).
     ledger_cache: Any = field(default_factory=LedgerRunCache)
     # Who the run is for and which model runs it (services.agent.proposal_tools): a proposal records it as the
@@ -398,6 +405,17 @@ class ResultPageArgs(BaseModel):
     path: list[str | int] | None = Field(None, description="The path named in the _paging note, e.g. [\"data\", "
                                          "\"rows\"]. Leave out to read the whole result again (a digest).")
     offset: int = Field(0, ge=0, description="The offset named in next_page.")
+
+
+class WorkingNote(BaseModel):
+    fact: str = Field(..., description="One fact in plain words, as the answer would state it.")
+    cite: str | None = Field(None, description="The citation it rests on, copied from the result (rec://, txn://, "
+                             "doc:// or a page link).")
+    result_id: str | None = Field(None, description="The result_id the fact came from.")
+
+
+class WorkingNotesArgs(BaseModel):
+    facts: list[WorkingNote] = Field(..., min_length=1, max_length=20)
 
 
 class GraphArtifactArgs(BaseModel):
@@ -2464,30 +2482,86 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         return context.result(tool_name, data, summary=summary or "Read the case material.")
 
     def read_tool_result_page(result_id: str, path: list[str | int] | None = None, offset: int = 0) -> dict[str, Any]:
-        from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model
-        view = context.model_views.get(result_id)
+        from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model, sequence_paths
+        source = context.reread_source.get(result_id, result_id)
+        view = context.model_views.get(result_id) or context.model_views.get(source)
         if view is None:
             return context.result("read_tool_result_page", {"error": "No result with that id in this run."},
                 summary="That result is not in this run; repeat the original tool call.", status="error",
                 error="Unknown result_id.")
+        budget = (context.page_budget_chars or MAX_MESSAGE_CHARS) - 2_000
         if path is None:
+            # A whole result read again once is enough (lx-agentfit B: the demo's Q4 spent 13 calls in a row reading
+            # results again). A second whole read of the same result is refused with its digest and a pointer to the
+            # working notes, so the run spends its calls on new evidence.
+            if context.rereads.get(source, 0) >= 1:
+                from services.agent.lean_history import digest_payload
+                stored = context.model_views.get(source) or view
+                digest = digest_payload({"result_id": source, "summary": None, "data": stored.get("data"),
+                                         "artifact": stored.get("artifact")}) or {}
+                digest.pop("note", None)
+                out = context.result("read_tool_result_page", {"not_read_again": source, "digest": digest,
+                    "working_notes": len(context.working_notes)},
+                    summary=(f"Result {source} was already read again in full in this run; it is not sent a third "
+                             "time. Use its digest here, the facts in your working notes (record_working_notes), "
+                             "or read one part of it with a path from its _paging note."))
+                return out
+            context.rereads[source] = context.rereads.get(source, 0) + 1
             # A digest's result read again: whole when it fits this message's budget, otherwise a stated page.
-            page = page_for_model(view, budget_chars=(context.page_budget_chars or MAX_MESSAGE_CHARS) - 2_000,
-                result_id=result_id)
-            return context.result("read_tool_result_page", {"page_of": result_id, **page},
+            page = page_for_model(view, budget_chars=budget, result_id=result_id)
+            out = context.result("read_tool_result_page", {"page_of": result_id, **page},
                 summary=(f"Read result {result_id} again" + (" in part; _paging states what is not shown."
-                                                             if page.get("_paging") else " in full.")))
+                                                             if page.get("_paging") else " in full.")
+                         + " Note the facts you will use with record_working_notes: it is not sent again in full."))
+            context.reread_source[out["result_id"]] = source
+            return out
+        path = list(path)
+        fixed = None
         try:
-            page = page_for_model(view, budget_chars=(context.page_budget_chars or MAX_MESSAGE_CHARS) - 2_000,
-                result_id=result_id, offset=offset, path=list(path))
+            page = page_for_model(view, budget_chars=budget, result_id=result_id, offset=offset, path=path)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            return context.result("read_tool_result_page", {"error": str(exc) or "That path is not in the result."},
-                summary="That page could not be read; use the path and offset from the _paging note.",
-                status="error", error=str(exc) or "Invalid path.")
+            # A wrong path is answered with the right one (lx-agentfit B: 4 demo page reads named a path the result
+            # does not have). The path without its "data" or "artifact" root is read at that root; otherwise the
+            # result's pageable parts are listed with their lengths.
+            options = sequence_paths(view)
+            for root in ("data", "artifact"):
+                candidate = [root, *path]
+                if path and path[0] != root and any(p == candidate for p, _ in options):
+                    fixed = candidate
+                    break
+            if fixed is None:
+                return context.result("read_tool_result_page", {"wrong_path": path,
+                    "reason": str(exc) or "That path is not in the result.",
+                    "paths": [dict(path=p, items=n) for p, n in options[:20]]},
+                    summary=("That path is not in result %s. Its parts that can be read by page are listed in "
+                             "paths; call again with one of them." % result_id))
+            page = page_for_model(view, budget_chars=budget, result_id=result_id, offset=offset, path=fixed)
         note = page["_paging"][0]
-        return context.result("read_tool_result_page", {"page_of": result_id, **page},
+        return context.result("read_tool_result_page", {"page_of": result_id, **page,
+                                                        **({"path_used": fixed} if fixed else {})},
             summary=(f"Read items {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} "
-                     f"at {'/'.join(map(str, note['path']))}; {note['remaining']} remain."))
+                     f"at {'/'.join(map(str, note['path']))}; {note['remaining']} remain."
+                     + (f" The path is {fixed}, not {path}." if fixed else "")))
+
+    def record_working_notes(facts: list[dict[str, Any]]) -> dict[str, Any]:
+        """The agent's own notes: facts it established, each with the citation it rests on. Never a finding of
+        anyone's; kept in the run only (lx-agentfit B)."""
+        added = []
+        for item in facts or []:
+            item = item.model_dump() if hasattr(item, "model_dump") else (item or {})
+            fact = str(item.get("fact") or "").strip()
+            if not fact:
+                continue
+            note = {"n": len(context.working_notes) + 1, "fact": fact[:600],
+                    "cite": str(item.get("cite") or "").strip()[:300] or None,
+                    "result_id": str(item.get("result_id") or "").strip() or None}
+            context.working_notes.append(note)
+            added.append(note)
+        # No result_id: the message is never digested or re-sent as a pointer, so every note stays in full.
+        return {"status": "success",
+                "summary": ("Noted %d fact(s); %d in your working notes. They stay in full in this conversation; "
+                            "they are your working, not a finding." % (len(added), len(context.working_notes))),
+                "data": {"noted": added, "label": "The agent's working notes, not confirmed by a person."}}
 
     def get_map_locations(
         entity_types: list[str] | None = None,
@@ -3253,6 +3327,16 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "read further pages with offset. places_by_country counts every mapped place; to count or list the "
                 "places in one country or town, pass place (e.g. 'Spain') and read total."),
             args_schema=MapArgs,
+        ),
+        wrap(
+            record_working_notes,
+            name="record_working_notes",
+            description=("Keep the facts you have established, each with the citation it rests on (the rec://, "
+                "txn:// or doc:// link from the result, or a page link) and the result_id it came from. Notes stay in "
+                "full for the rest of the run, while earlier results become digests, so note what the answer needs "
+                "instead of reading a result again. It does not count as a tool step; call it in the same turn as "
+                "your next tools. Not for questions to yourself or plans."),
+            args_schema=WorkingNotesArgs,
         ),
         wrap(
             read_tool_result_page,
