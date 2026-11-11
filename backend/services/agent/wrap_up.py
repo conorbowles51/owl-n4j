@@ -150,3 +150,36 @@ def keep_sources(answer: str, views: dict[str, Any], *, heading: str) -> tuple[s
     if unlisted:
         lines.append("- %d more records carry these figures and are not listed." % unlisted)
     return text.rstrip() + "\n\n" + heading + "\n" + "\n".join(lines), counts
+
+
+# An answer that writes a source as a bare target ([txn://<id>, doc://<id>/3]) gives the reader nothing to open and
+# the citation check nothing to count (BNB2 replay bf147c8a, 11 Nov 2026: 22 sources written so, 1 counted).
+_TARGET = r"(?:txn|doc|rec)://[0-9A-Za-z][0-9A-Za-z_-]*(?:/\d+)?"
+_BARE_GROUP = re.compile(r"\[\s*(%s(?:\s*[,;]\s*%s)*)\s*\](?!\()" % (_TARGET, _TARGET))
+_BARE = re.compile(r"(?<!\]\()(?<![\w/])(%s)(?![\w/])" % _TARGET)
+
+
+def _link(target: str) -> str:
+    if target.startswith("txn://"):
+        label = "payment"
+    elif target.startswith("rec://"):
+        label = "phone record"
+    else:
+        page = re.search(r"/(\d+)$", target)
+        label = "document, p.%s" % page.group(1) if page else "document"
+    return "[%s](%s)" % (label, target)
+
+
+def link_bare_targets(text: str) -> str:
+    """Each source written as a bare target becomes a Markdown link to it; links already written are untouched."""
+    if not text or "://" not in text:
+        return text
+    text = _BARE_GROUP.sub(lambda m: "(" + ", ".join(
+        _link(t) for t in re.findall(_TARGET, m.group(1))) + ")", text)
+    out, last = [], 0
+    for m in _BARE.finditer(text):
+        out.append(text[last:m.start()])
+        out.append(_link(m.group(1)))
+        last = m.end()
+    out.append(text[last:])
+    return "".join(out)

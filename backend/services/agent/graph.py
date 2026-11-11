@@ -864,10 +864,14 @@ def _with_found_so_far(request: list[AnyMessage], state: AgentState, out_of_step
 
 
 def _with_kept_sources(answer: str, tool_context: AgentToolContext, out_of_steps: bool) -> str:
-    """At the limit, records read in the run that carry a figure the answer states, and that it does not link, are
-    listed under it with their links."""
+    """Sources written as bare targets become links; at the limit, records read in the run that carry a figure the
+    answer states, and that it does not link, are listed under it with their links."""
     from services.agent import fit, wrap_up
-    if not out_of_steps or not fit.on("W") or not answer:
+    if not fit.on("W") or not answer:
+        return answer
+    # Every answer: a source written as a bare target becomes a link (the limit answer most often wrote them so).
+    answer = wrap_up.link_bare_targets(answer)
+    if not out_of_steps:
         return answer
     kept, _ = wrap_up.keep_sources(answer, tool_context.model_views, heading=KEPT_SOURCES_HEADING)
     return kept

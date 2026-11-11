@@ -109,5 +109,26 @@ class KeepSourcesTests(unittest.TestCase):
         self.assertIn("2 more records carry these figures and are not listed.", kept)
 
 
+class BareTargetTests(unittest.TestCase):
+    def test_sources_written_as_bare_targets_become_links_and_written_links_stay(self):
+        text = ("Paid 3,637,760.00 MXN [txn://%s, doc://ab12/2]. Also txn://%s. Kept [12 Mar](txn://%s)."
+                % (ROW, OTHER, ROW))
+        out = wrap_up.link_bare_targets(text)
+        self.assertIn("([payment](txn://%s), [document, p.2](doc://ab12/2))" % ROW, out)
+        self.assertIn("[payment](txn://%s)." % OTHER, out)
+        self.assertIn("[12 Mar](txn://%s)" % ROW, out)
+        self.assertEqual(wrap_up.link_bare_targets("see [x](doc://ab12/2)"), "see [x](doc://ab12/2)")
+
+    def test_every_answer_gets_its_bare_targets_linked_with_w_on(self):
+        from services.agent.graph import _with_kept_sources
+        from services.agent.tools import AgentToolContext
+        with patch.dict(os.environ, {"LOUPE_AGENT_FIT": "W"}):
+            self.assertEqual(_with_kept_sources("A [txn://%s]" % ROW, AgentToolContext(case_id=CASE), False),
+                             "A ([payment](txn://%s))" % ROW)
+        with patch.dict(os.environ, {"LOUPE_AGENT_FIT": ""}):
+            self.assertEqual(_with_kept_sources("A [txn://%s]" % ROW, AgentToolContext(case_id=CASE), False),
+                             "A [txn://%s]" % ROW)
+
+
 if __name__ == "__main__":
     unittest.main()
