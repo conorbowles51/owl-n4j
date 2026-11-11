@@ -739,10 +739,15 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
         from services.agent import fit
         suggested, unlinked = {}, []
         for tag, subject in (("a", sa), ("b", sb)):
-            if subject.get("dossier_id") and fit.on("D"):
-                side = link_edges.resolve_side(conn, case_id, subject)
+            if subject.get("dossier_id"):
+                try:
+                    side = link_edges.resolve_side(conn, case_id, subject)
+                except link_edges.NotInCase as exc:
+                    raise _Missing(str(exc)) from None
                 if not side["keys"]:
-                    found = suggested_identities(conn, case_id, subject["dossier_id"])
+                    # The count over no identity is never given as no contact (always on); counting through the
+                    # suggested identities is item D's.
+                    found = suggested_identities(conn, case_id, subject["dossier_id"]) if fit.on("D") else []
                     if found:
                         suggested[tag] = dict(person=side["label"], identities=found)
                     else:
@@ -764,8 +769,15 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
         sides = {}
         for tag, subject in (("a", sa), ("b", sb)):
             side = link_edges.resolve_side(conn, case_id, subject)
+            if not fit.on("D"):
+                if not side["keys"] and side["label"] in unlinked:
+                    limits.append("No phone identity is linked to %s, so no message, call or email of theirs can be "
+                                  "counted here; find their numbers with phone_find_people and read phone_messages."
+                                  % side["label"])
+                continue
+            seen_keys = side["keys"] or [x["identity_key"] for x in (suggested.get(tag) or {}).get("identities", [])]
             sides[tag] = {"label": side["label"], "identities": len(side["keys"]),
-                          "where_seen": _side_sightings(conn, case_id, side["keys"])}
+                          "where_seen": _side_sightings(conn, case_id, seen_keys)}
             if not side["keys"] and side["label"] in unlinked:
                 limits.append("No phone identity is linked to %s and no identity suggestion ties one to them, so no "
                               "message, call or email of theirs can be counted here; find their numbers with "
@@ -1223,7 +1235,7 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
     # A stored run on older inputs is read as stored, with that said (measured 11 Nov: 30 of 33 stored runs on the
     # check and reference cases read older inputs; computing each again would cost every such call up to 90 s).
     from services.agent import fit
-    stale = fit.on("C") and run is not None and not F.run_is_current(conn, case_id, approach, run.id)
+    stale = run is not None and not F.run_is_current(conn, case_id, approach, run.id)
     if run is None and fit.on("C"):
         results, reason = computed_results(conn, case_id, approach)
         if results is None:

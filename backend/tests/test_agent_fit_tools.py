@@ -16,12 +16,23 @@ from services.agent import fit, phone_cross_tools as PC, question_scope as QS, q
 CASE = "00000000-0000-0000-0000-0000000000ac"
 
 
+_ENV = patch.dict(os.environ, {fit.SETTING: "B,C,D,F"})
+
+
+def setUpModule():
+    _ENV.start()
+
+
+def tearDownModule():
+    _ENV.stop()
+
+
 class SwitchTests(unittest.TestCase):
-    def test_items_are_on_by_default_and_each_can_be_turned_off(self):
+    def test_items_are_off_by_default_until_measured_and_each_can_be_turned_on(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop(fit.SETTING, None)
-            self.assertTrue(all(fit.on(i) for i in fit.ITEMS))
-            self.assertEqual(fit.hidden_tools(), frozenset())
+            self.assertFalse(any(fit.on(i) for i in fit.ITEMS))
+            self.assertIn("record_working_notes", fit.hidden_tools())
         with patch.dict(os.environ, {fit.SETTING: "B,F"}):
             self.assertFalse(fit.on("D"))
             self.assertIn("check_statements", fit.hidden_tools())

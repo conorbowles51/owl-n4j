@@ -413,7 +413,8 @@ def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT
     from services.phone_analysis import approaches, framework as F
     approaches.install()
     from services.agent import fit
-    if fit.on("C") and (run is None or not F.run_is_current(conn, case_id, "money_signals", run.id)):
+    current = run is not None and F.run_is_current(conn, case_id, "money_signals", run.id)
+    if fit.on("C") and not current:
         return _computed_money_readings(conn, case_id, outcome, offset, limit, run)
     if run is None:
         return _base("money_readings", case_id, total_matching=0, returned=0, has_more=False, next_offset=None,
@@ -472,12 +473,18 @@ def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT
     nxt = offset + len(items) if offset + len(items) < total else None
     return _base("money_readings", case_id, run_id=str(run.id), total_matching=total, returned=len(items),
                  has_more=nxt is not None, next_offset=nxt, items=items,
-                 coverage="Read %d of %d money readings from the last run of Money on the phones." % (len(items),
-                                                                                                         total),
+                 coverage=("Read %d of %d money readings from the last run of Money on the phones." % (len(items), total)
+                           + ("" if current else " That run read the phones or the ledger as they were then, not as "
+                              "the case holds them now; run it again on Money on the phones for current readings.")),
                  limitation=("Only %d of %d are in this result; read on with offset %d." % (len(items), total, nxt))
                  if nxt is not None else None,
                  note="A money reading is what a phone shows, not a bank statement; a ledger row it matches only "
                       "gains a link.")
+
+
+def _fit_on(item):
+    from services.agent import fit
+    return fit.on(item)
 
 
 def _computed_money_readings(conn, case_id, outcome, offset, limit, run=None) -> dict:
@@ -543,8 +550,8 @@ def colocation_results(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
     return _base("colocation_results", case_id, total_matching=total, returned=len(items), has_more=nxt is not None,
                  next_offset=nxt, items=items,
                  coverage="Every together-and-apart run made in this case (%d)." % total,
-                 limitation=None if total else ("No together-and-apart run has been made in this case; "
-                                                "get_phone_company compares the phones for a period now."))
+                 limitation=None if total else ("No together-and-apart run has been made in this case" + (
+                     "; get_phone_company compares the phones for a period now." if _fit_on("C") else ".")))
 
 
 def record(conn, case_id, record_uid) -> dict:

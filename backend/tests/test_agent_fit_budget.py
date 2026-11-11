@@ -17,6 +17,15 @@ from services.agent.graph import AgentGraphRunner
 from services.agent.tools import AgentToolContext, make_agent_tools
 
 CASE = "00000000-0000-0000-0000-0000000000ab"
+_ENV = patch.dict("os.environ", {"LOUPE_AGENT_FIT": "B"})
+
+
+def setUpModule():
+    _ENV.start()
+
+
+def tearDownModule():
+    _ENV.stop()
 
 
 class Args(BaseModel):
