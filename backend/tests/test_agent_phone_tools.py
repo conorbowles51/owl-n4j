@@ -148,3 +148,17 @@ def test_the_agent_keeps_to_the_identities_a_question_names():
     from services.agent.graph import _PHONE_PROMPT
     assert "Keep to the identities the question names" in _PHONE_PROMPT
     assert "say which identities the total covers" in _PHONE_PROMPT
+
+
+def test_whose_phone_questions_read_the_stored_phone_comparison_first():
+    """lx-demo m111023214728433 (10 Nov 2026, demo case Q1 'Where was the glovebox phone ... and whose phone was it
+    with?'): the agent read the phone's own places and a proffer, never the stored device-users result that grades
+    Phone 2 with Phone 3 together in 42 of 42 quarter hours. Every tool the rule names is one the agent has."""
+    from services.agent.graph import _PHONE_PROMPT
+    from services.agent.workflows import registered_tool_names
+    rule = next(line for line in _PHONE_PROMPT.splitlines() if "whose phone a device was" in line)
+    for tool in ("get_analysis_results", "device_users", "co_location", "phone_colocation_results",
+                 "get_together_apart"):
+        assert tool in rule
+    names = set(registered_tool_names())
+    assert {"get_analysis_results", "phone_colocation_results", "get_together_apart"} <= names
