@@ -23,13 +23,13 @@ dependencies = [
     "aiofiles>=24.1,<25",
     "websockets>=14,<15",
     "pyyaml>=6.0,<7",
-    "Pillow>=10.0,<11",
+    "Pillow>=13.0,<14",
     "pytesseract>=0.3.10,<1",
     "lxml>=6.0.2,<7",  # 6.0.2 bundles libxml2 2.14: CRLF in CDATA read as LF (phone counter)
     "markdown-it-py>=3.0,<4",
     "psycopg[binary]>=3.2,<4",
     "python-dotenv>=1.0,<2",
-    "cryptography>=46,<47",
+    "cryptography>=50,<51",
 ]
 
 [project.optional-dependencies]
