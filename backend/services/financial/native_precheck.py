@@ -303,15 +303,19 @@ class FilePrecheck:
     unsure_row_count: int = 0
     #: What a spreadsheet reader wants the person to know before storing (a guessed mapping, a balance break).
     reader_notes: tuple[str, ...] = ()
+    #: The ledger document this case already holds for the file (``document_id``, ``added_at``), or None.  Storing
+    #: such a file again is refused as ``already_ingested``, so a reading of it must not say rows "will be added".
+    already_in_ledger: Optional[dict] = None
 
     @property
     def would_ingest(self) -> bool:
-        """Whether the two failures decidable from the file alone are absent.
+        """Whether the failures decidable before writing are absent.
 
         Not a promise that the write succeeds.  See the module docstring: a
         contradictory period is decided against rows already in the database.
+        A file the case already holds is decided here, because the writer refuses it before anything else.
         """
-        return self.outcome is PrecheckOutcome.readable
+        return self.outcome is PrecheckOutcome.readable and self.already_in_ledger is None
 
     def as_dict(self) -> dict:
         return {
@@ -328,6 +332,7 @@ class FilePrecheck:
             "reconciliation_status": self.reconciliation_status,
             "proof_class": self.proof_class,
             "admissibility_reservations": list(self.admissibility_reservations),
+            "already_in_ledger": self.already_in_ledger,
             "row_count": self.row_count,
             "parsed_row_count": self.parsed_row_count,
             "skipped": [row.as_dict() for row in self.skipped],
@@ -829,7 +834,7 @@ def precheck_case_file(
     if isinstance(located, NativeParse):
         return _described(located, window=window, distinguisher="")
 
-    return precheck_path(
+    described = precheck_path(
         resolve_path(located.stored_path),
         window=window,
         distinguisher=located.sha256,
@@ -838,6 +843,21 @@ def precheck_case_file(
         default_currency=default_currency,
         layouts=_layouts_for(db, case_id, located.file_name, layouts),
     )
+    held = _held_document(db, case_id=case_id, file_id=located.file_id)
+    return described if held is None else dataclasses.replace(described, already_in_ledger=held)
+
+
+def _held_document(db: "Session", *, case_id: uuid.UUID, file_id: object) -> Optional[dict]:
+    """The document the ledger already holds for this file, as the writer finds it, or None."""
+    from services.financial.native_ingest_file import existing_document_for
+
+    document = existing_document_for(db, case_id=case_id, file_id=uuid.UUID(str(file_id)))
+    if document is None:
+        return None
+    return {
+        "document_id": str(document.id),
+        "added_at": document.created_at.isoformat() if document.created_at else None,
+    }
 
 
 def read_case_file(

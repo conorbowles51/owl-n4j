@@ -357,6 +357,18 @@ class StoreAndReuseTests(IngestFileTestCase):
                                    resolve_path=self.resolve_path, window=WINDOW, default_currency="USD")
         self.assertEqual(shown.layouts[0]["source"], "confirmed")
         self.assertEqual(shown.layouts[0]["confirmed_by"]["email"], "investigator@example.test")
+        self.assertIsNone(shown.already_in_ledger)
+        self.assertTrue(shown.would_ingest)
+
+        # Reading the stored file again says the ledger holds it, and offers no write (the writer would refuse).
+        again = precheck_case_file(self.db, case_id=self.case.id, file_id=first.id,
+                                   resolve_path=self.resolve_path, window=WINDOW, default_currency="USD")
+        self.assertEqual(again.already_in_ledger["document_id"], str(document.id))
+        self.assertFalse(again.would_ingest)
+        self.assertFalse(again.as_dict()["would_ingest"])
+        self.assertEqual(again.row_count, 23)
+        refused = self.ingest(first, default_currency="USD")
+        self.assertEqual(refused.outcome.value, "already_ingested")
 
         # A confirmer sent with the request is ignored: an unchanged mapping keeps the stored confirmation, a
         # changed one is the storing person's.

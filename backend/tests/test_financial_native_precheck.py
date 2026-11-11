@@ -426,9 +426,11 @@ class CaseScopeTests(unittest.TestCase):
         self.file_id = uuid.uuid4()
 
     def _run(self, record, **kw):
+        # The fake session holds no ledger documents; the held-file lookup is tested on a real one
+        # (test_financial_tabular.StoreAndReuseTests).
         with patch(
             "services.evidence_db_storage.EvidenceDBStorage.get", return_value=record
-        ):
+        ), patch("services.financial.native_precheck._held_document", return_value=None):
             return precheck_case_file(
                 "fake-session",
                 case_id=self.case_id,

@@ -664,6 +664,8 @@ export interface FilePrecheck {
   unsure_row_count?: number
   /** Spreadsheets only: what the reader wants the person to know before storing. */
   reader_notes?: string[]
+  /** The ledger document the case already holds for this file; storing it again is refused. */
+  already_in_ledger?: { document_id: string; added_at: string | null } | null
 }
 
 /** The roles a spreadsheet column can be given. Mirrors `ROLES` in `services/financial/tabular.py`. */

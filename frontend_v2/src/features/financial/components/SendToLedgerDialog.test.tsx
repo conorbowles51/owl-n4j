@@ -509,6 +509,22 @@ describe("SendToLedgerDialog with a spreadsheet", () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  it("says a file the ledger already holds adds nothing, and offers no write", async () => {
+    vi.spyOn(financialAPI, "precheckFile").mockResolvedValue({
+      ...spreadsheetReading(),
+      would_ingest: false,
+      already_in_ledger: { document_id: "doc-1", added_at: "2026-11-11T04:49:23+00:00" },
+    })
+    renderDialog(vi.fn(), "penn.csv")
+    giveTheWindow()
+    fireEvent.click(screen.getByTestId("read-file"))
+
+    expect(await screen.findByTestId("already-in-ledger")).toHaveTextContent("already in the ledger")
+    expect(screen.getByTestId("precheck-rows")).toHaveTextContent("22 of 23 rows read from the file")
+    expect(screen.getByTestId("precheck-rows")).not.toHaveTextContent("will be added")
+    expect(screen.queryByTestId("store-file")).not.toBeInTheDocument()
+  })
+
   it("stores with the mapping shown, which confirms it", async () => {
     vi.spyOn(financialAPI, "precheckFile").mockResolvedValue(spreadsheetReading())
     const write = vi.spyOn(financialAPI, "ingestFile").mockResolvedValue(ingestion({ transactions_stored: 22 }))

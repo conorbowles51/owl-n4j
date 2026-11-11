@@ -457,6 +457,19 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
         <p className="text-xs text-muted-foreground">{precheck.reason}</p>
       )}
 
+      {precheck.already_in_ledger && (
+        <p
+          className="rounded-md border border-border/70 p-2 text-xs"
+          data-testid="already-in-ledger"
+        >
+          This file is already in the ledger
+          {precheck.already_in_ledger.added_at
+            ? ` (added ${new Date(precheck.already_in_ledger.added_at).toLocaleDateString()})`
+            : ""}
+          , so nothing will be added. What it holds is shown below.
+        </p>
+      )}
+
       {precheck.row_count !== null && (
         <p
           className="text-xs text-muted-foreground"
@@ -465,7 +478,7 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
           {precheck.row_count} of{" "}
           {precheck.parsed_row_count ?? precheck.row_count} row
           {(precheck.parsed_row_count ?? precheck.row_count) === 1 ? "" : "s"}{" "}
-          will be added
+          {precheck.already_in_ledger ? "read from the file" : "will be added"}
           {precheck.skipped.length > 0 &&
             `, ${precheck.skipped.length} skipped`}
           .
