@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import sys
 import time
@@ -70,10 +71,35 @@ def classify(item: dict) -> str:
     return 'returned'
 
 
+_MONTH = r'(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?'
+_DATE = re.compile(r'\d{4}-\d{1,2}-\d{1,2}|\d{1,2}/\d{1,2}/\d{2,4}')
+
+
+def expect_hit(term: str, text: str) -> bool:
+    """journeys/demo-key-score.mjs expectHit (cases in journeys/demo-key-score-cases.json): an expected word counts as
+    a whole word; an expected number never counts as a calendar day or part of a written date. Measured 11 Nov 2026:
+    plain word presence credited 4 of the 6 recorded Q1 answers, none of which names the key's place."""
+    t, s = str(term).lower(), str(text or '').lower()
+    if t.isdigit():
+        dates = [m.span() for m in _DATE.finditer(s)]
+        for m in re.finditer(r'(?<!\d)(?<!\d,)%s(?!\d|,\d)' % re.escape(t), s):
+            start, end = m.span()
+            if any(start >= a and end <= b for a, b in dates):
+                continue
+            if re.search(_MONTH + r'\s*$', s[max(0, start - 12):start]) or \
+                    re.match(r'\s*(?:st|nd|rd|th)?\s*(?:of\s+)?' + _MONTH, s[end:end + 14]):
+                continue
+            return True
+        return False
+    left = r'(?<![^\W])' if re.match(r'\w', t) else ''
+    right = r'(?![^\W])' if re.search(r'\w$', t) else ''
+    return re.search(left + re.escape(t) + right, s) is not None
+
+
 def score_key(answer: str, key: dict, citation_check: dict) -> dict:
     """The demo key's score for one answer, as journeys/live-demo-key.mjs scores it."""
+    hit = [w for w in key['expect'] if expect_hit(w, answer)]
     text = (answer or '').lower()
-    hit = [w for w in key['expect'] if w.lower() in text]
     bad = [w for w in key.get('must_not') or [] if w.lower() in text]
     ok = int((citation_check or {}).get('ok') or 0)
     result = 'wrong' if bad else 'found' if len(hit) == len(key['expect']) and ok > 0 else 'missed'

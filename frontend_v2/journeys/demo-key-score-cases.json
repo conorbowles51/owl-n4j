@@ -1,0 +1,22 @@
+{
+  "about": "Shared cases for the demo key's expected-word match (journeys/demo-key-score.mjs and backend/scripts/financial_agent_fit_replay.py expect_hit). An expected word counts as a whole word; an expected number never counts as a calendar day or part of a written date. Measured 11 Nov 2026 on the 6 recorded Q1 answers: word presence credited 'apartment' from 'Larkmont Apartments' in a caveat and '14' from the 14 June seizure date.",
+  "cases": [
+    {"term": "apartment", "text": "The sector covers both the garage and Larkmont Apartments.", "hit": false},
+    {"term": "apartment", "text": "It was at Travis Kell's apartment each evening.", "hit": true},
+    {"term": "14", "text": "The phone was seized on 14 June 2024.", "hit": false},
+    {"term": "14", "text": "Seized June 14, 2024.", "hit": false},
+    {"term": "14", "text": "Seized on the 14th of June.", "hit": false},
+    {"term": "14", "text": "See search-inventory-2024-06-14 and 14/06/2024.", "hit": false},
+    {"term": "14", "text": "Together on 14 of the 16 days.", "hit": true},
+    {"term": "14", "text": "A total of 140 quarter-hours.", "hit": false},
+    {"term": "500", "text": "Five payments of USD 500.00 each.", "hit": true},
+    {"term": "500", "text": "One payment of USD 1,500.00.", "hit": false},
+    {"term": "0181", "text": "Its number is +1 443-555-0181.", "hit": true},
+    {"term": "Travis Kell", "text": "with TRAVIS KELL's phone", "hit": true},
+    {"term": "no", "text": "No, there is no call.", "hit": true},
+    {"term": "no", "text": "Nothing was found.", "hit": false},
+    {"term": "bay 4", "text": "Rent for bay 4 from October 2023.", "hit": true},
+    {"term": "tow", "text": "At the tow yard.", "hit": true},
+    {"term": "tow", "text": "In the township.", "hit": false}
+  ]
+}

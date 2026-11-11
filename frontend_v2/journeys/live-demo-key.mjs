@@ -6,6 +6,7 @@
 // what the product shows and compares it with the key. Prints a table per module and writes the full result.
 //   node journeys/live-demo-key.mjs --out <file.json> [--only F01,F02] [--no-agent]
 import { readFileSync, writeFileSync } from "node:fs"
+import { expectHit } from "./demo-key-score.mjs"
 import { chromium } from "playwright"
 import { CASES, readLogin, signIn } from "./lib.mjs"
 
@@ -433,7 +434,7 @@ if (!process.argv.includes("--no-agent") && !only) {
     const t0 = Date.now()
     const r = await req("POST", "/api/agent/messages", { message: a.question, case_id: C })
     const text = String(r.body?.answer || "")
-    const hit = a.expect.filter((w) => text.toLowerCase().includes(w.toLowerCase()))
+    const hit = a.expect.filter((w) => expectHit(w, text))
     const bad = a.must_not.filter((w) => text.toLowerCase().includes(w.toLowerCase()))
     const cites = r.body?.citation_check || {}
     const res = r.status !== 200 ? "missed" : bad.length ? "wrong" : hit.length === a.expect.length && (cites.ok || 0) > 0 ? "found" : "missed"
