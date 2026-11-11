@@ -188,6 +188,33 @@ def context_window_for(model_id):
     return getattr(model, "context_window", None)
 
 
+# lx-agentfit R2 (item R): a result as the model reads it, without empty fields and with each list of records as one
+# table (its column names once, then one row per record). A record's every value and link stays, in its own row.
+# Measured on the recorded runs' results before it ships (headless/LX-AGENTFIT-STATUS.md, R2).
+TABLE_MIN_ROWS = 3
+TABLE_MAX_COLUMNS = 60
+
+
+def _empty(value):
+    return value is None or value == "" or value == [] or value == {}
+
+
+def compact_for_model(value):
+    """``value`` without empty fields (None, "", [], {}), each list of three or more records as
+    {"columns": [...], "rows": [[...], ...]} (a record without a column has null there). Numbers, booleans and
+    zeros are kept; nothing else is dropped or shortened."""
+    if isinstance(value, dict):
+        return {key: compact_for_model(item) for key, item in value.items() if not _empty(item)}
+    if isinstance(value, list):
+        items = [compact_for_model(item) for item in value]
+        if len(items) >= TABLE_MIN_ROWS and all(isinstance(item, dict) for item in items):
+            columns = list(dict.fromkeys(key for item in items for key in item))
+            if 0 < len(columns) <= TABLE_MAX_COLUMNS:
+                return {"columns": columns, "rows": [[item.get(key) for key in columns] for item in items]}
+        return items
+    return value
+
+
 def tool_message_payload(*, result_id, summary, data, artifact=None, budget_chars=MAX_MESSAGE_CHARS):
     """The tool message the model reads: the whole view when it fits ``budget_chars``, otherwise a stated page.
 
@@ -204,6 +231,11 @@ def tool_message_payload(*, result_id, summary, data, artifact=None, budget_char
     if view.get("_paging"):
         payload["_paging"] = view["_paging"]
         payload["summary"] = paged_summary
+    from services.agent import fit
+    if fit.on("R"):
+        payload["data"] = compact_for_model(payload["data"])
+        if payload.get("artifact") is not None:
+            payload["artifact"] = compact_for_model(payload["artifact"])
     return payload
 
 

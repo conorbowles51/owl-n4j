@@ -64,11 +64,20 @@ def _facts(data: dict) -> tuple[dict, dict]:
     return facts, sizes
 
 
+def _records(value: Any) -> Any:
+    """A list of records, also when sent as a table (model_payloads.compact_for_model)."""
+    if isinstance(value, dict) and isinstance(value.get("columns"), list) and isinstance(value.get("rows"), list) \
+            and set(value) == {"columns", "rows"}:
+        return [dict(zip(value["columns"], row)) for row in value["rows"] if isinstance(row, list)]
+    return value
+
+
 def _group_figures(data: dict) -> list[dict] | None:
-    if data.get("schema") != LEDGER_SCHEMA or data.get("view") != "groups" or not isinstance(data.get("items"), list):
+    items = _records(data.get("items"))
+    if data.get("schema") != LEDGER_SCHEMA or data.get("view") != "groups" or not isinstance(items, list):
         return None
     figures = []
-    for item in data["items"]:
+    for item in items:
         if not isinstance(item, dict):
             return None
         figure = {key: item[key] for key in GROUP_FIELDS if key in item}

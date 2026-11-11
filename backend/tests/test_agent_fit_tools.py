@@ -31,7 +31,8 @@ class SwitchTests(unittest.TestCase):
     def test_items_are_off_by_default_until_measured_and_each_can_be_turned_on(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop(fit.SETTING, None)
-            self.assertFalse(any(fit.on(i) for i in fit.ITEMS))
+            # W (the limit answer keeps its sources) is a fix and on by default; every other item waits for its gate.
+            self.assertEqual([i for i in fit.ITEMS if fit.on(i)], ["W"])
             self.assertIn("record_working_notes", fit.hidden_tools())
         with patch.dict(os.environ, {fit.SETTING: "B,F"}):
             self.assertFalse(fit.on("D"))

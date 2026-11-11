@@ -113,13 +113,16 @@ def _totals(readings, group_by=None, behind=None):
             group = _period(row)
         elif group_by == 'category':
             group = row.get('category') or 'Uncategorized'
-        elif group_by == 'counterparty':
+        elif group_by in ('counterparty', 'counterparty_month'):
             link = row.get('counterparty_link')
             label = row.get('to_name' if row['direction'] == 'debit' else 'from_name')
             if label is None:
                 label = row.get('counterparty_raw')
             group = (f"identity:{link['kind']}:{link['id']}" if link else
                 'label:' + json.dumps(label, ensure_ascii=False))
+            if group_by == 'counterparty_month':
+                # lx-agentfit M: totals per counterparty for each month in one read.
+                group = f"{group}|month:{_period(row)}"
         key = (row['currency'], _account_type(row.get('account_type')), group)
         entry = groups.setdefault(key, dict(currency=key[0], account_type=key[1], group=group,
             currency_exponent=_currency_exponent(key[0]),
@@ -127,9 +130,11 @@ def _totals(readings, group_by=None, behind=None):
             source_document_ids=set(), statement_period_ids=set(), banks=set()))
         if group_by == 'account':
             entry['group_label'] = row.get('canonical_account_label') or row.get('account_label') or group
-        if group_by == 'counterparty':
+        if group_by in ('counterparty', 'counterparty_month'):
             entry['group_label'] = label
             entry['group_basis'] = 'reviewed_identity' if link else 'exact_displayed_label'
+            if group_by == 'counterparty_month':
+                entry['month'] = _period(row)
         entry.setdefault('_readings', []).append(reading)
         entry['transaction_count'] += 1
         entry[row['direction'] + 's_minor'] += int(row['amount_minor'])
@@ -525,8 +530,8 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         raise FinancialLedgerToolError('Continuation pages require the revision from the first page.')
     if population not in ('working', 'verified') or view not in ('transactions', 'groups', 'coverage', 'excluded', 'incomplete'):
         raise FinancialLedgerToolError('Choose a supported ledger population and view.')
-    if group_by not in ('account', 'month', 'counterparty', 'category'):
-        raise FinancialLedgerToolError('Choose account, month, counterparty or category grouping.')
+    if group_by not in ('account', 'month', 'counterparty', 'category', 'counterparty_month'):
+        raise FinancialLedgerToolError('Choose account, month, counterparty, category or counterparty_month grouping.')
     try:
         table = LedgerTableView.model_validate(filters or {})
     except ValueError as exc:
@@ -700,7 +705,7 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         items=items[offset:offset+limit], totals=totals, coverage=scope_coverage,
         judgement_calls=_page_judgements(judgements, items[offset:offset+limit]),
         open_judgement_calls=behind(matching) if view in ('transactions', 'groups') else None,
-        **({'grouping_basis': COUNTERPARTY_GROUPING} if view == 'groups' and group_by == 'counterparty' else {}),
+        **({'grouping_basis': COUNTERPARTY_GROUPING} if view == 'groups' and group_by in ('counterparty', 'counterparty_month') else {}),
         applied=False, limitation=LIMITATION)
 
 

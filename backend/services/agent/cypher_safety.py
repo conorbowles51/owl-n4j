@@ -352,7 +352,27 @@ def _mandatory_scope(tokens: list[_Token]) -> set[str]:
     return set()
 
 
-def _assert_scalar_expression(tokens: list[_Token]) -> None:
+def _literal_lists(tokens: list[_Token]) -> set[int]:
+    """Positions of every list written only of literal values ([ 'a', 'b' ], [1, 2], [$x]), brackets included.
+    Such a list holds no pattern, map or query, so it cannot reach outside the case (lx-agentfit T: 4 of 25
+    refused recorded queries were n.key IN ['k1', ...] alone)."""
+    covered: set[int] = set()
+    index = 0
+    while index < len(tokens):
+        if tokens[index].value == "[":
+            end = index + 1
+            while end < len(tokens) and (tokens[end].kind in {"literal", "number", "parameter"}
+                                         or tokens[end].value in {",", ".", "-"}):
+                end += 1
+            if end < len(tokens) and tokens[end].value == "]" and (index == 0 or tokens[index - 1].value != "-"):
+                covered.update(range(index, end + 1))
+                index = end + 1
+                continue
+        index += 1
+    return covered
+
+
+def _assert_scalar_expression(tokens: list[_Token], literal_lists: bool = False) -> None:
     # A function/projection must not hide a second graph query or an unproved
     # relationship pattern. Third-party functions are not a case boundary.
     functions = {
@@ -364,7 +384,10 @@ def _assert_scalar_expression(tokens: list[_Token]) -> None:
         "SUM", "TIME", "TIMESTAMP", "TOBOOLEAN", "TOFLOAT", "TOINTEGER", "TOLOWER",
         "TOSTRING", "TOUPPER", "TRIM", "TYPE",
     }
+    allowed = _literal_lists(tokens) if literal_lists else set()
     for index, token in enumerate(tokens):
+        if index in allowed:
+            continue
         if token.value in {"[", "{"} or (
             token.value == "-" and index + 1 < len(tokens)
             and tokens[index + 1].value in {"-", ">", "["}
@@ -377,7 +400,7 @@ def _assert_scalar_expression(tokens: list[_Token]) -> None:
                 raise UnsafeCypherError("Use supported built-in scalar or aggregate functions; custom query functions are not allowed")
 
 
-def _assert_case_scope(tokens: list[_Token]) -> None:
+def _assert_case_scope(tokens: list[_Token], literal_lists: bool = False) -> None:
     # This is deliberately a small, fail-closed grammar, not a regex claim that
     # arbitrary Cypher has been proved safe. WITH aliases/subqueries can shadow
     # proven variables, and variable paths can traverse foreign intermediate nodes.
@@ -389,14 +412,15 @@ def _assert_case_scope(tokens: list[_Token]) -> None:
     while index < len(tokens):
         if tokens[index].value.upper() == "RETURN":
             tail = tokens[index + 1:]
+            allowed = _literal_lists(tail) if literal_lists else set()
             if not tail or any(
-                token.value in {"[", "{"} or (
+                (token.value in {"[", "{"} and position not in allowed) or (
                     token.kind == "word"
                     and token.value.upper() in {"MATCH", "OPTIONAL", "WHERE", "RETURN"}
-                ) for token in tail
+                ) for position, token in enumerate(tail)
             ):
                 raise UnsafeCypherError("Return scalar expressions or existing bindings; nested graph patterns are not supported")
-            _assert_scalar_expression(tail)
+            _assert_scalar_expression(tail, literal_lists)
             return
         if tokens[index].value.upper() == "OPTIONAL":
             index += 1
@@ -422,7 +446,7 @@ def _assert_case_scope(tokens: list[_Token]) -> None:
                     break
                 depth += (value == "(") - (value == ")")
                 index += 1
-            _assert_scalar_expression(tokens[begin:index])
+            _assert_scalar_expression(tokens[begin:index], literal_lists)
             local |= _mandatory_scope(tokens[begin:index])
         for kind, name, scoped in bindings:
             if not scoped and (name is None or ((kind, name) not in proven | inline and name not in local)):
@@ -479,7 +503,8 @@ def validate_readonly_cypher(
     if found:
         raise UnsafeCypherError(f"Cypher contains disallowed keyword(s): {', '.join(found)}")
 
-    _assert_case_scope(tokens)
+    from services.agent import fit
+    _assert_case_scope(tokens, literal_lists=fit.on("T"))
     return _enforce_limit(normalized_query, limit, max_limit, params)
 
 

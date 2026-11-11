@@ -84,6 +84,8 @@ class AgentToolContext:
     working_notes: list[dict[str, Any]] = field(default_factory=list)
     # Calls made of the tools that do not count against the investigative budget (graph.FREE_TOOLS).
     free_calls: int = 0
+    # lx-agentfit N: of those, the re-reads and page reads (notes are capped by size instead).
+    reread_calls: int = 0
     # The run's ledger captures, reused while the rows they read are unchanged (services.agent.ledger_run_cache).
     ledger_cache: Any = field(default_factory=LedgerRunCache)
     # Who the run is for and which model runs it (services.agent.proposal_tools): a proposal records it as the
@@ -130,6 +132,11 @@ class AgentToolContext:
         return payload
 
 
+# lx-agentfit N: the working notes hold at most this many characters of facts (the recorded after-runs' p90 was
+# 3,814, max 8,903). Reverse: a measured run that needed a fact the cap refused.
+NOTES_MAX_CHARS = 4_000
+
+
 class EmptyArgs(BaseModel):
     pass
 
@@ -147,9 +154,68 @@ class ClarificationArgs(BaseModel):
     reason: str | None = None
 
 
+def _fit_on(item: str) -> bool:
+    from services.agent import fit
+    return fit.on(item)
+
+
+def _cypher_description() -> str:
+    """run_readonly_cypher's description; with agent-fit T it says what the checker accepts, what the tool is not
+    for, and gives one query that runs (services.agent.tool_errors.CYPHER_EXAMPLE)."""
+    from services.agent import fit
+    if not fit.on("T"):
+        return ("Run a strictly read-only Neo4j query. Every matched node and relationship must have explicit case scope, "
+                "preferably (n:Label {case_id: $case_id}) and [r:TYPE {case_id: $case_id}]. Use simple MATCH/OPTIONAL MATCH and RETURN; "
+                "UNION, subqueries, rebinding and variable-length paths are not supported. "
+                "Put ORDER BY after RETURN, avoid NULLS FIRST/LAST, and use numeric LIMITs.")
+    from services.agent.tool_errors import CYPHER_EXAMPLE
+    return ("A read-only graph query, for counts, filters and tables no graph tool gives. Not for finding entities by "
+            "name (search_graph_entities), an entity's connections (get_entity_neighborhood), how two entities "
+            "connect (find_paths_between_entities) or money totals (the ledger tools). Accepted: MATCH or OPTIONAL "
+            "MATCH clauses, each with an optional WHERE, then RETURN, ORDER BY and a numeric LIMIT; every node and "
+            "relationship scoped in its pattern, (n:Label {case_id: $case_id}) and [r:TYPE {case_id: $case_id}]. "
+            "Refused: WITH, UNWIND, UNION, EXISTS, subqueries, [*] paths, maps, list comprehensions and patterns "
+            "after RETURN; a list is accepted only as literal values (n.key IN ['k1', 'k2']). Example: "
+            + CYPHER_EXAMPLE)
+
+
 class SearchGraphEntitiesArgs(BaseModel):
     query: str = Field(..., min_length=1, description="Name, alias, key, or phrase to search for.")
     limit: int = Field(10, ge=1, le=25)
+
+
+# lx-agentfit M and G: several names, keys or searches in one call (a recorded BNB2 run made 7
+# search_graph_entities calls in a row, another 15 get_financial_transactions calls). Offered only with the item on,
+# so the tool definitions are unchanged while it is off.
+MAX_MANY = 10
+
+
+class SearchGraphEntitiesManyArgs(BaseModel):
+    query: str | None = Field(None, min_length=1, description="One name, alias, key, or phrase to search for.")
+    queries: list[str] | None = Field(None, max_length=MAX_MANY, description=(
+        "Several names to search for in one call, e.g. ['Acme Ltd', 'J. Smith']; each is answered on its own."))
+    limit: int = Field(10, ge=1, le=25, description="Entities per name.")
+
+
+class EntityKeysArgs(BaseModel):
+    entity_key: str | None = Field(None, min_length=1, description="One exact graph node key.")
+    entity_keys: list[str] | None = Field(None, max_length=MAX_MANY, description="Several exact keys in one call.")
+
+
+class EntityNeighborhoodManyArgs(EntityKeysArgs):
+    depth: int = Field(1, ge=1, le=3)
+    relationship_types: list[str] | None = Field(None, max_length=20, description=(
+        "Only these relationship types, e.g. ['WORKS_FOR', 'SENT_PAYMENT']; omit for every type."))
+
+
+def _keys_given(one, many) -> list[str]:
+    keys = [k for k in ([one] if one else []) + list(many or []) if k]
+    keys = list(dict.fromkeys(keys))
+    if not keys:
+        raise ValueError("Give entity_key, or entity_keys with up to %d keys." % MAX_MANY)
+    if len(keys) > MAX_MANY:
+        raise ValueError("At most %d keys in one call; this call gave %d." % (MAX_MANY, len(keys)))
+    return keys
 
 
 class InspectGraphSchemaArgs(BaseModel):
@@ -306,6 +372,17 @@ class FinancialArgs(FinancialQueryArgs):
 
 class FinancialAnalysisArgs(FinancialQueryArgs):
     group_by: Literal["account", "month", "counterparty", "category"] = "account"
+
+
+class FinancialArgsMany(FinancialArgs):
+    searches: list[str] | None = Field(None, max_length=MAX_MANY, description=(
+        "Several search texts in one call, each read as its own query with the other filters, e.g. "
+        "['SECURE TITLE', 'CLANA']; the result lists each search's page and totals apart."))
+
+
+class FinancialAnalysisArgsMany(FinancialQueryArgs):
+    group_by: Literal["account", "month", "counterparty", "category", "counterparty_month"] = Field(
+        "account", description="counterparty_month: totals per counterparty for each month.")
 
 
 def _map_place_text(location: dict[str, Any]) -> str:
@@ -1979,7 +2056,24 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             ),
         )
 
-    def search_graph_entities(query: str, limit: int = 10) -> dict[str, Any]:
+    def search_graph_entities(query: str | None = None, limit: int = 10, queries: list[str] | None = None
+                              ) -> dict[str, Any]:
+        if queries:
+            asked = list(dict.fromkeys(q for q in ([query] if query else []) + list(queries) if q and q.strip()))
+            if len(asked) > MAX_MANY:
+                raise ValueError("At most %d names in one call; this call gave %d." % (MAX_MANY, len(asked)))
+            searches = []
+            for one in asked:
+                rows = graph_service.search_nodes(query=one, limit=limit, case_id=context.case_id)
+                if context.allowed_entity_keys is not None:
+                    rows = [row for row in rows if row.get("key") in context.allowed_entity_keys]
+                searches.append({"query": one, "entities": rows, "count": len(rows)})
+            return context.result(
+                "search_graph_entities", {"searches": searches, "count": sum(x["count"] for x in searches)},
+                summary="Searched %d names: %s." % (len(searches), "; ".join(
+                    "'%s' %d" % (x["query"], x["count"]) for x in searches)))
+        if not query:
+            raise ValueError("Give query, or queries with up to %d names." % MAX_MANY)
         rows = graph_service.search_nodes(query=query, limit=limit, case_id=context.case_id)
         if context.allowed_entity_keys is not None:
             rows = [row for row in rows if row.get("key") in context.allowed_entity_keys]
@@ -2011,7 +2105,17 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             ),
         )
 
-    def get_entity_details(entity_key: str) -> dict[str, Any]:
+    def get_entity_details(entity_key: str | None = None, entity_keys: list[str] | None = None) -> dict[str, Any]:
+        if entity_keys:
+            entities = []
+            for key in _keys_given(entity_key, entity_keys):
+                if context.allowed_entity_keys is not None and key not in context.allowed_entity_keys:
+                    entities.append({"key": key, "entity": None, "note": "Not in the Significant layer."})
+                    continue
+                entities.append({"key": key, "entity": graph_service.get_node_details(key, case_id=context.case_id)})
+            found = sum(1 for e in entities if e["entity"])
+            return context.result("get_entity_details", {"entities": entities, "count": found},
+                summary="Loaded details for %d of %d keys." % (found, len(entities)))
         if context.allowed_entity_keys is not None and entity_key not in context.allowed_entity_keys:
             return context.result(
                 "get_entity_details",
@@ -2025,7 +2129,29 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             summary=(f"Loaded details for {entity_key}." if details else f"No entity found for key {entity_key}."),
         )
 
-    def get_entity_neighborhood(entity_key: str, depth: int = 1) -> dict[str, Any]:
+    def get_entity_neighborhood(entity_key: str | None = None, depth: int = 1, entity_keys: list[str] | None = None,
+                                relationship_types: list[str] | None = None) -> dict[str, Any]:
+        if entity_keys or relationship_types:
+            keys = _keys_given(entity_key, entity_keys)
+            wanted = {t.strip().upper() for t in relationship_types or [] if t and t.strip()}
+            graphs = []
+            for key in keys:
+                if context.allowed_entity_keys is not None and key not in context.allowed_entity_keys:
+                    graphs.append({"key": key, "nodes": [], "links": [], "note": "Not in the Significant layer."})
+                    continue
+                graph = scoped_graph(graph_service.get_node_with_neighbours(key, depth=depth, case_id=context.case_id))
+                links = graph.get("links") or []
+                if wanted:
+                    kept = [l for l in links if str(l.get("type") or "").upper() in wanted]
+                    ends = {key} | {str(l.get(e)) for l in kept for e in ("source", "target")}
+                    graph = {**graph, "links": kept,
+                             "nodes": [n for n in graph.get("nodes") or [] if str(n.get("key")) in ends],
+                             "links_of_other_types": len(links) - len(kept)}
+                graphs.append({"key": key, **graph})
+            return context.result("get_entity_neighborhood", {"neighborhoods": graphs},
+                summary="Loaded %s." % "; ".join("%s around %s" % (_graph_counts(g), g["key"]) for g in graphs))
+        if entity_key is None:
+            raise ValueError("Give entity_key, or entity_keys with up to %d keys." % MAX_MANY)
         if context.allowed_entity_keys is not None and entity_key not in context.allowed_entity_keys:
             return context.result(
                 "get_entity_neighborhood",
@@ -2388,9 +2514,23 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             status="success" if available else "error",
             error=None if available else str(data.get("reason") or "Financial analysis unavailable."))
 
-    def get_financial_transactions(mode="transactions", entity_keys=None, records="transactions", **kwargs) -> dict[str, Any]:
+    def get_financial_transactions(mode="transactions", entity_keys=None, records="transactions", searches=None,
+                                   **kwargs) -> dict[str, Any]:
         if context.significant_scope:
             return scope_error("get_financial_transactions", "Financial analysis")
+        if searches:
+            asked = list(dict.fromkeys(x for x in ([kwargs.pop("search", "")] + list(searches)) if x and x.strip()))
+            if len(asked) > MAX_MANY:
+                raise ValueError("At most %d searches in one call; this call gave %d." % (MAX_MANY, len(asked)))
+            parts = []
+            for one in asked:
+                part = get_financial_transactions(mode=mode, entity_keys=entity_keys, records=records, search=one,
+                                                  **kwargs)
+                parts.append({"search": one, "summary": part.get("summary"), "status": part.get("status"),
+                              "error": part.get("error"), **(part.get("data") or {})})
+            return context.result("get_financial_transactions", {"searches": parts},
+                summary="Read %d searches: %s" % (len(parts), " | ".join(
+                    "'%s': %s" % (p["search"], p.get("summary") or "") for p in parts)))
         if mode == "intelligence":
             # Preserve the separate contextual graph reader without claiming it
             # is the imported ledger or silently ignoring ledger-specific filters.
@@ -2539,12 +2679,25 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             context.reread_source[out["result_id"]] = source
             return out
         path = list(path)
+        asked = list(path)
         fixed = None
+        from services.agent import fit
+        if fit.on("T"):
+            # A path copied from a digest (its not_in_digest list) or with a list position as text names the same
+            # part of the stored result (lx-agentfit T: 6 recorded page reads failed on these two alone).
+            mended = [int(p) if isinstance(p, str) and p.isdigit() else p for p in path]
+            if mended and mended[0] == "not_in_digest":
+                mended = ["data", *mended[1:]]
+            if mended != path:
+                fixed, path = mended, mended
+        if fit.on("R") and path and path[-1] == "rows":
+            # A list sent as a table (model_payloads.compact_for_model) is paged by the list's own path.
+            fixed = path = path[:-1]
         try:
             page = page_for_model(view, budget_chars=budget, result_id=result_id, offset=offset, path=path)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            from services.agent import fit
-            if not fit.on("B"):
+            fixed = None
+            if not (fit.on("B") or fit.on("T")):
                 return context.result("read_tool_result_page", {"error": str(exc) or "That path is not in the result."},
                     summary="That page could not be read; use the path and offset from the _paging note.",
                     status="error", error=str(exc) or "Invalid path.")
@@ -2569,7 +2722,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                                                         **({"path_used": fixed} if fixed else {})},
             summary=(f"Read items {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} "
                      f"at {'/'.join(map(str, note['path']))}; {note['remaining']} remain."
-                     + (f" The path is {fixed}, not {path}." if fixed else "")))
+                     + (f" The path is {fixed}, not {asked}." if fixed else "")))
 
     def read_question(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
         """Question-shaped tools built from the simple ones (services.agent.question_tools). Read only."""
@@ -2596,11 +2749,16 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def record_working_notes(facts: list[dict[str, Any]]) -> dict[str, Any]:
         """The agent's own notes: facts it established, each with the citation it rests on. Never a finding of
         anyone's; kept in the run only (lx-agentfit B)."""
+        from services.agent import fit
         added = []
+        refused = 0
         for item in facts or []:
             item = item.model_dump() if hasattr(item, "model_dump") else (item or {})
             fact = str(item.get("fact") or "").strip()
             if not fact:
+                continue
+            if fit.on("N") and sum(len(n["fact"]) for n in context.working_notes) + len(fact[:600]) > NOTES_MAX_CHARS:
+                refused += 1
                 continue
             note = {"n": len(context.working_notes) + 1, "fact": fact[:600],
                     "cite": str(item.get("cite") or "").strip()[:300] or None,
@@ -2608,9 +2766,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             context.working_notes.append(note)
             added.append(note)
         # No result_id: the message is never digested or re-sent as a pointer, so every note stays in full.
+        full = (" %d fact(s) were not noted: the notes are full (%d characters). Keep only facts the answer will use."
+                % (refused, NOTES_MAX_CHARS)) if refused else ""
         return {"status": "success",
                 "summary": ("Noted %d fact(s); %d in your working notes. They stay in full in this conversation; "
-                            "they are your working, not a finding." % (len(added), len(context.working_notes))),
+                            "they are your working, not a finding." % (len(added), len(context.working_notes)) + full),
                 "data": {"noted": added, "label": "The agent's working notes, not confirmed by a person."}}
 
     def get_map_locations(
@@ -3111,12 +3271,17 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             try:
                 return func(**kwargs)
             except UnsafeCypherError as exc:
+                from services.agent import fit
+                text = str(exc)
+                if fit.on("T"):
+                    from services.agent.tool_errors import cypher_fix
+                    text = cypher_fix(text)
                 return context.result(
                     name,
-                    {"error": str(exc)},
+                    {"error": text},
                     summary=f"{name} rejected an unsafe Cypher query.",
                     status="error",
-                    error=str(exc),
+                    error=text,
                 )
 
         return StructuredTool.from_function(
@@ -3145,8 +3310,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             search_graph_entities,
             name="search_graph_entities",
-            description="Search graph entities by display name, key, summary, notes, or alias-like text.",
-            args_schema=SearchGraphEntitiesArgs,
+            description=("Search graph entities by display name, key, summary, notes, or alias-like text."
+                         + (" Several names in one call with queries (each answered apart); use that instead of one "
+                            "call per name." if _fit_on("M") else "")),
+            args_schema=SearchGraphEntitiesManyArgs if _fit_on("M") else SearchGraphEntitiesArgs,
         ),
         wrap(
             inspect_graph_schema,
@@ -3161,14 +3328,18 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             get_entity_details,
             name="get_entity_details",
-            description="Load detailed information and immediate connections for one exact graph entity key.",
-            args_schema=EntityKeyArgs,
+            description=("Load detailed information and immediate connections for one exact graph entity key"
+                         + (", or for several with entity_keys." if _fit_on("G") else ".")),
+            args_schema=EntityKeysArgs if _fit_on("G") else EntityKeyArgs,
         ),
         wrap(
             get_entity_neighborhood,
             name="get_entity_neighborhood",
-            description="Load a graph neighborhood around one exact entity key.",
-            args_schema=EntityNeighborhoodArgs,
+            description=("Load a graph neighborhood around one exact entity key."
+                         + (" An entity's connections: who and what it links to, by relationship type. Several "
+                            "entities at once with entity_keys; only some relationship types with "
+                            "relationship_types. Use this, not Cypher, for connections." if _fit_on("G") else "")),
+            args_schema=EntityNeighborhoodManyArgs if _fit_on("G") else EntityNeighborhoodArgs,
         ),
         wrap(
             find_paths_between_entities,
@@ -3198,12 +3369,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             run_cypher,
             name="run_readonly_cypher",
-            description=(
-                "Run a strictly read-only Neo4j query. Every matched node and relationship must have explicit case scope, "
-                "preferably (n:Label {case_id: $case_id}) and [r:TYPE {case_id: $case_id}]. Use simple MATCH/OPTIONAL MATCH and RETURN; "
-                "UNION, subqueries, rebinding and variable-length paths are not supported. "
-                "Put ORDER BY after RETURN, avoid NULLS FIRST/LAST, and use numeric LIMITs."
-            ),
+            description=_cypher_description(),
             args_schema=ReadonlyCypherArgs,
         ),
         wrap(
@@ -3289,7 +3455,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "complete-scope totals and explicit pagination. Use next_offset and revision for every subsequent page. "
                 "A page is not the full dataset. records=excluded or incomplete inspects records outside totals. "
                 "Intelligence mode is a separate contextual graph reader and cannot establish complete imported coverage."),
-            args_schema=FinancialArgs,
+            args_schema=FinancialArgsMany if _fit_on("M") else FinancialArgs,
         ),
         wrap(
             analyze_financial_transactions,
@@ -3298,7 +3464,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "Groups are paged; calculations are not limited to the returned page. Currencies and account types stay separate. "
                 "Start here for a full financial analysis, use get_financial_coverage for known sources/accounts, and inspect payments for evidence. "
                 "Net postings are not an account balance; internal transfers are not automatically eliminated."),
-            args_schema=FinancialAnalysisArgs,
+            args_schema=FinancialAnalysisArgsMany if _fit_on("M") else FinancialAnalysisArgs,
         ),
         wrap(
             get_financial_coverage,

@@ -814,12 +814,30 @@ FREE_TOOLS = frozenset({"read_tool_result_page", "record_working_notes"})
 FREE_CALL_CAP = 16
 
 
+# lx-agentfit N: with notes capped by size, re-reads and page reads get their own allowance, set from measurement:
+# the most the before-runs made when each one cost a budget step was p90 10 (max 14) over 45 runs; with them free
+# (round 1, B) the after-runs made p90 17. Reverse: a measured run stopped at it with pages its answer needed unread.
+REREAD_CAP = 10
+
+
 def _free_call_refusal(name: str | None, tool_context: AgentToolContext) -> dict[str, Any] | None:
     """None when the call runs: an investigative tool, or a free one under its cap (counted here). Past the cap, the
     refusal the model reads instead of a result."""
     from services.agent import fit
     if name not in FREE_TOOLS or not fit.on("B"):
         return None
+    if fit.on("N"):
+        if name == "record_working_notes":
+            tool_context.free_calls += 1
+            return None
+        if tool_context.reread_calls < REREAD_CAP:
+            tool_context.reread_calls += 1
+            tool_context.free_calls += 1
+            return None
+        return {"status": "success", "summary": (
+            f"This run has read results again {REREAD_CAP} times; this one was not run and counts as a tool step. "
+            "Answer from your working notes and the results already shown."),
+            "data": {"not_run": name, "reread_cap": REREAD_CAP}}
     if tool_context.free_calls < FREE_CALL_CAP:
         tool_context.free_calls += 1
         return None
@@ -827,6 +845,84 @@ def _free_call_refusal(name: str | None, tool_context: AgentToolContext) -> dict
         f"This run has made its {FREE_CALL_CAP} calls for reading results again and keeping notes; this one was not "
         "run and counts as a tool step. Answer from your working notes and the results already shown."),
         "data": {"not_run": name, "free_call_cap": FREE_CALL_CAP}}
+
+
+# lx-agentfit R3 (item W, on): at the tool limit the answer keeps the sources of what the run found
+# (services.agent.wrap_up). Reverse: a measured limit answer that is worse with it.
+KEPT_SOURCES_HEADING = "**Records read before the search stopped that carry figures in this answer**"
+
+
+def _with_found_so_far(request: list[AnyMessage], state: AgentState, out_of_steps: bool) -> list[AnyMessage]:
+    """At the limit, the finalizer's last message also lists each record found so far with its link."""
+    from services.agent import fit, wrap_up
+    if not out_of_steps or not fit.on("W") or not request or not isinstance(request[-1], HumanMessage):
+        return request
+    block = wrap_up.found_so_far(state.get("tool_trace") or [])
+    if not block:
+        return request
+    return [*request[:-1], HumanMessage(content=message_content_to_text(request[-1].content) + "\n\n" + block)]
+
+
+def _with_kept_sources(answer: str, tool_context: AgentToolContext, out_of_steps: bool) -> str:
+    """At the limit, records read in the run that carry a figure the answer states, and that it does not link, are
+    listed under it with their links."""
+    from services.agent import fit, wrap_up
+    if not out_of_steps or not fit.on("W") or not answer:
+        return answer
+    kept, _ = wrap_up.keep_sources(answer, tool_context.model_views, heading=KEPT_SOURCES_HEADING)
+    return kept
+
+
+# lx-agentfit R4 (item X): the investigative calls of one model step run side by side; their results are then put
+# before the model in the order asked, exactly as when they run one by one. Calls that read or change this run's own
+# state (re-reads, notes, artifacts, proposals, a clarification) still run in order, after the others.
+SIDE_BY_SIDE_MAX = 4
+_IN_ORDER_PREFIXES = ("build_", "propose_", "record_", "request_")
+
+
+def _runs_side_by_side(name: str | None, tools_by_name: dict[str, Any]) -> bool:
+    return bool(name) and name in tools_by_name and name not in FREE_TOOLS and not name.startswith(_IN_ORDER_PREFIXES)
+
+
+def _run_side_by_side(tool_calls: list[dict[str, Any]], tools_by_name: dict[str, Any]) -> dict[int, tuple]:
+    """With item X on and two or more such calls in the step: {position: (output, error, ms)} for each, run on a
+    small thread pool. Otherwise empty (every call runs in the loop, one by one)."""
+    from services.agent import fit
+    if not fit.on("X"):
+        return {}
+    chosen = [(position, call) for position, call in enumerate(tool_calls, start=1)
+              if _runs_side_by_side(call.get("name"), tools_by_name)]
+    if len(chosen) < 2:
+        return {}
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(call):
+        started = time.perf_counter()
+        try:
+            return tools_by_name[call["name"]].invoke(call.get("args") or {}), None, \
+                int((time.perf_counter() - started) * 1000)
+        except Exception as exc:  # noqa: BLE001 - raised again in its place, as the call would have
+            return None, exc, int((time.perf_counter() - started) * 1000)
+    with ThreadPoolExecutor(max_workers=min(SIDE_BY_SIDE_MAX, len(chosen))) as pool:
+        done = list(pool.map(lambda item: one(item[1]), chosen))
+    return {position: result for (position, _), result in zip(chosen, done)}
+
+
+def _side_by_side_result(prefetched: dict[int, tuple], position: int) -> Any:
+    output, error, _ = prefetched[position]
+    if error is not None:
+        raise error
+    return output
+
+
+def _tool_error_text(name: str | None, exc: Exception, tools_by_name: dict[str, Any]) -> str:
+    """The failure the model reads: the exception's text, or with agent-fit T the reason and how to fix the call
+    (services.agent.tool_errors)."""
+    from services.agent import fit
+    if not fit.on("T"):
+        return str(exc)
+    from services.agent.tool_errors import model_error
+    return model_error(name or "", exc, tools_by_name.get(name or ""), sorted(tools_by_name))
 
 
 def _tool_budget_exhausted(state: AgentState) -> bool:
@@ -910,10 +1006,26 @@ def _phone_prompt() -> str:
         if fit.on("C") else "compare it with get_together_apart against each other phone"))
 
 
+def _cypher_rule_lines() -> str:
+    """The first Cypher rule lines. With agent-fit T they say what the query checker accepts (it refuses WITH,
+    UNWIND, map projections and patterns after RETURN: 25 of 134 recorded queries were refused, 11 Nov 2026)."""
+    from services.agent import fit
+    if not fit.on("T"):
+        return "- Only write read-only MATCH/OPTIONAL MATCH/WITH/UNWIND queries that RETURN data.\n"
+    return ("- Write one read-only query: MATCH or OPTIONAL MATCH clauses, each with an optional WHERE, then RETURN. "
+            "No WITH, UNWIND, UNION, EXISTS, subqueries or variable-length paths. After RETURN and in WHERE use "
+            "properties, built-in functions and aggregates of matched names only: no patterns, no maps, and lists "
+            "only as literal values (n.key IN ['k1', 'k2']).\n"
+            "- Before writing Cypher, check whether a graph tool answers it: search_graph_entities (find entities by "
+            "name), get_entity_neighborhood (an entity's connections), find_paths_between_entities (how two connect).\n")
+
+
 def _fit_prompt_lines() -> str:
     """The prompt lines of the agent-fit items that are on (services.agent.fit), each ending in a newline."""
     from services.agent import fit
     lines = []
+    if fit.on("P"):
+        lines.append("- Before the first tool, decide which lookups the question needs. Ask for lookups that do not depend on each other in one reply, as several tool calls together. Stop calling tools once the results answer the question; do not check again what a result already shows.")
     if fit.on("D"):
         lines.append("- A few tools answer a whole question in one call; use them when the question has that shape, and a simple tool when one lookup answers it: get_period_activity (a person or phone over several days), get_phone_company (whose phone a device was with, who was near whom), get_contact_and_money_between with with_records (everything between two people), check_statements (each statement or each side's version against the records).")
     if fit.on("B"):
@@ -982,8 +1094,7 @@ Recent artifacts available in this thread:
 Use these artifact ids when revising a previous report or embedding an existing graph, table, or chart in a report.
 
 Cypher safety rules:
-- Only write read-only MATCH/OPTIONAL MATCH/WITH/UNWIND queries that RETURN data.
-- Scope actual nodes or relationships with .case_id = $case_id in every Cypher query.
+{_cypher_rule_lines()}- Scope actual nodes or relationships with .case_id = $case_id in every Cypher query.
 - Do not use fake scoping like WHERE $case_id IS NOT NULL.
 - Use Neo4j syntax: RETURN ... ORDER BY ... LIMIT 50. Do not use NULLS FIRST/LAST.
 - Use literal numeric LIMIT values, not LIMIT $limit.
@@ -1115,8 +1226,9 @@ class AgentGraphRunner:
             tool_results: dict[str, Any] = {}
             used_chars = _tool_message_chars(state["messages"])
             free_before = tool_context.free_calls
+            prefetched = _run_side_by_side(tool_calls, tools_by_name)
 
-            for tool_call in tool_calls:
+            for position, tool_call in enumerate(tool_calls, start=1):
                 name = tool_call.get("name")
                 args = tool_call.get("args") or {}
                 call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
@@ -1131,16 +1243,19 @@ class AgentGraphRunner:
                     tool_context.page_budget_chars = budget
                     if name not in tools_by_name:
                         raise ValueError(f"Unknown tool: {name}")
-                    raw = _free_call_refusal(name, tool_context) or tools_by_name[name].invoke(args)
+                    raw = _free_call_refusal(name, tool_context) or (
+                        _side_by_side_result(prefetched, position) if position in prefetched
+                        else tools_by_name[name].invoke(args))
                     output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
                     status = str(output.get("status") or "success")
                     error = output.get("error")
                 except Exception as exc:
                     status = "error"
-                    error = str(exc)
+                    error = _tool_error_text(name, exc, tools_by_name)
                     output = {"summary": f"{name} failed: {error}", "data": {"error": error}}
 
-                duration_ms = int((time.perf_counter() - started) * 1000)
+                duration_ms = (prefetched[position][2] if position in prefetched
+                               else int((time.perf_counter() - started) * 1000))
                 result_id = output.get("result_id")
                 if result_id:
                     tool_results[result_id] = output.get("data")
@@ -1221,6 +1336,7 @@ class AgentGraphRunner:
                 state_messages=_messages_for_finalizer(state), final_answer_rules=final_answer_rules,
                 out_of_steps=out_of_steps, agent_system_prompt=build_system_prompt(state),
                 agent_model=model_with_tools, base_model=self.base_model)
+            final_request = _with_found_so_far(final_request, state, out_of_steps)
             response = invoke_model(final_model, final_request, step=int(state.get("tool_iterations") or 0))
             spent: list[AnyMessage] = []
             if final_model is not self.base_model:
@@ -1235,8 +1351,9 @@ class AgentGraphRunner:
             # A reply asked again was still billed: its tokens stay in the run's usage, its tool call does not.
             replies = [AIMessage(content="", usage_metadata=getattr(m, "usage_metadata", None),
                                  response_metadata=getattr(m, "response_metadata", {}) or {}) for m in spent] + replies
-            return {"messages": replies, "final_answer": link_named_files(link_document_citations(
-                replace_result_handles(text, state.get("tool_results"))), _tool_text(state)),
+            answer = link_named_files(link_document_citations(
+                replace_result_handles(text, state.get("tool_results"))), _tool_text(state))
+            return {"messages": replies, "final_answer": _with_kept_sources(answer, tool_context, out_of_steps),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
@@ -1357,6 +1474,7 @@ class AgentGraphRunner:
             tool_results: dict[str, Any] = {}
             used_chars = _tool_message_chars(state["messages"])
             free_before = tool_context.free_calls
+            prefetched = _run_side_by_side(tool_calls, tools_by_name)
 
             done_before = int(state.get("tool_iterations") or 0)
             for position, tool_call in enumerate(tool_calls, start=1):
@@ -1378,16 +1496,19 @@ class AgentGraphRunner:
                     tool_context.page_budget_chars = budget
                     if name not in tools_by_name:
                         raise ValueError(f"Unknown tool: {name}")
-                    raw = _free_call_refusal(name, tool_context) or tools_by_name[name].invoke(args)
+                    raw = _free_call_refusal(name, tool_context) or (
+                        _side_by_side_result(prefetched, position) if position in prefetched
+                        else tools_by_name[name].invoke(args))
                     output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
                     status = str(output.get("status") or "success")
                     error = output.get("error")
                 except Exception as exc:
                     status = "error"
-                    error = str(exc)
+                    error = _tool_error_text(name, exc, tools_by_name)
                     output = {"summary": f"{name} failed: {error}", "data": {"error": error}}
 
-                duration_ms = int((time.perf_counter() - started) * 1000)
+                duration_ms = (prefetched[position][2] if position in prefetched
+                               else int((time.perf_counter() - started) * 1000))
                 result_id = output.get("result_id")
                 if result_id:
                     tool_results[result_id] = output.get("data")
@@ -1472,6 +1593,7 @@ class AgentGraphRunner:
                 state_messages=_messages_for_finalizer(state), final_answer_rules=final_answer_rules,
                 out_of_steps=out_of_steps, agent_system_prompt=build_system_prompt(state),
                 agent_model=model_with_tools, base_model=self.base_model)
+            final_request = _with_found_so_far(final_request, state, out_of_steps)
             note(live_runs.progress_writing(step=int(state.get("tool_iterations") or 0)))
             response = invoke_model(final_model, final_request, note=note, step=int(state.get("tool_iterations") or 0),
                                     should_cancel=should_cancel)
@@ -1488,8 +1610,9 @@ class AgentGraphRunner:
             # A reply asked again was still billed: its tokens stay in the run's usage, its tool call does not.
             replies = [AIMessage(content="", usage_metadata=getattr(m, "usage_metadata", None),
                                  response_metadata=getattr(m, "response_metadata", {}) or {}) for m in spent] + replies
-            return {"messages": replies, "final_answer": link_named_files(link_document_citations(
-                replace_result_handles(text, state.get("tool_results"))), _tool_text(state)),
+            answer = link_named_files(link_document_citations(
+                replace_result_handles(text, state.get("tool_results"))), _tool_text(state))
+            return {"messages": replies, "final_answer": _with_kept_sources(answer, tool_context, out_of_steps),
                     **({"clarifications": budget_clarifications} if budget_clarifications else {})}
 
         workflow = StateGraph(AgentState)
