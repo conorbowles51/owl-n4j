@@ -119,21 +119,32 @@ def summarise(trace: list[dict], clarification, usage, seconds: float, budget: i
                        for t, k in zip(trace, kinds)])
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--run')
-    ap.add_argument('--case')
-    ap.add_argument('--question')
-    ap.add_argument('--key-id')
-    ap.add_argument('--key', default='../evidence-engine/tests/phone/planted-truths.json')
-    ap.add_argument('--out', required=True)
-    ap.add_argument('--model', default='deepseek-v4-pro')
-    ap.add_argument('--reasoning', default=None, help='off|high|max; default: the setting (model_choice)')
-    ap.add_argument('--budget', type=int, default=None, help='tool budget; default: the service default')
-    args = ap.parse_args()
-    if not args.run and not (args.case and args.question):
-        raise SystemExit('give --run, or --case and --question')
+def ledger_spent(path: str) -> tuple[int, str | None]:
+    """Tokens the measurement's runs spent so far, and why it stopped (a 402) if it did."""
+    total, stopped = 0, None
+    if os.path.exists(path + '.STOP'):
+        stopped = open(path + '.STOP').read().strip() or 'stopped'
+    if os.path.exists(path):
+        for line in open(path):
+            if line.strip():
+                total += int(json.loads(line).get('tokens') or 0)
+    return total, stopped
 
+
+def record_spend(path: str, run, usage: dict, error: str | None) -> None:
+    """One line per run; a 402 (no balance) stops every later run of the measurement."""
+    tokens = int(usage.get('prompt_tokens') or 0) + int(usage.get('completion_tokens') or 0)
+    with open(path, 'a') as f:
+        f.write(json.dumps({'run': run, 'tokens': tokens, 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                            'error': (error or '')[:200]}) + '\n')
+    if error and ('402' in error or 'Insufficient Balance' in error):
+        with open(path + '.STOP', 'w') as f:
+            f.write('the DeepSeek account answered 402 (no balance) at %s' % time.strftime('%H:%M:%SZ', time.gmtime()))
+
+
+def prepare(args):
+    """The run's question, thread, mandate, guided workflow and hidden tools as the service would send them, read
+    through read-only sessions; (tool budget, the pieces runner.stream takes)."""
     import uuid
     from types import SimpleNamespace
     from sqlalchemy import text
@@ -175,6 +186,13 @@ def main():
         rules = '\n\n'.join(x for x in (AgentService._final_rules(request), focus) if x)
         reasoning = args.reasoning or model_choice.default_reasoning()
 
+    return budget, dict(case_id=case_id, question=question, history=history, artifacts=artifacts, block=block,
+                        hidden=hidden, rules=rules, reasoning=reasoning, run=run, api_key=api_key,
+                        workflow_id=workflow_id)
+
+
+def stub_proposals():
+    """Proposal tools answer 'stubbed' in a replay: nothing is saved anywhere."""
     from services.agent import graph
     real = graph.make_agent_tools
 
@@ -187,14 +205,52 @@ def main():
         return tools
     graph.make_agent_tools = make
 
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--run')
+    ap.add_argument('--case')
+    ap.add_argument('--question')
+    ap.add_argument('--key-id')
+    ap.add_argument('--key', default='../evidence-engine/tests/phone/planted-truths.json')
+    ap.add_argument('--out', required=True)
+    ap.add_argument('--model', default='deepseek-v4-pro')
+    ap.add_argument('--reasoning', default=None, help='off|high|max; default: the setting (model_choice)')
+    ap.add_argument('--budget', type=int, default=None, help='tool budget; default: the service default')
+    ap.add_argument('--spend-budget', type=int, required=True, help=(
+        'model tokens (prompt + completion) the whole measurement may spend, stated before it starts (lx-agentfit '
+        'R8: the app shares the DeepSeek account); runs sharing --spend-ledger stop once it is reached'))
+    ap.add_argument('--spend-ledger', required=True, help='jsonl of tokens spent by each run of this measurement')
+    args = ap.parse_args()
+    if not args.run and not (args.case and args.question):
+        raise SystemExit('give --run, or --case and --question')
+    spent_before, stopped = ledger_spent(args.spend_ledger)
+    if stopped or spent_before >= args.spend_budget:
+        reason = stopped or 'the measurement spent %d of its %d tokens' % (spent_before, args.spend_budget)
+        with open(args.out, 'w') as f:
+            json.dump(dict(run=args.run, case=args.case, key_id=args.key_id, failed='not run: ' + reason), f)
+        print(json.dumps({'failed': 'not run: ' + reason}))
+        raise SystemExit(3)
+
+    budget, ctx = prepare(args)
+    case_id, question, history, artifacts = ctx['case_id'], ctx['question'], ctx['history'], ctx['artifacts']
+    block, hidden, rules, reasoning, run, api_key = (ctx[k] for k in ('block', 'hidden', 'rules', 'reasoning', 'run', 'api_key'))
+    stub_proposals()
+    from services.agent import graph
+
     runner = graph.AgentGraphRunner(provider='deepseek', model_id=args.model, api_key=api_key, reasoning=reasoning)
     started = time.perf_counter()
     final, trace = {}, []
     error = None
     try:
+        def over_budget():
+            usage = runner.spent_so_far() or {}
+            return spent_before + (usage.get('prompt_tokens') or 0) + (usage.get('completion_tokens') or 0) \
+                >= args.spend_budget
         for event in runner.stream(case_id=case_id, messages=history, thread_id='replay', available_artifacts=artifacts,
                                    max_tool_calls=budget, mandate_context_block=block, hidden_tools=hidden,
-                                   final_answer_rules=rules,
+                                   final_answer_rules=rules, should_cancel=over_budget,
                                    proposer=dict(for_name='replay', for_user_id=None, for_email=None, model='replay',
                                                  model_id=args.model, provider='deepseek', run_id=None, thread_id=None,
                                                  can_propose=False)):
@@ -205,6 +261,10 @@ def main():
     except Exception as exc:  # noqa: BLE001 - a failed run is a measured outcome, not a crash of the harness
         error = '%s: %s' % (type(exc).__name__, str(exc)[:300])
     wall = time.perf_counter() - started
+    usage = final.get('usage') or runner.spent_so_far() or {}
+    record_spend(args.spend_ledger, args.run or args.key_id, usage, error)
+    if error and 'AgentRunCancelled' in error:
+        error = 'stopped: the measurement reached its budget of %d tokens' % args.spend_budget
     from services.agent import plain_answer
     answer, _ = plain_answer.checked((final.get('answer') or '').strip())
     with _financial_session() as s:
