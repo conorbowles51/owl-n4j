@@ -25,7 +25,7 @@ import logging
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from postgres.session import get_db
@@ -100,6 +100,15 @@ def precheck_financial_file(
             "look right."
         ),
     ),
+    layouts: list[dict] | None = Body(
+        None,
+        embed=True,
+        description=(
+            "Spreadsheets only: the column mapping per table, as returned in a precheck's layouts with any "
+            "column changed. Left out, the mapping a person confirmed for the same headings in this case is "
+            "used, else the reader's guess."
+        ),
+    ),
     db: Session = Depends(get_db),
 ):
     """What one native bank file says it holds, without storing any of it.
@@ -129,6 +138,7 @@ def precheck_financial_file(
             resolve_path=_resolve_stored_path,
             window=window,
             default_currency=default_currency,
+            layouts=layouts,
         )
     except Exception as e:
         logger.error(
@@ -182,6 +192,15 @@ def ingest_financial_file(
             "not inferred from an account number."
         ),
     ),
+    layouts: list[dict] | None = Body(
+        None,
+        embed=True,
+        description=(
+            "Spreadsheets only: the column mapping per table, as returned in a precheck's layouts with any "
+            "column changed. Left out, the mapping a person confirmed for the same headings in this case is "
+            "used, else the reader's guess."
+        ),
+    ),
     current_user=Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -221,6 +240,7 @@ def ingest_financial_file(
             document_type=document_type,
             institution_name=institution_name,
             actor=current_user,
+            layouts=layouts,
         )
     except Exception as e:
         # The service returns rather than raises for everything the evidence

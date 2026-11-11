@@ -441,6 +441,42 @@ def _subjects_nacha(file: NachaFile, distinguisher: str) -> list[AccountSubject]
     return subjects
 
 
+def _subjects_tabular(reading: NativeReading, distinguisher: str) -> list[AccountSubject]:
+    """One subject per account the spreadsheet's rows name, and no period.
+
+    A spreadsheet export prints no statement period the way a statement does; its first and last rows are
+    not printed bounds, so no period is recorded.  An account the file names (an account column, or an
+    account number in the banner above the table) is observed.  A workbook with several statement sheets
+    and no account number gets one unnamed account per sheet, keyed by the sheet, so two sheets' rows are
+    never put on one account and no account number is invented.
+    """
+    document = reading.document
+    subjects: list[AccountSubject] = []
+    seen: dict[Optional[str], None] = {}
+    for row in reading.rows:
+        key = row.account_key
+        if key in seen:
+            continue
+        seen[key] = None
+        currency = row.reading.currency
+        if key is not None and key.startswith("sheet "):
+            draft = AccountDraft.unidentified(
+                distinguisher=f"{distinguisher}:{key}",
+                institution_name=document.banner_institution,
+                currency=currency,
+            )
+        else:
+            draft = _account_draft(
+                key=key,
+                distinguisher=distinguisher,
+                ordinal=len(seen) - 1,
+                institution_name=document.banner_institution,
+                currency=currency,
+            )
+        subjects.append(AccountSubject(account_key=key, draft=draft, period=None))
+    return subjects
+
+
 # ---------------------------------------------------------------------------
 # The entry point
 # ---------------------------------------------------------------------------
@@ -481,6 +517,8 @@ def describe_subjects(
         subjects = _subjects_mt940(document, window, distinguisher)
     elif fmt is NativeFormat.nacha:
         subjects = _subjects_nacha(document, distinguisher)
+    elif fmt is NativeFormat.tabular:
+        subjects = _subjects_tabular(reading, distinguisher)
     else:
         raise SubjectError(
             f"no subject adapter for native format {fmt!r}; a format that can "

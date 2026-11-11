@@ -111,6 +111,8 @@ RESERVATIONS_METADATA_KEY = "admissibility_reservations"
 
 #: Where a row's reversal flag is kept, there being no column for it.
 REVERSAL_METADATA_KEY = "is_reversal"
+#: Where a spreadsheet row was read (file, sheet, line), so the stored row is labelled as read from the file.
+from services.financial.tabular import ROW_SOURCE_METADATA_KEY  # noqa: E402
 
 #: Where the reason a document's rows carry no period link is kept.
 AMBIGUOUS_PERIOD_METADATA_KEY = "unlinked_period_accounts"
@@ -399,7 +401,11 @@ def _transaction_drafts(
                 statement_period_id=linkable.get(row.account_key),
                 ordering_date=row.ordering_date,
                 ordering_date_source=row.ordering_date_source,
-                metadata={REVERSAL_METADATA_KEY: row.is_reversal},
+                metadata=(
+                    {REVERSAL_METADATA_KEY: row.is_reversal}
+                    if row.source is None
+                    else {REVERSAL_METADATA_KEY: row.is_reversal, ROW_SOURCE_METADATA_KEY: dict(row.source)}
+                ),
             )
         )
     return drafts

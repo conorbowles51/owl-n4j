@@ -35,7 +35,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { financialAPI, type FileIngestion, type FilePrecheck } from "../api"
+import {
+  financialAPI,
+  type FileIngestion,
+  type FilePrecheck,
+  type SpreadsheetLayout,
+} from "../api"
 import { SendToLedgerDialog } from "./SendToLedgerDialog"
 
 const CASE_ID = "case-1"
@@ -124,7 +129,7 @@ function ingestion(overrides: Partial<FileIngestion> = {}): FileIngestion {
   }
 }
 
-function renderDialog(onClose = vi.fn()) {
+function renderDialog(onClose = vi.fn(), fileName = "statement.qbo") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -133,7 +138,7 @@ function renderDialog(onClose = vi.fn()) {
       <SendToLedgerDialog
         caseId={CASE_ID}
         fileId={FILE_ID}
-        fileName="statement.qbo"
+        fileName={fileName}
         open
         onClose={onClose}
       />
@@ -225,7 +230,7 @@ describe("SendToLedgerDialog", () => {
     expect(await screen.findByTestId("precheck-report")).toBeInTheDocument()
     expect(screen.getByText("Can be read")).toBeInTheDocument()
     expect(screen.getByTestId("precheck-rows")).toHaveTextContent(
-      "42 of 42 rows read"
+      "42 of 42 rows will be added"
     )
     expect(screen.getByTestId("precheck-span")).toHaveTextContent(
       "Covering 2024-01-03 to 2024-03-28"
@@ -455,5 +460,80 @@ describe("SendToLedgerDialog", () => {
       expect(screen.queryByTestId("precheck-report")).not.toBeInTheDocument()
     )
     expect(screen.getByTestId("window-start")).toHaveValue("")
+  })
+})
+
+const GUESSED: SpreadsheetLayout = {
+  sheet: null,
+  header_line: 3,
+  headings: ["Date", "Description", "Amount", "Balance"],
+  columns: { date: 0, description: 1, amount: 2, balance: 3 },
+  amount_sign: "negative_is_out",
+  date_order: null,
+  date_order_used: "month_first",
+  date_order_source: "file",
+  layout_key: "k1",
+  source: "guessed",
+}
+
+function spreadsheetReading(layout: SpreadsheetLayout = GUESSED): FilePrecheck {
+  return precheck({
+    file_name: "penn.csv",
+    detected_format: "tabular",
+    row_count: 22,
+    parsed_row_count: 23,
+    skipped: [{ row_index: 4, reason: "line 8: a totals or balance line, not a payment" }],
+    layouts: [layout],
+    unsure_row_count: 0,
+    reader_notes: ["the column mapping is the reader's guess; storing the file confirms it for this layout"],
+  })
+}
+
+describe("SendToLedgerDialog with a spreadsheet", () => {
+  it("shows the guessed mapping and every skipped line before anything is stored", async () => {
+    vi.spyOn(financialAPI, "precheckFile").mockResolvedValue(spreadsheetReading())
+    const write = vi.spyOn(financialAPI, "ingestFile")
+    renderDialog(vi.fn(), "penn.csv")
+    giveTheWindow()
+    fireEvent.click(screen.getByTestId("read-file"))
+
+    expect(await screen.findByTestId("spreadsheet-mapping")).toBeInTheDocument()
+    expect(screen.getByTestId("mapping-source")).toHaveTextContent("The reader guessed this mapping")
+    expect(screen.getByTestId("mapping-column-2")).toHaveValue("amount")
+    expect(screen.getByTestId("precheck-rows")).toHaveTextContent("22 of 23 rows will be added, 1 skipped")
+    expect(screen.getByTestId("skipped-lines")).toHaveTextContent("line 8: a totals or balance line")
+    expect(screen.getByTestId("store-file")).toBeInTheDocument()
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it("stores with the mapping shown, which confirms it", async () => {
+    vi.spyOn(financialAPI, "precheckFile").mockResolvedValue(spreadsheetReading())
+    const write = vi.spyOn(financialAPI, "ingestFile").mockResolvedValue(ingestion({ transactions_stored: 22 }))
+    renderDialog(vi.fn(), "penn.csv")
+    giveTheWindow()
+    fireEvent.click(screen.getByTestId("read-file"))
+    fireEvent.click(await screen.findByTestId("store-file"))
+
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1))
+    expect(write.mock.calls[0][0].layouts).toEqual([GUESSED])
+  })
+
+  it("a changed mapping must be read again before it can be stored", async () => {
+    const changed = { ...GUESSED, columns: { ...GUESSED.columns, balance: null } }
+    const read = vi
+      .spyOn(financialAPI, "precheckFile")
+      .mockResolvedValueOnce(spreadsheetReading())
+      .mockResolvedValueOnce(spreadsheetReading({ ...changed, source: "confirmed" }))
+    renderDialog(vi.fn(), "penn.csv")
+    giveTheWindow()
+    fireEvent.click(screen.getByTestId("read-file"))
+    fireEvent.change(await screen.findByTestId("mapping-column-3"), { target: { value: "" } })
+
+    expect(screen.queryByTestId("store-file")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId("read-with-mapping"))
+
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    expect(read.mock.calls[1][0].layouts?.[0].columns.balance).toBeNull()
+    expect(await screen.findByTestId("store-file")).toBeInTheDocument()
   })
 })

@@ -1,6 +1,11 @@
+import { useState } from "react"
 import { Link } from "react-router-dom"
+import { Button } from "@/components/ui/button"
+import { useFinancialAccess } from "../hooks/use-financial-access"
 import type { StatementFile } from "../hooks/use-statement-register"
 import { FinancialFileAction } from "./FinancialFileAction"
+import { isSpreadsheetName } from "../lib/spreadsheet-layout"
+import { SendToLedgerDialog } from "./SendToLedgerDialog"
 
 /** A source may contain financial evidence without being a PDF statement. */
 export function FinancialSourceFile({
@@ -14,7 +19,10 @@ export function FinancialSourceFile({
   importedPayments?: number
   onVisibilityChanged?: (removed: boolean) => void
 }) {
-  const legacyOffice = /\.(xls|doc)$/i.test(file.original_filename)
+  const legacyOffice = /\.doc$/i.test(file.original_filename)
+  const spreadsheet = isSpreadsheetName(file.original_filename)
+  const { canEdit } = useFinancialAccess()
+  const [reading, setReading] = useState(false)
   return (
     <article
       aria-label={`Financial source ${file.original_filename}`}
@@ -30,9 +38,11 @@ export function FinancialSourceFile({
       <p className="text-sm text-muted-foreground">
         Review the original content in Evidence. Adding this source to Financial
         does not import transactions.
-        {legacyOffice
-          ? " This reader requires XLS to be converted to XLSX or CSV, and DOC to DOCX or PDF. Keep the original as evidence."
-          : " Use the file’s processing controls in Evidence to read its contents or check progress. Reader support depends on the format."}
+        {spreadsheet
+          ? " If it is a bank or payment-app statement, choose Read as a statement to check which column holds the date and the money, and every line, before anything is added."
+          : legacyOffice
+            ? " This reader requires DOC to be converted to DOCX or PDF. Keep the original as evidence."
+            : " Use the file’s processing controls in Evidence to read its contents or check progress. Reader support depends on the format."}
       </p>
       <div className="flex flex-wrap gap-3 items-center">
         <Link
@@ -41,12 +51,31 @@ export function FinancialSourceFile({
         >
           Open source in Evidence
         </Link>
+        {spreadsheet && canEdit && !file.financial_removed && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="read-spreadsheet-statement"
+            onClick={() => setReading(true)}
+          >
+            Read as a statement
+          </Button>
+        )}
         <FinancialFileAction
           caseId={caseId}
           file={file}
           onVisibilityChanged={onVisibilityChanged}
         />
       </div>
+      {reading && (
+        <SendToLedgerDialog
+          caseId={caseId}
+          fileId={file.id}
+          fileName={file.original_filename}
+          open
+          onClose={() => setReading(false)}
+        />
+      )}
     </article>
   )
 }

@@ -740,9 +740,13 @@ it("shows non-PDF financial sources with their original and keeps them out of PD
   expect(source).toHaveTextContent(
     "Adding this source to Financial does not import transactions"
   )
+  // Spreadsheets (XLS included) are read as statements here; only DOC still needs converting.
   expect(
     screen.getByRole("article", { name: "Financial source legacy.xls" })
-  ).toHaveTextContent("converted to XLSX or CSV")
+  ).toHaveTextContent("choose Read as a statement")
+  expect(
+    screen.getByRole("article", { name: "Financial source invoice.docx" })
+  ).not.toHaveTextContent("Read as a statement")
   expect(
     screen.getAllByRole("link", { name: "Open source in Evidence" })[0]
   ).toHaveAttribute(

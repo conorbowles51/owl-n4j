@@ -9,6 +9,7 @@ from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
 from postgres.models.enums import TransactionDirection
 from services.financial.money import Money
+from services.financial.tabular import TABULAR_LAYOUTS_METADATA_KEY, TabularError
 from services.financial.native import CenturyWindow, NativeError, read_native
 from services.financial.bai2 import Bai2Error
 from services.financial.camt053 import Camt053Error
@@ -76,7 +77,11 @@ def correction_native_controls(session, document, rows, *, transaction_id,
         if file is None or file.sha256 != document.sha256_at_ingestion:
             raise ValueError('Native source identity differs from ingestion.')
         data = _source_bytes(file.stored_path, file.sha256, resolve_path)
-        native = read_native(data, window=window, default_currency=document.currency)
+        # A spreadsheet is read again by its name and with the mapping it was stored with, so the row
+        # indices and hashes are the ones the stored rows carry.
+        native = read_native(data, window=window, default_currency=document.currency,
+                             file_name=getattr(file, 'original_filename', None),
+                             layouts=(getattr(document, 'metadata_', None) or {}).get(TABULAR_LAYOUTS_METADATA_KEY))
         expected = dict(zip((r.row_index for r in native.rows), native.content_hashes()))
         if expected != {r.row_index: r.content_hash for r in originals}:
             raise ValueError('Fresh native parsing does not match every retained original reading.')
@@ -100,5 +105,5 @@ def correction_native_controls(session, document, rows, *, transaction_id,
             proposed=recheck_native_controls(native, proposed),
             current_transaction_ids=[str(r.id) for r in sorted(current, key=lambda r: r.row_index)],
             limitation='Conditional arithmetic on verified original bytes and current readings. Source interpretation and proof class are not approved by these checks.')
-    except (ValueError, NativeError, Bai2Error, Camt053Error, Mt940Error, NachaError) as exc:
+    except (ValueError, NativeError, TabularError, Bai2Error, Camt053Error, Mt940Error, NachaError) as exc:
         return dict(available=False, reason=str(exc))

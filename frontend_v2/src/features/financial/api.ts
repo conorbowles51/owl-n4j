@@ -658,6 +658,49 @@ export interface FilePrecheck {
   accounts: PrecheckAccount[]
   unattributed_keys: (string | null)[]
   unattributed_row_count: number
+  /** Spreadsheets only: the column mapping per table. Absent or empty for bank files. */
+  layouts?: SpreadsheetLayout[]
+  /** Spreadsheets only: skipped lines the reader could not read with certainty. */
+  unsure_row_count?: number
+  /** Spreadsheets only: what the reader wants the person to know before storing. */
+  reader_notes?: string[]
+}
+
+/** The roles a spreadsheet column can be given. Mirrors `ROLES` in `services/financial/tabular.py`. */
+export const SPREADSHEET_ROLES = [
+  "date",
+  "posted_date",
+  "description",
+  "memo",
+  "amount",
+  "debit",
+  "credit",
+  "balance",
+  "type",
+  "status",
+  "counterparty",
+  "from_party",
+  "to_party",
+  "reference",
+  "currency",
+  "account",
+] as const
+export type SpreadsheetRole = (typeof SPREADSHEET_ROLES)[number]
+
+/** One table's column mapping: guessed by the reader, or confirmed by a person when a file was stored. */
+export interface SpreadsheetLayout {
+  sheet: string | null
+  header_line: number
+  headings: string[]
+  columns: Partial<Record<SpreadsheetRole, number | null>>
+  amount_sign: "negative_is_out" | "negative_is_in"
+  date_order: "month_first" | "day_first" | null
+  date_order_used?: "month_first" | "day_first" | null
+  date_order_source?: "file" | "confirmed" | "undetermined"
+  layout_key: string
+  source: "guessed" | "confirmed"
+  confirmed_by?: { user_id: string | null; name: string | null; email: string | null } | null
+  confirmed_at?: string | null
 }
 
 /** The shape of `FileIngestion.as_dict()`. */
@@ -698,6 +741,8 @@ export interface IngestWindowParams {
   /** `YYYY-MM-DD`. Latest date this matter's evidence may fall in. */
   windowEnd: string
   defaultCurrency?: string
+  /** Spreadsheets only: the mapping to read with, as shown by a precheck and changed by the person. */
+  layouts?: SpreadsheetLayout[]
 }
 
 function ingestWindowQuery(params: IngestWindowParams): URLSearchParams {
@@ -1845,6 +1890,7 @@ export const financialAPI = {
       `/api/financial/precheck?${ingestWindowQuery(params)}`,
       {
         method: "POST",
+        ...(params.layouts ? { body: { layouts: params.layouts } } : {}),
       }
     ),
 
@@ -1868,6 +1914,7 @@ export const financialAPI = {
       qs.set("institution_name", params.institutionName)
     return fetchAPI<FileIngestion>(`/api/financial/ingest?${qs}`, {
       method: "POST",
+      ...(params.layouts ? { body: { layouts: params.layouts } } : {}),
     })
   },
 

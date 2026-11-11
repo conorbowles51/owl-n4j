@@ -67,7 +67,9 @@ import {
   wouldStore,
 } from "../lib/ingest-format"
 import { formatLedgerAmount } from "../lib/ledger-format"
-import type { FilePrecheck } from "../api"
+import type { FilePrecheck, SpreadsheetLayout } from "../api"
+import { SkippedLines, SpreadsheetMapping } from "./SpreadsheetMapping"
+import { isSpreadsheetName } from "../lib/spreadsheet-layout"
 
 interface SendToLedgerDialogProps {
   caseId: string
@@ -159,6 +161,11 @@ function SendToLedgerDialogForm({
   const [windowStart, setWindowStart] = useState("")
   const [windowEnd, setWindowEnd] = useState("")
   const [defaultCurrency, setDefaultCurrency] = useState("")
+  // The mapping as the person has it now; null until a spreadsheet reading arrives. It differs from the
+  // reading's own layouts only when the person changed something, and then the file must be read again
+  // before it can be stored, so what is stored is what was shown.
+  const [draftLayouts, setDraftLayouts] = useState<SpreadsheetLayout[] | null>(null)
+  const spreadsheet = isSpreadsheetName(fileName)
 
   const precheck = usePrecheckFile(caseId)
   const ingest = useIngestFile(caseId)
@@ -166,6 +173,10 @@ function SendToLedgerDialogForm({
   const reading = precheck.data
   const written = ingest.data
   const busy = precheck.isPending || ingest.isPending
+  const readLayouts = reading?.layouts ?? []
+  const shownLayouts = draftLayouts ?? readLayouts
+  const mappingChanged =
+    draftLayouts !== null && JSON.stringify(draftLayouts) !== JSON.stringify(readLayouts)
 
   const reset = () => {
     precheck.reset()
@@ -173,6 +184,7 @@ function SendToLedgerDialogForm({
     setWindowStart("")
     setWindowEnd("")
     setDefaultCurrency("")
+    setDraftLayouts(null)
   }
 
   const close = () => {
@@ -196,8 +208,14 @@ function SendToLedgerDialogForm({
     precheck.mutate(params)
   }
 
+  const handleReadWithMapping = () => {
+    const layouts = draftLayouts ?? readLayouts
+    precheck.mutate({ ...params, layouts }, { onSuccess: () => setDraftLayouts(null) })
+  }
+
   const handleStore = () => {
-    ingest.mutate(params)
+    // The layouts of the reading on screen: storing confirms exactly the mapping the person saw.
+    ingest.mutate(readLayouts.length > 0 ? { ...params, layouts: readLayouts } : params)
   }
 
   const canRead = Boolean(windowStart && windowEnd) && !busy
@@ -218,8 +236,10 @@ function SendToLedgerDialogForm({
             Send to ledger
           </DialogTitle>
           <DialogDescription>
-            <span className="font-medium">{fileName ?? fileId}</span> is a bank
-            file. Reading it here shows what it holds before anything is stored.
+            <span className="font-medium">{fileName ?? fileId}</span>{" "}
+            {spreadsheet
+              ? "is a spreadsheet. Reading it here shows which column the reader takes for the date, the money and the balance, and every line it would add, before anything is stored."
+              : "is a bank file. Reading it here shows what it holds before anything is stored."}
           </DialogDescription>
         </DialogHeader>
 
@@ -283,6 +303,14 @@ function SendToLedgerDialogForm({
           )}
 
           {reading && !written && <PrecheckReport precheck={reading} />}
+
+          {reading && !written && shownLayouts.length > 0 && (
+            <SpreadsheetMapping
+              layouts={shownLayouts}
+              disabled={busy}
+              onChange={(next) => setDraftLayouts(next)}
+            />
+          )}
 
           {written && (
             <div
@@ -355,13 +383,28 @@ function SendToLedgerDialogForm({
             <>
               <Button
                 variant="outline"
-                onClick={() => precheck.reset()}
+                onClick={() => {
+                  precheck.reset()
+                  setDraftLayouts(null)
+                }}
                 disabled={busy}
                 data-testid="read-again"
               >
                 Change dates
               </Button>
-              {wouldStore(reading) && (
+              {mappingChanged && (
+                <Button
+                  onClick={handleReadWithMapping}
+                  disabled={busy}
+                  data-testid="read-with-mapping"
+                >
+                  {precheck.isPending && (
+                    <LoadingSpinner className="mr-1.5 size-3.5" />
+                  )}
+                  Read again with this mapping
+                </Button>
+              )}
+              {!mappingChanged && wouldStore(reading) && (
                 <Button
                   onClick={handleStore}
                   disabled={busy}
@@ -418,9 +461,10 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
           className="text-xs text-muted-foreground"
           data-testid="precheck-rows"
         >
-          {precheck.parsed_row_count ?? precheck.row_count} of{" "}
-          {precheck.row_count} row
-          {precheck.row_count === 1 ? "" : "s"} read
+          {precheck.row_count} of{" "}
+          {precheck.parsed_row_count ?? precheck.row_count} row
+          {(precheck.parsed_row_count ?? precheck.row_count) === 1 ? "" : "s"}{" "}
+          will be added
           {precheck.skipped.length > 0 &&
             `, ${precheck.skipped.length} skipped`}
           .
@@ -453,6 +497,24 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
             />
           ))}
         </div>
+      )}
+
+      {(precheck.reader_notes ?? []).length > 0 && (
+        <ul
+          className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground"
+          data-testid="precheck-notes"
+        >
+          {(precheck.reader_notes ?? []).map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      )}
+
+      {(precheck.layouts ?? []).length > 0 && (
+        <SkippedLines
+          skipped={precheck.skipped}
+          unsure={precheck.unsure_row_count ?? 0}
+        />
       )}
 
       {precheck.unattributed_row_count > 0 && (

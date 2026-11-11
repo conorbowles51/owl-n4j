@@ -502,6 +502,7 @@ class ReturnShapeTests(SubjectTestCase):
             NativeFormat.bai2,
             NativeFormat.mt940,
             NativeFormat.nacha,
+            NativeFormat.tabular,  # _subjects_tabular; covered in test_financial_tabular
         }
         self.assertEqual(set(NativeFormat), covered)
 

@@ -142,6 +142,20 @@ def recheck_native_controls(native: NativeReading,
                 trailer(scope, account.control_total, delta)
             trailer(f"group:{group_number}", group.control_total)
         trailer("file", document.control_total)
+    elif native.format == NativeFormat.tabular:
+        # A spreadsheet's only control is its balance column: each printed balance must follow from the one
+        # before and the amount between, in file order (oldest first or newest first).
+        rows = sorted(native.rows, key=lambda row: row.row_index)
+        signed = [(-1 if readings[row.row_index].direction is TransactionDirection.debit else 1)
+                  * readings[row.row_index].amount.minor_units for row in rows]
+        balances = [row.reading.running_balance_minor for row in rows]
+        if len(rows) < 2 or any(balance is None for balance in balances):
+            add("file", "balance", {"status": "unavailable", "breaks": 0})
+        else:
+            oldest = sum(1 for i in range(1, len(rows)) if balances[i - 1] + signed[i] != balances[i])
+            newest = sum(1 for i in range(1, len(rows)) if balances[i] + signed[i - 1] != balances[i - 1])
+            breaks = min(oldest, newest)
+            add("file", "balance", {"status": "balanced" if breaks == 0 else "unbalanced", "breaks": breaks})
     else:
         raise ValueError("Unsupported native format")
     return {

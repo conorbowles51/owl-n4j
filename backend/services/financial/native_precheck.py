@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, Sequence
 
 from services.financial.accounts import AccountDraft
 from services.financial.money import Money
@@ -66,9 +66,16 @@ from services.financial.native import (
     AmbiguousFormatError,
     CenturyWindow,
     DateResolutionError,
+    NativeFormat,
     NativeReading,
     UnrecognisedFormatError,
     read_native,
+)
+from services.financial.tabular import (
+    TABULAR_LAYOUTS_METADATA_KEY,
+    TabularError,
+    public_layouts,
+    tabular_kind,
 )
 from services.financial.native_subjects import (
     AccountSubject,
@@ -289,6 +296,13 @@ class FilePrecheck:
     #: Non-empty means ingestion would raise ``UnattributableRowError``.
     unattributed_keys: tuple[Optional[str], ...] = ()
     unattributed_row_count: int = 0
+    #: A spreadsheet's column mapping per table: the reader's guess or the one a person confirmed, with the
+    #: headings, so the person can see and change it before storing.  Empty for the byte formats.
+    layouts: tuple[dict, ...] = ()
+    #: Skipped lines the reader could not read with certainty (a subset of ``skipped``).
+    unsure_row_count: int = 0
+    #: What a spreadsheet reader wants the person to know before storing (a guessed mapping, a balance break).
+    reader_notes: tuple[str, ...] = ()
 
     @property
     def would_ingest(self) -> bool:
@@ -330,6 +344,9 @@ class FilePrecheck:
             "accounts": [account.as_dict() for account in self.accounts],
             "unattributed_keys": list(self.unattributed_keys),
             "unattributed_row_count": self.unattributed_row_count,
+            "layouts": [dict(layout) for layout in self.layouts],
+            "unsure_row_count": self.unsure_row_count,
+            "reader_notes": list(self.reader_notes),
         }
 
 
@@ -363,6 +380,17 @@ def _reading_facts(reading: NativeReading) -> dict:
         ),
         "earliest_ordering_date": dates[0] if dates else None,
         "latest_ordering_date": dates[-1] if dates else None,
+        "layouts": (
+            tuple(public_layouts(reading.document))
+            if reading.format is NativeFormat.tabular else ()
+        ),
+        "reader_notes": (
+            tuple(reading.document.notes) if reading.format is NativeFormat.tabular else ()
+        ),
+        "unsure_row_count": (
+            sum(1 for row in reading.document.rows if row.unsure)
+            if reading.format is NativeFormat.tabular else 0
+        ),
     }
 
 
@@ -561,6 +589,7 @@ def parse_bytes(
     file_id: str,
     file_name: Optional[str] = None,
     default_currency: Optional[str] = None,
+    layouts: Optional[Sequence[dict]] = None,
 ) -> NativeParse:
     """Parse one native file's bytes, or say in one word why it did not parse.
 
@@ -570,8 +599,11 @@ def parse_bytes(
     """
     try:
         reading = read_native(
-            data, window=window, default_currency=default_currency
+            data, window=window, default_currency=default_currency,
+            file_name=file_name, layouts=layouts,
         )
+    except TabularError as exc:
+        return _unparsed(file_id, file_name, PrecheckOutcome.unreadable, str(exc))
     except UnrecognisedFormatError as exc:
         return _unparsed(
             file_id, file_name, PrecheckOutcome.unrecognised, str(exc)
@@ -604,6 +636,7 @@ def parse_path(
     file_id: str,
     file_name: Optional[str] = None,
     default_currency: Optional[str] = None,
+    layouts: Optional[Sequence[dict]] = None,
 ) -> NativeParse:
     """Open one file in full and parse it.
 
@@ -657,6 +690,7 @@ def parse_path(
         file_id=file_id,
         file_name=file_name,
         default_currency=default_currency,
+        layouts=layouts,
     )
 
 
@@ -691,6 +725,7 @@ def precheck_path(
     file_id: str,
     file_name: Optional[str] = None,
     default_currency: Optional[str] = None,
+    layouts: Optional[Sequence[dict]] = None,
 ) -> FilePrecheck:
     """Open one file in full and describe it."""
     return _described(
@@ -700,6 +735,7 @@ def precheck_path(
             file_id=file_id,
             file_name=file_name,
             default_currency=default_currency,
+            layouts=layouts,
         ),
         window=window,
         distinguisher=distinguisher,
@@ -769,6 +805,7 @@ def precheck_case_file(
     resolve_path: Callable[[Optional[str]], Optional[Path]],
     window: CenturyWindow,
     default_currency: Optional[str] = None,
+    layouts: Optional[Sequence[dict]] = None,
 ) -> FilePrecheck:
     """Describe one evidence file, if it belongs to this case.
 
@@ -799,6 +836,7 @@ def precheck_case_file(
         file_id=located.file_id,
         file_name=located.file_name,
         default_currency=default_currency,
+        layouts=_layouts_for(db, case_id, located.file_name, layouts),
     )
 
 
@@ -810,6 +848,7 @@ def read_case_file(
     resolve_path: Callable[[Optional[str]], Optional[Path]],
     window: CenturyWindow,
     default_currency: Optional[str] = None,
+    layouts: Optional[Sequence[dict]] = None,
 ) -> NativeParse:
     """Locate and parse one evidence file, without describing what is in it.
 
@@ -833,5 +872,67 @@ def read_case_file(
         file_id=located.file_id,
         file_name=located.file_name,
         default_currency=default_currency,
+        layouts=_layouts_for(db, case_id, located.file_name, layouts),
     )
     return dataclasses.replace(parse, sha256=located.sha256)
+
+
+def _layouts_for(
+    db: "Session", case_id: uuid.UUID, file_name: Optional[str], given: Optional[Sequence[dict]]
+) -> Optional[list[dict]]:
+    """The mappings to read a spreadsheet with: the ones sent, then the ones a person confirmed in this case.
+
+    A mapping sent with the request wins for its layout.  Every other layout takes the mapping a person
+    confirmed when they stored an earlier file with the same headings in this case, so a layout is
+    confirmed once.  Not a spreadsheet: ``None``, and nothing is looked up.
+    """
+    if tabular_kind(file_name) is None:
+        return None
+    stored = confirmed_layouts(db, case_id)
+    by_key = {layout.get("layout_key"): layout for layout in stored}
+    chosen: list[dict] = []
+    for layout in given or []:
+        if not isinstance(layout, dict):
+            continue
+        # Who confirmed a mapping is never taken from the request.  A sent mapping identical to one stored in
+        # the case keeps that confirmation; any other is confirmed by the person who stores the file.
+        sent = {key: value for key, value in layout.items() if key not in _CONFIRMATION_FIELDS}
+        earlier = by_key.get(sent.get("layout_key"))
+        if earlier is not None and all(sent.get(key) == earlier.get(key) for key in _MAPPING_FIELDS):
+            sent.update({key: earlier.get(key) for key in _CONFIRMATION_FIELDS if earlier.get(key)})
+        chosen.append(dict(sent, source="confirmed"))
+    keys = {layout.get("layout_key") for layout in chosen}
+    for layout in stored:
+        if layout.get("layout_key") not in keys:
+            chosen.append(layout)
+            keys.add(layout.get("layout_key"))
+    return chosen
+
+
+_CONFIRMATION_FIELDS = ("confirmed_by", "confirmed_at", "confirmed_document_id")
+_MAPPING_FIELDS = ("columns", "amount_sign", "date_order")
+
+
+def confirmed_layouts(db: "Session", case_id: uuid.UUID) -> list[dict]:
+    """Spreadsheet mappings people confirmed in this case, newest first, one per layout."""
+    from postgres.models.financial import FinancialSourceDocument
+
+    documents = (
+        db.query(FinancialSourceDocument)
+        .filter(
+            FinancialSourceDocument.case_id == case_id,
+            FinancialSourceDocument.document_type == NativeFormat.tabular.value,
+        )
+        .order_by(FinancialSourceDocument.created_at.desc())
+        .limit(500)
+        .all()
+    )
+    found: list[dict] = []
+    seen: set = set()
+    for document in documents:
+        for layout in (document.metadata_ or {}).get(TABULAR_LAYOUTS_METADATA_KEY) or []:
+            key = layout.get("layout_key")
+            if key and key not in seen:
+                seen.add(key)
+                found.append(dict(layout, source="confirmed", confirmed_document_id=str(document.id)))
+    return found

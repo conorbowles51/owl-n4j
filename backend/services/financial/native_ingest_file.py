@@ -235,6 +235,39 @@ def existing_document_for(
     )
 
 
+def _confirmed_layouts(parse: NativeParse, actor: Any) -> Optional[dict]:
+    """For a spreadsheet, the mapping it was stored with, recorded as confirmed by the person storing it.
+
+    Storing is the person's act: the dialog showed them this mapping and the rows it reads, so the mapping
+    is theirs from here on and the next file with the same headings in the case is read with it.  A mapping
+    a person confirmed earlier keeps its first confirmer.
+    """
+    from datetime import datetime, timezone
+
+    from services.financial.native import NativeFormat
+    from services.financial.tabular import TABULAR_LAYOUTS_METADATA_KEY, public_layouts
+
+    reading = parse.reading
+    if reading is None or reading.format is not NativeFormat.tabular:
+        return None
+    who = None
+    if actor is not None:
+        who = {
+            "user_id": str(getattr(actor, "id", "") or "") or None,
+            "name": getattr(actor, "name", None) or getattr(actor, "full_name", None),
+            "email": getattr(actor, "email", None),
+        }
+    now = datetime.now(timezone.utc).isoformat()
+    layouts = []
+    for layout in public_layouts(reading.document):
+        if layout.get("source") == "confirmed" and layout.get("confirmed_by"):
+            layouts.append(layout)
+            continue
+        layouts.append({**layout, "source": "confirmed", "confirmed_by": who, "confirmed_at": now,
+                        "confirmed_document_id": None})
+    return {TABULAR_LAYOUTS_METADATA_KEY: layouts, "file_name": parse.file_name}
+
+
 def _unread(parse: NativeParse) -> FileIngestion:
     """A parse that never happened, as an outcome.  No run was opened."""
     outcome = READING_OUTCOMES.get(
@@ -260,6 +293,7 @@ def ingest_case_file(
     institution_name: Optional[str] = None,
     actor: Any = None,
     session_factory: Any = None,
+    layouts: Optional[list] = None,
 ) -> FileIngestion:
     """Read one evidence file and store what it holds, under a recorded run.
 
@@ -285,6 +319,7 @@ def ingest_case_file(
         resolve_path=resolve_path,
         window=window,
         default_currency=default_currency,
+        layouts=layouts,
     )
     if parse.reading is None or not parse.sha256:
         return _unread(parse)
@@ -337,6 +372,7 @@ def ingest_case_file(
                     window=window,
                     document_type=document_type,
                     institution_name=institution_name,
+                    metadata=_confirmed_layouts(parse, actor),
                 )
                 # Inside the block on purpose: a commit that fails has failed
                 # the run, and terminating it ``completed`` first would put a

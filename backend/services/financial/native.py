@@ -133,6 +133,7 @@ from services.financial.references import (
     document_ref_ids,
 )
 from services.financial.version import UNVERIFIED, code_fingerprint_detail
+from services.financial import tabular
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +215,10 @@ class NativeFormat(str, Enum):
     bai2 = "bai2"
     mt940 = "mt940"
     nacha = "nacha"
+    #: A bank or payment-app statement exported as CSV, XLSX or XLS (:mod:`services.financial.tabular`).
+    #: Never claimed by sniffing: a spreadsheet has no signature, so it is chosen by the file's ending
+    #: when none of the four byte formats claims the bytes.
+    tabular = "tabular"
 
 
 #: The locator every row of a given format carries, taken from the parser that
@@ -223,6 +228,7 @@ NATIVE_LOCATORS: dict[NativeFormat, Locator] = {
     NativeFormat.bai2: BAI2_LOCATOR,
     NativeFormat.mt940: MT940_LOCATOR,
     NativeFormat.nacha: NACHA_LOCATOR,
+    NativeFormat.tabular: tabular.LOCATOR,
 }
 
 
@@ -499,7 +505,7 @@ def sniff(data: bytes) -> tuple[NativeFormat, ...]:
         return ()
     text = _sniff_text(head)
     first = _first_content_line(text)
-    return tuple(fmt for fmt in NativeFormat if _CLAIMS[fmt](text, first))
+    return tuple(fmt for fmt in _CLAIMS if _CLAIMS[fmt](text, first))
 
 
 # A PDF, an Office or zip container or an image is a document, never one of the four text formats. Its compressed
@@ -547,6 +553,9 @@ class NativeRow:
     ordering_date: date
     ordering_date_source: DateSource
     is_reversal: bool
+    #: Where in the file the row was read, for formats with lines a person can open: a spreadsheet's file,
+    #: sheet and line.  Stored on the transaction so the row is labelled as read from the file.
+    source: Optional[dict] = None
 
     def __post_init__(self) -> None:
         if isinstance(self.ordering_date, datetime) or not isinstance(
@@ -676,6 +685,7 @@ class _RowCollector:
         ordering_date: date,
         ordering_date_source: DateSource,
         is_reversal: bool,
+        source: Optional[dict] = None,
         **reading_fields: object,
     ) -> None:
         """Build one row, or record why the reading would not hold together.
@@ -700,6 +710,7 @@ class _RowCollector:
                 ordering_date=ordering_date,
                 ordering_date_source=ordering_date_source,
                 is_reversal=is_reversal,
+                source=source,
             )
         )
         self._index += 1
@@ -989,6 +1000,34 @@ def _rows_nacha(file: NachaFile, window: CenturyWindow) -> _RowCollector:
     return collector
 
 
+def _rows_tabular(document: "tabular.TabularDocument") -> _RowCollector:
+    """Spreadsheet lines as ledger rows; every line that is not one is skipped with its line and reason."""
+    collector = _RowCollector(NativeFormat.tabular)
+    for row in document.rows:
+        where = f"{'sheet ' + repr(row.sheet) + ' ' if row.sheet else ''}line {row.line}"
+        if row.skip is not None:
+            collector.skip(f"{where}: {'unsure, ' if row.unsure else ''}{row.skip}")
+            continue
+        collector.add(
+            account_key=row.account_key,
+            ordering_date=row.when,
+            ordering_date_source=tabular.DATE_SOURCE,
+            is_reversal=False,
+            source=tabular.row_source(document, row),
+            currency=row.currency,
+            amount_minor=tabular.to_minor(row.amount),
+            direction=tabular.row_direction(row.amount),
+            transaction_date=row.when,
+            posted_date=row.posted,
+            running_balance_minor=None if row.balance is None else int((row.balance * 100).to_integral_value()),
+            description=row.description,
+            counterparty_raw=row.counterparty,
+            transaction_type=row.kind,
+            bank_reference=row.reference,
+        )
+    return collector
+
+
 # ---------------------------------------------------------------------------
 # The entry point
 # ---------------------------------------------------------------------------
@@ -1000,6 +1039,8 @@ def read_native(
     window: CenturyWindow,
     default_currency: Optional[str] = None,
     fmt: Optional[NativeFormat] = None,
+    file_name: Optional[str] = None,
+    layouts: Optional[Sequence[dict]] = None,
 ) -> NativeReading:
     """Read one native bank file as ledger rows that carry their own provenance.
 
@@ -1020,9 +1061,18 @@ def read_native(
     ``None``, the format is detected by exclusive claim.
     """
     payload = bytes(data)
+    if fmt is None and tabular.tabular_kind(file_name) and not sniff(payload):
+        fmt = NativeFormat.tabular
     chosen = fmt if fmt is not None else detect_format(payload)
 
-    if chosen is NativeFormat.camt053:
+    layer = ExtractionLayer.native
+    if chosen is NativeFormat.tabular:
+        document = tabular.read_tabular_document(
+            payload, file_name=file_name, window=window,
+            default_currency=default_currency, layouts=layouts)
+        collector = _rows_tabular(document)
+        layer = tabular.EXTRACTION_LAYER
+    elif chosen is NativeFormat.camt053:
         document: object = parse_camt053(payload)
         collector = _rows_camt053(document)  # type: ignore[arg-type]
     elif chosen is NativeFormat.bai2:
@@ -1048,6 +1098,7 @@ def read_native(
         rows=collector.rows,
         unmapped=collector.unmapped,
         document=document,
+        extraction_layer=layer,
     )
     # Checked on every read rather than only under test.  The invariant is
     # cheap to verify and the failure it catches — a row counted twice or not
