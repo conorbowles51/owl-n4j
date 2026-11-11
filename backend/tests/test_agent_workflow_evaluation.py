@@ -73,7 +73,9 @@ QUESTIONS = [
     ("WF10", "procurement-kickbacks", "Can the procurement workflow run on this case?", R, {}, [NO_DOCS], None, None),
     ("WF11", "procurement-kickbacks", "Were Sam's and Ana's phones together in March 2023?", "get_together_apart",
      dict(SA, start="2023-03-01", end="2023-03-31"), "refused", [],
-     lambda d: "No phone in this case is linked to this person" in d["_summary"]),
+     # The refusal names the person and says no identity suggestion ties a phone to them (58e11e8e1).
+     lambda d: "No phone in this case is linked to Ana Synthetic" in d["_summary"]
+     and "no identity suggestion" in d["_summary"]),
     ("WF12", "procurement-kickbacks", "Was the USD 70.00 leg to Ana discussed?", "get_payment_conversation",
      {"payment": "@t_quiet"}, 0, [], lambda d: d["outcome"] == "no_conversation_in_window"),
     # 5 Expense fraud
