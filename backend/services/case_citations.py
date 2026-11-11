@@ -353,12 +353,16 @@ def canonicalize(session, case_id, text: str | None) -> str:
 
 _BARE = re.compile(r"\[\s*((?:doc|txn|rec)://[^\]\s()]+)\s*\](?![(\]])")
 _BARE_LABEL = {"doc": "document", "txn": "payment", "rec": "record"}
+# the scheme written twice (``rec://rec://<id>``, live 10 Nov 2026): such a link parses as nothing, so the check
+# neither counted nor flagged it; the repeated scheme is dropped
+_DOUBLED = re.compile(r"\b(doc|txn|rec)://(?:\1://)+")
 
 
 def link_bare_citations(text: str) -> str:
-    """A citation the model wrote in brackets with no link (``[rec://<id>]``, ``[doc://<id>/3]``) cannot be opened and
+    """A citation written with its scheme twice (``rec://rec://<id>``) keeps one. A citation the model wrote in brackets with no link (``[rec://<id>]``, ``[doc://<id>/3]``) cannot be opened and
     is not seen by the check, which reads Markdown links only: it becomes ``[record](rec://<id>)``, so the screen can
     open it and the check counts it. The target is never changed; a bracket that is already a link label is left."""
+    text = _DOUBLED.sub(r"\1://", text)
     return _BARE.sub(lambda m: f"[{_BARE_LABEL[m.group(1).split(':', 1)[0]]}]({m.group(1)})", text)
 
 

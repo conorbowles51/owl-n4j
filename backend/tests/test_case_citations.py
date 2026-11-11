@@ -46,6 +46,13 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(len(C.citations_in(out)), 5)
 
 
+    def test_a_scheme_written_twice_is_written_once_and_counted(self):
+        rid, fid = str(uuid.uuid4()), str(uuid.uuid4())
+        out = C.link_bare_citations(f"[rec://rec://{rid}](rec://rec://{rid}) and [doc://doc://{fid}/2]")
+        self.assertEqual(out, f"[rec://{rid}](rec://{rid}) and [document](doc://{fid}/2)")
+        self.assertEqual([c.href for c in C.citations_in(out)], [f"rec://{rid}", f"doc://{fid}/2"])
+
+
 class CaseCheckTests(LedgerToolFixture):
     def _file(self, name, case=None, **extra):
         self._file_index += 1
