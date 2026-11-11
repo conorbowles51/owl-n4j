@@ -417,7 +417,10 @@ def _backfill_marks(session):
 
 
 def _marked_none(session):
+    # An internal statement copy (hidden, same bytes as its original) is the reading of a file, not an upload.
+    from services.financial.source_lineage import visible_evidence_condition
     query = (select(EvidenceFile).where(EvidenceFile.metadata_[MARK]['state'].as_string().is_(None),
+             visible_evidence_condition(),
              func.lower(EvidenceFile.original_filename).like('%.pdf'),
              func.coalesce(EvidenceFile.source_type, '').notin_(PHONE_SOURCE_TYPES),
              ~func.coalesce(EvidenceFile.stored_path, '').like(ARCHIVE_MEMBER_PREFIX + '%'))

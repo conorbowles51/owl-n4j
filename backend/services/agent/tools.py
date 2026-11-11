@@ -2117,7 +2117,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         gap_note = meaning_search.gap_sentence(gap)
         coverage = {"search": "meaning", "note": gap_note,
                     "documents_without_vector": (gap or {}).get("documents_without_vector"),
-                    "documents_with_text": (gap or {}).get("documents_with_text")}
+                    "documents_with_text": (gap or {}).get("documents_with_text"),
+                    "documents_without_text": (gap or {}).get("documents_without_text")}
         return context.result(
             "search_documents",
             {"available": True, "search": "meaning", "health": health, "chunks": compact, "count": len(compact),

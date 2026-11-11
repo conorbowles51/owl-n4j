@@ -325,6 +325,12 @@ class EvidenceProcessingTests(AutoReadBase):
             self.assertEqual(source.status, 'unprocessed')  # the Evidence pipeline still processes it
             self.assertEqual(version.metadata_['statement_root_evidence_id'], str(original))
             self.assertEqual(version.sha256, source.sha256)
+        # The internal copy is never itself checked as an earlier upload (11 Nov: demo b75f3f2c's 22 copies were
+        # marked 'evidence_backfill', so they read as second evidence rows of their statements).
+        with patch('services.financial.auto_read.detect_enabled', return_value=True):
+            auto_read.sweep(self.f.SessionLocal, Path)
+        with self.f.SessionLocal() as db:
+            self.assertIsNone((db.get(EvidenceFile, asked[0]).metadata_ or {}).get(auto_read.MARK))
         # Evidence processing of the original is not refused or skipped.
         from services.evidence_processing_service import process_db_files
         with self.f.SessionLocal() as db, \

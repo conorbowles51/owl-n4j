@@ -331,21 +331,29 @@ def vector_gap(case_id: str, *, db=None, collection=None, fresh: bool = False) -
                 return None
             collection = service.chunk_collection
 
+        from sqlalchemy import func
+        from services.financial.source_lineage import visible_evidence_condition
+
         def rows(session):
-            return session.execute(
-                select(EvidenceFile.id, EvidenceFile.original_filename)
+            # Only documents a person sees: an internal statement copy (same bytes as its original, hidden from
+            # Evidence) is searched through its original. A document whose reading found no text (a photo, a
+            # handwritten plan) has nothing to embed; it is counted on its own, never as a missing vector.
+            found = session.execute(
+                select(EvidenceFile.id, EvidenceFile.original_filename,
+                       func.coalesce(EvidenceDocumentText.character_count,
+                                     func.char_length(EvidenceDocumentText.content)))
                 .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
-                .where(EvidenceFile.case_id == UUID(case_id),
-                       EvidenceFile.source_type.is_distinct_from("phone_text"))
+                .where(EvidenceFile.case_id == UUID(case_id), visible_evidence_condition())
             ).all()
+            return [(fid, name) for fid, name, size in found if size], sum(1 for *_, size in found if not size)
 
         if db is None:
             from postgres.session import get_background_session
             with get_background_session() as session:
-                files = rows(session)
+                files, empty = rows(session)
                 pending = pending_chunk_counts(session, case_id=case_id)
         else:
-            files = rows(db)
+            files, empty = rows(db)
             pending = pending_chunk_counts(db, case_id=case_id)
         refs = _searchable_vector_refs(collection, case_id)
         file_ids = {str(fid) for fid, _ in files}
@@ -358,6 +366,7 @@ def vector_gap(case_id: str, *, db=None, collection=None, fresh: bool = False) -
                    if str(fid) in pending or (str(fid) not in ids and str(name) not in names)]
         gap = {"documents_with_text": len(files), "documents_with_vector": len(files) - len(missing),
                "documents_without_vector": len(missing), "missing_evidence_file_ids": missing,
+               "documents_without_text": empty,
                "documents_with_pending_chunks": len(pending), "pending_chunks": sum(pending.values()),
                "pending_evidence_file_ids": sorted(pending),
                "measured_at": _now().isoformat()}

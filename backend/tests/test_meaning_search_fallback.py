@@ -248,6 +248,33 @@ class ReviewFindingTests(Fixture):
         self.assertIn(str(twin.id), gap["missing_evidence_file_ids"])
         self.assertNotIn(tender_id, gap["missing_evidence_file_ids"])
 
+    def test_hidden_statement_copies_and_empty_readings_are_not_missing_vectors(self):
+        """11 Nov, demo b75f3f2c: 22 of 65 'without a vector' were internal statement copies (hidden, same bytes as
+        an original that has its vector); OPDMD63: 32 photos and a handwritten plan whose reading found no text."""
+        with self.Session() as db:
+            copy = self._doc(db, "tender-award.pdf", "The tender for the depot closed on 3 May.")
+            copy.metadata_ = {"statement_root_evidence_id": str(self.tender.id),
+                              "statement_parent_evidence_id": str(self.tender.id)}
+            photo = self._doc(db, "DSCN0822.JPG", "")
+            db.commit()
+        tender_id, receipt_id = str(self.tender.id), str(self.receipt.id)
+
+        class Collection:
+            def get(self, where, include, limit, offset):
+                if offset:
+                    return {"ids": [], "metadatas": []}
+                return {"ids": ["c1", "c2"], "metadatas": [
+                    {"case_id": where["case_id"], "evidence_file_id": tender_id, "doc_name": "tender-award.pdf"},
+                    {"case_id": where["case_id"], "evidence_file_id": receipt_id, "doc_name": "receipt-0412.pdf"}]}
+
+        with self.Session() as db:
+            gap = meaning_search.vector_gap(str(self.case_id), db=db, collection=Collection(), fresh=True)
+        self.assertNotIn(str(copy.id), gap["missing_evidence_file_ids"])
+        self.assertNotIn(str(photo.id), gap["missing_evidence_file_ids"])
+        self.assertEqual((gap["documents_with_text"], gap["documents_without_vector"], gap["documents_without_text"]),
+                         (2, 0, 1))
+        self.assertIsNone(meaning_search.gap_sentence(gap))
+
     def _pending(self, db, evidence, state="active"):
         db.add(PendingChunkVector(chunk_id="%s:r:chunk:0" % evidence.id, case_id=str(self.case_id),
                                   document_id=str(evidence.id), evidence_file_id=evidence.id, revision_id="r",
