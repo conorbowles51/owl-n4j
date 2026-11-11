@@ -499,6 +499,9 @@ describe("SendToLedgerDialog with a spreadsheet", () => {
 
     expect(await screen.findByTestId("spreadsheet-mapping")).toBeInTheDocument()
     expect(screen.getByTestId("mapping-source")).toHaveTextContent("The reader guessed this mapping")
+    // The format is named for a reader, not by the reader's internal code.
+    expect(screen.getByTestId("precheck-report")).toHaveTextContent("Spreadsheet statement")
+    expect(screen.getByTestId("precheck-report")).not.toHaveTextContent("tabular")
     expect(screen.getByTestId("mapping-column-2")).toHaveValue("amount")
     expect(screen.getByTestId("precheck-rows")).toHaveTextContent("22 of 23 rows will be added, 1 skipped")
     expect(screen.getByTestId("skipped-lines")).toHaveTextContent("line 8: a totals or balance line")

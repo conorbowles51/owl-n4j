@@ -70,6 +70,7 @@ import { formatLedgerAmount } from "../lib/ledger-format"
 import type { FilePrecheck, SpreadsheetLayout } from "../api"
 import { SkippedLines, SpreadsheetMapping } from "./SpreadsheetMapping"
 import { isSpreadsheetName } from "../lib/spreadsheet-layout"
+import { formatLabel } from "@/features/evidence/utils/financial-route"
 
 interface SendToLedgerDialogProps {
   caseId: string
@@ -447,7 +448,7 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
         </Badge>
         {precheck.detected_format && (
           <span className="text-xs text-muted-foreground">
-            {precheck.detected_format}
+            {formatLabel(precheck.detected_format)}
           </span>
         )}
       </div>

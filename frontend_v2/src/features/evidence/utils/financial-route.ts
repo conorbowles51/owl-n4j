@@ -132,6 +132,7 @@ export const NATIVE_FORMAT_LABEL: Record<string, string> = {
   bai2: "BAI2",
   mt940: "MT940",
   nacha: "NACHA",
+  tabular: "Spreadsheet statement",
 }
 
 export function formatLabel(code: string): string {
