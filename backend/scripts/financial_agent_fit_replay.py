@@ -306,7 +306,9 @@ def main():
     record_spend(args.spend_ledger, args.run or args.key_id, usage, error)
     if error and 'AgentRunCancelled' in error:
         error = 'stopped: the measurement reached its budget of %d tokens' % args.spend_budget
-    from services.agent import plain_answer
+    import uuid
+    from services.agent import plain_answer, storage
+    from services.agent.tools import _financial_session
     answer, _ = plain_answer.checked((final.get('answer') or '').strip())
     with _financial_session() as s:
         answer, citation_check = storage.checked_answer(s, case_id=uuid.UUID(case_id), answer=answer)
