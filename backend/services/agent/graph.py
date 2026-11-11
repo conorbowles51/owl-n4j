@@ -385,6 +385,17 @@ _FINAL_ANSWER_REQUEST = (
     "Reply with the answer only, not a comment about an earlier reply."
 )
 
+# lx-agentfit round 2, R2b item A: what a good answer has, said last, where the model reads it just before writing.
+# Rule 1: nothing more certain than its record. Measured by services.agent.answer_quality (uncited, not_in_record,
+# unfinished_unstated, other_side_missing, certainty).
+ANSWER_REQUIREMENTS = (
+    " Before you write, check the answer against these, in order: (1) every fact has the link of the record it comes "
+    "from, copied from a result above; a fact no result above carries is not stated as found. (2) Every figure and "
+    "date is written as its record writes it. (3) For a question of fact (where, whose, who, did, is it true), give "
+    "the strongest other version and what the records say about it. (4) Say what was not read or not finished. "
+    "(5) A reading by a model, a suggestion or a rule's match is called that, never confirmed; write 'shows' or "
+    "'suggests', never 'proves' or 'confirms'.")
+
 _OUT_OF_STEPS_REQUEST = (
     " The step limit for one answer ended the search before it finished. Write the answer from what was found, and "
     "start with one line saying what it could not yet cover, in an investigator's words (which accounts, people or "
@@ -403,6 +414,9 @@ def _finalizer_request(*, state_messages: list[AnyMessage], final_answer_rules: 
     the cache read fell to 0), so a tool call in the reply is dropped instead (_final_reply). The agent's view holds
     every result whole only with the cache-stable history on, so the two switches go on together."""
     request = _FINAL_ANSWER_REQUEST + (_OUT_OF_STEPS_REQUEST if out_of_steps else "")
+    from services.agent import fit
+    if fit.on("A"):
+        request += ANSWER_REQUIREMENTS
     if finalizer_on_agent_prefix() and agent_model is not None:
         rules = _FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + final_answer_rules if final_answer_rules else "")
         return agent_model, [SystemMessage(content=agent_system_prompt), *lean_messages(state_messages),
@@ -875,6 +889,10 @@ def _with_kept_sources(answer: str, tool_context: AgentToolContext, out_of_steps
         answer = wrap_up.link_bare_targets(answer)
         if out_of_steps:
             answer, _ = wrap_up.keep_sources(answer, tool_context.model_views, heading=KEPT_SOURCES_HEADING)
+    if fit.on("V"):
+        # lx-agentfit R2b item V: each figure in a cited claim is checked against the records the claim cites.
+        from services.agent import answer_quality
+        answer = answer_quality.mark_unsupported(answer, tool_context.model_views.values())
     # Every answer: a figure 10x or 100x the payment it cites is listed with the record's amount.
     answer, _ = wrap_up.check_scaled_figures(answer, tool_context.model_views)
     return answer
@@ -1031,6 +1049,8 @@ def _fit_prompt_lines() -> str:
     """The prompt lines of the agent-fit items that are on (services.agent.fit), each ending in a newline."""
     from services.agent import fit
     lines = []
+    if fit.on("Q"):
+        lines.append("- Before the first tool, in your thinking, restate the question as a plan: what would answer it, what would show that answer wrong, and which records hold each (ledger, phones, documents, graph, casework). Fetch those; leave out kinds the case does not hold.")
     if fit.on("P"):
         lines.append("- Before the first tool, decide which lookups the question needs. Ask for lookups that do not depend on each other in one reply, as several tool calls together. Stop calling tools once the results answer the question; do not check again what a result already shows.")
     if fit.on("D"):

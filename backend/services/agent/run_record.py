@@ -108,6 +108,12 @@ def prompt_version_source() -> dict[str, Any]:
     prompts["all_cases"] = graph.ALL_CASES_PROMPT
     prompts["final_answer_system"] = graph._FINAL_ANSWER_SYSTEM_PROMPT
     prompts["final_answer_request"] = graph._FINAL_ANSWER_REQUEST
+    # lx-agentfit R12: every prompt part that depends on a switch is part of the version, so a change to any one is a
+    # new version (services.agent.prompt_loop.part_versions splits it per part).
+    from services.agent import case_briefing, fit
+    prompts["agent_fit"] = [item for item in fit.ITEMS if fit.on(item)]
+    prompts["answer_requirements"] = graph.ANSWER_REQUIREMENTS if fit.on("A") else ""
+    prompts["case_briefing"] = case_briefing.LACKS if fit.on("S") else ""
     tools = sorted((convert_to_openai_tool(tool) for tool in make_agent_tools(AgentToolContext(case_id="{case_id}",
                                                                                                all_cases=True))),
                    key=lambda item: item.get("function", {}).get("name", ""))

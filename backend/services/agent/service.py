@@ -887,7 +887,16 @@ class AgentService:
                        - {"get_financial_coverage"} - keep)
             notes.append("This case holds no bank or brokerage statements, so the payment tools are not offered; "
                          "say so if asked about money in statements.")
-        return frozenset(hidden), " ".join(notes)
+        brief = ""
+        from services.agent import fit
+        if fit.on("S"):
+            # lx-agentfit R2b item S: what the case holds and lacks, before the first tool.
+            from services.agent import case_briefing
+            try:
+                brief = case_briefing.briefing(db.connection(), request.case_id, counts)
+            except Exception:  # noqa: BLE001 - no briefing is the behaviour with S off
+                logger.warning("Agent case briefing failed", exc_info=True)
+        return frozenset(hidden), "\n\n".join(x for x in (brief, " ".join(notes)) if x)
 
     @staticmethod
     def _question_focus(db: Session, request: AgentMessageRequest) -> tuple[str, str]:
