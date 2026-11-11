@@ -68,3 +68,18 @@ it("turns an unknown amount into a check tag with words, and edges the card in i
   const article = container.querySelector("article") as HTMLElement
   expect(article.style.borderLeftColor).not.toBe("")
 })
+
+// lx-demo 10 Nov: the document model's events sat beside the ledger's rows with nothing saying who wrote them.
+it("labels an event the document model wrote as a model reading with its file, and a ledger row not", () => {
+  const { unmount } = withEvent({ source_files: ["bay4-lease-2023-10-01.pdf"] })
+  expect(screen.getByText("Model reading, not checked · bay4-lease-2023-10-01.pdf")).toBeTruthy()
+  unmount()
+  const { unmount: u2 } = withEvent({ source_files: ["a.pdf", "b.pdf", "c.pdf"] })
+  expect(screen.getByText("Model reading, not checked · a.pdf and 2 more")).toBeTruthy()
+  u2()
+  const { container, unmount: u3 } = withEvent({ source_files: null, ledger_transaction_id: "t1" })
+  expect(container.querySelector("[data-model-reading]")).toBeNull()
+  u3()
+  const { container: c4 } = withEvent({ source_files: ["shop.pdf"], ledger_transaction_id: "t1" })
+  expect(c4.querySelector("[data-model-reading]")).toBeNull()
+})

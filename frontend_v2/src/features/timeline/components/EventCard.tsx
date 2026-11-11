@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn"
 import { Checkbox } from "@/components/ui/checkbox"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
-import { getEventTypeColor, hasAmount } from "../api"
+import { getEventTypeColor, hasAmount, modelReadingFile } from "../api"
 import type { TimelineEvent } from "../api"
 import { displayEventTime, getEventTimeValue } from "../lib/timeline-utils"
 import { CheckTag, DirectionMark, MONEY } from "@/lib/data-colour"
@@ -58,6 +58,7 @@ export const EventCard = memo(function EventCard({
   const shownTime = displayEventTime(event)
   const timeLabel = shownTime.text
   const hasTime = Boolean(getEventTimeValue(event))
+  const readFrom = modelReadingFile(event)
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -173,6 +174,16 @@ export const EventCard = memo(function EventCard({
           {summaryText && (
             <p className="mt-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
               {highlightText(summaryText, searchTerm)}
+            </p>
+          )}
+
+          {readFrom && (
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              data-model-reading=""
+              title="The document model wrote this event from the file. No person has checked it, and it is not a ledger row."
+            >
+              Model reading, not checked · {readFrom}
             </p>
           )}
 

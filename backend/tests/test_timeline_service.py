@@ -29,6 +29,9 @@ class _FakeSession:
         return False
 
     def run(self, query, **params):
+        if "// ledger repeats" in query:
+            # the read of the model's events that repeat a ledger row (_ledger_repeat_keys): none here
+            return _FakeResult(single={"rows": []})
         self._captured.append({"query": query, "params": params})
         if "RETURN count(n) AS total" in query:
             return _FakeResult(single={"total": self._total})
@@ -318,6 +321,59 @@ class TimelineServiceTests(unittest.TestCase):
             with self.assertRaises(TimelineTooLarge):
                 TimelineService().get_timeline_whole(case_id="case-1", max_events=4)
         self.assertEqual(len(captured), 1)
+
+    def test_model_events_repeating_a_ledger_row_of_the_same_file_are_left_out(self):
+        # lx-demo 10 Nov (demo case, shop-2023-10.pdf): the document model wrote the statement's lines as events
+        # of its own beside the ledger's rows, so 1 Oct 2023 showed the $650 bay rent three times. A model event
+        # with the same file, date and amount as a ledger row is left out of the page and of the total; one
+        # from another file (the lease), one with no ledger row (the opening balance) and one with an amount
+        # that is not plain stay.
+        candidates = [
+            ["m-rent", ["shop-2023-10.pdf"], "2023-10-01", 650.0],
+            ["m-rent-text", ["shop-2023-10.pdf"], "2023-10-01", "$650.00"],
+            ["m-lease", ["bay4-lease-2023-10-01.pdf"], "2023-10-01", 650.0],
+            ["m-opening", ["shop-2023-10.pdf"], "2023-10-01", 18420.1],
+            ["m-unknown", ["shop-2023-10.pdf"], "2023-10-01", "Unknown"],
+            ["m-other-day", ["shop-2023-10.pdf"], "2023-10-02", 650.0],
+        ]
+        ledger = [["shop-2023-10.pdf", "2023-10-01", 650.0], ["kell-2023-10.pdf", "2023-10-01", 18420.1]]
+        captured, repeats = [], []
+
+        class Session(_FakeSession):
+            def run(self, query, **params):
+                if "// ledger repeats: the model" in query:
+                    repeats.append(params)
+                    return _FakeResult(single={"rows": candidates})
+                if "// ledger repeats: the ledger rows" in query:
+                    repeats.append(params)
+                    return _FakeResult(single={"rows": ledger})
+                return super().run(query, **params)
+
+        with patch("services.neo4j.timeline_service.driver.session", return_value=Session(captured, total=4)):
+            page = TimelineService().get_timeline_page(case_id="case-1")
+        self.assertEqual(repeats[1]["files"], ["bay4-lease-2023-10-01.pdf", "shop-2023-10.pdf"])
+        page_query, count_query = captured[0], captured[1]
+        for call in (page_query, count_query):
+            self.assertIn("NOT n.key IN $ledger_repeat_keys", call["query"])
+            self.assertEqual(call["params"]["ledger_repeat_keys"], ["m-rent", "m-rent-text"])
+        self.assertIn("n.source_files AS source_files", page_query["query"])
+        self.assertEqual(page["total"], 4)
+
+    def test_no_model_money_events_means_no_ledger_read_and_no_filter(self):
+        captured = []
+        with patch("services.neo4j.timeline_service.driver.session", return_value=_FakeSession(captured)):
+            TimelineService().get_timeline_page(case_id="case-1")
+        self.assertNotIn("ledger_repeat_keys", captured[0]["query"])
+
+    def test_amount_cents_reads_plain_amounts_only(self):
+        cents = TimelineService._amount_cents
+        self.assertEqual(cents(650), 65000)
+        self.assertEqual(cents(-650.0), 65000)
+        self.assertEqual(cents("29,678.96"), 2967896)
+        self.assertEqual(cents("USD 742,000"), 74200000)
+        self.assertEqual(cents("$157"), 15700)
+        for text in ("Unknown", "$B61.36", "", None, True):
+            self.assertIsNone(cents(text))
 
 if __name__ == "__main__":
     unittest.main()

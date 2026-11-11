@@ -25,7 +25,35 @@ class TimelineService:
     _NODE_PREFILTER = "n.case_id = $case_id AND coalesce(n.system_node, false) <> true"
     # The columns the page query returns, in its RETURN order (rows arrive packed: see run_packed).
     _EVENT_COLUMNS = ("key", "name", "type", "date", "time", "amount", "summary", "notes",
-                      "ledger_transaction_id", "direction", "connections")
+                      "ledger_transaction_id", "direction", "source_files", "connections")
+    # A statement Financial has read is on the Timeline as its ledger rows. The document model also writes the
+    # statement's lines as events of its own; one of those with the same date and amount as a ledger row from the
+    # same file is that row again, written by the model (demo case: 192 of 264 model events, so 1 Oct 2023 showed
+    # the bay rent three times, two of them with the direction reversed). Those are left out of the Timeline; a
+    # model event the ledger has no row for stays (67 from files the ledger has not read, 4 statement balances
+    # and one cash deposit), so nothing the ledger lacks is hidden. The match needs the file, the date and the
+    # amount: a chat that mentions a payment on its day (BNB2: 44) is not the statement and stays.
+    _REPEAT_CANDIDATES_QUERY = """
+            // ledger repeats: the model's money events
+            MATCH (n)
+            WHERE n.case_id = $case_id AND coalesce(n.system_node, false) <> true
+              AND n.ledger_transaction_id IS NULL AND n.amount IS NOT NULL AND n.source_files IS NOT NULL
+              AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+            WITH n, {sort_date} AS sort_date
+            WHERE sort_date IS NOT NULL
+            RETURN n.key AS key, n.source_files AS files, sort_date AS date, n.amount AS amount
+    """
+    _LEDGER_ROWS_QUERY = """
+            // ledger repeats: the ledger rows of those files
+            MATCH (n:FinancialTransaction)
+            WHERE n.case_id = $case_id AND n.ledger_transaction_id IS NOT NULL
+              AND n.source_filename IN $files AND n.amount IS NOT NULL
+              AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+            WITH n, {sort_date} AS sort_date
+            WHERE sort_date IS NOT NULL
+            RETURN n.source_filename AS file, sort_date AS date, n.amount AS amount
+    """
+    _AMOUNT_TEXT = re.compile(r"\s*[-+]?\s*(?:[A-Z]{3}\s*)?[$€£]?\s*(\d[\d,]*(?:\.\d+)?|\.\d+)\s*(?:[A-Z]{3})?\s*")
     # A connection's name as the Timeline lists it. Accounts share their holder's name (BNB2: 14 accounts
     # named ARRENDO SERV SA DE CV), so an account is named by its identity label (holder, bank, number,
     # currency) when that label extends its current name and no person has set the name (graph_edit_service
@@ -83,6 +111,51 @@ class TimelineService:
             ELSE NULL
         END
     """
+
+    @classmethod
+    def _amount_cents(cls, value) -> int | None:
+        """A stored amount as whole cents, sign dropped (a model event may say 'debit' for money in); None if it
+        is not a plain amount ('Unknown', '$B61.36')."""
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return round(abs(float(value)) * 100)
+        match = cls._AMOUNT_TEXT.fullmatch(str(value))
+        if not match:
+            return None
+        return round(float(match.group(1).replace(",", "")) * 100)
+
+    @staticmethod
+    def _files(value) -> list[str]:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                value = [value]
+        if not isinstance(value, list):
+            return []
+        return [str(f).strip() for f in value if str(f or "").strip()]
+
+    def _ledger_repeat_keys(self, session, case_id: str) -> list[str]:
+        """Keys of the document model's events that repeat a ledger row: same file, same date, same amount."""
+        sort_date = self.SORT_DATE_CYPHER
+        candidates = run_packed(session, self._REPEAT_CANDIDATES_QUERY.format(sort_date=sort_date),
+                                ("key", "files", "date", "amount"), case_id=case_id)
+        wanted = []
+        for row in candidates:
+            cents = self._amount_cents(row["amount"])
+            files = self._files(row["files"])
+            if cents is not None and files:
+                wanted.append((row["key"], files, row["date"], cents))
+        if not wanted:
+            return []
+        files = sorted({f for _, fs, _, _ in wanted for f in fs})
+        ledger = {
+            (row["file"], row["date"], self._amount_cents(row["amount"]))
+            for row in run_packed(session, self._LEDGER_ROWS_QUERY.format(sort_date=sort_date),
+                                  ("file", "date", "amount"), case_id=case_id, files=files)
+        }
+        return sorted({key for key, fs, date, cents in wanted if any((f, date, cents) in ledger for f in fs)})
 
     @staticmethod
     def _normalise_date_time(date_value, time_value) -> tuple[str | None, str | None]:
@@ -153,6 +226,7 @@ class TimelineService:
         end_date: Optional[str],
         case_id: str,
         entity_keys: Optional[List[str]] = None,
+        hidden_keys: Optional[List[str]] = None,
     ) -> tuple[str, Dict]:
         conditions = [
             "sort_date IS NOT NULL",
@@ -165,6 +239,9 @@ class TimelineService:
         if entity_keys is not None:
             conditions.append("n.key IN $entity_keys")
             params["entity_keys"] = entity_keys
+        if hidden_keys:
+            conditions.append("NOT n.key IN $ledger_repeat_keys")
+            params["ledger_repeat_keys"] = hidden_keys
 
         if event_types:
             conditions.append("labels(n)[0] IN $types")
@@ -280,12 +357,15 @@ class TimelineService:
             entity_keys = list(dict.fromkeys(entity_keys))
             if not entity_keys:
                 return {"events": [], "count": 0, "total": 0, "next_cursor": None}
+        with driver.session() as session:
+            hidden_keys = self._ledger_repeat_keys(session, case_id)
         where_clause, params = self._build_filters(
             event_types,
             start_date,
             end_date,
             case_id,
             entity_keys,
+            hidden_keys,
         )
         connected_scope_filter = (
             "AND connected.key IN $entity_keys" if entity_keys is not None else ""
@@ -357,6 +437,7 @@ class TimelineService:
                 n.notes AS notes,
                 n.ledger_transaction_id AS ledger_transaction_id,
                 n.direction AS direction,
+                n.source_files AS source_files,
                 connections
             ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
         """
@@ -367,6 +448,7 @@ class TimelineService:
             end_date,
             case_id,
             entity_keys,
+            hidden_keys,
         )
         count_query = f"""
             MATCH (n)

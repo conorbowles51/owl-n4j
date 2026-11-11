@@ -29,8 +29,18 @@ export interface TimelineEvent {
     state: "current" | "snapshot"
   }
   source_references?: string[]
+  /** The files the document model read this event from; set on the model's events, never on a ledger row. */
+  source_files?: string[] | null
   ledger_transaction_id?: string | null
   connections: TimelineConnection[]
+}
+
+/** The file a model-written event was read from, or null for a ledger row, a person's entry or a saved source. */
+export function modelReadingFile(event: TimelineEvent): string | null {
+  if (event.ledger_transaction_id || event.source) return null
+  const files = Array.isArray(event.source_files) ? event.source_files.filter((f) => typeof f === "string" && f.trim()) : []
+  if (files.length === 0) return null
+  return files.length === 1 ? files[0] : `${files[0]} and ${files.length - 1} more`
 }
 
 export interface TimelineResponse {

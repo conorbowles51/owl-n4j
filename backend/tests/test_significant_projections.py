@@ -168,7 +168,9 @@ class SignificantProjectionTests(unittest.TestCase):
         }
         with patch(
             "services.neo4j.timeline_service.driver.session",
-            return_value=_Session(captured, [_packed([row], TimelineService._EVENT_COLUMNS), _Result(single={"total": 1})]),
+            # first the read of the model's events that repeat a ledger row (none), then the page and its count
+            return_value=_Session(captured, [_packed([]), _packed([row], TimelineService._EVENT_COLUMNS),
+                                             _Result(single={"total": 1})]),
         ):
             result = TimelineService().get_timeline_page(
                 case_id="case-1",
@@ -176,9 +178,10 @@ class SignificantProjectionTests(unittest.TestCase):
             )
 
         self.assertEqual(result["count"], 1)
-        self.assertIn("n.key IN $entity_keys", captured[0]["query"])
-        self.assertIn("connected.key IN $entity_keys", captured[0]["query"])
-        self.assertEqual(captured[0]["params"]["entity_keys"], ["event-2", "person-1"])
+        self.assertIn("// ledger repeats", captured[0]["query"])
+        self.assertIn("n.key IN $entity_keys", captured[1]["query"])
+        self.assertIn("connected.key IN $entity_keys", captured[1]["query"])
+        self.assertEqual(captured[1]["params"]["entity_keys"], ["event-2", "person-1"])
 
     def test_map_projection_filters_locations_and_connections(self):
         captured = []
