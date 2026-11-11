@@ -523,6 +523,7 @@ describe("SendToLedgerDialog with a spreadsheet", () => {
     expect(screen.getByTestId("precheck-rows")).toHaveTextContent("22 of 23 rows read from the file")
     expect(screen.getByTestId("precheck-rows")).not.toHaveTextContent("will be added")
     expect(screen.queryByTestId("store-file")).not.toBeInTheDocument()
+    expect(screen.getByTestId("precheck-report")).not.toHaveTextContent("nothing has been stored yet")
   })
 
   it("stores with the mapping shown, which confirms it", async () => {

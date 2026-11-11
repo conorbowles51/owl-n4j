@@ -46,9 +46,13 @@ try {
   out.mapping_source = await page.getByTestId("mapping-source").innerText()
   out.mapping = []
   for (let c = 0; c < 4; c++) out.mapping.push(await page.getByTestId(`mapping-column-${c}`).inputValue())
+  out.named_spreadsheet_statement = (await page.getByTestId("precheck-report").getByText("Spreadsheet statement").count()) > 0
+  const held = page.getByTestId("already-in-ledger")
+  out.already_in_ledger = (await held.count()) ? (await held.innerText()).replace(/\s+/g, " ") : null
+  out.add_offered = (await page.getByTestId("store-file").count()) > 0
   out.uuid_available = await page.evaluate(() => typeof crypto.randomUUID)
   await page.screenshot({ path: `${shots}/2-mapping.png`, fullPage: true })
-  if (store) {
+  if (store && out.add_offered) {
     await page.getByTestId("store-file").click()
     await page.getByTestId("ingest-report").waitFor({ timeout: 180000 })
     out.stored = (await page.getByTestId("ingest-report").innerText()).replace(/\s+/g, " ")

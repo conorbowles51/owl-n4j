@@ -452,7 +452,10 @@ function PrecheckReport({ precheck }: { precheck: FilePrecheck }) {
           </span>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">{term.description}</p>
+      {/* "Nothing has been stored yet" is untrue of a file the ledger already holds; the line below says so. */}
+      {!precheck.already_in_ledger && (
+        <p className="text-xs text-muted-foreground">{term.description}</p>
+      )}
       {precheck.reason && (
         <p className="text-xs text-muted-foreground">{precheck.reason}</p>
       )}
