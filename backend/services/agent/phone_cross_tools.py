@@ -721,6 +721,16 @@ def _between_suggested(conn, case_id, sa, sb, suggested, a, b, with_records):
     return pairs
 
 
+def _named_money(named: dict) -> str:
+    """The money sentence when no payment is linked to the other person."""
+    if not named["total"]:
+        return "no payment between them in the ledger"
+    return ("no payment linked between them in the ledger, but %d payment%s on one side's accounts name%s the other "
+            "person in the description or counterparty text (listed in named_unlinked_payments with their txn "
+            "citations; not linked and not summed, so state them as named, not as proven payments between them)"
+            % (named["total"], "" if named["total"] == 1 else "s", "s" if named["total"] == 1 else ""))
+
+
 def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, person_b=None, identity_b=None,
                               start=None, end=None, with_records=False, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """One edge between two people (02 11.2): messages, calls and emails between them on every phone, and the money
@@ -763,6 +773,10 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
                      summed=r["proof_class"] in link_edges.SUMMED) for r in pays["items"]]
         money = [dict(m, paid_ab=link_edges.format_minor(m["paid_ab_minor"], m["currency"]),
                       paid_ba=link_edges.format_minor(m["paid_ba_minor"], m["currency"])) for m in edge["money"]]
+        named = edge.get("money_named_unlinked") or {"total": 0, "items": []}
+        named = dict(named, items=[dict(r, txn=_txn(r["id"]),
+                                        amount=link_edges.format_minor(r["amount_minor"], r["currency"]))
+                                   for r in named["items"]])
         c = edge["communication"]
         limits = [x["message"] for x in out["limits"]]
         # A side with no phone identity linked has no contact to count: said, never a silent zero (lx-agentfit D).
@@ -799,12 +813,13 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
         return _paged(tool, case_id, rows, offset, limit, "payments", a=edge["a"], b=edge["b"], communication=c, **extra,
                       money=money, money_mentioned_on_phones=edge["money_mentioned_on_phones"],
                       money_readings_available=edge["money_readings_available"], label_line=edge["label"],
+                      named_unlinked_payments=named,
                       money_absent=out["money_absent"], zone=out["zone"],
                       coverage="%s and %s: %s. Money: %s." % (
-                          edge["a"]["label"], edge["b"]["label"], label,
+                          edge["a"]["label"], edge["b"]["label"], label.rstrip("."),
                           "; ".join("%s A to B %s (%d), B to A %s (%d), p3 stated apart" % (
                               m["currency"], m["paid_ab"], m["payments_ab"], m["paid_ba"], m["payments_ba"])
-                              for m in money) or (out["money_absent"] or "no payment between them in the ledger")),
+                              for m in money) or out["money_absent"] or _named_money(named)),
                       limitation=" ".join(limits) or None,
                       note="Totals are the ledger's verified rows (p0-p2) per currency; p3 rows are stated beside "
                            "them, never added. Money the phones mention is counted, never summed. Messages: read "

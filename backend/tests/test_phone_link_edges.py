@@ -264,6 +264,42 @@ class MoneyTests(DuplicateTestCase):
         assert [(r["amount_minor"], r["direction"]) for r in ba] == [(100_00, "ba"), (200_00, "ba")]
         assert {r["direction"] for r in LE.payments(self.db, self.case.id, a, b)["rows"]} == {"ab"}
 
+    def test_a_payment_that_only_names_the_other_person_is_said_unlinked_never_as_no_payment(self):
+        """lx-agentfit 11 Nov, demo b75f3f2c: three 'POCKETWIRE TO LENA MARSH' debits on Travis Kell's account (holder
+        printed on the statement, no reviewed link) read as 'no payment between them in the ledger'."""
+        self.account.holder_name = "TRAVIS  KELL"
+        for day in (date(2024, 3, 16), date(2024, 4, 13), date(2024, 6, 1)):
+            r = self.row(500_00, link=False, day=day)
+            r.description = "POCKETWIRE TO LENA MARSH"
+        other = self.row(75_00, link=False, day=date(2024, 3, 20))
+        other.description = "POCKETWIRE TO LENA MARSHALL-SMITH"        # still names her: listed, the person judges
+        self.row(20_00, link=False, day=date(2024, 3, 21)).description = "GROCERY"
+        self.db.commit()
+        none = {"parties": set(), "accounts": set()}
+        named = LE.named_unlinked_payments(self.db, self.case.id, none, none, "Travis Kell", "Lena Marsh")
+        assert named["total"] == 4
+        assert [(r["amount_minor"], r["direction"], r["summed"], r["linked"]) for r in named["items"][:1]] == [
+            (500_00, "ab", False, False)]
+        assert named["items"][0]["account_basis"] == "holder name printed on the statement"
+        # read the other way round, Kell's debits run from the second side to the first
+        assert {r["direction"] for r in LE.named_unlinked_payments(
+            self.db, self.case.id, none, none, "Lena Marsh", "Travis Kell")["items"]} == {"ba"}
+        # a window reads only its own days; a name that is too short to search names nothing
+        assert LE.named_unlinked_payments(self.db, self.case.id, none, none, "Travis Kell", "Lena Marsh",
+                                          from_date=date(2024, 4, 1), to_date=date(2024, 4, 30))["total"] == 1
+        assert LE.named_unlinked_payments(self.db, self.case.id, none, none, "Travis Kell", "Lena")["total"] == 0
+        # a linked account is read as linked; with no printed holder match and no link, nothing is read
+        linked = {"parties": set(), "accounts": {str(self.account.id)}}
+        assert LE.named_unlinked_payments(self.db, self.case.id, linked, none, "T K", "Lena Marsh")["items"][0][
+            "account_basis"] == "linked holder"
+        assert LE.named_unlinked_payments(self.db, self.case.id, none, none, "Mateo Ruiz", "Lena Marsh")["total"] == 0
+        label = LE._named_label("No calls, messages, emails or payments in this period", named)
+        assert label == ("No calls, messages, emails or linked payments in this period; 4 payments whose ledger text "
+                         "names the other person, not linked and not summed")
+        from services.agent.phone_cross_tools import _named_money
+        assert "4 payments on one side's accounts name the other person" in _named_money(named)
+        assert _named_money({"total": 0, "items": []}) == "no payment between them in the ledger"
+
     def test_format_minor_uses_the_currency_exponent(self):
         assert LE.format_minor(840000, "USD") == "USD 8,400.00"
         assert LE.format_minor(1500, "JPY") == "JPY 1,500"

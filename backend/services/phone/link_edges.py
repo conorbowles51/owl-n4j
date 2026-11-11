@@ -300,6 +300,65 @@ def payments(session, case_id, side_a: dict, side_b: dict, *, from_date=None, to
     return {"rows": collapse_mirrored(rows), "shared_accounts": len(shared)}
 
 
+NAMED_LIMIT = 50
+
+
+def printed_holder_accounts(session, case_id, name) -> set:
+    """Ids of the case's accounts whose printed holder name is exactly ``name`` (case and spacing aside)."""
+    from sqlalchemy import select
+    from postgres.models.financial import FinancialAccount
+    want = " ".join(str(name or "").split()).lower()
+    if len(want) < 5:
+        return set()
+    return {str(i) for i, holder in session.execute(select(FinancialAccount.id, FinancialAccount.holder_name).where(
+        FinancialAccount.case_id == case_id, FinancialAccount.holder_name.isnot(None)))
+        if " ".join(holder.split()).lower() == want}
+
+
+def named_unlinked_payments(session, case_id, side_a: dict, side_b: dict, name_a, name_b, *, from_date=None,
+                            to_date=None) -> dict:
+    """Ledger rows on one side's accounts whose description or counterparty text names the other person, with no
+    reviewed link to them (lx-agentfit 11 Nov, demo: three 'POCKETWIRE TO LENA MARSH' debits from Travis Kell's
+    account read as no money between them). Read beside the linked money, never summed into it:
+    ``{"total": n, "items": [...]}`` (at most NAMED_LIMIT items, the total says how many there are)."""
+    from sqlalchemy import func, or_, select
+    from postgres.models.financial import FinancialTransaction as T
+    from services.financial.proof_class import LEDGER_CLASSES
+    shared = side_a["accounts"] & side_b["accounts"]
+    found, total = [], 0
+    for own, own_name, other_name, towards_on_debit in ((side_a, name_a, name_b, ("ab", "ba")),
+                                                        (side_b, name_b, name_a, ("ba", "ab"))):
+        accounts, basis = own["accounts"] - shared, "linked holder"
+        if not own["accounts"]:
+            # No account is linked to this person: the accounts whose statements print them as holder are read.
+            accounts, basis = printed_holder_accounts(session, case_id, own_name) - shared, "holder name printed on the statement"
+        name = " ".join(str(other_name or "").split())
+        if not accounts or len(name) < 5:
+            continue
+        pattern = "%" + name.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        where = [T.case_id == case_id, T.superseded_by_id.is_(None), T.ledger_status == 'admitted',
+                 T.proof_class.in_(sorted(c.value for c in LEDGER_CLASSES)),
+                 T.account_id.in_([uuid.UUID(a) for a in accounts]),
+                 or_(func.lower(func.coalesce(T.description, '')).like(pattern, escape="\\"),
+                     func.lower(func.coalesce(T.counterparty_raw, '')).like(pattern, escape="\\"))]
+        if from_date is not None:
+            where.append(T.ordering_date >= from_date)
+        if to_date is not None:
+            where.append(T.ordering_date <= to_date)
+        total += int(session.scalar(select(func.count()).select_from(T).where(*where)) or 0)
+        for r in session.execute(select(T.id, T.ref_id, T.account_id, T.direction, T.amount_minor, T.currency,
+                                        T.proof_class, T.ordering_date, T.description, T.counterparty_raw)
+                                 .where(*where).order_by(T.ordering_date, T.id).limit(NAMED_LIMIT)):
+            found.append({"id": str(r.id), "ref_id": r.ref_id, "account_id": str(r.account_id),
+                          "direction": towards_on_debit[0] if r.direction == "debit" else towards_on_debit[1],
+                          "amount_minor": int(r.amount_minor), "currency": r.currency,
+                          "proof_class": str(r.proof_class), "ordering_date": r.ordering_date.isoformat(),
+                          "description": r.description, "counterparty_raw": r.counterparty_raw, "names": name,
+                          "account_basis": basis, "linked": False, "summed": False})
+    found.sort(key=lambda r: (r["ordering_date"], r["id"]))
+    return {"total": total, "items": found[:NAMED_LIMIT]}
+
+
 def collapse_mirrored(rows) -> list:
     """One payment seen on both sides' statements (a debit in the payer's account, the credit in the payee's) is
     one payment: the ledger's own mirror rule (``flow.collapse_mirrors``: same parties, amount and currency, different
@@ -430,6 +489,14 @@ def edge_label(comm: dict, money: list, financial: bool = True) -> str:
     return text_ or "No calls, messages, emails or payments in this period"
 
 
+def _named_label(label: str, named: dict) -> str:
+    """The edge label, with payments that only name the other person stated after it (not linked, not summed)."""
+    if not named["total"]:
+        return label
+    return "%s; %s whose ledger text names the other person, not linked and not summed" % (
+        label.replace("emails or payments", "emails or linked payments"), _plural(named["total"], "payment"))
+
+
 # ---- phone money readings (p4) ----------------------------------------------------------------------------------
 
 def money_mentioned(conn, case_id, a_keys, b_keys, *, from_instant=None, to_instant=None) -> int | None:
@@ -531,6 +598,15 @@ def edges(conn, case_id, subjects: list, *, from_instant=None, to_instant=None, 
                                    "message": "%s held by both sides are left out of the money between them."
                                               % _plural(pay["shared_accounts"], "account")})
                 money = pay["totals"]
+                # Linked money is the edge's money. With none, a payment that only names the other person in its
+                # text is said beside it (unlinked, never summed), so it never reads as no payment.
+                named = {"total": 0, "items": []}
+                if not pay["rows"] and financial:
+                    named = named_unlinked_payments(
+                        session, case_id, fin.get(a["entity_key"], empty), fin.get(b["entity_key"], empty),
+                        a["label"] if a["subject"].get("dossier_id") else None,
+                        b["label"] if b["subject"].get("dossier_id") else None,
+                        from_date=_date_in_zone(from_instant, zone), to_date=_date_in_zone(to_instant, zone, end=True))
                 slices = []
                 if slice_by:
                     cs = comm["_slices"]
@@ -552,7 +628,8 @@ def edges(conn, case_id, subjects: list, *, from_instant=None, to_instant=None, 
                             "money_mentioned_on_phones": mentioned or 0,
                             "money_readings_available": mentioned is not None,
                             "money_date_basis": "ledger ordering date",
-                            "slices": slices, "label": edge_label(comm, money, financial)})
+                            "money_named_unlinked": named,
+                            "slices": slices, "label": _named_label(edge_label(comm, money, financial), named)})
     finally:
         session.close()
     return {"edges": out, "limits": limits, "zone": zone, "group_scope": group_scope,
