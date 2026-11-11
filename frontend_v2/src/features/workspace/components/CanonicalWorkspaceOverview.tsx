@@ -170,7 +170,7 @@ function AttentionList({
             <li key={item.attention_key} className="flex gap-2 py-3">
               <span
                 aria-hidden="true"
-                className={`mt-2 size-1.5 shrink-0 rounded-full ${item.priority_band === 0 ? "bg-rose-500" : item.priority_band === 1 ? "bg-amber-500" : "bg-muted-foreground/40"}`}
+                className={`mt-2 size-1.5 shrink-0 rounded-full ${item.priority_band === 0 ? "bg-rose-500" : item.priority_band === 1 ? "bg-status-warning" : "bg-muted-foreground/40"}`}
               />
               <div className="min-w-0 flex-1">
                 <Link

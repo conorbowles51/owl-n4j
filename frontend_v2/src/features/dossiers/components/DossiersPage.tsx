@@ -312,7 +312,7 @@ export function DossiersPage() {
                           )}
                           {(dossier.needs_link_review ||
                             dossier.linkage_state === "deleted") && (
-                            <span className="mt-2 inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+                            <span className="mt-2 inline-flex items-center gap-1 text-[11px] text-status-warning">
                               <AlertTriangle className="size-3" />{" "}
                               {dossier.linkage_state === "deleted"
                                 ? "Graph entity deleted"

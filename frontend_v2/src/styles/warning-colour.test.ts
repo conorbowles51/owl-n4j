@@ -56,6 +56,7 @@ describe("warnings use the warning colour, not brand-red amber", () => {
       expect(i, `${rel} ${marker}`).toBeGreaterThanOrEqual(0)
       return lines.slice(i, i + 2).join("\n")
     }
-    expect(tone("features/workspace/components/CanonicalWorkspaceOverview.tsx", /priorityBand === 1/)).not.toMatch(/amber-\d/)
+    // The workspace redesign (edd13dae6) renamed priorityBand to priority_band; either spelling is the band-1 tone.
+    expect(tone("features/workspace/components/CanonicalWorkspaceOverview.tsx", /priority_?[bB]and === 1/)).not.toMatch(/amber-\d/)
   })
 })
