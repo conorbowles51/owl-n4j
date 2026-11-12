@@ -4,6 +4,7 @@ import { CalendarOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EventCard } from "./EventCard"
 import type { StreamItem } from "../hooks/use-filtered-events"
+import type { EventFile } from "../api"
 
 interface EventStreamProps {
   items: StreamItem[]
@@ -11,6 +12,8 @@ interface EventStreamProps {
   selectedEventKey: string | null
   multiSelectedKeys: Set<string>
   searchTerm: string
+  /** Files people attached to events, by event key. */
+  attachedFiles?: Map<string, EventFile[]>
   selectedEntityKeys: Set<string>
   scrollToEventKey: string | null
   onSelectEvent: (key: string) => void
@@ -28,6 +31,7 @@ export function EventStream({
   selectedEventKey,
   multiSelectedKeys,
   searchTerm,
+  attachedFiles,
   selectedEntityKeys,
   scrollToEventKey,
   onSelectEvent,
@@ -120,6 +124,7 @@ export function EventStream({
                 <div className="px-2 py-1">
                   <EventCard
                     event={item.event}
+                    attachedFiles={attachedFiles?.get(item.event.key)}
                     isSelected={selectedEventKey === item.event.key}
                     isMultiSelected={multiSelectedKeys.has(item.event.key)}
                     searchTerm={searchTerm}

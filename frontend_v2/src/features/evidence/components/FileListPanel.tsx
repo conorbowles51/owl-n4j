@@ -18,7 +18,6 @@ import {
   Play,
   ChevronLeft,
   ChevronRight,
-  ContactRound,
   Pin,
 } from "lucide-react"
 import { EvidenceSortHeader } from "./EvidenceTableHeaders"
@@ -41,6 +40,9 @@ import { InlineDropZone } from "./InlineDropZone"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import type { EvidenceFile } from "@/types/evidence.types"
 import { AddEvidenceToDossierDialog } from "@/features/dossiers/components/AddEvidenceToDossierDialog"
+import { FileAddActions } from "./FileAddActions"
+import { AddToEventDialog } from "@/features/timeline/components/AddToEventDialog"
+import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 import {
@@ -139,6 +141,10 @@ export function FileListPanel({
   const [dossierFiles, setDossierFiles] = useState<
     Array<{ id: string; name: string }>
   >([])
+  const [rowDialog, setRowDialog] = useState<{
+    kind: "timeline" | "event"
+    file: { id: string; name: string }
+  } | null>(null)
   const caseQuery = useCase(caseId)
   const { canEdit } = useCasePermissions(caseQuery.data)
 
@@ -425,6 +431,16 @@ export function FileListPanel({
                           ])
                       : undefined
                   }
+                  onAddToTimeline={
+                    canEdit
+                      ? (file) => setRowDialog({ kind: "timeline", file: { id: file.id, name: file.original_filename } })
+                      : undefined
+                  }
+                  onAddToEvent={
+                    canEdit
+                      ? (file) => setRowDialog({ kind: "event", file: { id: file.id, name: file.original_filename } })
+                      : undefined
+                  }
                   isPinned={Boolean(pinStatus[file.id])}
                   pinId={pinStatus[file.id]}
                   onPin={
@@ -559,27 +575,30 @@ export function FileListPanel({
             </Button>
           ) : null}
           {canEdit ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                setDossierFiles(
-                  filteredFiles
-                    .filter((file) => selectedFileIds.has(file.id))
-                    .map((file) => ({
-                      id: file.id,
-                      name: file.original_filename,
-                    }))
-                )
-              }
-            >
-              <ContactRound className="mr-1.5 size-3.5" /> Add to Dossier
-            </Button>
+            <FileAddActions
+              caseId={caseId}
+              files={filteredFiles
+                .filter((file) => selectedFileIds.has(file.id))
+                .map((file) => ({ id: file.id, name: file.original_filename }))}
+              onDone={clearSelection}
+            />
           ) : null}
           <Button size="sm" variant="ghost" onClick={clearSelection}>
             Clear
           </Button>
         </div>
+      )}
+      {rowDialog?.kind === "timeline" && (
+        <AddToTimelineDialog
+          caseId={caseId}
+          ids={[rowDialog.file.id]}
+          sourceKind="evidence_file"
+          title={rowDialog.file.name}
+          onClose={() => setRowDialog(null)}
+        />
+      )}
+      {rowDialog?.kind === "event" && (
+        <AddToEventDialog caseId={caseId} files={[rowDialog.file]} onClose={() => setRowDialog(null)} />
       )}
       <AddEvidenceToDossierDialog
         caseId={caseId}

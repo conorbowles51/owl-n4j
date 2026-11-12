@@ -83,3 +83,33 @@ it("labels an event the document model wrote as a model reading with its file, a
   const { container: c4 } = withEvent({ source_files: ["shop.pdf"], ledger_transaction_id: "t1" })
   expect(c4.querySelector("[data-model-reading]")).toBeNull()
 })
+
+// lx-photos: a photo's event shows the picture, says its date is the photo's own data, and shows attached files.
+it("shows a photo's thumbnail and words its date as the photo's data, not checked", () => {
+  const event: TimelineEvent = {
+    key: "photo:1", name: "Photo taken", type: "Photo", date: "2024-05-01", time: "12:30", amount: null,
+    summary: "a.jpg", notes: null, connections: [], thumbnail_url: "/api/photos/1/thumbnail?case_id=c",
+    source: { kind: "evidence_file", id: "1", label: "a.jpg", state: "current",
+      date_basis: "From the photo's data, not checked by a person. Time zone not recorded." },
+  }
+  const { container } = render(
+    <EventCard event={event} isSelected={false} isMultiSelected={false} searchTerm=""
+      highlightedEntityKeys={new Set()} onSelect={() => {}} onMultiSelect={() => {}} />
+  )
+  expect(container.querySelector('img[src="/api/photos/1/thumbnail?case_id=c"]')).not.toBeNull()
+  expect(screen.getByText(/not checked by a person/)).toBeTruthy()
+})
+
+it("shows the files attached to an event, with who attached them", () => {
+  const event: TimelineEvent = {
+    key: "e9", name: "Meeting", type: "Event", date: "2024-05-01", time: null, amount: null, summary: null,
+    notes: null, connections: [],
+  }
+  const { container } = render(
+    <EventCard event={event} isSelected={false} isMultiSelected={false} searchTerm=""
+      highlightedEntityKeys={new Set()} onSelect={() => {}} onMultiSelect={() => {}}
+      attachedFiles={[{ id: "f", event_key: "e9", evidence_file_id: "1", name: "b.jpg", added_by: "x@y.z",
+        thumbnail_url: "/api/photos/1/thumbnail?case_id=c" }]} />
+  )
+  expect(container.querySelector('[data-event-files] img[title="b.jpg, attached by x@y.z"]')).not.toBeNull()
+})

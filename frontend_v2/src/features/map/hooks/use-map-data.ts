@@ -45,6 +45,10 @@ export interface MapLocation {
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
+  /** A photo pin: the evidence file it comes from and a small picture of it. */
+  evidence_file_id?: string
+  thumbnail_url?: string
+  altitude_m?: number | null
 }
 
 interface RawMapLocation {
@@ -159,7 +163,9 @@ export function useMapData(caseId: string | undefined) {
       const raw = await fetchAPI<RawMapLocation[]>(
         `/api/graph/locations?case_id=${caseId}&scope=${scope}`
       )
-      return raw.map(
+      // Photos with a place in their own data, as pins linked to the file.
+      const photos = await fetchAPI<MapLocation[]>(`/api/photos/places?case_id=${caseId}`)
+      const pins = raw.map(
         (loc): MapLocation => ({
           ...loc,
           name: loc.name ?? loc.label ?? loc.key,
@@ -173,6 +179,7 @@ export function useMapData(caseId: string | undefined) {
           manual_correction_history: normalizeCorrectionHistory(loc.manual_correction_history),
         })
       )
+      return [...pins, ...photos]
     },
     enabled: !!caseId,
   })

@@ -65,6 +65,10 @@ import type {
 } from "@/types/evidence.types"
 import { toast } from "sonner"
 import { textWorkbenchHref } from "../lib/text-workbench-link"
+import { FileAddActions } from "./FileAddActions"
+import { PhotoDataPanel } from "./PhotoDataPanel"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
 import { TextSearchPanel } from "./TextSearchPanel"
 import {
@@ -459,6 +463,7 @@ function DetailsPanelContent({
     file.transcription_speaker_merges || {}
   )
   const fileUrl = evidenceAPI.getFileUrl(file.id)
+  const { canEdit } = useCasePermissions(useCase(caseId).data)
   const ext = getExt(file.original_filename)
   const mediaType = getMediaType(file.original_filename)
   const displayStatus = getDisplayStatus(file)
@@ -602,6 +607,15 @@ function DetailsPanelContent({
             </Button>
             <AddToTheory caseId={caseId} surface="evidence" label="Theory…" items={[{ target_type: "evidence", target_id: file.id, target_label: file.original_filename }]} />
           </div>
+
+          {!fileMissing && canEdit && (
+            <div className="flex flex-wrap gap-2">
+              <FileAddActions caseId={caseId} files={[{ id: file.id, name: file.original_filename }]} />
+            </div>
+          )}
+          {mediaType === "image" && !fileMissing && (
+            <PhotoDataPanel caseId={caseId} fileId={file.id} canEdit={canEdit} />
+          )}
 
           {/* Smart thumbnail */}
           {!fileMissing && (

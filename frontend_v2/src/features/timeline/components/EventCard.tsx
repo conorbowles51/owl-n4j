@@ -4,12 +4,14 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
 import { getEventTypeColor, hasAmount, modelReadingFile } from "../api"
-import type { TimelineEvent } from "../api"
+import type { EventFile, TimelineEvent } from "../api"
 import { displayEventTime, getEventTimeValue } from "../lib/timeline-utils"
 import { CheckTag, DirectionMark, MONEY } from "@/lib/data-colour"
 
 interface EventCardProps {
   event: TimelineEvent
+  /** Files a person attached to this event. */
+  attachedFiles?: EventFile[]
   isSelected: boolean
   isMultiSelected: boolean
   curationMode?: boolean
@@ -41,6 +43,7 @@ function highlightText(text: string, term: string) {
 
 export const EventCard = memo(function EventCard({
   event,
+  attachedFiles = [],
   isSelected,
   isMultiSelected,
   curationMode = false,
@@ -52,6 +55,7 @@ export const EventCard = memo(function EventCard({
   onToggleCurationSelection,
 }: EventCardProps) {
   const color = getEventTypeColor(event.type)
+  const attached = attachedFiles
   const direction = event.direction === "credit" ? "in" : event.direction === "debit" ? "out" : null
   const active = isSelected || isMultiSelected
   const summaryText = event.summary ? markdownToPlainText(event.summary) : null
@@ -187,12 +191,36 @@ export const EventCard = memo(function EventCard({
             </p>
           )}
 
+          {event.thumbnail_url && (
+            <img
+              src={event.thumbnail_url}
+              alt={`Photo ${event.source?.label ?? ""}`.trim()}
+              loading="lazy"
+              className="mt-1.5 h-24 w-auto max-w-full rounded border object-cover"
+            />
+          )}
+          {attached.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5" data-event-files="">
+              {attached.map((file) => (
+                <img
+                  key={file.id}
+                  src={file.thumbnail_url}
+                  alt={`Attached ${file.name}`}
+                  title={`${file.name}, attached by ${file.added_by}`}
+                  loading="lazy"
+                  className="h-14 w-auto rounded border object-cover"
+                />
+              ))}
+            </div>
+          )}
           {event.source && (
             <p className="mt-1 text-xs text-muted-foreground">
               {event.source.date_basis} ·{" "}
               {event.source.state === "snapshot"
                 ? "Saved copy; source changed or removed"
-                : event.source.kind === "transaction"
+                : event.source.kind === "evidence_file"
+                  ? `File ${event.source.label}`
+                  : event.source.kind === "transaction"
                   ? "Open payment and statement"
                   : `Open ${event.type.toLowerCase()} and supporting evidence`}
             </p>

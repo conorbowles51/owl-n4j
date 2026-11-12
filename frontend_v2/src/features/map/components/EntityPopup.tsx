@@ -120,6 +120,28 @@ export function EntityPopup({
           </p>
         )}
 
+        {location.thumbnail_url && (
+          <img
+            src={location.thumbnail_url}
+            alt={`Photo ${location.name}`}
+            loading="lazy"
+            className="h-24 w-auto max-w-full rounded border object-cover"
+          />
+        )}
+        {location.evidence_file_id && (
+          <a
+            className="text-[10px] underline"
+            href={`/api/evidence/${location.evidence_file_id}/file`}
+            target="_blank"
+            rel="noopener"
+          >
+            Open the photo file
+          </a>
+        )}
+        {location.altitude_m != null && (
+          <p className="text-[10px] text-muted-foreground">Altitude {location.altitude_m} m</p>
+        )}
+
         {/* Geocoding provenance */}
         {hasProvenance && (
           <div className="space-y-1 border-t border-border pt-1.5 text-[10px] text-muted-foreground">

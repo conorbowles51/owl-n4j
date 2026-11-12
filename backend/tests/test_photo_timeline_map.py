@@ -131,3 +131,31 @@ def test_deleted_file_is_not_a_timeline_event_or_pin(world):
     a.deleted_at = datetime.now(timezone.utc)
     db.commit()
     assert pd.photo_events(db, case) == [] and pd.photo_places(db, case) == []
+
+
+def test_backfill_stores_photo_data_only_and_is_a_dry_run_by_default(world, tmp_path):
+    from PIL import Image
+
+    from scripts.backfill_photo_data import backfill
+
+    db, case = world
+    exif = Image.Exif()
+    exif.get_ifd(0x8769)[0x9003] = "2024:05:01 12:30:15"
+    path = tmp_path / "a.jpg"
+    Image.new("RGB", (5, 5)).save(path, format="JPEG", exif=exif)
+    file = _file(db, case, "a.jpg", None, ocr="kept")
+    file.stored_path = str(path)
+    db.commit()
+    resolve = lambda stored: tmp_path / stored.rsplit("/", 1)[-1]
+
+    dry = backfill(db, apply=False, resolve_path=resolve)[str(case)]
+    assert (dry["would_store"], dry["stored"], dry["before"]) == (1, 0, {})
+    db.refresh(file)
+    assert "photo_data" not in file.metadata_
+
+    done = backfill(db, apply=True, resolve_path=resolve)[str(case)]
+    assert done["stored"] == 1 and done["after"]["date_taken"] == 1
+    db.refresh(file)
+    assert file.metadata_["photo_data"]["read_by"] == "backfill" and file.metadata_["ocr"] == "kept"
+    again = backfill(db, apply=True, resolve_path=resolve)[str(case)]
+    assert again["stored"] == 0  # a file with a record is left alone

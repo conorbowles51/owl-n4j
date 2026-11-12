@@ -8,6 +8,8 @@ import {
   FolderInput,
   Trash2,
   ContactRound,
+  CalendarPlus,
+  Link2,
   Pin,
   PinOff,
 } from "lucide-react"
@@ -67,6 +69,8 @@ interface FileRowProps {
   productionLine?: string | null
   onDelete?: (file: EvidenceFile) => void
   onAddToDossier?: (file: EvidenceFile) => void
+  onAddToTimeline?: (file: EvidenceFile) => void
+  onAddToEvent?: (file: EvidenceFile) => void
   isPinned?: boolean
   onPin?: (fileId: string) => void
   onUnpin?: (pinId: string) => void
@@ -114,6 +118,8 @@ export function FileRow({
   caseId,
   onDelete,
   onAddToDossier,
+  onAddToTimeline,
+  onAddToEvent,
   isPinned,
   onPin,
   onUnpin,
@@ -351,6 +357,18 @@ export function FileRow({
                 <DropdownMenuItem onClick={() => onPin(file.id)}>
                   <Pin className="size-4" />
                   Pin to workspace
+                </DropdownMenuItem>
+              ) : null}
+              {onAddToTimeline ? (
+                <DropdownMenuItem onClick={() => onAddToTimeline(asLegacyFile)}>
+                  <CalendarPlus className="size-4" />
+                  Add to Timeline
+                </DropdownMenuItem>
+              ) : null}
+              {onAddToEvent ? (
+                <DropdownMenuItem onClick={() => onAddToEvent(asLegacyFile)}>
+                  <Link2 className="size-4" />
+                  Add to event
                 </DropdownMenuItem>
               ) : null}
               {onAddToDossier ? (

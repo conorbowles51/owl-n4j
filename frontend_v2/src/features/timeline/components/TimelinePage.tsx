@@ -25,6 +25,7 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { useTimelineData } from "../hooks/use-timeline-data"
+import { useCaseEventFiles } from "../hooks/use-event-files"
 import { useTimelineStore } from "../stores/timeline.store"
 import { useFilteredEvents } from "../hooks/use-filtered-events"
 import { useKeyboardNavigation } from "../hooks/use-keyboard-navigation"
@@ -46,7 +47,7 @@ import { UndatedEvents } from "./UndatedEvents"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import type { GroupMember } from "@/features/theory/api"
-import type { TimelineEvent } from "../api"
+import type { EventFile, TimelineEvent } from "../api"
 
 export function TimelinePage() {
   const { id: caseId } = useParams()
@@ -65,6 +66,12 @@ export function TimelinePage() {
       ? location.state.financialReturnTo
       : `/cases/${caseId}/financial?view=transactions`
   const caseLayer = useCaseLayer(caseId)
+  const eventFiles = useCaseEventFiles(caseId).data?.files
+  const attachedFiles = useMemo(() => {
+    const byKey = new Map<string, EventFile[]>()
+    for (const file of eventFiles ?? []) byKey.set(file.event_key, [...(byKey.get(file.event_key) ?? []), file])
+    return byKey
+  }, [eventFiles])
   const { events, undatedEvents, eventTypes, entities, isLoading, dataKey, error, retry } =
     useTimelineData({ caseId })
   // The phone lens (03 section 9): shown only on a case with phones; off, the page is the existing Timeline (T-5).
@@ -391,6 +398,7 @@ export function TimelinePage() {
       selectedEventKey={selectedEventKey}
       multiSelectedKeys={multiSelectedKeys}
       searchTerm={searchTerm}
+      attachedFiles={attachedFiles}
       selectedEntityKeys={selectedEntityKeys}
       scrollToEventKey={scrollToEventKey}
       onSelectEvent={handleSelectEvent}

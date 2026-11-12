@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
@@ -47,7 +47,7 @@ export function AddToTimelineDialog({
 }: {
   caseId: string
   ids: string[]
-  sourceKind?: "transaction" | "workspace_entry" | "money_trail"
+  sourceKind?: "transaction" | "workspace_entry" | "money_trail" | "evidence_file"
   title?: string
   onClose: () => void
 }) {
@@ -55,12 +55,17 @@ export function AddToTimelineDialog({
   const location = useLocation()
   const client = useQueryClient()
   const [eventDate, setEventDate] = useState("")
+  const [eventTime, setEventTime] = useState("")
+  const [place, setPlace] = useState("")
+  const isFile = sourceKind === "evidence_file"
   const [preview, setPreview] = useState<Preview | null>(null)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const body = {
     source_kind: sourceKind,
     source_ids: ids,
     ...(eventDate ? { event_date: eventDate } : {}),
+    ...(isFile && eventTime ? { event_time: eventTime } : {}),
+    ...(isFile && place.trim() ? { place: place.trim() } : {}),
   }
   const url = `/api/timeline/entries?${new URLSearchParams({ case_id: caseId })}`
   const review = useMutation({
@@ -80,6 +85,12 @@ export function AddToTimelineDialog({
       setPreview(result)
     },
   })
+  // Files open with their preview already loaded, so each photo's own date shows before anything is typed.
+  const startReview = review.mutate
+  useEffect(() => {
+    if (isFile) startReview()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const save = useMutation({
     mutationFn: async () => {
       const result = await fetchAPI<Receipt>(url, {
@@ -116,7 +127,7 @@ export function AddToTimelineDialog({
         <DialogTitle>Add to Timeline</DialogTitle>
         <DialogDescription>
           {title ||
-            `${ids.length} selected transaction${ids.length === 1 ? "" : "s"}`}{" "}
+            `${ids.length} selected ${isFile ? "file" : "transaction"}${ids.length === 1 ? "" : "s"}`}{" "}
           · Add dated events to this case’s Timeline with links back to their
           sources.
         </DialogDescription>
@@ -134,8 +145,9 @@ export function AddToTimelineDialog({
               )}
               {receipt.undated > 0 && (
                 <p>
-                  {receipt.undated} undated payments were left in Transactions.
-                  Edit their dates and add them when ready.
+                  {isFile
+                    ? `${receipt.undated} had no date in their data and were not added. Choose a date and add them again.`
+                    : `${receipt.undated} undated payments were left in Transactions. Edit their dates and add them when ready.`}
                 </p>
               )}
               <p>
@@ -145,7 +157,36 @@ export function AddToTimelineDialog({
             </div>
           ) : (
             <>
-              {sourceKind === "money_trail" ? (
+              {isFile ? (
+                <div className="grid gap-2 text-sm">
+                  <p>
+                    Each photo goes on the Timeline at the date in its own data. That date is not checked by a
+                    person. Change the date, time or place below if it is wrong; the photo’s own value stays
+                    visible on the entry.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="grid gap-1">
+                      Date (all selected)
+                      <input type="date" className="rounded border p-2 bg-background" value={eventDate}
+                        disabled={pending}
+                        onChange={(e) => { setEventDate(e.target.value); setPreview(null); save.reset() }} />
+                    </label>
+                    <label className="grid gap-1">
+                      Time
+                      <input type="time" className="rounded border p-2 bg-background" value={eventTime}
+                        disabled={pending}
+                        onChange={(e) => { setEventTime(e.target.value); setPreview(null); save.reset() }} />
+                    </label>
+                    <label className="grid min-w-48 flex-1 gap-1">
+                      Place (optional)
+                      <input type="text" maxLength={200} className="rounded border p-2 bg-background" value={place}
+                        disabled={pending}
+                        onChange={(e) => { setPlace(e.target.value); setPreview(null); save.reset() }} />
+                    </label>
+                  </div>
+                  <span className="text-muted-foreground">Leave all three blank to use each photo’s own data. A description is not needed.</span>
+                </div>
+              ) : sourceKind === "money_trail" ? (
                 <p>
                   One transfer event retains both statement entries as
                   supporting evidence. Existing individual entries are combined
@@ -199,6 +240,7 @@ export function AddToTimelineDialog({
                     {sourceKind === "transaction" && (
                       <> · {preview.undated} without a payment date</>
                     )}
+                    {isFile && <> · {preview.undated} without a date</>}
                   </p>
                   <ul className="divide-y rounded border">
                     {preview.rows.map((row) => (
@@ -207,7 +249,9 @@ export function AddToTimelineDialog({
                         <p>
                           {row.event
                             ? `${row.event.date} · ${row.event.type} · ${row.event.source?.date_basis ?? "Recorded date"}`
-                            : "No payment date — will not be added"}
+                            : isFile
+                              ? "No date taken in the photo’s data. Choose a date above to add it."
+                              : "No payment date — will not be added"}
                         </p>
                         {row.event && hasAmount(row.event.amount) && <p>{row.event.amount}</p>}
                         {row.event?.source?.label && (

@@ -22,7 +22,7 @@ export interface TimelineEvent {
   summary: string | null
   notes: string | null
   source?: {
-    kind: "transaction" | "workspace_entry" | "money_trail"
+    kind: "transaction" | "workspace_entry" | "money_trail" | "evidence_file"
     id: string
     date_basis: string
     label: string
@@ -32,7 +32,23 @@ export interface TimelineEvent {
   /** The files the document model read this event from; set on the model's events, never on a ledger row. */
   source_files?: string[] | null
   ledger_transaction_id?: string | null
+  /** A photo's event: the file, a small picture of it, and the photo's own date and place as its data holds them. */
+  evidence_file_id?: string
+  thumbnail_url?: string
+  photo_original?: {
+    date_taken?: { local: string; offset: string | null } | null
+    gps?: { latitude: number; longitude: number; altitude_m?: number } | null
+  } | null
   connections: TimelineConnection[]
+}
+
+export interface EventFile {
+  id: string
+  event_key: string
+  evidence_file_id: string
+  name: string
+  added_by: string
+  thumbnail_url: string
 }
 
 /** The file a model-written event was read from, or null for a ledger row, a person's entry or a saved source. */
