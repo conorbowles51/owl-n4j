@@ -76,6 +76,7 @@ import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { AllCasesSwitch } from "./AllCasesSwitch"
+import { firstShownDetails, useFollowNewestStep } from "../investigation-trail-follow"
 import { AgentCapabilitiesHelp } from "./AgentCapabilitiesHelp"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
@@ -1746,6 +1747,8 @@ function InvestigationTrail({
   )
   const durationLabel = formatDuration(duration)
   const isOpen = open || live
+  const details = useMemo(() => firstShownDetails(steps.map((step) => step.detail)), [steps])
+  const newestStep = useFollowNewestStep(isOpen ? steps.length : 0, live)
 
   if (steps.length === 0) return null
 
@@ -1801,7 +1804,11 @@ function InvestigationTrail({
               const Icon = activityIconFor(step.toolName)
               const durationText = formatDuration(step.durationMs)
               return (
-                <div key={`${step.id}_${index}`} className="flex gap-2">
+                <div
+                  key={`${step.id}_${index}`}
+                  ref={index === steps.length - 1 ? newestStep : undefined}
+                  className="flex gap-2"
+                >
                   <div className="flex w-5 shrink-0 flex-col items-center">
                     <span
                       className={cn(
@@ -1835,9 +1842,9 @@ function InvestigationTrail({
                         </span>
                       )}
                     </div>
-                    {step.detail && (
+                    {details[index] && (
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                        {step.detail}
+                        {details[index]}
                       </p>
                     )}
                     {step.result && (
