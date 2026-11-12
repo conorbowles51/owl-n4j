@@ -541,26 +541,57 @@ fi
 step "Pausing uploads"
 release_work_pause uploads
 
-step "Checking ingestion before migrations and service replacement"
-ingestion_gate
-
-if [ "${STEP_BACKEND}" != run ]; then
-    success "Backend unchanged; migrations skipped"
-elif [ "${MIGRATED}" != true ]; then
-    run_migrations
-fi
-
 # The Docker stack refresh has a time limit. 9 Nov 00:40 'docker compose up' held the release 2,569 s with uploads
 # paused and the evidence engine's containers only created; over the 40 releases before, the step took 19-65 s
 # (two others 794 s and 1,138 s). A refresh that does not finish is tried once more (compose starts what is left);
 # a second one undoes the release through the rollback below, which resumes the paused work.
 COMPOSE_UP_TIMEOUT_S="${COMPOSE_UP_TIMEOUT_S:-900}"
 ENGINE_REFRESH_FAILED=""
+# The main engine worker finishes the work in its hands before it stops (stop_grace_period 14500 s). 11 Nov 22:51 the
+# refresh began with 9 engine jobs still in it: compose replaced the API and the other workers first, then waited on
+# the worker's stop and could not name its successor; both tries and the rollback's ran out and the engine API stayed
+# down for hours. Now the release waits a little for engine work in a worker's hands (arq's in-progress keys) and
+# otherwise is deferred before any migration that needs the old backend gone or any service is replaced; and the
+# main worker is stopped on its own before compose touches anything else.
+ENGINE_MAIN_WORKER="${ENGINE_MAIN_WORKER:-evidence-engine-worker}"
+ENGINE_BUSY_WAIT_S="${ENGINE_BUSY_WAIT_S:-180}"
+ENGINE_BUSY_POLL_S="${ENGINE_BUSY_POLL_S:-10}"
+engine_jobs_in_hand() {  # prints the count; fails when it cannot be read
+    local keys
+    keys="$(docker compose exec -T redis redis-cli --scan --pattern 'arq:in-progress:*')" || return 1
+    grep -c . <<<"${keys}" || true
+}
+engine_gate() {
+    [ "${STEP_ENGINE}" = run ] || return 0
+    local n waited=0
+    while :; do
+        n="$(engine_jobs_in_hand)" || n="an unknown number of"
+        if [ "${n}" = 0 ]; then
+            success "Evidence engine: no job in a worker's hands"
+            return 0
+        fi
+        [ "${waited}" -lt "${ENGINE_BUSY_WAIT_S}" ] || break
+        sleep "${ENGINE_BUSY_POLL_S}"
+        waited=$(( waited + ENGINE_BUSY_POLL_S ))
+    done
+    DEPLOY_OUTCOME="deferred: ${n} evidence engine jobs still in a worker's hands after ${waited} s"
+    echo "Release deferred: ${n} evidence engine jobs are still in a worker's hands after ${waited} s. No further services will be replaced by this release attempt; the engine keeps running." >&2
+    return 75
+}
 docker_stack_up() {
     local attempt rc
     for attempt in 1 2; do
         rc=0
         # Plain timeout: this host's timeout (uutils 0.2.2) exits 125 at once when given --kill-after.
+        timeout "${COMPOSE_UP_TIMEOUT_S}" docker compose stop "${ENGINE_MAIN_WORKER}" || rc=$?
+        if [ "${rc}" -ne 0 ]; then
+            if [ "${rc}" -eq 124 ]; then
+                warn "The main engine worker did not stop within ${COMPOSE_UP_TIMEOUT_S} s (attempt ${attempt} of 2); nothing else was replaced"
+            else
+                warn "Stopping the main engine worker failed with exit ${rc} (attempt ${attempt} of 2); nothing else was replaced"
+            fi
+            continue
+        fi
         timeout "${COMPOSE_UP_TIMEOUT_S}" docker compose up -d --no-build --remove-orphans || rc=$?
         [ "${rc}" -eq 0 ] && return 0
         if [ "${rc}" -eq 124 ]; then
@@ -571,6 +602,33 @@ docker_stack_up() {
     done
     return 1
 }
+# Rollback: the whole stack, else every engine service but a main worker still stopping, so the API answers again;
+# that worker is started (old code) once its stop has finished, by a waiter that outlives this script.
+engine_rollback_up() {
+    local services
+    docker_stack_up && return 0
+    services="$(docker compose config --services | grep -vx "${ENGINE_MAIN_WORKER}" | tr '\n' ' ')"
+    # shellcheck disable=SC2086
+    if timeout "${COMPOSE_UP_TIMEOUT_S}" docker compose up -d --no-build --no-deps ${services}; then
+        warn "Rollback: the evidence engine is back except its main worker, which is still finishing its work"
+    else
+        warn "Rollback: the evidence engine services did not start; the evidence engine may be down"
+    fi
+    setsid bash -c 'c="$(docker compose ps -aq "$1" | head -1)"; [ -z "${c}" ] || timeout 15000 docker wait "${c}" >/dev/null; docker compose up -d --no-build --no-deps "$1"' \
+        engine-worker-restart "${ENGINE_MAIN_WORKER}" >> "${LOG_FILE:-/dev/null}" 2>&1 < /dev/null &
+    warn "Rollback: the main engine worker starts again once its stop has finished (waiter pid $!)"
+    return 1
+}
+
+step "Checking ingestion before migrations and service replacement"
+ingestion_gate
+engine_gate
+
+if [ "${STEP_BACKEND}" != run ]; then
+    success "Backend unchanged; migrations skipped"
+elif [ "${MIGRATED}" != true ]; then
+    run_migrations
+fi
 
 if [ "${STEP_ENGINE}" = run ]; then
     step "Refreshing Docker stack"
@@ -768,7 +826,7 @@ if [ "${STEP_ENGINE}" = run ]; then
     step "Rollback: rebuilding Docker stack"
     docker compose build || true
     check_ingestion_idle
-    docker_stack_up || warn "Rollback: the Docker stack did not refresh; the evidence engine may be down"
+    engine_rollback_up || warn "Rollback: the Docker stack did not refresh"
 fi
 
 step "Rollback: restarting services"
