@@ -1,7 +1,4 @@
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { DocumentViewer } from "@/components/ui/document-viewer"
-import { evidenceAPI } from "@/features/evidence/api"
 import type { CoverageReview } from "../hooks/use-statement-coverage-review"
 import { formatLedgerAmount } from "../lib/ledger-format"
 
@@ -35,24 +32,69 @@ function RepeatedActivityDetail({
   )
 }
 
-export function StatementCoverageReview({
-  caseId,
+/** "I have compared these files…" and its reason: shown in this box and inside the side-by-side compare. */
+export function CoverageDecisionControls({
   review,
   decision,
   change,
   canEdit,
-  inBatch,
 }: {
-  inBatch: boolean
-  caseId: string
   review: CoverageReview
   decision: { revision: string; reason: string }
   change: (value: { revision: string; reason: string }) => void
   canEdit: boolean
 }) {
-  const [file, setFile] = useState<CoverageReview["candidates"][number] | null>(
-    null
+  const checked = decision.revision === review.revision
+  return (
+    <>
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          aria-label="I have compared these files and need to import this statement too"
+          checked={checked}
+          disabled={!canEdit}
+          onChange={(e) =>
+            change({
+              revision: e.target.checked ? review.revision || "" : "",
+              reason: decision.reason,
+            })
+          }
+        />
+        I have compared these files and need to import this statement too
+      </label>
+      {checked && (
+        <label className="block">
+          Why both statements are needed
+          <textarea
+            aria-label="Reason for importing overlapping statements"
+            className="block w-full border rounded p-2 bg-background mt-1"
+            maxLength={4096}
+            disabled={!canEdit}
+            value={decision.reason}
+            onChange={(e) => change({ ...decision, reason: e.target.value })}
+          />
+        </label>
+      )}
+    </>
   )
+}
+
+export function StatementCoverageReview({
+  review,
+  decision,
+  change,
+  canEdit,
+  inBatch,
+  onCompare,
+}: {
+  inBatch: boolean
+  review: CoverageReview
+  decision: { revision: string; reason: string }
+  change: (value: { revision: string; reason: string }) => void
+  canEdit: boolean
+  /** Opens this statement and the chosen one side by side. */
+  onCompare: (other: CoverageReview["candidates"][number]) => void
+}) {
   if (!review.candidates.length) return null
   const checked = decision.revision === review.revision
   const decided = checked && !!decision.reason.trim()
@@ -100,8 +142,8 @@ export function StatementCoverageReview({
                 <RepeatedActivityDetail detail={other.repeated_activity} />
               )}
             </div>
-            <Button size="sm" variant="outline" onClick={() => setFile(other)}>
-              Compare original PDF
+            <Button size="sm" variant="outline" onClick={() => onCompare(other)}>
+              Compare side by side
             </Button>
           </li>
         ))}
@@ -123,48 +165,12 @@ export function StatementCoverageReview({
         The file stays in Evidence. If it contains additional records, explain
         below why you need both statements.
       </p>
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          aria-label="I have compared these files and need to import this statement too"
-          checked={checked}
-          disabled={!canEdit}
-          onChange={(e) =>
-            change({
-              revision: e.target.checked ? review.revision || "" : "",
-              reason: decision.reason,
-            })
-          }
-        />
-        I have compared these files and need to import this statement too
-      </label>
-      {checked && (
-        <label className="block">
-          Why both statements are needed
-          <textarea
-            aria-label="Reason for importing overlapping statements"
-            className="block w-full border rounded p-2 bg-background mt-1"
-            maxLength={4096}
-            disabled={!canEdit}
-            value={decision.reason}
-            onChange={(e) => change({ ...decision, reason: e.target.value })}
-          />
-        </label>
-      )}
-      {file && (
-        <DocumentViewer
-          caseId={caseId}
-          evidenceId={file.file_id}
-          documentName={file.filename}
-          initialPage={file.page_number ?? 1}
-          documentUrl={evidenceAPI.getFileUrl(file.file_id)}
-          navigationKey={`${caseId}:${file.file_id}`}
-          open
-          onOpenChange={(open) => {
-            if (!open) setFile(null)
-          }}
-        />
-      )}
+      <CoverageDecisionControls
+        review={review}
+        decision={decision}
+        change={change}
+        canEdit={canEdit}
+      />
     </section>
   )
 }

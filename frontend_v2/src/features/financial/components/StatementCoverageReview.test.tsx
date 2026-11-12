@@ -1,9 +1,7 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { StatementCoverageReview } from "./StatementCoverageReview"
 
-vi.mock("@/components/ui/document-viewer", () => ({ DocumentViewer: () => null }))
-vi.mock("@/features/evidence/api", () => ({ evidenceAPI: { getFileUrl: () => "" } }))
 afterEach(cleanup)
 
 const review = {
@@ -45,7 +43,7 @@ const review = {
 it("holds a statement repeating earlier activity as a suggestion, naming what matches", () => {
   render(
     <StatementCoverageReview
-      caseId="case"
+      onCompare={vi.fn()}
       review={review}
       decision={{ revision: "", reason: "" }}
       change={vi.fn()}
@@ -67,7 +65,7 @@ it("holds a statement repeating earlier activity as a suggestion, naming what ma
 it("keeps the existing wording for a statement that only overlaps", () => {
   render(
     <StatementCoverageReview
-      caseId="case"
+      onCompare={vi.fn()}
       review={{ ...review, repeated_activity: undefined, matching_statement: false, candidates: [{ ...review.candidates[0], matching_statement: false, repeated_activity: undefined }] }}
       decision={{ revision: "", reason: "" }}
       change={vi.fn()}
@@ -76,4 +74,21 @@ it("keeps the existing wording for a statement that only overlaps", () => {
     />
   )
   expect(screen.getByRole("heading", { name: "Another statement covers these dates" })).toBeVisible()
+})
+
+it("opens the side-by-side compare with the chosen statement", () => {
+  const onCompare = vi.fn()
+  render(
+    <StatementCoverageReview
+      onCompare={onCompare}
+      review={review}
+      decision={{ revision: "", reason: "" }}
+      change={vi.fn()}
+      canEdit
+      inBatch={false}
+    />
+  )
+  expect(screen.queryByRole("button", { name: "Compare original PDF" })).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Compare side by side" }))
+  expect(onCompare).toHaveBeenCalledWith(review.candidates[0])
 })

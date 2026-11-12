@@ -10,7 +10,15 @@ import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
 import { ImportedStatementRowReview } from "./ImportedStatementRowReview"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
-import { StatementCoverageReview } from "./StatementCoverageReview"
+import {
+  CoverageDecisionControls,
+  StatementCoverageReview,
+} from "./StatementCoverageReview"
+import {
+  StatementCompareView,
+  type CompareCandidate,
+  type CompareFacts,
+} from "./StatementCompareView"
 import { useBatchReview } from "../lib/batch-review-context"
 import { PageReviewForm } from "./PageReviewForm"
 import { ReviewSaveConflict } from "./ReviewSaveConflict"
@@ -1429,6 +1437,10 @@ function EditableStatement({
     saved?.coverageDecision ?? { revision: "", reason: "" }
   )
   const [replacePrevious, setReplacePrevious] = useState(false)
+  const [compareWith, setCompareWith] = useState<CompareCandidate | null>(
+    null
+  )
+  const [compareMissing, setCompareMissing] = useState(false)
   const coverage = useStatementCoverageReview(
     caseId,
     fileId,
@@ -1449,6 +1461,27 @@ function EditableStatement({
     },
     !data.current_import || replacePrevious
   )
+  // Opened from a row's Compare in the review queue (its queueCompare names the queue item opened): show the
+  // side-by-side compare once the overlap check names the matching statement. Read once per opened statement.
+  const [compareAsked] = useState(() => {
+    if (typeof window === "undefined") return false
+    const params = new URLSearchParams(window.location.search)
+    const asked = params.get("queueCompare")
+    return !!asked && asked === params.get("queueItem")
+  })
+  const compareTaken = useRef(false)
+  useEffect(() => {
+    if (!compareAsked || compareTaken.current || !coverage.data) return
+    compareTaken.current = true
+    const candidates = coverage.data.candidates
+    const matching = candidates.filter((c) => c.matching_statement)
+    const target =
+      matching.find((c) => c.status === "imported") ??
+      matching[0] ??
+      candidates[0]
+    if (target) setCompareWith(target)
+    else setCompareMissing(true)
+  }, [compareAsked, coverage.data])
   const coverageBlocked =
     !!coverage.data?.candidates.length &&
     (coverageDecision.revision !== coverage.data.revision ||
@@ -2990,8 +3023,129 @@ function EditableStatement({
         )}
     </section>
   )
+  const duplicateDecisionPanel =
+    !data.current_import &&
+    (duplicateDecision || coverage.data?.matching_statement) ? (
+      <StatementDuplicateDecision
+        caseId={caseId}
+        fileId={fileId}
+        statementId={data.statement_id}
+        currency={data.currency}
+        readingRevision={data.revision}
+        decision={duplicateDecision}
+        matchingStatement={coverage.data?.matching_statement}
+        canEdit={caseCanEdit && !duplicateCheck.isPending}
+        canCheck={!duplicateCheckDirty}
+        checkDisabledReason="Save your current corrections with Save progress before checking duplicates. Your unfinished edits stay here."
+        onBusy={setDuplicateActionBusy}
+        onDecision={(decision) => {
+          if (renderSnapshot !== currentRequestSnapshot.current) return
+          setLocalDuplicate(decision)
+          confirm.reset()
+          void client.invalidateQueries({
+            queryKey: ["financial-batch", caseId],
+          })
+          void client.invalidateQueries({
+            queryKey: ["statement-import-status", caseId],
+          })
+          void client.invalidateQueries({
+            queryKey: ["financial-review-queue", caseId],
+          })
+          void client.invalidateQueries({
+            queryKey: ["financial-review-status", caseId],
+          })
+        }}
+      />
+    ) : null
+  // This statement's side of the side-by-side compare, from the values on this screen (her corrections included).
+  const ownBalance = (role: "opening" | "closing") => {
+    const readings = rows.filter(
+      (item) =>
+        item.excluded &&
+        originals.get(item.id)?.kind === "balance" &&
+        originals.get(item.id)?.fields.description?.trim().toLowerCase() ===
+          `${role} balance`
+    )
+    return readings.length === 1 &&
+      readings[0].balance_minor !== null &&
+      /^-?\d+$/.test(readings[0].balance_minor)
+      ? readings[0].balance_minor
+      : null
+  }
+  const ownTotalsIncomplete = included.some(
+    (r) => !r.direction || !/^\d+$/.test(r.amount_minor)
+  )
+  const ownFacts: CompareFacts = {
+    institution,
+    account_number: account,
+    holder,
+    period_start: periodStart,
+    period_end: periodEnd,
+    currency: data.currency,
+    opening_balance_minor: ownBalance("opening"),
+    closing_balance_minor: ownBalance("closing"),
+    money_in_minor: ownTotalsIncomplete ? null : total("credit"),
+    money_out_minor: ownTotalsIncomplete ? null : total("debit"),
+    payment_count: included.length,
+    notes: ownTotalsIncomplete
+      ? [
+          "Some payments have no amount or direction yet, so money in and out are not totalled.",
+        ]
+      : [],
+  }
+  const ownPages = data.page_numbers.length ? data.page_numbers : balancePages
+  const ownStatus =
+    excludedCopy ||
+    (duplicateDecision?.status === "ignored" && duplicateDecision.current)
+      ? "Left unimported"
+      : importedHere
+        ? "Imported"
+        : coverage.data?.matching_statement
+          ? "Held as possible duplicate"
+          : "Not imported yet"
   return (
     <div ref={statementControls} className="space-y-4 pt-4">
+      {compareMissing && (
+        <p role="status" className="text-sm">
+          No other statement in this case matches this one now, so there is
+          nothing to compare it with.
+        </p>
+      )}
+      {compareWith && (
+        <StatementCompareView
+          caseId={caseId}
+          open
+          onOpenChange={(open) => {
+            if (!open) setCompareWith(null)
+          }}
+          own={{
+            fileId,
+            filename: data.filename,
+            startPage: Math.min(...(ownPages.length ? ownPages : [1])),
+            pages: ownPages,
+            status: ownStatus,
+            facts: ownFacts,
+          }}
+          other={compareWith}
+          decision={
+            <>
+              {duplicateDecisionPanel}
+              {coverage.data?.candidates.length &&
+              !excludedCopy &&
+              !importedHere ? (
+                <div className="space-y-2 rounded border p-3 text-sm">
+                  <CoverageDecisionControls
+                    review={coverage.data}
+                    decision={coverageDecision}
+                    change={setCoverageDecision}
+                    canEdit={canEdit}
+                  />
+                </div>
+              ) : null}
+            </>
+          }
+        />
+      )}
       {data.current_import && !importedHere && !excludedCopy && (
         <section
           aria-label="Use the re-read statement"
@@ -3030,33 +3184,7 @@ function EditableStatement({
           </p>
         </section>
       )}
-      {!data.current_import &&
-        (duplicateDecision || coverage.data?.matching_statement) && (
-          <StatementDuplicateDecision
-            caseId={caseId}
-            fileId={fileId}
-            statementId={data.statement_id}
-            currency={data.currency}
-            readingRevision={data.revision}
-            decision={duplicateDecision}
-            matchingStatement={coverage.data?.matching_statement}
-            canEdit={caseCanEdit && !duplicateCheck.isPending}
-            canCheck={!duplicateCheckDirty}
-            checkDisabledReason="Save your current corrections with Save progress before checking duplicates. Your unfinished edits stay here."
-            onBusy={setDuplicateActionBusy}
-            onDecision={(decision) => {
-              if (renderSnapshot !== currentRequestSnapshot.current) return
-              setLocalDuplicate(decision)
-              confirm.reset()
-              void client.invalidateQueries({
-                queryKey: ["financial-batch", caseId],
-              })
-              void client.invalidateQueries({
-                queryKey: ["statement-import-status", caseId],
-              })
-            }}
-          />
-        )}
+      {duplicateDecisionPanel}
       {duplicateCheck.isPending && (
         <p role="status">
           Checking whether this statement is already represented. No
@@ -4921,12 +5049,12 @@ function EditableStatement({
             >
               {coverage.data && (
                 <StatementCoverageReview
-                  caseId={caseId}
                   review={coverage.data}
                   decision={coverageDecision}
                   change={setCoverageDecision}
                   canEdit={canEdit}
                   inBatch={!!batchReview}
+                  onCompare={setCompareWith}
                 />
               )}
               {coverage.pending && (
