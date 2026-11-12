@@ -4,6 +4,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.pipeline.failure_reason import failure_reason
 from app.config import settings
 from app.models.job import Job, JobStatus
 from app.pipeline.chunk_embed import (
@@ -414,7 +415,7 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
             JobStatus.FAILED,
             job.progress,
             db,
-            f"Failed: {e}",
-            error_message=str(e),
+            f"Failed: {failure_reason(e)}",
+            error_message=failure_reason(e),
         )
         raise

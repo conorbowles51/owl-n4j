@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.pipeline.failure_reason import failure_reason
 from app.config import settings
 from app.models.job import Job, JobStatus
 from app.ontology.schema_builder import get_merge_schema
@@ -506,7 +507,7 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
         logger.exception("Merge pipeline failed for job %s", job_id)
         await _update_job(
             job, JobStatus.FAILED, job.progress, db,
-            f"Failed: {e}",
-            error_message=str(e),
+            f"Failed: {failure_reason(e)}",
+            error_message=failure_reason(e),
         )
         raise

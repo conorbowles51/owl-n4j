@@ -414,19 +414,32 @@ def _top_level_item_count(content: str, schema: dict[str, Any]) -> int:
 # A request that never reached DeepSeek (no connection) is sent again after these pauses; it was not billed. The
 # OpenAI client retries these itself. 11 Nov 22:34: one ConnectTimeout failed a whole batch after 302 s of work.
 _DEEPSEEK_CONNECT_RETRY_DELAYS_S = (2.0, 6.0)
+# A connection dropped after the request was sent (ReadError, WriteError, the server closing without an answer) is
+# sent again once. DeepSeek may have billed the lost answer; one repeated call costs far less than the batch it
+# would fail. 12 Nov 05:19: one ReadError in entity summaries failed 6 PDFs after 25 minutes of work.
+_DEEPSEEK_DROPPED_RETRY_DELAYS_S = (6.0,)
+_DROPPED = (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError)
 
 
 async def _deepseek_post(client: httpx.AsyncClient, **kwargs: Any) -> httpx.Response:
-    for delay in (*_DEEPSEEK_CONNECT_RETRY_DELAYS_S, None):
+    connect_delays = list(_DEEPSEEK_CONNECT_RETRY_DELAYS_S)
+    dropped_delays = list(_DEEPSEEK_DROPPED_RETRY_DELAYS_S)
+    while True:
         try:
             return await client.post("https://api.deepseek.com/chat/completions", **kwargs)
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
-            if delay is None:
+            if not connect_delays:
                 raise
+            delay = connect_delays.pop(0)
             logger.warning("DeepSeek could not be reached (%s); sending again in %.0f s",
                            type(exc).__name__, delay)
-            await asyncio.sleep(delay)
-    raise AssertionError("unreachable")
+        except _DROPPED as exc:
+            if not dropped_delays:
+                raise
+            delay = dropped_delays.pop(0)
+            logger.warning("DeepSeek connection dropped before the answer (%s); sending again in %.0f s",
+                           type(exc).__name__, delay)
+        await asyncio.sleep(delay)
 
 
 def _add_token_usage(total: dict[str, Any], usage: Any) -> None:

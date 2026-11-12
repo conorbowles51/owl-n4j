@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.pipeline.failure_reason import failure_reason
 from app.config import settings
 from app.dependencies import async_session
 from app.models.job import Job, JobStatus
@@ -383,8 +384,8 @@ async def _report_file_failure(ji: dict, failure: Exception) -> None:
         ji["id"],
         JobStatus.FAILED,
         0.0,
-        f"Extraction failed: {failure}",
-        error_message=str(failure),
+        f"Extraction failed: {failure_reason(failure)}",
+        error_message=failure_reason(failure),
     )
 
 
@@ -429,11 +430,6 @@ async def _activate_chunk_revisions(
                 revision.job_id,
             )
     return pending_job_ids
-
-
-def failure_reason(error: BaseException) -> str:
-    """The error's text, or its name when it has none (httpx.ConnectTimeout: 11 Nov a file failed with an empty reason)."""
-    return str(error).strip() or type(error).__name__
 
 
 async def _force_fail_unfinished_batch_rows(batch_id: str, reason: str) -> None:
