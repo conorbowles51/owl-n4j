@@ -1,7 +1,7 @@
 import { fetchAPI } from "@/lib/api-client"
 import { LONG_REQUEST_MS } from "./deleted-items"
 import { transcriptsAPI } from './transcripts.api'
-import { uploadOrdinaryFiles } from "./resumable-upload"
+import { uploadOrdinaryFiles, type RefusedFile } from "./resumable-upload"
 import { uploadFolderOrArchive } from "./resumable-upload-groups"
 import type { UploadProgress } from "./upload-progress"
 import type {
@@ -26,6 +26,8 @@ export interface UploadResponse {
   task_ids?: string[]
   job_ids?: string[]
   message?: string
+  /** Files of the selection that were not uploaded, with why (an ordinary file selection). */
+  refused?: RefusedFile[]
 }
 
 export interface EvidenceUploadOptions {
@@ -34,6 +36,8 @@ export interface EvidenceUploadOptions {
   folderId?: string
   /** Hashing and sending progress for folder and archive uploads (07 J-1). */
   onProgress?: (progress: UploadProgress) => void
+  /** Files refused so far (an ordinary file selection): named at once, the others still upload. */
+  onRefused?: (refused: RefusedFile[]) => void
 }
 
 export const evidenceAPI = {
@@ -106,7 +110,7 @@ export const evidenceAPI = {
         : optionsOrIsFolder
     const isFolderUpload = options.isFolder || options.isArchive
     if (!isFolderUpload)
-      return uploadOrdinaryFiles(caseId, files, options.folderId)
+      return uploadOrdinaryFiles(caseId, files, options.folderId, options.onRefused)
     return uploadFolderOrArchive(caseId, files, options)
   },
 

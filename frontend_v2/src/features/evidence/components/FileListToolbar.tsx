@@ -141,7 +141,8 @@ export function FileListToolbar({
               : mode === "folder"
                 ? `Uploaded folder with ${uploadFiles.length} file${uploadFiles.length !== 1 ? "s" : ""}`
                 : `Uploaded ${uploadFiles.length} file${uploadFiles.length !== 1 ? "s" : ""}`
-          toast.success(result.message || fallback)
+          if (result.refused?.length) toast.warning(result.message || fallback)
+          else toast.success(result.message || fallback)
         },
         onError: (err) => toast.error(err.message),
       }

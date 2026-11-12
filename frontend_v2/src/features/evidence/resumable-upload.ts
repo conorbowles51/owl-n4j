@@ -19,6 +19,27 @@ export interface UploadSession {
   group_id?: string | null
 }
 export const CHUNK_SIZE = 4 * 1024 * 1024
+/** One ordinary file's limit, the server's (backend/routers/evidence_uploads.py MAX_FILE_BYTES). Checked before
+ * the file is hashed: a 1.3 GB video was hashed for minutes and then refused (12 Nov). */
+export const MAX_ORDINARY_FILE_BYTES = 64 * 1024 ** 3
+/** The completion request assembles and checks every byte: 397 s for 5 GB on the server under load (12 Nov), more
+ * than the default 300 s wait. The proxy in front allows an hour. */
+const COMPLETE_TIMEOUT_MS = 3_600_000
+
+/** A file of the selection that was not uploaded, and why, in words for the page. */
+export interface RefusedFile {
+  name: string
+  reason: string
+}
+
+export function ordinaryTooLarge(file: File): RefusedFile | null {
+  if (file.size <= MAX_ORDINARY_FILE_BYTES) return null
+  const size = `${(file.size / 1024 ** 3).toFixed(1)} GB`
+  return {
+    name: file.name,
+    reason: `${file.name} is ${size}; one file can be at most 64 GB, so it was not uploaded.`,
+  }
+}
 const transfers = new Map<
   string,
   {
@@ -179,7 +200,7 @@ export function transferFile(
       try {
         return await fetchAPI<UploadSession>(
           `${endpoint}/${session.id}/complete`,
-          { method: "POST" }
+          { method: "POST", timeout: COMPLETE_TIMEOUT_MS }
         )
       } catch (error) {
         // The server may have committed before the acknowledgement was lost.
@@ -202,49 +223,81 @@ export function transferFile(
 export async function uploadOrdinaryFiles(
   caseId: string,
   files: File[],
-  folderId?: string
+  folderId?: string,
+  onRefused?: (refused: RefusedFile[]) => void
 ): Promise<UploadResponse> {
   const checkSession = uploadSessionGuard()
   const records: EvidenceFile[] = []
+  // Too large files are named at once, before any file is hashed; the rest of the selection still uploads.
+  const refused: RefusedFile[] = []
+  const accepted: File[] = []
   for (const file of files) {
-    const fingerprint = await uploadFingerprint(file)
-    const pending = await listUploads(caseId)
-    const prior = pending.find(
-      (item) =>
-        item.sha256 === fingerprint.sha256 &&
-        item.filename === file.name &&
-        item.folder_id === (folderId || null)
-    )
-    // A random id belongs to this transfer, not the file hash: intentional
-    // separately uploaded originals remain distinct.
-    const id = prior?.id ?? randomUUID()
-    checkSession()
-    const session = await fetchAPI<UploadSession>(endpoint, {
-      method: "POST",
-      body: {
-        id,
-        case_id: caseId,
-        folder_id: folderId || null,
-        filename: file.name,
-        size: file.size,
-        ...fingerprint,
-      },
-    })
-    const result = prior
-      ? await resumeUpload(id, file)
-      : await transferFile(session, file)
-    if (!result.evidence_id)
-      throw new Error(
-        "Upload is saved but evidence registration has not completed. Resume to finish."
-      )
-    records.push(
-      await fetchAPI<EvidenceFile>(`/api/evidence/${result.evidence_id}`)
-    )
+    const tooLarge = ordinaryTooLarge(file)
+    if (tooLarge) refused.push(tooLarge)
+    else accepted.push(file)
   }
+  if (refused.length) onRefused?.([...refused])
+  for (const file of accepted) {
+    try {
+      records.push(await uploadOneOrdinaryFile(caseId, file, folderId, checkSession))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      refused.push({ name: file.name, reason: reason.includes(file.name) ? reason : `${file.name}: ${reason}` })
+      onRefused?.([...refused])
+    }
+  }
+  const notUploaded = refused.map((item) => item.reason).join(" ")
+  if (!records.length && refused.length)
+    throw new Error(
+      refused.length === 1 ? notUploaded : `None of the ${refused.length} files was uploaded. ${notUploaded}`
+    )
+  const uploaded = `Uploaded ${records.length} file${records.length === 1 ? "" : "s"}`
   return {
     files: records,
-    message: `Uploaded ${records.length} file(s). Select Process to start ingestion.`,
+    refused,
+    message: refused.length
+      ? `${uploaded} of ${files.length}. Not uploaded: ${notUploaded}`
+      : `${uploaded}. Select Process to start ingestion.`,
   }
+}
+
+async function uploadOneOrdinaryFile(
+  caseId: string,
+  file: File,
+  folderId: string | undefined,
+  checkSession: () => void
+) {
+  const fingerprint = await uploadFingerprint(file)
+  const pending = await listUploads(caseId)
+  const prior = pending.find(
+    (item) =>
+      item.sha256 === fingerprint.sha256 &&
+      item.filename === file.name &&
+      item.folder_id === (folderId || null)
+  )
+  // A random id belongs to this transfer, not the file hash: intentional
+  // separately uploaded originals remain distinct.
+  const id = prior?.id ?? randomUUID()
+  checkSession()
+  const session = await fetchAPI<UploadSession>(endpoint, {
+    method: "POST",
+    body: {
+      id,
+      case_id: caseId,
+      folder_id: folderId || null,
+      filename: file.name,
+      size: file.size,
+      ...fingerprint,
+    },
+  })
+  const result = prior
+    ? await resumeUpload(id, file)
+    : await transferFile(session, file)
+  if (!result.evidence_id)
+    throw new Error(
+      "Upload is saved but evidence registration has not completed. Resume to finish."
+    )
+  return fetchAPI<EvidenceFile>(`/api/evidence/${result.evidence_id}`)
 }
 
 export function randomUUID() {

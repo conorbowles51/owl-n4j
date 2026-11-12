@@ -33,6 +33,10 @@ export function useUploadToFolder(caseId: string) {
         isArchive: data.isArchive,
         folderId: data.folderId || undefined,
         onProgress,
+        onRefused: (refused) => {
+          if (data.activityId)
+            useEvidenceStore.getState().updateUploadActivity(data.activityId, { refused })
+        },
       })
     },
     onMutate: (data) => {

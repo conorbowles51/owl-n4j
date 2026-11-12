@@ -165,6 +165,14 @@ function UploadActivityCard({ activity }: { activity: UploadActivity }) {
         </p>
       )}
 
+      {activity.refused?.length ? (
+        <ul className="mt-1 space-y-0.5 text-[10px] text-red-600" aria-label="Files not uploaded">
+          {activity.refused.map((item, index) => (
+            <li key={`${item.name}-${index}`}>{item.reason}</li>
+          ))}
+        </ul>
+      ) : null}
+
       <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1">
           <Clock className="size-2.5" />
