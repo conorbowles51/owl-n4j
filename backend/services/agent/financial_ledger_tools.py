@@ -203,23 +203,38 @@ def _context(session, case_id, account_ids, account_holders, start, end, filters
         FinancialSourceDocument.metadata_['statement_incomplete_records'].label('incomplete'),
         FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string().label('currency'),
         FinancialSourceDocument.metadata_['statement_details_review']['currency'].as_string().label('review_currency'),
-        EvidenceFile.case_id.label('file_case_id'), EvidenceFile.original_filename.label('filename'))
+        EvidenceFile.case_id.label('file_case_id'), EvidenceFile.original_filename.label('filename'),
+        EvidenceFile.sha256.label('file_sha256'),
+        EvidenceFile.metadata_['statement_root_evidence_id'].as_string().label('file_root_id'))
         .outerjoin(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
         .where(FinancialSourceDocument.case_id == case_id)
         .order_by(FinancialSourceDocument.id).limit(MAX_CONTEXT_ROWS + 1)))
     if len(sources) > MAX_CONTEXT_ROWS:
         raise FinancialLedgerToolError('Source coverage exceeds the bounded capture; no partial result was calculated.')
     source_index = {}
+    from services.financial.source_lineage import listed_originals
+    # A statement read from its reading version is cited by the original the Evidence page lists (same bytes). No
+    # query unless a source is a version.
+    root_of = {}
+    for source in sources:
+        if source.evidence_file_id is not None and source.file_case_id == case_id and source.file_root_id:
+            root = _uuid(source.file_root_id)
+            if root is not None and str(root) != str(source.evidence_file_id):
+                root_of[str(source.evidence_file_id)] = (str(root), source.file_sha256)
+    page_ids = listed_originals(session, case_id, root_of)
     for source in sources:
         # Never expose names/links through a dangling or foreign Evidence ID.
         valid_file = source.evidence_file_id is not None and source.file_case_id == case_id
+        listed = page_ids.get(str(source.evidence_file_id), str(source.evidence_file_id)) if valid_file else None
         source_index[str(source.id)] = dict(source_document_id=str(source.id),
-            evidence_file_id=str(source.evidence_file_id) if valid_file else None,
+            evidence_file_id=listed,
+            **({'read_from_evidence_file_id': str(source.evidence_file_id)}
+               if valid_file and listed != str(source.evidence_file_id) else {}),
             filename=source.filename if valid_file else None,
             status=source.status, proof_class=source.proof_class,
             source_available=valid_file, source_registered=valid_file, source_access_checked=False,
             financial_review_href=f'/cases/{case_id}/financial?view=statements&files=1&reviewFile={source.evidence_file_id}' if valid_file else None,
-            evidence_href=f'/cases/{case_id}/evidence?file={source.evidence_file_id}' if valid_file else None)
+            evidence_href=f'/cases/{case_id}/evidence?file={listed}' if valid_file else None)
     context = []
     for identifier in sorted(selected):
         account = by_id[identifier]
@@ -395,7 +410,7 @@ def _row_provenance(reading, judgements, by_id, load_row, correctors=None):
     """Who the row's reading comes from, its confirmation state, proof class, judgement calls and corrections. Reads
     the ledger's own fields (ledger_summary: model_work, provenance.confirmed_by, provenance.correction) and the
     judgement calls' row map; nothing is inferred a second way."""
-    from services.financial.model_work import origin_of
+    from services.financial.model_work import automatic_actor, origin_of
     row, stored = reading['row'], reading.get('provenance') or {}
     work = reading.get('model_work')
     saver = stored.get('confirmed_by') or {}
@@ -407,6 +422,9 @@ def _row_provenance(reading, judgements, by_id, load_row, correctors=None):
             origin_text=f'Saved by {model} for {person}: a model reading, not a person\'s entry. '
                 + ('No person has confirmed this statement.' if status == 'not_confirmed'
                    else f'A person has {status} this statement.'))
+    elif automatic_actor(saver):
+        out = dict(origin='automatic', confirmation='automatic_import',
+            origin_text='Imported automatically by Loupe from the statement; no person entered or reviewed it.')
     elif saver and not origin_of(saver):
         out = dict(origin='person', confirmation='person_saved', saved_by=saver.get('name'),
             origin_text=f"Entered or reviewed and saved by a person ({saver.get('name') or 'name not recorded'}).")
@@ -434,6 +452,9 @@ def _row_provenance(reading, judgements, by_id, load_row, correctors=None):
                 model_id=origin.get('model_id'), saved_at=corrector.get('at'), citation=origin.get('citation'),
                 origin_text=f'Corrected by {model} for {person}: a model correction, not a person\'s. '
                     + ('No person has confirmed it.' if status == 'not_confirmed' else f'A person has {status} it.'))
+        elif automatic_actor(corrector):
+            out = dict(origin='automatic', confirmation='automatic_correction',
+                origin_text='Corrected automatically by Loupe; no person made or reviewed the correction.')
         else:
             out = dict(origin='person', confirmation='person_saved', saved_by=corrector.get('name'),
                 origin_text=f"Corrected by a person ({corrector.get('name') or 'name not recorded'}).")
@@ -741,3 +762,47 @@ import contextvars as _contextvars  # noqa: E402
 _RUN_LEDGER_CACHE = _contextvars.ContextVar('agent_run_ledger_cache', default=None)
 from services.financial.view_cache import cached_view as _cached_view  # noqa: E402
 _kept_ledger_read = _cached_view('agent-ledger-read')(_kept_ledger_read)
+
+
+# Review-queue lists whose statements have no imported period yet: their payments are not in the ledger.
+_OUTSIDE_LEDGER_LISTS = (('items', 'waiting for a person'), ('ready', 'ready to import'),
+                         ('filled', 'filled in, not imported'), ('reader_fix', 'waiting for a reader fix'),
+                         ('rechecking', 'being read again'), ('unreadable', "couldn't be read"))
+OUTSIDE_LEDGER_SHOWN = 20
+
+
+def statements_outside_ledger(session, *, case_id) -> dict:
+    """The case's statements that the review queue still holds (not imported, not copies, not set aside by a person):
+    the ledger's totals leave out their payments. 12 Nov stand-in test: kell-2024-05.pdf was processed and waiting
+    for its closing balance while the ledger said its totals covered the complete payment population.
+
+    Reads the queue the Financial page shows; an earlier saved copy is used at once while a current one is built
+    (``refreshing``). Case-wide: a waiting statement's account and period are not yet confirmed."""
+    from services.financial.review_queue import case_review_queue
+    queue = case_review_queue(session, case_id=_uuid(case_id), limit=OUTSIDE_LEDGER_SHOWN, stale_ok=True,
+                              updating=True)
+    totals, files = queue.get('totals') or {}, []
+    count = 0
+    for name, words in _OUTSIDE_LEDGER_LISTS:
+        bucket = 'waiting' if name == 'items' else name
+        count += int(totals.get(bucket) or 0)
+        for entry in queue.get(name) or []:
+            files.append(dict(evidence_file_id=entry.get('file_id'), filename=entry.get('filename'),
+                state=words, account=entry.get('account') or None, period_start=entry.get('period_start') or None,
+                period_end=entry.get('period_end') or None, issue=entry.get('issue') or None))
+    shown = files[:OUTSIDE_LEDGER_SHOWN]
+    from services.financial.source_lineage import evidence_page_ids
+    listed = evidence_page_ids(session, _uuid(case_id), [f['evidence_file_id'] for f in shown])
+    for f in shown:
+        f['evidence_file_id'] = listed.get(str(f['evidence_file_id']), f['evidence_file_id'])
+    out = dict(statements_not_in_ledger=count, files=shown, files_not_shown=max(count - len(shown), 0),
+               left_out_by_a_person=int((queue.get('counts') or {}).get('left_unimported') or 0),
+               refreshing=bool(queue.get('refreshing')))
+    if count:
+        names = ', '.join(f"{f['filename']} ({f['state']})" for f in shown[:5])
+        more = count - min(len(shown), 5)
+        out['sentence'] = (f"{count} statement{'' if count == 1 else 's'} of this case "
+                           f"{'is' if count == 1 else 'are'} not in the ledger yet, so the totals leave out "
+                           f"{'its' if count == 1 else 'their'} payments: {names}"
+                           + (f" and {more} more" if more > 0 else '') + '.')
+    return out

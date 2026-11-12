@@ -89,6 +89,13 @@ def origin_of(record: Any) -> Optional[dict]:
     return None
 
 
+def automatic_actor(record: Any) -> bool:
+    """True for a stored actor that is Loupe's own automatic step ("System", no account: auto_read, carried
+    readings, automatic set-asides), never a person."""
+    return isinstance(record, Mapping) and record.get('name') == 'System' and not record.get('user_id') \
+        and origin_of(record) is None
+
+
 def origin_field(actor) -> dict:
     """``{'origin': ...}`` for a model actor and ``{}`` for anyone else, to spread into a stored actor record so a
     person's record stays exactly as it was."""

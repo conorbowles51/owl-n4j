@@ -177,6 +177,43 @@ def lineage_id(file):
         return str(file.id)
 
 
+def evidence_page_ids(session, case_id, file_ids):
+    """{file id: the id the Evidence page lists for it}. A statement's reading version (same case, same bytes, its
+    root recorded) is hidden there (``visible_evidence_condition``), so a citation of it names its original; every
+    other id maps to itself. 12 Nov stand-in test: the ledger cited the version of kell-2024-05.pdf, the file list
+    its original."""
+    ids = {str(i) for i in file_ids if i}
+    if not ids:
+        return {}
+    out = {i: i for i in ids}
+    root_of = {}
+    for file_id, root, sha in session.execute(select(EvidenceFile.id, EvidenceFile.metadata_['statement_root_evidence_id']
+            .as_string(), EvidenceFile.sha256).where(EvidenceFile.case_id == case_id,
+            EvidenceFile.id.in_([UUID(i) for i in ids]))):
+        try:
+            root = str(UUID(str(root))) if root else None
+        except (ValueError, TypeError):
+            root = None
+        if root and root != str(file_id):
+            root_of[str(file_id)] = (root, sha)
+    out.update(listed_originals(session, case_id, root_of))
+    return out
+
+
+def listed_originals(session, case_id, root_of):
+    """{version id: original id} for each ``version id: (recorded root id, version sha256)`` whose original is in the
+    case with the same bytes. No query when ``root_of`` is empty."""
+    out = {}
+    if root_of:
+        originals = dict(session.execute(select(EvidenceFile.id, EvidenceFile.sha256).where(
+            EvidenceFile.case_id == case_id, EvidenceFile.id.in_([UUID(r) for r, _ in root_of.values()]))).all())
+        originals = {str(k): v for k, v in originals.items()}
+        for file_id, (root, sha) in root_of.items():
+            if root in originals and originals[root] == sha:
+                out[file_id] = root
+    return out
+
+
 def visible_evidence_condition():
     """Hide only proven internal copies and phone thread documents (02 section 9.7: text written from a phone's
     records, reached through search and the phone screens), before pagination and counting."""

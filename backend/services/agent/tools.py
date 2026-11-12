@@ -2497,6 +2497,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                         summary=reason)
                 data = kept_read_financial_ledger(db, case_id=uuid.UUID(context.case_id),
                     view=view, filters=filters or None, ledger_cache=context.ledger_cache, **kwargs)
+                outside = _statements_outside_ledger(db, context.case_id) if data.get("available") is True else None
+                if outside is not None:
+                    data = {**data, "coverage": {**(data.get("coverage") or {}), "statements_outside_ledger": outside}}
         except ValueError as exc:
             return context.result(tool_name,
                 {"available": False, "applied": False, "reason": str(exc)},
@@ -2511,7 +2514,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         available = data.get("available") is True
         summary = (
             f"Read {data.get('returned', 0)} of {data.get('total_matching', 0)} matching {view}; "
-            "totals cover the complete matching payment population, separated by currency and account type."
+            + ledger_population_words(data)
             + (" " + data["coverage"]["why_not_verified"]
                if not data.get("totals") and (data.get("coverage") or {}).get("why_not_verified") else "")
             if available else str(data.get("reason") or "The complete financial scope is unavailable.")
@@ -3771,3 +3774,25 @@ def _conversation_read_tools(context):
 def _workspace_read_tools(context):
     from services.agent.workspace_read_tools import make_workspace_read_tools
     return make_workspace_read_tools(context)
+
+
+def _statements_outside_ledger(db, case_id):
+    """financial_ledger_tools.statements_outside_ledger, or a plain 'unavailable' when the queue cannot be read (the
+    summary then does not call the totals complete)."""
+    from services.agent.financial_ledger_tools import statements_outside_ledger
+    try:
+        return statements_outside_ledger(db, case_id=case_id)
+    except Exception:
+        logger.exception("Agent ledger: statements outside the ledger could not be read for case %s", case_id)
+        return {"unavailable": True}
+
+
+def ledger_population_words(data):
+    """What the ledger read's totals cover: complete only when no statement of the case waits outside the ledger."""
+    outside = (data.get("coverage") or {}).get("statements_outside_ledger") or {}
+    if not outside or outside.get("unavailable"):
+        return ("totals cover the imported statements; whether any statement still waits outside the ledger could "
+                "not be checked.")
+    if outside.get("statements_not_in_ledger"):
+        return "totals cover the imported statements only. " + outside["sentence"]
+    return "totals cover the complete matching payment population, separated by currency and account type."

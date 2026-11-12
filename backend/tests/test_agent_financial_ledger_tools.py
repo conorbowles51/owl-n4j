@@ -526,6 +526,75 @@ class FinancialAgentRowProvenanceTests(LedgerToolFixture):
         self.assertEqual(item['cite'], f'txn://{rows[0].id}')
 
 
+class StandInLedgerDefectTests(LedgerToolFixture):
+    """12 Nov stand-in test on the demo case. Each failed on the code before it."""
+
+    def test_automatic_import_row_is_not_called_a_persons(self):
+        _, _, rows = self.source(rows=1)
+        rows[0].provenance = {**(rows[0].provenance or {}), 'confirmed_by': dict(user_id=None, name='System')}
+        self.db.commit()
+        provenance = self.read()['items'][0]['provenance']
+        self.assertEqual(provenance['origin'], 'automatic')
+        self.assertEqual(provenance['confirmation'], 'automatic_import')
+        self.assertNotIn('person (System)', provenance['origin_text'])
+        self.assertIn('no person', provenance['origin_text'])
+
+    def test_row_read_from_a_reading_version_cites_the_file_the_evidence_page_lists(self):
+        from postgres.models.evidence import EvidenceFile
+        document, _, _ = self.source(rows=1)
+        version = self.db.get(EvidenceFile, document.evidence_file_id)
+        original = EvidenceFile(id=UUID('00000000-0000-4000-8000-0000000000a1'), case_id=self.case.id,
+            original_filename=version.original_filename, stored_path='/evidence/original.pdf', sha256=version.sha256)
+        self.db.add(original)
+        version.metadata_ = dict(statement_root_evidence_id=str(original.id), statement_parent_evidence_id=str(original.id))
+        self.db.commit()
+        item = self.read()['items'][0]
+        self.assertEqual(item['source']['evidence_file_id'], str(original.id))
+        self.assertEqual(item['source']['read_from_evidence_file_id'], str(version.id))
+        self.assertIn(str(original.id), item['source']['evidence_href'])
+        if item['statement_cite']:
+            self.assertIn(str(original.id), item['statement_cite'])
+
+    def test_a_version_with_other_bytes_keeps_its_own_id(self):
+        from postgres.models.evidence import EvidenceFile
+        document, _, _ = self.source(rows=1)
+        version = self.db.get(EvidenceFile, document.evidence_file_id)
+        other = EvidenceFile(id=UUID('00000000-0000-4000-8000-0000000000a2'), case_id=self.case.id,
+            original_filename='other.pdf', stored_path='/evidence/other.pdf', sha256='f' * 64)
+        self.db.add(other)
+        version.metadata_ = dict(statement_root_evidence_id=str(other.id))
+        self.db.commit()
+        source = self.read()['items'][0]['source']
+        self.assertEqual(source['evidence_file_id'], str(version.id))
+        self.assertNotIn('read_from_evidence_file_id', source)
+
+    def _queue(self, waiting):
+        items = [dict(file_id='00000000-0000-4000-8000-0000000000b1', filename='kell-2024-05.pdf', account='7730554471',
+                      period_start='2024-05-01', period_end='2024-05-31',
+                      issue='Closing balance not read: enter it from the statement')] if waiting else []
+        return dict(totals=dict(waiting=len(items), ready=0, filled=0, reader_fix=0, rechecking=0, unreadable=0),
+                    counts=dict(left_unimported=0), items=items, ready=[], filled=[], reader_fix=[], rechecking=[],
+                    unreadable=[], refreshing=False)
+
+    def test_a_statement_waiting_in_the_queue_makes_the_totals_not_complete(self):
+        from services.agent.financial_ledger_tools import statements_outside_ledger
+        from services.agent.tools import ledger_population_words
+        with patch('services.financial.review_queue.case_review_queue', return_value=self._queue(True)):
+            outside = statements_outside_ledger(self.db, case_id=self.case.id)
+        self.assertEqual(outside['statements_not_in_ledger'], 1)
+        self.assertEqual(outside['files'][0]['filename'], 'kell-2024-05.pdf')
+        words = ledger_population_words(dict(coverage=dict(statements_outside_ledger=outside)))
+        self.assertNotIn('complete', words)
+        self.assertIn('kell-2024-05.pdf', words)
+        with patch('services.financial.review_queue.case_review_queue', return_value=self._queue(False)):
+            outside = statements_outside_ledger(self.db, case_id=self.case.id)
+        self.assertEqual(outside['statements_not_in_ledger'], 0)
+        self.assertIn('complete', ledger_population_words(dict(coverage=dict(statements_outside_ledger=outside))))
+        # Not checked is never complete.
+        self.assertNotIn('complete', ledger_population_words(dict(coverage=dict(statements_outside_ledger={'unavailable': True}))))
+        self.assertNotIn('complete', ledger_population_words(dict(coverage={})))
+
+
 class CorrectedRowProvenanceTests(unittest.TestCase):
     def test_corrected_row_shows_original_and_uses_corrected(self):
         from tests.test_financial_payment_edits import PaymentEditTests
