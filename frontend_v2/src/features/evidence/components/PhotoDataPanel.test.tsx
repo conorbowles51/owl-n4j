@@ -7,7 +7,7 @@ const fetchAPI = vi.fn()
 vi.mock("@/lib/api-client", () => ({ fetchAPI: (...args: unknown[]) => fetchAPI(...args) }))
 
 function show(detail: object) {
-  fetchAPI.mockImplementation((url: string, init?: { method?: string }) =>
+  fetchAPI.mockImplementation((_url: string, init?: { method?: string }) =>
     Promise.resolve(init?.method === "PUT" ? { caption: "ok" } : detail)
   )
   return render(

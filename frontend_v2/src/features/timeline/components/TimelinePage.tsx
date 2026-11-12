@@ -25,6 +25,7 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { useTimelineData } from "../hooks/use-timeline-data"
+import { textWorkbenchHref } from "@/features/evidence/lib/text-workbench-link"
 import { useCaseEventFiles } from "../hooks/use-event-files"
 import { useTimelineStore } from "../stores/timeline.store"
 import { useFilteredEvents } from "../hooks/use-filtered-events"
@@ -145,14 +146,21 @@ export function TimelinePage() {
     (key: string) => {
       timelineSelectEvent(key)
       const financial = events.find((event) => event.key === key)?.source
-      if (financial) {
-        setSource(financial)
+      const kind = financial?.kind
+      if (financial && kind === "evidence_file") {
+        // A photo's event: its source is the file, not a payment, so it opens the original beside its text.
+        window.open(textWorkbenchHref(caseId ?? "", financial.id), "_blank", "noopener")
+        return
+      }
+      if (kind === "evidence_file") return
+      if (financial && kind) {
+        setSource({ kind, id: financial.id })
         return
       }
       selectNodes([key])
       expandGraphPanelTo("detail")
     },
-    [timelineSelectEvent, selectNodes, expandGraphPanelTo, events]
+    [timelineSelectEvent, selectNodes, expandGraphPanelTo, events, caseId]
   )
 
   const handleMultiSelectEvent = useCallback(
