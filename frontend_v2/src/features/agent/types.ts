@@ -155,6 +155,12 @@ export type AgentStreamEvent =
       tool: AgentToolTraceItem
     }
   | {
+      type: "steering"
+      entries: AgentSteeringEntry[]
+      applied: AgentSteeringEntry[]
+      off: string[]
+    }
+  | {
       type: "artifact"
       artifact: AgentArtifact
     }
@@ -349,6 +355,41 @@ export interface AgentLiveRun {
   stale?: boolean
   server_time?: string | null
   error?: string | null
+  steering?: AgentRunSteering | null
+  tool_trace?: AgentToolTraceItem[]
+}
+
+/** One switch or note the person sent while a run worked (backend services/agent/tool_groups.py trail_entry). */
+export interface AgentSteeringEntry {
+  id: string
+  kind: "switch" | "note"
+  group?: string | null
+  on?: boolean | null
+  note?: string | null
+  title: string
+  result: string
+  /** The last finished step when the run took it; it applies from applies_from. Absent while not yet taken. */
+  step?: number | null
+  applies_from?: number | null
+  at?: string | null
+}
+
+/** A run's tool switches: groups chosen from the question, entries taken (with their step), entries not yet taken,
+ * and the groups off now. */
+export interface AgentRunSteering {
+  chosen: string[]
+  applied: AgentSteeringEntry[]
+  pending: AgentSteeringEntry[]
+  off: string[]
+}
+
+/** A tool group as the run card lists it (GET /api/agent/tool-groups). */
+export interface AgentToolGroup {
+  id: string
+  name: string
+  about: string
+  tools: string[]
+  switchable: boolean
 }
 
 /** What the agent can work with (GET /api/agent/capabilities): plain labels, descriptions and example questions. */

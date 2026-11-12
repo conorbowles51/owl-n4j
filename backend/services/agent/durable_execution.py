@@ -189,8 +189,8 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
            mandate_context_block="", final_answer_rules="", proposer=None, user_id=None,
            all_cases=False, on_progress=None, hidden_tools=frozenset(),
            checkpoint_callback=None, resume_checkpoint=None, automatic_windows=DEFAULT_WINDOWS,
-           access_check=None, delivery_contract=None, **_ignored):
-    from services.agent import graph as g, live_runs, fit
+           access_check=None, delivery_contract=None, steering=None, **_ignored):
+    from services.agent import graph as g, live_runs, fit, tool_groups
     checkpoint = deepcopy(resume_checkpoint or {})
     if checkpoint and (checkpoint.get("version") != VERSION or checkpoint.get("case_id") != case_id
                        or checkpoint.get("all_cases", False) != bool(all_cases)
@@ -222,8 +222,16 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 context.cases_read.setdefault(source_id, None)
     tools = g.make_agent_tools(context)
     by_name = {t.name: t for t in tools if t.name not in hidden_tools}
-    bound = runner.base_model.bind_tools(g.tools_for_binding(runner.base_model,
-        [t for t in tools if t.name not in hidden_tools and t.name not in fit.hidden_tools()]))
+    # The person's tool switches and notes taken so far (services.agent.tool_groups), kept across a resume.
+    steer_applied = deepcopy(checkpoint.get('steering_applied', []))
+
+    def bind():
+        switched_off = tool_groups.hidden_tools(steer_applied)
+        return runner.base_model.bind_tools(g.tools_for_binding(runner.base_model,
+            [t for t in tools if t.name not in hidden_tools and t.name not in fit.hidden_tools()
+             and t.name not in switched_off]))
+
+    bound = bind()
     phase = checkpoint.get("phase", "agent")
     completed = set(checkpoint.get("completed_calls", []))
     inflight = checkpoint.get("inflight")
@@ -267,7 +275,8 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
 
     def note(value):
         if on_progress:
-            on_progress(value)
+            # "step N of up to <budget>": the budget this run stops at (lx-agentfit, tool steering F).
+            on_progress({**value, "budget": total_budget} if isinstance(value, dict) else value)
 
     def save():
         payload = dict(version=VERSION, case_id=case_id, all_cases=bool(all_cases),
@@ -287,6 +296,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                        working_notes=context.working_notes, rereads=context.rereads,
                        reread_source=context.reread_source,
                        page_reads=[[source, list(path), offset] for source, path, offset in context.page_reads],
+                       steering_applied=steer_applied,
                        budget_base=checkpoint.get("budget_base", 0), billed_count=billed_count,
                        elapsed_seconds=elapsed_before + time.monotonic() - started)
         for key in ("result_store", "model_views", "artifact_store", "cases_read", "other_case_citations"):
@@ -328,6 +338,20 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 state_messages.append(HumanMessage(content=resume_note))
                 resume_note = None
                 save()
+            # Switches and notes the person sent while the last step ran apply from this step (the running step
+            # finished first). Read from the run row: the web process that took them is not this worker.
+            fresh = tool_groups.apply(steering() or [], steer_applied, step=used) if steering else []
+            if fresh:
+                if any(entry.get("kind") == "switch" for entry in fresh):
+                    bound = bind()
+                    state_messages.append(HumanMessage(content=tool_groups.switch_message(fresh)))
+                for entry in fresh:
+                    if entry.get("kind") == "note":
+                        state_messages.append(HumanMessage(content=tool_groups.note_message(entry)))
+                save()
+                yield {"type": "steering", "entries": [tool_groups.trail_entry(e) for e in fresh],
+                       "applied": [tool_groups.trail_entry(e) for e in steer_applied],
+                       "off": sorted(tool_groups.off_groups(steer_applied))}
             note(live_runs.progress_thinking(step=used))
             response = g.invoke_model(bound, [SystemMessage(content=system_prompt()), *model_context(g.lean_messages(state_messages))],
                                       note=note, step=used, should_cancel=should_cancel)
@@ -384,6 +408,9 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 try:
                     if name not in by_name:
                         raise ValueError(f'Unknown or unavailable tool: {name}')
+                    switched_off = tool_groups.refusal(name, steer_applied)
+                    if switched_off:
+                        raise ValueError(switched_off)
                     # Checkpoint each call in order. Experimental parallel execution
                     # must not start another call before the first result is durable.
                     raw = g._free_call_refusal(name, context) or by_name[name].invoke(args)
@@ -512,6 +539,8 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 answer = g.link_named_files(g.link_document_citations(
                     g.replace_result_handles(answer, context.result_store)), g._tool_text({'messages': safe_messages}))
                 answer = g._with_kept_sources(answer, context, bool(clarification))
+            # A group the person switched off is named under Not examined, with its steps (rule 1).
+            answer = tool_groups.with_not_examined(answer, steer_applied, last_step=used)
             phase = "done"
             save()
     if clarification:
@@ -522,4 +551,4 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
            'completion_issues': completion_issues, 'render_receipts': render_receipts, 'repair_attempts': repair_attempts,
            'source_coverage_receipts': source_receipts,
            'evidence_review_receipts': {key: value for key, value in evidence_review_receipts.items() if value.get('active')},
-           "tool_trace": trace, "messages": spent, "usage": runner._extract_usage(spent[billed_count:]), **g._cross_case_result(context, case_id)}}
+           "tool_trace": trace, "messages": spent, "steering": steer_applied, "usage": runner._extract_usage(spent[billed_count:]), **g._cross_case_result(context, case_id)}}

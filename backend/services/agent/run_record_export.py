@@ -173,6 +173,8 @@ def load_record(db, run) -> dict[str, Any]:
         "summary": run.record_summary or {},
         "recorded": run.prompt_version is not None or any(c["recorded"] for c in calls),
         "calls": calls,
+        # The investigator's tool switches and notes the run took, each with its step (services.agent.tool_groups).
+        "steering": [e for e in metadata.get("steering_applied") or [] if isinstance(e, dict)],
         "items": [{"sequence": i.tool_call_sequence, "kind": i.kind, "ref": i.ref, "label": i.label,
                    "list": i.list_path, "position": i.position, "shown_to_model": i.shown_to_model,
                    "opened": i.opened, "opened_by_sequence": i.opened_by_sequence, "cited": i.cited,
@@ -241,7 +243,23 @@ def strategy_rows(record: dict[str, Any]) -> dict[str, Any]:
     return {"header": _header_rows(record),
             "tools": [{"tool": name, "calls": n} for name, n in sorted(tools.items())],
             "versions": [{"result schema": v} for v in versions],
-            "searches": searches, "exclusions": exclusions}
+            "searches": searches, "exclusions": exclusions, "steering": steering_rows(record)}
+
+
+def steering_rows(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each switch and note the investigator sent while the run worked, in the order the run took them."""
+    from services.agent import tool_groups
+    rows = []
+    for e in record.get("steering") or []:
+        if e.get("kind") == "note":
+            what = "Note to the agent: %s" % (e.get("note") or "")
+        else:
+            name = tool_groups.BY_ID.get(e.get("group") or "", {}).get("name", e.get("group"))
+            what = "%s switched %s" % (name, "on" if e.get("on") else "off")
+        rows.append({"after step": e.get("step") if e.get("step") is not None else "",
+                     "applies from step": e.get("applies_from") if e.get("applies_from") is not None else "",
+                     "what": what, "sent at": e.get("at") or ""})
+    return rows
 
 
 def _search_coverage_rows(call: dict[str, Any]) -> list[dict[str, Any]]:
@@ -319,6 +337,14 @@ def not_examined_rows(record: dict[str, Any], *, material: dict[str, dict[str, A
     if record["case_layer"] == "significant":
         scope.append({"#": "", "what": "Everything outside the Significant layer",
                       "decision": "The run was asked on the Significant layer only."})
+    from services.agent import tool_groups
+    last_step = int(record.get("tool_calls_used") or 0)
+    for span in tool_groups.off_spans(record.get("steering") or [], last_step=last_step):
+        scope.append({"#": "", "what": "%s (switched off by the investigator)" % span["name"],
+                      "decision": ("Switched off at step %s; not examined from step %s on." % (
+                          span["switched_at"], span["from"])) if span["to"] is None else (
+                          "Switched off at step %s and on again at step %s; not examined in steps %s to %s." % (
+                              span["switched_at"], span["to"], span["from"], span["to"]))})
     for c in record["calls"]:
         if c.get("withheld"):
             w = c["withheld"] if isinstance(c["withheld"], dict) else {"what": str(c["withheld"])}
@@ -345,7 +371,7 @@ def not_examined_rows(record: dict[str, Any], *, material: dict[str, dict[str, A
 
 SECTIONS = {
     "strategy": [("tools", "Tools used"), ("versions", "Tool result versions"), ("searches", "Searches, in order"),
-                 ("exclusions", "Exclusions stated")],
+                 ("exclusions", "Exclusions stated"), ("steering", "Switches and notes from the investigator")],
     "not_examined": [("categories", "Categories of case material not searched"),
                      ("hits", "Items returned but not opened, cited or used"),
                      ("clipped", "Material clipped by paging or by the tool budget"),
@@ -359,7 +385,8 @@ EMPTY = {"categories": "Every kind of material the case holds was searched.",
          "scope": "Nothing was out of scope by case decision or refused.",
          "phone_types": "No phone record type is left unread (or the case has no phones).",
          "exclusions": "No exclusions were stated by the results.", "tools": "No tools were called.",
-         "versions": "No result stated a schema version.", "searches": "No tool calls."}
+         "versions": "No result stated a schema version.", "searches": "No tool calls.",
+         "steering": "The investigator switched nothing and sent no note while the run worked."}
 
 
 def build_statement(db, run, kind: RecordExportKind) -> dict[str, Any]:

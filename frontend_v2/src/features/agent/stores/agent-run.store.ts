@@ -11,6 +11,8 @@ export interface AgentRunProgress {
   attempts?: number
   title: string
   since?: string
+  /** The number of steps this run stops at (the saved-work budget). */
+  budget?: number
 }
 
 export interface AgentRunNavigationState {

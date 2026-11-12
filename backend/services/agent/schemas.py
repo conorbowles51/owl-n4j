@@ -163,6 +163,16 @@ class AgentRunDetail(AgentRunStatusResponse):
     heartbeat_at: datetime | None = None
     stale: bool = False
     server_time: datetime | None = None
+    # The person's tool switches and notes for this run (services.agent.tool_groups): what was sent, what the run
+    # has taken (with its step), the groups chosen from the question and the groups off now.
+    steering: dict[str, Any] | None = None
+
+
+class AgentSteeringRequest(BaseModel):
+    kind: Literal["switch", "note"]
+    group: str | None = None
+    on: bool | None = None
+    note: str | None = None
 
 
 class AgentThreadSummary(BaseModel):

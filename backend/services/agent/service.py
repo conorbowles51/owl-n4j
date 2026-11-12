@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy.orm import Session
 
 from models.llm_models import get_model_by_id
-from postgres.models.agent import AgentThread
+from postgres.models.agent import AgentRun, AgentThread
 from postgres.models.cost_record import CostRecord
 from postgres.models.cost_record import CostJobType
 from postgres.models.user import User
@@ -231,6 +231,11 @@ class AgentService:
         if hidden_tools:
             storage.update_run_metadata(db, run=run, metadata={"tools_not_offered": sorted(hidden_tools)})
             db.commit()
+        from services.agent import tool_groups
+        if not (run.extra_metadata or {}).get("tool_groups_chosen"):
+            storage.update_run_metadata(db, run=run, metadata={
+                "tool_groups_chosen": tool_groups.chosen_from_question(request.message)})
+            db.commit()
         heartbeat = run_settle.RunHeartbeat(run.id, lease=execution_lease)
         if live is not None:
             live.run_id = run_id
@@ -265,7 +270,12 @@ class AgentService:
                 checkpoint_callback=lambda state: durable_execution.save_checkpoint(db, run, state, request, execution_lease),
                 access_check=lambda cases: self._checkpoint_access(db, user, request, cases),
                 delivery_contract=task_specification.get('delivery_contract'),
+                steering=lambda: self._steering_requests(db, run.id),
             ):
+                if event.get("type") == "steering":
+                    # What the run took and at which step: the agent page's trail and card read it back.
+                    storage.update_run_metadata(db, run=run, metadata={"steering_applied": event.get("applied") or []})
+                    db.commit()
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
                     continue
@@ -534,6 +544,45 @@ class AgentService:
         for case_id in other_cases:
             if not request.all_cases or not may_open(db, user, case_id):
                 raise PermissionError("Access to a source case changed; the saved work cannot be resumed")
+
+    @staticmethod
+    def _steering_requests(db: Session, run_id) -> list[dict[str, Any]]:
+        """The switches and notes the person has sent for this run, read fresh from the run row (the web process
+        that took them is not this worker). A failed read takes nothing this step; the next step reads again."""
+        from sqlalchemy import text
+        try:
+            if db.get_bind().dialect.name == "postgresql":
+                value = db.execute(text("SELECT extra_metadata->'steering' FROM agent_runs WHERE id = :id"),
+                                   {"id": str(run_id)}).scalar()
+            else:
+                from postgres.models.agent import AgentRun
+                row = db.get(AgentRun, run_id)
+                db.refresh(row, ["extra_metadata"])
+                value = (row.extra_metadata or {}).get("steering")
+        except Exception:  # noqa: BLE001
+            logger.warning("Reading the run's tool switches failed", exc_info=True)
+            return []
+        return [entry for entry in value if isinstance(entry, dict)] if isinstance(value, list) else []
+
+    def steer_run(self, *, db: Session, user: User, run_id: UUID, kind: str, group: str | None = None,
+                  on: bool | None = None, note: str | None = None) -> dict[str, Any]:
+        """A tool switch or a note from the person who asked, for a run still working. Stored on the run; the worker
+        takes it before its next step."""
+        from services.agent import tool_groups
+        from services.agent.durable_execution import write_metadata
+        run = storage.get_run_for_user(db, run_id=run_id, user=user)
+        db.query(AgentRun).filter(AgentRun.id == run.id).populate_existing().with_for_update().one()
+        if run.status != "running":
+            raise ValueError("This run has finished, so it cannot be changed. Ask a new question instead.")
+        entry = tool_groups.new_entry(kind=kind, user_id=str(user.id), group=group, on=on, note=note)
+        requested = [e for e in (run.extra_metadata or {}).get("steering") or [] if isinstance(e, dict)]
+        write_metadata(db, run, {"steering": [*requested, entry]})
+        self._log_agent_event(db, action="agent_run_steered", user=user, run=run,
+                              details={"kind": entry["kind"], "group": entry.get("group"), "on": entry.get("on"),
+                                       "note_chars": len(entry.get("note") or "")})
+        db.commit()
+        db.refresh(run)
+        return {"entry": tool_groups.trail_entry(entry), "steering": storage.steering_view(run)}
 
     def cancel_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunStatusResponse:
         run = storage.get_run_for_user(db, run_id=run_id, user=user)

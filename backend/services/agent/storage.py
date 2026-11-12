@@ -554,7 +554,20 @@ def run_progress_fields(run: AgentRun) -> dict[str, Any]:
         "heartbeat_at": run.heartbeat_at,
         "stale": bool(running and live_runs.stale(run.heartbeat_at or run.started_at)),
         "server_time": datetime.now(timezone.utc),
+        "steering": steering_view(run),
     }
+
+
+def steering_view(run: AgentRun) -> dict[str, Any]:
+    """The run's tool switches as the agent page shows them (services.agent.tool_groups)."""
+    from services.agent import tool_groups
+    meta = run.extra_metadata or {}
+    requested = [e for e in meta.get("steering") or [] if isinstance(e, dict)]
+    applied = [e for e in meta.get("steering_applied") or [] if isinstance(e, dict)]
+    taken = {e.get("id") for e in applied}
+    pending = [tool_groups.trail_entry(e) for e in requested if e.get("id") not in taken]
+    return {"chosen": list(meta.get("tool_groups_chosen") or []), "applied": applied, "pending": pending,
+            "off": sorted(tool_groups.off_groups([*applied, *[e for e in requested if e.get("id") not in taken]]))}
 
 
 def active_runs(db: Session, *, user: User, case_id: UUID) -> list[dict[str, Any]]:
@@ -579,6 +592,7 @@ def active_runs(db: Session, *, user: User, case_id: UUID) -> list[dict[str, Any
             "heartbeat_at": run.heartbeat_at.isoformat() if run.heartbeat_at else None,
             "stale": fields["stale"],
             "server_time": fields["server_time"].isoformat(),
+            "steering": fields["steering"],
         })
     return out
 

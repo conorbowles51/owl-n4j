@@ -39,6 +39,14 @@ it("says what the run is doing, which step and how long so far, in plain words",
     .toBe("Reading what step 3 found and deciding the next step · 5 s so far")
 })
 
+it("says the step against the run's budget once the run states it (tool steering F)", () => {
+  expect(progressLine(running({ progress: { phase: "tool", step: 5, budget: 224, title: "Reading the ledger" } }), 72))
+    .toBe("Reading the ledger · step 5 of up to 224 · 1 min 12 s so far")
+  expect(progressLine(running({ progress: { phase: "thinking", step: 5, budget: 224,
+    title: "Reading what step 5 found and deciding the next step" } }), 72))
+    .toBe("Reading what step 5 found and deciding the next step · step 5 of up to 224 · 1 min 12 s so far")
+})
+
 it("shows the progress line with Stop, and Stop is wired", () => {
   const stop = vi.fn()
   render(<AgentRunProgress run={running()} onStop={stop} />)

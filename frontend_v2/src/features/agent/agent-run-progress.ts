@@ -28,7 +28,10 @@ export function progressLine(run: Pick<AgentRunNavigationState, "progress" | "st
   const progress = run.progress
   const title = progress?.title || run.statusText || "Working through the case data"
   const parts = [title]
-  if (progress && progress.phase === "tool" && progress.step > 0) parts.push(`step ${progress.step}`)
+  // "step N of up to <budget>" once the run says its budget; a thinking line already names its step without it.
+  if (progress && progress.step > 0 && progress.budget && (progress.phase === "tool" || progress.phase === "thinking")) {
+    parts.push(`step ${progress.step} of up to ${progress.budget}`)
+  } else if (progress && progress.phase === "tool" && progress.step > 0) parts.push(`step ${progress.step}`)
   parts.push(`${formatElapsed(elapsed)} so far`)
   return parts.join(" · ")
 }

@@ -18,6 +18,7 @@ from services.agent.schemas import (
     AgentMessageResponse,
     AgentRunDetail,
     AgentRunStatusResponse,
+    AgentSteeringRequest,
     AgentThreadDetail,
     AgentThreadSummary,
 )
@@ -317,6 +318,35 @@ def get_agent_cost_summary(
     current_user: User = Depends(get_current_db_user),
 ):
     return agent_service.get_cost_summary(db=db, user=current_user)
+
+
+@router.get("/tool-groups")
+def list_agent_tool_groups(current_user: User = Depends(get_current_db_user)):
+    """The agent's tools in plain-word groups, as the run card lists and switches them."""
+    from services.agent import tool_groups
+    return {"groups": tool_groups.catalogue()}
+
+
+@router.post("/runs/{run_id}/steering")
+def steer_agent_run(
+    run_id: UUID,
+    request: AgentSteeringRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Switch a tool group off or on, or send the agent a note, while the run works: taken before its next step."""
+    try:
+        return agent_service.steer_run(db=db, user=current_user, run_id=run_id, kind=request.kind,
+                                       group=request.group, on=request.on, note=request.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=404 if "not found" in str(exc).lower() else 409
+                            if "finished" in str(exc) else 400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.post("/runs/{run_id}:cancel", response_model=AgentRunStatusResponse)

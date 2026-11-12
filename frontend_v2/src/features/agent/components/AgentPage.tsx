@@ -95,6 +95,8 @@ import { cn } from "@/lib/cn"
 import { agentAPI } from "../api"
 import { localStartMs, useAgentRunStore } from "../stores/agent-run.store"
 import { AgentRunProgress, AgentUnansweredNote } from "./AgentRunProgress"
+import { ToolSteeringCard } from "./ToolSteeringCard"
+import { trailNewestFirst, type InvestigationTrailStep } from "../agent-trail"
 import { AgentModelPicker } from "./AgentModelPicker"
 import { modelParams, useAgentModelChoices } from "../agent-model-choice"
 import { unansweredQuestion, useFollowServerRun } from "../agent-run-progress"
@@ -112,6 +114,8 @@ import type {
   AgentThreadSummary,
   AgentToolTraceItem,
   AgentMandateUsage,
+  AgentRunSteering,
+  AgentSteeringEntry,
 } from "../types"
 
 type Dict = Record<string, unknown>
@@ -136,16 +140,6 @@ interface AgentFGLink {
 
 type AgentForceNode = NodeObject<AgentFGNode>
 type AgentForceLink = LinkObject<AgentFGNode, AgentFGLink>
-
-interface InvestigationTrailStep {
-  id: string
-  toolName?: string | null
-  title: string
-  detail?: string | null
-  result?: string | null
-  status: "running" | "success" | "error"
-  durationMs?: number | null
-}
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
@@ -553,6 +547,9 @@ export function AgentPage() {
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([])
   const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
   const [activityTrail, setActivityTrail] = useState<AgentActivityItem[]>([])
+  // The run's tool switches and notes (ToolSteeringCard): as the stream last said, and as the card last read.
+  const [streamSteering, setStreamSteering] = useState<Pick<AgentRunSteering, "applied" | "off"> | null>(null)
+  const [steeringView, setSteeringView] = useState<AgentRunSteering | null>(null)
   const [showWorkflows, setShowWorkflows] = useState(false)
   // The guided workflow this thread was started with: its follow-ups (a clarification answer, "continue" after the
   // tool budget) keep the plan. Cleared only by a new thread or by picking another thread (the reload after a run
@@ -798,6 +795,8 @@ export function AgentPage() {
     if (resumeRunId) useAgentRunStore.getState().updateRun(caseId, { runId: resumeRunId, statusText: "Resuming saved work" })
     setToolTrace([])
     setActivityTrail([])
+    setStreamSteering(null)
+    setSteeringView(null)
     if (!resumeRunId) setMessages((current) => [
       ...current,
       { id: optimisticId, role: "user", content: prompt, pending: true },
@@ -853,6 +852,10 @@ export function AgentPage() {
 
           if (event.type === "progress") {
             useAgentRunStore.getState().updateRun(caseId, { progress: event.progress, stale: false })
+          }
+
+          if (event.type === "steering" && viewingRun) {
+            setStreamSteering({ applied: event.applied, off: event.off })
           }
 
           if (event.type === "activity") {
@@ -1253,10 +1256,19 @@ export function AgentPage() {
                       onDismiss={dismissStoppedRun}
                     />
                   )}
-                  {isLoading && viewingRunningThread && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0) && (
+                  {isLoading && viewingRunningThread && sharedRun && !sharedRun.stale && activeRunId && (
+                    <ToolSteeringCard
+                      runId={activeRunId}
+                      trace={visibleToolTrace}
+                      streamed={streamSteering}
+                      onSteering={setSteeringView}
+                    />
+                  )}
+                  {isLoading && viewingRunningThread && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0 || (steeringView?.applied.length ?? 0) > 0) && (
                     <InvestigationTrail
                       activities={activityTrail}
                       trace={visibleToolTrace}
+                      steering={steeringView ? [...steeringView.applied, ...steeringView.pending] : []}
                       live
                       defaultOpen
                     />
@@ -1707,22 +1719,27 @@ function activityIconFor(toolName?: string | null) {
 function InvestigationTrail({
   trace = [],
   activities = [],
+  steering = [],
   live = false,
   defaultOpen = false,
   className,
 }: {
   trace?: AgentToolTraceItem[]
   activities?: AgentActivityItem[]
+  /** The person's switches and notes: each placed after the step the run took it at; one not yet taken is newest. */
+  steering?: AgentSteeringEntry[]
   live?: boolean
   defaultOpen?: boolean
   className?: string
 }) {
   const [open, setOpen] = useState(defaultOpen || live)
-  const steps = useMemo(() => {
+  const toolSteps = useMemo(() => {
     const activitySteps = activities.map(stepFromActivity)
     if (activitySteps.length > 0) return activitySteps
     return trace.map(stepFromTraceItem)
   }, [activities, trace])
+  // Newest first, so the newest stays in view (tool steering C).
+  const steps = useMemo(() => trailNewestFirst(toolSteps, steering), [toolSteps, steering])
   const duration = useMemo(
     () => steps.reduce((total, step) => total + (step.durationMs || 0), 0),
     [steps]
@@ -1748,8 +1765,8 @@ function InvestigationTrail({
         <ListChecks className="size-3.5 text-amber-600 dark:text-amber-300" />
         <span className="font-medium text-foreground">Investigation trail</span>
         <span className="text-xs text-muted-foreground">
-          {steps.length} {steps.length === 1 ? "step" : "steps"}
-          {durationLabel ? ` - ${durationLabel}` : ""}
+          {toolSteps.length} {toolSteps.length === 1 ? "step" : "steps"}
+          {durationLabel ? ` - ${durationLabel}` : ""} · newest first
         </span>
         {live && (
           <Badge variant="secondary" className="ml-auto text-[10px]">
@@ -1758,9 +1775,29 @@ function InvestigationTrail({
         )}
       </button>
       {isOpen && (
-        <div className="border-t border-border px-3 py-2">
+        <div className="max-h-[28rem] overflow-y-auto border-t border-border px-3 py-2">
           <div className="space-y-2">
             {steps.map((step, index) => {
+              if (step.steering) {
+                const entry = step.steering
+                return (
+                  <div
+                    key={`steer_${entry.id}`}
+                    data-testid="trail-steering"
+                    className="rounded-md border border-[#5a4a1d] bg-[#1d1a12] px-2.5 py-2 text-[#f0d48a]"
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-medium">{entry.title}</span>
+                      <span className="ml-auto shrink-0 text-[11px] opacity-80">
+                        {entry.step != null
+                          ? `step ${entry.step} · applies from step ${entry.applies_from ?? entry.step + 1}`
+                          : "applies from the next step"}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs leading-5 opacity-90">{entry.kind === "note" ? `“${entry.note ?? ""}”` : entry.result}</p>
+                  </div>
+                )
+              }
               const Icon = activityIconFor(step.toolName)
               const durationText = formatDuration(step.durationMs)
               return (

@@ -157,6 +157,16 @@ export const agentAPI = {
   getRun: (runId: string) =>
     fetchAPI<import("./types").AgentLiveRun>(`/api/agent/runs/${encodeURIComponent(runId)}`),
 
+  /** The agent's tools in plain-word groups (what the run card switches). */
+  toolGroups: () => fetchAPI<{ groups: import("./types").AgentToolGroup[] }>("/api/agent/tool-groups"),
+
+  /** Switch a tool group off or on, or send the agent a note, while the run works (taken before its next step). */
+  steerRun: (runId: string, body: { kind: "switch"; group: string; on: boolean } | { kind: "note"; note: string }) =>
+    fetchAPI<{ entry: import("./types").AgentSteeringEntry; steering: import("./types").AgentRunSteering }>(
+      `/api/agent/runs/${encodeURIComponent(runId)}/steering`,
+      { method: "POST", body },
+    ),
+
   cancelRun: (runId: string) =>
     fetchAPI<AgentRunStatus>(`/api/agent/runs/${runId}:cancel`, {
       method: "POST",

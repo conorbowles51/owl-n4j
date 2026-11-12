@@ -1480,7 +1480,10 @@ class AgentGraphRunner:
         automatic_windows=8,
         access_check=None,
         delivery_contract=None,
+        steering=None,
     ):
+        # ``steering``: the person's tool switches and notes, read before each step (services.agent.tool_groups);
+        # taken by the saved-work loop, which every app run uses.
         if checkpoint_callback is not None or resume_checkpoint is not None:
             from services.agent.durable_execution import stream as durable_stream
             yield from durable_stream(self, case_id=case_id, messages=messages,
@@ -1490,7 +1493,7 @@ class AgentGraphRunner:
                 final_answer_rules=final_answer_rules, proposer=proposer, user_id=user_id, all_cases=all_cases,
                 on_progress=on_progress, hidden_tools=hidden_tools, checkpoint_callback=checkpoint_callback,
                 resume_checkpoint=resume_checkpoint, automatic_windows=automatic_windows, access_check=access_check,
-                delivery_contract=delivery_contract)
+                delivery_contract=delivery_contract, steering=steering)
             return
         from services.agent import live_runs
 
