@@ -3442,3 +3442,106 @@ it("Go to field on a duplicate hold with nothing ticked focuses the decision and
   expect(warn).not.toHaveBeenCalled()
   warn.mockRestore()
 })
+
+// fin-alexjudge: a judgement call before import can be checked on the statement screen.
+const amountCall = {
+  rule_id: "L9.scan_amount_marks",
+  rule_label: "Scan mark read past",
+  rule_source: "fin-queue L9",
+  subject_type: "transaction",
+  subject_id: "1:0:1",
+  row_id: "1:0:1",
+  strength: "proved",
+  summary: "2023-01-02 credit 125.00: the amount on page 1 is printed '125.00?' in the scan; the space or mark is read past, and the printed balances agree with the value read.",
+  target_key: "amount",
+  category: "amount",
+  category_label: "Amount read past damage",
+  priority: 1,
+  priority_label: "Check first",
+  page: 1,
+}
+function withCall() {
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    String(url).includes("/judgements/preview?")
+      ? ({ items: [amountCall] } as never)
+      : base(url, options)
+  )
+}
+
+it("keeps Looks right before import with the review through a reload and sends it with the import", async () => {
+  useAuthStore.setState({ user: { id: "reviewer" } as never })
+  withCall()
+  mount()
+  await open(false)
+  expect(
+    await screen.findByText("Look at this value on the page before you import.")
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: /Looks right/ }))
+  expect(
+    screen.getByText(/Recorded when the statement is imported\./)
+  ).toBeVisible()
+  // The browser draft holds it, so a reload shows it checked.
+  await waitFor(() =>
+    expect(
+      Object.values({ ...sessionStorage }).some((value) =>
+        String(value).includes("L9.scan_amount_marks")
+      )
+    ).toBe(true)
+  )
+  cleanup()
+  mount()
+  await screen.findByText("Review statement.pdf")
+  expect(
+    await screen.findByText(/Recorded when the statement is imported\./)
+  ).toBeVisible()
+  expect(
+    screen.queryByText("Look at this value on the page before you import.")
+  ).toBeNull()
+  // Check first never holds the import.
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).toMatchObject({
+    judgement_checks: [
+      expect.objectContaining({
+        rule_id: "L9.scan_amount_marks",
+        row_id: "1:0:1",
+        target_key: "amount",
+      }),
+    ],
+  })
+})
+
+it("sends no checks when none was made, as before", async () => {
+  withCall()
+  mount()
+  await open(false)
+  await screen.findByText("Look at this value on the page before you import.")
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Import 1 transaction" })[0]
+  )
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]).not.toHaveProperty("judgement_checks")
+})
+
+it("Correct this opens that row's own amount correction, and Show on page opens the page at the row", async () => {
+  withCall()
+  mount()
+  await open(false)
+  fireEvent.click(await screen.findByRole("button", { name: "Correct this" }))
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Corrected credit")
+    )
+  )
+  vi.mocked(TransactionSourceHighlight).mockClear()
+  fireEvent.click(screen.getByRole("button", { name: "Show on page 1" }))
+  await waitFor(() =>
+    expect(
+      vi.mocked(TransactionSourceHighlight).mock.lastCall?.[0]
+    ).toMatchObject({ sourceDocumentId: "file", wholePage: false })
+  )
+  expect(screen.getByText("Original statement")).toBeVisible()
+})

@@ -27,6 +27,20 @@ const draftRow = lazySchema(() => z.object({
   balance_minor: z.string().nullable(),
   reason: z.string(),
 }))
+/** A judgement call marked Looks right before import; the server records who checked it. */
+export const judgementCheck = lazySchema(() => z.object({
+  rule_id: z.string(),
+  row_id: z.string().nullable(),
+  target_key: z.string(),
+  checked_at: z.string(),
+  checked_by: z
+    .object({ name: z.string().nullish(), email: z.string().nullish(), user_id: z.string().nullish() })
+    .nullish(),
+}))
+export type JudgementCheck = z.infer<typeof judgementCheck>
+export const judgementCheckKey = (check: Pick<JudgementCheck, "rule_id" | "row_id" | "target_key">) =>
+  `${check.rule_id}|${check.row_id ?? ""}|${check.target_key}`
+
 export const statementDraft = lazySchema(() => z.object({
   revision: z.string(),
   // New drafts retain only changes; older complete drafts remain readable.
@@ -47,6 +61,7 @@ export const statementDraft = lazySchema(() => z.object({
     .object({ revision: z.string(), reason: z.string() })
     .optional(),
   amountText: z.record(z.string(), z.string()),
+  judgementChecks: z.array(judgementCheck).max(5000).optional(),
 }))
 export type StatementDraft = z.infer<typeof statementDraft>
 
@@ -85,6 +100,7 @@ export function serverStatementDraft(raw: Record<string, unknown> | undefined) {
       reason: raw.coverage_review_reason || "",
     },
     amountText: {},
+    judgementChecks: Array.isArray(raw.judgement_checks) ? raw.judgement_checks : [],
   })
   return parsed.success ? parsed.data : null
 }

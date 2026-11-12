@@ -62,9 +62,11 @@ import { z } from "zod"
 import { StatementModelWorkMark } from "./StatementModelWork"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
+  judgementCheckKey,
   readStatementDraft,
   saveStatementDraft,
   serverStatementDraft,
+  type JudgementCheck,
 } from "../lib/statement-review-draft"
 import { Button } from "@/components/ui/button"
 import { ReaderReplacementNotice } from "./ReaderReplacementNotice"
@@ -102,7 +104,8 @@ import {
 } from "../lib/statement-date-fields"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialDraft } from "../stores/financial-drafts"
-import { ReadingJudgements } from "./JudgementCalls"
+import { ReadingJudgements, type ReadingJudgementActions } from "./JudgementCalls"
+import type { JudgementPreview } from "../lib/judgements"
 import { lazySchema } from "@/lib/lazy-schema"
 
 function BalanceDerivation({
@@ -1322,6 +1325,7 @@ function EditableStatement({
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
   const [correctionPage, setCorrectionPage] = useState(0)
   const correctionControls = useRef<HTMLDivElement>(null)
+  const sourceAside = useRef<HTMLElement>(null)
   const statementControls = useRef<HTMLDivElement>(null)
   const duplicateBox = useRef<HTMLDivElement>(null)
   const duplicateHighlightTimer = useRef<number | undefined>(undefined)
@@ -1443,6 +1447,12 @@ function EditableStatement({
   )
   const [coverageDecision, setCoverageDecision] = useState(
     saved?.coverageDecision ?? { revision: "", reason: "" }
+  )
+  // Judgement calls marked Looks right before import: kept with the review
+  // and recorded under the person who checked them when the statement is
+  // imported (fin-alexjudge).
+  const [judgementChecks, setJudgementChecks] = useState<JudgementCheck[]>(
+    saved?.judgementChecks ?? []
   )
   const [replacePrevious, setReplacePrevious] = useState(false)
   const [compareWith, setCompareWith] = useState<CompareCandidate | null>(
@@ -1925,6 +1935,7 @@ function EditableStatement({
       direction: r.direction || null,
       amount_minor: r.excluded && !r.amount_minor ? "0" : r.amount_minor,
     })),
+    ...(judgementChecks.length ? { judgement_checks: judgementChecks } : {}),
   })
   currentRequestSnapshot.current = JSON.stringify(importRequest())
   const renderSnapshot = currentRequestSnapshot.current
@@ -2100,6 +2111,7 @@ function EditableStatement({
       noActivityRevision,
       coverageDecision,
       amountText,
+      judgementChecks,
     }
     const timer = window.setTimeout(
       () => setDraftSaved(saveStatementDraft(draftKey, draft)),
@@ -2135,6 +2147,7 @@ function EditableStatement({
     noActivityRevision,
     coverageDecision,
     amountText,
+    judgementChecks,
     confirm.isSuccess,
     confirm.data?.ignored,
     importedHere,
@@ -2589,6 +2602,80 @@ function EditableStatement({
       behavior: "smooth",
     })
     if (!target || target.kind === "saved_review") editValues()
+  }
+  // Judgement calls before import (fin-alexjudge): Correct this opens the
+  // value's own correction field, the same edit as any other row correction.
+  const judgementFields: Record<string, string> = {
+    holder: "Account holder",
+    account: "Account number",
+    account_number: "Account number",
+    institution: "Bank",
+    period_start: "Period start",
+    period_end: "Period end",
+  }
+  const judgementBalance = (key: string) =>
+    key === "opening_balance" ||
+    key === "closing_balance" ||
+    key.startsWith("total_") ||
+    key.startsWith("control_")
+  const readingJudgementActions: ReadingJudgementActions = {
+    canEdit,
+    checks: judgementChecks,
+    onCheck: (item: JudgementPreview, checked: boolean) => {
+      const key = judgementCheckKey(item)
+      setJudgementChecks((previous) => [
+        ...previous.filter((one) => judgementCheckKey(one) !== key),
+        ...(checked
+          ? [
+              {
+                rule_id: item.rule_id,
+                row_id: item.row_id,
+                target_key: item.target_key,
+                checked_at: new Date().toISOString(),
+              },
+            ]
+          : []),
+      ])
+    },
+    canCorrect: (item: JudgementPreview) =>
+      item.row_id
+        ? originals.has(item.row_id)
+        : judgementBalance(item.target_key) ||
+          !!judgementFields[item.target_key],
+    onCorrect: (item: JudgementPreview) => {
+      if (item.row_id && originals.has(item.row_id)) {
+        inspectBlocker({
+          message: "",
+          row_id: item.row_id,
+          target: {
+            kind: item.target_key === "balance" ? "balance" : "row",
+            field: item.target_key,
+            row_id: item.row_id,
+          },
+        })
+        return
+      }
+      if (judgementBalance(item.target_key)) focusDetail("Statement balances")
+      else if (judgementFields[item.target_key])
+        focusDetail(judgementFields[item.target_key])
+    },
+    onShow: (item: JudgementPreview) => {
+      const original = item.row_id ? originals.get(item.row_id) : undefined
+      const page = Number(item.page) || original?.page_number
+      if (!page) return
+      setSourcePage(page)
+      setFocus(
+        original
+          ? { rowId: original.id, locator: statementRowLocator(original, page) }
+          : { rowId: "", locator: { kind: "page_only", page } }
+      )
+      requestAnimationFrame(() =>
+        sourceAside.current?.scrollIntoView({
+          block: "start",
+          behavior: "smooth",
+        })
+      )
+    },
   }
   const problemIndex = problemIds.indexOf(focus?.rowId ?? "")
   const savedRowsById = useMemo(() => {
@@ -3495,6 +3582,7 @@ function EditableStatement({
           reviewRows={rows}
           fileId={fileId}
           holder={holder}
+          actions={readingJudgementActions}
         />
       )}
       {!data.assignment_only && (!data.current_import || replacePrevious) && (
@@ -3935,7 +4023,10 @@ function EditableStatement({
           className={`grid gap-4 ${focus ? "lg:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.2fr)]" : ""}`}
         >
           {focus && (
-            <aside className="min-w-0 lg:sticky lg:top-0 self-start rounded border p-3">
+            <aside
+              ref={sourceAside}
+              className="min-w-0 lg:sticky lg:top-0 self-start rounded border p-3"
+            >
               <div className="flex justify-between items-center mb-2">
                 <h4 className="font-semibold">Original statement</h4>
                 <Button variant="ghost" onClick={() => setFocus(null)}>

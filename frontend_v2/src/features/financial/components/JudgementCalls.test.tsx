@@ -260,3 +260,16 @@ it("rejects a proposal with a reason", async () => {
     })
   )
 })
+
+it("after import, a call checked before import reads as settled by that person and is not asked again", () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <JudgementMarker caseId="case-a" defaultOpen judgement={{ ...judgement, status: "confirmed", resolved_by: "Alex",
+        resolved_at: "2026-11-12T20:00:00Z", resolution_reason: "Looks right: checked on the statement screen before import." }} />
+    </QueryClientProvider>
+  )
+  expect(screen.getByText(/· Alex: Looks right: checked on the statement screen before import\./)).toBeVisible()
+  expect(screen.queryByRole("button", { name: "Looks right" })).toBeNull()
+  // Still correctable, as every saved call.
+  expect(screen.getByRole("button", { name: "Correct it" })).toBeVisible()
+})

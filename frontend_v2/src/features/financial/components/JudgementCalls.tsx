@@ -26,7 +26,9 @@ import {
   strengthHelp,
   strengthLabel,
   type Judgement,
+  type JudgementPreview,
 } from "../lib/judgements"
+import { judgementCheckKey, type JudgementCheck } from "../lib/statement-review-draft"
 import type { LedgerTransaction } from "../api"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { ProposalReview } from "./ProposalReview"
@@ -617,10 +619,96 @@ type ReadingRow = {
 type ReviewRow = { id: string; reason?: string; excluded?: boolean; manual_page?: number | null }
 
 /**
- * Before saving (the review queue): the calls the rules make on this reading, from the same detection that
- * records them on save. Nothing is stored here; once saved, each can be confirmed or corrected.
+ * Before saving (the statement screen): the calls the rules make on this reading, from the same detection that
+ * records them on save. Each can be looked at on its page, marked Looks right (kept with the review and recorded
+ * under the person who clicked it when the statement is imported) or corrected in its own row. Nothing here holds
+ * the import: a call is flagged and cited, never a refusal.
  */
 const PREVIEW_HOLDER_SETTLE_MS = 600
+
+/** What the statement screen lets a person do with a call before import. */
+export type ReadingJudgementActions = {
+  canEdit: boolean
+  checks: JudgementCheck[]
+  onCheck: (item: JudgementPreview, checked: boolean) => void
+  /** Whether the call's value has a field on this screen to correct. */
+  canCorrect: (item: JudgementPreview) => boolean
+  onCorrect: (item: JudgementPreview) => void
+  onShow: (item: JudgementPreview) => void
+}
+
+function ReadingJudgementItem({ item, actions }: { item: JudgementPreview; actions?: ReadingJudgementActions }) {
+  const check = actions?.checks.find((one) => judgementCheckKey(one) === judgementCheckKey(item))
+  const lookFirst = (item.priority || 1) === 1 && !check
+  const viewOnly = actions && !actions.canEdit ? "You can view this case. Checking a call needs edit access." : undefined
+  return (
+    <div className="space-y-1" data-testid="reading-judgement" data-checked={check ? "true" : "false"}>
+      {lookFirst && (
+        <p className="flex items-center gap-1 font-semibold text-[#a3142a] dark:text-[#ffc2c9]">
+          <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+          Look at this value on the page before you import.
+        </p>
+      )}
+      <PriorityLabel priority={item.priority} className="mr-1" />
+      <span
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium"
+        title={`${item.rule_id} · ${item.rule_source}`}
+      >
+        <Lightbulb aria-hidden="true" className="size-3" />
+        {strengthLabel(item)} · {item.category_label}
+      </span>
+      <p>{item.summary}</p>
+      <p className="text-xs text-muted-foreground">{strengthHelp(item)}</p>
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {item.page != null && item.page !== "" && (
+            <Button size="sm" variant="outline" onClick={() => actions.onShow(item)}>
+              Show on page {item.page}
+            </Button>
+          )}
+          {check ? (
+            <>
+              <span
+                role="status"
+                className="rounded-md bg-[#e3f4ea] px-2 py-1 text-xs font-semibold text-[#15653f] dark:bg-[#12351f] dark:text-[#a7e3bf]"
+              >
+                <span aria-hidden="true">✓ </span>Looks right
+                {check.checked_by?.name ? ` · ${check.checked_by.name}` : ""}. Recorded when the statement is imported.
+              </span>
+              {actions.canEdit && (
+                <Button size="sm" variant="ghost" onClick={() => actions.onCheck(item, false)}>
+                  Undo
+                </Button>
+              )}
+            </>
+          ) : (
+            <Button
+              size="sm"
+              className="bg-[#15653f] text-white hover:bg-[#0f5133]"
+              disabled={!actions.canEdit}
+              title={viewOnly}
+              onClick={() => actions.onCheck(item, true)}
+            >
+              <span aria-hidden="true">✓</span>Looks right
+            </Button>
+          )}
+          {actions.canCorrect(item) && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!actions.canEdit}
+              title={viewOnly}
+              onClick={() => actions.onCorrect(item)}
+            >
+              Correct this
+            </Button>
+          )}
+        </div>
+      )}
+      {viewOnly && <p className="text-xs text-muted-foreground">{viewOnly}</p>}
+    </div>
+  )
+}
 
 export function ReadingJudgements({
   caseId,
@@ -631,6 +719,7 @@ export function ReadingJudgements({
   reviewRows,
   fileId,
   holder,
+  actions,
 }: {
   caseId: string
   statementId: string
@@ -641,6 +730,8 @@ export function ReadingJudgements({
   /** The statement's file and the holder being saved: the holder kept as printed is previewed too. */
   fileId?: string
   holder?: string
+  /** The statement screen's Looks right, Correct this and Show on page; without them the list only reads. */
+  actions?: ReadingJudgementActions
 }) {
   // Only what the detection reads: each row's fields, repairs and cell text, and the review's reasons.
   const reading = useMemo(
@@ -685,31 +776,32 @@ export function ReadingJudgements({
   const items = query.data || []
   if (!items.length) return null
   const inferred = items.filter((item) => item.strength === "inferred").length
+  const keys = new Set((actions?.checks || []).map(judgementCheckKey))
+  const checked = items.filter((item) => keys.has(judgementCheckKey(item))).length
+  const lookFirst = items.filter((item) => (item.priority || 1) === 1 && !keys.has(judgementCheckKey(item))).length
   return (
-    <Disclosure className="rounded border p-3 text-sm" label={<><Lightbulb aria-hidden="true" className="mr-1 inline size-3" />
-        {countLine({ total: items.length, inferred })} in this reading</>}>
+    <Disclosure
+      className={cn("rounded border p-3 text-sm", lookFirst && "border-[#a3142a]/50")}
+      defaultOpen={lookFirst > 0}
+      label={<><Lightbulb aria-hidden="true" className="mr-1 inline size-3" />
+        {countLine({ total: items.length, inferred })} in this reading
+        {actions && checked > 0 ? ` · ${checked} marked Looks right` : ""}
+        {lookFirst > 0 ? ` · ${lookFirst} to check first` : ""}</>}
+    >
       <p className="mt-2 text-muted-foreground">
-        Values the reader chose that the page does not print outright. Check any of them on the page before you
-        save; nothing is held for them. Once saved, each can be marked Looks right or corrected.
+        {actions
+          ? "Values the reader chose that the page does not print outright. Look at each one on its page, then " +
+            "mark it Looks right or correct the value in its row. None of them stops the import. Looks right is kept " +
+            "with this review and recorded under your name when the statement is imported. A corrected value keeps " +
+            "the value read beside it, and only your value counts."
+          : "Values the reader chose that the page does not print outright. Check any of them on the page before " +
+            "you save; nothing is held for them. Once saved, each can be marked Looks right or corrected."}
       </p>
       <div className="mt-2">
         <TieredList
           items={items}
           rowKey={(item, index) => `${item.rule_id}:${item.row_id}:${item.target_key}:${index}`}
-          render={(item) => (
-            <div className="space-y-1">
-              <PriorityLabel priority={item.priority} className="mr-1" />
-              <span
-                className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium"
-                title={`${item.rule_id} · ${item.rule_source}`}
-              >
-                <Lightbulb aria-hidden="true" className="size-3" />
-                {strengthLabel(item)} · {item.category_label}
-              </span>
-              <p>{item.summary}</p>
-              <p className="text-xs text-muted-foreground">{strengthHelp(item)}</p>
-            </div>
-          )}
+          render={(item) => <ReadingJudgementItem item={item} actions={actions} />}
         />
       </div>
     </Disclosure>

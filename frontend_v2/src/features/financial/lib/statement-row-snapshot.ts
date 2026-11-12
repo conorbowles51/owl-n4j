@@ -1,5 +1,5 @@
 import type { StatementDraft } from "./statement-review-draft"
-import { serverStatementDraft } from "./statement-review-draft"
+import { judgementCheckKey, serverStatementDraft } from "./statement-review-draft"
 
 // Compare every editable value, normalizing only optional transport defaults.
 // A saved balance must not make newer date, party or amount edits look saved.
@@ -39,6 +39,8 @@ export function statementReviewSnapshot(request: Record<string, unknown>) {
   return JSON.stringify({
     ...draft,
     rows: draft.rows.map(statementRowSnapshot),
+    // Which calls were checked, not who or when: the server writes those (judgements.stamp_checks).
+    judgementChecks: (draft.judgementChecks ?? []).map(judgementCheckKey).sort(),
     statement_id: request.statement_id ?? null,
     currency: request.currency ?? "",
     replaces_source_document_id: request.replaces_source_document_id ?? null,
