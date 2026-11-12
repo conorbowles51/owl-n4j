@@ -214,3 +214,68 @@ def test_saving_a_new_revision_resets_earlier_read_failures(monkeypatch):
     assert len(result['tool_trace']) == 4
     assert len(result['artifacts']) == 1
     assert result['clarification'] is None
+
+
+def test_durable_finalizer_preserves_upstream_source_recovery(monkeypatch):
+    from services.agent import graph
+    identity = '11111111-2222-3333-4444-555555555555'
+    captured = {}
+    class Read:
+        name = 'read_test'
+        def __init__(self, context): self.context = context
+        def invoke(self, args):
+            result = self.context.result('read_test', {'items': [{'key': identity, 'cite': f'txn://{identity}',
+                'amount_minor': '123400', 'currency': 'MXN', 'currency_exponent': 2, 'description': 'Synthetic payment'}]},
+                summary='Read one synthetic payment.')
+            captured['handle'] = result['result_id']
+            return result
+    monkeypatch.setenv('LOUPE_AGENT_FIT', 'W')
+    monkeypatch.setattr(graph, 'make_agent_tools', lambda context: [Read(context)])
+    monkeypatch.setattr(graph, 'tools_for_binding', lambda model, tools: tools)
+    monkeypatch.setattr(graph, 'call_facts', lambda *args: {'items': [
+        {'kind': 'payment', 'ref': identity, 'alts': [f'txn://{identity}'], 'label': 'Synthetic payment'}]})
+    r = runner([[call(1), call(2)]])
+    requests = []
+    def final(messages):
+        requests.append(messages)
+        return AIMessage(content=f"Synthetic payment: 1,234.00 MXN [source](doc://{captured['handle']}).")
+    r.base_model.invoke = final
+    result = list(r.stream(case_id=CASE, messages=[HumanMessage(content='Read both records')],
+        checkpoint_callback=lambda p: None, max_tool_calls=1, automatic_windows=1))[-1]['result']
+    assert f'(txn://{identity})' in result['answer'] and 'res_' not in result['answer']
+    assert 'Records found so far' in requests[-1][-1].content
+
+
+def test_notes_survive_resume_without_consuming_investigative_budget(monkeypatch):
+    from services.agent import graph
+    from services.agent.tools import make_agent_tools
+    contexts, offered = [], []
+    def tools(context):
+        contexts.append(context)
+        notes = next(t for t in make_agent_tools(context) if t.name == 'record_working_notes')
+        class Read:
+            name = 'read_test'
+            def invoke(self, args):
+                return context.result('read_test', {'number': args['number']}, summary='Read synthetic record.')
+        return [notes, Read()]
+    monkeypatch.setenv('LOUPE_AGENT_FIT', 'B')
+    monkeypatch.setattr(graph, 'make_agent_tools', tools)
+    monkeypatch.setattr(graph, 'tools_for_binding', lambda model, tools: offered.extend(t.name for t in tools) or tools)
+    note = {'id': 'note-1', 'name': 'record_working_notes', 'args': {'facts': [{'fact': 'Synthetic observation.'}]}}
+    saved = {}
+    class LostWorker(BaseException): pass
+    def checkpoint(payload):
+        saved.update(copy.deepcopy(payload))
+        if (payload.get('inflight') or {}).get('id') == 'call-1': raise LostWorker()
+    with pytest.raises(LostWorker):
+        list(runner([[note, call(1)]]).stream(case_id=CASE, messages=[HumanMessage(content='Note the fact, then read')],
+            checkpoint_callback=checkpoint, max_tool_calls=1, automatic_windows=1))
+    result = list(runner().stream(case_id=CASE, messages=[], resume_checkpoint=saved,
+        checkpoint_callback=lambda p: None, max_tool_calls=1, automatic_windows=1))[-1]['result']
+    assert result['clarification'] is None
+    assert len(result['tool_trace']) == 2 and len(contexts[-1].working_notes) == 1
+    assert contexts[-1].free_calls == 1
+    monkeypatch.setenv('LOUPE_AGENT_FIT', 'W')
+    offered.clear()
+    list(runner().stream(case_id=CASE, messages=[HumanMessage(content='Review')], checkpoint_callback=lambda p: None))
+    assert 'record_working_notes' not in offered and 'read_test' in offered

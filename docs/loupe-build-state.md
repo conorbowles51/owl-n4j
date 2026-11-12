@@ -4,8 +4,9 @@ The capability implementation is now local. The [agent acceptance record](loupe-
 durable execution, broader authorized reads/actions, long and flexible reports, eleven artifact renderers,
 version comparison, full-data exports and actual-model/browser verification. The final long report covers
 all25 subjects and500 records; it exports49 PDF pages and47 Word-rendered pages, and its detected prose
-errors were corrected in the original report. New upstream runtime changes still require integration and
-verification. No push or deployment of this agent release is recorded.
+errors were corrected in the original report. Upstream runtime changes are integrated on the isolated release branch:709 backend tests and the full
+frontend build passed. A fresh two-deliverable model run completed in120 seconds, with actual report exports
+and browser calculator interactions verified. No push or deployment of this agent release is recorded.
 
 ## 11 November: agent conversation audit — follow-up acceptance remains open
 

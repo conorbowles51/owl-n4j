@@ -152,7 +152,7 @@ def extend_budget_checkpoint(checkpoint):
     reason = (value.get("clarification") or {}).get("context", {}).get("reason")
     if reason in ('tool_budget_exhausted', 'no_progress'):
         value.update(phase="tools", clarification=None, answer="", elapsed_seconds=0, malformed_streak=0,
-                     budget_base=len(value.get("trace", [])))
+                     budget_base=value.get('used_steps', len(value.get("trace", []))))
         if reason == 'no_progress':
             value['resume_note'] = ('The investigator explicitly resumed this saved task after a no-progress stop. '
                 'Preserve completed work and the latest user requirements. Change the failed approach; do not repeat '
@@ -190,7 +190,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
            all_cases=False, on_progress=None, hidden_tools=frozenset(),
            checkpoint_callback=None, resume_checkpoint=None, automatic_windows=DEFAULT_WINDOWS,
            access_check=None, delivery_contract=None, **_ignored):
-    from services.agent import graph as g, live_runs
+    from services.agent import graph as g, live_runs, fit
     checkpoint = deepcopy(resume_checkpoint or {})
     if checkpoint and (checkpoint.get("version") != VERSION or checkpoint.get("case_id") != case_id
                        or checkpoint.get("all_cases", False) != bool(all_cases)
@@ -210,13 +210,20 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                                 proposer=proposer, user_id=user_id, all_cases=all_cases)
     for key in ("result_store", "model_views", "artifact_store", "cases_read", "other_case_citations"):
         getattr(context, key).update(checkpoint.get(key, {}))
+    for key in ('rereads', 'reread_source'):
+        getattr(context, key).update(checkpoint.get(key, {}))
+    context.page_reads = {(item[0], tuple(item[1]), item[2]) for item in checkpoint.get('page_reads', [])}
+    context.working_notes = deepcopy(checkpoint.get('working_notes', []))
+    context.free_calls = int(checkpoint.get('free_calls', 0))
+    context.reread_calls = int(checkpoint.get('reread_calls', 0))
     for artifact in context.artifact_store.values():
         for source_id in (artifact.get("metadata") or {}).get("source_case_ids", []):
             if source_id != case_id:
                 context.cases_read.setdefault(source_id, None)
     tools = g.make_agent_tools(context)
     by_name = {t.name: t for t in tools if t.name not in hidden_tools}
-    bound = runner.base_model.bind_tools(g.tools_for_binding(runner.base_model, [t for t in tools if t.name not in hidden_tools]))
+    bound = runner.base_model.bind_tools(g.tools_for_binding(runner.base_model,
+        [t for t in tools if t.name not in hidden_tools and t.name not in fit.hidden_tools()]))
     phase = checkpoint.get("phase", "agent")
     completed = set(checkpoint.get("completed_calls", []))
     inflight = checkpoint.get("inflight")
@@ -246,7 +253,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
             'content to address a historical validation failure, inspect the latest saved artifact with the current '
             'tools. Earlier checker results can be stale after an application update. Recheck first and repair '
             'only current problems; do not convert valid tables or remove content to satisfy an obsolete error.')
-    used = len(trace)
+    used = int(checkpoint.get('used_steps', len(trace)))
     total_budget = checkpoint.get("budget_base", 0) + max(1, max_tool_calls) * max(1, min(automatic_windows, 32))
     elapsed_before = checkpoint.get("elapsed_seconds", 0)
     started = time.monotonic()
@@ -276,6 +283,10 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                        source_observations=messages_to_dict(source_messages),
                        malformed_streak=malformed_streak,
                        resume_note=resume_note,
+                       used_steps=used, free_calls=context.free_calls, reread_calls=context.reread_calls,
+                       working_notes=context.working_notes, rereads=context.rereads,
+                       reread_source=context.reread_source,
+                       page_reads=[[source, list(path), offset] for source, path, offset in context.page_reads],
                        budget_base=checkpoint.get("budget_base", 0), billed_count=billed_count,
                        elapsed_seconds=elapsed_before + time.monotonic() - started)
         for key in ("result_store", "model_views", "artifact_store", "cases_read", "other_case_citations"):
@@ -369,11 +380,17 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 budget = max(MIN_MESSAGE_CHARS, min(run_budget // 4,
                     g.message_budget_chars(run_budget, g._tool_message_chars(retained))))
                 context.page_budget_chars = budget
+                free_before = context.free_calls
                 try:
-                    raw = by_name[name].invoke(args)
+                    if name not in by_name:
+                        raise ValueError(f'Unknown or unavailable tool: {name}')
+                    # Checkpoint each call in order. Experimental parallel execution
+                    # must not start another call before the first result is durable.
+                    raw = g._free_call_refusal(name, context) or by_name[name].invoke(args)
                     output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
                 except Exception as exc:
-                    output = {"status": "error", "error": str(exc), "summary": f"{name} failed: {exc}", "data": {"error": str(exc)}}
+                    error = g._tool_error_text(name, exc, by_name)
+                    output = {"status": "error", "error": error, "summary": f"{name} failed: {error}", "data": {"error": error}}
                 result_id, artifact = output.get("result_id"), output.get("artifact")
                 saved_progress = (isinstance(artifact, dict) and bool(artifact.get('id'))
                     and output.get('status') != 'error'
@@ -394,7 +411,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 trace.append(item)
                 state_messages.append(ToolMessage(tool_call_id=call_id, name=name, content=json.dumps(model_payload, ensure_ascii=False)))
                 completed.add(call_id)
-                used += 1
+                used += 1 - (context.free_calls - free_before)
                 inflight = None
                 if saved_progress:
                     progress_trace_start = len(trace)
@@ -483,6 +500,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 model, request_messages = g._finalizer_request(state_messages=model_context(safe_messages),
                     final_answer_rules=checked_final_rules, out_of_steps=bool(clarification),
                     agent_system_prompt=system_prompt(), agent_model=bound, base_model=runner.base_model)
+                request_messages = g._with_found_so_far(request_messages, {'tool_trace': trace}, bool(clarification))
                 response = g.invoke_model(model, request_messages, note=note, step=used, should_cancel=should_cancel)
                 if getattr(response, "tool_calls", []):
                     spent.append(response)
@@ -491,7 +509,9 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                         note=note, step=used, should_cancel=should_cancel)
                 replies, answer = g._in_plain_words(runner.base_model, response)
                 spent.extend(replies)
-                answer = g.link_document_citations(answer)
+                answer = g.link_named_files(g.link_document_citations(
+                    g.replace_result_handles(answer, context.result_store)), g._tool_text({'messages': safe_messages}))
+                answer = g._with_kept_sources(answer, context, bool(clarification))
             phase = "done"
             save()
     if clarification:

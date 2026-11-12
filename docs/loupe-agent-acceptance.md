@@ -1,7 +1,8 @@
 # Loupe agent implementation and acceptance
 
 11–12 November 2026. This records the implementation of the [capability plan](loupe-agent-capability-plan.md).
-The release is not complete and has not been committed, pushed or deployed. Historical client chats and
+The release is not complete. The scoped implementation is committed locally on
+`codex/agent-capabilities-end-to-end`; it has not been pushed or deployed. Historical client chats and
 evidence remain outside Git. All fixtures and outputs used for implementation acceptance are synthetic.
 
 ## Implemented journeys
@@ -31,9 +32,19 @@ evidence remain outside Git. All fixtures and outputs used for implementation ac
 
 ## Verification recorded so far
 
+After integration with upstream: **709 passed, 75 skipped and 1,351 subtests passed** across78 agent modules
+on isolated PostgreSQL. The complete frontend build (typecheck, lint and production bundle) passed.
+A fresh default DeepSeek V4 Pro high-reasoning run completed in120 seconds with7 tool calls and no
+completion issues: exactly two deliverables, a one-page five-section report and an interactive calculator.
+Actual PDF and DOCX downloads preserve all five sections and the computed150.00 total; Microsoft Word
+opens and renders one page. The real signed-in app reopens both outputs, and changing quantity1500→2000
+changes the total150→200 in both the app and exported standalone HTML. The PDF was visually inspected.
+These checks cover the integrated candidate; they are not live-deployment acceptance.
+
+
 | Journey or check | Evidence and current limit |
 |---|---|
-| Backend regression baseline | Latest complete run on the isolated code-only checkout: 623 passed, 74 skipped and 1,328 subtests passed against isolated PostgreSQL. This includes bounded source review, copied-data dependencies, validation caching, corrected PDF content checks, reviewer-response repair, checker-upgrade recovery, truthful unfinished responses, recovery after a saved revision, compact section reads, duplicate-deliverable prevention, numbered review progress and shared review attempts for identical inputs. Skips are not acceptance passes. The Windows-only test adapter is described below. |
+| Backend regression baseline | Pre-integration complete run on the isolated code-only checkout: 623 passed, 74 skipped and 1,328 subtests passed against isolated PostgreSQL. This includes bounded source review, copied-data dependencies, validation caching, corrected PDF content checks, reviewer-response repair, checker-upgrade recovery, truthful unfinished responses, recovery after a saved revision, compact section reads, duplicate-deliverable prevention, numbered review progress and shared review attempts for identical inputs. Skips are not acceptance passes. The Windows-only test adapter is described below. |
 | Later-turn references and context | Targeted tests restore all 1,500 source rows and the original numeric binding on a later report edit; context projection preserves user corrections, source handles and provider tool pairing. |
 | Browser component journeys | 13 Chromium journeys and 34 unit tests passed for artifacts, versions, comparisons, attachment intake, progress and proposal review. Nine artifact journeys subsequently passed, including nearby map points, visible assumptions, retaining copied workbook inputs with an explicit review reason, separate authored record lines and reopening source-review failures with a repair action. Full frontend build passed after these changes. |
 | Actual signed-in application | Real API and PostgreSQL: reopen all14 fixture deliverables; find row1,500; download CSV; save an investigator correction as version5; compare before/after; download Word. Concurrent API edits return201/409 and retain prior revisions. Unauthenticated reads return401. |
@@ -93,23 +104,30 @@ metadata preserves revision/source handles and actionable issues; verbose eviden
 available through an explicit full-metadata read. These changes reduce unnecessary context and make
 recovery concrete. Seventeen targeted workspace tests passed, followed by the full suite above.
 
-An isolated review checkout based on edd13dae611ddee8209abca912776a2a1b900512 contains119 explicitly selected
+An isolated review checkout contains119 explicitly selected
 implementation, synthetic-test, brand and documentation files. The frontend build and diff whitespace
 check passed there. Financial implementation, client material, credentials, outputs and screenshots
 were excluded. The unmodified Windows backend run hit20 instances of an existing POSIX-only day-format
 call in the financial reconciliation fixture. A private test-only adapter emulated that exact date
 format without changing release source; the623-pass run used this adapter. This is not a native Linux
-CI result. The checkout and manifest are review preparation, not a commit or release.
+CI result. The original verified snapshot was committed locally, then integrated onto upstream
+`d8a543382f2ce121c9333d4d3d90d8bfc977ec6c`. Four overlapping files were resolved, preserving new
+phone/source tools and existing feature switches. The durable path now retains upstream source recovery,
+read/notes state and bounded free-call accounting across resumes. Connected dossier acceptance refreshes
+phone suggestions after its atomic commit. Seventy targeted integrated tests passed, followed by the full suite, build and real-model checks above.
+The read-only live ingestion gate returned idle on12 November before publication. No live services or
+team jobs were changed for verification. No push or release is claimed.
 
-The manual CI bootstrap now includes the tested PPTX and Markdown packages and WeasyPrint70. YAML was parsed locally; no remote workflow was dispatched. The installed GitHub workflow skill references a missing ci_monitor.cjs, so no script-based CI result is claimed.
+The manual CI bootstrap now includes the tested PPTX and Markdown packages, WeasyPrint70 and the upstream XLS reader dependency. YAML was parsed locally; no remote workflow was dispatched. The installed GitHub workflow skill references a missing ci_monitor.cjs, so no script-based CI result is claimed.
 
 ## Remaining release gates
 
 1. Preserve the recorded long-report coverage, source-review, revision and export checks during integration.
    A clean uninterrupted latency/cost benchmark remains outstanding.
 2. Mixed real-model artifact acceptance and the later-turn revision have passed the recorded checks; preserve these journeys through final review.
-3. Complete and record fresh regression/build/browser checks after the last runtime and rendering changes.
-4. Integrate newer upstream changes to the same agent runtime, then review the exact code-only diff
+3. Integrated regression, build and the fresh real-model/browser checks above have passed. Preserve them
+   through publication; native Linux CI and live deployment checks remain separate.
+4. Upstream integration and scoped code-only review are complete; publish only the inspected paths,
    independently of unrelated existing workspace changes. Preserve client
    evidence, private audit material, screenshots, exports and credentials outside Git staging.
 5. Release only under applicable authorization, preserve active ingestion transitions, verify the deployed

@@ -548,6 +548,12 @@ def accept(session, *, case_id, output_id, reviewer, via='api', due_at=None, edi
     item.accepted_targets = accepted
     item.model_metadata = dict(item.model_metadata or {}, review=facts, edits=edits or None)
     session.commit()
+    if item.output_type == 'dossier_change' and (content.get('operation') == 'create' or
+            (content.get('operation') == 'update' and {'display_name', 'contacts'} & set(content.get('fields') or {}))):
+        # The connected case action must commit atomically before the existing
+        # best-effort phone suggestion refresh opens its own transaction.
+        from services.dossier_service import _phone_suggestions
+        _phone_suggestions(session, item.case_id, 'an accepted agent dossier change')
     return serialize(item)
 
 
