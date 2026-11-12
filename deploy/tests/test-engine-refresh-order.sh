@@ -16,7 +16,7 @@ case "$*" in
         for i in $(seq 1 "${FAKE_INPROGRESS:-0}"); do echo "arq:in-progress:job-${i}"; done ;;
     "compose stop evidence-engine-worker") sleep "${FAKE_STOP_SLEEP:-0}" ;;
     "compose config --services") printf '%s\n' redis evidence-engine-api evidence-engine-worker evidence-pdf-worker ;;
-    "compose ps -aq evidence-engine-worker") echo c0ffee ;;
+    "compose ps -q evidence-engine-worker") [ "${FAKE_NO_WORKER:-0}" = 1 ] || echo c0ffee ;;
 esac
 exit 0
 FAKE
@@ -57,9 +57,16 @@ run stuck 'FAKE_STOP_SLEEP=5 docker_stack_up'
 ! grep -q '^compose up' "${tmp}/calls" || fail "stuck worker: compose up replaced services while the worker was stopping"
 # 6. Rollback with that worker still stopping: every other engine service comes back, and a waiter starts the worker.
 run rollback 'FAKE_STOP_SLEEP=5 engine_rollback_up'
-for _ in $(seq 1 20); do grep -qx 'compose up -d --no-build --no-deps evidence-engine-worker' "${tmp}/calls" && break; sleep 0.5; done
+for _ in $(seq 1 20); do grep -qx 'start c0ffee' "${tmp}/calls" && break; sleep 0.5; done
 grep -qx 'compose up -d --no-build --no-deps redis evidence-engine-api evidence-pdf-worker' "${tmp}/calls" \
     || fail "rollback: the API and other workers were not brought back without the main worker"
-grep -qx 'wait c0ffee' "${tmp}/calls" && grep -qx 'compose up -d --no-build --no-deps evidence-engine-worker' "${tmp}/calls" \
-    || fail "rollback: no waiter started the main worker after its stop"
+grep -qx 'wait c0ffee' "${tmp}/calls" && grep -qx 'start c0ffee' "${tmp}/calls" \
+    || fail "rollback: no waiter started the same main worker container after its stop"
+! grep -qx 'compose up -d --no-build --no-deps evidence-engine-worker' "${tmp}/calls" \
+    || fail "rollback: the waiter made a new main worker from the newest images"
+# 7. No main worker running at the rollback: compose starts it from the images the rollback built.
+run noworker 'FAKE_STOP_SLEEP=5 FAKE_NO_WORKER=1 engine_rollback_up'
+for _ in $(seq 1 20); do grep -qx 'compose up -d --no-build --no-deps evidence-engine-worker' "${tmp}/calls" && break; sleep 0.5; done
+grep -qx 'compose up -d --no-build --no-deps evidence-engine-worker' "${tmp}/calls" \
+    || fail "rollback with no main worker: it was not started"
 echo "PASS engine refresh order"

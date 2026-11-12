@@ -614,7 +614,11 @@ engine_rollback_up() {
     else
         warn "Rollback: the evidence engine services did not start; the evidence engine may be down"
     fi
-    setsid bash -c 'c="$(docker compose ps -aq "$1" | head -1)"; [ -z "${c}" ] || timeout 15000 docker wait "${c}" >/dev/null; docker compose up -d --no-build --no-deps "$1"' \
+    # The same container is started again, so its code is the code it ran: images built later by a deferred release
+    # are not mixed in. With no worker running, compose starts it from the images the rollback built.
+    setsid bash -c 'c="$(docker compose ps -q "$1" | head -1)"
+        if [ -n "${c}" ]; then timeout 15000 docker wait "${c}" >/dev/null; docker start "${c}"
+        else docker compose up -d --no-build --no-deps "$1"; fi' \
         engine-worker-restart "${ENGINE_MAIN_WORKER}" >> "${LOG_FILE:-/dev/null}" 2>&1 < /dev/null &
     warn "Rollback: the main engine worker starts again once its stop has finished (waiter pid $!)"
     return 1
