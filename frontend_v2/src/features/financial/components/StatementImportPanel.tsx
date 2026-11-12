@@ -182,6 +182,7 @@ const receipt = lazySchema(() => z.object({
   duplicate_disposition: statementDuplicateDisposition.optional(),
   account_closed_on: z.string().nullable().optional(),
 }))
+const DUPLICATE_BOX_FIELD = "Duplicate decision"
 
 // 15 s apart: about ten minutes, longer than a save held behind a case lock.
 const MAX_BACKGROUND_IMPORT_CHECKS = 40
@@ -1322,6 +1323,13 @@ function EditableStatement({
   const [correctionPage, setCorrectionPage] = useState(0)
   const correctionControls = useRef<HTMLDivElement>(null)
   const statementControls = useRef<HTMLDivElement>(null)
+  const duplicateBox = useRef<HTMLDivElement>(null)
+  const duplicateHighlightTimer = useRef<number | undefined>(undefined)
+  const [duplicateHighlight, setDuplicateHighlight] = useState(false)
+  useEffect(
+    () => () => window.clearTimeout(duplicateHighlightTimer.current),
+    []
+  )
   const printedControls = useRef<HTMLDivElement>(null)
   const confirmationControls = useRef<HTMLDivElement>(null)
   const balanceControls = useRef<HTMLDivElement>(null)
@@ -1674,10 +1682,7 @@ function EditableStatement({
       message: duplicateBlocked
         ? "A matching statement needs a duplicate decision before import. Compare the existing statement below."
         : "Another statement covers these dates. You can compare the statements now or after importing.",
-      field:
-        coverageDecision.revision === coverage.data?.revision
-          ? "Reason for importing overlapping statements"
-          : "I have compared these files and need to import this statement too",
+      field: DUPLICATE_BOX_FIELD,
     })
   if (data.review_recovery?.required && !recoveryCompared)
     detailProblems.push({
@@ -1765,6 +1770,34 @@ function EditableStatement({
       field: "Statement balances",
     })
   const focusDetail = (field: string) => {
+    if (field === DUPLICATE_BOX_FIELD) {
+      const box = duplicateBox.current
+      if (!box) {
+        console.warn("Go to field: the duplicate decision is not on screen")
+        statementControls.current?.scrollIntoView({
+          block: "start",
+          behavior: "smooth",
+        })
+        return
+      }
+      const control =
+        box.querySelector<HTMLElement>(
+          '[aria-label="Reason for importing overlapping statements"]'
+        ) ??
+        box.querySelector<HTMLElement>(
+          '[aria-label="I have compared these files and need to import this statement too"]'
+        ) ??
+        box
+      control.focus({ preventScroll: true })
+      box.scrollIntoView({ block: "start", behavior: "smooth" })
+      setDuplicateHighlight(true)
+      window.clearTimeout(duplicateHighlightTimer.current)
+      duplicateHighlightTimer.current = window.setTimeout(
+        () => setDuplicateHighlight(false),
+        2500
+      )
+      return
+    }
     if (field === "Replace the previous import") {
       const control = statementControls.current?.querySelector<HTMLElement>(
         '[aria-label="Replace the previous import"]'
@@ -1796,8 +1829,16 @@ function EditableStatement({
         HTMLInputElement | HTMLTextAreaElement
       >("input,textarea") ?? []
     ).find((element) => element.getAttribute("aria-label") === field)
-    input?.focus({ preventScroll: true })
-    input?.scrollIntoView({ block: "center", behavior: "smooth" })
+    if (!input) {
+      console.warn(`Go to field: no control named "${field}" is on screen`)
+      statementControls.current?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      })
+      return
+    }
+    input.focus({ preventScroll: true })
+    input.scrollIntoView({ block: "center", behavior: "smooth" })
   }
   const total = (direction: Edit["direction"]) =>
     included
@@ -3184,6 +3225,74 @@ function EditableStatement({
           </p>
         </section>
       )}
+      {!excludedCopy &&
+        !importedHere &&
+        !data.assignment_only &&
+        !(batchReview && data.current_import) &&
+        (coverage.data || coverage.pending || coverage.error) && (
+          <div
+            ref={duplicateBox}
+            id="statement-duplicate-box"
+            data-highlighted={duplicateHighlight ? "true" : undefined}
+            tabIndex={-1}
+            className={`rounded space-y-2 outline-none transition-shadow ${
+              duplicateHighlight
+                ? "ring-4 ring-amber-500 ring-offset-2"
+                : ""
+            }`}
+          >
+            {coverage.data && (
+              <StatementCoverageReview
+                review={coverage.data}
+                decision={coverageDecision}
+                change={setCoverageDecision}
+                canEdit={canEdit}
+                inBatch={!!batchReview}
+                onCompare={setCompareWith}
+              />
+            )}
+            {coverage.pending && (
+              <p role="status">
+                Checking for other statements covering these dates…
+              </p>
+            )}
+            {coverage.error && (
+              <div role="alert">
+                <p>{coverage.error}</p>
+                <Button variant="outline" onClick={coverage.retry}>
+                  Retry overlap check
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      {!data.current_import &&
+        (duplicateDecision || coverage.data?.matching_statement) && (
+          <StatementDuplicateDecision
+            caseId={caseId}
+            fileId={fileId}
+            statementId={data.statement_id}
+            currency={data.currency}
+            readingRevision={data.revision}
+            decision={duplicateDecision}
+            matchingStatement={coverage.data?.matching_statement}
+            canEdit={caseCanEdit && !duplicateCheck.isPending}
+            canCheck={!duplicateCheckDirty}
+            checkDisabledReason="Save your current corrections with Save progress before checking duplicates. Your unfinished edits stay here."
+            onBusy={setDuplicateActionBusy}
+            onDecision={(decision) => {
+              if (renderSnapshot !== currentRequestSnapshot.current) return
+              setLocalDuplicate(decision)
+              confirm.reset()
+              void client.invalidateQueries({
+                queryKey: ["financial-batch", caseId],
+              })
+              void client.invalidateQueries({
+                queryKey: ["statement-import-status", caseId],
+              })
+            }}
+          />
+        )}
       {duplicateDecisionPanel}
       {duplicateCheck.isPending && (
         <p role="status">
@@ -5047,29 +5156,6 @@ function EditableStatement({
               ref={confirmationControls}
               className="rounded border bg-muted/30 p-3 space-y-2"
             >
-              {coverage.data && (
-                <StatementCoverageReview
-                  review={coverage.data}
-                  decision={coverageDecision}
-                  change={setCoverageDecision}
-                  canEdit={canEdit}
-                  inBatch={!!batchReview}
-                  onCompare={setCompareWith}
-                />
-              )}
-              {coverage.pending && (
-                <p role="status">
-                  Checking for other statements covering these dates…
-                </p>
-              )}
-              {coverage.error && (
-                <div role="alert">
-                  <p>{coverage.error}</p>
-                  <Button variant="outline" onClick={coverage.retry}>
-                    Retry overlap check
-                  </Button>
-                </div>
-              )}
               {data.metadata.account_closure && (
                 <div className="space-y-2">
                   <p>

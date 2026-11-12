@@ -3394,3 +3394,51 @@ it("opens a reading whose worked-out opening balance records what it rests on, a
     screen.getByText("printed opening minor:").nextSibling
   ).toHaveTextContent("100000")
 })
+
+it("Go to field on a duplicate hold with nothing ticked focuses the decision and highlights the box above the transactions", async () => {
+  vi.mocked(useStatementCoverageReview).mockReturnValue({
+    data: {
+      available: true,
+      matching_statement: true,
+      revision: "d".repeat(64),
+      candidates: [
+        {
+          file_id: "other-file",
+          filename: "Other statement.pdf",
+          statement_id: null,
+          source_document_id: "other-source",
+          status: "imported",
+          period_start: "2023-01-01",
+          period_end: "2023-01-31",
+        },
+      ],
+    },
+    pending: false,
+    error: undefined,
+    retry: vi.fn(),
+  })
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  mount()
+  await open()
+  const box = document.getElementById("statement-duplicate-box")!
+  expect(box).toBeTruthy()
+  expect(
+    within(box).getByRole("button", { name: "Compare side by side" })
+  ).toBeVisible()
+  const balances = screen.getByRole("region", { name: "Statement correction columns" })
+  expect(
+    box.compareDocumentPosition(balances) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy()
+  const issues = screen.getByRole("region", {
+    name: "Statement issues and edits",
+  })
+  fireEvent.click(within(issues).getAllByRole("button", { name: "Go to field" })[0])
+  expect(
+    screen.getByRole("checkbox", {
+      name: "I have compared these files and need to import this statement too",
+    })
+  ).toHaveFocus()
+  expect(box).toHaveAttribute("data-highlighted", "true")
+  expect(warn).not.toHaveBeenCalled()
+  warn.mockRestore()
+})
