@@ -17,3 +17,20 @@ def deny_all(message: str):
             raise ValueError(message)
 
     return DenyAll()
+
+
+def data_only(message: str):
+    """A fetcher that loads ``data:`` URLs (embedded charts and images) and refuses every other URL with ``message``.
+
+    WeasyPrint 70 also asserts that a fetcher returns a ``URLFetcherResponse``, so a plain function returning a dict
+    failed the whole PDF on an embedded image too (agent document PDFs, measured 12 Nov on the live venv).
+    """
+    from weasyprint.urls import URLFetcher
+
+    class DataOnly(URLFetcher):
+        def fetch(self, url, headers=None):
+            if not str(url).startswith("data:"):
+                raise ValueError(message)
+            return super().fetch(url, headers)
+
+    return DataOnly(allowed_protocols={"data"})

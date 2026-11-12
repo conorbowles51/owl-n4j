@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from services.agent.export_visuals import visual_svg, svg_png
+from services.pdf_fetch import data_only
 
 ASSETS = Path(__file__).resolve().parents[2] / "assets"
 BRAND_RED = "B41624"
@@ -285,20 +286,15 @@ def document_html(title,payload,portable=True):
     return ''.join(parts)+'</body></html>'
 
 
-def offline_fetcher(url,*args,**kwargs):
-    """WeasyPrint must never fetch case-controlled network URLs or local files."""
-    from urllib.parse import unquote_to_bytes
-    if not str(url).startswith('data:'):
-        raise ValueError('Only embedded data resources may be rendered')
-    header,encoded=str(url)[5:].split(',',1)
-    mime=header.split(';',1)[0] or 'text/plain'
-    content=base64.b64decode(encoded,validate=True) if ';base64' in header else unquote_to_bytes(encoded)
-    return {'string':content,'mime_type':mime,'redirected_url':url}
+@lru_cache(maxsize=1)
+def offline_fetcher():
+    """WeasyPrint must never fetch case-controlled network URLs or local files: embedded data resources only."""
+    return data_only('Only embedded data resources may be rendered')
 
 
 def document_pdf(title,payload):
     from weasyprint import HTML
-    return HTML(string=document_html(title,payload),url_fetcher=offline_fetcher).write_pdf()
+    return HTML(string=document_html(title,payload),url_fetcher=offline_fetcher()).write_pdf()
 
 
 def _word_inline(paragraph,content):

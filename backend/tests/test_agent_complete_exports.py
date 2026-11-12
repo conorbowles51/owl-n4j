@@ -105,9 +105,20 @@ def test_unavailable_exhibit_fails_instead_of_claiming_a_complete_report():
     with pytest.raises(ValueError,match='unavailable'):render_report_pdf(title='Report',payload=payload)
 
 
+PNG_1PX='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+
+
+def test_pdf_with_an_embedded_image_and_a_refused_one_is_written():
+    # 12 Nov: offline_fetcher was a plain function; under WeasyPrint 70 an embedded image failed the PDF
+    # (AssertionError: fetcher must return a URLFetcherResponse) and a refused URL failed it too (AttributeError).
+    from weasyprint import HTML
+    for page in (f'<p>Chart</p><img src="{PNG_1PX}">','<p>Outside</p><img src="https://example.test/a.png">'):
+        assert HTML(string=page,url_fetcher=offline_fetcher()).write_pdf().startswith(b'%PDF')
+
+
 def test_no_network_or_file_fetch_in_pdf_renderer():
     for url in ('https://example.test/private','file:///etc/passwd'):
-        with pytest.raises(ValueError):offline_fetcher(url)
+        with pytest.raises(ValueError):offline_fetcher()(url)
     page=document_html('Report',{'sections':[{'heading':'Safe','content':'<script>alert(1)</script> ![bad](file:///secret) [bad](javascript:alert(1))'}]})
     assert '<script>alert' not in page
     assert 'src="file:' not in page
