@@ -39,3 +39,8 @@ def test_the_sb4_refusal_says_it_can_be_processed_again():
 def test_no_error_no_words_and_unknown_text_kept():
     assert plain_failure(None) is None
     assert plain_failure('Password-protected PDF') == 'Password-protected PDF'
+
+
+def test_a_batch_that_could_not_reach_the_ai_service_says_so():
+    # 11 Nov: httpx.ConnectTimeout has no text; the engine now stores its name.
+    assert 'could not be reached' in plain_failure('Batch pipeline failed: ConnectTimeout')

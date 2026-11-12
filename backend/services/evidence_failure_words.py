@@ -33,7 +33,7 @@ _RULES = [
      'Files of type {0} cannot be processed.'),
     (re.compile(r'not a valid ZIP-based file', re.I),
      'This Office document is damaged or not what its name says, so it could not be opened.'),
-    (re.compile(r'All connection attempts failed|ConnectError|timed out', re.I),
+    (re.compile(r'All connection attempts failed|Connect(?:Error|Timeout)|PoolTimeout|timed out', re.I),
      'The processing service could not be reached when this file was sent. ' + AGAIN),
     (re.compile(r'^Processing failed$'),
      'Processing stopped without giving a reason. ' + AGAIN),

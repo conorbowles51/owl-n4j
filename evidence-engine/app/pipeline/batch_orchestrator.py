@@ -431,6 +431,11 @@ async def _activate_chunk_revisions(
     return pending_job_ids
 
 
+def failure_reason(error: BaseException) -> str:
+    """The error's text, or its name when it has none (httpx.ConnectTimeout: 11 Nov a file failed with an empty reason)."""
+    return str(error).strip() or type(error).__name__
+
+
 async def _force_fail_unfinished_batch_rows(batch_id: str, reason: str) -> None:
     """Mark every job in this batch still in non-terminal status as failed.
 
@@ -782,7 +787,7 @@ async def run_batch_pipeline(
         try:
             await _force_fail_unfinished_batch_rows(
                 batch_id,
-                f"Batch pipeline failed: {e}",
+                f"Batch pipeline failed: {failure_reason(e)}",
             )
         except Exception:
             logger.exception("Failed to force-fail unfinished rows in batch %s on crash", batch_id)

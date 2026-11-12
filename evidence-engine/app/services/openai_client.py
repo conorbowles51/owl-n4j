@@ -335,8 +335,98 @@ def _normalize_deepseek_structured_content(
 
     error = _json_schema_error(parsed, schema)
     if error:
-        raise ValueError(error)
+        # An answer whose only fault is a property the schema does not allow loses that property, not the answer
+        # (11 Nov, CHAT JARZ EMPRESA.pdf chunk 0: 'location_raw' on a Person rejected 9 entities, and the retry
+        # answered none).
+        dropped: list[str] = []
+        pruned = _without_unexpected_properties(parsed, schema, "$", dropped)
+        if not dropped or _json_schema_error(pruned, schema) is not None:
+            raise ValueError(error)
+        logger.warning("DeepSeek structured response: properties the schema does not allow, moved or dropped: %s",
+                       ", ".join(dropped))
+        parsed = pruned
     return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+
+def _without_unexpected_properties(value: Any, schema: dict[str, Any], path: str, dropped: list[str]) -> Any:
+    """A copy of value without the object properties the schema forbids (additionalProperties false).
+
+    The paths dropped are appended to dropped. Items are never removed; an anyOf takes the first option the value
+    matches as it is, else the first that it matches once its forbidden properties are dropped.
+    """
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        if any(_json_schema_error(value, option, path) is None for option in any_of):
+            return value
+        for option in any_of:
+            trial: list[str] = []
+            candidate = _without_unexpected_properties(value, option, path, trial)
+            if trial and _json_schema_error(candidate, option, path) is None:
+                dropped.extend(trial)
+                return candidate
+        return value
+    schema_type = schema.get("type")
+    if schema_type == "object" and isinstance(value, dict):
+        properties = schema.get("properties") or {}
+        # An entity's attribute written beside its fields instead of inside its open "properties" object moves there.
+        bag_schema = properties.get("properties")
+        bag = value.get("properties") if isinstance(value.get("properties"), dict) else None
+        open_bag = (isinstance(bag_schema, dict) and bag_schema.get("type") == "object"
+                    and bag_schema.get("additionalProperties") is not False
+                    and not bag_schema.get("properties") and (bag is not None or "properties" not in value))
+        out: dict[str, Any] = {}
+        moved: dict[str, Any] = {}
+        for key, item in value.items():
+            if key in properties:
+                out[key] = _without_unexpected_properties(item, properties[key], f"{path}.{key}", dropped)
+            elif schema.get("additionalProperties") is not False:
+                out[key] = item
+            elif open_bag and key not in (bag or {}):
+                moved[key] = item
+                dropped.append(f"{path}.{key} -> {path}.properties.{key}")
+            else:
+                dropped.append(f"{path}.{key}")
+        if moved:
+            out["properties"] = {**(out.get("properties") or {}), **moved}
+        return out
+    if schema_type == "array" and isinstance(value, list) and isinstance(schema.get("items"), dict):
+        return [_without_unexpected_properties(item, schema["items"], f"{path}[{index}]", dropped)
+                for index, item in enumerate(value)]
+    return value
+
+
+def _top_level_item_count(content: str, schema: dict[str, Any]) -> int:
+    """Items in the answer's one top-level array ({"entities": [...]} or a bare array); 0 when there is none."""
+    try:
+        parsed = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return 0
+    if isinstance(parsed, list):
+        return len(parsed)
+    properties = schema.get("properties") or {}
+    if isinstance(parsed, dict) and len(properties) == 1:
+        key = next(iter(properties))
+        if isinstance(parsed.get(key), list):
+            return len(parsed[key])
+    return 0
+
+
+# A request that never reached DeepSeek (no connection) is sent again after these pauses; it was not billed. The
+# OpenAI client retries these itself. 11 Nov 22:34: one ConnectTimeout failed a whole batch after 302 s of work.
+_DEEPSEEK_CONNECT_RETRY_DELAYS_S = (2.0, 6.0)
+
+
+async def _deepseek_post(client: httpx.AsyncClient, **kwargs: Any) -> httpx.Response:
+    for delay in (*_DEEPSEEK_CONNECT_RETRY_DELAYS_S, None):
+        try:
+            return await client.post("https://api.deepseek.com/chat/completions", **kwargs)
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+            if delay is None:
+                raise
+            logger.warning("DeepSeek could not be reached (%s); sending again in %.0f s",
+                           type(exc).__name__, delay)
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 def _add_token_usage(total: dict[str, Any], usage: Any) -> None:
@@ -514,6 +604,7 @@ async def _deepseek_chat_completion(
     total_usage: dict[str, Any] = {}
     last_error = "DeepSeek returned an invalid response"
     retry_max_output_tokens: int | None = None
+    invalid_items = 0
 
     async with httpx.AsyncClient(timeout=_OPENAI_TIMEOUT) as client:
         for attempt in range(attempts):
@@ -554,8 +645,8 @@ async def _deepseek_chat_completion(
                     *normalized_messages,
                 ]
 
-            response = await client.post(
-                "https://api.deepseek.com/chat/completions",
+            response = await _deepseek_post(
+                client,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "content-type": "application/json",
@@ -580,9 +671,18 @@ async def _deepseek_chat_completion(
                 last_error = "response content was empty"
             elif schema:
                 try:
-                    return _normalize_deepseek_structured_content(content, schema), total_usage
+                    normalized = _normalize_deepseek_structured_content(content, schema)
                 except (json.JSONDecodeError, ValueError) as exc:
                     last_error = str(exc)
+                    invalid_items = max(invalid_items, _top_level_item_count(content, schema))
+                else:
+                    # A retry told to correct an answer that held items must not hand back none: that empty answer
+                    # passes the schema and the items are lost without a trace (11 Nov, CHAT JARZ EMPRESA.pdf).
+                    if invalid_items and not _top_level_item_count(normalized, schema):
+                        last_error = (f"the previous answer held {invalid_items} items and this one holds none; "
+                                      "return the items the source supports, corrected")
+                    else:
+                        return normalized, total_usage
             else:
                 return content, total_usage
 
