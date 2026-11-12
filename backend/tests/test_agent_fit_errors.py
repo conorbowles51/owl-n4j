@@ -31,6 +31,7 @@ class ContactOverNoIdentityTests(unittest.TestCase):
                 "money_readings_available": False}
         with patch.dict(os.environ, {"LOUPE_AGENT_FIT": ""}), \
                 patch.object(PC, "_dossier", lambda conn, case, p: SimpleNamespace(id="d1" if "Mateo" in p else "d2")), \
+                patch.object(PC, "owner_records_naming", lambda conn, case, name: []), \
                 patch.object(link_edges, "resolve_side", lambda conn, case, s: side(s)), \
                 patch.object(link_edges, "edges", lambda *a, **k: {"edges": [edge], "limits": [], "money_absent": None,
                                                                     "zone": "UTC"}), \

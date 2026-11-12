@@ -20,8 +20,13 @@ _ACCOUNT_REF = re.compile(r"account:(" + _UUID + ")", re.I)
 _DIGITS = re.compile(r"(?<![\w-])\d[\d ]{2,}\d(?![\w-])")
 _MONTHS = ("january|february|march|april|may|june|july|august|september|october|november|december|"
            "jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec")
-_DATE = re.compile(r"\b\d{4}-\d{2}(?:-\d{2})?\b|\b\d{1,2} (?:" + _MONTHS + r")\.? \d{4}\b|\b(?:" + _MONTHS
-                   + r")\.? (?:\d{1,2},? )?\d{4}\b|\b(?:19|20)\d{2}\b", re.I)
+# A day without its year ("23 May", "May 23") counts too: "between 23 May and 7 June 2024" names two dates.
+_DATE_TEXT = (r"\b\d{4}-\d{2}(?:-\d{2})?\b|\b\d{1,2} (?:" + _MONTHS + r")\.? \d{4}\b|\b(?:" + _MONTHS
+              + r")\.? (?:\d{1,2},? )?\d{4}\b|\b\d{1,2} (?:" + _MONTHS + r")\b\.?|\b(?:" + _MONTHS
+              + r")\.? \d{1,2}(?:st|nd|rd|th)?\b|\b(?:19|20)\d{2}\b")
+_DATE = re.compile(_DATE_TEXT, re.I)
+_RANGE = re.compile(r"\b(?:between|from)\s+(" + _DATE_TEXT + r")\s+(?:and|to|until|through|till|-|–)\s+("
+                    + _DATE_TEXT + r")", re.I)
 # Two to five capitalised words: a name the case may not hold as an account holder.
 _NAME = re.compile(r"\b(?:[A-Z][a-zA-Z'À-ſ.-]+|[A-Z]{2,})(?:\s+(?:de|del|la|van|von|[A-Z][a-zA-Z'À-ſ.-]+"
                    r"|[A-Z]{2,})){1,4}\b")
@@ -70,7 +75,14 @@ def build(question: str, accounts: Iterable[dict[str, Any]] = ()) -> Scope:
     digit_runs = [re.sub(r"\D", "", m.group(0)) for m in _DIGITS.finditer(text)]
     scope.identifiers = [d for d in dict.fromkeys(digit_runs)
                          if len(d) >= 4 and not (len(d) == 4 and d[:2] in ("19", "20"))]
-    scope.dates = list(dict.fromkeys(m.group(0) for m in _DATE.finditer(text)))
+    dates = [m.group(0).rstrip(".") for m in _DATE.finditer(text)]
+    for m in _RANGE.finditer(text):
+        a, b = m.group(1).rstrip("."), m.group(2).rstrip(".")
+        if a in dates and b in dates:
+            i = dates.index(a)
+            dates[i] = "%s to %s" % (a, b)
+            dates.remove(b)
+    scope.dates = list(dict.fromkeys(dates))
     question_words = set(_words(text))
     by_number, by_holder = [], []
     for account in accounts:

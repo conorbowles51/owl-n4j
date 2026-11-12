@@ -41,6 +41,10 @@ fit_replay = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fit_replay)
 
 
+# The case reader the tools check access for (get_document_text refuses a run with no reader): the jobs login's
+# user id, given with --user-id or LOUPE_REPLAY_USER_ID. Reads only; never a proposer.
+REPLAY_USER_ID = os.environ.get('LOUPE_REPLAY_USER_ID') or None
+
 def guard_process():
     """fit_replay's guards (read-only sessions, no model service) and no DeepSeek either. Called by main(), never
     on import (a test importing this file must keep its own process writable)."""
@@ -224,6 +228,7 @@ def main():
     guard_process()
     ap = argparse.ArgumentParser()
     ap.add_argument('--recorded', required=True, help='a run json written by financial_agent_fit_replay.py')
+    ap.add_argument('--user-id', help='the case reader for tools that check access (the jobs login user id)')
     ap.add_argument('--out', required=True)
     ap.add_argument('--group', type=int, default=1, help='recorded calls per scripted step')
     ap.add_argument('--tokenizer', default='/mnt/owl-data/tmp/lx-agentfit/r2/tok/tokenizer.json')
@@ -232,6 +237,9 @@ def main():
     ap.add_argument('--outputs', help='a pickle of the tools\' raw outputs: written when missing, else replayed '
                                       'from it so request variants are compared on the same results without the DB')
     cli = ap.parse_args()
+    if cli.user_id:
+        global REPLAY_USER_ID
+        REPLAY_USER_ID = cli.user_id
 
     recorded = json.load(open(cli.recorded))
     trace = [t for t in recorded.get('trace') or [] if t.get('name')]
@@ -272,6 +280,7 @@ def main():
                                    available_artifacts=ctx['artifacts'], max_tool_calls=10_000,
                                    mandate_context_block=ctx['block'], hidden_tools=ctx['hidden'],
                                    final_answer_rules=ctx['rules'],
+                                   user_id=REPLAY_USER_ID,
                                    proposer=dict(for_name='replay', for_user_id=None, for_email=None, model='replay',
                                                  model_id='replay', provider='deepseek', run_id=None, thread_id=None,
                                                  can_propose=False)):

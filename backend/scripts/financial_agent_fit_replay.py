@@ -35,6 +35,10 @@ _READ_ONLY = '-c default_transaction_read_only=on'
 _REFUSED = ('openai.com', 'anthropic.com', 'googleapis.com')
 
 
+# The case reader the tools check access for (get_document_text refuses a run with no reader): the jobs login's
+# user id, given with --user-id or LOUPE_REPLAY_USER_ID. Reads only; never a proposer.
+REPLAY_USER_ID = os.environ.get('LOUPE_REPLAY_USER_ID') or None
+
 def guard_process():
     """Read-only Postgres sessions and no model service for this process. Called when a replay runs, never on
     import: a test that imports this file to reach a helper (expect_hit) must not turn the rest of its process
@@ -255,6 +259,7 @@ def main():
     ap.add_argument('--question')
     ap.add_argument('--key-id')
     ap.add_argument('--key', default='../evidence-engine/tests/phone/planted-truths.json')
+    ap.add_argument('--user-id', help='the case reader for tools that check access (the jobs login user id)')
     ap.add_argument('--out', required=True)
     ap.add_argument('--model', default='deepseek-v4-pro')
     ap.add_argument('--reasoning', default=None, help='off|high|max; default: the setting (model_choice)')
@@ -264,6 +269,9 @@ def main():
         'R8: the app shares the DeepSeek account); runs sharing --spend-ledger stop once it is reached'))
     ap.add_argument('--spend-ledger', required=True, help='jsonl of tokens spent by each run of this measurement')
     args = ap.parse_args()
+    if args.user_id:
+        global REPLAY_USER_ID
+        REPLAY_USER_ID = args.user_id
     if not args.run and not (args.case and args.question):
         raise SystemExit('give --run, or --case and --question')
     spent_before, stopped = ledger_spent(args.spend_ledger)
@@ -292,6 +300,7 @@ def main():
         for event in runner.stream(case_id=case_id, messages=history, thread_id='replay', available_artifacts=artifacts,
                                    max_tool_calls=budget, mandate_context_block=block, hidden_tools=hidden,
                                    final_answer_rules=rules, should_cancel=over_budget,
+                                   user_id=REPLAY_USER_ID,
                                    proposer=dict(for_name='replay', for_user_id=None, for_email=None, model='replay',
                                                  model_id=args.model, provider='deepseek', run_id=None, thread_id=None,
                                                  can_propose=False)):

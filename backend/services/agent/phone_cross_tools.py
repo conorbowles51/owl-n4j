@@ -147,6 +147,34 @@ def _subject(conn, case_id, person=None, phone=None, role="subject"):
     return r
 
 
+def owner_records_naming(conn, case_id, name) -> list:
+    """Phones whose owner record (the extraction's own owner, as phone_coverage gives it) carries this name, with no
+    person's link behind it: ``[{identity_key, phone, shown_as, owner, basis}]``. One source with phone_coverage, so
+    a person tool never says "no phone identity" for a person phone_coverage names as a phone's owner. A name on the
+    phone, never a link."""
+    from services.phone import labels as L
+    from services.phone import records
+    want = " ".join(str(name or "").split()).casefold()
+    if not want:
+        return []
+    out = []
+    for p in records.phones(conn, case_id):
+        owner = p.get("owner") or {}
+        got = " ".join(str(owner.get("name") or "").split()).casefold()
+        if p.get("standing") != "active" or not owner.get("identity_key") or got != want:
+            continue
+        out.append({"identity_key": owner["identity_key"], "phone": p["label"],
+                    "shown_as": (owner.get("identifier") or {}).get("display"), "owner": L.label_text(owner),
+                    "basis": "The owner record of %s carries the name %s; no person has linked it on People." % (
+                        p["label"], owner["name"])})
+    return out
+
+
+def _owner_words(found) -> str:
+    return " ".join("The owner record of %s names them (%s): a name recorded on the phone, not a person's link; read "
+                    "it with identity key %s." % (x["phone"], x["owner"], x["identity_key"]) for x in found)
+
+
 def suggested_identities(conn, case_id, dossier_id) -> list:
     """Phone identities an open identity suggestion ties to the person, strongest first:
     ``[{identity_key, shown_as, strength, reasons}]`` (the suggestions' own rule; nothing is linked or stored)."""
@@ -308,12 +336,16 @@ def person_phones(conn, case_id, person) -> dict:
                   "names": names.get(r.identity_id, []), "messages_and_calls": counts.get(r.identity_key, 0),
                   "linked_by": r.decided_by_name, "linked_at": _iso(r.decided_at),
                   "link_origin": (r.actor_origin or {}).get("kind") if r.actor_origin else "person"} for r in rows]
+        named = [] if items else owner_records_naming(conn, case_id, d.display_name)
         return _base(tool, case_id, person={"dossier_id": d.id, "name": d.display_name},
-                     owner_of_phones=[labels.get(e) or e for e in owned], total_matching=len(items),
+                     owner_of_phones=[labels.get(e) or e for e in owned], owner_records_naming=named,
+                     total_matching=len(items),
                      returned=len(items), has_more=False, next_offset=None, items=items,
                      coverage="Every phone identity linked to %s (%d), linked by a person on People." % (
                          d.display_name, len(items)),
-                     limitation=None if items else "No phone identity is linked to %s yet." % d.display_name)
+                     limitation=None if items else " ".join(x for x in (
+                         "No person has linked a phone identity to %s on People yet." % d.display_name,
+                         _owner_words(named)) if x))
     return _guard(tool, case_id, run)
 
 
@@ -758,6 +790,11 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
                     # The count over no identity is never given as no contact (always on); counting through the
                     # suggested identities is item D's.
                     found = suggested_identities(conn, case_id, subject["dossier_id"]) if fit.on("D") else []
+                    if not found:
+                        # The phone's own owner record naming them (phone_coverage's owner), read as theirs with
+                        # that basis stated: never "no identity" for a person phone_coverage names as an owner.
+                        found = [dict(x, strength=None, reasons=[x["basis"]])
+                                 for x in owner_records_naming(conn, case_id, side["label"])]
                     if found:
                         suggested[tag] = dict(person=side["label"], identities=found)
                     else:
@@ -803,7 +840,8 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
             people = " or ".join(v["person"] for v in suggested.values())
             extra["suggested_pairs"] = pairs
             label = ("No person has linked a phone identity to %s, so contact is counted through the identities an "
-                     "identity suggestion ties to them (say so, with the strength, beside every count): %s" % (
+                     "identity suggestion or a phone's owner record ties to them (say so, with the strength or "
+                     "basis, beside every count): %s" % (
                          people, "; ".join("%s and %s: %s" % (p["a"], p["b"], p["label_line"]) for p in pairs)))
             limits = [x for x in limits if not any(v["person"] in x for v in suggested.values())]
         elif unlinked:
@@ -878,7 +916,68 @@ def match_lines(items) -> dict:
     return out
 
 
-def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
+MATCHES_LIMIT = 10
+MAX_PAIRINGS_SHOWN = 5
+OTHER_SIDE_DAYS = 1
+
+
+def _phones_of_person(conn, case_id, person) -> list:
+    """Labels of the phones whose owner record carries this name, or whose owner identity a person linked to a
+    dossier of this name (phone_coverage's owner, read the same way)."""
+    from services.pattern_of_life import subjects
+    from services.phone import records
+    want = " ".join(str(person or "").split()).casefold()
+    phones = records.phones(conn, case_id)
+    by_ext = {p["extraction_id"]: p["label"] for p in phones}
+    out = [p["label"] for p in phones
+           if " ".join(str((p.get("owner") or {}).get("name") or "").split()).casefold() == want]
+    for d in subjects.dossiers(conn, str(case_id)):
+        if " ".join(str(d.get("name") or "").split()).casefold() == want:
+            out += [by_ext[e] for e in d["extraction_ids"] if e in by_ext]
+    return sorted(set(out))
+
+
+def _reading_day(it):
+    try:
+        return datetime.fromisoformat(str(it.get("instant"))).date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _other_side(entries, accounts, it) -> list:
+    """Ledger rows the other way of the same amount within a day of the reading: for a received alert, the payer's
+    debit; for a sent one, the payee's credit. A suggestion for a person to check, never a pairing (the pairing rule
+    keeps to the phone's own direction)."""
+    day, minor = _reading_day(it), it.get("amount_minor")
+    if not day or not minor or it.get("direction") not in ("credit", "debit"):
+        return []
+    want = "debit" if it["direction"] == "credit" else "credit"
+    out = []
+    for acc, rows in entries.items():
+        for r in rows:
+            d = r["date"]
+            d = d.date() if isinstance(d, datetime) else d
+            if (r["direction"] != want or int(r["amount_minor"]) != int(minor) or d is None
+                    or abs((d - day).days) > OTHER_SIDE_DAYS
+                    or (it.get("currency") and r["currency"] != it["currency"])):
+                continue
+            a = accounts.get(acc) or {}
+            lag = abs((d - day).days)
+            out.append({"payment": r["id"], "txn": _txn(r["id"]),
+                        "amount": "%s %s" % (r["currency"], "{:,.2f}".format(int(r["amount_minor"]) / 100))
+                        if r["currency"] else str(minor),
+                        "date": d.isoformat(), "direction": want, "account_holder": a.get("holder"),
+                        "institution": a.get("institution"),
+                        "printed_text": r.get("description") or r.get("counterparty"),
+                        "words": "Same amount, %s, %d day%s from the alert, on an account in the case: the other side "
+                                 "of the payment if a person checks it; not a pairing and not a link." % (
+                                     "money out" if want == "debit" else "money in", lag, "" if lag == 1 else "s")})
+    return sorted(out, key=lambda x: (x["date"], x["payment"]))[:3]
+
+
+def money_signal_matches(conn, case_id, *, outcome=None, strength=None, phones=(), person=None, direction=None,
+                         minimum_minor=None, maximum_minor=None, start=None, end=None,
+                         max_pairings=MAX_PAIRINGS_SHOWN, offset=0, limit=MATCHES_LIMIT) -> dict:
     """Every phone money reading of approach 1's last run that pairs with a ledger row at any strength (strong,
     moderate, weak, faint; 05 4.3.8), strongest first, each with its candidate payments (txn://), the strength by rule
     and the plain reasons (how well matched, how substantiated), and whether a person confirmed or rejected the pairing.
@@ -892,6 +991,39 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
         raise ValueError("outcome is one of %s; other readings are in phone_money_readings." % ", ".join(MATCHED))
     if strength and strength not in LEVELS:
         raise ValueError("strength is one of %s." % ", ".join(LEVELS))
+    want_phones = set(phones or ())
+    if person:
+        named = _phones_of_person(conn, case_id, person)
+        if not named:
+            raise ValueError("No phone in this case has an owner named %s; give phones by label from phone_coverage."
+                             % person)
+        want_phones |= set(named)
+    lo, hi = _instant(start), _instant(end, end=True)
+
+    def kept(it):
+        if want_phones and it.get("phone") not in want_phones:
+            return False
+        if direction and it.get("direction") != direction:
+            return False
+        m = it.get("amount_minor")
+        if minimum_minor is not None and (m is None or int(m) < int(minimum_minor)):
+            return False
+        if maximum_minor is not None and (m is None or int(m) > int(maximum_minor)):
+            return False
+        if lo or hi:
+            try:
+                t = datetime.fromisoformat(str(it.get("instant")))
+            except (TypeError, ValueError):
+                return False
+            if (lo and t < lo) or (hi and t >= hi):
+                return False
+        return True
+    filters = ", ".join(x for x in (
+        "phones %s" % ", ".join(sorted(want_phones)) if want_phones else None,
+        "person %s" % person if person else None, "direction %s" % direction if direction else None,
+        "amount from %s" % minimum_minor if minimum_minor is not None else None,
+        "amount to %s" % maximum_minor if maximum_minor is not None else None,
+        "from %s" % start if start else None, "to %s" % end if end else None) if x)
     run = _last_run(conn, case_id, "money_signals")
     if run is None:
         return _base(tool, case_id, total_matching=0, returned=0, has_more=False, next_offset=None, items=[],
@@ -940,6 +1072,8 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
             continue
         if strength and best != strength:
             continue
+        if not kept(it):
+            continue
         o = m.get("outcome")
         if o in ("corroborated", "near_amount") and rejected_rule:
             o = "rule match rejected by a person"
@@ -977,13 +1111,33 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
     if old_run:
         limitation = " ".join(x for x in (limitation, "The last run predates match strengths; run Money on the phones "
                                           "again to list every candidate payment with its strength.") if x)
+    # Bounded: each reading shows its strongest pairings (the rest counted), and readings page at MATCHES_LIMIT, so a
+    # filter-less call is no longer a 254,355-character result (lx-agentfit, demo Q4 stand-in).
+    shown_cap = max(1, int(max_pairings or MAX_PAIRINGS_SHOWN))
+    page_items, _, _ = _page(items, offset, limit)
+    if page_items:
+        from services.phone_analysis import money_signals as MS
+        accounts, entries, _ = MS._ledger(conn, case_id)
+    for it in page_items:
+        extra = len(it["pairings"]) - shown_cap
+        if extra > 0:
+            it["pairings_not_shown"] = extra
+            it["pairings_not_shown_words"] = ("%d weaker pairing%s not shown; read them with this reading's phone "
+                                              "and max_pairings up to 50." % (extra, "" if extra == 1 else "s"))
+            it["pairings"] = it["pairings"][:shown_cap]
+        if it.get("best_strength") in ("weak", "faint", None):
+            other = _other_side(entries, accounts, it)
+            if other:
+                it["other_side"] = other
+    if filters:
+        cov = "Filtered to %s. %s" % (filters, cov)
     out = _paged(tool, case_id, items, offset, limit, "readings", run_id=str(run.id), by_outcome=by_outcome,
                   by_strength=by_level, confirmed_by_person=confirmed, rejected_by_person=rejected,
                   readings_with_every_pairing_rejected=all_rejected,
                   search=MP.search_words(), coverage=cov, limitation=limitation,
                   note="Mention every pairing with its strength and reasons, one line each, weak and faint ones as weak "
                        "or faint; never replace them with examples or a count, and never say they are only in the tool "
-                       "output. Copy every line of match_lines under its strength heading (Strong, Moderate, Weak, Faint) and the rejected lines apart; rejected_pairings are not matches: list them apart, never under a strength. Say which are confirmed by a person and which are found by the rule; never "
+                       "output; a reading's pairings_not_shown are counted, not listed: give the count. Copy every line of match_lines under its strength heading (Strong, Moderate, Weak, Faint) and the rejected lines apart; rejected_pairings are not matches: list them apart, never under a strength. Say which are confirmed by a person and which are found by the rule; never "
                        "call a rule-found pairing confirmed. Rejected pairings are not evidence of a match and are "
                        "not counted. A reading is what a phone shows (p4), never summed; a row keeps its class.")
     out["match_lines"] = match_lines(out.get("items") or [])
@@ -1876,7 +2030,7 @@ def draft_payment_purpose(conn, case_id, payment, outcome, quoted, purpose=None,
 
 from typing import Literal  # noqa: E402
 
-from pydantic import BaseModel, Field  # noqa: E402
+from pydantic import BaseModel, Field, field_validator  # noqa: E402
 
 
 class _Page(BaseModel):
@@ -1966,6 +2120,23 @@ class MatchesArgs(_Page):
     outcome: Literal["corroborated", "near_amount", "several_candidates"] | None = None
     strength: Literal["strong", "moderate", "weak", "faint"] | None = Field(
         None, description="Only readings whose strongest pairing has this strength.")
+    phones: list[str] = Field(default_factory=list, description="Only readings on these phones (labels such as Phone 6).")
+    person: str | None = Field(None, description=(
+        "Only readings on the phones whose owner is this person (as phone_coverage names the owner)."))
+    direction: Literal["credit", "debit"] | None = Field(None, description="credit: money in on the phone; debit: out.")
+    minimum_minor: int | None = Field(None, ge=0, description="Smallest amount in minor units (50000 is 500.00).")
+    maximum_minor: int | None = Field(None, ge=0, description="Largest amount in minor units.")
+    start: str | None = Field(None, description="First day (YYYY-MM-DD) or instant, inclusive.")
+    end: str | None = Field(None, description="Last day (YYYY-MM-DD, inclusive) or instant.")
+    max_pairings: int = Field(MAX_PAIRINGS_SHOWN, ge=1, le=50, description=(
+        "Pairings shown per reading, strongest first; the rest are counted."))
+    limit: int = Field(MATCHES_LIMIT, ge=1, description=(
+        "Readings per page, at most 25; a larger number reads 25 and the result gives next_offset."))
+
+    @field_validator("limit")
+    @classmethod
+    def _page_cap(cls, v):
+        return min(int(v), 25)
 
 
 class StatementArgs(_Page):
@@ -2063,7 +2234,10 @@ TOOLS = [
      "Every phone alert or message that pairs with a ledger row at any strength (approach 1), strongest first: the "
      "alert's rec://, each candidate row's txn://, the strength (strong, moderate, weak, faint) with the reasons "
      "(how well matched, how substantiated), and whether a person confirmed or rejected it. An alert is p4 and never "
-     "summed; the row keeps its class."),
+     "summed; the row keeps its class. Narrow it to what the question asks: person or phones, direction, amount, "
+     "start and end; 10 readings a page, 5 pairings each. A reading with no strong pairing also lists other_side: "
+     "rows the other way of the same amount within a day (a received alert beside the payer's debit), which are "
+     "suggestions, never pairings."),
     ("get_money_signal_leads", "money_signal_leads", _Page,
      "Accounts and periods the phones point to that the ledger does not hold (approach 1 leads), each with "
      "institution, masked ending, alert days, missing account or missing period, and records. Alerts are never "

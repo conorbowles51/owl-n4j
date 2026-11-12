@@ -511,6 +511,25 @@ def _payment_id(session, case_id, payment):
         return found
 
 
+def _printed_not_named(p: dict) -> dict:
+    """A payment with no printed counterparty: the screen fills its other side with the description, which is not a
+    name (the system prompt's rule: a name comes only from from_name/to_name). For the agent that side is no name, the
+    text is printed_text, and the name fit says names were not compared rather than reading as a disagreement."""
+    if p.get("counterparty"):
+        return p
+    other = "to_name" if p.get("direction") == "debit" else "from_name"
+    out = dict(p)
+    if out.get(other) and out.get(other) != "not printed":
+        out["printed_text"] = p.get("description")
+    out[other] = None
+    out["name_basis"] = ("No counterparty name is printed on this payment; %s is empty and the printed description is "
+                         "in printed_text (any name you read in it is your reading)." % other)
+    if (out.get("fits") or {}).get("name") == 0 and not out.get("name_similarity"):
+        out["name_fit_words"] = ("Names were not compared: no counterparty name is printed on one side or both, so a "
+                                 "name fit of 0 is not a disagreement.")
+    return out
+
+
 def find_connected_payments(session, *, case_id, payment, mode="connected", search="", offset=0, limit=25):
     """Ranked candidate payments for one payment (``services.financial.link_suggestions``): its possible other side
     (``connected``), the onward payments out of the account it arrived in (``onward``), or a case-wide search graded
@@ -542,9 +561,9 @@ def find_connected_payments(session, *, case_id, payment, mode="connected", sear
         more = (LS.search_payments(session, q=str(search)[:300], **fn_kw) if mode == "search" else
                 (LS.suggest_onward if mode == "onward" else LS.suggest_connected)(session, **fn_kw))
         items.extend(more["candidates"])
-    items = [dict(c, financial_href=payment_href(case_id, c["id"]),
-                  citation=dict(href=payment_href(case_id, c["id"]))) for c in items]
-    anchor = dict(out["anchor"], financial_href=payment_href(case_id, out["anchor"]["id"]))
+    items = [_printed_not_named(dict(c, financial_href=payment_href(case_id, c["id"]),
+                                     citation=dict(href=payment_href(case_id, c["id"])))) for c in items]
+    anchor = _printed_not_named(dict(out["anchor"], financial_href=payment_href(case_id, out["anchor"]["id"])))
     return _paged(CONNECTED_SCHEMA, case_id, items, offset, limit, _revision([c["id"] for c in items]),
                   mode=mode, anchor=anchor, by_level=out["by_level"], rule=out["rule"],
                   understood=out.get("understood"), left_out=out.get("left_out"),

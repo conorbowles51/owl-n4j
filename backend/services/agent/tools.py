@@ -339,7 +339,8 @@ class FinancialScopeArgs(BaseModel):
     account_holders: list[str] | None = Field(None, max_length=200)
     start_date: date | None = None
     end_date: date | None = None
-    currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
+    currency: str | None = Field(None, pattern=r"^[A-Z]{3}$", description=(
+        "Three-letter code such as USD. Required with minimum_minor or maximum_minor."))
     source_document_id: uuid.UUID | None = None
     population: Literal["working", "verified"] = Field(
         "working", description="Working includes usable imported payments; verified applies the narrower proof-class policy. Neither includes rejected, superseded or quarantined payments."
@@ -361,8 +362,10 @@ class FinancialQueryArgs(FinancialPageArgs):
     categories: list[str] | None = Field(None, max_length=100)
     direction: Literal["credit", "debit"] | None = None
     search: str = Field("", max_length=256)
-    minimum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$")
-    maximum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$")
+    minimum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$", description=(
+        "Smallest amount in minor units (65000 is 650.00). An amount range needs currency as well, e.g. USD."))
+    maximum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$", description=(
+        "Largest amount in minor units (65000 is 650.00). An amount range needs currency as well, e.g. USD."))
 
 
 class FinancialArgs(FinancialQueryArgs):
@@ -3524,9 +3527,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             lambda **kw: read_phones("phone_messages", "messages", **kw),
             name="phone_messages",
             description=("Read messages and calls on this case's phones in full, as the Conversations screen lists "
-                "them: between people, involving anyone, in a window (activity around a date), on some phones, or "
-                "containing words (record search). States total_matching, has_more and next_offset; every row has "
-                "a rec:// link to cite and says when it rests on a reading not yet confirmed. Cite every claim "
+                "them. mode is between (only among these people) or any (involving any of them); there is no other "
+                "mode. For activity around a date set start and end; phones and search narrow it further. States "
+                "total_matching, has_more and next_offset; every row has a rec:// link to cite and says when it rests on a reading not yet confirmed. Cite every claim "
                 "with its rec:// link and state the coverage sentence."),
             args_schema=PhoneMessagesArgs,
         ),
