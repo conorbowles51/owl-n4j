@@ -22,6 +22,7 @@ from routers import (
     agent_router,
     query_router,
     timeline_router,
+    photos_router,
     snapshots_router,
     cases_router,
     case_members_router,
@@ -304,6 +305,7 @@ app.include_router(chat_router)
 app.include_router(agent_router)
 app.include_router(query_router)
 app.include_router(timeline_router)
+app.include_router(photos_router)
 app.include_router(snapshots_router)
 
 

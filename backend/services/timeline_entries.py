@@ -14,6 +14,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from postgres.models.case import Case
+from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialTransaction, FinancialSourceDocument
 from postgres.models.timeline_entry import TimelineEntry
 from postgres.models.workspace_entry import WorkspaceEntry
@@ -25,11 +26,15 @@ PREFIX = "timeline-entry:"
 
 
 class TimelineAddition(BaseModel):
-    source_kind: Literal["transaction", "workspace_entry", "money_trail", "phone_record"]
+    source_kind: Literal["transaction", "workspace_entry", "money_trail", "phone_record", "evidence_file"]
     # Up to 5,000 per request, stated in the refusal. Phone record ids are the phone build's ids; every other
     # kind takes UUIDs.
     source_ids: list[UUID | str] = Field(min_length=1, max_length=5000)
     event_date: date | None = None
+    # Evidence files only: a person's time of day and place for the added photo(s). Each photo's own value stays
+    # in the event (photo_original), whatever is chosen here.
+    event_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    place: str | None = Field(default=None, max_length=200)
     expected_revision: str | None = None
 
     @model_validator(mode="after")
@@ -84,6 +89,8 @@ def _load_sources(db, case_id, kind, ids):
             joinedload(FinancialTransaction.account), joinedload(FinancialTransaction.source_document).joinedload(FinancialSourceDocument.evidence_file))
     elif kind == "money_trail":
         query = select(FinancialMoneyTrail).where(FinancialMoneyTrail.case_id == case_id, FinancialMoneyTrail.id.in_(ids))
+    elif kind == "evidence_file":
+        query = select(EvidenceFile).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids), EvidenceFile.deleted_at.is_(None))
     else:
         query = select(WorkspaceEntry).where(WorkspaceEntry.case_id == case_id, WorkspaceEntry.id.in_(ids)).options(selectinload(WorkspaceEntry.links))
     return {row.id: row for row in db.scalars(query)}
@@ -212,6 +219,16 @@ def preview_addition(db: Session, *, case_id: UUID, request: TimelineAddition):
             key = _key(case_id, request.source_kind, source_id)
             event = _transfer_event(db,record,key)
             title = 'Reviewed account transfer (both statement entries)'
+        elif request.source_kind == "evidence_file":
+            file = sources.get(id)
+            if not file:
+                raise ValueError("A selected file is no longer in this case. Refresh the file list.")
+            source_id = id
+            key = _key(case_id, request.source_kind, source_id)
+            from services.photo_data import photo_event
+            event = photo_event(file, event_date=request.event_date.isoformat() if request.event_date else None,
+                                event_time=request.event_time, place=request.place, key=key)
+            title = file.original_filename
         elif request.source_kind == "phone_record":
             source_id = phone_source_uuid(id)
             key = _key(case_id, request.source_kind, source_id)
@@ -253,6 +270,8 @@ def save_addition(db: Session, *, case_id: UUID, request: TimelineAddition, acto
         elif request.source_kind == 'money_trail':
             db.execute(select(FinancialMoneyTrail).where(FinancialMoneyTrail.case_id == case_id,
                 FinancialMoneyTrail.id.in_(request.source_ids)).with_for_update().execution_options(populate_existing=True)).scalars().all()
+        elif request.source_kind == "evidence_file":
+            pass  # the case row lock above already serializes additions; the files themselves are not changed
         elif request.source_kind == "workspace_entry":
             db.execute(select(WorkspaceEntry).where(WorkspaceEntry.case_id == case_id,
                 WorkspaceEntry.id.in_(request.source_ids)).with_for_update().execution_options(populate_existing=True)).scalars().all()
@@ -292,6 +311,17 @@ def resolve_entry(db, entry):
         if event and event.get('trail_revision') != snapshot.get('trail_revision'):
             # A saved chronology captures the interpretation the investigator added.
             event = None
+    elif entry.source_kind == "evidence_file":
+        current = db.get(EvidenceFile, entry.source_id)
+        if current and current.case_id == entry.case_id and not current.deleted_at:
+            # The person's chosen date, time and place are the added entry; the file's current caption and its own
+            # original value are read again.
+            event = dict(snapshot)
+            event["source"] = {**snapshot["source"], "state": "current"}
+            caption = (current.metadata_ or {}).get("caption")
+            if caption:
+                event["summary"] = caption + ". " + (snapshot.get("summary") or "")
+            event["thumbnail_url"] = f"/api/photos/{current.id}/thumbnail?case_id={current.case_id}"
     elif entry.source_kind == "phone_record":
         from postgres import link_types
         try:
@@ -331,7 +361,7 @@ def list_entries(db, *, case_id, event_keys=None, offset=0, limit=2000):
     # Retain these maps while resolving so SQLAlchemy's identity map supplies the
     # source records instead of issuing one query per event in a large import.
     sources = [_load_sources(db, case_id, kind, [entry.source_id for entry in entries if entry.source_kind == kind])
-               for kind in ("transaction", "workspace_entry", "money_trail")]
+               for kind in ("transaction", "workspace_entry", "money_trail", "evidence_file")]
     events = [resolve_entry(db, entry) for entry in entries]
     del sources
     return events

@@ -155,6 +155,8 @@ from postgres.models.timeline_entry import TimelineEntry
 from postgres.models.transcript import TranscriptSource, TranscriptRevision, TranscriptState, TranscriptReview, EvidenceProcessingPlan
 __all__ += ['TranscriptSource', 'TranscriptRevision', 'TranscriptState', 'TranscriptReview', 'EvidenceProcessingPlan']
 __all__ += ["TimelineEntry"]
+from postgres.models.timeline_event_file import TimelineEventFile
+__all__ += ["TimelineEventFile"]
 from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploadGroup, EvidenceUploadRegistration
 from postgres.models.activity_event import ActivityEvent
 __all__ += ["EvidenceUploadSession"]

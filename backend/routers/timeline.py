@@ -17,6 +17,7 @@ from services.neo4j_service import neo4j_service
 from services.neo4j.graph_response_cache import cached_json, keys_digest, warm as warm_response
 from services.neo4j.timeline_service import TimelineTooLarge
 from services.significant_service import get_significant_entity_keys
+from services.photo_data import photo_events
 from services.timeline_entries import TimelineAddition, preview_addition, save_addition, list_entries
 from services.timeline_view_service import (
     TimelineViewNotFound,
@@ -414,6 +415,91 @@ def get_timeline_entries(case_id: UUID = Query(...), offset: int = Query(0, ge=0
         if scope == "significant":
             keys = set(get_significant_entity_keys(db, case_id=case_id))
             events = [event for event in events if event["key"] in keys]
+        elif not more:
+            # Photos with a date taken, from the photo's own data. They come with the last page, so each is
+            # listed once; a photo a person has added by hand is already in the entries above.
+            events = events + photo_events(db, case_id)
         return dict(case_id=str(case_id), events=events, next_offset=offset + limit if more else None)
     except Exception as exc:
         _handle_error(exc)
+
+
+class EventFilesBody(BaseModel):
+    event_key: str = Field(min_length=1, max_length=200)
+    evidence_file_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+def _event_file_view(row):
+    return dict(id=str(row.id), event_key=row.event_key, evidence_file_id=str(row.evidence_file_id),
+                added_by=row.added_by, created_at=row.created_at.isoformat() if row.created_at else None,
+                thumbnail_url=f"/api/photos/{row.evidence_file_id}/thumbnail?case_id={row.case_id}")
+
+
+@router.get("/event-files")
+def list_event_files(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                     current_user: User = Depends(get_current_db_user)):
+    """Files attached to Timeline events, each with who attached it. The event stays as it was."""
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.timeline_event_file import TimelineEventFile
+    try:
+        get_case_if_allowed(db=db, case_id=case_id, user=current_user)
+        rows = db.query(TimelineEventFile, EvidenceFile.original_filename).join(
+            EvidenceFile, EvidenceFile.id == TimelineEventFile.evidence_file_id).filter(
+            TimelineEventFile.case_id == case_id, EvidenceFile.deleted_at.is_(None)).order_by(TimelineEventFile.created_at).all()
+        return dict(case_id=str(case_id), files=[{**_event_file_view(row), "name": name} for row, name in rows])
+    except Exception as exc:
+        _handle_error(exc)
+
+
+@router.post("/event-files")
+def attach_event_files(body: EventFilesBody, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_db_user)):
+    """Attach files to an event. Repeating the call adds nothing twice. No description is needed."""
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.timeline_event_file import TimelineEventFile
+    try:
+        check_case_access(db=db, case_id=case_id, user=current_user, required_permission=("case", "edit"))
+        ids = list(dict.fromkeys(body.evidence_file_ids))
+        found = {row for row in db.scalars(select_files(case_id, ids))}
+        if len(found) != len(ids):
+            raise ValueError("A selected file is no longer in this case. Refresh the file list.")
+        have = {row for row in db.scalars(select_attached(case_id, body.event_key))}
+        added = 0
+        for file_id in ids:
+            if file_id not in have:
+                db.add(TimelineEventFile(case_id=case_id, event_key=body.event_key, evidence_file_id=file_id,
+                                         added_by=current_user.email))
+                added += 1
+        db.commit()
+        return dict(added=added, already_attached=len(ids) - added)
+    except Exception as exc:
+        db.rollback()
+        _handle_error(exc)
+
+
+@router.delete("/event-files")
+def detach_event_file(event_key: str = Query(...), evidence_file_id: UUID = Query(...), case_id: UUID = Query(...),
+                      db: Session = Depends(get_db), current_user: User = Depends(get_current_db_user)):
+    """Undo one attachment. The file and the event are untouched."""
+    from postgres.models.timeline_event_file import TimelineEventFile
+    try:
+        check_case_access(db=db, case_id=case_id, user=current_user, required_permission=("case", "edit"))
+        count = db.query(TimelineEventFile).filter(TimelineEventFile.case_id == case_id,
+            TimelineEventFile.event_key == event_key, TimelineEventFile.evidence_file_id == evidence_file_id).delete()
+        db.commit()
+        return dict(removed=count)
+    except Exception as exc:
+        db.rollback()
+        _handle_error(exc)
+
+
+def select_files(case_id, ids):
+    from sqlalchemy import select
+    from postgres.models.evidence import EvidenceFile
+    return select(EvidenceFile.id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids), EvidenceFile.deleted_at.is_(None))
+
+
+def select_attached(case_id, event_key):
+    from sqlalchemy import select
+    from postgres.models.timeline_event_file import TimelineEventFile
+    return select(TimelineEventFile.evidence_file_id).where(TimelineEventFile.case_id == case_id, TimelineEventFile.event_key == event_key)

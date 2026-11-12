@@ -7,6 +7,7 @@ from routers.chat import router as chat_router
 from routers.agent import router as agent_router
 from routers.query import router as query_router
 from routers.timeline import router as timeline_router
+from routers.photos import router as photos_router
 from routers.snapshots import router as snapshots_router
 from routers.cases import router as cases_router
 from routers.case_members import router as case_members_router
@@ -60,6 +61,7 @@ __all__ = [
     "agent_router",
     "query_router",
     "timeline_router",
+    "photos_router",
     "snapshots_router",
     "cases_router",
     "case_members_router",
