@@ -1,8 +1,11 @@
 # Loupe agent implementation and acceptance
 
 11–12 November 2026. This records the implementation of the [capability plan](loupe-agent-capability-plan.md).
-The release is not complete. The scoped implementation is committed locally on
-`codex/agent-capabilities-end-to-end`; it has not been pushed or deployed. Historical client chats and
+The implementation and recorded local checks are complete; live release acceptance remains open.
+Code-only commits `d60a1fba` and `957d04e0` were pushed to `integration/evidence-main-reunion` on12 November.
+Push is the deployment trigger. At00:49 UTC the active backend remained `0a2b1b97`; an already-running
+release was pinned to `d8a54338`, so it does not establish deployment of the agent changes.
+The live Chrome check reached Loupe sign-in and awaits the user's authenticated session. Historical client chats and
 evidence remain outside Git. All fixtures and outputs used for implementation acceptance are synthetic.
 
 ## Implemented journeys
@@ -116,7 +119,11 @@ phone/source tools and existing feature switches. The durable path now retains u
 read/notes state and bounded free-call accounting across resumes. Connected dossier acceptance refreshes
 phone suggestions after its atomic commit. Seventy targeted integrated tests passed, followed by the full suite, build and real-model checks above.
 The read-only live ingestion gate returned idle on12 November before publication. No live services or
-team jobs were changed for verification. No push or release is claimed.
+team jobs were changed manually for verification. The release also retains upstream `76eceead`, which
+defers evidence-engine replacement while workers hold jobs. The main workspace was fast-forwarded to
+the published candidate; an explicit119-path local stash preserves the pre-integration agent files,
+and unrelated local work remains in place. Screenshots, exports, audit material and credentials were
+not staged or pushed.
 
 The manual CI bootstrap now includes the tested PPTX and Markdown packages, WeasyPrint70 and the upstream XLS reader dependency. YAML was parsed locally; no remote workflow was dispatched. The installed GitHub workflow skill references a missing ci_monitor.cjs, so no script-based CI result is claimed.
 
@@ -130,8 +137,9 @@ The manual CI bootstrap now includes the tested PPTX and Markdown packages, Weas
 4. Upstream integration and scoped code-only review are complete; publish only the inspected paths,
    independently of unrelated existing workspace changes. Preserve client
    evidence, private audit material, screenshots, exports and credentials outside Git staging.
-5. Release only under applicable authorization, preserve active ingestion transitions, verify the deployed
-   revision and repeat the affected investigator journeys on the deployment. Push is the deployment trigger.
+5. Code is pushed. Wait for the automatic release to include the agent commits, verify the deployed
+   revision, and repeat the affected investigator journeys in an authenticated live verification case.
+   Do not interrupt the older in-flight release or bypass sign-in to complete this gate.
 
 Deterministic checks establish content presence, reference consistency and arithmetic. They do not establish
 the truth of every source, the soundness of every inference, or visual quality without inspecting the render.

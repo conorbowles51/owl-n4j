@@ -6,7 +6,9 @@ version comparison, full-data exports and actual-model/browser verification. The
 all25 subjects and500 records; it exports49 PDF pages and47 Word-rendered pages, and its detected prose
 errors were corrected in the original report. Upstream runtime changes are integrated on the isolated release branch:709 backend tests and the full
 frontend build passed. A fresh two-deliverable model run completed in120 seconds, with actual report exports
-and browser calculator interactions verified. No push or deployment of this agent release is recorded.
+and browser calculator interactions verified. Agent code was pushed as `d60a1fba` and `957d04e0`.
+At00:49 UTC the live backend was still `0a2b1b97`, with an older release of `d8a54338` in progress.
+Deployment of the agent revision and authenticated live workflow acceptance remain open.
 
 ## 11 November: agent conversation audit — follow-up acceptance remains open
 
