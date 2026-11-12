@@ -86,3 +86,14 @@ def test_postgres_protection_covers_shared_buffers_and_sessions():
     work = _bytes(settings['work_mem'].replace('GB', 'g').replace('MB', 'm'))
     assert shared >= 1024 ** 3 and work >= 64 * 1024 ** 2
     assert _bytes(pg['mem_reservation']) >= shared + 30 * 16 * 1024 ** 2 + 5 * 2 * work
+
+
+def test_postgres_shared_memory_holds_the_parallel_hashes_it_allows():
+    # Docker's default /dev/shm is 64 MB; parallel hash joins failed there with 'could not resize shared memory
+    # segment' from 11 Nov (followups batch 105). Four gathers (max_parallel_workers 8, 2 per gather) of one hash each.
+    pg = yaml.safe_load((ROOT / 'docker-compose.yml').read_text())['services']['postgres']
+    settings = dict(a.split('=', 1) for a in pg['command'] if '=' in a)
+    work = _bytes(settings['work_mem'].replace('GB', 'g').replace('MB', 'm'))
+    per_gather = int(settings.get('max_parallel_workers_per_gather', 2)) + 1
+    gathers = int(settings.get('max_parallel_workers', 8)) // (per_gather - 1)
+    assert _bytes(str(pg.get('shm_size', '64m')).rstrip('bB')) >= gathers * per_gather * 2 * work

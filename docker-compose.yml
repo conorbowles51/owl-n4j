@@ -59,6 +59,12 @@ services:
     cgroup_parent: loupe-live.slice
     # lx-datastores (item e, 1 Nov): protection raised from 1536m by the 1 GB of shared_buffers below.
     mem_reservation: 2560m
+    # Parallel queries share their hash tables through /dev/shm, and Docker gives a container 64 MB of it. From 11 Nov
+    # 01:36 the phone sweep's queries failed there ('could not resize shared memory segment ... No space left on
+    # device': 11,353 on 12 Nov by 05:00, 8,917 of them the sweep's pv_file join). One parallel hash can take
+    # work_mem x hash_mem_multiplier (2) x (2 workers + leader) = 384 MB, and max_parallel_workers (8) allows four at
+    # once: 1.5 GB. The space is used only while such a query runs. Changing it recreates the container.
+    shm_size: 2g
     # lx-datastores: query statistics (pg_stat_statements, created in owl_db by migration 20261031), plans of
     # statements over 2 s (auto_explain, plan only, no ANALYZE cost), named temp spills over 10 MB, lock waits,
     # JIT off. Plans are logged without their parameter values (measured 31 Oct: the values were 6.7 of the
