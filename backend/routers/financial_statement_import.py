@@ -141,6 +141,16 @@ def statement_details(source_id: UUID, case_id: UUID = Query(...), db: Session =
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.get('/sources/{source_id}/compare-facts')
+def statement_compare_facts(source_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """An imported statement's stored facts, for the side-by-side compare with a held possible duplicate."""
+    from services.financial.statement_compare_facts import statement_compare_facts as facts
+    try:
+        return facts(db, case_id=case_id, source_id=source_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.put('/sources/{source_id}/details', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
 @records('statement_details', 'change')
 def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_id: UUID = Query(...),
