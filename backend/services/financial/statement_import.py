@@ -1107,6 +1107,17 @@ class ImportRow(DraftImportRow):
         return self
 
 
+class JudgementCheck(_Contract):
+    """A judgement call marked Looks right on the statement screen before import (fin-alexjudge). Which call: its
+    rule, the reading row it is on (none for a statement's own value) and the value. ``checked_by`` is written by
+    the server from the signed-in person who first sent it (judgements.stamp_checks), never taken from the browser."""
+    rule_id: Annotated[str, Field(min_length=1, max_length=80)]
+    row_id: Annotated[str | None, Field(max_length=80)] = None
+    target_key: Annotated[str, Field(max_length=48)] = ''
+    checked_at: Annotated[str, Field(max_length=40)] = ''
+    checked_by: dict[str, Annotated[str | None, Field(max_length=320)]] | None = None
+
+
 class StatementReviewDraft(_Contract):
     expected_revision: _Digest
     statement_id: _Digest | None = None
@@ -1129,6 +1140,16 @@ class StatementReviewDraft(_Contract):
     coverage_review_reason: Annotated[str, Field(max_length=4096)] = ''
     coverage_review_revision: _Digest | None = None
     rows: Annotated[list[DraftImportRow], Field(min_length=1, max_length=MAX_STATEMENT_REVIEW_ROWS)]
+    judgement_checks: Annotated[list[JudgementCheck], Field(max_length=5000)] = Field(default_factory=list)
+
+    @model_serializer(mode='wrap')
+    def serialize_without_empty_checks(self, handler):
+        # A review with no checks serialises exactly as before the field existed, so the digests and signatures of
+        # every saved review stay the same.
+        value = handler(self)
+        if not self.judgement_checks:
+            value.pop('judgement_checks', None)
+        return value
 
 
 class StatementImportRequest(StatementReviewDraft):
@@ -1477,6 +1498,9 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     raise PdfMappingError('A reader replacement replaces a saved statement only.', 409)
                 originals = check_import_request(proposal, request)
                 request = with_printed_clabe(request, proposal)
+                # Looks right before import, under the person who clicked it (kept from the saved review).
+                from services.financial.judgements import stamp_checks
+                request = stamp_checks(request, (proposal.get('saved_review') or {}).get('request'), actor)
                 if replacing is None:
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
                         proposal=proposal, request=request.model_dump(mode='json'), actor=actor, sources=case_comparison)
@@ -1631,7 +1655,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     saved_reading_replacement.set_aside_shell(session, case_id=case_id, shell=shell, document=document)
                 # The processor's judgement calls in this statement (fin-judgements): shown, never held; never raises.
                 from services.financial.judgements import record_saved
-                record_saved(session, document, period=period, transactions=transactions, file=file)
+                record_saved(session, document, period=period, transactions=transactions, file=file,
+                             checks=request.judgement_checks)
                 # The replaced reading's trades and holdings are set aside with it (lx-brokerage).
                 from services.financial.brokerage_ledger import after_cash_rows_changed
                 for prior in (replacing, shell):

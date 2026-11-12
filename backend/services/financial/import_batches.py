@@ -2064,6 +2064,8 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
         raise PdfMappingError('The saved reading changed. Reopen this statement before saving corrections.', 409)
     # Save incomplete edits without discarding their source rows or page references.
     check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
+    from services.financial.judgements import stamp_checks
+    request = stamp_checks(request, (saved or {}).get('request') or item.review_request, actor)
     payload = request.model_dump(mode='json')
     _, conflict = resolve_review(item.review_request, saved, baseline=initial_request(proposal))
     if conflict and request_signature(payload) != request_signature(saved['request']):

@@ -762,8 +762,10 @@ def _detail_rule(name, why):
     return None, ''
 
 
-def record_saved(session, document, *, period=None, transactions=None, file=None, origin='processor'):
-    """Detect and record the judgement calls of one saved statement; never raises. Returns the rows recorded."""
+def record_saved(session, document, *, period=None, transactions=None, file=None, origin='processor', checks=()):
+    """Detect and record the judgement calls of one saved statement; never raises. Returns the rows recorded.
+    ``checks``: the calls a person marked Looks right before import (the request's judgement_checks); each is
+    recorded confirmed under that person (apply_prior_checks)."""
     try:
         from postgres.models.evidence import EvidenceFile
         from postgres.models.financial import FinancialStatementPeriod, FinancialTransaction
@@ -786,6 +788,13 @@ def record_saved(session, document, *, period=None, transactions=None, file=None
         details = record_model_details(session, document)
         if details is not None:
             rows.append(details)
+        if checks:
+            try:
+                with session.begin_nested():
+                    apply_prior_checks(session, rows, transactions, checks)
+            except Exception:  # noqa: BLE001 - the calls stay open, to be checked on the saved statement
+                log.exception('Recording the checks made before import on %s failed; the calls stay open',
+                              getattr(document, 'id', None))
         return rows
     except Exception:  # noqa: BLE001 - recording only adds information
         log.exception('Recording the judgement calls of saved statement %s failed; the statement stands',
@@ -1293,6 +1302,99 @@ def confirm(session, *, case_id, judgement_id, actor, reason=''):
     row.resolved_at, row.resolution_reason = datetime.now(timezone.utc), (reason or '').strip() or None
     session.commit()
     return as_dict(row)
+
+
+PRIOR_CHECK_REASON = 'Looks right: checked on the statement screen before import.'
+
+
+def check_key(rule_id, row_id, target_key):
+    """Which call a Looks right before import is for: rule, reading row (None for the statement's own value), value."""
+    return (str(rule_id or ''), str(row_id) if row_id else None, str(target_key or ''))
+
+
+def stamp_checks(request, previous=None, actor=None):
+    """The review request with each Looks right before import under the person who clicked it (fin-alexjudge).
+
+    A check already in the saved review keeps who made it and when. A new one is the signed-in person's who sends
+    it, at the time the screen recorded (never later than now). A browser's own ``checked_by`` is never believed.
+    A model or Loupe's automatic step checks nothing: its new checks are dropped. Returns the same request type."""
+    from services.financial.model_work import automatic_actor, is_model
+    checks = list(getattr(request, 'judgement_checks', None) or [])
+    if not checks:
+        return request
+    earlier = {}
+    for item in ((previous or {}).get('judgement_checks') or []):
+        if isinstance(item, dict) and isinstance(item.get('checked_by'), dict) and item['checked_by'].get('name'):
+            earlier[check_key(item.get('rule_id'), item.get('row_id'), item.get('target_key'))] = item
+    person = actor is not None and not is_model(actor) and getattr(actor, 'name', None) and \
+        not automatic_actor(dict(name=actor.name, user_id=getattr(actor, 'user_id', None)))
+    now = datetime.now(timezone.utc)
+    stamped, seen = [], set()
+    for check in checks:
+        key = check_key(check.rule_id, check.row_id, check.target_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        prior = earlier.get(key)
+        if prior is not None:
+            stamped.append(check.model_copy(update=dict(checked_at=str(prior.get('checked_at') or ''),
+                                                        checked_by=dict(prior['checked_by']))))
+            continue
+        if not person:
+            continue
+        try:
+            when = datetime.fromisoformat(str(check.checked_at).replace('Z', '+00:00'))
+            when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+            when = min(when, now)
+        except ValueError:
+            when = now
+        stamped.append(check.model_copy(update=dict(
+            checked_at=when.isoformat(),
+            checked_by=dict(user_id=str(actor.user_id) if getattr(actor, 'user_id', None) else None,
+                            name=str(actor.name), email=getattr(actor, 'email', None) or None))))
+    return request.model_copy(update=dict(judgement_checks=stamped))
+
+
+def apply_prior_checks(session, rows, transactions, checks, *, statement=''):
+    """At import: each saved call a person marked Looks right before import is recorded confirmed, under that person
+    and at that time, as the saved-statement marker records it, and fed to the lessons feed as a confirmation.
+    Only open calls, never a proposal or an assumption (they have their own paths). Returns the confirmed rows."""
+    wanted = {}
+    for check in checks or ():
+        item = check if isinstance(check, dict) else check.model_dump(mode='json')
+        by = item.get('checked_by') or {}
+        if by.get('name'):
+            wanted[check_key(item.get('rule_id'), item.get('row_id'), item.get('target_key'))] = item
+    if not wanted:
+        return []
+    reading_row = {str(t.id): str(((t.provenance or {}).get('statement_import_original') or {}).get('id') or '')
+                   for t in transactions or ()}
+    from services.manual_changes import record_confirmation
+    done = []
+    for row in rows or ():
+        if row.status != 'open' or row.rule_id.startswith('proposal.') or row.rule_id == 'assumption.proceeds':
+            continue
+        on_row = reading_row.get(str(row.subject_id)) if row.subject_type == 'transaction' else None
+        if row.subject_type == 'transaction' and not on_row:
+            continue
+        item = wanted.get(check_key(row.rule_id, on_row, row.target_key))
+        if item is None:
+            continue
+        by = item['checked_by']
+        try:
+            when = datetime.fromisoformat(str(item.get('checked_at') or ''))
+        except ValueError:
+            when = datetime.now(timezone.utc)
+        row.status, row.resolved_by, row.resolved_by_email = 'confirmed', by.get('name'), by.get('email')
+        row.resolved_at, row.resolution_reason = when, PRIOR_CHECK_REASON
+        done.append(row)
+        record_confirmation(session, 'judgement_confirm', row.case_id, ('judgement', str(row.id)), row.target_key,
+                            dict(name=by.get('name'), email=by.get('email'), user_id=by.get('user_id')),
+                            PRIOR_CHECK_REASON, f'/cases/{row.case_id}/financial?judgement={row.id}',
+                            field=row.target_key)
+    if done:
+        session.flush()
+    return done
 
 
 def correct(session, *, case_id, judgement_id, actor, reason, adjudication_id=None):

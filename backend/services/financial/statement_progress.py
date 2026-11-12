@@ -40,6 +40,8 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
         raise PdfMappingError('This statement is being imported. Wait for its receipt before editing it.', 409)
     previous = review_progress(file, request.statement_id)
     revision = previous['review_revision'] if previous else 'initial'
+    from services.financial.judgements import stamp_checks
+    request = stamp_checks(request, (previous or {}).get('request'), actor)
     if revision != expected_review_revision:
         # The same values saved again, by a retry after a lost response or a second tab, are the saved review: a
         # refusal here would read as a lost correction (register E29).
