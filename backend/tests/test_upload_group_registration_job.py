@@ -95,6 +95,48 @@ def test_complete_answers_before_registration_ends_and_the_page_reads_how_far_it
     assert control(f, state, 'complete').json()['receipt'] == done['receipt']
 
 
+def test_no_transaction_is_open_while_the_files_are_checked(groups, monkeypatch):
+    """12 Nov: a 310,881-file phone folder kept its registration's transaction open (and the selection's row locked)
+    for 43 min while files were read and copied; the release's upload pause waited on it. The checks and copies run
+    with no transaction open, and the evidence rows still commit with the receipt."""
+    from sqlalchemy import inspect
+    f = groups
+    seen = []
+    original = api.prepare_payload
+
+    def prepare(group, rows, detect, progress=None, sources=None):
+        session = inspect(group).session
+        seen.append(session.in_transaction())
+        prepared = original(group, rows, detect, progress, sources)
+        seen.append(session.in_transaction())  # reading the selection's values started none
+        return prepared
+    monkeypatch.setattr(api, 'prepare_payload', prepare)
+    state, _ = staged(f)
+    done = control(f, state, 'complete').json()
+    if done['status'] != 'completed':
+        done = follow(f, state)
+    assert seen == [False, False]
+    assert done['status'] == 'completed' and len(done['receipt']['file_ids']) == 3 and evidence_rows(f) == 3
+
+
+def test_a_selection_paused_while_its_files_were_checked_is_not_registered(held):
+    """A pause that reached the row while files were checked (on PostgreSQL every other taker queues behind the
+    registration's lock, so only a raw write gets there) leaves no evidence rows and says how to go on."""
+    f = held
+    state, _ = staged(f)
+    assert control(f, state, 'complete').status_code == 200
+    assert f.entered.wait(30)
+    with Session(f.engine) as db:
+        db.execute(text("update evidence_upload_groups set status = 'paused' where id = :g"),
+                   dict(g=UUID(state['id']).hex if f.engine.dialect.name == 'sqlite' else state['id']))
+        db.commit()
+    f.release.set()
+    answer = follow(f, state, until=('failed',))
+    assert answer['registration']['error']['status_code'] == 409
+    assert 'changed while its files were checked' in answer['registration']['error']['detail']
+    assert evidence_rows(f) == 0
+
+
 def test_a_registration_stopped_midway_leaves_no_rows_and_runs_again_to_one_registration(held):
     f = held
     state, content = staged(f, 4)

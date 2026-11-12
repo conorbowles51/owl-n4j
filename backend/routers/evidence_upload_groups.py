@@ -87,26 +87,31 @@ def safe_path(raw):
     return PurePosixPath(raw)
 
 
-def get_group(db, identity, user, *, lock=False):
+def _selection_key(identity):
+    return f'loupe.upload_group:{identity}'
+
+
+def get_group(db, identity, user, *, lock=False, queued=True):
     """``lock=True`` holds the group row alone (pause, resume, complete, discard). ``lock='share'`` is for a file's
     own writes (a chunk, a file's finish, a batch of small files): they hold the row together, so several files of
     one selection are saved at once, and a pause or finish still waits for every write in flight. Every member write
     holding the row alone made a selection's files queue one behind another however many the page sent at once
-    (measured live on a 81,820-file phone folder: 3 to 6 files a second with four in flight)."""
+    (measured live on a 81,820-file phone folder: 3 to 6 files a second with four in flight). ``queued=False``: the
+    caller already holds the selection's queue lock (a registration, ``_hold_selection``) and takes the row only."""
     # The manifest (one entry per file: 43,123 on a measured phone folder) loads only when read. Every chunk and every
     # file completion locks its group, and decoding the whole manifest each time made a folder's cost grow with its
     # square (measured live: about 2 s per file at 300 of 43,123).
     query = select(EvidenceUploadGroup).options(defer(EvidenceUploadGroup.manifest)).where(
         EvidenceUploadGroup.id == identity)
     if lock:
-        if db.get_bind().dialect.name == 'postgresql':
+        if queued and db.get_bind().dialect.name == 'postgresql':
             # Row locks do not queue fairly: a new FOR SHARE that need not wait goes ahead of a waiting FOR UPDATE,
             # so files sent back to back could hold off a release's pause indefinitely. An advisory lock on the
             # selection queues every taker in arrival order (shared for a file's writes, alone for the rest), and
             # the row lock under it keeps its meaning. Both end with the transaction.
             db.execute(text('SELECT pg_advisory_xact_lock_shared(hashtextextended(:k, 0))' if lock == 'share'
                             else 'SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))'),
-                       {'k': f'loupe.upload_group:{identity}'})
+                       {'k': _selection_key(identity)})
         query = query.with_for_update(read=lock == 'share').execution_options(populate_existing=True)
     group = db.scalar(query)
     if group is None or group.user_id != user.id:
@@ -953,10 +958,41 @@ def _remove_parts_after_answer(parts):
     _parts_remover.submit(remove)
 
 
+def _hold_selection(bind, identity):
+    """The selection held alone for a whole registration without a transaction open: a session-level lock on the
+    key every other taker of the selection queues on (get_group), on a connection of its own. A registration used to
+    hold its row in one transaction from the first check to the receipt: 43 min for a 310,881-file phone folder on
+    12 Nov, 'idle in transaction' while it read and copied files, which held the release's upload pause and kept every
+    row version since its start from being cleaned away. PostgreSQL only; None elsewhere (one test connection)."""
+    if bind.dialect.name != 'postgresql':
+        return None
+    holder = bind.connect()
+    try:
+        holder.execute(text('SELECT pg_advisory_lock(hashtextextended(:k, 0))'), {'k': _selection_key(identity)})
+        holder.commit()
+    except BaseException:
+        holder.invalidate()
+        raise
+    return holder
+
+
+def _release_selection(holder, identity):
+    if holder is None:
+        return
+    try:
+        holder.execute(text('SELECT pg_advisory_unlock(hashtextextended(:k, 0))'), {'k': _selection_key(identity)})
+        holder.commit()
+        holder.close()
+    except Exception:
+        holder.invalidate()  # the lock ends with the connection
+
+
 async def _register(registration, identity, user, bind):
     """The finish of a selection, as the request did it before: in its own session, the selection held alone from
-    the first step to the commit that ends it."""
-    db = Session(bind=bind, autoflush=False)
+    the first step to the commit that ends it (_hold_selection)."""
+    # Objects keep their values over the commit that lets the selection's row go: reading them while files are checked
+    # must not start a transaction again.
+    db = Session(bind=bind, autoflush=False, expire_on_commit=False)
     stop = asyncio.Event()
 
     async def heartbeat():
@@ -1001,11 +1037,25 @@ async def _register(registration, identity, user, bind):
 
 
 async def _complete(db, identity, user, registration):
+    holder = await run_in_threadpool(_hold_selection, db.get_bind(), identity)
+    try:
+        return await _complete_held(db, identity, user, registration, queued=holder is None)
+    except asyncio.CancelledError:
+        # The server is stopping and a step's worker thread may still be copying files: the lock ends with the
+        # process, not before.
+        holder = None
+        raise
+    finally:
+        if holder is not None:
+            await run_in_threadpool(_release_selection, holder, identity)
+
+
+async def _complete_held(db, identity, user, registration, *, queued):
     def progress(phase, done):
         registration.phase, registration.done = phase, done
 
     def start():
-        group = get_group(db, identity, user, lock=True)
+        group = get_group(db, identity, user, lock=True, queued=queued)
         if group.status == 'completed': return None, None, snapshot(db, group)
         registration.phase = 'checking'  # the selection is held: from here this registration reports progress
         rows = members(db, group)
@@ -1018,6 +1068,9 @@ async def _complete(db, identity, user, registration):
         if not group.receipt and any(row.status != 'staged' for row in rows):
             raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
         registration.total = len(group.manifest)
+        # The selection stays held by _hold_selection (PostgreSQL); the row and this transaction end here, before the
+        # files are read.
+        db.commit()
         return group, rows, None
 
     group, rows, answer = await run_in_threadpool(start)
@@ -1043,6 +1096,10 @@ async def _complete(db, identity, user, registration):
         progress('saving', registration.total)
 
         def register():
+            held = get_group(db, identity, user, lock=True, queued=queued)
+            if held.receipt or held.status in ('paused', 'completed'):
+                raise HTTPException(409, 'This selection changed while its files were checked. Choose Finish '
+                                         'registration to try again; files will not be uploaded again.')
             group.receipt = register_payload(db, group, user, prepared)
             group.status = 'dispatching' if group.receipt['dispatch'] else 'completed'
             if group.status == 'completed':
@@ -1064,7 +1121,7 @@ async def _complete(db, identity, user, registration):
             raise HTTPException(503, 'Files are saved, but processing could not be queued. Choose Finish registration to retry; files will not be uploaded again.') from exc
 
         def finish():
-            group = get_group(db, identity, user, lock=True)
+            group = get_group(db, identity, user, lock=True, queued=queued)
             group.receipt = {**group.receipt, 'job_ids': jobs}
             group.status = 'completed'
             done = members(db, group)
