@@ -230,6 +230,47 @@ class BusinessStatementTests(unittest.TestCase):
         self.assertEqual(E._number_heading_account(dict(text='BUSINESS VALUE 200 CHECKING 1000000000001')),
                          '1000000000001')
 
+    def test_a_scanned_heading_bullet_is_not_read_while_the_switch_is_off(self):
+        with mock.patch.object(E, 'HEADING_BULLET', False):
+            self.assertEqual(E._number_heading_account(dict(text='= BUSINESS VALUE 200 CHECKING 1000000000001')), '')
+            self.assertEqual(E._number_heading_account(dict(text='BUSINESS VALUE 200 CHECKING 1000000000001')),
+                             '1000000000001')
+
+    @mock.patch.object(E, 'HEADING_BULLET', True)
+    def test_a_scanned_heading_bullet_still_names_the_account(self):
+        # STATEMENTS 5630.pdf (OPDMD66, 'Your account statement', scanned): the scan reads the square bullet
+        # before the heading as '=' ('= BUSINESS VALUE 200 CHECKING <number>'); people typed the number on 5 periods.
+        self.assertEqual(E._number_heading_account(dict(text='= BUSINESS VALUE 200 CHECKING 1000000000001')),
+                         '1000000000001')
+        self.assertEqual(E._number_heading_account(dict(text='■ BUSINESS VALUE 200 CHECKING 1000000000001 (continued)')),
+                         '1000000000001')
+        self.assertEqual(E._number_heading_account(dict(text='= TELEFONO 5512345678')), '')
+        self.assertEqual(E._number_heading_account(dict(text='== BUSINESS VALUE 200 CHECKING 1000000000001')), '')
+
+    @mock.patch.object(E, 'HEADING_BULLET', True)
+    def test_a_scanned_heading_bullet_reads_the_account_and_keeps_the_period_id(self):
+        # The same statement as the scan reads it: '= ' before both heading lines. The account is read, and the
+        # period keeps the id the reading without the account gave it, so a review saved on it still opens.
+        sources = json.loads(json.dumps(fixture('financial_truist_business_fixture.json'))
+                             .replace('"BUSINESS VALUE 200 CHECKING 9990007778889', '"= BUSINESS VALUE 200 CHECKING 9990007778889'))
+        # The reading before this rule (no bullet mark skipped) finds no account.
+        with mock.patch.object(E, '_HEADING_BULLET', __import__('re').compile(r'(?!)')):
+            E._READINGS.clear()
+            E._LIVE_READINGS.clear()
+            before, _ = reading(json.loads(json.dumps(sources)))
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertEqual(list(before), [''])
+        statements, profile = reading(sources)
+        self.assertEqual((profile, list(statements)), ('truist-consolidated', ['9990007778889']))
+        statement = statements['9990007778889']
+        self.assertEqual(statement['account_basis'], 'section_heading_number')
+        self.assertTrue(statement['engine']['proved'], statement['engine'])
+        self.assertEqual(statement['id'], before['']['id'])
+        # A heading printed without a bullet keeps the id it always had (its account is part of it).
+        plain, _ = reading(fixture('financial_truist_business_fixture.json'))
+        self.assertNotEqual(plain['9990007778889']['id'], statement['id'])
+
 
     def test_checks_printed_three_to_a_line_are_one_movement_each(self):
         statements, profile = reading(fixture('financial_truist_side_by_side_checks_fixture.json'))

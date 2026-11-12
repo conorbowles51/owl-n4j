@@ -3639,12 +3639,21 @@ def _suffix_heading_account(row):
 
 
 _NUMBER_HEADING = re.compile(r'^([A-Z][A-Z0-9 .&/]{2,60}?)\s+(\d{8,17})(?:\s+\(CONTINUED[A-Z ]*\))?$')
+# Truist prints a square bullet before the heading ('■ BUSINESS VALUE 200 CHECKING 1000270585630'); a scan reads it
+# as '=' (or another single mark), apart from the product name. One such mark is not part of the heading.
+# Off by default: on the stored cases it fills the account of 6 periods people already filled by hand, and it would
+# make their duplicate decisions on those periods stale (they are bound to the reading's revision). On once a
+# decision carries across a reading change that only fills a value the saved review already holds.
+HEADING_BULLET = os.environ.get('LOUPE_FINANCIAL_HEADING_BULLET', '0').strip().lower() in ('1', 'true', 'on', 'yes')
+_HEADING_BULLET = re.compile(r'^[=■□▪•●*+-]\s+')
 
 
-def _number_heading_account(row):
+def _number_heading_account(row, bullet=True):
     """The full account number from a whole heading line '<product name> 1470015292431' (optionally
-    '(continued)'), or ''. A line naming a telephone, client or other reference word is no account heading."""
-    m = _NUMBER_HEADING.match(' '.join(_dnorm(row['text']).split()))
+    '(continued)', optionally after one bullet mark unless ``bullet`` is False), or ''. A line naming a telephone,
+    client or other reference word is no account heading."""
+    text = ' '.join(_dnorm(row['text']).split())
+    m = _NUMBER_HEADING.match(_HEADING_BULLET.sub('', text) if bullet and HEADING_BULLET else text)
     if not m or any(w.strip('.:') in _HEADING_ACCOUNT_NOT for w in m[1].split()):
         return ''
     return m[2]
@@ -3920,6 +3929,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         account = found.pop() if len(found) == 1 else ''
     account_basis = ''
     beside = None
+    id_account = None
     if profile and profile.get('account_suffix_heading'):
         # Library profile (data): each section names its own account in its heading, after the product
         # name ('<product name> - 1234'); numbers on the statement's other pages (a deposit slip listing
@@ -3944,6 +3954,11 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         found = {_number_heading_account(row) for row in lead + own_head if row['tokens']} - {''}
         account = found.pop() if len(found) == 1 else ''
         account_basis = 'section_heading_number' if account else ''
+        # A period whose account is read only past the heading's bullet mark (a scan's '=') was read before
+        # without one: it keeps the id it had then, so work saved on it stays attached (as _ids_kept does).
+        plain = {_number_heading_account(row, bullet=False) for row in lead + own_head if row['tokens']} - {''}
+        if account and plain != {account}:
+            id_account = ''
     elif account:
         scope = head if shared else [row for page in _heading_pages(segment['pages'], facts) for row in pages[page]]
         account, account_basis = _printed_over_interbank(account, scope)
@@ -4053,7 +4068,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     statement['section_sources'] = [dict(page_number=page, table_index=table, row_indices=sorted(indices))
                                     for (page, table), indices in sorted(scope.items())]
     reading = _reading(rows, statement, style, exponent, liability, period)
-    statement.update(id=_digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+    statement.update(id=_digest(dict(layout_id=LAYOUT, account=account if id_account is None else id_account, start=statement['period_start'],
                                      end=statement['period_end'], currency=currency, first_page=section_pages[0],
                                      first_row=reading['first_row'])),
                      layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'], engine=reading['proof'])
@@ -4091,7 +4106,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
             reading = _reading(rows, statement, style, new_exponent, liability, period)
             statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
                              engine=reading['proof'])
-        statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+        statement['id'] = _digest(dict(layout_id=LAYOUT, account=account if id_account is None else id_account, start=statement['period_start'],
                                        end=statement['period_end'], currency=statement['currency'],
                                        first_page=section_pages[0], first_row=reading['first_row']))
     if len(named) > 1:
@@ -4125,7 +4140,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                 reading = _reading(rows, statement, style, new_exponent, liability, period)
                 statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
                                  engine=reading['proof'])
-            statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+            statement['id'] = _digest(dict(layout_id=LAYOUT, account=account if id_account is None else id_account, start=statement['period_start'],
                                            end=statement['period_end'], currency=attributed, first_page=section_pages[0],
                                            first_row=reading['first_row']))
     if (HOLDINGS_CURRENCY and not statement['currency'] and (profile or {}).get('holdings_currency')
@@ -4149,7 +4164,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                 reading = _reading(rows, statement, style, new_exponent, liability, period)
                 statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
                                  engine=reading['proof'])
-            statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+            statement['id'] = _digest(dict(layout_id=LAYOUT, account=account if id_account is None else id_account, start=statement['period_start'],
                                            end=statement['period_end'], currency=statement['currency'],
                                            first_page=section_pages[0], first_row=reading['first_row']))
     statement['_rows'] = reading['rows']
