@@ -48,7 +48,8 @@ MARKER_PLUGINS = {re.compile(r"^\s*@pytest\.mark\.asyncio\b", re.M): "pytest-asy
 # Import name -> distribution where they differ and the distribution may not be installed here to say so.
 IMPORT_ALIASES = {"docx": "python-docx", "whisper": "openai-whisper", "PIL": "pillow", "fitz": "pymupdf",
                   "yaml": "pyyaml", "jose": "python-jose", "dotenv": "python-dotenv", "dateutil": "python-dateutil",
-                  "magic": "python-magic", "multipart": "python-multipart"}
+                  "magic": "python-magic", "multipart": "python-multipart",
+                  "markdown_it": "markdown-it-py", "pptx": "python-pptx"}
 # requirements.txt packages a module the suite imports loads inside a function, deliberately not on the line, with
 # the reason. Anything else such a module loads lazily must be on the line, or the suite goes red in a venv built
 # from it (python-docx and weasyprint, tests/test_agent_artifact_exports.py, 4 Nov: 11 of 14 job venvs lacked one).
@@ -60,7 +61,6 @@ NOT_ON_LINE = {
     "langchain-google-genai": "loaded only when a Gemini agent model is chosen; ImportError is a named ValueError",
     "redis": "opened only when the job-status subscriber or evidence websocket connects to a Redis server",
     "reverse-geocoder": "the geocoder factory catches ImportError and turns the offline backend off",
-    "markdown-it-py": "markdown readers (routers/backfill.py, utils/text_extraction.py) fall back to regex stripping on ImportError",
 }
 # A function-body import (indented), the only kind importing the module does not reach.
 LAZY_IMPORT = re.compile(r"^[ \t]+(?:from[ \t]+([A-Za-z_][A-Za-z0-9_]*)[.A-Za-z0-9_]*[ \t]+import|"
@@ -96,7 +96,10 @@ def _lazy_requirements_of(source: pathlib.Path) -> frozenset[str]:
     for groups in LAZY_IMPORT.findall(source.read_text()):
         name = groups[0] or groups[1]
         if name not in sys.stdlib_module_names:
-            out |= {_norm(d) for d in dists_of.get(name, [])} | {_norm(IMPORT_ALIASES.get(name, name))}
+            own = _norm(IMPORT_ALIASES.get(name, name))
+            dists = {_norm(d) for d in dists_of.get(name, [])}
+            # An add-on that installs into the same package (neo4j-rust-ext into neo4j) is not what the import needs.
+            out |= ({own} if own in dists else dists) | {own}
     return frozenset(out)
 
 

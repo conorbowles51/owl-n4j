@@ -85,6 +85,7 @@ COVERED_BY_CALLER = {
     "evidence-engine/app/services/openai_client.py::_anthropic_chat_completion": "chat_completion (with_writing_standard)",
     "evidence-engine/app/services/openai_client.py::_gemini_chat_completion": "chat_completion (with_writing_standard)",
     "evidence-engine/app/services/openai_client.py::_deepseek_chat_completion": "chat_completion (with_writing_standard)",
+    "evidence-engine/app/services/openai_client.py::_deepseek_post": "_deepseek_chat_completion sends the payload it built (with_writing_standard); this only retries a dropped connection",
 }
 
 
