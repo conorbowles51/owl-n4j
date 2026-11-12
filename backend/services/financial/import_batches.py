@@ -1156,7 +1156,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
     if not items:
         return [], None
     from services.financial.statement_import_overlap import (coverage_review, summary_request, requires_decision,
-        comparison_sources, duplicate_hold, ReadingDeferred)
+        comparison_sources, duplicate_hold, duplicate_matches, ReadingDeferred)
     from services.financial.repeated_activity import HOLD_MESSAGE as REPEATED_HOLD
     with stage('batch_pending'):
         pending = _pending_with_files(session, case_id)
@@ -1223,7 +1223,10 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                         if duplicate_hold(review, raw) and review.get('same_file_statement') else
                         'A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
                         if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.'
-                        + ((' ' + summary['overlap_trim']['message']) if (summary.get('overlap_trim') or {}).get('message') else ''))))
+                        + ((' ' + summary['overlap_trim']['message']) if (summary.get('overlap_trim') or {}).get('message') else '')),
+                    # The statements the copy check matched (the same candidates the statement screen names), so the
+                    # review queue can name each copy's original and say whether it is imported.
+                    **(dict(matches=duplicate_matches(review)) if duplicate_hold(review, raw) else {})))
             if duplicate_hold(review, raw):
                 summary['can_import'] = False
             conflict = _account_currency_conflict(session, case_id, summary, raw, knowledge)

@@ -9,8 +9,9 @@ that every statement appears once:
   so the same statement prepared in several batches, or in two uploads of the
   same PDF, is one entry;
 * anything saved (imported, or being saved) is never queue work;
-* copies the system set aside, and possible copies that need a comparison, are
-  counted under copies and listed separately, never in the queue;
+* copies set aside (by a person or by the copy rule) are counted under copies and
+  listed separately; a possible copy still waiting for a duplicate decision is
+  queue work, listed with the statement it may copy;
 * a statement whose problems are all notes (an overlap of dates, a balance
   comparison that could not be made, a background update) is not work;
 * every queue entry carries at least one actionable problem, and the plain
@@ -216,6 +217,61 @@ def _hold_detail(summary):
                 also=[], pages=[], messages=[hold['sentence']])
 
 
+# A possible copy held for a person's duplicate decision ("Don't import this duplicate", or a reason to import both)
+# is listed under "Needs you" until she decides; only copies set aside (by her or by the copy rule) are finished.
+# Counted as finished copies before 12 Nov 2026, so the queue said "Nothing needs you" while four statements were
+# held for her decision. Reverse: LOUPE_FINANCIAL_QUEUE_UNDECIDED_COPIES_WAIT=0.
+UNDECIDED_COPIES_WAIT = os.environ.get('LOUPE_FINANCIAL_QUEUE_UNDECIDED_COPIES_WAIT', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def copy_matches(summary):
+    """The statements a duplicate hold matched, imported first (statement_import_overlap.duplicate_matches)."""
+    found = []
+    for problem in summary.get('problems') or []:
+        if problem.get('kind') == 'coverage' and problem.get('matching_statement'):
+            found.extend(m for m in problem.get('matches') or [] if isinstance(m, dict))
+    return sorted(found, key=lambda m: (m.get('status') != 'imported', m.get('filename') or '', m.get('period_start') or ''))
+
+
+def copy_original(summary):
+    """The one statement a possible copy is compared with: an imported match first, else the first match."""
+    matches = copy_matches(summary)
+    if not matches:
+        return None
+    first = matches[0]
+    return dict(filename=first.get('filename') or None, file_id=first.get('file_id'), statement_id=first.get('statement_id'),
+                period_start=first.get('period_start') or '', period_end=first.get('period_end') or '',
+                page=first.get('page_number'), imported=first.get('status') == 'imported',
+                same_file=bool(first.get('same_file_statement')), others=len(matches) - 1)
+
+
+def copy_sentence(original):
+    """The queue sentence of a possible copy waiting for a duplicate decision."""
+    if not original or not original.get('filename'):
+        return 'Possible copy of another statement: compare the two, then decide'
+    if original.get('same_file'):
+        page = original.get('page')
+        return ('This file prints the same statement twice' + (f' (also on page {page})' if isinstance(page, int) else '')
+                + ': compare the two, then decide')
+    if original.get('imported'):
+        return f"Possible copy of {original['filename']}, which is already imported: compare the two, then decide"
+    return f"Possible copy of {original['filename']}, which is not imported either: compare the two and import one"
+
+
+def copy_detail(summary):
+    """The queue detail of an undecided possible copy: the duplicate decision first, every other problem after it."""
+    original = copy_original(summary)
+    other = describe(summary)
+    sentence = copy_sentence(original)
+    also = ([other['sentence']] + list(other.get('also') or [])) if other else []
+    others = (other.get('reasons') or [other['reason']]) if other else []
+    reasons = ['duplicate'] + [r for r in others if r != 'duplicate']
+    return dict(reason='duplicate', sentence=sentence, row_id=None, field=None, page=summary.get('page_number'),
+                other_problems=len(also), problem_total=1 + (other.get('problem_total', 0) if other else 0),
+                reasons=reasons, also=also, pages=[], messages=[sentence], original=original)
+
+
 def _empty_reading(summary):
     return not (summary.get('transaction_count') or summary.get('record_count') or summary.get('incomplete_count')
                 or summary.get('unclassified_count') or summary.get('period_start') or summary.get('period_end'))
@@ -236,8 +292,13 @@ def classify(item):
     if item.status == 'attention' and summary.get('not_payment_statement'):
         # A fund statement set aside as not a payment statement (not_payment_statements).
         return 'not_payment'
-    if item.status not in ('ready', 'attention') or is_duplicate_review(item):
-        return 'copies' if item.status == 'duplicate_ignored' or is_duplicate_review(item) else 'unexplained'
+    if item.status == 'duplicate_ignored':
+        return 'copies'
+    if is_duplicate_review(item) and item.status in ('ready', 'attention'):
+        # Held for a person's duplicate decision and not decided yet: work for her, never "set aside" or finished.
+        return 'waiting' if UNDECIDED_COPIES_WAIT else 'copies'
+    if item.status not in ('ready', 'attention'):
+        return 'unexplained'
     if summary.get('readiness_pending') or summary.get('comparison_pending'):
         return 'rechecking'
     if actionable_problems(summary):
@@ -352,6 +413,10 @@ def _entry(item, batch_id, describe_result=None):
         if describe_result.get('why'):
             entry['why'] = describe_result['why']
         entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
+        if describe_result.get('reason') == 'duplicate':
+            # The statement it may be a copy of: file, dates and whether it is imported, for the row and its Compare.
+            entry.update(original=describe_result.get('original'),
+                         copy_of=(describe_result.get('original') or {}).get('filename'))
     vision = summary.get('vision_reading')
     if vision and item.status == 'attention' and (vision.get('message') or vision.get('line')):
         # The latest outcome of reading its page images (vision_reader), in plain words: why it did not settle it,
@@ -485,6 +550,7 @@ def _build(session, case_id):
         if item.id in full:
             rows.append((identity, bucket, full[item.id], None, None))
     from services.financial import field_proposals
+    from services.financial.batch_review_summary import is_duplicate_review as duplicate_review
     knowledge = []  # loaded once, only when a waiting statement lacks a detail
     preparing_again = _preparing_again(batches.values())
     # A file-level preparation that found nothing does not stand for a file
@@ -502,14 +568,17 @@ def _build(session, case_id):
             # Its file is being prepared again (after a release, or a retry):
             # what it shows now may change in a moment.
             bucket = 'rechecking'
-        detail = describe(current.summary) if bucket in ('waiting', 'unreadable') else None
+        undecided_copy = bucket == 'waiting' and duplicate_review(current)
+        detail = (copy_detail(current.summary) if undecided_copy
+                  else describe(current.summary) if bucket in ('waiting', 'unreadable') else None)
         if bucket == 'unreadable':
             page = current.summary.get('page_number')
             detail = dict(detail or dict(row_id=None, field=None, other_problems=0, problem_total=0),
                 reason='unreadable', page=page, sentence='Nothing could be read from this statement'
                 + (f' (page {page})' if isinstance(page, int) else '') + ': check its pages in the PDF')
         proposals = None
-        if bucket == 'waiting' and field_proposals.enabled_fields():
+        # A possible copy waits for her duplicate decision: a filled-in detail never moves it on.
+        if bucket == 'waiting' and not undecided_copy and field_proposals.enabled_fields():
             if not knowledge:
                 knowledge.append(field_proposals.case_knowledge(session, case_id))
             proposals, resolved = _proposals(current.summary, knowledge[0], detail)
@@ -563,8 +632,9 @@ def _build(session, case_id):
         if bucket == 'copies':
             disposition = item.summary.get('duplicate_disposition') or {}
             retained = disposition.get('retained') or {}
-            entry.update(copy_of=retained.get('filename') or None,
-                set_aside=item.status == 'duplicate_ignored')
+            original = copy_original(item.summary)
+            entry.update(copy_of=retained.get('filename') or (original or {}).get('filename') or None,
+                set_aside=item.status == 'duplicate_ignored', **(dict(original=original) if original else {}))
         result.append(entry)
     # Statement order inside its file, so an entry can say "statement 12 of 54".
     by_file = {}

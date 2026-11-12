@@ -19,9 +19,9 @@ from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from postgres.models.evidence import IngestionLog
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from services.financial import import_batches as service
-from services.financial.batch_review_summary import needs_decision
+from services.financial.batch_review_summary import is_duplicate_review, needs_decision
 from services.financial.review_queue import (actionable_problems, case_review_queue, classify, describe,
-                                             issue_sentence, status_line)
+                                             issue_sentence, status_line, copy_detail)
 from tests import test_financial_statement_import as _test_financial_statement_import
 
 # The Financial file library (unread statement files) reads these.
@@ -131,7 +131,9 @@ class QueueRulesTests(TestCase):
         }
         for bucket, value in cases.items():
             self.assertEqual(classify(value), bucket, bucket)
-        self.assertEqual(classify(item(COPY)), 'copies')
+        # A possible copy with no decision yet waits for her; only a decided copy is finished (fin-alexcopies C).
+        self.assertEqual(classify(item(COPY)), 'waiting')
+        self.assertEqual(classify(item(COPY, status='duplicate_ignored')), 'copies')
         # Notes only, still importable: nothing to fix, ready to save.
         self.assertEqual(classify(item(OVERLAP, UNAVAILABLE, can_import=True)), 'ready')
         # Held with no stated reason is counted, never queued as work.
@@ -151,6 +153,11 @@ class QueueRulesTests(TestCase):
                     if classify(value) != 'waiting':
                         self.assertFalse(needs_decision(value) and classify(value) in ('ready', 'imported', 'copies'))
                         continue
+                    if is_duplicate_review(value):
+                        detail = copy_detail(value.summary)
+                        self.assertEqual(detail['reasons'][0], 'duplicate')
+                        self.assertTrue(detail['sentence'].strip() and detail['problem_total'] >= 1, combination)
+                        continue
                     self.assertTrue(needs_decision(value))
                     detail = describe(value.summary)
                     self.assertTrue(detail and detail['sentence'].strip() and detail['problem_total'] >= 1, combination)
@@ -160,6 +167,28 @@ class QueueRulesTests(TestCase):
                       left_unimported=0, assigned=0, unexplained=0, unreadable_files=1)
         self.assertEqual(status_line(counts), 'Imported 5 statements · Waiting for you 2 · Ready to import 1 · '
                                               'Copies set aside 3 · Couldn\'t read 2')
+
+    def test_an_undecided_possible_copy_names_its_original_and_whether_it_is_imported(self):
+        # OPDMD66, STATEMENTS 5630.pdf statement 2: held as a copy of Dec 2023 (5630) (2).pdf, imported.
+        imported = dict(COPY, matches=[dict(filename='Dec 2023 (5630) (2).pdf', file_id='f1', statement_id='s1',
+            status='imported', period_start='2023-12-01', period_end='2023-12-29', page_number=1)])
+        detail = copy_detail(item(imported).summary)
+        self.assertEqual(detail['sentence'], 'Possible copy of Dec 2023 (5630) (2).pdf, which is already imported: '
+                                             'compare the two, then decide')
+        self.assertEqual((detail['original']['filename'], detail['original']['period_start'],
+                          detail['original']['period_end'], detail['original']['imported']),
+                         ('Dec 2023 (5630) (2).pdf', '2023-12-01', '2023-12-29', True))
+        waiting = dict(COPY, matches=[dict(filename='Jan.pdf', status='awaiting_import', period_start='2024-01-01',
+                                           period_end='2024-01-31')])
+        self.assertIn('not imported either', copy_detail(item(waiting).summary)['sentence'])
+        # An imported match is named before a waiting one.
+        both = dict(COPY, matches=waiting['matches'] + imported['matches'])
+        self.assertEqual(copy_detail(item(both).summary)['original']['filename'], 'Dec 2023 (5630) (2).pdf')
+        self.assertEqual(copy_detail(item(both).summary)['original']['others'], 1)
+        # Its other problems are still named after the decision.
+        mixed = copy_detail(item(imported, READING).summary)
+        self.assertEqual(mixed['reasons'][:2], ['duplicate', 'reading'])
+        self.assertTrue(mixed['also'])
 
 
 class QueueReadTests(TestCase):
@@ -233,6 +262,45 @@ class QueueReadTests(TestCase):
         after = self.queue()
         self.assertEqual((after['counts']['imported'], after['counts']['ready'], after['counts']['waiting']), (1, 0, 0))
         self.assertTrue(after['status_line'].startswith('Imported 1 statements'))
+
+    def test_an_undecided_possible_copy_needs_her_and_a_decided_one_is_finished(self):
+        # fin-alexcopies C: four possible copies held for her decision were counted as finished copies, so the queue
+        # said "Nothing needs you" while each row said "Needs you".
+        if type(self) is not QueueReadTests:
+            self.skipTest('one statement fixture: QueueReadTests only')
+        batch = self.create(); self.advance(batch)
+        match = dict(filename='Dec 2023 (5630) (2).pdf', file_id='f1', statement_id='s1', status='imported',
+                     period_start='2023-12-01', period_end='2023-12-29', page_number=1)
+        real = service.checked_batch_items
+
+        def held(session, case_id, items, **kwargs):
+            out = real(session, case_id, items, **kwargs)
+            for value in out:
+                value.summary = dict(value.summary, can_import=False, problems=[dict(COPY, matches=[match])],
+                                     problem_count=1)
+                value.status = 'attention'
+            return out
+        with patch.object(service, 'checked_batch_items', side_effect=held):
+            queue = self.queue()
+        self.assertEqual((queue['counts']['waiting'], queue['counts']['copies'], queue['counts']['ready']), (1, 0, 0))
+        entry = queue['items'][0]
+        self.assertEqual((entry['bucket'], entry['issue_reason'], entry['copy_of'], entry['original']['imported']),
+                         ('waiting', 'duplicate', 'Dec 2023 (5630) (2).pdf', True))
+        self.assertIn('Waiting for you 1', queue['status_line'])
+        self.assertEqual(queue['copies'], [])
+
+        def decided(session, case_id, items, **kwargs):
+            out = held(session, case_id, items, **kwargs)
+            for value in out:
+                value.status = 'duplicate_ignored'
+            return out
+        with patch.object(service, 'checked_batch_items', side_effect=decided):
+            queue = self.queue()
+        self.assertEqual((queue['counts']['waiting'], queue['counts']['copies']), (0, 1))
+        # A copy the copy rule set aside names the statement it kept; the match is named too.
+        self.assertTrue(queue['copies'][0]['copy_of'])
+        self.assertEqual(queue['copies'][0]['original']['filename'], 'Dec 2023 (5630) (2).pdf')
+        self.assertTrue(queue['copies'][0]['set_aside'])
 
     def test_nothing_read_from_pages_with_text_is_a_reader_fix_not_a_person_s_task(self):
         # OPDMD66 Truist before its reader (fin-holes B): 249 lines read, no payment, period or balance.

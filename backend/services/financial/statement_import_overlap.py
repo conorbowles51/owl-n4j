@@ -503,6 +503,16 @@ def duplicate_hold(review, request):
     return bool(review.get('matching_statement') and requires_decision(review, request))
 
 
+MATCH_FIELDS = ('filename', 'file_id', 'statement_id', 'source_document_id', 'status', 'period_start', 'period_end',
+                'page_number', 'same_file_statement')
+
+
+def duplicate_matches(review):
+    """The candidates a duplicate hold names: each matching statement's file, period, page and whether it is imported."""
+    return [{key: candidate.get(key) for key in MATCH_FIELDS} for candidate in review.get('candidates') or []
+            if candidate.get('matching_statement')]
+
+
 def requires_decision(review, request):
     return bool(review['candidates'] and not (
         request.get('coverage_review_revision') == review['revision']
