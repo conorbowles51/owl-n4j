@@ -13,7 +13,9 @@ echo "$*" >> "${FAKE_DIR}/calls"
 case "$*" in
     "compose exec -T redis redis-cli --scan --pattern arq:in-progress:*")
         [ "${FAKE_REDIS_DOWN:-0}" = 1 ] && exit 1
-        for i in $(seq 1 "${FAKE_INPROGRESS:-0}"); do echo "arq:in-progress:job-${i}"; done ;;
+        echo "arq:in-progress:cron:embed_pending_chunks:1794449220123"
+        echo "arq:in-progress:cron:audio_worker_heartbeat:1794449250123"
+        for i in $(seq 1 "${FAKE_INPROGRESS:-0}"); do echo "arq:in-progress:evidence-batch:job-${i}"; done ;;
     "compose stop evidence-engine-worker") sleep "${FAKE_STOP_SLEEP:-0}" ;;
     "compose config --services") printf '%s\n' redis evidence-engine-api evidence-engine-worker evidence-pdf-worker ;;
     "compose ps -q evidence-engine-worker") [ "${FAKE_NO_WORKER:-0}" = 1 ] || echo c0ffee ;;
@@ -43,7 +45,7 @@ grep -q 'Release deferred: 2 evidence engine jobs' "${tmp}/out" || fail "busy en
 # 2. Unreadable engine state defers too (fail closed, like the ingestion gate).
 run unknown 'FAKE_REDIS_DOWN=1 engine_gate'
 [ "$(cat "${tmp}/rc")" = 75 ] || fail "unreadable engine state: exit $(cat "${tmp}/rc"), wanted 75"
-# 3. Idle engine: the gate passes.
+# 3. Idle engine (only scheduled-task keys): the gate passes.
 run idle 'engine_gate'
 [ "$(cat "${tmp}/rc")" = 0 ] || fail "idle engine: exit $(cat "${tmp}/rc"), wanted 0"
 # 4. The main worker is stopped on its own first, then compose refreshes the stack.

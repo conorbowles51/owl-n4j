@@ -559,7 +559,9 @@ ENGINE_BUSY_POLL_S="${ENGINE_BUSY_POLL_S:-10}"
 engine_jobs_in_hand() {  # prints the count; fails when it cannot be read
     local keys
     keys="$(docker compose exec -T redis redis-cli --scan --pattern 'arq:in-progress:*')" || return 1
-    grep -c . <<<"${keys}" || true
+    # Scheduled tasks (arq:in-progress:cron:*) hold a key for each run, under a minute, all the time; a release that
+    # counted them was always deferred (12 Nov 02:04: 8 cron keys, no engine job).
+    grep -v '^arq:in-progress:cron:' <<<"${keys}" | grep -c . || true
 }
 engine_gate() {
     [ "${STEP_ENGINE}" = run ] || return 0
