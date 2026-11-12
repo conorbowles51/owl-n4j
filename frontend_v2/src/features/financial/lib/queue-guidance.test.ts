@@ -28,7 +28,7 @@ const me = { id: "u1", name: "Maria Lopez" }
 const JARGON = /copy_of_saved|not_all_held|issue_reason|_|\bbatch\b|\breading\b|lineage/i
 const every = [
   "import_failed", "saved_review", "reprint", "assignment", "principal_only", "currency", "institution", "holder",
-  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "auto_save_check", "saved_check", "copies_none_saved", "some_new_reason",
+  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "auto_save_check", "saved_check", "copies_none_saved", "duplicate", "some_new_reason",
 ]
 
 it("gives every reason a plain title, numbered steps that say where to look, one action and what happens next", () => {

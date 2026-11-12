@@ -272,6 +272,23 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
         after: "Once the saved statement is corrected or set aside, it leaves this list.",
         action: "Open the statement",
       }
+    case "duplicate": {
+      // Held as a possible copy and not decided yet: only she can say whether both are needed.
+      const original = entry.original
+      const name = original?.filename ?? "the matching statement"
+      return {
+        title: entry.issue || "This may be a copy of another statement",
+        steps: [
+          `Press Compare to open this statement beside ${name}.`,
+          "If they are the same statement, choose Don’t import this duplicate.",
+          "If both are needed, tick I have compared these files and say why.",
+        ],
+        after: original?.imported
+          ? `Until you decide, it is not imported. ${name} is already in the ledger.`
+          : "Until you decide, it is not imported and counts nothing.",
+        action: "Compare",
+      }
+    }
     case "copies_none_saved":
       // Every upload of this statement was set aside as a copy of another one, and none of them was saved.
       return {
@@ -365,6 +382,7 @@ export const ISSUE_LABELS: Record<string, string> = {
   auto_save_check: "Not proven by its balances",
   saved_check: "Imported, needs a check",
   copies_none_saved: "No copy saved yet",
+  duplicate: "Possible copies",
 }
 
 /** A label for any reason, including one this screen does not know yet. */

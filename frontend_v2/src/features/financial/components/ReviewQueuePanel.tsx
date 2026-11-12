@@ -12,6 +12,9 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryBalances,
   entryPeriod,
+  originalLine,
+  COMPARE_PARAM,
+  saveResultShown,
   importOutcome,
   savedOutcome,
   fillAndSaveReady,
@@ -440,7 +443,7 @@ export function ReviewQueuePanel({
       setOrder(current)
     }
   }, [query.data, query.isPlaceholderData, itemId, orderKey, current])
-  const open = (entry: QueueEntry | undefined, name: ListName = list) => {
+  const open = (entry: QueueEntry | undefined, name: ListName = list, compare = false) => {
     setParams((previous) => {
       const next = new URLSearchParams(previous)
       next.set("view", "statements")
@@ -448,6 +451,9 @@ export function ReviewQueuePanel({
       if (entry) next.set("queueItem", entry.id)
       else next.delete("queueItem")
       next.set("queueList", name)
+      // Compare: the statement screen opens with its original beside it (StatementCoverageReview).
+      if (compare && entry) next.set(COMPARE_PARAM, entry.id)
+      else next.delete(COMPARE_PARAM)
       return next
     })
   }
@@ -711,7 +717,7 @@ export function ReviewQueuePanel({
           )}
           {saving && <p role="status" className="text-sm">{saving}</p>}
           {saveError && <p role="alert" className="text-sm">{saveError}</p>}
-          {saveResult && (
+          {saveResult && saveResultShown(saveResult) && (
             <div
               role="status"
               aria-label="Result of importing ready statements"
@@ -904,10 +910,10 @@ export function ReviewQueuePanel({
             >
               {/* Chosen together with the no-payments confirmation above, one tick each. */}
               {shown.map((item, position) => {
-                const openEntry = (entry: QueueEntry) => {
+                const openEntry = (entry: QueueEntry, compare = false) => {
                   setOrder(current)
                   appliedOrder.current = orderKey
-                  open(entry)
+                  open(entry, list, compare)
                 }
                 return isGroup(item) ? (
                   <GroupItem
@@ -930,6 +936,7 @@ export function ReviewQueuePanel({
                     canEdit={canEdit}
                     bucket={list === "unreadable" ? "unreadable" : item.bucket}
                     onOpen={() => openEntry(item)}
+                    onCompare={item.original ? () => openEntry(item, true) : undefined}
                     onSaved={(saved) => void refresh(saved)}
                     onLeftOut={(left) => {
                       setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
@@ -1402,6 +1409,7 @@ function NeedsItem({
   canEdit,
   bucket,
   onOpen,
+  onCompare,
   onSaved,
   onLeftOut,
   onPreview,
@@ -1414,6 +1422,8 @@ function NeedsItem({
   canEdit: boolean
   bucket: string
   onOpen: () => void
+  /** A possible copy: open the statement with its original beside it. */
+  onCompare?: () => void
   onSaved: (entry: QueueEntry) => void
   onLeftOut?: (entry: QueueEntry) => void
   onPreview?: () => void
@@ -1461,6 +1471,18 @@ function NeedsItem({
         <div className="rounded bg-muted/40 p-2 text-xs">
           <EntryLine entry={entry} onPreview={onPreview} />
         </div>
+        {entry.original && (
+          <div className="flex flex-wrap items-center gap-2 rounded border border-amber-300 p-2 text-xs" aria-label="Original">
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">May be a copy of:</span> {originalLine(entry.original)}
+            </span>
+            {onCompare && (
+              <Button size="sm" variant="outline" onClick={onCompare}>
+                Compare
+              </Button>
+            )}
+          </div>
+        )}
         <ItemFixes entry={entry} user={user} caseId={caseId} canEdit={canEdit} bucket={bucket} onSaved={onSaved} onLeftOut={onLeftOut} />
       </div>
       {entry.batch_id && (

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 import { guidanceFor } from "./queue-guidance"
-import { savedOutcome, type QueueEntry, type ReviewQueue } from "./review-queue"
+import { originalLine, savedOutcome, saveResultShown, type QueueEntry, type ReviewQueue } from "./review-queue"
 import { filledBySave, missingRequired, statementNeeds } from "./statement-needs"
 
 const GATE = "Enter at least one printed opening or closing balance to save a statement without transactions."
@@ -54,4 +54,46 @@ it("guides a statement with no payments and no balances to check it is a stateme
   const guide = guidanceFor(entry())
   expect(guide.title).toBe("No payments and no balances were read from this statement")
   expect(guide.steps[1]).toBe("Check that it is a bank or card statement. If it is not, choose This isn't a statement.")
+})
+
+it("after a save, a statement still listed as a possible copy is never told nothing more is needed", () => {
+  // OPDMD66 STATEMENTS 5630.pdf statement 5: saved while held for a duplicate decision, still listed below the banner.
+  const copy = entry({ id: "s5", bucket: "copies", set_aside: false, copy_reason: null, copy_of: "Mar 2024 (5630).pdf" })
+  const withCopies = (copies: QueueEntry[]) => ({ ...queue([]), copies }) as unknown as ReviewQueue
+  const held = savedOutcome(withCopies([copy]), copy)
+  expect(held.held).toBe(true)
+  expect(held.message).not.toContain("Nothing more is needed")
+  expect(held.message).toContain("Mar 2024 (5630).pdf")
+  expect(savedOutcome(withCopies([{ ...copy, set_aside: true }]), copy).message).toBe(
+    "Saved. It is set aside as a copy and counts nothing."
+  )
+  // Waiting for her decision under Needs you: the queue's own sentence says what is left.
+  const waiting = entry({ id: "s5", issue_reason: "duplicate", reasons: ["duplicate"], issue_messages: [],
+    issue: "Possible copy of Mar 2024 (5630).pdf, which is already imported: compare the two, then decide",
+    opening_minor: "1", closing_minor: "1", period_start: "2024-03-01", period_end: "2024-03-29", account: "5630",
+    transaction_count: 58 })
+  expect(savedOutcome(queue([waiting]), waiting)).toEqual({
+    held: true,
+    message: "Saved. Still needed before it can be imported: Possible copy of Mar 2024 (5630).pdf, which is already imported: compare the two, then decide.",
+  })
+})
+
+it("shows no save panel when the save found nothing to import", () => {
+  expect(saveResultShown({ imported: 0, held: [], stillSaving: 0, sent: 0, notReady: [], counted: 0, filled: 0 })).toBe(false)
+  expect(saveResultShown({ imported: 0, held: [], stillSaving: 0, sent: 0, notReady: [], counted: 2, filled: 0 })).toBe(true)
+  expect(saveResultShown({ imported: 1, held: [], stillSaving: 0, sent: 1, notReady: [], counted: 1 })).toBe(true)
+})
+
+it("names the original of a possible copy, its dates and whether it is imported, and guides to Compare", () => {
+  const original = { filename: "Dec 2023 (5630) (2).pdf", file_id: "f2", statement_id: "s2", period_start: "2023-12-01",
+    period_end: "2023-12-29", page: 1, imported: true, same_file: false, others: 0 }
+  expect(originalLine(original)).toBe("Dec 2023 (5630) (2).pdf, 2023-12-01 to 2023-12-29: already imported")
+  expect(originalLine({ ...original, imported: false, others: 1 })).toBe(
+    "Dec 2023 (5630) (2).pdf, 2023-12-01 to 2023-12-29: not imported (and 1 more match)"
+  )
+  const guide = guidanceFor(entry({ issue_reason: "duplicate", reasons: ["duplicate"], original,
+    issue: "Possible copy of Dec 2023 (5630) (2).pdf, which is already imported: compare the two, then decide" }))
+  expect(guide.action).toBe("Compare")
+  expect(guide.steps[0]).toBe("Press Compare to open this statement beside Dec 2023 (5630) (2).pdf.")
+  expect(guide.after).toBe("Until you decide, it is not imported. Dec 2023 (5630) (2).pdf is already in the ledger.")
 })

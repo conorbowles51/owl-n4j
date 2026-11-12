@@ -48,6 +48,20 @@ const entry = lazySchema(() => z.object({
   held_bucket: z.string().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
+  /** The statement a possible copy matched (the check the statement screen shows): file, dates, whether imported. */
+  original: z
+    .object({
+      filename: z.string().nullish(),
+      file_id: z.string().nullish(),
+      statement_id: z.string().nullish(),
+      period_start: z.string().default(""),
+      period_end: z.string().default(""),
+      page: z.number().nullish(),
+      imported: z.boolean().default(false),
+      same_file: z.boolean().default(false),
+      others: z.number().default(0),
+    })
+    .nullish(),
   /** "same_file_read": this upload's reading failed; the same bytes were read through another upload.
    * "same_pages_read": the same, for a file with other bytes whose every page is identical. */
   copy_reason: z.string().nullish(),
@@ -521,6 +535,16 @@ export function importOutcome(receipt?: StatementImportReceipt) {
 }
 
 /**
+ * A save result worth a panel: something was sent, filled, counted or held. A save that found nothing ready (the
+ * queue refreshed and nothing was left to import) shows no panel; the refreshed counts already say so.
+ */
+export function saveResultShown(result: { sent?: number; imported?: number; held?: unknown[]; filled?: number;
+  counted?: number; notReady?: unknown[]; stillSaving?: number }) {
+  return !!(result.sent || result.imported || result.held?.length || result.filled || result.counted
+    || result.notReady?.length || result.stillSaving)
+}
+
+/**
  * Where a statement stands after a save, from the refreshed queue: what the
  * save filled, and when it still waits, exactly what is still needed and why.
  */
@@ -544,6 +568,14 @@ export function savedOutcome(data: ReviewQueue, entry: QueueEntry) {
     return { held: false, message: `${saved} Ready to import: use Import at the top of the queue.` }
   if (data.unreadable.some(same))
     return { held: true, message: `${saved} Nothing could be read from it yet: open it to check its pages.` }
+  const copy = (data.copies ?? []).find(same)
+  if (copy && !copy.set_aside && !copy.copy_reason)
+    // A possible copy still waiting for her duplicate decision (a queue that counted these as copies).
+    return { held: true, message: `${saved} Still needed before it can be imported: decide whether it is a copy${copy.copy_of ? ` of ${copy.copy_of}` : ""}.` }
+  if (copy)
+    return { held: false, message: `${saved} It is set aside as a copy and counts nothing.` }
+  if ((data.reader_fix ?? []).some(same))
+    return { held: true, message: `${saved} It waits for a reader fix; nothing is needed from you for now.` }
   return { held: false, message: `${saved} Nothing more is needed from you here.` }
 }
 
@@ -561,6 +593,20 @@ export function entryBalances(entry: QueueEntry) {
   if (entry.balance_status === "matches") parts.push("balances add up")
   else if (entry.balance_status === "difference") parts.push("balances do not add up")
   return parts.join(" · ")
+}
+
+/** URL parameter set by a queue row's Compare: the queue item whose statement opens with its original beside it. */
+export const COMPARE_PARAM = "queueCompare"
+
+/** One line naming the statement a possible copy matched: file, dates and whether it is imported. */
+export function originalLine(original: NonNullable<QueueEntry["original"]>) {
+  const dates = original.period_start || original.period_end
+    ? `, ${original.period_start || "?"} to ${original.period_end || "?"}`
+    : ""
+  const where = original.same_file && original.page ? `, page ${original.page} of this file` : ""
+  const state = original.imported ? "already imported" : "not imported"
+  const more = original.others ? ` (and ${original.others} more ${original.others === 1 ? "match" : "matches"})` : ""
+  return `${original.filename ?? "Another statement"}${dates}${where}: ${state}${more}`
 }
 
 export function entryPeriod(entry: QueueEntry) {
