@@ -286,9 +286,9 @@ def assess(proposal, request=None):
         summary.update(record_count=summary['transaction_count'], incomplete_count=incomplete,
             transaction_count=summary['transaction_count'] - incomplete)
     duplicate = proposal.get('duplicate_disposition')
-    from services.financial.pending_statement_duplicates import review_signature
+    from services.financial.pending_statement_duplicates import decision_signed
     if (duplicate and duplicate.get('current') and duplicate['status'] == 'ignored'
-            and duplicate.get('signature') == review_signature(proposal, raw)):
+            and decision_signed(proposal, raw, duplicate)):
         summary.update(duplicate_disposition=duplicate, can_import=False, problems=[], problem_count=0)
         return 'duplicate_ignored', summary
     if current and current.get('excluded_as_duplicate') and current.get('duplicate_disposition'):

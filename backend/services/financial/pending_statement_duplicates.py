@@ -24,6 +24,11 @@ POLICY = 'pending-statement-duplicate-v1'
 # account). Off: only the bank identity and product type nominate copies.
 PRINTED_FACTS_COPIES = os.environ.get('LOUPE_FINANCIAL_PRINTED_FACTS_COPIES', '1') != '0'
 METADATA_KEY = 'financial_duplicate_dispositions'
+# A decision is signed on one reading. When a reader fix only filled details the saved review already held, the saved
+# review carries over (review_upgrade.attach_upgrade, ``upgraded_from_revision``) with every row and value unchanged:
+# the decision signed on exactly that earlier reading still holds (Truist STATEMENTS 5630.pdf, 3 decisions, 2 by a
+# person). Reverse: LOUPE_FINANCIAL_DUPLICATE_UPGRADED_READING=0.
+UPGRADED_READING = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_UPGRADED_READING', '1') != '0'
 MATCHED_FIELDS = ['bank', 'full_account_number', 'account_holder', 'period_start', 'period_end', 'currency', 'account_type']
 
 
@@ -63,6 +68,20 @@ def _review_shape(proposal, request):
 def review_signature(proposal, request=None):
     return _digest(dict(policy=POLICY, reading=proposal['revision'], review=_review_shape(proposal, _raw(proposal, request)),
         saved_review=_review_shape(proposal, proposal['saved_review']['request']) if (proposal.get('saved_review') or {}).get('request') else None))
+
+
+def _upgraded_from(proposal):
+    return (proposal.get('saved_review') or {}).get('upgraded_from_revision') if UPGRADED_READING else None
+
+
+def decision_signed(proposal, request, decision):
+    """Whether ``decision`` was signed on this reading and review, or on the earlier reading the saved review was
+    carried over from unchanged."""
+    if decision.get('signature') == review_signature(proposal, request):
+        return True
+    earlier = _upgraded_from(proposal)
+    return bool(earlier and decision.get('reading_revision') == earlier
+                and decision.get('signature') == review_signature({**proposal, 'revision': earlier}, request))
 
 
 def _financial_reading(proposal):
@@ -146,7 +165,8 @@ def _target_available(session, case_id, decision, cache=None):
                 _cache=cache, _include_period_checks=False, _include_duplicate_disposition=False)
         except PdfMappingError:
             return False
-        if proposal['revision'] != decision['retained_reading_revision'] or _requires_review_comparison(proposal):
+        if (decision['retained_reading_revision'] not in (proposal['revision'], _upgraded_from(proposal))
+                or _requires_review_comparison(proposal)):
             return False
     return True
 
@@ -158,7 +178,7 @@ def read_duplicate_disposition(session, file, proposal, request=None, *, cache=N
         return None
     result = deepcopy(previous)
     result.pop('history', None)
-    valid = previous.get('signature') == review_signature(proposal, request)
+    valid = decision_signed(proposal, request, previous)
     if previous.get('status') in ('ignored', 'restored'):
         from services.financial.pending_duplicate_projection import capture_projection_guard
         valid = valid and previous.get('projection_guard') == capture_projection_guard(session, file, proposal.get('statement_id'), previous)

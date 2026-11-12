@@ -3641,10 +3641,10 @@ def _suffix_heading_account(row):
 _NUMBER_HEADING = re.compile(r'^([A-Z][A-Z0-9 .&/]{2,60}?)\s+(\d{8,17})(?:\s+\(CONTINUED[A-Z ]*\))?$')
 # Truist prints a square bullet before the heading ('■ BUSINESS VALUE 200 CHECKING 1000270585630'); a scan reads it
 # as '=' (or another single mark), apart from the product name. One such mark is not part of the heading.
-# Off by default: on the stored cases it fills the account of 6 periods people already filled by hand, and it would
-# make their duplicate decisions on those periods stale (they are bound to the reading's revision). On once a
-# decision carries across a reading change that only fills a value the saved review already holds.
-HEADING_BULLET = os.environ.get('LOUPE_FINANCIAL_HEADING_BULLET', '0').strip().lower() in ('1', 'true', 'on', 'yes')
+# On the stored cases it fills the account of 6 periods people already filled by hand; their saved reviews and
+# duplicate decisions carry over (review_upgrade.filled_details_upgrade, pending_statement_duplicates.decision_signed).
+# Reverse: LOUPE_FINANCIAL_HEADING_BULLET=0.
+HEADING_BULLET = os.environ.get('LOUPE_FINANCIAL_HEADING_BULLET', '1').strip().lower() in ('1', 'true', 'on', 'yes')
 _HEADING_BULLET = re.compile(r'^[=■□▪•●*+-]\s+')
 
 
