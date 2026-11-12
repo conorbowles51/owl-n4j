@@ -28,6 +28,10 @@ _ENGINE_STATUS_MAP = {
 # about tracked jobs that have been quiet (covers messages lost in transit).
 _RETRY_DELAYS = (5, 30, 120, 300)
 _QUIET_SWEEP_SECONDS = 300
+# A job this backend never subscribed to (sent by a script, another backend, or before a lost subscription) has no
+# message to wait for: rows left 'processing' are asked about at the engine this often, as at startup. 11 Nov: 7 files
+# showed 'processing' 5 h after their jobs failed (sent by scripts/reprocess_failed_files.py).
+_IN_FLIGHT_SWEEP_SECONDS = 300
 
 # The engine answers 404 for a job it no longer has. That is final: the job
 # will never report a terminal status, so the row is failed with a plain reason
@@ -150,6 +154,7 @@ class JobStatusSubscriber:
         self._failures: Dict[str, int] = {}  # job_id -> consecutive failed syncs
         self._warned: Set[str] = set()  # jobs already warned unreachable this start
         self._next_sweep = time.monotonic() + _QUIET_SWEEP_SECONDS
+        self._next_in_flight = time.monotonic() + _IN_FLIGHT_SWEEP_SECONDS
         self._task: asyncio.Task | None = None
 
     async def start(self):
@@ -200,7 +205,16 @@ class JobStatusSubscriber:
         """A release ran this backend beside the old one: pick up what the old one started after this one's start."""
         await self._recover_in_flight()
 
-    async def _recover_in_flight(self):
+    async def _sweep_in_flight(self):
+        """Every _IN_FLIGHT_SWEEP_SECONDS, settle or watch rows left 'processing' whose job this backend is not
+        watching."""
+        now = time.monotonic()
+        if now < self._next_in_flight:
+            return
+        self._next_in_flight = now + _IN_FLIGHT_SWEEP_SECONDS
+        await self._recover_in_flight(untracked_only=True)
+
+    async def _recover_in_flight(self, untracked_only: bool = False):
         """On startup, find EvidenceFiles and MergeJobs stuck in 'processing'
         and re-subscribe (or drain immediately if already terminal).
 
@@ -211,6 +225,9 @@ class JobStatusSubscriber:
         owners needed the loop to finish (1 Nov: 2 h 28 min deadlock)."""
         try:
             stuck_files, stuck_merges = await asyncio.to_thread(self._load_in_flight)
+            if untracked_only:
+                stuck_files = [row for row in stuck_files if row[2] not in self._tracked]
+                stuck_merges = [row for row in stuck_merges if row[2] not in self._tracked]
             if stuck_files:
                 logger.info("Recovering %d in-flight evidence-file jobs", len(stuck_files))
             if stuck_merges:
@@ -349,6 +366,7 @@ class JobStatusSubscriber:
         """Main subscriber loop."""
         while True:
             try:
+                await self._sweep_in_flight()
                 if not self._tracked:
                     # No jobs to watch — sleep and retry
                     await asyncio.sleep(1)

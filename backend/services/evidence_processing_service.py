@@ -21,8 +21,7 @@ from services.evidence_file_check import FILE_MISSING_DETAIL
 from services.job_status_subscriber import get_subscriber
 
 # Said when the files were sent from outside the backend (a script): nothing there follows their jobs live.
-NOT_TRACKED_DETAIL = ("statuses settle when the case's jobs are synced (opening the case's files, or the next "
-                      "backend start)")
+NOT_TRACKED_DETAIL = "the backend settles their statuses within 5 minutes of each job ending"
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """Process a case's failed files again, through the production send (chunked: services/evidence_chunking.py).
 
 Selects by status = 'failed', never by error text, and prints every reason found first (services/evidence_failures).
-Dry run by default; --apply sends. Statuses settle as the case's jobs are synced (the case page does this).
+Dry run by default; --apply sends. The backend settles each status within 5 minutes of its job ending.
     set -a; . <app>/.env; set +a; PYTHONPATH=. python scripts/reprocess_failed_files.py --case <uuid> [--apply]
 """
 import argparse

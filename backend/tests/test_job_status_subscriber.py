@@ -260,6 +260,67 @@ class RecoverInFlightTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("job-8", self.subscriber._tracked)
 
 
+class InFlightSweepTests(unittest.IsolatedAsyncioTestCase):
+    """11 Nov: 7 files sent by scripts/reprocess_failed_files.py (outside the backend, so never subscribed) showed
+    'processing' for 5 h after their engine jobs failed 402. The backend asks about such rows on its own."""
+
+    def setUp(self):
+        self.clock = _Clock()
+        patcher = patch.object(module.time, "monotonic", self.clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.subscriber = JobStatusSubscriber()
+        self.subscriber._pubsub = AsyncMock()
+        self.db = MagicMock()
+
+    def _session(self, files):
+        rows = {row.id: row for row in files}
+        self.db.scalars.side_effect = lambda *a, **k: MagicMock(all=MagicMock(return_value=[]))
+        self.db.get.side_effect = lambda model, row_id, **options: rows.get(row_id)
+
+        @contextmanager
+        def session():
+            yield self.db
+        return session
+
+    async def _one_idle_loop_turn(self):
+        # The loop idles (nothing tracked); stop it at its first sleep.
+        with patch.object(module.asyncio, "sleep", AsyncMock(side_effect=module.asyncio.CancelledError)):
+            with self.assertRaises(module.asyncio.CancelledError):
+                await self.subscriber._run()
+
+    async def test_idle_backend_settles_a_failed_job_it_never_watched(self):
+        ef = SimpleNamespace(id="ef-9", case_id="case-1", engine_job_id="job-402", original_filename="d.pdf",
+                             status="processing")
+        loaded = [("file", ef.id, ef.engine_job_id, ef.case_id)]
+        engine = AsyncMock(return_value={"id": "job-402", "status": "failed",
+                                         "error_message": "Client error '402 Payment Required'"})
+        with patch("postgres.session.get_background_session", self._session([ef])), \
+                patch.object(JobStatusSubscriber, "_load_in_flight", staticmethod(lambda: (loaded, []))), \
+                patch("services.evidence_engine_client.get_job", engine), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed") as mark:
+            await self._one_idle_loop_turn()  # not due yet
+            mark.assert_not_called()
+            self.clock.now += module._IN_FLIGHT_SWEEP_SECONDS
+            await self._one_idle_loop_turn()
+
+        mark.assert_called_once_with(self.db, ["ef-9"], error="Client error '402 Payment Required'")
+        self.assertNotIn("job-402", self.subscriber._tracked)
+
+    async def test_sweep_skips_jobs_already_watched(self):
+        self.subscriber._tracked["job-w"] = "case-1"
+        self.subscriber._last_seen["job-w"] = self.clock.now
+        loaded = [("file", "ef-w", "job-w", "case-1")]
+        engine = AsyncMock(return_value={"id": "job-w", "status": "processing"})
+        with patch.object(JobStatusSubscriber, "_load_in_flight", staticmethod(lambda: (loaded, []))), \
+                patch("postgres.session.get_background_session", self._session([])), \
+                patch("services.evidence_engine_client.get_job", engine):
+            self.clock.now += module._IN_FLIGHT_SWEEP_SECONDS
+            await self.subscriber._sweep_in_flight()
+
+        engine.assert_not_awaited()
+
+
 class TerminalWriteThreadTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_database_write_runs_off_the_event_loop_thread(self):
         # 1 Nov: an UPDATE evidence_files run on the loop thread waited on a row lock held by a
