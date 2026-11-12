@@ -170,3 +170,77 @@ def test_sweep_keeps_parts_of_a_completed_upload_whose_evidence_is_gone(uploads)
         preview=api.sweep_completed_parts(db,apply=True)
         assert (preview['folders'],preview['removed'],preview['left_no_evidence'])==(0,0,1)
     assert (left/'0.part').exists()
+
+
+def _large_body(f, size, name='bodycam.mp4'):
+    chunk = 4 * 1024 * 1024
+    return dict(id=str(uuid4()), case_id=str(f.case), filename=name, size=size, sha256='a' * 64,
+        chunks=['b' * 64] * -(-size // chunk))
+
+
+def test_a_file_over_one_gib_is_accepted_with_one_chunk_per_four_mib(uploads, monkeypatch):
+    """12 Nov: a 1.313 GB body-cam video (314 chunks) was refused with a bare 422 by a 1 GiB / 256-chunk cap."""
+    f = uploads
+    monkeypatch.setattr(api, 'CHUNK_SIZE', 4 * 1024 * 1024)
+    monkeypatch.setattr(api, 'free_bytes', lambda: 100 * 1024**3)
+    body = _large_body(f, 1_313_000_000)
+    assert len(body['chunks']) == 314
+    response = f.client.post('/api/evidence-upload-sessions', json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()['size'] == 1_313_000_000 and response.json()['received'] == []
+    assert f.client.post('/api/evidence-upload-sessions', json=_large_body(f, 20 * 1024**3)).status_code == 200
+
+
+def test_a_file_over_the_limit_or_the_free_space_is_refused_in_words_and_never_recorded(uploads, monkeypatch):
+    f = uploads
+    monkeypatch.setattr(api, 'CHUNK_SIZE', 4 * 1024 * 1024)
+    too_large = f.client.post('/api/evidence-upload-sessions', json=_large_body(f, api.MAX_FILE_BYTES + 1))
+    assert too_large.status_code == 413
+    assert too_large.json()['detail'] == 'bodycam.mp4 is 64.0 GB; one file can be at most 64.0 GB, so it was not uploaded.'
+    monkeypatch.setattr(api, 'free_bytes', lambda: 3 * 1024**3)
+    no_room = f.client.post('/api/evidence-upload-sessions', json=_large_body(f, 2 * 1024**3, 'video.mov'))
+    assert no_room.status_code == 507
+    assert no_room.json()['detail'] == ('video.mov was not uploaded: it needs 4.0 GB of storage (4,294,967,296 bytes) '
+        'and 3.0 GB (3,221,225,472 bytes) is free.')
+    with Session(f.engine) as db:
+        assert not list(db.scalars(select(EvidenceUploadSession)))
+
+
+def test_assembly_runs_with_no_transaction_open(uploads, monkeypatch):
+    """Assembling a file of many GB takes minutes (5 GB: 397 s on the server, 12 Nov); the session row lock or an open
+    transaction held for it stalls a pause, a release and the database."""
+    f = uploads
+    opened = []
+    def db_dependency():
+        with Session(f.engine) as db:
+            opened.append(db)
+            yield db
+    f.client.app.dependency_overrides[api.get_db] = db_dependency
+    real = api.assemble
+    seen = []
+    def assemble(item):
+        seen.append([db.in_transaction() for db in opened])
+        return real(item)
+    monkeypatch.setattr(api, 'assemble', assemble)
+    body, state, content = start(f)
+    for i in range(len(body['chunks'])): assert send(f, state, content, i).status_code == 200
+    opened.clear()
+    receipt = action(f, state, 'complete').json()
+    assert receipt['status'] == 'completed' and receipt['evidence_id']
+    assert seen == [[False]]
+
+
+def test_a_pause_that_lands_during_assembly_is_kept(uploads, monkeypatch):
+    f = uploads
+    body, state, content = start(f)
+    for i in range(len(body['chunks'])): assert send(f, state, content, i).status_code == 200
+    real = api.assemble
+    def assemble(item):
+        assert action(f, state, 'pause').json()['status'] == 'paused'
+        return real(item)
+    monkeypatch.setattr(api, 'assemble', assemble)
+    assert action(f, state, 'complete').status_code == 409
+    monkeypatch.setattr(api, 'assemble', real)
+    assert action(f, state, 'resume').json()['status'] == 'uploading'
+    assert action(f, state, 'complete').json()['status'] == 'completed'
+    with Session(f.engine) as db: assert len(list(db.scalars(select(EvidenceFile)))) == 1

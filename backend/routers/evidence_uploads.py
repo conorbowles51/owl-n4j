@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import tempfile
+from types import SimpleNamespace
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -21,10 +22,21 @@ from postgres.models.user import User
 from routers.users import get_current_db_user
 from routers.case_access import authorize_case
 from services.evidence_db_storage import EvidenceDBStorage
+from services.evidence_archive import MAX_EXPANDED_BYTES
 
 router = APIRouter(prefix='/api/evidence-upload-sessions', tags=['evidence'])
 CHUNK_SIZE = 4 * 1024 * 1024
 ROOT = Path(EVIDENCE_DATA_ROOT) / '_resumable_uploads'
+# One evidence file reaches as far as one folder selection (Neil, 12 Nov: "Loupe has to accept more than 1gb if it's
+# accepting phones"). The old 1 GiB cap refused a 1.3 GB body-cam video after the browser had hashed it for minutes.
+# Chunks are saved, verified and assembled one at a time, so the size is bounded by free disk space, checked below.
+MAX_FILE_BYTES = MAX_EXPANDED_BYTES
+# Kept free on the evidence disk after an upload's parts and its assembled file (the database and other uploads share it).
+DISK_RESERVE_BYTES = 1024**3
+
+
+def gigabytes(size):
+    return f'{size / 1024**3:.1f} GB'
 
 
 class StartUpload(BaseModel):
@@ -32,9 +44,25 @@ class StartUpload(BaseModel):
     case_id: UUID
     folder_id: UUID | None = None
     filename: str = Field(min_length=1, max_length=255)
-    size: int = Field(ge=0, le=1_073_741_824)
+    size: int = Field(ge=0)
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
-    chunks: list[str] = Field(max_length=256)
+    # A bound on the request only; the file's own limit is MAX_FILE_BYTES, refused in words by start_upload.
+    chunks: list[str] = Field(max_length=4 * MAX_FILE_BYTES // (4 * 1024 * 1024))
+
+
+def free_bytes():
+    root = Path(EVIDENCE_DATA_ROOT)
+    while not root.exists() and root != root.parent:
+        root = root.parent
+    return shutil.disk_usage(root).free
+
+
+def refuse_without_space(filename, needed):
+    """507 naming the bytes needed and the bytes free, before a byte is sent or assembled."""
+    free = free_bytes()
+    if needed + DISK_RESERVE_BYTES > free:
+        raise HTTPException(507, f'{filename} was not uploaded: it needs {gigabytes(needed)} of storage '
+            f'({needed:,} bytes) and {gigabytes(free)} ({free:,} bytes) is free.')
 
 
 def get_session(db, identity, user, *, lock=False):
@@ -143,6 +171,9 @@ def start_upload(body: StartUpload, user: User = Depends(get_current_db_user), d
     authorize_case(db, body.case_id, user, ('evidence', 'upload'))
     if PurePosixPath(body.filename).name != body.filename or body.filename in ('.', '..') or '\\' in body.filename or '\x00' in body.filename:
         raise HTTPException(400, 'Choose a valid filename')
+    if body.size > MAX_FILE_BYTES:
+        raise HTTPException(413, f'{body.filename} is {gigabytes(body.size)}; one file can be at most '
+            f'{gigabytes(MAX_FILE_BYTES)}, so it was not uploaded.')
     if len(body.chunks) != math.ceil(body.size / CHUNK_SIZE) or any(not re.fullmatch(r'[a-f0-9]{64}', h) for h in body.chunks):
         raise HTTPException(400, 'Upload chunk manifest does not match the file size')
     if body.folder_id:
@@ -151,6 +182,8 @@ def start_upload(body: StartUpload, user: User = Depends(get_current_db_user), d
             raise HTTPException(404, 'Destination folder not found')
     item = db.get(EvidenceUploadSession, body.id)
     if item is None:
+        # Its parts and then the assembled file are both on disk until the evidence is registered.
+        refuse_without_space(body.filename, 2 * body.size)
         item = EvidenceUploadSession(**body.model_dump(), user_id=user.id, chunk_size=CHUNK_SIZE, status='uploading')
         db.add(item)
         try:
@@ -257,6 +290,17 @@ def assemble(item):
         if os.path.exists(temporary): os.unlink(temporary)
 
 
+def assemble_outside_transaction(db, item):
+    """Assemble an ordinary upload with no transaction open. Assembly reads and hashes every byte (minutes for a
+    file of many GB); the session row lock, or an idle open transaction, held that long would stall a pause, a
+    release and the database (an idle-in-transaction upload stalled two releases, 12 Nov)."""
+    spec = SimpleNamespace(id=item.id, case_id=item.case_id, filename=item.filename, size=item.size,
+        chunk_size=item.chunk_size, chunks=list(item.chunks), sha256=item.sha256)
+    db.commit()
+    refuse_without_space(spec.filename, spec.size)
+    return assemble(spec)
+
+
 @router.post('/{identity}/{action}')
 def upload_action(identity: UUID, action: str, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
     item = get_session(db, identity, user, lock=True)
@@ -280,7 +324,13 @@ def upload_action(identity: UUID, action: str, user: User = Depends(get_current_
         item.status = 'paused' if action == 'pause' else 'uploading'
     else:
         if item.status == 'paused': raise HTTPException(409, 'Resume this upload before completing it')
-        target = assemble(item)
+        target = assemble_outside_transaction(db, item)
+        # Locked again: a pause or another completion may have landed while the file was assembled.
+        item = get_session(db, identity, user, lock=True)
+        if item.status == 'completed':
+            remove_parts(item)
+            return snapshot(item)
+        if item.status == 'paused': raise HTTPException(409, 'Resume this upload before completing it')
         records = EvidenceDBStorage.add_files(db, case_id=item.case_id, folder_id=item.folder_id,
             owner=user.email, created_by_id=user.id, files_data=[dict(original_filename=item.filename,
                 stored_path=str(target), sha256=item.sha256, size=item.size,
