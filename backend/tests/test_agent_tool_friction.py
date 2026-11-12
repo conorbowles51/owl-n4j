@@ -125,3 +125,30 @@ def test_replays_give_the_tools_a_case_reader():
     for name in ("financial_agent_fit_replay.py", "financial_agent_trace_replay.py"):
         src = (root / name).read_text()
         assert "user_id=REPLAY_USER_ID" in src and "--user-id" in src
+
+
+def _q(**k):
+    base = {"uncited": 2, "not_read": 0, "not_in_record": 0, "unfinished_unstated": 0, "other_side_missing": 0,
+            "certainty": 0, "cited": 5, "citations": 6, "in_record": 6, "key": "missed"}
+    return dict(base, **k)
+
+
+def test_range_gate_does_not_reject_a_run_inside_the_same_settings_spread():
+    # Coordinator 12 Nov: decide's any-count rule rejected identical settings on most pairs of repeats.
+    from services.agent import prompt_loop as PL
+    current = {"Q1": [_q(cited=4), _q(cited=6), _q(cited=5, certainty=1)]}
+    same = {"Q1": [_q(cited=4, certainty=1)]}
+    assert PL.decide({"Q1": current["Q1"][1]}, {"Q1": same["Q1"][0]}, held={"Q1"})["losses"]  # the single-run rule rejects it
+    out = PL.decide_range(current, same, held={"Q1"})
+    assert out["losses"] == {} and "no count gains beyond the same-settings range" in out["reasons"]
+    better = PL.decide_range(current, {"Q1": [_q(cited=7, key="found")]}, held={"Q1"})
+    assert better["accepted"] and better["gains"]["Q1"]
+
+
+def test_range_gate_still_blocks_a_loss_outside_the_range_and_too_few_runs():
+    from services.agent import prompt_loop as PL
+    current = {"Q1": [_q(cited=4), _q(cited=6), _q(cited=5)], "Q2": [_q(), _q()]}
+    out = PL.decide_range(current, {"Q1": [_q(cited=7), _q(cited=3)], "Q2": [_q(cited=9)]}, held={"Q1", "Q2"})
+    assert not out["accepted"]
+    assert out["losses"]["Q1"] == ["cited 3 outside 4..6"]
+    assert out["too_few_runs"] == ["Q2"]

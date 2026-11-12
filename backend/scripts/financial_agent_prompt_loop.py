@@ -49,6 +49,14 @@ def _per_question(state: dict) -> dict:
     return out
 
 
+def _runs_by_question(state: dict) -> dict:
+    """Every repeat of each question, as a list (decide_range compares against their spread)."""
+    out: dict = {}
+    for name, s in state.items():
+        out.setdefault(_question_id(name), []).append(dict(s))
+    return out
+
+
 def _load_state(path: str) -> dict:
     data = json.load(open(path))
     if len(data) == 1 and isinstance(next(iter(data.values())), dict) and all(
@@ -73,12 +81,20 @@ def main(argv=None) -> int:
     d.add_argument("--part", required=True)
     d.add_argument("--written-from", default="", help="comma-separated question ids the candidate was drafted from")
     d.add_argument("--record", action="store_true")
+    d.add_argument("--single", action="store_true", help=(
+        "compare one score per question (worst of its repeats) instead of the same-settings range"))
     a = ap.parse_args(argv)
     from services.agent import prompt_loop as PL
     if a.cmd == "decide":
-        cur, cand = _per_question(_load_state(a.current)), _per_question(_load_state(a.candidate))
-        held = PL.held_out(set(cur) | set(cand))
-        decision = PL.decide(cur, cand, held=held, written_from=[x for x in a.written_from.split(",") if x])
+        written = [x for x in a.written_from.split(",") if x]
+        if a.single:
+            cur, cand = _per_question(_load_state(a.current)), _per_question(_load_state(a.candidate))
+            held = PL.held_out(set(cur) | set(cand))
+            decision = PL.decide(cur, cand, held=held, written_from=written)
+        else:
+            cur, cand = _runs_by_question(_load_state(a.current)), _runs_by_question(_load_state(a.candidate))
+            held = PL.held_out(set(cur) | set(cand))
+            decision = PL.decide_range(cur, cand, held=held, written_from=written)
         print(json.dumps({k: decision[k] for k in ("accepted", "reasons", "questions", "held_out_checked")},
                          indent=1))
         for q, lost in decision["losses"].items():

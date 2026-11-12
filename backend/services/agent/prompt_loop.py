@@ -11,7 +11,9 @@ The loop, all in this module and ``scripts/agent_prompt_loop.py``:
    asked to continue or retry, whether the answer was accepted into a dossier, and whether a record it cited was
    corrected or confirmed in the manual-change feed after it.
 3. Candidates are drafted from the failures and reviewed as code; they live behind a switch (``fit``).
-4. ``decide`` accepts a candidate only when it scores better on the question set and loses nothing on any question,
+4. ``decide_range`` (the gate since 12 Nov) compares each question with at least 3 runs of the current version and
+   counts a loss only outside their range; ``decide`` compares single runs. Either accepts a candidate only when it
+   scores better on the question set and loses nothing on any question,
    held-out questions included: a question it was not written from (``held_out``) must be among those checked.
    The demo key is one count among the others, never the target.
 5. ``record`` keeps each decision and its numbers in ``prompt_history.jsonl`` beside this file, so a version can be
@@ -93,6 +95,66 @@ def decide(current: dict[str, dict], candidate: dict[str, dict], *, held: set[st
         reasons.append("no held-out question was checked")
     return {"accepted": not reasons, "reasons": reasons, "questions": len(common), "losses": losses,
             "gains": gains, "missing": missing, "held_out_checked": checked_held}
+
+
+MIN_SAME_SETTINGS_RUNS = 3
+
+
+def decide_range(current_runs: dict[str, list[dict]], candidate_runs: dict[str, list[dict]], *, held: set[str],
+                 written_from: Iterable[str] = ()) -> dict[str, Any]:
+    """``decide`` against the spread of repeated runs (coordinator, 12 Nov). One DeepSeek run per question is noisy:
+    with ``decide``'s any-count rule, the round-1 base's own repeats (demo Q1-Q8, 3 each, identical settings) reject
+    each other on 45 of 48 ordered pairs. Here each question needs at least ``MIN_SAME_SETTINGS_RUNS`` runs of the
+    current version. A count loses when any candidate run is worse than the worst current run, and gains when a
+    candidate run is better than the best current run with no candidate run worse than the worst. The demo key is
+    compared the same way. Every other condition of ``decide`` holds: nothing lost on any question, something gained,
+    and a held-out question checked."""
+    written = set(written_from)
+    common = sorted(set(current_runs) & set(candidate_runs))
+    losses, gains, too_few = {}, {}, []
+
+    def key_rank(run):
+        return _KEY_RANK.get(run.get("key"), 1)
+    for q in common:
+        cur, cand = current_runs[q], candidate_runs[q]
+        if len(cur) < MIN_SAME_SETTINGS_RUNS or not cand:
+            too_few.append(q)
+            continue
+        lost, won = [], []
+        counts = [(k, True) for k in AQ.WORSE_HIGHER] + [(k, False) for k in AQ.BETTER_HIGHER]
+        for k, lower_is_better in counts:
+            sign = 1 if lower_is_better else -1
+            cv = [sign * int(r.get(k, 0) or 0) for r in cur]
+            dv = [sign * int(r.get(k, 0) or 0) for r in cand]
+            span = "%d..%d" % tuple(sorted((sign * min(cv), sign * max(cv))))
+            if max(dv) > max(cv):
+                lost.append(f"{k} {sign * max(dv)} outside {span}")
+            elif min(dv) < min(cv):
+                won.append(f"{k} {sign * min(dv)} beyond {span}")
+        ck, dk = [key_rank(r) for r in cur], [key_rank(r) for r in cand]
+        if min(dk) < min(ck):
+            lost.append("key below every current run")
+        elif max(dk) > max(ck):
+            won.append("key above every current run")
+        if lost:
+            losses[q] = lost
+        if won:
+            gains[q] = won
+    missing = sorted(set(current_runs) - set(candidate_runs))
+    checked_held = sorted(q for q in common if q in held and q not in written and q not in too_few)
+    reasons = []
+    if losses:
+        reasons.append(f"{len(losses)} question(s) fall outside the same-settings range")
+    if too_few:
+        reasons.append(f"{len(too_few)} question(s) have fewer than {MIN_SAME_SETTINGS_RUNS} same-settings runs")
+    if missing:
+        reasons.append(f"{len(missing)} question(s) have no candidate answer")
+    if not gains:
+        reasons.append("no count gains beyond the same-settings range")
+    if not checked_held:
+        reasons.append("no held-out question was checked")
+    return {"accepted": not reasons, "reasons": reasons, "questions": len(common), "losses": losses,
+            "gains": gains, "missing": missing, "held_out_checked": checked_held, "too_few_runs": sorted(too_few)}
 
 
 def record(decision: dict[str, Any], *, part: str, current: str, candidate: str, note: str = "",
