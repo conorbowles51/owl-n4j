@@ -76,7 +76,12 @@ class Settings(BaseSettings):
     batch_file_max_concurrency: int = 4
     max_extracted_characters: int = 50_000_000
     max_pdf_pages: int = 2_000
-    max_image_pixels: int = 25_000_000
+    # Refusal guard against decompression bombs. Ordinary camera photos reach 26 MP (Fujifilm X-T4,
+    # 6240x4160), 61 MP (Sony A7R) and 102 MP (Fujifilm GFX100); the guard sits above them and below
+    # Pillow's own refusal (2 x Image.MAX_IMAGE_PIXELS = 178,956,970).
+    max_image_pixels: int = 120_000_000
+    # Images above this are scaled down to it before OCR, which bounds Tesseract time and memory.
+    image_ocr_max_pixels: int = 50_000_000
     max_image_file_bytes: int = 50_000_000
     max_text_input_bytes: int = 100_000_000
     max_office_uncompressed_bytes: int = 500_000_000

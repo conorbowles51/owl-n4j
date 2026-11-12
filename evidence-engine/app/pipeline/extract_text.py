@@ -910,6 +910,10 @@ def _extract_text_tesseract(file_path: str) -> str:
         if img.format and img.format not in SUPPORTED_FORMATS:
             img.seek(0)
             page = img.convert("RGB")
+        pixels = page.width * page.height
+        if pixels > settings.image_ocr_max_pixels:
+            scale = (settings.image_ocr_max_pixels / pixels) ** 0.5
+            page = page.resize((max(1, int(page.width * scale)), max(1, int(page.height * scale))))
         text = pytesseract.image_to_string(
             page,
             lang=settings.tesseract_lang,
