@@ -132,3 +132,15 @@ class BareTargetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_a_link_whose_text_is_its_target_is_never_nested():
+    # R10 answers with W on: 16 of 41 held "[[phone record](rec://X)](rec://X)" (the model wrote [rec://X](rec://X)).
+    from services.agent.wrap_up import link_bare_targets
+    out = link_bare_targets("said so [rec://611e49d4](rec://611e49d4) and [doc://b4/2](<doc://b4/2>), "
+                            "[message of 14 Mar](rec://aa11) and bare txn://t1.")
+    assert "[[" not in out
+    assert "[phone record](rec://611e49d4)" in out and "[document, p.2](<doc://b4/2>)" in out
+    assert "[message of 14 Mar](rec://aa11)" in out and "[payment](txn://t1)" in out
+    assert link_bare_targets("x [[phone record](rec://a1)](rec://a1) y") == "x [phone record](rec://a1) y"
+    assert link_bare_targets(out) == out

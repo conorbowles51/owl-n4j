@@ -170,10 +170,13 @@ def _link(target: str) -> str:
     return "[%s](%s)" % (label, target)
 
 
-def link_bare_targets(text: str) -> str:
-    """Each source written as a bare target becomes a Markdown link to it; links already written are untouched."""
-    if not text or "://" not in text:
-        return text
+# A Markdown link already written: [text](target) or [text](<target>). Its text may itself be a bare target
+# ("[rec://<id>](rec://<id>)"); linking that text again nested one link in another (R10 answers, 16 of 41 with W on).
+_MD_LINK = re.compile(r"\[([^\[\]\n]*)\]\(\s*<?[^)\s>]*>?\s*\)")
+_ONLY_TARGET = re.compile(r"\s*(%s)\s*" % _TARGET)
+
+
+def _link_outside_links(text: str) -> str:
     text = _BARE_GROUP.sub(lambda m: "(" + ", ".join(
         _link(t) for t in re.findall(_TARGET, m.group(1))) + ")", text)
     out, last = [], 0
@@ -183,6 +186,43 @@ def link_bare_targets(text: str) -> str:
         last = m.end()
     out.append(text[last:])
     return "".join(out)
+
+
+def _label_link(m) -> str:
+    """A written link stays whole; a link whose text is only its target reads as its kind (payment, document, phone
+    record) instead."""
+    own = _ONLY_TARGET.fullmatch(m.group(1) or "")
+    if not own:
+        return m.group(0)
+    label = _link(own.group(1))[1:].split("](", 1)[0]
+    return "[%s]" % label + m.group(0)[len(m.group(1)) + 2:]
+
+
+def link_bare_targets(text: str) -> str:
+    """Each source written as a bare target becomes a Markdown link to it; links already written stay whole (a link
+    whose text is only its target gets its kind as text), so no link is ever nested in another."""
+    if not text or "://" not in text:
+        return text
+    text = unnest_links(text)
+    out, last = [], 0
+    for m in _MD_LINK.finditer(text):
+        out.append(_link_outside_links(text[last:m.start()]))
+        out.append(_label_link(m))
+        last = m.end()
+    out.append(_link_outside_links(text[last:]))
+    return "".join(out)
+
+
+_NESTED = re.compile(r"\[\[([^\[\]\n]*)\]\(\s*(%s)\s*\)\]\(\s*<?(%s)>?\s*\)" % (_TARGET, _TARGET))
+
+
+def unnest_links(text: str) -> str:
+    """``[[label](target)](target)``, as W wrote it before the fix, back to ``[label](target)`` when both targets
+    agree; anything else is left as written."""
+    if not text or "[[" not in text:
+        return text
+    return _NESTED.sub(lambda m: "[%s](%s)" % (m.group(1), m.group(3)) if m.group(2) == m.group(3) else m.group(0),
+                       text)
 
 
 # An answer figure 10x or 100x the amount of the payment it cites is a minor-unit slip, not a second figure (BNB2 run
