@@ -92,7 +92,7 @@ export function useFollowServerRun(caseId: string | undefined) {
           store.finishRun(caseId, "failed", detail.error || "The run failed")
         } else {
           // completed, a question back to the person, or interrupted (its thread says so): the thread is reloaded.
-          store.finishRun(caseId, "completed")
+          store.finishRun(caseId, detail.status === "needs_revision" ? "needs_revision" : "completed")
         }
       } catch {
         // A restart or a dropped connection: the next tick asks again.

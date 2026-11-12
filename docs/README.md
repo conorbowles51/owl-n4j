@@ -1,5 +1,11 @@
 # Owl Documentation
 
+## Agent Capability Plan
+
+- [Loupe agent capability and quality plan](loupe-agent-capability-plan.md)
+
+  Durable investigation tasks, complete authorized data access and actions, flexible long reports, professional Loupe styling, varied artifacts, accuracy checks and staged workflow acceptance.
+
 ## Business And Release Planning
 
 - [Business Readiness Pack](business/README.md)

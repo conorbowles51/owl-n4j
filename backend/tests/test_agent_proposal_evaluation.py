@@ -21,6 +21,8 @@ from postgres.base import Base
 from postgres.models.agent_evidence import CaseGlossaryTerm
 from postgres.models.agent_proposals import AgentProposalSourceOpen, ProceedsCalculation
 from postgres.models.case import Case
+from postgres.models.case_membership import CaseMembership
+from postgres.models.enums import CaseMembershipRole
 from postgres.models.case_context import CaseContext, CaseMandateVersion
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_judgements import FinancialJudgement
@@ -35,7 +37,7 @@ TABLES = [User.__table__, Case.__table__, CaseMandateVersion.__table__, CaseCont
           WorkspaceEntry.__table__, WorkspaceEntryRevision.__table__, WorkspaceEntryLink.__table__,
           WorkspaceEntryEvent.__table__, WorkspaceAIOutput.__table__, AgentProposalSourceOpen.__table__,
           FinancialJudgement.__table__, ProceedsCalculation.__table__, WorkspaceLegacyMapping.__table__,
-          CaseGlossaryTerm.__table__]
+          CaseGlossaryTerm.__table__, CaseMembership.__table__]
 NOT_IN_CASE = "Not in this case."
 
 
@@ -53,6 +55,9 @@ def world(tmp_path_factory):
         other = Case(title="Other case", created_by_user_id=owner.id, owner_user_id=owner.id)
         s.add_all([case, other])
         s.flush()
+        s.add(CaseMembership(case_id=case.id, user_id=owner.id, added_by_user_id=owner.id,
+                            membership_role=CaseMembershipRole.collaborator,
+                            permissions={'case': {'view': True, 'edit': True}}))
         doc = EvidenceFile(case_id=case.id, original_filename="march.pdf", stored_path=str(tmp / "m.pdf"), size=1,
                            sha256="a" * 64, status="processed", created_by_id=owner.id)
         foreign = EvidenceFile(case_id=other.id, original_filename="elsewhere.pdf", stored_path=str(tmp / "e.pdf"),

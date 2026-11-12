@@ -39,7 +39,6 @@ import {
   Download,
   FileSearch,
   FileText,
-  GitBranch,
   Info,
   ListChecks,
   Loader2,
@@ -65,6 +64,12 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AgentCitationProvider, AgentMarkdown, CitationCheckLine } from "./AgentCitations"
 import { AgentArtifactNotes } from "./AgentArtifactNotes"
+import { ArtifactDataTable } from "./ArtifactDataTable"
+import { ExtendedArtifact } from "./ExtendedArtifact"
+import { ArtifactReportDocument } from "./ArtifactReportDocument"
+import { AgentBriefAttachment, type AgentBrief } from "./AgentBriefAttachment"
+import { ArtifactRevisionControls } from "./ArtifactRevisionControls"
+import { artifactIdentity, artifactRevision, latestArtifactVersion } from "../artifact-data"
 import { AcceptAnswerIntoAssessment } from "./AcceptAnswerIntoAssessment"
 import { AgentRunRecordPanel } from "./AgentRunRecordPanel"
 import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
@@ -175,6 +180,8 @@ const artifactIcons = {
   map: MapIcon,
   report: FileText,
   chart: ChartColumn,
+  workbook: Table2, presentation: FileText, interactive: PanelRight,
+  timeline: ListChecks, matrix: Table2, diagram: Network,
 } as const
 
 const CHART_COLORS = [
@@ -506,43 +513,17 @@ function firstEntityKeyFromArtifact(artifact: AgentArtifact): string | null {
   return null
 }
 
-function listText(value: unknown): string[] {
-  return asArray<unknown>(value)
-    .map((item) => valueText(item).trim())
-    .filter(Boolean)
-}
-
-function reportColumns(data: Dict, rows: Dict[]): Dict[] {
-  const explicitColumns = asArray<Dict>(data.columns)
-  if (explicitColumns.length > 0) return explicitColumns
-
-  const keys: string[] = []
-  for (const row of rows) {
-    for (const key of Object.keys(row)) {
-      if (!keys.includes(key)) keys.push(key)
-    }
-  }
-  return keys.slice(0, 8).map((key) => ({ key, label: key.replace(/_/g, " ") }))
-}
-
 function reportEmbeddedArtifact(embed: Dict, artifacts: AgentArtifact[]): AgentArtifact | null {
-  const existing = artifacts.find((artifact) => artifact.id === valueText(embed.artifact_id))
-  if (existing && (existing.type === "graph" || existing.type === "table" || existing.type === "chart")) {
-    return existing
-  }
-
+  if (embed.available === false) return null
   const type = valueText(embed.type)
-  if ((type !== "graph" && type !== "table" && type !== "chart") || embed.available === false) return null
   const data = asRecord(embed.data)
-  if (Object.keys(data).length === 0) return null
-
-  return {
+  // The saved embed is pinned to its report revision; a newer library item must not replace it.
+  if (type in artifactIcons && Object.keys(data).length > 0) return {
     id: valueText(embed.artifact_id || embed.id || "embedded-report-artifact"),
-    type,
-    title: valueText(embed.title || "Embedded artifact"),
-    data,
-    metadata: asRecord(embed.metadata),
+    type: type as AgentArtifact["type"], title: valueText(embed.title || "Embedded artifact"),
+    data, metadata: asRecord(embed.metadata),
   }
+  return artifacts.find((artifact) => artifact.id === valueText(embed.artifact_id)) ?? null
 }
 
 function chartSeries(artifact: AgentArtifact) {
@@ -578,16 +559,21 @@ export function AgentPage() {
   // finishes keeps it).
   const [threadWorkflowId, setThreadWorkflowId] = useState<string | null>(null)
   const [input, setInput] = useState("")
+  const [brief, setBrief] = useState<AgentBrief | null>(null)
+  const [briefLoading, setBriefLoading] = useState(false)
   const [mandateOverride, setMandateOverride] = useState("")
   // All-cases mode (Neil 2026-11-01: an option, never the default): off for every new or reopened conversation.
   const [allCases, setAllCases] = useState(false)
   useEffect(() => setAllCases(false), [caseId])
   const activeThreadIdRef = useRef<string | null>(null)
+  const threadLoadSequence = useRef(0)
+  const initialRunRecovery = useRef(false)
   useEffect(() => {
     activeThreadIdRef.current = activeThreadId
   }, [activeThreadId])
   const [mandateUsage, setMandateUsage] = useState<AgentMandateUsage | null>(null)
   const [pendingClarification, setPendingClarification] = useState<AgentClarification | null>(null)
+  const [revisionNeeded, setRevisionNeeded] = useState(false)
   const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(false)
@@ -600,12 +586,13 @@ export function AgentPage() {
     caseId ? state.runsByCase[caseId] : undefined
   )
   const isLoading = sharedRun?.isLoading ?? false
+  const viewingRunningThread = !sharedRun?.threadId || sharedRun.threadId === activeThreadId
   const activeRunId = sharedRun?.runId ?? null
   useFollowServerRun(caseId)
   const caseContext = useCaseContext(caseId ?? "")
 
   const selectedArtifact = useMemo(
-    () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0] ?? null,
+    () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? latestArtifactVersion(artifacts),
     [artifacts, selectedArtifactId]
   )
 
@@ -680,6 +667,10 @@ export function AgentPage() {
   }, [loadThreads])
 
   const loadThread = useCallback(async (threadId: string) => {
+    initialRunRecovery.current = true
+    const sequence = ++threadLoadSequence.current
+    if (activeThreadIdRef.current !== threadId) setAllCases(false)
+    activeThreadIdRef.current = threadId
     try {
       if (!caseId) return
       const [thread, context, versions] = await Promise.all([
@@ -687,14 +678,20 @@ export function AgentPage() {
         workspaceAPI.getCaseContext(caseId),
         workspaceAPI.listMandateVersions(caseId),
       ])
-      if (activeThreadIdRef.current !== thread.id) setAllCases(false)
+      if (sequence !== threadLoadSequence.current) return
       setActiveThreadId(thread.id)
+      setBrief(null)
+      setBriefLoading(false)
       setMessages(thread.messages.map(storedToClientMessage).filter(Boolean) as AgentClientMessage[])
       setArtifacts(thread.artifacts)
+      const latest = new Map<string, AgentArtifact>()
+      for (const artifact of thread.artifacts) if (artifactRevision(artifact) >= artifactRevision(latest.get(artifactIdentity(artifact)) ?? artifact)) latest.set(artifactIdentity(artifact), artifact)
+      setRevisionNeeded([...latest.values()].some((artifact) => asRecord(artifact.metadata.validation).status === "needs_revision"
+        || asRecord(artifact.metadata.completion_review).status === "needs_revision"))
       setToolTrace([])
       setActivityTrail([])
       setPendingClarification(null)
-      setSelectedArtifactId(thread.artifacts[0]?.id ?? null)
+      setSelectedArtifactId(latestArtifactVersion(thread.artifacts)?.id ?? null)
       const anchored = versions.find((version) => version.id === thread.mandate_version_id) ?? null
       setMandateUsage({
         version: anchored,
@@ -709,11 +706,10 @@ export function AgentPage() {
   }, [caseId])
 
   useEffect(() => {
-    if (!sharedRun?.isLoading || !sharedRun.threadId || activeThreadId === sharedRun.threadId) {
-      return
-    }
-    loadThread(sharedRun.threadId)
-  }, [activeThreadId, loadThread, sharedRun?.isLoading, sharedRun?.threadId])
+    if (!sharedRun?.isLoading || !sharedRun.threadId || initialRunRecovery.current) return
+    initialRunRecovery.current = true
+    if (activeThreadIdRef.current === null) void loadThread(sharedRun.threadId)
+  }, [loadThread, sharedRun?.isLoading, sharedRun?.threadId])
 
   useEffect(() => {
     if (!caseId || !sharedRun?.terminalState) return
@@ -725,12 +721,14 @@ export function AgentPage() {
     const terminalQuestion = sharedRun.inputMessage ?? null
 
     const consumeTerminalRun = async () => {
-      if (sharedRun.runId && sharedRun.threadId) {
+      const viewingRun = activeThreadIdRef.current === sharedRun.threadId
+      if (sharedRun.runId && sharedRun.threadId && viewingRun) {
         await loadThread(sharedRun.threadId)
       }
       if (cancelled) return
+      if (terminalState === "needs_revision" && activeThreadIdRef.current === sharedRun.threadId) setRevisionNeeded(true)
 
-      if (terminalState === "failed") {
+      if (terminalState === "failed" && activeThreadIdRef.current === sharedRun.threadId) {
         const message = terminalError || "Agent request failed"
         setMessages((current) => [
           ...current.map((item) => (item.pending ? { ...item, pending: false } : item)),
@@ -740,6 +738,7 @@ export function AgentPage() {
             content: `The run failed before I could write a final response.\n\n${message}`,
             createdAt: new Date().toISOString(),
             retryQuestion: terminalQuestion,
+            runId: /no (?:resumable )?checkpoint/i.test(message) ? null : terminalRunId,
           },
         ])
       }
@@ -757,6 +756,9 @@ export function AgentPage() {
   }, [caseId, loadThread, loadThreads, sharedRun?.error, sharedRun?.inputMessage, sharedRun?.runId, sharedRun?.terminalState, sharedRun?.threadId])
 
   const startNewThread = () => {
+    initialRunRecovery.current = true
+    threadLoadSequence.current++
+    activeThreadIdRef.current = null
     setAllCases(false)
     setActiveThreadId(null)
     setThreadWorkflowId(null)
@@ -767,13 +769,21 @@ export function AgentPage() {
     setPendingClarification(null)
     setSelectedArtifactId(null)
     setInput("")
+    setBrief(null)
+    setBriefLoading(false)
+    setRevisionNeeded(false)
     setMandateOverride("")
     setMandateUsage(null)
   }
 
-  const sendMessage = async (overridePrompt?: string, workflowId?: string) => {
-    const prompt = (overridePrompt ?? input).trim()
+  const sendMessage = async (overridePrompt?: string, workflowId?: string, resumeRunId?: string) => {
+    if (briefLoading) { toast.info("Wait for the brief preview to finish before sending."); return }
+    const basePrompt = (overridePrompt ?? input).trim()
+    const prompt = brief && overridePrompt == null ? `${basePrompt}\n\nAttached brief: ${brief.name}\n${brief.text}` : basePrompt
+    if (prompt.length > 250_000) { toast.error("The combined message and brief exceed 250,000 characters. Shorten the message or attach a smaller brief."); return }
     if (!prompt || !caseId || isLoading) return
+    initialRunRecovery.current = true
+    setRevisionNeeded(false)
     // The Significant layer reads no phones or ledger, so no workflow plan is sent there.
     const runWorkflowId = caseLayer === "significant" ? undefined : (workflowId ?? threadWorkflowId ?? undefined)
     if (workflowId) setThreadWorkflowId(workflowId)
@@ -781,23 +791,27 @@ export function AgentPage() {
     const optimisticId = `local_${Date.now()}`
     const requestMandateOverride = mandateOverride.trim()
     setInput("")
+    if (overridePrompt == null) setBrief(null)
     if (requestMandateOverride) setMandateOverride("")
     setPendingClarification(null)
     useAgentRunStore.getState().startRun(caseId, activeThreadId, prompt)
+    if (resumeRunId) useAgentRunStore.getState().updateRun(caseId, { runId: resumeRunId, statusText: "Resuming saved work" })
     setToolTrace([])
     setActivityTrail([])
-    setMessages((current) => [
+    if (!resumeRunId) setMessages((current) => [
       ...current,
       { id: optimisticId, role: "user", content: prompt, pending: true },
     ])
 
     let streamedRunId: string | null = null
+    let streamThreadId = activeThreadIdRef.current
     let ended = false
     try {
       await agentAPI.streamMessage(
         {
           caseId,
           message: prompt,
+          resumeRunId,
           threadId: activeThreadId,
           caseLayer,
           mandateOverride: requestMandateOverride ? { perspective: requestMandateOverride } : undefined,
@@ -806,9 +820,11 @@ export function AgentPage() {
           ...modelParams(modelChoices.find((choice) => choice.key === modelKey)),
         },
         (event) => {
+          const viewingRun = activeThreadIdRef.current === streamThreadId
           if (event.type === "run_started") {
             streamedRunId = event.run_id
-            setActiveThreadId(event.thread_id)
+            streamThreadId = event.thread_id
+            if (viewingRun) { activeThreadIdRef.current = event.thread_id; setActiveThreadId(event.thread_id) }
             useAgentRunStore.getState().updateRun(caseId, {
               threadId: event.thread_id,
               runId: event.run_id,
@@ -818,7 +834,7 @@ export function AgentPage() {
             useAgentRunStore.getState().updateRun(caseId, {
               statusText: "Investigating the case",
             })
-            setMessages((current) =>
+            if (viewingRun) setMessages((current) =>
               current.map((message) =>
                 message.id === optimisticId
                   ? {
@@ -840,7 +856,7 @@ export function AgentPage() {
           }
 
           if (event.type === "activity") {
-            setActivityTrail((current) => upsertActivity(current, event.activity))
+            if (viewingRun) setActivityTrail((current) => upsertActivity(current, event.activity))
             if (event.activity.phase === "plan") {
               useAgentRunStore.getState().updateRun(caseId, {
                 statusText: event.activity.title,
@@ -871,8 +887,8 @@ export function AgentPage() {
           }
 
           if (event.type === "tool_result") {
-            setToolTrace((current) => [...current, event.tool])
-            setActivityTrail((current) =>
+            if (viewingRun) setToolTrace((current) => [...current, event.tool])
+            if (viewingRun) setActivityTrail((current) =>
               upsertActivity(current, {
                 ...(event.tool.activity ?? describeToolActivity(event.tool)),
                 id: event.tool.id,
@@ -893,7 +909,7 @@ export function AgentPage() {
           }
 
           if (event.type === "artifact") {
-            setArtifacts((current) => {
+            if (viewingRun) setArtifacts((current) => {
               const next = [...current.filter((artifact) => artifact.id !== event.artifact.id), event.artifact]
               setSelectedArtifactId((selected) => selected ?? event.artifact.id)
               return next
@@ -904,7 +920,7 @@ export function AgentPage() {
           }
 
           if (event.type === "clarification") {
-            setPendingClarification(event.clarification)
+            if (viewingRun) setPendingClarification(event.clarification)
             useAgentRunStore.getState().updateRun(caseId, {
               statusText: "Clarification needed",
             })
@@ -918,6 +934,7 @@ export function AgentPage() {
 
           if (event.type === "done") {
             const response = event.response
+            if (viewingRun) {
             setActiveThreadId(response.thread_id)
             setMessages((current) => [
               ...current.map((message) =>
@@ -940,13 +957,14 @@ export function AgentPage() {
             setPendingClarification(null)
             setActivityTrail([])
             if (response.artifacts.length > 0) {
-              setArtifacts(response.artifacts)
-              setSelectedArtifactId(response.artifacts[0]?.id ?? null)
+              setArtifacts((current) => [...current.filter((a) => !response.artifacts.some((next) => next.id === a.id)), ...response.artifacts])
+              setSelectedArtifactId(latestArtifactVersion(response.artifacts)?.id ?? null)
             }
             setToolTrace(response.tool_trace)
             setMandateUsage(response.mandate)
+            }
             ended = true
-            useAgentRunStore.getState().finishRun(caseId, "completed")
+            useAgentRunStore.getState().finishRun(caseId, response.status === "needs_revision" ? "needs_revision" : "completed")
             announce(caseId, {
               kind: "agent-run-done",
               threadId: response.thread_id,
@@ -990,14 +1008,16 @@ export function AgentPage() {
     }
   }
 
-  // A run whose worker stopped beating will not finish: Retry asks the same question again in its thread.
+  // Continue from the same durable checkpoint when the original run is known.
   const [retryQuestion, setRetryQuestion] = useState<string | null>(null)
+  const [resumeId, setResumeId] = useState<string | undefined>()
   const dismissStoppedRun = () => {
     if (caseId) useAgentRunStore.getState().clearRun(caseId)
   }
   const retryStoppedRun = () => {
     if (!caseId || !sharedRun?.inputMessage) return
     const question = sharedRun.inputMessage
+    setResumeId(sharedRun.runId || undefined)
     if (sharedRun.threadId) setActiveThreadId(sharedRun.threadId)
     useAgentRunStore.getState().clearRun(caseId)
     setRetryQuestion(question)
@@ -1007,7 +1027,8 @@ export function AgentPage() {
   useEffect(() => {
     if (!retryQuestion || isLoading) return
     setRetryQuestion(null)
-    void sendMessage(retryQuestion)
+    void sendMessage(retryQuestion, undefined, resumeId)
+    setResumeId(undefined)
     // sendMessage is re-created each render; the question is what triggers the retry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryQuestion, isLoading])
@@ -1081,7 +1102,7 @@ export function AgentPage() {
       <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
         <ResizablePanel id="agent-conversation" order={1} defaultSize={58} minSize={36}>
           <section className="flex h-full min-w-0 flex-col">
-            <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <header className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex size-8 items-center justify-center rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
                   <Bot className="size-4" />
@@ -1095,7 +1116,7 @@ export function AgentPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 {caseLayer === "significant" ? (
                   <Badge
                     variant="outline"
@@ -1187,7 +1208,7 @@ export function AgentPage() {
                     <p className="mt-1 text-sm text-muted-foreground">
                       {caseLayer === "significant"
                         ? "It will investigate only the entities and induced relationships in your Significant layer."
-                        : "It can search the graph, inspect documents, run safe read-only Cypher, and build focused views."}
+                        : "Ask for case research, a saved finding, a detailed report, a workbook, a presentation or an interactive analysis."}
                     </p>
                     {caseId && caseLayer !== "significant" && (
                       <div className="mt-5">
@@ -1213,18 +1234,18 @@ export function AgentPage() {
                       showInvestigationTrail={showInvestigationTrail}
                       onClarificationAnswer={
                         message.id === activeClarificationMessageId && !isLoading
-                          ? (answer) => sendMessage(answer)
+                          ? (answer) => sendMessage(answer, undefined, /^continue$/i.test(answer.trim()) && message.clarification?.context.reason === "tool_budget_exhausted" ? message.clarification.pending_run_id : undefined)
                           : undefined
                       }
                       onRetry={
-                        message.retryQuestion && !isLoading ? () => setRetryQuestion(message.retryQuestion ?? null) : undefined
+                        message.retryQuestion && !isLoading ? () => { setResumeId(message.runId ?? undefined); setRetryQuestion(message.retryQuestion ?? null) } : undefined
                       }
                     />
                   ))}
                   {!isLoading && unanswered !== null && (
-                    <AgentUnansweredNote onRetry={() => setRetryQuestion(unanswered)} />
+                    <AgentUnansweredNote resumable={!!messages[messages.length - 1]?.runId} onRetry={() => { setResumeId(messages[messages.length - 1]?.runId ?? undefined); setRetryQuestion(unanswered) }} />
                   )}
-                  {isLoading && sharedRun && (
+                  {isLoading && viewingRunningThread && sharedRun && (
                     <AgentRunProgress
                       run={sharedRun}
                       onStop={activeRunId ? cancelActiveRun : undefined}
@@ -1232,7 +1253,7 @@ export function AgentPage() {
                       onDismiss={dismissStoppedRun}
                     />
                   )}
-                  {isLoading && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0) && (
+                  {isLoading && viewingRunningThread && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0) && (
                     <InvestigationTrail
                       activities={activityTrail}
                       trace={visibleToolTrace}
@@ -1249,11 +1270,12 @@ export function AgentPage() {
             )}
 
             <div className="border-t border-border bg-background p-4">
+              {isLoading && !viewingRunningThread && sharedRun?.threadId && <div role="status" className="mx-auto mb-3 flex max-w-3xl flex-wrap items-center gap-2 rounded border border-border p-2 text-xs"><span>The agent is working in another conversation. You can read and export this saved work.</span><Button size="sm" variant="outline" onClick={() => { if (sharedRun.threadId) void loadThread(sharedRun.threadId) }}>View running conversation</Button></div>}
               {composerClarification && (
                 <div className="mx-auto mb-3 max-w-3xl">
                   <ClarificationPanel
                     clarification={composerClarification}
-                    onAnswer={(answer) => sendMessage(answer)}
+                    onAnswer={(answer) => sendMessage(answer, undefined, /^continue$/i.test(answer.trim()) && composerClarification.context.reason === "tool_budget_exhausted" ? composerClarification.pending_run_id : undefined)}
                     disabled={isLoading}
                   />
                 </div>
@@ -1270,7 +1292,9 @@ export function AgentPage() {
                   />
                 </div>
               )}
-              <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-lg border border-border bg-card p-2 shadow-sm">
+              {revisionNeeded && <p role="status" className="mx-auto mb-2 max-w-3xl rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">The draft is saved, but checks found issues that need revision. Review the response and artifact notes before using it.</p>}
+              <AgentBriefAttachment key={activeThreadId ?? "new-thread"} brief={brief} onChange={setBrief} onBusyChange={setBriefLoading} disabled={isLoading} />
+              <div className="mx-auto flex min-w-0 max-w-3xl flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-2 shadow-sm">
                 {messages.length > 0 && caseLayer !== "significant" && (
                   <Button
                     size="sm"
@@ -1291,13 +1315,14 @@ export function AgentPage() {
                       sendMessage()
                     }
                   }}
-                  className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
-                  placeholder="Ask the agent to answer, explore, or build a focused view..."
+                  className="order-first max-h-40 min-h-16 w-full min-w-0 basis-full resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
+                  aria-label="Agent request"
+                  placeholder="Describe the work and the report or artifact you need…"
                   rows={1}
                   disabled={isLoading}
                 />
                 <AgentModelPicker choices={modelChoices} value={modelKey} onChange={setModelKey} disabled={isLoading} />
-                <Button size="icon" onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send agent prompt">
+                <Button size="icon" className="ml-auto shrink-0" onClick={() => sendMessage()} disabled={(!input.trim() && !brief) || isLoading || briefLoading} aria-label="Send agent prompt">
                   {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                 </Button>
               </div>
@@ -1313,8 +1338,11 @@ export function AgentPage() {
             selectedArtifact={selectedArtifact}
             selectedArtifactId={selectedArtifactId}
             onSelectArtifact={handleArtifactSelect}
-            exportEnabled={!isLoading}
+            exportEnabled={!isLoading || !viewingRunningThread}
+            agentBusy={isLoading}
             onEntitySelect={handleEntitySelect}
+            onSaved={(artifact) => { setArtifacts((current) => [...current.filter((a) => a.id !== artifact.id), artifact]); handleArtifactSelect(artifact) }}
+            onRevise={(message) => { void sendMessage(message) }}
           />
         </ResizablePanel>
 
@@ -1410,7 +1438,7 @@ function MessageBubble({
         {onRetry && (
           <Button type="button" size="sm" variant="secondary" className="mt-2 h-7 px-2 text-xs" onClick={onRetry}>
             <RotateCcw className="mr-1 size-3" />
-            Retry
+            {message.runId ? "Resume run" : "Ask again"}
           </Button>
         )}
         <div className="mt-1 text-[11px] text-muted-foreground" data-testid="agent-answer-meta">
@@ -1824,88 +1852,42 @@ function ToolTrace({ trace }: { trace: AgentToolTraceItem[] }) {
   )
 }
 
-function ArtifactWorkspace({
-  artifacts,
-  selectedArtifact,
-  selectedArtifactId,
-  onSelectArtifact,
-  exportEnabled,
-  onEntitySelect,
-}: {
-  artifacts: AgentArtifact[]
-  selectedArtifact: AgentArtifact | null
-  selectedArtifactId: string | null
-  onSelectArtifact: (artifact: AgentArtifact) => void
-  exportEnabled: boolean
-  onEntitySelect: (key: string) => void
+export function ArtifactWorkspace({ artifacts, selectedArtifact, selectedArtifactId, onSelectArtifact, exportEnabled, onEntitySelect, onSaved, onRevise, agentBusy = false }: {
+  artifacts: AgentArtifact[]; selectedArtifact: AgentArtifact | null; selectedArtifactId: string | null;
+  onSelectArtifact: (artifact: AgentArtifact) => void; exportEnabled: boolean; onEntitySelect: (key: string) => void;
+  onSaved: (artifact: AgentArtifact) => void; onRevise: (message: string) => void
+  agentBusy?: boolean
 }) {
-  return (
-    <section className="flex h-full min-w-0 flex-col bg-muted/10">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <PanelRight className="size-4 text-muted-foreground" />
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">
-              Agent artifacts
-            </h2>
-            <p className="truncate text-xs text-muted-foreground">
-              Focused views generated from tool results
-            </p>
-          </div>
-        </div>
-      </header>
-
-      {artifacts.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-6">
-          <div className="max-w-sm text-center">
-            <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-lg border border-dashed border-border">
-              <GitBranch className="size-4 text-muted-foreground" />
-            </div>
-            <h3 className="text-sm font-medium text-foreground">
-              No artifact yet
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Ask for a graph, table, chart, report, or map view.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="flex gap-2 overflow-x-auto border-b border-border px-3 py-2">
-            {artifacts.map((artifact) => {
-              const Icon = artifactIcons[artifact.type] ?? FileText
-              return (
-                <button
-                  key={artifact.id}
-                  type="button"
-                  onClick={() => onSelectArtifact(artifact)}
-                  className={cn(
-                    "flex min-w-36 items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
-                    selectedArtifactId === artifact.id
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Icon className="size-3.5 shrink-0" />
-                  <span className="truncate font-medium">{artifact.title}</span>
-                </button>
-              )
-            })}
-          </div>
-          <div className="flex min-h-0 flex-1 px-4 py-3">
-            {selectedArtifact && (
-              <ArtifactRenderer
-                artifact={selectedArtifact}
-                artifacts={artifacts}
-                exportEnabled={exportEnabled}
-                onEntitySelect={onEntitySelect}
-              />
-            )}
-          </div>
-        </>
-      )}
-    </section>
-  )
+  const [query, setQuery] = useState("")
+  const [showVersions, setShowVersions] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const latest = useMemo(() => {
+    const byId = new Map<string, AgentArtifact>()
+    for (const artifact of artifacts) {
+      const key = artifactIdentity(artifact)
+      if (!byId.has(key) || artifactRevision(byId.get(key)!) < artifactRevision(artifact)) byId.set(key, artifact)
+    }
+    return [...byId.values()]
+  }, [artifacts])
+  const visible = (showVersions ? artifacts : latest).filter((a) => `${a.title} ${a.type} ${a.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  return <section aria-label="Artifact workspace" className={cn("flex min-w-0 flex-col bg-muted/10", focused ? "fixed inset-3 z-40 rounded-lg border border-border bg-background shadow-xl" : "h-full")}>
+    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <div><h2 className="text-sm font-semibold">Agent artifacts</h2><p className="text-xs text-muted-foreground">{latest.length} saved deliverables · {artifacts.length} versions</p></div>
+      <Button size="sm" variant="outline" onClick={() => setFocused(!focused)}>{focused ? "Return to conversation" : "Expand workspace"}</Button>
+    </header>
+    {!artifacts.length ? <div className="flex flex-1 items-center justify-center p-6 text-center"><div><FileText className="mx-auto mb-3 size-8 text-muted-foreground" /><h3 className="text-sm font-medium">Your work appears here</h3><p className="mt-2 max-w-sm text-xs text-muted-foreground">Ask for a detailed report, workbook, presentation, diagram or interactive analysis.</p></div></div> : <>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <Search className="size-4 text-muted-foreground" /><input aria-label="Search saved artifacts" placeholder="Find any saved artifact…" value={query} onChange={(e) => setQuery(e.target.value)} className="h-8 min-w-24 flex-1 rounded border border-border bg-background px-2 text-sm" />
+        <label className="flex items-center gap-1 text-xs text-muted-foreground"><input type="checkbox" checked={showVersions} onChange={(e) => setShowVersions(e.target.checked)} />All versions</label>
+      </div>
+      <div className="flex max-h-32 shrink-0 flex-wrap gap-2 overflow-auto border-b border-border px-3 py-2" aria-label="Saved artifact library">
+        {visible.map((artifact) => { const Icon = artifactIcons[artifact.type] ?? FileText; return <button key={artifact.id} type="button" onClick={() => onSelectArtifact(artifact)} aria-pressed={selectedArtifactId === artifact.id} className={cn("flex max-w-80 items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs", selectedArtifactId === artifact.id ? "border-primary/40 bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground")}><Icon className="size-3.5 shrink-0" /><span className="truncate font-medium">{artifact.title}</span><span className="shrink-0 text-[10px]">v{artifactRevision(artifact)}</span></button> })}
+        {!visible.length && <p className="p-2 text-xs text-muted-foreground">No matching artifacts. Clear the search to see all saved work.</p>}
+      </div>
+      {selectedArtifact && <ArtifactRevisionControls key={selectedArtifact.id} artifact={selectedArtifact} artifacts={artifacts} disabled={!exportEnabled} agentBusy={agentBusy} onSaved={onSaved} onSelect={(version) => { if (artifacts.some((a) => a.id === version.id)) onSelectArtifact(version); else onSaved(version) }} onRevise={onRevise} />}
+      <div className="flex min-h-0 min-w-0 flex-1 px-3 py-3">{selectedArtifact && <ArtifactRenderer key={selectedArtifact.id} artifact={selectedArtifact} artifacts={artifacts} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />}</div>
+    </>}
+  </section>
 }
 
 function ArtifactRenderer({
@@ -1919,12 +1901,12 @@ function ArtifactRenderer({
   exportEnabled: boolean
   onEntitySelect: (key: string) => void
 }) {
-  if (artifact.type === "graph") return <GraphArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
-  if (artifact.type === "table") return <TableArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
+  if (artifact.type === "graph" || artifact.type === "diagram") return <GraphArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
+  if (["table", "matrix", "timeline"].includes(artifact.type)) return <TableArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
   if (artifact.type === "map") return <MapArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
   if (artifact.type === "report") return <ReportArtifact artifact={artifact} artifacts={artifacts} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
   if (artifact.type === "chart") return <ChartArtifact artifact={artifact} exportEnabled={exportEnabled} />
-  return <pre className="h-full overflow-auto text-xs">{JSON.stringify(artifact.data, null, 2)}</pre>
+  return <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}><ExtendedArtifact artifact={artifact} renderEmbed={(embed, index) => <ReportEmbedBlock key={index} embed={embed} artifacts={artifacts} onEntitySelect={onEntitySelect} />} /></ArtifactShell>
 }
 
 function ArtifactShell({
@@ -1942,7 +1924,7 @@ function ArtifactShell({
   const [isDownloading, setIsDownloading] = useState(false)
   const { id: artifactCaseId } = useParams()
   const exportFormats: AgentArtifactExportFormat[] =
-    artifact.type === "report" ? ["pdf", "docx"] : ["csv"]
+    artifact.type === "report" ? ["pdf", "docx", "html", "pptx"] : artifact.type === "presentation" ? ["pptx", "pdf", "html", "docx"] : artifact.type === "interactive" ? ["html", "pdf", "docx", "csv", "xlsx"] : artifact.type === "workbook" ? ["xlsx", "pdf", "html", "docx"] : ["table", "matrix", "timeline"].includes(artifact.type) ? ["xlsx", "csv", "pdf", "docx", "html"] : ["svg", "png", "pdf", "docx", "html", "csv", "xlsx"]
 
   const downloadArtifact = async (format: AgentArtifactExportFormat) => {
     if (!exportEnabled || isDownloading) return
@@ -1962,15 +1944,15 @@ function ArtifactShell({
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border/70 px-1 pb-2">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/70 px-1 pb-2">
         <div className="flex min-w-0 items-center gap-2">
           <Icon className="size-4 text-muted-foreground" />
           <h3 className="truncate text-sm font-semibold text-foreground">
             {artifact.title}
           </h3>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
           {headerActions}
           {artifactCaseId && SAVED_MESSAGE_ID.test(artifact.id) && (
             <AddToTheory caseId={artifactCaseId} surface="agent" label="Theory…" items={[{ target_type: "agent_artifact", target_id: artifact.id, target_label: `Agent ${artifact.type}: ${artifact.title}` }]} />
@@ -2277,7 +2259,7 @@ function GraphArtifact({
     <ArtifactShell
       artifact={artifact}
       exportEnabled={exportEnabled}
-      headerActions={
+      headerActions={artifact.type === "graph" &&
         <Button
           type="button"
           variant="ghost"
@@ -2305,6 +2287,7 @@ function GraphArtifact({
             width={dimensions.width}
             height={dimensions.height}
             backgroundColor={canvasColors.background}
+            nodeLabel={(node) => { const label = document.createElement("div"); label.textContent = node.label; return label.innerHTML }}
             nodeCanvasObject={paintNode}
             nodePointerAreaPaint={(node: AgentForceNode, color, ctx) => {
               const radius = getArtifactNodeRadius(node, graphData.nodes.length)
@@ -2315,7 +2298,7 @@ function GraphArtifact({
             }}
             linkCanvasObject={paintLink}
             linkDirectionalParticles={0}
-            onNodeClick={(node) => onEntitySelect(node.key)}
+            onNodeClick={(node) => { if (artifact.type === "graph") onEntitySelect(node.key) }}
             onEngineStop={() => graphRef.current?.zoomToFit(450, layout.zoomPadding)}
             cooldownTime={layout.cooldownTime}
             warmupTicks={layout.warmupTicks}
@@ -2329,6 +2312,7 @@ function GraphArtifact({
         <Stat label="Nodes" value={graphData.nodes.length} />
         <Stat label="Relationships" value={graphData.links.length} />
       </div>
+      <details className="mt-3 max-h-72 shrink-0 overflow-auto text-xs"><summary className="cursor-pointer">All nodes and relationships</summary><ArtifactDataTable data={{ rows: rawNodes }} label={`${artifact.title} nodes`} /><ArtifactDataTable data={{ rows: rawLinks }} label={`${artifact.title} relationships`} /></details>
     </ArtifactShell>
   )
 }
@@ -2528,118 +2512,24 @@ function ChartArtifact({
   )
 }
 
-function ReportArtifact({
-  artifact,
-  artifacts,
-  exportEnabled,
-  onEntitySelect,
-}: {
-  artifact: AgentArtifact
-  artifacts: AgentArtifact[]
-  exportEnabled: boolean
-  onEntitySelect: (key: string) => void
+function ReportArtifact({ artifact, artifacts, exportEnabled, onEntitySelect }: {
+  artifact: AgentArtifact; artifacts: AgentArtifact[]; exportEnabled: boolean; onEntitySelect: (key: string) => void
 }) {
-  const sections = asArray<Dict>(artifact.data.sections)
-  const includedItems = listText(artifact.data.included_items)
-  const openQuestions = listText(artifact.data.open_questions)
-  const purpose = valueText(artifact.data.purpose).trim()
-  const scope = valueText(artifact.data.scope).trim()
-  const audience = valueText(artifact.data.audience).trim()
-  const revisionNote = valueText(artifact.metadata.revision_note).trim()
-
-  return (
-    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
-      <article className="min-h-0 flex-1 overflow-y-auto px-1 pb-6 pr-3">
-        <div className="mx-auto max-w-3xl">
-          <div className="border-b border-border/70 pb-4">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-              <span>Report draft</span>
-              {audience && <span className="normal-case tracking-normal">For {audience}</span>}
-            </div>
-            {purpose && (
-              <p className="mt-2 text-sm leading-6 text-foreground">
-                {purpose}
-              </p>
-            )}
-            {(scope || revisionNote) && (
-              <div className="mt-3 space-y-2 border-l-2 border-amber-500/70 pl-3 text-xs leading-5 text-muted-foreground">
-                {scope && <p>{scope}</p>}
-                {revisionNote && <p>Revision: {revisionNote}</p>}
-              </div>
-            )}
-            {includedItems.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {includedItems.slice(0, 12).map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground"
-                  >
-                    {item}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {sections.length === 0 ? (
-            <div className="py-8">
-              <SmallEmpty label="No report sections returned" />
-            </div>
-          ) : (
-            <div className="divide-y divide-border/70">
-              {sections.map((section, index) => {
-                const embeds = asArray<Dict>(section.embeds)
-                return (
-                  <section key={valueText(section.id || section.heading || index)} className="py-5">
-                    <h2 className="text-base font-semibold text-foreground">
-                      {valueText(section.heading || `Section ${index + 1}`)}
-                    </h2>
-                    <AgentMarkdown
-                      content={valueText(section.content)}
-                      className="mt-2 max-w-none text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
-                    />
-                    {embeds.length > 0 && (
-                      <div className="mt-4 space-y-4">
-                        {embeds.map((embed, embedIndex) => (
-                          <ReportEmbedBlock
-                            key={valueText(embed.artifact_id || embedIndex)}
-                            embed={embed}
-                            artifacts={artifacts}
-                            onEntitySelect={onEntitySelect}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                )
-              })}
-            </div>
-          )}
-
-          {openQuestions.length > 0 && (
-            <section className="mt-2 border-t border-border/70 pt-5">
-              <h2 className="text-sm font-semibold text-foreground">Open questions</h2>
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-6 text-muted-foreground">
-                {openQuestions.map((question) => (
-                  <li key={question}>{question}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
-      </article>
-    </ArtifactShell>
-  )
+  return <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+    <ArtifactReportDocument artifact={artifact} renderEmbed={(embed, index) => <ReportEmbedBlock key={valueText(embed.artifact_id) || index} embed={embed} artifacts={artifacts} onEntitySelect={onEntitySelect} />} />
+  </ArtifactShell>
 }
 
 function ReportEmbedBlock({
   embed,
   artifacts,
   onEntitySelect,
+  ancestors = [],
 }: {
   embed: Dict
   artifacts: AgentArtifact[]
   onEntitySelect: (key: string) => void
+  ancestors?: Dict[]
 }) {
   const artifact = reportEmbeddedArtifact(embed, artifacts)
   const caption = valueText(embed.caption).trim()
@@ -2657,7 +2547,10 @@ function ReportEmbedBlock({
     )
   }
 
-  if (artifact.type === "graph") {
+  if (ancestors.includes(artifact.data)) return <p className="my-3 text-xs text-muted-foreground">{artifact.title} refers back to an enclosing artifact. Open its saved version from the artifact library.</p>
+  const renderNested = (next: Dict, index: number) => <ReportEmbedBlock key={index} embed={next} artifacts={artifacts} onEntitySelect={onEntitySelect} ancestors={[...ancestors, artifact.data]} />
+  if (artifact.type === "report") return <figure className="my-4"><ArtifactReportDocument artifact={artifact} renderEmbed={renderNested} /></figure>
+  if (artifact.type === "graph" || artifact.type === "diagram") {
     return (
       <ReportGraphEmbed
         artifact={artifact}
@@ -2676,6 +2569,8 @@ function ReportEmbedBlock({
     )
   }
 
+  if (artifact.type === "map") return <div className="my-3 h-[38rem]"><MapArtifact artifact={artifact} exportEnabled={false} onEntitySelect={onEntitySelect} /></div>
+  if (["interactive", "presentation", "workbook"].includes(artifact.type)) return <figure className="my-4"><figcaption className="mb-2 text-xs font-medium">{artifact.title}</figcaption><ExtendedArtifact artifact={artifact} renderEmbed={renderNested} /></figure>
   return (
     <ReportTableEmbed
       artifact={artifact}
@@ -2711,73 +2606,12 @@ function ReportChartEmbed({
   )
 }
 
-function ReportTableEmbed({
-  artifact,
-  caption,
-  onEntitySelect,
-}: {
-  artifact: AgentArtifact
-  caption: string
-  onEntitySelect: (key: string) => void
-}) {
-  const rows = asArray<Dict>(artifact.data.rows)
-  const columns = reportColumns(artifact.data, rows).slice(0, 8)
-  return (
-    <figure className="border-y border-border/70 py-3">
-      <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span className="font-semibold text-foreground">Table: {artifact.title}</span>
-        <span className="text-muted-foreground">{rows.length} rows</span>
-      </figcaption>
-      {caption && <p className="mt-1 text-xs leading-5 text-muted-foreground">{caption}</p>}
-      {rows.length === 0 ? (
-        <div className="mt-3">
-          <SmallEmpty label="No embedded table rows" />
-        </div>
-      ) : (
-        <div className="mt-3 max-h-80 overflow-auto">
-          <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
-            <thead className="sticky top-0 z-10 bg-background/95 backdrop-blur">
-              <tr>
-                {columns.map((column) => (
-                  <th
-                    key={valueText(column.key)}
-                    className="whitespace-nowrap border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground"
-                  >
-                    {valueText(column.label || column.key)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, 12).map((row, rowIndex) => {
-                const key = entityKeyFromRecord(row)
-                return (
-                  <tr
-                    key={rowIndex}
-                    onClick={() => key && onEntitySelect(key)}
-                    className={cn(key && "cursor-pointer hover:bg-muted/45")}
-                  >
-                    {columns.map((column) => {
-                      const cellText = valueText(row[valueText(column.key)]).slice(0, 160)
-                      return (
-                        <td
-                          key={valueText(column.key)}
-                          className="max-w-72 truncate border-b border-border/50 px-3 py-2 align-top leading-5 text-muted-foreground"
-                          title={cellText}
-                        >
-                          {cellText}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </figure>
-  )
+function ReportTableEmbed({ artifact, caption, onEntitySelect }: { artifact: AgentArtifact; caption: string; onEntitySelect: (key: string) => void }) {
+  return <figure className="border-y border-border/70 py-3">
+    <figcaption className="mb-3 text-xs font-semibold">Table: {artifact.title}</figcaption>
+    {caption && <p className="mb-3 text-xs text-muted-foreground">{caption}</p>}
+    <ArtifactDataTable data={artifact.data} label={artifact.title} onRowSelect={(row) => { const key = entityKeyFromRecord(row); if (key) onEntitySelect(key) }} />
+  </figure>
 }
 
 function ReportGraphEmbed({
@@ -2791,7 +2625,7 @@ function ReportGraphEmbed({
 }) {
   const rawNodes = asArray<Dict>(artifact.data.nodes)
   const rawLinks = asArray<Dict>(artifact.data.links)
-  const nodes = rawNodes.slice(0, 18).map((node, index) => {
+  const nodes = rawNodes.map((node, index) => {
     const key = valueText(node.key || node.id || `node-${index}`)
     return {
       key,
@@ -2805,18 +2639,17 @@ function ReportGraphEmbed({
     endpointLookup.set(node.label, node.key)
   })
   const links = rawLinks
-    .slice(0, 36)
     .map((link) => ({
       source: endpointLookup.get(valueText(link.source)) ?? valueText(link.source),
       target: endpointLookup.get(valueText(link.target)) ?? valueText(link.target),
     }))
     .filter((link) => endpointLookup.has(link.source) && endpointLookup.has(link.target))
 
-  const width = 560
-  const height = 230
+  const width = Math.max(560, nodes.length * 25)
+  const height = Math.max(230, nodes.length * 18)
   const centerX = width / 2
   const centerY = height / 2
-  const radius = nodes.length <= 2 ? 54 : Math.min(92, 46 + nodes.length * 2.6)
+  const radius = nodes.length <= 2 ? 54 : Math.min(width, height) / 2 - 65
   const positions = new Map(
     nodes.map((node, index) => {
       if (nodes.length === 1) return [node.key, { x: centerX, y: centerY }]
@@ -2875,17 +2708,19 @@ function ReportGraphEmbed({
             return (
               <g
                 key={node.key}
-                role="button"
-                tabIndex={0}
-                className="cursor-pointer outline-none"
-                onClick={() => onEntitySelect(node.key)}
+                role={artifact.type === "graph" ? "button" : undefined}
+                tabIndex={artifact.type === "graph" ? 0 : undefined}
+                aria-label={node.label}
+                className={artifact.type === "graph" ? "cursor-pointer outline-none" : ""}
+                onClick={() => { if (artifact.type === "graph") onEntitySelect(node.key) }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
+                  if (artifact.type === "graph" && (event.key === "Enter" || event.key === " ")) {
                     event.preventDefault()
                     onEntitySelect(node.key)
                   }
                 }}
               >
+                <title>{node.label}</title>
                 <circle
                   cx={position.x}
                   cy={position.y}
@@ -2908,71 +2743,16 @@ function ReportGraphEmbed({
           })}
         </svg>
       )}
+      <details className="mt-3 text-xs"><summary className="cursor-pointer">All nodes and relationships</summary><ArtifactDataTable data={{ rows: rawNodes }} label={`${artifact.title} nodes`} /><ArtifactDataTable data={{ rows: rawLinks }} label={`${artifact.title} relationships`} /></details>
     </figure>
   )
 }
 
-function TableArtifact({
-  artifact,
-  exportEnabled,
-  onEntitySelect,
-}: {
-  artifact: AgentArtifact
-  exportEnabled: boolean
-  onEntitySelect: (key: string) => void
-}) {
-  const columns = asArray<Dict>(artifact.data.columns)
-  const rows = asArray<Dict>(artifact.data.rows)
-  return (
-    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
-      <AgentArtifactNotes artifact={artifact} />
-      {rows.length === 0 ? (
-        <SmallEmpty label="No rows returned" />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
-            <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
-              <tr>
-                {columns.map((column) => (
-                  <th key={valueText(column.key)} className="whitespace-nowrap border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground">
-                    {valueText(column.label || column.key)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, rowIndex) => {
-                const key = entityKeyFromRecord(row)
-                return (
-                  <tr
-                    key={rowIndex}
-                    onClick={() => key && onEntitySelect(key)}
-                    className={cn(
-                      "text-foreground",
-                      key && "cursor-pointer hover:bg-muted/45"
-                    )}
-                  >
-                    {columns.map((column) => {
-                      const cellText = valueText(row[valueText(column.key)]).slice(0, 180)
-                      return (
-                        <td
-                          key={valueText(column.key)}
-                          className="max-w-80 truncate border-b border-border/50 px-3 py-2 align-top leading-5 text-muted-foreground"
-                          title={cellText}
-                        >
-                          {cellText}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </ArtifactShell>
-  )
+function TableArtifact({ artifact, exportEnabled, onEntitySelect }: { artifact: AgentArtifact; exportEnabled: boolean; onEntitySelect: (key: string) => void }) {
+  return <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+    <AgentArtifactNotes artifact={artifact} />
+    <div className="min-h-0 flex-1 overflow-auto"><ArtifactDataTable data={artifact.data} label={artifact.title} onRowSelect={(row) => { const key = entityKeyFromRecord(row); if (key) onEntitySelect(key) }} /></div>
+  </ArtifactShell>
 }
 
 function MapArtifact({
@@ -2986,7 +2766,9 @@ function MapArtifact({
 }) {
   const { id: caseId } = useParams()
   const navigate = useNavigate()
-  const locations = asArray<Dict>(artifact.data.locations)
+  const locations = asArray<Dict>(artifact.data.locations ?? artifact.data.points ?? artifact.data.rows)
+    .map((location): Dict => ({ ...location, name: location.name ?? location.label,
+      latitude: location.latitude ?? location.lat, longitude: location.longitude ?? location.lng ?? location.lon }))
   // XF-12: a phone point carries its rec:// link and opens its record; an entity opens in the graph.
   const open = (raw: Dict) => {
     const rec = typeof raw.rec === "string" ? raw.rec.replace(/^rec:\/\//, "") : ""
@@ -3000,12 +2782,14 @@ function MapArtifact({
       latitude: Number(location.latitude),
       longitude: Number(location.longitude),
     }))
-    .filter((location) => Number.isFinite(location.latitude) && Number.isFinite(location.longitude))
+    .filter((location) => location.raw.latitude != null && location.raw.longitude != null
+      && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
+      && Math.abs(location.latitude) <= 90 && Math.abs(location.longitude) <= 180)
 
-  const minLat = Math.min(...coords.map((location) => location.latitude), 0)
-  const maxLat = Math.max(...coords.map((location) => location.latitude), 1)
-  const minLng = Math.min(...coords.map((location) => location.longitude), 0)
-  const maxLng = Math.max(...coords.map((location) => location.longitude), 1)
+  const minLat = coords.length ? Math.min(...coords.map((location) => location.latitude)) : 0
+  const maxLat = coords.length ? Math.max(...coords.map((location) => location.latitude)) : 1
+  const minLng = coords.length ? Math.min(...coords.map((location) => location.longitude)) : 0
+  const maxLng = coords.length ? Math.max(...coords.map((location) => location.longitude)) : 1
   const latSpan = Math.max(maxLat - minLat, 0.001)
   const lngSpan = Math.max(maxLng - minLng, 0.001)
 
@@ -3015,8 +2799,8 @@ function MapArtifact({
       <div className="relative min-h-[320px] flex-1 overflow-hidden rounded-md border border-border bg-slate-950">
         <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:32px_32px]" />
         {coords.map((location, index) => {
-          const left = ((location.longitude - minLng) / lngSpan) * 86 + 7
-          const top = 93 - ((location.latitude - minLat) / latSpan) * 86
+          const left = maxLng === minLng ? 50 : ((location.longitude - minLng) / lngSpan) * 86 + 7
+          const top = maxLat === minLat ? 50 : 93 - ((location.latitude - minLat) / latSpan) * 86
           return (
             <button
               key={valueText(location.raw.key || index)}
@@ -3024,13 +2808,14 @@ function MapArtifact({
               className="absolute size-3 rounded-full bg-amber-400 shadow-[0_0_0_4px_rgba(227,59,76,.22)] outline-none ring-offset-2 ring-offset-slate-950 transition-transform hover:scale-125 focus-visible:ring-2 focus-visible:ring-amber-300"
               style={{ left: `${left}%`, top: `${top}%` }}
               title={valueText(location.raw.name || location.raw.key)}
+              aria-label={`Location ${index + 1}: ${valueText(location.raw.name || location.raw.key || "Unnamed location")}`}
               onClick={() => open(location.raw)}
             />
           )
         })}
       </div>
       <div className="mt-3 grid max-h-44 shrink-0 grid-cols-1 gap-2 overflow-y-auto pr-1">
-        {locations.slice(0, 5).map((location, index) => {
+        {locations.map((location, index) => {
           const key = entityKeyFromRecord(location)
           return (
             <button

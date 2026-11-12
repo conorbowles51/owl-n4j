@@ -72,6 +72,8 @@ class AgentService:
         user: User,
         request: AgentMessageRequest,
         live=None,
+        resume_run_id: UUID | None = None,
+        resume_claim: str | None = None,
     ):
         """``live`` (services.agent.live_runs.LiveRun): the channel a detached run reports its steps to as they start;
         without it the steps still reach the run's stored progress through the heartbeat."""
@@ -116,33 +118,66 @@ class AgentService:
             version_id=thread.mandate_version_id,
             override=request.mandate_override,
         )
-        user_message = storage.append_message(
-            db,
-            thread=thread,
-            role="user",
-            content=request.message,
-        )
+        from services.agent import durable_execution
+        resume_checkpoint = None
         feedback = self._proposal_feedback(db, request)
-        run = storage.create_run(
-            db,
-            thread=thread,
-            user=user,
-            provider=provider,
-            model_id=model.id,
-            input_message=request.message,
-            extra_metadata={
-                "artifact_preference": request.artifact_preference,
-                "case_layer": request.case_layer,
-                **self._workflow_metadata(request),
-                **({"all_cases": True} if request.all_cases else {}),
-                **({"proposal_feedback": feedback} if feedback else {}),
-                "model_choice": {"reasoning": choice.reasoning, "chosen_by_person": chosen,
-                                 "written_by": model_choice.written_by(model.name, choice.reasoning)},
-            },
-            mandate_override=mandate_context.override,
-            tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
-            **self._prompt_version(db),
-        )
+        if resume_run_id is not None:
+            run = storage.get_run_for_user(db, run_id=resume_run_id, user=user)
+            if run.thread_id != thread.id or run.case_id != request.case_id:
+                raise PermissionError("Saved work belongs to another conversation")
+            durable_execution.consume_resume_claim(db, run, resume_claim)
+            resume_checkpoint = (run.extra_metadata or {}).get("execution_checkpoint")
+            if not resume_checkpoint:
+                raise ValueError("This run has no saved checkpoint")
+            resume_checkpoint = dict(resume_checkpoint, billed_count=(run.extra_metadata or {}).get('execution_billed_count', 0))
+            if run.status == 'clarification_required':
+                resume_checkpoint = durable_execution.extend_budget_checkpoint(resume_checkpoint)
+            from postgres.models.agent import AgentMessage
+            user_message = db.query(AgentMessage).filter(AgentMessage.thread_id == thread.id,
+                AgentMessage.role == 'user', AgentMessage.run_id == run.id).first()
+            if user_message is None:
+                raise ValueError("The original question for this saved run could not be found")
+            run.status, run.error, run.completed_at = 'running', None, None
+            clear_cancel(str(run.id))
+        else:
+            user_message = storage.append_message(
+                db,
+                thread=thread,
+                role="user",
+                content=request.message,
+            )
+            feedback = self._proposal_feedback(db, request)
+            run = storage.create_run(
+                db,
+                thread=thread,
+                user=user,
+                provider=provider,
+                model_id=model.id,
+                input_message=request.message,
+                extra_metadata={
+                    "artifact_preference": request.artifact_preference,
+                    "case_layer": request.case_layer,
+                    **self._workflow_metadata(request),
+                    **({"all_cases": True} if request.all_cases else {}),
+                    **({"proposal_feedback": feedback} if feedback else {}),
+                    "model_choice": {"reasoning": choice.reasoning, "chosen_by_person": chosen,
+                                     "written_by": model_choice.written_by(model.name, choice.reasoning)},
+                },
+                mandate_override=mandate_context.override,
+                tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
+                **self._prompt_version(db),
+            )
+            user_message.run_id = run.id
+        import uuid
+        execution_lease = resume_claim or str(uuid.uuid4())
+        if resume_claim:
+            durable_execution.lock_execution(db, run, execution_lease)
+        task_specification = ((run.extra_metadata or {}).get('task_specification') if resume_run_id else None) or durable_execution.task_specification(db, thread, request)
+        if 'delivery_contract' not in task_specification:
+            from services.agent.completion_checks import delivery_contract
+            task_specification = {**task_specification, 'delivery_contract': delivery_contract(task_specification.get('instructions') or [request.message])}
+        durable_execution.write_metadata(db, run, {"execution_lease": execution_lease,
+            "task_specification": task_specification})
         db.commit()
         db.refresh(thread)
         db.refresh(user_message)
@@ -178,7 +213,7 @@ class AgentService:
         history = (
             [HumanMessage(content=request.message)]
             if request.case_layer == "significant"
-            else self._build_history(db, thread=thread, all_cases=request.all_cases)
+            else self._build_history(db, thread=thread, all_cases=request.all_cases, user=user)
         )
         runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key, reasoning=choice.reasoning)
         if request.fault_drill:
@@ -189,14 +224,14 @@ class AgentService:
         # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
         focus_plan, focus = self._question_focus(db, request)
         final_result: dict[str, Any] | None = None
-        collected_trace: list[dict[str, Any]] = []
+        collected_trace: list[dict[str, Any]] = list((resume_checkpoint or {}).get("trace", []))
 
         # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
         hidden_tools, offer_note = self._tools_not_offered(db, request)
         if hidden_tools:
             storage.update_run_metadata(db, run=run, metadata={"tools_not_offered": sorted(hidden_tools)})
             db.commit()
-        heartbeat = run_settle.RunHeartbeat(run.id)
+        heartbeat = run_settle.RunHeartbeat(run.id, lease=execution_lease)
         if live is not None:
             live.run_id = run_id
             live.on_progress_change = heartbeat.note_progress
@@ -214,9 +249,9 @@ class AgentService:
                 available_artifacts=(
                     []
                     if request.case_layer == "significant"
-                    else self._available_artifacts_for_runner(thread)
+                    else self._available_artifacts_for_runner(thread, all_cases=request.all_cases, db=db, user=user)
                 ),
-                should_cancel=lambda: is_cancelled(run_id),
+                should_cancel=lambda: is_cancelled(run_id) or heartbeat.lost_lease,
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block="\n\n".join(x for x in (self._prompt_block(mandate_context.block, request, feedback),
                                                                offer_note, focus_plan) if x),
@@ -226,6 +261,10 @@ class AgentService:
                 user_id=str(user.id),
                 all_cases=request.all_cases,
                 on_progress=on_progress,
+                resume_checkpoint=resume_checkpoint,
+                checkpoint_callback=lambda state: durable_execution.save_checkpoint(db, run, state, request, execution_lease),
+                access_check=lambda cases: self._checkpoint_access(db, user, request, cases),
+                delivery_contract=task_specification.get('delivery_contract'),
             ):
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
@@ -249,6 +288,9 @@ class AgentService:
                 raise AgentRunCancelled("Agent run cancelled")
             if final_result is None:
                 raise ValueError("Agent run did not produce a final result")
+            durable_execution.lock_execution(db, run, execution_lease)
+            if run.status != 'running':
+                raise AgentRunCancelled('Agent run stopped')
 
             runner_clarification = self._clarification_from_runner(
                 final_result.get("clarification"),
@@ -281,9 +323,10 @@ class AgentService:
                 run_id=run.id,
             )
 
+            durable_execution.write_metadata(db, run, {"execution_billed_count": len(final_result.get("messages") or [])})
             tool_trace = final_result.get("tool_trace") or []
             artifacts = self._with_refinement_metadata(
-                (final_result.get("artifacts") or [])[:5],
+                (final_result.get("artifacts") or []),
                 request_message=request.message,
                 thread=thread,
             )
@@ -294,23 +337,43 @@ class AgentService:
                 else []
             )
             storage.persist_tool_trace(db, run=run, trace=tool_trace, skip_existing=True)
-            run_record.persist_call_facts(
-                db, run=run, trace=tool_trace, answer=answer,
-                # Only artifacts that were kept: an artifact thrown away (a clarification) is no use of an item.
-                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records],
-                messages=final_result.get("messages"),
-                budget_exhausted=self._is_tool_budget_clarification(runner_clarification),
-            )
             if runner_clarification:
                 storage.update_run_metadata(
                     db,
                     run=run,
                     metadata={"clarification": runner_clarification.model_dump(mode="json")},
                 )
+            current_outputs = {}
+            for artifact in artifact_records:
+                meta = artifact.extra_metadata or {}
+                key = meta.get('deliverable_id', str(artifact.id))
+                old = current_outputs.get(key)
+                if old is None or int(meta.get('revision', 1)) >= int((old.extra_metadata or {}).get('revision', 1)):
+                    current_outputs[key] = artifact
+            if not runner_clarification:
+                storage.update_run_metadata(db, run=run, metadata={"clarification": None})
+            needs_revision = any((a.extra_metadata or {}).get("validation", {}).get("status") == "needs_revision"
+                                 for a in current_outputs.values()) or bool(final_result.get('completion_issues'))
+            durable_execution.write_metadata(db, run, {'completion_checks': {
+                'issues': final_result.get('completion_issues') or [], 'render_receipts': final_result.get('render_receipts') or {},
+                'source_coverage': final_result.get('source_coverage_receipts') or [],
+                'evidence_review': final_result.get('evidence_review_receipts') or {},
+                'repair_attempts': final_result.get('repair_attempts', 0)}})
+            completion_status = "clarification_required" if runner_clarification else ("needs_revision" if needs_revision else "completed")
+            if needs_revision:
+                from services.agent.completion_checks import revision_needed_answer
+                answer = revision_needed_answer(artifacts, final_result.get('completion_issues') or [])
+            run_record.persist_call_facts(
+                db, run=run, trace=tool_trace, answer=answer,
+                # Only retained artifacts contribute to the final saved answer.
+                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records],
+                messages=final_result.get("messages"),
+                budget_exhausted=self._is_tool_budget_clarification(runner_clarification),
+            )
             storage.finish_run(
                 db,
                 run=run,
-                status="clarification_required" if runner_clarification else "completed",
+                status=completion_status,
                 final_answer=answer,
                 usage=usage,
             )
@@ -330,7 +393,7 @@ class AgentService:
             )
             self._log_agent_event(
                 db,
-                action="agent_clarification_requested" if runner_clarification else "agent_run_completed",
+                action="agent_clarification_requested" if runner_clarification else ("agent_run_needs_revision" if needs_revision else "agent_run_completed"),
                 user=user,
                 run=run,
                 details={
@@ -372,7 +435,7 @@ class AgentService:
                 if cost_record
                 else None,
                 clarification=runner_clarification,
-                status="clarification_required" if runner_clarification else "completed",
+                status=completion_status,
                 mandate={
                     **mandate_context_service.metadata(
                         db, case_id=request.case_id, version_id=thread.mandate_version_id
@@ -385,6 +448,13 @@ class AgentService:
         except AgentRunCancelled as exc:
             db.rollback()
             run = db.merge(run)
+            try:
+                durable_execution.lock_execution(db, run, execution_lease)
+            except RuntimeError:
+                db.rollback()
+                yield {"type": "error", "run_id": run_id, "thread_id": str(thread.id),
+                       "message": "This saved job is continuing in another worker.", "retryable": False}
+                return
             self._record_stopped_run(db, run=run, trace=collected_trace)
             self._record_stop_usage(db=db, runner=runner, provider=provider, model_id=model.id,
                                     request=request, user=user, thread_id=thread.id, run_id=run.id)
@@ -409,6 +479,13 @@ class AgentService:
             db.rollback()
             try:
                 run = db.merge(run)
+                durable_execution.lock_execution(db, run, execution_lease)
+            except RuntimeError:
+                db.rollback()
+                yield {"type": "error", "run_id": run_id, "thread_id": str(thread.id),
+                       "message": "This saved job is continuing in another worker.", "retryable": False}
+                return
+            try:
                 self._record_stopped_run(db, run=run, trace=collected_trace)
                 self._record_stop_usage(db=db, runner=runner, provider=provider, model_id=model.id,
                                         request=request, user=user, thread_id=thread.id, run_id=run.id)
@@ -436,291 +513,27 @@ class AgentService:
         finally:
             heartbeat.stop()
 
-    def handle_message(
-        self,
-        *,
-        db: Session,
-        user: User,
-        request: AgentMessageRequest,
-    ) -> AgentMessageResponse:
-        if not request.persist:
-            raise ValueError("Ephemeral agent runs are not supported yet")
+    def handle_message(self, *, db: Session, user: User, request: AgentMessageRequest) -> AgentMessageResponse:
+        for event in self.stream_message(db=db, user=user, request=request):
+            if event.get("type") == "done":
+                return AgentMessageResponse(**event["response"])
+            if event.get("type") in ("error", "cancelled"):
+                raise ValueError(event.get("message") or "Agent work stopped")
+        raise ValueError("Agent work produced no response")
 
+    @staticmethod
+    def _checkpoint_access(db, user, request, other_cases):
+        from services.agent.all_cases import may_open
+        from postgres.models.case_membership import CaseMembership
+        db.refresh(user, ["is_active", "global_role"])
+        if not user.is_active:
+            raise PermissionError("This user no longer has access")
+        db.query(CaseMembership).filter(CaseMembership.case_id == request.case_id,
+                                       CaseMembership.user_id == user.id).populate_existing().first()
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
-        ai_budget.check(db, request.case_id, "this agent question")
-        if request.all_cases and request.case_layer == "significant":
-            raise ValueError("All-cases mode reads whole cases; switch the case layer to All data to use it.")
-        allowed_entity_keys = (
-            get_significant_entity_keys(db, case_id=request.case_id)
-            if request.case_layer == "significant"
-            else None
-        )
-
-        # The Settings default, or the model a person picked for this message (services.agent.model_choice, AG-08).
-        choice, chosen = model_choice.resolve(db, model=request.model, provider=request.provider,
-                                              reasoning=request.reasoning, workload_model=get_workload_model)
-        requested_model = choice.model_id
-        requested_provider = choice.provider
-        model = get_model_by_id(requested_model)
-        if not model:
-            raise ValueError(f"Invalid model: {requested_model}")
-        provider = model.provider.value
-        if requested_provider != provider:
-            raise ValueError(f"Model {requested_model} belongs to provider {provider}, not {requested_provider}")
-        api_key = get_provider_api_key(db, provider)
-        if not api_key:
-            raise ValueError(
-                f"{provider.title()} is not connected. Add its API key in Settings → AI settings."
-            )
-
-        thread = self._resolve_thread(db, user=user, request=request)
-        mandate_context = mandate_context_service.resolve(
-            db,
-            case_id=request.case_id,
-            version_id=thread.mandate_version_id,
-            override=request.mandate_override,
-        )
-        user_message = None
-        if request.persist:
-            user_message = storage.append_message(
-                db,
-                thread=thread,
-                role="user",
-                content=request.message,
-            )
-
-        feedback = self._proposal_feedback(db, request)
-        run = storage.create_run(
-            db,
-            thread=thread,
-            user=user,
-            provider=provider,
-            model_id=model.id,
-            input_message=request.message,
-            extra_metadata={
-                "artifact_preference": request.artifact_preference,
-                "case_layer": request.case_layer,
-                **self._workflow_metadata(request),
-                **({"all_cases": True} if request.all_cases else {}),
-                **({"proposal_feedback": feedback} if feedback else {}),
-                "model_choice": {"reasoning": choice.reasoning, "chosen_by_person": chosen,
-                                 "written_by": model_choice.written_by(model.name, choice.reasoning)},
-            },
-            mandate_override=mandate_context.override,
-            tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
-            **self._prompt_version(db),
-        )
-        db.flush()
-        self._log_agent_event(
-            db,
-            action="agent_run_started",
-            user=user,
-            run=run,
-            details={"thread_id": str(thread.id), "streaming": False},
-        )
-
-        history = (
-            [HumanMessage(content=request.message)]
-            if request.case_layer == "significant"
-            else self._build_history(db, thread=thread, all_cases=request.all_cases)
-        )
-        runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key, reasoning=choice.reasoning)
-        # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
-        focus_plan, focus = self._question_focus(db, request)
-
-        # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
-        heartbeat = run_settle.RunHeartbeat(run.id)
-        try:
-            heartbeat.start()
-            result = runner.invoke(
-                case_id=str(request.case_id),
-                messages=history,
-                artifact_preference=request.artifact_preference,
-                max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
-                thread_id=str(thread.id),
-                available_artifacts=(
-                    []
-                    if request.case_layer == "significant"
-                    else self._available_artifacts_for_runner(thread)
-                ),
-                allowed_entity_keys=allowed_entity_keys,
-                mandate_context_block="\n\n".join(x for x in (
-                    self._prompt_block(mandate_context.block, request, feedback), focus_plan) if x),
-                final_answer_rules="\n\n".join(x for x in (self._final_rules(request), focus) if x),
-                proposer=self._proposer(db, user, request, provider, model, run, thread),
-                user_id=str(user.id),
-                all_cases=request.all_cases,
-            )
-            runner_clarification = self._clarification_from_runner(
-                result.get("clarification"),
-                thread_id=str(thread.id),
-                run_id=str(run.id),
-                original_message=request.message,
-            )
-            answer = self._name_other_cases(db, run, result, request.case_id)
-            if runner_clarification:
-                # Out of steps: the partial answer stays, followed by the offer to continue.
-                answer = (f"{answer}\n\n{runner_clarification.question}"
-                          if answer and self._is_tool_budget_clarification(runner_clarification)
-                          else runner_clarification.question)
-            if not answer:
-                answer = "I could not produce an answer from the available case data."
-            answer, plain_check = plain_answer.checked(answer)  # internal terms in plain words (lx-agentlive C)
-            answer, citation_check = storage.checked_answer(db, case_id=thread.case_id, answer=answer)
-            storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check,
-                                                               "plain_check": plain_check})
-
-            usage = result.get("usage")
-            cost_record = self._record_usage(
-                db=db,
-                usage=usage,
-                provider=provider,
-                model_id=model.id,
-                request=request,
-                user=user,
-                thread_id=thread.id,
-                run_id=run.id,
-            )
-
-            tool_trace = result.get("tool_trace") or []
-            artifacts = self._with_refinement_metadata(
-                (result.get("artifacts") or [])[:5],
-                request_message=request.message,
-                thread=thread,
-            )
-            persist_partial_artifacts = self._is_tool_budget_clarification(runner_clarification)
-            artifact_records = (
-                storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
-                if artifacts and (not runner_clarification or persist_partial_artifacts)
-                else []
-            )
-            storage.persist_tool_trace(db, run=run, trace=tool_trace, skip_existing=True)
-            run_record.persist_call_facts(
-                db, run=run, trace=tool_trace, answer=answer,
-                # Only artifacts that were kept: an artifact thrown away (a clarification) is no use of an item.
-                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records],
-                messages=result.get("messages"),
-                budget_exhausted=self._is_tool_budget_clarification(runner_clarification),
-            )
-            if runner_clarification:
-                storage.update_run_metadata(
-                    db,
-                    run=run,
-                    metadata={"clarification": runner_clarification.model_dump(mode="json")},
-                )
-            storage.finish_run(
-                db,
-                run=run,
-                status="clarification_required" if runner_clarification else "completed",
-                final_answer=answer,
-                usage=usage,
-            )
-
-            assistant_message = None
-            if request.persist:
-                assistant_message = storage.append_message(
-                    db,
-                    thread=thread,
-                    role="assistant",
-                    content=answer,
-                    run=run,
-                    provider=provider,
-                    model_id=model.id,
-                    artifact_ids=[str(record.id) for record in artifact_records],
-                    tool_trace_summary=[
-                        self._trace_summary_item(item)
-                        for item in tool_trace
-                    ],
-                )
-
-            self._log_agent_event(
-                db,
-                action="agent_clarification_requested" if runner_clarification else "agent_run_completed",
-                user=user,
-                run=run,
-                details={
-                    "tool_count": len(tool_trace),
-                    "artifact_count": len(artifact_records),
-                    "artifact_types": [record.type for record in artifact_records],
-                    "streaming": False,
-                    "question": runner_clarification.question if runner_clarification else None,
-                },
-            )
-            db.commit()
-            db.refresh(thread)
-            db.refresh(run)
-
-            return AgentMessageResponse(
-                thread_id=str(thread.id),
-                run_id=str(run.id),
-                user_message_id=str(user_message.id) if user_message else None,
-                assistant_message_id=str(assistant_message.id) if assistant_message else None,
-                answer=answer,
-                citation_check=citation_check,
-                artifacts=[storage.to_api_artifact(record) for record in artifact_records],
-                tool_trace=[AgentToolTraceItem(**self._public_trace_item(item)) for item in tool_trace],
-                model_info=AgentModelInfo(
-                    provider=provider,
-                    model_id=model.id,
-                    model_name=model.name,
-                    server=f"{provider.title()} (remote)",
-                    reasoning=choice.reasoning,
-                    written_by=model_choice.written_by(model.name, choice.reasoning),
-                ),
-                cost=AgentCost(
-                    usd=float(cost_record.cost_usd),
-                    prompt_tokens=cost_record.prompt_tokens,
-                    completion_tokens=cost_record.completion_tokens,
-                    total_tokens=cost_record.total_tokens,
-                    cost_record_id=str(cost_record.id),
-                )
-                if cost_record
-                else None,
-                clarification=runner_clarification,
-                status="clarification_required" if runner_clarification else "completed",
-                mandate={
-                    **mandate_context_service.metadata(
-                        db, case_id=request.case_id, version_id=thread.mandate_version_id
-                    ),
-                    "temporary_override": bool(mandate_context.override),
-                },
-            )
-        except Exception as exc:
-            db.rollback()
-            # Re-open a small transaction so failed runs are still visible when possible.
-            try:
-                check_case_access(db, request.case_id, user, required_permission=("case", "view"))
-                thread = self._resolve_thread(db, user=user, request=request)
-                failed_run = storage.create_run(
-                    db,
-                    thread=thread,
-                    user=user,
-                    provider=provider,
-                    model_id=model.id,
-                    input_message=request.message,
-                    extra_metadata={"artifact_preference": request.artifact_preference},
-                    tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
-                    **self._prompt_version(db),
-                )
-                failed_run.record_summary = {"items_returned": 0, "basis": (
-                    "The run failed before its tool calls could be stored (a run sent without streaming keeps its "
-                    "calls only when it finishes); what it searched is not known.")}
-                storage.finish_run(db, run=failed_run, status="failed", error=str(exc))
-                self._log_agent_event(
-                    db,
-                    action="agent_run_failed",
-                    user=user,
-                    run=failed_run,
-                    success=False,
-                    error=str(exc),
-                    details={"streaming": False},
-                )
-                db.commit()
-            except Exception:
-                db.rollback()
-            raise
-        finally:
-            heartbeat.stop()
+        for case_id in other_cases:
+            if not request.all_cases or not may_open(db, user, case_id):
+                raise PermissionError("Access to a source case changed; the saved work cannot be resumed")
 
     def cancel_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunStatusResponse:
         run = storage.get_run_for_user(db, run_id=run_id, user=user)
@@ -995,15 +808,33 @@ class AgentService:
             ),
         )
 
-    def _build_history(self, db: Session, *, thread: AgentThread, all_cases: bool = False
+    def _build_history(self, db: Session, *, thread: AgentThread, all_cases: bool = False, user=None
                        ) -> list[HumanMessage | AIMessage]:
         messages = storage.recent_messages(db, thread_id=thread.id, limit=20)
         history: list[HumanMessage | AIMessage] = []
+        from postgres.models.agent import AgentMessage
+        from services.agent.durable_execution import instruction_ledger
+        earliest = getattr(messages[0], 'sequence_number', 0) if messages else 0
+        earlier = (db.query(AgentMessage).filter(AgentMessage.thread_id == thread.id,
+                   AgentMessage.sequence_number < earliest, AgentMessage.role == 'user')
+                   .order_by(AgentMessage.sequence_number).all()) if earliest else []
+        ledger = instruction_ledger(earlier, all_cases=all_cases)
+        if ledger:
+            import json
+            history.append(HumanMessage(content="Earlier investigator instructions, in order. Preserve required "
+                "subjects and accepted corrections. Later explicit instructions override earlier ones. "
+                "This is historical context, not a new request:\n" + json.dumps(ledger, ensure_ascii=False)))
         for message in messages:
             if message.role == "user":
                 history.append(HumanMessage(content=message.content))
             elif message.role == "assistant":
                 run = getattr(message, "run", None)
+                if run is not None and user is not None:
+                    try:
+                        storage.check_run_source_access(db, run, user)
+                    except PermissionError:
+                        history.append(AIMessage(content="[An earlier answer is withheld because access to a source case changed.]"))
+                        continue
                 if not all_cases and isinstance(getattr(run, "extra_metadata", None), dict) \
                         and run.extra_metadata.get("all_cases"):
                     # An answer that read other cases never reaches a message that reads this case only.
@@ -1013,22 +844,30 @@ class AgentService:
         return history
 
     @staticmethod
-    def _available_artifacts_for_runner(thread: AgentThread) -> list[dict[str, Any]]:
+    def _available_artifacts_for_runner(thread: AgentThread, *, all_cases=False, db=None, user=None) -> list[dict[str, Any]]:
         artifacts = sorted(
             storage.supported_artifacts(thread.artifacts),
             key=lambda item: item.created_at or item.id,
         )
-        return [
-            storage.to_api_artifact(artifact).model_dump(mode="json")
-            for artifact in artifacts[-8:]
-        ]
+        visible = []
+        for artifact in artifacts:
+            run_meta = artifact.run.extra_metadata or {} if artifact.run else {}
+            if not all_cases and ((artifact.extra_metadata or {}).get('all_cases') or run_meta.get('all_cases')):
+                continue
+            if db is not None and user is not None:
+                try:
+                    storage.check_artifact_access(db, artifact, user)
+                except PermissionError:
+                    continue
+            visible.append(storage.to_api_artifact(artifact).model_dump(mode="json"))
+        return visible
 
     @staticmethod
     def _is_tool_budget_clarification(clarification: AgentClarification | None) -> bool:
         return bool(
             clarification
             and isinstance(clarification.context, dict)
-            and clarification.context.get("reason") == "tool_budget_exhausted"
+            and clarification.context.get("reason") in ("tool_budget_exhausted", "no_progress")
         )
 
     @staticmethod
@@ -1067,6 +906,11 @@ class AgentService:
             usage = runner.spent_so_far()
             with db.begin_nested():
                 self._record_usage(db=db, usage=usage, run_id=run_id, **kwargs)
+                from postgres.models.agent import AgentRun
+                from services.agent.durable_execution import write_metadata
+                stopped = db.get(AgentRun, run_id)
+                if stopped is not None:
+                    write_metadata(db, stopped, {"execution_billed_count": len(getattr(runner, 'messages_so_far', []) or [])})
         except Exception:
             logger.exception("Could not record the spend of stopped agent run %s", run_id)
 
@@ -1153,36 +997,8 @@ class AgentService:
         request_message: str,
         thread: AgentThread,
     ) -> list[dict[str, Any]]:
-        normalized = request_message.lower()
-        refinement_terms = (
-            "add ",
-            "remove ",
-            "only ",
-            "instead",
-            "update",
-            "refine",
-            "expand",
-            "narrow",
-            "center",
-            "centred",
-            "centered",
-        )
-        if not artifacts or not any(term in normalized for term in refinement_terms):
-            return artifacts
-        previous_artifacts = sorted(thread.artifacts, key=lambda item: item.created_at or item.id)
-        if not previous_artifacts:
-            return artifacts
-        source = previous_artifacts[-1]
-        enriched: list[dict[str, Any]] = []
-        for artifact in artifacts:
-            metadata = dict(artifact.get("metadata") or {})
-            metadata.setdefault("refinement", True)
-            metadata.setdefault("source_artifact_id", str(source.id))
-            metadata.setdefault("source_artifact_type", source.type)
-            metadata.setdefault("source_artifact_title", source.title)
-            metadata.setdefault("refinement_request", request_message[:500])
-            enriched.append({**artifact, "metadata": metadata})
-        return enriched
+        # Revision lineage comes from the selected artifact, never whichever artifact happened to be newest.
+        return artifacts
 
     @staticmethod
     def _log_agent_event(

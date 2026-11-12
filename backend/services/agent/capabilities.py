@@ -18,6 +18,16 @@ from typing import Any
 SCHEMA = "loupe.agent.capabilities/1"
 
 DATA_TYPES: list[dict[str, Any]] = [
+    {"id": "work_and_saved_outputs", "label": "Tasks, deadlines and saved agent work",
+     "description": "Case tasks, deadlines, pinned evidence and your saved agent reports across conversations.",
+     "examples": ["What case tasks and deadlines remain open?", "Find the report I created in an earlier conversation.",
+                  "Which evidence have I pinned for this case?"],
+     "tools": ["get_case_work", "read_saved_agent_work"]},
+    {"id": "case_configuration", "label": "Case details and instructions",
+     "description": "The case description, investigator background, mandate and interpretation settings.",
+     "examples": ["What is this case about?", "What instructions and scope were saved for this case?",
+                  "What background should guide this investigation?"],
+     "tools": ["get_case_configuration"]},
     {
         "id": "financials",
         "label": "Bank statements and payments",
@@ -97,7 +107,7 @@ DATA_TYPES: list[dict[str, Any]] = [
             "Find the exact words of this reference.",
             "What does this statement say the closing balance was?",
         ],
-        "tools": ["search_documents", "search_exact_words", "search_case", "check_statements"],
+        "tools": ["search_documents", "search_exact_words", "search_case", "check_statements", "get_document_text"],
     },
     {
         "id": "interviews",
@@ -199,6 +209,13 @@ DATA_TYPES: list[dict[str, Any]] = [
 # Tools that do not read a kind of case material: they build views, ask back, read the rest of an earlier result,
 # propose work for a person to accept, or read other cases (only when the person switches that on).
 SUPPORT_TOOLS: dict[str, str] = {
+    "list_artifacts": "finds saved deliverables", "read_artifact": "reads saved deliverables",
+    "create_artifact": "builds a deliverable", "revise_artifact": "revises a deliverable",
+    "edit_report_sections": "edits report sections", "append_artifact_rows": "extends a dataset",
+    "calculate_artifact_data": "calculates from saved data",
+    "inspect_artifact_export": "checks rendered deliverables",
+    "read_conversation_history": "reads earlier conversation turns",
+    "read_prior_result": "retrieves earlier analysis inputs and results",
     "request_clarification": "asks the person a question",
     "read_tool_result_page": "reads the rest of an earlier result",
     "record_working_notes": "keeps its working notes",
@@ -211,6 +228,7 @@ SUPPORT_TOOLS: dict[str, str] = {
     "propose_control_claim": "proposes work", "propose_payment_purpose": "proposes work",
     "propose_claim": "proposes work", "propose_entity": "proposes work", "propose_glossary_term": "proposes work",
     "propose_assumption": "proposes work",
+    "propose_dossier_change": "proposes dossier creation and updates",
     "identifier_in_other_cases": "reads other cases", "list_my_cases": "reads other cases",
     "find_identifier_across_cases": "reads other cases", "read_in_case": "reads other cases",
 }
@@ -236,6 +254,7 @@ def capabilities(bound_tools: list[str] | None = None) -> dict[str, Any]:
             continue
         types.append({"id": t["id"], "label": t["label"], "description": t["description"],
                       "examples": list(t["examples"])})
-    return {"schema": SCHEMA, "types": types, "total": len(types),
+    from services.agent.action_capabilities import action_capabilities
+    return {"schema": SCHEMA, "types": types, "total": len(types), **action_capabilities(bound_tools),
             "note": "Ask in your own words. Every answer cites the records it rests on; what the agent could not "
                     "read is said in the answer."}

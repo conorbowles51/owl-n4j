@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 
 AGENT_OUTPUT_TYPES = ('entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation',
                       'control_claim', 'payment_purpose', 'statement_claim', 'entity_proposal', 'glossary_term',
-                      'counter_argument')
+                      'counter_argument', 'dossier_change')
 # The phones' two drafts (agent-phones, phone_cross_tools): the deterministic check is re-run when stored.
 PHONE_DRAFTS = ('control_claim', 'payment_purpose')
 ENTRY_KINDS = ('note', 'finding')
@@ -69,10 +69,22 @@ def _next_version(session, case_id, output_type):
 
 
 def _store(session, *, case_id, output_type, content, checked, action, origin, requested_by_user_id=None):
+    import hashlib
+    from postgres.models.case import Case
     from postgres.models.workspace_ai import WorkspaceAIOutput as W
     from services.mandate_context_service import mandate_context_service
-    mandate = mandate_context_service.active_version(session, case_id=case_id)
     content = dict(content, citations=[c['citation'] for c in checked])
+    # One model retry in a run must not create another review card. Serialize the case's version allocation too.
+    session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).scalar_one()
+    fingerprint = hashlib.sha256(json.dumps([output_type, content, action, origin.get('run_id')],
+                                            sort_keys=True, default=str).encode()).hexdigest()
+    if origin.get('run_id'):
+        existing = session.scalar(select(W).where(W.case_id == case_id,
+            W.generation_input['agent_request_fingerprint'].as_string() == fingerprint))
+        if existing is not None:
+            session.commit()
+            return serialize(existing)
+    mandate = mandate_context_service.active_version(session, case_id=case_id)
     item = W(id=uuid.uuid4(), case_id=case_id, target_type='case', target_id=case_id, output_type=output_type,
              version=_next_version(session, case_id, output_type), job_status='completed',
              review_status='pending_review', citation_status='valid', progress=100, content=content,
@@ -81,7 +93,7 @@ def _store(session, *, case_id, output_type, content, checked, action, origin, r
              proposed_actions=[action], model_metadata=dict(origin=origin, model=origin.get('model'),
                                                             model_id=origin.get('model_id'),
                                                             run_id=origin.get('run_id')),
-             generation_input=dict(kind='agent_proposal'), source_set=[],
+             generation_input=dict(kind='agent_proposal', agent_request_fingerprint=fingerprint), source_set=[],
              mandate_version_id=getattr(mandate, 'id', None), requested_by_user_id=_uuid(requested_by_user_id),
              started_at=_now(), completed_at=_now())
     session.add(item)
@@ -105,16 +117,28 @@ def serialize(item) -> dict:
 # Proposing
 # ---------------------------------------------------------------------------
 
-def propose_entry(session, *, case_id, entry_type, title, body, citations, origin, requested_by_user_id=None):
+def propose_entry(session, *, case_id, entry_type, title, body, citations, origin, requested_by_user_id=None,
+                  dossier_id=None, event_date=None):
     origin = _require_origin(origin)
     entry_type = str(entry_type or '').strip().lower()
     if entry_type not in ENTRY_KINDS:
         raise ProposalError('A drafted Workspace entry is a note or a finding.')
     title, body = _text(title, MAX_TITLE, 'title'), _text(body, MAX_BODY, 'text')
+    dossier = None
+    if dossier_id:
+        from services.agent.dossier_proposals import dossier_in_case
+        dossier = dossier_in_case(session, case_id, dossier_id)
+    if event_date and entry_type != 'finding':
+        raise ProposalError('A dated timeline event requires a finding.')
+    if event_date:
+        event_date = date.fromisoformat(str(event_date))
     checked = _checked_citations(session, case_id, citations)
     return _store(session, case_id=_uuid(case_id), output_type='entry_draft',
-                  content=dict(entry_type=entry_type, title=title, body=body), checked=checked,
-                  action=dict(action='create_workspace_entry', entry_type=entry_type), origin=origin,
+                  content=dict(entry_type=entry_type, title=title, body=body,
+                      dossier_id=str(dossier.id) if dossier else None, dossier_name=dossier.display_name if dossier else None,
+                      event_date=event_date.isoformat() if event_date else None), checked=checked,
+                  action=dict(action='create_workspace_entry', entry_type=entry_type,
+                      dossier_id=str(dossier.id) if dossier else None, event_date=event_date.isoformat() if event_date else None), origin=origin,
                   requested_by_user_id=requested_by_user_id)
 
 
@@ -493,6 +517,9 @@ def accept(session, *, case_id, output_id, reviewer, via='api', due_at=None, edi
     if reviewer is None or is_model(reviewer):
         raise ProposalError('A person accepts a proposal; a model accepting its own draft accepts nothing.', 403)
     item = _load(session, case_id, output_id)
+    atomic = item.output_type in ('entry_draft', 'dossier_change')
+    if atomic and item.review_status == 'accepted' and item.accepted_targets:
+        return serialize(item)
     if item.review_status != 'pending_review':
         raise ProposalError(f'This proposal is already {item.review_status.replace("_", " ")}.', 409)
     facts = review_facts(session, 'workspace_ai', item.id, reviewer, via=via)
@@ -502,11 +529,16 @@ def accept(session, *, case_id, output_id, reviewer, via='api', due_at=None, edi
     # Claimed first, under the row lock: the work below commits on its own (entries, timeline), so a second accept
     # waiting on the lock then sees 'accepted' and is refused instead of applying the proposal twice.
     item.review_status, item.reviewed_by_user_id, item.reviewed_at = 'accepted', reviewer.id, _now()
-    session.commit()
+    if atomic:
+        session.flush()
+    else:
+        session.commit()
     try:
         accepted = _apply(session, item, content, action, reviewer, provenance, due_at, edits)
     except Exception:
         session.rollback()
+        if atomic:
+            raise
         released = _load(session, case_id, output_id)
         released.review_status, released.reviewed_by_user_id, released.reviewed_at = 'pending_review', None, None
         session.commit()
@@ -520,11 +552,11 @@ def accept(session, *, case_id, output_id, reviewer, via='api', due_at=None, edi
 
 
 def _entry(session, *, case_id, reviewer, entry_type, title, body, provenance, tags=(), lifecycle_state=None,
-           links=()):
+           links=(), commit=True):
     from services.workspace_entry_service import create_entry
     return create_entry(session, case_id=case_id, current_user=reviewer, entry_type=entry_type, title=title,
                         body=body, tags=list(tags), lifecycle_state=lifecycle_state, review_state='accepted',
-                        links=list(links), compatibility_metadata=dict(actor_origin=provenance))
+                        links=list(links), compatibility_metadata=dict(actor_origin=provenance), commit=commit)
 
 
 def _citation_links(content):
@@ -543,6 +575,9 @@ def _citation_links(content):
 def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
     kind = item.output_type
     case_id = item.case_id
+    if kind == 'dossier_change':
+        from services.agent.dossier_proposals import apply_dossier
+        return apply_dossier(session, item, content, reviewer, provenance)
     if kind in PHONE_DRAFTS:
         entry = _entry(session, case_id=case_id, reviewer=reviewer, entry_type='finding',
                        title=edits.get('title') or content.get('title'), body=edits.get('body') or content.get('body'),
@@ -554,8 +589,13 @@ def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
                        title=edits.get('title') or content.get('title'), body=edits.get('body') or content.get('body'),
                        provenance=provenance, tags=('red-cell',) if kind == 'alternative_explanation' else (),
                        lifecycle_state='proposed' if kind == 'alternative_explanation' else None,
-                       links=_citation_links(content))
-        return [dict(target_type='workspace_entry', target_id=entry['id'])]
+                       links=_citation_links(content), commit=kind != 'entry_draft')
+        targets = [dict(target_type='workspace_entry', target_id=entry['id'],
+                        href=f'/cases/{case_id}/workspace?view=casework&kind={entry_type}&entry={entry["id"]}', label='Open saved finding' if entry_type == 'finding' else 'Open saved note')]
+        if kind == 'entry_draft':
+            from services.agent.dossier_proposals import attach_finding_destinations
+            targets.extend(attach_finding_destinations(session, item, entry, reviewer, provenance))
+        return targets
     if kind == 'counter_argument':
         return _accept_counter_argument(session, item, content, action, reviewer, provenance)
     if kind == 'lead_card':

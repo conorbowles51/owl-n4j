@@ -37,7 +37,7 @@ class _Fixture(unittest.TestCase):
         from tests.test_financial_statement_import import StatementImportTests
         self.f = StatementImportTests()
         self.f.setUp()
-        self._inbox = tempfile.mkdtemp(prefix='loupe-proposals-', dir='/dev/shm')
+        self._inbox = tempfile.mkdtemp(prefix='loupe-proposals-', dir='/dev/shm' if Path('/dev/shm').is_dir() else None)
         # Before the statement is saved: the category store remembers whether its table exists.
         Base.metadata.create_all(self.f.db.get_bind(), tables=[
             FinancialJudgement.__table__, FinancialPaymentCategory.__table__, AgentProposalSourceOpen.__table__,

@@ -10,6 +10,42 @@
  },
  "questions": [
   {
+   "id": "v-work-1", "case": "verification", "type": "work_and_saved_outputs", "layer": "all",
+   "question": "List this case's open tasks. Read all pages if necessary; distinguish an empty list from a failed read.",
+   "expect_all": [], "expected": "Current tasks, or an explicitly empty task list. Contents are mutable; inspect the saved trace and answer.",
+   "derived_from": "Task adapter contract, 2026-11-11. No fixed count is asserted for this mutable automated-check case.", "cite_required": false
+  },
+  {
+   "id": "v-work-2", "case": "verification", "type": "work_and_saved_outputs", "layer": "all",
+   "question": "What deadlines are saved in this case? Include dates and current states, or say if none are saved.",
+   "expect_all": [], "expected": "Current saved deadlines and states; human review compares the trace's complete list.",
+   "derived_from": "Deadline adapter contract, 2026-11-11. Mutable fixture; no fixed count assertion.", "cite_required": false
+  },
+  {
+   "id": "v-work-3", "case": "verification", "type": "work_and_saved_outputs", "layer": "all",
+   "question": "Find the reports I have saved in other Agent conversations in this case. Distinguish those drafts from original evidence.",
+   "expect_all": [], "expected": "The signed-in user's accessible saved reports or an explicitly empty list, labelled as previous drafts.",
+   "derived_from": "Saved-work adapter contract, 2026-11-11. Depends on the signed-in user's existing outputs; inspect the trace.", "cite_required": false
+  },
+  {
+   "id": "v-config-1", "case": "verification", "type": "case_configuration", "layer": "all",
+   "question": "Read the saved case details and tell me this case's title.",
+   "expect_all": [["Verification"]], "expected": "Verification (automated checks)",
+   "derived_from": "Existing synthetic coverage fixture case title; configuration adapter added 2026-11-11.", "cite_required": false
+  },
+  {
+   "id": "v-config-2", "case": "verification", "type": "case_configuration", "layer": "all",
+   "question": "What background and investigator instructions are saved in this case? Do not invent missing instructions.",
+   "expect_all": [], "expected": "Saved description, background and instructions, with explicit missing fields; compare the trace.",
+   "derived_from": "Case-configuration adapter contract, 2026-11-11. Mutable saved fields; no invented fixed text.", "cite_required": false
+  },
+  {
+   "id": "v-config-3", "case": "verification", "type": "case_configuration", "layer": "all",
+   "question": "Read the saved mandate and interpretation settings for this case. Distinguish saved values from defaults or absent settings.",
+   "expect_all": [], "expected": "Current saved mandate and settings, or their absence; inspect the source adapter result.",
+   "derived_from": "Case-configuration adapter contract, 2026-11-11. Mutable fixture; no fixed content assertion.", "cite_required": false
+  },
+  {
    "id": "v-fin-1",
    "case": "verification",
    "type": "financials",

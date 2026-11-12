@@ -9,13 +9,14 @@ import type {
 } from "./types"
 import type { CaseLayer } from "@/features/significant/types"
 
-export type AgentArtifactExportFormat = "csv" | "pdf" | "docx"
+export type AgentArtifactExportFormat = "csv" | "pdf" | "docx" | "html" | "xlsx" | "pptx" | "svg" | "png"
 
 export interface SendAgentMessageParams {
   caseId: string
   message: string
   threadId?: string | null
-  artifactPreference?: "auto" | "none" | "graph" | "table" | "map" | "report" | "chart"
+  resumeRunId?: string
+  artifactPreference?: "auto" | "none" | import("./types").AgentArtifactType
   provider?: string
   model?: string
   /** How hard the model reasons for this message (AG-07/08); omitted: the default for the model. */
@@ -28,6 +29,12 @@ export interface SendAgentMessageParams {
 }
 
 export const agentAPI = {
+  previewBrief: (file: File, signal?: AbortSignal) => {
+    const body = new FormData()
+    body.append("file", file)
+    return fetchAPI<{ filename: string; text: string; format: string; characters: number; warnings: string[] }>("/api/agent/briefs/preview", { method: "POST", body, signal, read: true })
+  },
+
   listThreads: (caseId: string) =>
     fetchAPI<AgentThreadSummary[]>(`/api/agent/threads?case_id=${caseId}`),
 
@@ -41,6 +48,18 @@ export const agentAPI = {
 
   getThread: (threadId: string) =>
     fetchAPI<AgentThreadDetail>(`/api/agent/threads/${threadId}`),
+
+  getArtifact: (artifactId: string) =>
+    fetchAPI<import("./types").AgentArtifact>(`/api/agent/artifacts/${encodeURIComponent(artifactId)}`),
+
+  artifactVersions: (artifactId: string) =>
+    fetchAPI<import("./types").AgentArtifact[]>(`/api/agent/artifacts/${encodeURIComponent(artifactId)}/versions`),
+
+  reviseArtifact: (artifactId: string, revision: {
+    expected_revision: number; title?: string; data: Record<string, unknown>; revision_note?: string
+  }) => fetchAPI<import("./types").AgentArtifact>(`/api/agent/artifacts/${encodeURIComponent(artifactId)}/revisions`, {
+    method: "POST", body: revision,
+  }),
 
   sendMessage: (params: SendAgentMessageParams) =>
     fetchAPI<AgentMessageResponse>("/api/agent/messages", {
@@ -66,13 +85,13 @@ export const agentAPI = {
     params: SendAgentMessageParams,
     onEvent: (event: AgentStreamEvent) => void
   ) => {
-    const response = await fetch("/api/agent/messages/stream", {
+    const response = await fetch(params.resumeRunId ? `/api/agent/runs/${encodeURIComponent(params.resumeRunId)}/resume` : "/api/agent/messages/stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       credentials: "include",
-      body: JSON.stringify({
+      body: params.resumeRunId ? undefined : JSON.stringify({
         case_id: params.caseId,
         thread_id: params.threadId || undefined,
         message: params.message,

@@ -26,6 +26,7 @@ MIN_MESSAGE_CHARS = 12_000
 # A single text value larger than this is shown in part with its length stated (only when it alone cannot fit).
 MAX_TEXT_CHARS = 20_000
 NOTE_ROOM = 400  # characters kept for the note a cut adds
+PAGING_METADATA = frozenset({'_paging', 'next_page'})
 PAGED_SUMMARY = " This result is shown in part; _paging states what is not shown and how to read it."
 
 
@@ -64,6 +65,8 @@ def _sequences(value, path=()):
         found.append((path, value))
     children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
     for key, child in children:
+        if key in PAGING_METADATA:
+            continue
         if isinstance(child, (list, dict)):
             found.extend(_sequences(child, path + (key,)))
     return found
@@ -71,8 +74,23 @@ def _sequences(value, path=()):
 
 def _get(value, path):
     for key in path:
+        if isinstance(value, list) and isinstance(key, str) and key.isdecimal():
+            key = int(key)
         value = value[key]
     return value
+
+
+def _canonical_path(value, path):
+    normalized = []
+    for key in path:
+        if isinstance(value, list):
+            if isinstance(key, str) and key.isdecimal():
+                key = int(key)
+            if isinstance(key, bool) or not isinstance(key, int) or key < 0:
+                raise ValueError('List positions must be nonnegative integer indices.')
+        normalized.append(key)
+        value = value[key]
+    return normalized
 
 
 def _set(value, path, replacement):
@@ -102,49 +120,43 @@ def _fit_count(sequence, offset, room, at_least_one=True):
     return count
 
 
-def _note(path, total, offset, returned, result_id):
+def _note(path, total, offset, returned, result_id, *, unit='items'):
     remaining = total - offset - returned
     note = dict(path=list(path), total=total, offset=offset, returned=returned, remaining=remaining)
+    if unit == 'characters':
+        note['unit'] = unit
     if remaining > 0:
         note["next_page"] = dict(tool=PAGE_TOOL, result_id=result_id, path=list(path), offset=offset + returned)
-        note["message"] = (f"Showing {returned} of {total} from item {offset}; {remaining} more: call {PAGE_TOOL} "
+        note["message"] = (f"Showing {returned} of {total} {unit} from offset {offset}; {remaining} more: call {PAGE_TOOL} "
                            "with next_page, or say the answer covers part of the result.")
     return note
 
 
-def _cut_texts(value, limit):
-    """Shorten single oversized texts, stating how much is not shown (last resort, after paging lists)."""
-    if isinstance(value, str) and len(value) > limit:
-        return value[:limit] + f" [... {len(value) - limit} more characters not shown]"
-    if isinstance(value, list):
-        return [_cut_texts(item, limit) for item in value]
-    if isinstance(value, dict):
-        return {key: _cut_texts(item, limit) for key, item in value.items()}
-    return value
+def _texts(value, path=()):
+    if isinstance(value, str):
+        return [(path, value)]
+    children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    return [item for key, child in children if key not in PAGING_METADATA
+            for item in _texts(child, path + (key,))]
 
 
-def page_for_model(data, *, budget_chars, result_id=None, offset=0, path=None):
-    """``data`` whole when it fits ``budget_chars``; otherwise its largest sequences cut to fit, with ``_paging``.
+def _text_count(value, room):
+    """Count characters using their encoded JSON size, including escaped newlines and quotes."""
+    low, high = 0, len(value)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if _size(value[:mid]) <= room:
+            low = mid
+        else:
+            high = mid - 1
+    return low
 
-    ``path``/``offset``: page one sequence of a stored result from ``offset`` (the next-page tool)."""
-    safe = to_jsonable(data)
-    if path is not None:
-        sequence = _get(safe, path) if path else safe
-        if not isinstance(sequence, (list, dict)):
-            raise ValueError("That path is not a list or mapping in this result.")
-        total = len(sequence)
-        if offset < 0 or offset > total:
-            raise ValueError(f"Use an offset from 0 to {total}.")
-        count = _fit_count(sequence, offset, budget_chars - 1_000)
-        return dict(items=_slice(sequence, offset, count), _paging=[_note(path, total, offset, count, result_id)])
-    if _size(safe) <= budget_chars:
-        return safe
-    if not isinstance(safe, dict):
-        safe = {"value": safe}
-    notes = []
-    done = set()
-    # The notes are part of the message, so every size check counts them, with room kept for the next note.
-    while _size(safe) + _size(notes) > budget_chars:
+
+def _fit_payload(safe, budget_chars, result_id, *, source_path=lambda path: path, protected_sequences=()):
+    """Fit data while keeping every existing paging instruction immutable and addressable."""
+    notes = list(safe.pop('_paging', []) or [])
+    done = set(protected_sequences)
+    while _size(safe) + _size(notes) + 20 > budget_chars:
         candidates = [(p, s) for p, s in _sequences(safe) if p not in done and len(s) > 1]
         if not candidates:
             break
@@ -155,12 +167,21 @@ def page_for_model(data, *, budget_chars, result_id=None, offset=0, path=None):
         if count >= len(sequence):
             continue
         _set(safe, sequence_path, _slice(sequence, 0, count))
-        notes.append(_note(sequence_path, len(sequence), 0, count, result_id))
-    if _size(safe) + _size(notes) > budget_chars:
-        safe = _cut_texts(safe, min(MAX_TEXT_CHARS, max(1_000, budget_chars // 4)))
-        notes.append(dict(message="Some long text values are shown in part; each states how many characters are "
-                                  "not shown."))
-    safe["_paging"] = notes
+        notes.append(_note(source_path(sequence_path), len(sequence), 0, count, result_id))
+    trimmed = set()
+    while _size(safe) + _size(notes) + 20 > budget_chars:
+        texts = [(p, value) for p, value in _texts(safe) if p and p not in trimmed and len(value) > 100]
+        if not texts:
+            break
+        text_path, value = max(texts, key=lambda item: _size(item[1]))
+        trimmed.add(text_path)
+        room = budget_chars - (_size(safe) - _size(value)) - _size(notes) - NOTE_ROOM - 100
+        count = _text_count(value, max(2, room))
+        _set(safe, text_path, value[:count])
+        notes.append(_note(source_path(text_path), len(value), 0, count, result_id, unit='characters'))
+    if notes:
+        # Finish the text of an included item before advancing to the next item/page.
+        safe['_paging'] = sorted(notes, key=lambda note: note.get('unit') != 'characters')
     return safe
 
 
@@ -168,6 +189,41 @@ def sequence_paths(view):
     """Every part of a stored result that can be read by page, with its number of items, largest first."""
     found = [(list(path), len(sequence)) for path, sequence in _sequences(to_jsonable(view))]
     return sorted(found, key=lambda item: -item[1])
+
+
+def page_for_model(data, *, budget_chars, result_id=None, offset=0, path=None):
+    """``data`` whole when it fits ``budget_chars``; otherwise its largest sequences cut to fit, with ``_paging``.
+
+    ``path``/``offset``: page one sequence of a stored result from ``offset`` (the next-page tool)."""
+    safe = to_jsonable(data)
+    if path is not None:
+        path = _canonical_path(safe, path)
+        sequence = _get(safe, path) if path else safe
+        if not isinstance(sequence, (list, dict, str)):
+            raise ValueError("That path is not a list, mapping or text value in this result.")
+        total = len(sequence)
+        if offset < 0 or offset > total:
+            raise ValueError(f"Use an offset from 0 to {total}.")
+        if isinstance(sequence, str):
+            count = _text_count(sequence[offset:], max(64, budget_chars - 1_000))
+            return dict(text=sequence[offset:offset + count],
+                        _paging=[_note(path, total, offset, count, result_id, unit='characters')])
+        count = _fit_count(sequence, offset, budget_chars - 1_000)
+        def original_path(local):
+            if local and local[0] == 'items':
+                tail = list(local[1:])
+                if tail and isinstance(sequence, list):
+                    tail[0] += offset
+                return tuple(path) + tuple(tail)
+            return local
+        return _fit_payload(dict(items=_slice(sequence, offset, count),
+                                 _paging=[_note(path, total, offset, count, result_id)]),
+                            budget_chars, result_id, source_path=original_path, protected_sequences={('items',)})
+    if _size(safe) <= budget_chars:
+        return safe
+    if not isinstance(safe, dict):
+        safe = {"value": safe}
+    return _fit_payload(safe, budget_chars, result_id)
 
 
 def model_view(data, artifact=None):

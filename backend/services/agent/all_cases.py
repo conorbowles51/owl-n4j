@@ -110,7 +110,10 @@ def may_open(db, user, case_id) -> bool:
         cid = uuid.UUID(str(case_id))
     except (TypeError, ValueError):
         return False
-    if not has_permission(get_membership(db, cid, user.id), "case", "view"):
+    from postgres.models.case_membership import CaseMembership
+    membership = (db.query(CaseMembership).filter(CaseMembership.case_id == cid, CaseMembership.user_id == user.id)
+                  .populate_existing().first())
+    if not has_permission(membership, "case", "view"):
         return False
     try:
         check_case_access(db, cid, user, required_permission=("case", "view"))
@@ -305,8 +308,10 @@ def name_cases_in_answer(answer: str, cited: dict[str, tuple[str, str]], home_ca
 # Tools a cross-case read may run in another case: readers only. Artifact builders, clarification, drafting and
 # proposal tools belong to the person's own case and conversation, so they never run against another case.
 def _readable_elsewhere(name: str) -> bool:
-    return not (name.startswith(("build_", "draft_", "propose_")) or name == "request_clarification"
-                or name in CROSS_CASE_TOOL_NAMES)
+    from services.agent.capabilities import types_for_tool
+    return (name not in {'read_saved_agent_work', 'read_conversation_history', 'read_prior_result'}
+            and bool(types_for_tool(name))
+            and not name.startswith(("build_", "draft_", "propose_", "plan_", "create_", "revise_", "edit_", "append_")))
 
 
 CROSS_CASE_TOOL_NAMES = ("identifier_in_other_cases", "list_my_cases", "find_identifier_across_cases",
@@ -434,7 +439,7 @@ def make_cross_case_tools(context) -> list:
         inner = other_contexts.get(cid)
         if inner is None:
             inner = AgentToolContext(case_id=cid, artifact_preference=context.artifact_preference,
-                                     ledger_session_factory=context.ledger_session_factory)
+                                     ledger_session_factory=context.ledger_session_factory, user_id=context.user_id)
             inner.tools_by_name = {t.name: t for t in make_agent_tools(inner)}
             other_contexts[cid] = inner
         inner.page_budget_chars = context.page_budget_chars

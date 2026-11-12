@@ -340,25 +340,13 @@ class AgentImprovementTests(unittest.TestCase):
         self.assertEqual(result["clarification"]["question"], "Which graph should I build?")
         self.assertEqual(len(result["clarification"]["options"]), 2)
 
-    def test_refinement_metadata_links_new_artifact_to_previous_one(self):
-        class Previous:
-            id = "source-id"
-            type = "graph"
-            title = "Original graph"
-            created_at = 1
-
+    def test_refinement_does_not_guess_the_newest_artifact_as_its_target(self):
         class Thread:
-            artifacts = [Previous()]
-
-        enriched = AgentService._with_refinement_metadata(
-            [{"type": "graph", "metadata": {}, "data": {}}],
-            request_message="remove all nodes except transactions",
-            thread=Thread(),
-        )
-
-        metadata = enriched[0]["metadata"]
-        self.assertTrue(metadata["refinement"])
-        self.assertEqual(metadata["source_artifact_id"], "source-id")
+            artifacts = []
+        artifact = {"type": "graph", "metadata": {"previous_revision_id": "chosen-source"}, "data": {}}
+        enriched = AgentService._with_refinement_metadata([artifact],
+            request_message="revise the earlier graph", thread=Thread())
+        self.assertEqual(enriched[0]["metadata"], {"previous_revision_id": "chosen-source"})
 
     def test_vector_health_reports_missing_service_explicitly(self):
         import services.vector_db_service as vector_db_service

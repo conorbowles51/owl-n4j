@@ -30,7 +30,7 @@ export function AgentRunProgress({
           {onRetry && (
             <Button type="button" size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={onRetry}>
               <RotateCcw className="mr-1 size-3" />
-              Retry
+              Resume run
             </Button>
           )}
           {onDismiss && (
@@ -79,7 +79,7 @@ export function AgentRunProgress({
 
 /** The thread's last question has no answer and nothing is running for it: the run was stopped or did not finish.
  * The stored thread has no record of why, so the note says both and offers to ask again. */
-export function AgentUnansweredNote({ onRetry }: { onRetry?: () => void }) {
+export function AgentUnansweredNote({ onRetry, resumable = false }: { onRetry?: () => void; resumable?: boolean }) {
   return (
     <div className="flex gap-3" role="status" data-testid="agent-unanswered-note">
       <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
@@ -90,7 +90,7 @@ export function AgentUnansweredNote({ onRetry }: { onRetry?: () => void }) {
         {onRetry && (
           <Button type="button" size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={onRetry}>
             <RotateCcw className="mr-1 size-3" />
-            Ask again
+            {resumable ? "Resume run" : "Ask again"}
           </Button>
         )}
       </div>

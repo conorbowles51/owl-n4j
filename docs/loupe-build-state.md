@@ -1,3 +1,40 @@
+## 11–12 November: broad agent implementation — local checks passed; release remains open
+
+The capability implementation is now local. The [agent acceptance record](loupe-agent-acceptance.md) records
+durable execution, broader authorized reads/actions, long and flexible reports, eleven artifact renderers,
+version comparison, full-data exports and actual-model/browser verification. The final long report covers
+all25 subjects and500 records; it exports49 PDF pages and47 Word-rendered pages, and its detected prose
+errors were corrected in the original report. New upstream runtime changes still require integration and
+verification. No push or deployment of this agent release is recorded.
+
+## 11 November: agent conversation audit — follow-up acceptance remains open
+
+The [agent capability and quality plan](loupe-agent-capability-plan.md) expands this follow-up to the full
+product goal: capable task execution, flexible long reports, Loupe-branded professional output, varied
+artifacts, complete authorized reads and connected saved actions. The historical fixes are part of this
+broader scope. The plan records dependencies and synthetic acceptance journeys; implementation remains open.
+
+Read-only review of historical conversations, run/tool records and saved artifacts identified the following
+workflow acceptance requirements. Private transcripts, identifiers, figures and audit exports remain outside
+the repository. This entry records engineering requirements only; it does not publish case evidence.
+
+- Preserve the explicit task, requested subject list, audience, accepted assumptions and corrections across long
+  threads. Continue must resume pending work with retained progress, including after worker replacement.
+- Verify deliverables before claiming completion: required sections and embedded tables must exist, narrative
+  figures must agree with computed data, and corrections must survive report and diagram revisions.
+- Separate evidence inventory, readable source coverage and imported structured data. An unsuccessful search
+  does not establish that a record is absent from the case; exhaustive requests need enumerated coverage.
+- Test speaker-role fidelity, empty answers, repeated clarification loops and provider tool-message formatting
+  through multi-turn synthetic journeys. Successful tool execution is not investigator workflow acceptance.
+- Preserve existing case access controls and proposal safeguards when extending read access and saved actions.
+  A saved action must return its destination, survive reopening and avoid duplicate writes on retry.
+
+Historical symptoms are not all confirmed on the current release. Deployed code inspected during the review
+still loads only the latest twenty thread messages; finalizer and partial-answer safeguards are also present.
+Do not describe those existing safeguards as new work. Implementation, controlled replay and browser acceptance
+of these follow-ups remain open. No live data mutations, model reruns, service restarts or release occurred in
+this audit. Detailed evidence and its limitations are retained in the private local audit, outside Git.
+
 ## 5 November: financial analyses run on the whole case (lx-wholecase)
 
 - **What closes.** The capacity gaps recorded on 16 September (transfers above 500 payments, timelines above 1,000,

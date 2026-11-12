@@ -143,7 +143,16 @@ class FaultDrill:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._model, name)
 
-class DeepSeekReasoningChat(ChatOpenAI):
+class DeepSeekChat(ChatOpenAI):
+    """Keep the provider's documented token-budget field on OpenAI-compatible requests."""
+    def _get_request_payload(self, input_, *, stop=None, **kwargs):
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        if 'max_completion_tokens' in payload:
+            payload['max_tokens'] = payload.pop('max_completion_tokens')
+        return payload
+
+
+class DeepSeekReasoningChat(DeepSeekChat):
     """DeepSeek in thinking mode. With tools in the request, DeepSeek refuses (400) a conversation whose earlier
     assistant turns lack their ``reasoning_content``; LangChain's OpenAI client neither keeps nor sends it. This keeps
     it on the message (additional_kwargs) and sends it back."""
@@ -170,8 +179,10 @@ def deepseek_chat(*, model_id: str, api_key: str, reasoning: str, max_retries: i
     if reasoning not in REASONING_LEVELS:
         raise ValueError(f"Unknown reasoning level: {reasoning}")
     if reasoning == "off":
-        return ChatOpenAI(model=model_id, api_key=api_key, base_url="https://api.deepseek.com", timeout=timeout,
-                          max_retries=max_retries, extra_body={"thinking": {"type": "disabled"}})
+        # The provider's 8K default can cut a multi-section JSON edit in half.
+        # Keep a bounded allowance while still encouraging incremental writes.
+        return DeepSeekChat(model=model_id, api_key=api_key, base_url="https://api.deepseek.com", timeout=timeout,
+                          max_retries=max_retries, max_tokens=32768, extra_body={"thinking": {"type": "disabled"}})
     return DeepSeekReasoningChat(model=model_id, api_key=api_key, base_url="https://api.deepseek.com",
                                  timeout=timeout, max_retries=max_retries,
                                  extra_body={"thinking": {"type": "enabled"}, "reasoning_effort": reasoning})
@@ -216,7 +227,7 @@ def _artifact_store_from_available(available_artifacts: list[dict[str, Any]] | N
 
 def _format_available_artifacts(available_artifacts: list[dict[str, Any]] | None) -> str:
     rows: list[str] = []
-    for artifact in (available_artifacts or [])[-8:]:
+    for artifact in (available_artifacts or []):
         if not isinstance(artifact, dict):
             continue
         artifact_id = str(artifact.get("id") or "")
@@ -323,12 +334,13 @@ _CROSS_TITLES = {"search_case": "Searched the case", "get_person_phones": "Read 
                  "get_evidence_files": "Checked the case's files and their processing",
                  "get_interviews": "Read the interviews and transcripts",
                  "get_transcript": "Read a transcript",
+                 "get_document_text": "Read the complete document text",
                  "list_dossiers": "Listed the dossiers",
                  "get_theory": "Read a theory and what was added to it",
                  "get_significant_layer": "Read the Significant layer",
                  "get_reports": "Read the saved reports"}
 
-_CASE_MATERIAL_TOOLS = ("get_evidence_files", "get_interviews", "get_transcript", "list_dossiers", "get_theory",
+_CASE_MATERIAL_TOOLS = ("get_evidence_files", "get_interviews", "get_transcript", "get_document_text", "list_dossiers", "get_theory",
                         "get_significant_layer", "get_reports")
 
 _PHONE_PROMPT = """Phones (extraction reports of the case's phones):
@@ -608,7 +620,21 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
     title = "Used agent tool"
     detail = "I'm gathering case context before answering."
 
-    if safe_name == "get_case_overview":
+    workspace_activity = {
+        'create_artifact': ('Created a saved deliverable', "I'm saving the requested content and checking its sources and structure."),
+        'revise_artifact': ('Revised a saved deliverable', "I'm saving a new version while preserving earlier work."),
+        'edit_report_sections': ('Updated report sections', "I'm revising the requested sections and retaining the rest of the report."),
+        'append_artifact_rows': ('Added the next data rows', "I'm extending the saved dataset without dropping its existing rows."),
+        'calculate_artifact_data': ('Calculated from the full inputs', "I'm calculating the result and retaining the inputs and method for verification."),
+        'inspect_artifact_export': ('Checked the rendered document', "I'm checking the actual PDF's pages, boundaries and content."),
+        'list_artifacts': ('Located saved deliverables', "I'm finding the requested output and its current version."),
+        'read_artifact': ('Read a saved deliverable', "I'm checking the saved content before using or editing it."),
+        'read_conversation_history': ('Read earlier conversation decisions', "I'm recovering the investigator's earlier instructions and corrections."),
+        'read_prior_result': ('Recovered an earlier source result', "I'm opening the complete saved result used in the earlier work."),
+    }
+    if safe_name in workspace_activity:
+        title, detail = workspace_activity[safe_name]
+    elif safe_name == "get_case_overview":
         title = "Checked the case overview"
         detail = "I need the case size and available entity types before narrowing the search."
     elif safe_name == "search_graph_entities":
@@ -720,7 +746,7 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
                  "get_identity_suggestions": "Read possible links between phone identities"}[safe_name]
         detail = "I'm reading every possible match with its strength, weak and faint ones included."
     elif safe_name in _CASE_MATERIAL_TOOLS:
-        title = _CROSS_TITLES[safe_name]
+        title = _CROSS_TITLES.get(safe_name, "Read case material")
         detail = "I'm reading this case's own records as its pages show them, with links to each."
     elif safe_name in _CROSS_TITLES:
         title = _CROSS_TITLES[safe_name]
@@ -1080,7 +1106,7 @@ Your job:
 - Search documents when the answer needs source text, document excerpts, or semantic context.
 - Read the case's own records with their tools: get_evidence_files (which files are in the case and their processing state), get_interviews and get_transcript (interviews and recordings), list_dossiers and get_dossier, get_casework (notes, findings, observations, theories) and get_theory (one theory with everything added to it), get_significant_layer (what is marked significant), get_reports (saved reports), get_judgement_calls and get_decisions (omit subject for the whole case). Cite casework, theories and dossiers by the href page link each result gives, as a markdown link.
 - For where something happened or where a place is, read get_map_locations (the case map's places, with what happened at each) before searching documents.
-- When phone_coverage says the case has no phones, say so in the answer and do not look for phone material another way.
+- When phone_coverage reports no structured phone extractions, state that coverage precisely. Uploaded transcripts or phone export documents may still exist: use the evidence inventory and document readers when relevant. An explicit access denial or wrong-case identifier is a boundary, never a reason to try another reader.
 - Use run_readonly_cypher for precise graph questions that need counts, filters, paths, or custom tables.
 - Use inspect_graph_schema before writing custom Cypher for labels or properties you have not already inspected in this run.
 - For human-readable entity names in Cypher, prefer coalesce(n.name, n.display_name, n.full_name, n.title, n.key); do not assume display_name exists.
@@ -1091,7 +1117,19 @@ Your job:
 - Do not encode hand-built analytical rows as Cypher UNWIND just to create a table artifact.
 - For report requests, use the purpose and scope already supplied by the user and conversation. For a complete financial analysis, follow the useful default report below. Ask for clarification only when a missing choice materially changes the work.
 - When useful for a report, offer to embed graph, table, or chart artifacts, or create and embed them yourself when they materially support the report.
-- Build reports with build_report_artifact. Treat follow-ups as revisions of the previous report artifact and explain what changed.
+- Reports may have any requested structure and depth. Use create_artifact for the document skeleton, then edit_report_sections incrementally to develop every requested topic. A long requested report must not become a brief summary. Templates are optional; omit sections the user excludes.
+- Compose the requested form with data.document_layout: cover 'inline' or 'page', contents true/false, density 'compact' or 'comfortable', page_size 'A4' or 'Letter', orientation 'portrait' or 'landscape'. A one-page brief generally uses inline cover, no separate contents and compact density. Long reports generally use a separate cover and contents. Keep the requested topics intact when changing layout.
+- Required_items are content requirements with evidence-backed coverage records, not style labels. Add or update citations and coverage incrementally with edit_report_sections add_evidence; use set_document to update presentation or source lists without rewriting completed chapters.
+- For large sources, read and develop the report in coherent batches, saving evidence-backed sections as you go. Retain a coverage ledger in the report rather than postponing all drafting until every source has filled the context. When the user specifies page count, use inspect_artifact_export on the saved report, then substantively revise until the requested bounds and scope are met.
+- Draft each sourced section immediately after reading its actual source pages. Never extrapolate record identifiers, dates, times, people or events from a repeated pattern. If an earlier source observation was compacted, retrieve it again before stating its details. A page target never authorizes invented evidence or padded record lists. Expand with supported analysis, exact source excerpts, unresolved questions and correctly copied source tables. Separate proposed or hypothetical details from cited factual prose. Use real paragraph breaks and valid Markdown tables (including the header separator row), not literal backslash-n text.
+- Use list_artifacts and read_artifact to resolve the exact saved deliverable, including older outputs. Use revise_artifact or edit_report_sections with its current revision; preserve unrelated sections and investigator corrections. Do not create a competing report when asked to update one.
+- Use create_artifact for supported workbook, presentation, timeline, matrix, diagram and interactive compositions. Use append_artifact_rows for complete datasets and calculate_artifact_data for reproducible totals and scenarios. Preserve every requested exhibit, even when there are more than five outputs.
+- Use data_refs and rows_ref to copy full saved datasets into an artifact. Never reconstruct a complete dataset by retyping a paginated preview. Calculations use input_refs to read complete saved sources.
+- Inspect validation returned by artifact tools. Repair issues before calling the deliverable complete; an artifact identifier proves only that a draft was saved. Check requested sections, embeds, source coverage and arithmetic. Structural checks do not establish factual accuracy or rendered layout quality.
+- When revising a saved report, read the affected section by its stable section_id, then compare it with the cited source. Read related sections when a correction affects a wider conclusion. Artifact reads return compact actionable metadata by default; request full check details only when needed, and follow next_read exactly when continuing a list.
+- Preserve the investigator's explicit working assumptions, terminology, audience, required subjects and exclusions. Label assumptions as assumptions and proceed with the requested analysis; do not reopen decisions already answered or substitute a general case mandate for the current assignment.
+- Use read_conversation_history to recover earlier agreed methods or instructions outside the recent turns, and read_prior_result for their complete stored tool data. Historical model answers are not independent evidence. Later explicit investigator corrections override older assumptions.
+- When asked to create or change casework, do the concrete work through the proposal tools. propose_workspace_entry can prepare a cited finding together with its dossier attachment and dated timeline event in one review; propose_dossier_change can create, update or attach material to a dossier. Report the saved proposal and its review destination, without claiming it is already accepted.
 - If the user asks for a timeline, chronology, transaction list, or financial table, build a table artifact with useful date, amount, entity, and reasoning columns.
 - For graph requests, first use search_graph_entities, inspect_graph_schema, or run_readonly_cypher to identify the exact node keys and relationship context that belong in the graph.
 - Prefer build_graph_artifact in selected_subgraph mode with node_keys, source_result_ids, or a graph query. The graph builder can materialize nodes/relationships from prior Cypher results, key columns, or graph-shaped rows.
@@ -1100,7 +1138,7 @@ Your job:
 - If the graph request is ambiguous and the difference changes meaning, ask a clarifying question before building.
 - Use request_clarification with 2-4 options when you need the user to choose a scope before continuing.
 - If a visual artifact would materially help the answer, build it even when the user did not explicitly ask.
-- Prefer one primary artifact. Supporting tables and charts may be embedded in a requested analytical report; avoid redundant standalone views.
+- Produce the requested number and kinds of deliverables. Embed supporting views when requested, while preserving separately requested outputs. Avoid unsolicited duplicates, never discard requested exhibits.
 - Treat follow-ups like "add emails too", "remove non-transaction nodes", "expand it", or "center this node" as refinements of the previous artifact in the thread.
 - If the user says to continue after a tool-budget clarification, continue the previous unfinished request with this fresh run's tool budget.
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
@@ -1115,7 +1153,7 @@ Your job:
 
 Artifact preference from the UI: {state.get("artifact_preference", "auto")}.
 
-Recent artifacts available in this thread:
+Saved artifacts available in this thread (use list_artifacts/read_artifact for full content):
 {available_artifact_context}
 
 Use these artifact ids when revising a previous report or embedding an existing graph, table, or chart in a report.
@@ -1436,7 +1474,23 @@ class AgentGraphRunner:
         all_cases: bool = False,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
         hidden_tools: frozenset[str] | set[str] = frozenset(),
+        checkpoint_callback=None,
+        resume_checkpoint=None,
+        automatic_windows=8,
+        access_check=None,
+        delivery_contract=None,
     ):
+        if checkpoint_callback is not None or resume_checkpoint is not None:
+            from services.agent.durable_execution import stream as durable_stream
+            yield from durable_stream(self, case_id=case_id, messages=messages,
+                artifact_preference=artifact_preference, max_tool_calls=max_tool_calls, thread_id=thread_id,
+                available_artifacts=available_artifacts, should_cancel=should_cancel,
+                allowed_entity_keys=allowed_entity_keys, mandate_context_block=mandate_context_block,
+                final_answer_rules=final_answer_rules, proposer=proposer, user_id=user_id, all_cases=all_cases,
+                on_progress=on_progress, hidden_tools=hidden_tools, checkpoint_callback=checkpoint_callback,
+                resume_checkpoint=resume_checkpoint, automatic_windows=automatic_windows, access_check=access_check,
+                delivery_contract=delivery_contract)
+            return
         from services.agent import live_runs
 
         def note(progress: dict[str, Any]) -> None:
@@ -1463,10 +1517,11 @@ class AgentGraphRunner:
         # Tool results may use a share of the model's context over the run; each result is whole when it fits.
         run_budget = run_budget_chars(context_window_for(getattr(self, "model_id", None)))
         # The tools as sent to the model: optional fields without the repeated null alternative (lean_history).
-        # Tools for material the case holds none of are not offered (service._tools_not_offered); a call to one
-        # still runs, so nothing the model asks for is refused.
+        # Case-scope exclusions apply to dispatch too. Experimental tools remain hidden
+        # unless their existing measured feature switch is enabled.
         from services.agent import fit
         offered = [tool for tool in tools if tool.name not in hidden_tools and tool.name not in fit.hidden_tools()]
+        tools_by_name = {tool.name: tool for tool in tools if tool.name not in hidden_tools}
         model_with_tools = self.base_model.bind_tools(tools_for_binding(self.base_model, offered))
         repeated = RepeatedResults()
 
@@ -1749,7 +1804,7 @@ class AgentGraphRunner:
         yield {"type": "final", "result": result}
 
     def spent_so_far(self) -> dict[str, int] | None:
-        return self._extract_usage(getattr(self, "messages_so_far", None) or [])
+        return self._extract_usage((getattr(self, "messages_so_far", None) or [])[getattr(self, "billed_message_count", 0):])
 
     @staticmethod
     def _extract_usage(messages: list[AnyMessage]) -> dict[str, Any] | None:

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -44,8 +44,28 @@ function ProposalBody({ item }: { item: AgentProposal }) {
           </p>
         )}
         <p className="whitespace-pre-wrap text-sm">{text(c.body)}</p>
+        {text(c.dossier_name) && <p className="text-xs text-muted-foreground">Attach to dossier: {text(c.dossier_name)}.</p>}
+        {text(c.event_date) && <p className="text-xs text-muted-foreground">Add dated timeline event: {text(c.event_date)}.</p>}
       </div>
     )
+  }
+  if (item.output_type === "dossier_change") {
+    const fields = (c.fields || {}) as Record<string, unknown>
+    const before = (c.before || {}) as Record<string, unknown>
+    const links = (Array.isArray(c.links) ? c.links : []) as { target_type: string; target_id: string; label?: string }[]
+    return <div className="space-y-2 text-sm" data-testid="dossier-proposal">
+      <p className="font-semibold">{text(c.title)}</p>
+      <p>{text(c.why)}</p>
+      {Object.entries(fields).map(([key, value]) => <div key={key}>
+        <span className="font-medium">{key.replace(/_/g, " ")}: </span>
+        {c.operation === "update" && <span className="text-muted-foreground">{text(before[key]) || "Empty"} → </span>}
+        <span className="whitespace-pre-wrap">{text(value) || "Empty"}</span>
+      </div>)}
+      {!!links.length && <ul className="list-disc pl-5" aria-label="Material to attach">{links.map((link) =>
+        <li key={`${link.target_type}:${link.target_id}`}>{link.label || `${link.target_type.replace(/_/g, " ")} · ${link.target_id}`}</li>
+      )}</ul>}
+      <p className="text-xs text-muted-foreground">Accepting saves these changes together. Existing attachments remain. If an investigator changed these fields, refresh the proposal.</p>
+    </div>
   }
   if (item.output_type === "counter_argument") {
     return (
@@ -183,11 +203,12 @@ function ProposalBody({ item }: { item: AgentProposal }) {
   )
 }
 
-function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentProposal; canEdit: boolean }) {
+function ProposalCard({ caseId, item, canEdit, onSaved }: { caseId: string; item: AgentProposal; canEdit: boolean; onSaved: (item: AgentProposal) => void }) {
   const client = useQueryClient()
   const [due, setDue] = useState("")
   const [schedule, setSchedule] = useState<string | null>(null)
   const [meaning, setMeaning] = useState<string | null>(null)
+  const [saved, setSaved] = useState<AgentProposal | null>(null)
   const refresh = () => client.invalidateQueries({ queryKey: agentProposalKeys.all(caseId) })
   const cites = item.content.citations || item.citations.map((c) => c.cite || c.source_id || "").filter(Boolean)
   const labels = Object.fromEntries(item.citations.map((c) => [c.cite || c.source_id || "", c.label]))
@@ -262,7 +283,12 @@ function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentPr
             ) : null
           }
           onOpened={(citation) => agentProposalOpened(caseId, item.id, citation)}
-          onAccept={() => acceptAgentProposal(caseId, item.id, acceptBody()).then(refresh)}
+          onAccept={async () => {
+            const result = await acceptAgentProposal(caseId, item.id, acceptBody())
+            setSaved(result)
+            onSaved(result)
+            await refresh()
+          }}
           onReject={(reason) => rejectAgentProposal(caseId, item.id, reason).then(refresh)}
         />
       ) : (
@@ -276,12 +302,27 @@ function ProposalCard({ caseId, item, canEdit }: { caseId: string; item: AgentPr
               : ""}
         </p>
       )}
+      {!!(saved?.accepted_targets || item.accepted_targets)?.length && (
+        <div className="space-y-1" role="status" aria-label="Saved destinations">
+          <p className="text-sm font-medium">Saved. Open the result:</p>
+          <div className="flex flex-wrap gap-3">{(saved?.accepted_targets || item.accepted_targets || []).filter((t) => t.href?.startsWith(`/cases/${caseId}/`)).map((target) => (
+            <a key={`${target.target_type}:${target.target_id}`} className="text-sm text-primary underline" href={target.href}>
+              {target.label || `Open ${target.target_type.replace(/_/g, " ")}`}
+            </a>
+          ))}</div>
+        </div>
+      )}
     </li>
   )
 }
 
 /** The case agent's drafted Workspace work: nothing is in the Workspace until a person accepts it. */
 export function AgentProposalsPanel({ caseId, canEdit }: { caseId: string; canEdit: boolean }) {
+  const [saved, setSaved] = useState<AgentProposal | null>(null)
+  const destinationRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (saved) destinationRef.current?.focus()
+  }, [saved])
   const [status, setStatus] = useState<string>("pending_review")
   const [offset, setOffset] = useState(0)
   const query = useQuery({
@@ -297,6 +338,12 @@ export function AgentProposalsPanel({ caseId, canEdit }: { caseId: string; canEd
           accepts it.
         </p>
       </div>
+      {saved && <div ref={destinationRef} tabIndex={-1} role="status" className="rounded-lg border border-primary/30 bg-primary/5 p-3" aria-label="Saved proposal result">
+        <p className="text-sm font-medium">Saved: {text(saved.content.title) || AGENT_PROPOSAL_LABELS[saved.output_type]}.</p>
+        <div className="mt-1 flex flex-wrap gap-3">{(saved.accepted_targets || []).filter((t) => t.href?.startsWith(`/cases/${caseId}/`)).map((target) =>
+          <a key={`${target.target_type}:${target.target_id}`} className="text-sm text-primary underline" href={target.href}>{target.label || `Open ${target.target_type.replace(/_/g, " ")}`}</a>
+        )}</div>
+      </div>}
       <div className="flex flex-wrap gap-2" role="group" aria-label="Show">
         {STATUSES.map(([value, label]) => (
           <Button
@@ -329,7 +376,7 @@ export function AgentProposalsPanel({ caseId, canEdit }: { caseId: string; canEd
           </p>
           <ul className="space-y-3">
             {query.data.items.map((item) => (
-              <ProposalCard key={item.id} caseId={caseId} item={item} canEdit={canEdit} />
+              <ProposalCard key={item.id} caseId={caseId} item={item} canEdit={canEdit} onSaved={setSaved} />
             ))}
           </ul>
           {offset > 0 && (

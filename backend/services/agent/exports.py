@@ -11,7 +11,7 @@ from typing import Any, Literal
 from postgres.models.agent import AgentArtifactRecord
 
 
-AgentExportFormat = Literal["csv", "pdf", "docx"]
+AgentExportFormat = Literal["csv", "pdf", "docx", "html", "xlsx", "pptx", "svg", "png"]
 
 
 @dataclass(frozen=True)
@@ -25,21 +25,59 @@ def render_artifact_export(
     artifact: AgentArtifactRecord,
     export_format: AgentExportFormat,
 ) -> AgentArtifactExport:
-    if export_format == "pdf":
-        if artifact.type != "report":
-            raise ValueError("PDF export is only supported for report artifacts")
-        return render_report_pdf(title=artifact.title, payload=artifact.payload or {})
-    if export_format == "docx":
-        if artifact.type != "report":
-            raise ValueError("Word export is only supported for report artifacts")
-        return render_report_docx(title=artifact.title, payload=artifact.payload or {})
-    if export_format != "csv":
-        raise ValueError(f"Unsupported artifact export format: {export_format}")
-    return render_artifact_csv(
-        artifact_type=artifact.type,
-        title=artifact.title,
-        payload=artifact.payload or {},
-    )
+    kind, title, payload = artifact.type, artifact.title, dict(artifact.payload or {})
+    from services.agent.source_presentation import present_sources
+    run = getattr(artifact, 'run', None)
+    sources = ((run.extra_metadata or {}).get('execution_checkpoint') or {}).get('result_store', {}) if run else {}
+    payload = present_sources(payload, sources)
+    payload.setdefault("document_metadata", (getattr(artifact, "extra_metadata", None) or {}).get("document_metadata", {}))
+    formats = supported_export_formats(kind)
+    if export_format not in formats:
+        raise ValueError(f"{export_format} export is not supported for {kind}; available: {', '.join(formats)}")
+    if export_format == "csv":
+        return render_artifact_csv(artifact_type=kind,title=title,payload=payload)
+    if export_format in ("svg", "png"):
+        from services.agent.export_visuals import visual_svg,svg_png
+        svg=visual_svg(kind,payload,title)
+        return AgentArtifactExport(svg.encode() if export_format=="svg" else svg_png(svg),
+            f"{_safe_filename(title)}.{export_format}","image/svg+xml" if export_format=="svg" else "image/png")
+    if export_format in ("xlsx", "pptx"):
+        from services.agent.export_office import workbook_bytes,presentation_bytes
+        content=workbook_bytes(kind,title,payload) if export_format=="xlsx" else presentation_bytes(kind,title,payload)
+        media="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if export_format=="xlsx" else "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        return AgentArtifactExport(content,f"{_safe_filename(title)}.{export_format}",media)
+    if export_format=="html" and kind=="interactive":
+        from services.agent.export_office import interactive_html
+        return AgentArtifactExport(interactive_html(title,payload).encode("utf-8"),f"{_safe_filename(title)}.html","text/html; charset=utf-8")
+    if export_format=="pdf" and kind=="presentation":
+        from services.agent.export_office import presentation_bytes
+        from services.agent.export_slides import presentation_pdf
+        return AgentArtifactExport(presentation_pdf(presentation_bytes(kind,title,payload)),f"{_safe_filename(title)}.pdf","application/pdf")
+    document=as_document(kind,title,payload)
+    if export_format=="pdf":return render_report_pdf(title=title,payload=document)
+    if export_format=="docx":return render_report_docx(title=title,payload=document)
+    from services.agent.export_documents import document_html
+    return AgentArtifactExport(document_html(title,document).encode("utf-8"),f"{_safe_filename(title)}.html","text/html; charset=utf-8")
+
+
+def supported_export_formats(kind: str) -> list[str]:
+    if kind=="report":return ["pdf","docx","html","pptx"]
+    if kind=="presentation":return ["pptx","pdf","html","docx"]
+    if kind=="workbook":return ["xlsx","pdf","html","docx"]
+    if kind=="interactive":return ["html","pdf","docx","csv","xlsx"]
+    if kind in ("graph","diagram","chart","map"):return ["svg","png","pdf","docx","html","csv","xlsx"]
+    if kind in ("table","timeline","matrix"):return ["csv","xlsx","pdf","docx","html"]
+    return []
+
+
+def as_document(kind: str,title: str,payload: dict) -> dict:
+    if kind=="report":return payload
+    common={"title":title,"purpose":payload.get("purpose", ""),"document_metadata":payload.get("document_metadata",{}),"sources":payload.get("sources",[])}
+    if kind=="presentation":
+        return {**common,"sections":[{"heading":s.get("title") or f"Slide {i+1}","content":s.get("content") or "",
+            "page_break_before":True,"embeds":s.get("embeds") or []} for i,s in enumerate(payload.get("slides") or [])]}
+    notes = list(dict.fromkeys(str(payload[key]).strip() for key in ('description', 'notes', 'note') if payload.get(key)))
+    return {**common,"sections":[{"heading":title,"content":"\n\n".join(notes), "embeds":[{"type":kind,"title":title,"data":payload,"available":True}]}]}
 
 
 def render_artifact_csv(
@@ -60,13 +98,16 @@ def render_artifact_csv(
 
 
 def _rows_for_artifact(artifact_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
-    if artifact_type == "table":
+    if artifact_type in ("table", "timeline", "matrix", "interactive"):
         return _dict_rows(payload.get("rows"))
     if artifact_type == "chart":
         return _dict_rows(payload.get("rows"))
     if artifact_type == "map":
-        return _dict_rows(payload.get("locations"))
-    if artifact_type == "graph":
+        return [{**row, 'name': row.get('name', row.get('label', '')),
+                 'latitude': row.get('latitude', row.get('lat')),
+                 'longitude': row.get('longitude', row.get('lng', row.get('lon')))}
+                for row in _dict_rows(payload.get("locations") or payload.get('points') or payload.get('rows'))]
+    if artifact_type in ("graph", "diagram"):
         return _graph_rows(payload)
     return _dict_rows(payload.get("rows") or payload.get("items") or payload.get("data"))
 
@@ -76,7 +117,7 @@ def _columns_for_artifact(
     payload: dict[str, Any],
     rows: list[dict[str, Any]],
 ) -> list[str]:
-    if artifact_type == "table":
+    if artifact_type in ("table", "timeline", "matrix", "interactive"):
         explicit = [
             str(column.get("key"))
             for column in _dict_rows(payload.get("columns"))
@@ -124,8 +165,9 @@ def _columns_for_artifact(
             "properties.source_files",
         ],
     }
-    if artifact_type in preferred:
-        return _dedupe([*preferred[artifact_type], *[key for key in _flattened_keys(rows) if key in preferred[artifact_type]]])
+    if artifact_type in ("graph", "diagram", "map"):
+        actual=_flattened_keys(rows)
+        return _dedupe([*[key for key in preferred["graph" if artifact_type=="diagram" else artifact_type] if key in actual], *actual])
     return _dedupe(_flattened_keys(rows))
 
 
@@ -133,7 +175,7 @@ def _graph_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for node in _dict_rows(payload.get("nodes")):
         rows.append({"row_type": "node", **node})
-    for link in _dict_rows(payload.get("links")):
+    for link in _dict_rows(payload.get("links") or payload.get("edges")):
         rows.append({"row_type": "relationship", **link})
     return rows
 
@@ -203,258 +245,26 @@ def _safe_filename(value: str) -> str:
 
 
 def render_report_pdf(*, title: str, payload: dict[str, Any]) -> AgentArtifactExport:
-    try:
-        from weasyprint import HTML
-    except Exception as exc:
-        raise ValueError(f"PDF export is unavailable: {exc}") from exc
-
-    html_text = _report_html(title=title, payload=payload)
-    return AgentArtifactExport(
-        content=HTML(string=html_text).write_pdf(),
-        filename=f"{_safe_filename(title or 'agent-report')}-report.pdf",
-        media_type="application/pdf",
-    )
+    from services.agent.export_documents import document_pdf
+    return AgentArtifactExport(document_pdf(title,payload),f"{_safe_filename(title)}-report.pdf","application/pdf")
 
 
 def render_report_docx(*, title: str, payload: dict[str, Any]) -> AgentArtifactExport:
-    try:
-        from docx import Document
-    except Exception as exc:
-        raise ValueError(f"Word export is unavailable: {exc}") from exc
-
-    document = Document()
-    document.add_heading(str(payload.get("title") or title or "Agent report"), level=0)
-    purpose = str(payload.get("purpose") or "").strip()
-    if purpose:
-        document.add_paragraph(purpose)
-    scope = str(payload.get("scope") or "").strip()
-    if scope:
-        document.add_heading("Scope", level=1)
-        document.add_paragraph(scope)
-    included = [str(item) for item in payload.get("included_items") or [] if str(item).strip()]
-    if included:
-        document.add_heading("Included", level=1)
-        for item in included:
-            document.add_paragraph(item, style="List Bullet")
-
-    for section in _dict_rows(payload.get("sections")):
-        heading = str(section.get("heading") or "Section")
-        level = max(1, min(int(section.get("level") or 2), 3))
-        document.add_heading(heading, level=level)
-        _add_markdownish_docx(document, str(section.get("content") or ""))
-        for embed in _dict_rows(section.get("embeds")):
-            _add_embed_docx(document, embed)
-
-    open_questions = [str(item) for item in payload.get("open_questions") or [] if str(item).strip()]
-    if open_questions:
-        document.add_heading("Open Questions", level=1)
-        for item in open_questions:
-            document.add_paragraph(item, style="List Bullet")
-
-    buffer = io.BytesIO()
-    document.save(buffer)
-    return AgentArtifactExport(
-        content=buffer.getvalue(),
-        filename=f"{_safe_filename(title or 'agent-report')}-report.docx",
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
+    from services.agent.export_documents import document_docx
+    return AgentArtifactExport(document_docx(title,payload),f"{_safe_filename(title)}-report.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 def _report_html(*, title: str, payload: dict[str, Any]) -> str:
-    report_title = str(payload.get("title") or title or "Agent report")
-    sections = _dict_rows(payload.get("sections"))
-    included = [str(item) for item in payload.get("included_items") or [] if str(item).strip()]
-    open_questions = [str(item) for item in payload.get("open_questions") or [] if str(item).strip()]
-    purpose = str(payload.get("purpose") or "").strip()
-    scope = str(payload.get("scope") or "").strip()
-    audience = str(payload.get("audience") or "").strip()
-
-    parts = [
-        "<!doctype html><html><head><meta charset='utf-8'>",
-        "<style>",
-        "body{font-family:Arial,sans-serif;color:#111827;margin:36px;line-height:1.45}",
-        "h1{font-size:28px;margin:0 0 8px}h2{font-size:18px;margin:24px 0 8px}h3{font-size:15px;margin:18px 0 6px}",
-        ".meta{color:#4b5563;font-size:12px;margin-bottom:18px}.scope{border-left:3px solid #d97706;padding-left:12px;color:#374151}",
-        "ul{margin-top:6px}.section{break-inside:avoid}.embed{border:1px solid #d1d5db;border-radius:6px;padding:10px;margin:10px 0 14px}",
-        ".embed-title{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;margin-bottom:6px}",
-        "table{border-collapse:collapse;width:100%;font-size:11px;margin-top:6px}th,td{border:1px solid #d1d5db;padding:5px;text-align:left;vertical-align:top}th{background:#f3f4f6}",
-        ".graph-list{font-size:12px;color:#374151}.muted{color:#6b7280}",
-        "</style></head><body>",
-        f"<h1>{html.escape(report_title)}</h1>",
-    ]
-    if audience:
-        parts.append(f"<div class='meta'>Audience: {html.escape(audience)}</div>")
-    if purpose:
-        parts.append(f"<p>{html.escape(purpose)}</p>")
-    if scope:
-        parts.append(f"<h2>Scope</h2><p class='scope'>{html.escape(scope)}</p>")
-    if included:
-        parts.append("<h2>Included</h2><ul>")
-        parts.extend(f"<li>{html.escape(item)}</li>" for item in included)
-        parts.append("</ul>")
-
-    for section in sections:
-        level = max(2, min(int(section.get("level") or 2), 3))
-        heading_tag = f"h{level}"
-        parts.append("<div class='section'>")
-        parts.append(f"<{heading_tag}>{html.escape(str(section.get('heading') or 'Section'))}</{heading_tag}>")
-        parts.append(_markdownish_to_html(str(section.get("content") or "")))
-        for embed in _dict_rows(section.get("embeds")):
-            parts.append(_embed_html(embed))
-        parts.append("</div>")
-
-    if open_questions:
-        parts.append("<h2>Open Questions</h2><ul>")
-        parts.extend(f"<li>{html.escape(item)}</li>" for item in open_questions)
-        parts.append("</ul>")
-
-    parts.append("</body></html>")
-    return "".join(parts)
+    from services.agent.export_documents import document_html
+    return document_html(title,payload)
 
 
 def _markdownish_to_html(content: str) -> str:
-    lines = [line.rstrip() for line in content.splitlines()]
-    parts: list[str] = []
-    list_open = False
-    paragraph: list[str] = []
-
-    def flush_paragraph() -> None:
-        nonlocal paragraph
-        if paragraph:
-            parts.append(f"<p>{html.escape(' '.join(paragraph))}</p>")
-            paragraph = []
-
-    def close_list() -> None:
-        nonlocal list_open
-        if list_open:
-            parts.append("</ul>")
-            list_open = False
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            flush_paragraph()
-            close_list()
-            continue
-        if stripped.startswith(("- ", "* ")):
-            flush_paragraph()
-            if not list_open:
-                parts.append("<ul>")
-                list_open = True
-            parts.append(f"<li>{html.escape(stripped[2:].strip())}</li>")
-            continue
-        close_list()
-        paragraph.append(stripped)
-
-    flush_paragraph()
-    close_list()
-    return "".join(parts)
+    from services.agent.export_documents import markdown_html
+    return markdown_html(content)
 
 
 def _embed_html(embed: dict[str, Any]) -> str:
-    title = html.escape(str(embed.get("title") or "Embedded artifact"))
-    caption = html.escape(str(embed.get("caption") or ""))
-    artifact_type = str(embed.get("type") or "unknown")
-    data = embed.get("data") if isinstance(embed.get("data"), dict) else {}
-    if not embed.get("available", True):
-        return f"<div class='embed'><div class='embed-title'>{title}</div><p class='muted'>Referenced artifact is not available in this report export.</p></div>"
-    if artifact_type == "table":
-        rows = _dict_rows(data.get("rows"))[:20]
-        columns = _columns_for_artifact("table", data, rows)[:8]
-        return (
-            f"<div class='embed'><div class='embed-title'>Table: {title}</div>"
-            + (f"<p class='muted'>{caption}</p>" if caption else "")
-            + _html_table(columns, rows)
-            + "</div>"
-        )
-    if artifact_type == "graph":
-        nodes = _dict_rows(data.get("nodes"))[:20]
-        links = _dict_rows(data.get("links"))[:20]
-        node_names = ", ".join(str(node.get("name") or node.get("key") or "") for node in nodes[:10])
-        return (
-            f"<div class='embed'><div class='embed-title'>Graph: {title}</div>"
-            + (f"<p class='muted'>{caption}</p>" if caption else "")
-            + f"<p class='graph-list'>{len(nodes)} shown node(s), {len(links)} shown relationship(s).</p>"
-            + (f"<p class='graph-list'>Key nodes: {html.escape(node_names)}</p>" if node_names else "")
-            + "</div>"
-        )
-    if artifact_type == "chart":
-        rows = _dict_rows(data.get("rows"))[:20]
-        columns = _columns_for_artifact("chart", data, rows)[:8]
-        chart_type = html.escape(str(data.get("chart_type") or "chart").replace("_", " "))
-        series = ", ".join(str(item.get("label") or item.get("key") or "") for item in _dict_rows(data.get("series"))[:6])
-        return (
-            f"<div class='embed'><div class='embed-title'>Chart: {title}</div>"
-            + (f"<p class='muted'>{caption}</p>" if caption else "")
-            + f"<p class='graph-list'>Type: {chart_type}. Rows: {len(rows)}."
-            + (f" Series: {html.escape(series)}." if series else "")
-            + "</p>"
-            + _html_table(columns, rows)
-            + "</div>"
-        )
-    return f"<div class='embed'><div class='embed-title'>{title}</div><p class='muted'>Unsupported embedded artifact type: {html.escape(artifact_type)}</p></div>"
-
-
-def _html_table(columns: list[str], rows: list[dict[str, Any]]) -> str:
-    if not rows:
-        return "<p class='muted'>No rows.</p>"
-    header = "".join(f"<th>{html.escape(column)}</th>" for column in columns)
-    body = []
-    for row in rows:
-        flattened = _flatten_dict(row)
-        body.append("<tr>" + "".join(f"<td>{html.escape(_cell_value(flattened.get(column)))}</td>" for column in columns) + "</tr>")
-    return f"<table><thead><tr>{header}</tr></thead><tbody>{''.join(body)}</tbody></table>"
-
-
-def _add_markdownish_docx(document: Any, content: str) -> None:
-    for block in re.split(r"\n\s*\n", content.strip()):
-        lines = [line.strip() for line in block.splitlines() if line.strip()]
-        if not lines:
-            continue
-        if all(line.startswith(("- ", "* ")) for line in lines):
-            for line in lines:
-                document.add_paragraph(line[2:].strip(), style="List Bullet")
-        else:
-            document.add_paragraph(" ".join(lines))
-
-
-def _add_embed_docx(document: Any, embed: dict[str, Any]) -> None:
-    title = str(embed.get("title") or "Embedded artifact")
-    artifact_type = str(embed.get("type") or "unknown")
-    document.add_paragraph(f"Embedded {artifact_type}: {title}")
-    caption = str(embed.get("caption") or "").strip()
-    if caption:
-        document.add_paragraph(caption)
-    data = embed.get("data") if isinstance(embed.get("data"), dict) else {}
-    if artifact_type == "table":
-        rows = _dict_rows(data.get("rows"))[:20]
-        columns = _columns_for_artifact("table", data, rows)[:8]
-        if rows and columns:
-            table = document.add_table(rows=1, cols=len(columns))
-            header_cells = table.rows[0].cells
-            for index, column in enumerate(columns):
-                header_cells[index].text = column
-            for row in rows:
-                cells = table.add_row().cells
-                flattened = _flatten_dict(row)
-                for index, column in enumerate(columns):
-                    cells[index].text = _cell_value(flattened.get(column))
-    elif artifact_type == "graph":
-        nodes = _dict_rows(data.get("nodes"))
-        links = _dict_rows(data.get("links"))
-        document.add_paragraph(f"{len(nodes)} node(s), {len(links)} relationship(s)")
-    elif artifact_type == "chart":
-        chart_type = str(data.get("chart_type") or "chart").replace("_", " ")
-        rows = _dict_rows(data.get("rows"))[:20]
-        columns = _columns_for_artifact("chart", data, rows)[:8]
-        document.add_paragraph(f"Chart type: {chart_type}; {len(rows)} source row(s)")
-        if rows and columns:
-            table = document.add_table(rows=1, cols=len(columns))
-            header_cells = table.rows[0].cells
-            for index, column in enumerate(columns):
-                header_cells[index].text = column
-            for row in rows:
-                cells = table.add_row().cells
-                flattened = _flatten_dict(row)
-                for index, column in enumerate(columns):
-                    cells[index].text = _cell_value(flattened.get(column))
+    from services.agent.export_documents import embed_html
+    return embed_html(embed)

@@ -207,6 +207,58 @@ if __name__ == "__main__":
 
 
 class RecordAndCitationTests(unittest.TestCase):
+    def test_omitted_artifact_receipts_return_an_exact_continuation_instead_of_a_paging_error(self):
+        context = AgentToolContext(case_id='00000000-0000-0000-0000-0000000000aa')
+        tools = {tool.name: tool for tool in make_agent_tools(context)}
+        artifact = tools['create_artifact'].invoke({'kind': 'report', 'title': 'Synthetic receipt read',
+            'data': {'sections': [{'id': 'source', 'heading': 'Source', 'content': 'Synthetic saved content.'}]}})['artifact']
+        compact = tools['read_artifact'].invoke({'artifact_id': artifact['id'], 'section_id': 'source'})
+        context.model_views['compact'] = {'data': compact['data']}
+        continued = tools['read_tool_result_page'].invoke({'result_id': 'compact',
+            'path': ['data', 'metadata', 'claim_evidence']})
+        self.assertEqual(continued['status'], 'success')
+        self.assertFalse(continued['data']['requested_content_returned'])
+        follow = dict(continued['data']['next_read'])
+        name = follow.pop('tool')
+        full = tools[name].invoke(follow)
+        self.assertIn('claim_evidence', full['data']['metadata'])
+        self.assertEqual(full['data']['value'], compact['data']['value'])
+
+    def test_nested_paging_metadata_is_immutable_under_a_smaller_outer_budget(self):
+        original = {"path": ["data", "pages", 6, "text"], "total": 31000, "offset": 0, "returned": 5000,
+                    "remaining": 26000, "next_page": {"tool": "read_tool_result_page", "result_id": "original-result",
+                    "path": ["data", "pages", 6, "text"], "offset": 5000}}
+        page = tool_message_payload(result_id='page-result', summary='', budget_chars=MIN_MESSAGE_CHARS,
+             data={'page_of': 'original-result', 'items': [{'text': 'x' * 31000}], '_paging': [original]})
+        self.assertEqual(page['data']['_paging'][0], original)
+        self.assertTrue(all('_paging' not in note.get('path', []) for note in page.get('_paging', [])))
+
+    def test_complete_oversized_document_pages_can_be_read_without_losing_text_or_paths(self):
+        context = AgentToolContext(case_id='00000000-0000-0000-0000-0000000000aa', page_budget_chars=MIN_MESSAGE_CHARS)
+        pages = [{'page_number': n + 1, 'text': (f'Page {n + 1} evidence.\n' * 1800), 'cite': f'doc://synthetic/{n + 1}'} for n in range(25)]
+        context.model_views['original'] = {'data': {'pages': pages}}
+        reader = next(t for t in make_agent_tools(context) if t.name == 'read_tool_result_page')
+        offset, all_text = 0, []
+        while offset is not None:
+            output = reader.invoke({'result_id': 'original', 'path': ['data', 'pages'], 'offset': offset})
+            shown = tool_message_payload(result_id=output['result_id'], summary=output['summary'], data=output['data'], budget_chars=MIN_MESSAGE_CHARS)
+            self.assertLessEqual(len(json.dumps(shown, ensure_ascii=False, separators=(',', ':'))), MIN_MESSAGE_CHARS)
+            data = shown['data']
+            self.assertEqual(data['_paging'], output['data']['_paging'])
+            page_note = next(note for note in data['_paging'] if note.get('unit') != 'characters')
+            for local, item in enumerate(data['items']):
+                text = item['text']
+                text_note = next((note for note in data['_paging'] if note.get('path') == ['data', 'pages', offset + local, 'text']), None)
+                while text_note and text_note.get('next_page'):
+                    args = {key: value for key, value in text_note['next_page'].items() if key != 'tool'}
+                    self.assertEqual(args['result_id'], 'original')
+                    more = reader.invoke(args)['data']
+                    text += more['text']
+                    text_note = more['_paging'][0]
+                all_text.append(text)
+            offset = (page_note.get('next_page') or {}).get('offset')
+        self.assertEqual(all_text, [page['text'] for page in pages])
+
     def test_a_tools_data_record_is_never_cut_by_key(self):
         data = {"nodes": [{"key": f"n{i}", "t": "z" * 300} for i in range(60)],
                 "links": [{"source": f"n{i}", "target": f"n{i + 1}"} for i in range(59)]}
@@ -221,3 +273,10 @@ class RecordAndCitationTests(unittest.TestCase):
         self.assertEqual(link_document_citations(text),
             "See [March statement.pdf, p.4](doc://March%20statement.pdf/4) and [Ledger.pdf](doc://Ledger.pdf) "
             "and [Already.pdf, p.2](doc://Already%20done.pdf/2).")
+def test_numeric_string_list_path_recovers_to_integer_continuation_without_changing_dict_keys():
+    from services.agent.model_payloads import page_for_model
+    value = {'data': {'pages': [{'0': 'x' * 31000}]}}
+    page = page_for_model(value, budget_chars=5000, result_id='synthetic', path=['data', 'pages', '0', '0'])
+    assert page['text']
+    assert page['_paging'][0]['path'] == ['data', 'pages', 0, '0']
+    assert page['_paging'][0]['next_page']['path'] == ['data', 'pages', 0, '0']

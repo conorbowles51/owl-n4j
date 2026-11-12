@@ -153,6 +153,10 @@ class ReasoningClientTests(unittest.TestCase):
         from services.agent.graph import DeepSeekReasoningChat, deepseek_chat
         off = deepseek_chat(model_id="deepseek-v4-pro", api_key="k", reasoning="off")
         self.assertEqual(off.extra_body, {"thinking": {"type": "disabled"}})
+        self.assertEqual(off.max_tokens, 32768)
+        off_payload = off._get_request_payload([HumanMessage(content="Write a sourced report.")])
+        self.assertEqual(off_payload['max_tokens'], 32768)
+        self.assertNotIn('max_completion_tokens', off_payload)
         high = deepseek_chat(model_id="deepseek-v4-pro", api_key="k", reasoning="high")
         self.assertIsInstance(high, DeepSeekReasoningChat)
         self.assertEqual(high.extra_body, {"thinking": {"type": "enabled"}, "reasoning_effort": "high"})

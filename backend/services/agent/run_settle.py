@@ -10,11 +10,10 @@ its worker lives (``RunHeartbeat``), so the sweep touches only runs whose beat h
 heartbeat column (``heartbeat_at`` empty) is keyed on ``started_at``: a living run would have beaten within
 ``HEARTBEAT_SECONDS``, so an empty beat long past that has no living worker.
 
-The sweep (``settle_orphaned_runs``) marks each orphaned run ``interrupted`` — never ``completed``, and never left
-``running`` — states the cut on the run record (``error``), and puts a plain line in the thread so the person who
-asked sees why there is no answer. It runs once at startup and then every ``SWEEP_SECONDS`` in every worker
-(``settle_forever``); rows are taken with FOR UPDATE SKIP LOCKED so two workers never settle, or write the thread
-line for, the same run twice.
+The sweep (``settle_orphaned_runs``) claims checkpointed runs for bounded automatic recovery under a new execution
+lease. Legacy runs without checkpoints and runs which exhaust their recovery attempts become ``interrupted``
+with a plain thread explanation. It runs once at startup and every ``SWEEP_SECONDS`` in each worker; rows are
+taken with FOR UPDATE SKIP LOCKED so two workers cannot claim the same recovery or duplicate its thread line.
 
 Decisions (lx-agentruns, 8 Nov 2026):
 - D-r1 The sweep keys on the heartbeat (ownership), not age alone: a slow run that still beats is never touched.
@@ -63,8 +62,10 @@ class RunHeartbeat:
 
     POLL_SECONDS = 2
 
-    def __init__(self, run_id):
+    def __init__(self, run_id, lease=None):
         self.run_id = run_id
+        self.lease = lease
+        self.lost_lease = False
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._lock = threading.Lock()
@@ -110,8 +111,13 @@ class RunHeartbeat:
             self._progress_dirty = False
         try:
             with get_background_session() as session:
-                session.execute(update(AgentRun).where(AgentRun.id == self.run_id)
-                                .values(heartbeat_at=_now()))
+                statement = update(AgentRun).where(AgentRun.id == self.run_id)
+                if self.lease:
+                    statement = statement.where(AgentRun.extra_metadata['execution_lease'].as_string() == self.lease)
+                changed = session.execute(statement.values(heartbeat_at=_now()))
+                if self.lease and not changed.rowcount:
+                    self.lost_lease = True
+                    return
                 if progress is not None:
                     _write_progress(session, self.run_id, progress)
                 session.commit()
@@ -129,7 +135,12 @@ class RunHeartbeat:
         from services.agent.cancellation import request_cancel
         try:
             with get_background_session() as session:
-                status = session.execute(select(AgentRun.status).where(AgentRun.id == self.run_id)).scalar()
+                row = session.execute(select(AgentRun.status, AgentRun.extra_metadata).where(AgentRun.id == self.run_id)).first()
+            if row is not None and self.lease and (row[1] or {}).get('execution_lease') != self.lease:
+                # A global cancellation flag would also stop a replacement on this process.
+                self.lost_lease = True
+                return
+            status = row[0] if row is not None else None
             if status is not None and status != 'running':
                 request_cancel(str(self.run_id))
         except Exception as exc:  # noqa: BLE001
@@ -155,8 +166,8 @@ def _write_progress(session, run_id, progress: dict) -> None:
 
 
 def settle_orphaned_runs(session) -> list[dict]:
-    """Every ``running`` run with no living worker: marked ``interrupted``, the cut on the record, a line in the
-    thread. New and beating runs are untouched. Returns what was settled, for the log."""
+    """Claim checkpointed orphans for recovery; mark legacy/exhausted orphans interrupted.
+    New and beating runs are untouched. Returns the claimed/settled work for dispatch."""
     from postgres.models.agent import AgentRun
     from services.agent import storage
     cutoff = _now() - timedelta(seconds=STALE_AFTER)
@@ -167,6 +178,19 @@ def settle_orphaned_runs(session) -> list[dict]:
     settled = []
     for run in session.scalars(query).all():
         if run.status != 'running':  # re-read under the lock
+            continue
+        meta = run.extra_metadata or {}
+        checkpoint = meta.get('execution_checkpoint')
+        if (isinstance(checkpoint, dict) and checkpoint.get('version') == 1
+                and meta.get('execution_request') and int(meta.get('recovery_attempts', 0)) < 3):
+            # Claim under the row lock. Other workers see a fresh heartbeat and cannot dispatch this run again.
+            run.heartbeat_at = _now()
+            import uuid
+            token = str(uuid.uuid4())
+            run.extra_metadata = {**meta, 'recovery_attempts': int(meta.get('recovery_attempts', 0)) + 1,
+                                  'execution_resume_token': token, 'execution_resume_pending': True,
+                                  'execution_lease': token}
+            settled.append(dict(run_id=str(run.id), thread_id=str(run.thread_id), recover=True))
             continue
         run.status = INTERRUPTED
         run.error = RECORD_WORDS
@@ -180,7 +204,7 @@ def settle_orphaned_runs(session) -> list[dict]:
                             started_at=run.started_at.isoformat() if run.started_at else None))
     session.commit()
     if settled:
-        log.warning('Settled %d orphaned agent run(s) as interrupted: %s', len(settled),
+        log.warning('Claimed or settled %d orphaned agent run(s): %s', len(settled),
                     ', '.join(r['run_id'] for r in settled))
     return settled
 
@@ -188,7 +212,12 @@ def settle_orphaned_runs(session) -> list[dict]:
 def _settle_once() -> None:
     from postgres.session import get_background_session
     with get_background_session() as session:
-        settle_orphaned_runs(session)
+        settled = settle_orphaned_runs(session)
+    from services.agent.durable_execution import recover_run
+    for item in settled:
+        if item.get('recover'):
+            threading.Thread(target=recover_run, args=(item['run_id'],),
+                             name='agent-recovery-' + item['run_id'], daemon=True).start()
 
 
 async def settle_forever() -> None:

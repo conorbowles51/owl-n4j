@@ -538,7 +538,7 @@ def get_dossier(db: Session, *, dossier_id: uuid.UUID, user: User) -> dict[str, 
     return serialize_dossier(db, _read(db, dossier_id, user))
 
 
-def update_dossier(db: Session, *, dossier_id: uuid.UUID, user: User, data: dict[str, Any]) -> dict[str, Any]:
+def update_dossier(db: Session, *, dossier_id: uuid.UUID, user: User, data: dict[str, Any], commit: bool = True) -> dict[str, Any]:
     dossier = _write(db, dossier_id, user)
     if "display_name" in data:
         if dossier.canonical_entity_key:
@@ -557,6 +557,9 @@ def update_dossier(db: Session, *, dossier_id: uuid.UUID, user: User, data: dict
     if "roles" in data:
         _replace_roles(db, dossier, data.get("roles") or [], user)
     dossier.updated_by_user_id = user.id
+    if not commit:
+        db.flush()
+        return {"id": str(dossier.id), "display_name": dossier.display_name}
     db.commit()
     if "contacts" in data or "display_name" in data:
         _phone_suggestions(db, dossier.case_id, "a dossier edit")
@@ -690,6 +693,7 @@ def replace_links(db: Session, *, dossier_id: uuid.UUID, user: User, links: list
 
 def add_links(
     db: Session, *, dossier_id: uuid.UUID, user: User, links: list[dict[str, Any]], origin: str | None = None,
+    commit: bool = True,
 ) -> dict[str, Any]:
     """Append links. Idempotent: a target already on the Dossier is skipped and keeps its adder and time.
 
@@ -747,7 +751,10 @@ def add_links(
         "added": len(new_rows), "skipped": skipped, "origin": _text(origin),
         "types": sorted({row.target_type for row in new_rows}),
     })
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return {
         "dossier_id": str(dossier.id),
         "added": len(new_rows),

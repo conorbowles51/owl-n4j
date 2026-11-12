@@ -1,4 +1,4 @@
-"""Investigator-selected financial evidence in the shared case Timeline.
+"""Investigator-selected evidence and findings in the shared case Timeline.
 
 Snapshots retain the as-added evidence. Current readings are resolved on every
 read; corrections keep the same event key and removed sources remain labelled.
@@ -149,6 +149,8 @@ def _payment_event(row, key):
 def _finding_event(entry, key, event_date):
     tags = entry.tags or []
     kind = "Observation" if "financial-entry-observation" in tags or ("financial-observation" not in tags and "financial-conclusion" not in tags and "financial-entry-finding" not in tags) else "Finding"
+    if 'financial' not in tags:
+        kind = 'Finding'
     return dict(key=key, name=entry.title or f"Untitled {kind.lower()}", type=kind,
         date=event_date, time=None, amount=None, summary=entry.body, notes=None, connections=[],
         source_references=list(dict.fromkeys(link.target_label for link in entry.links if link.target_label)),
@@ -217,7 +219,7 @@ def preview_addition(db: Session, *, case_id: UUID, request: TimelineAddition):
             title = target.label or "Phone record"
         else:
             entry = sources.get(id)
-            if not entry or entry.case_id != case_id or entry.deleted_at or "financial" not in entry.tags or "financial-report" in entry.tags:
+            if not entry or entry.case_id != case_id or entry.deleted_at or (entry.entry_type != 'finding' and 'financial' not in entry.tags) or "financial-report" in entry.tags:
                 raise ValueError("This finding or observation is no longer available in this case. Refresh the list.")
             source_id = id
             key = _key(case_id, request.source_kind, source_id)
@@ -241,7 +243,7 @@ def preview_addition(db: Session, *, case_id: UUID, request: TimelineAddition):
         undated=sum(row["status"] == "undated" for row in rows))
 
 
-def save_addition(db: Session, *, case_id: UUID, request: TimelineAddition, actor: str):
+def save_addition(db: Session, *, case_id: UUID, request: TimelineAddition, actor: str, commit: bool = True):
     try:
         # Serialize additions to this case so duplicate clicks cannot create two events.
         db.execute(select(Case.id).where(Case.id == case_id).with_for_update()).scalar_one()
@@ -265,7 +267,10 @@ def save_addition(db: Session, *, case_id: UUID, request: TimelineAddition, acto
                 db.add(TimelineEntry(id=UUID(row["event"]["key"][len(PREFIX):]), case_id=case_id,
                     source_kind=request.source_kind, source_id=UUID(row["source_id"]),
                     event_snapshot=row["event"], added_by=actor))
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         return dict(case_id=str(case_id), added=preview["ready"], already_added=preview["already_added"], undated=preview["undated"], event_keys=keys)
     except Exception:
         db.rollback()
@@ -298,6 +303,8 @@ def resolve_entry(db, entry):
         if current and current.case_id == entry.case_id and not current.deleted_at:
             event = _finding_event(current, snapshot["key"], snapshot["date"])
     if event:
+        if snapshot.get('actor_origin'):
+            event['actor_origin'] = snapshot['actor_origin']
         return event
     snapshot["source"] = {**snapshot["source"], "state": "snapshot"}
     snapshot["summary"] = "Saved Timeline copy: the source was removed, excluded or no longer has a usable date. " + (snapshot.get("summary") or "")

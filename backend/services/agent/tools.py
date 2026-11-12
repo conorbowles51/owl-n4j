@@ -26,12 +26,12 @@ from services.neo4j.timeline_service import timeline_service
 from services.vector_db_service import get_vector_db_service
 
 
-MAX_DIRECT_TABLE_ROWS = 100
-MAX_DIRECT_TABLE_COLUMNS = 20
-MAX_DIRECT_TABLE_CELL_CHARS = 1200
+MAX_DIRECT_TABLE_ROWS = 10000
+MAX_DIRECT_TABLE_COLUMNS = 200
+MAX_DIRECT_TABLE_CELL_CHARS = 100000
 MAX_DIRECT_TABLE_KEY_CHARS = 80
-MAX_CHART_ROWS = 250
-MAX_CHART_SERIES = 8
+MAX_CHART_ROWS = 10000
+MAX_CHART_SERIES = 64
 MAX_CHART_CELL_CHARS = 600
 ChartType = Literal["bar", "stacked_bar", "line", "area", "pie", "donut", "scatter"]
 logger = logging.getLogger(__name__)
@@ -483,7 +483,7 @@ class ResultPageArgs(BaseModel):
     result_id: str = Field(..., description="The result_id named in a _paging note or a digest.")
     path: list[str | int] | None = Field(None, description="The path named in the _paging note, e.g. [\"data\", "
                                          "\"rows\"]. Leave out to read the whole result again (a digest).")
-    offset: int = Field(0, ge=0, description="The offset named in next_page.")
+    offset: int = Field(0, ge=0, description="The offset named in next_page: items for a list, characters for a text value.")
 
 
 class WorkingNote(BaseModel):
@@ -642,10 +642,11 @@ class ReportEmbedArgs(BaseModel):
 
 
 class ReportSectionArgs(BaseModel):
+    id: str | None = None
     heading: str = Field(..., min_length=1, max_length=160)
-    content: str = Field(..., min_length=1, max_length=12000)
-    level: int = Field(2, ge=1, le=3)
-    embeds: list[ReportEmbedArgs] = Field(default_factory=list, max_length=6)
+    content: str = Field(..., min_length=1, max_length=1000000)
+    level: int = Field(2, ge=1, le=6)
+    embeds: list[ReportEmbedArgs] = Field(default_factory=list)
 
 
 class ReportArtifactArgs(BaseModel):
@@ -660,11 +661,10 @@ class ReportArtifactArgs(BaseModel):
     included_items: list[str] = Field(
         ...,
         min_length=1,
-        max_length=30,
         description="Specific topics, evidence groups, questions, or headings included in the report.",
     )
     audience: str | None = Field(default=None, max_length=300)
-    sections: list[ReportSectionArgs] = Field(..., min_length=1, max_length=24)
+    sections: list[ReportSectionArgs] = Field(..., min_length=1)
     source_result_ids: list[str] = Field(default_factory=list, max_length=30)
     open_questions: list[str] = Field(default_factory=list, max_length=20)
     revision_note: str | None = Field(default=None, max_length=1000)
@@ -761,13 +761,8 @@ def _lookup_entity_names_and_kinds(case_id: str, keys: list[str]) -> dict[str, d
 
 
 def _artifact(artifact_type: str, title: str, data: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any]:
-    return {
-        "id": str(uuid.uuid4()),
-        "type": artifact_type,
-        "title": title,
-        "data": to_jsonable(data),
-        "metadata": to_jsonable(metadata or {}),
-    }
+    from services.agent.deliverables import new_artifact
+    return new_artifact(artifact_type, title, to_jsonable(data), metadata=to_jsonable(metadata or {}))
 
 
 def _graph_counts(graph: dict[str, Any]) -> str:
@@ -854,6 +849,12 @@ def _is_table_scalar(value: Any) -> bool:
     return isinstance(value, float) and value == value and value not in (float("inf"), float("-inf"))
 
 
+def _complete_text(value: str, limit: int, label: str) -> str:
+    if len(value) > limit:
+        raise ValueError(f"{label} exceeds {limit} characters. Shorten it explicitly or use a companion report; nothing was truncated.")
+    return value
+
+
 def _normalize_direct_table(
     *,
     rows: list[dict[str, Any]],
@@ -869,12 +870,12 @@ def _normalize_direct_table(
     for column in columns:
         raw_key = column.key if isinstance(column, TableColumnArgs) else column.get("key")
         raw_label = column.label if isinstance(column, TableColumnArgs) else column.get("label")
-        key = truncate_text(str(raw_key).strip(), MAX_DIRECT_TABLE_KEY_CHARS)
+        key = _complete_text(str(raw_key).strip(), MAX_DIRECT_TABLE_KEY_CHARS, "Column key")
         if not key:
             raise ValueError("Table column keys cannot be blank.")
         if key not in ordered_keys:
             ordered_keys.append(key)
-        column_labels[key] = truncate_text(raw_label or key.replace("_", " ").title(), 120)
+        column_labels[key] = _complete_text(raw_label or key.replace("_", " ").title(), 120, "Column label")
 
     normalized_rows: list[dict[str, Any]] = []
     for row_index, row in enumerate(rows, start=1):
@@ -882,7 +883,7 @@ def _normalize_direct_table(
             raise ValueError(f"Table row {row_index} must be an object.")
         normalized: dict[str, Any] = {}
         for raw_key, raw_value in row.items():
-            key = truncate_text(str(raw_key).strip(), MAX_DIRECT_TABLE_KEY_CHARS)
+            key = _complete_text(str(raw_key).strip(), MAX_DIRECT_TABLE_KEY_CHARS, "Column key")
             if not key:
                 raise ValueError(f"Table row {row_index} contains a blank column key.")
             if not _is_table_scalar(raw_value):
@@ -893,7 +894,7 @@ def _normalize_direct_table(
             if key not in ordered_keys:
                 ordered_keys.append(key)
             if isinstance(raw_value, str):
-                normalized[key] = truncate_text(raw_value, MAX_DIRECT_TABLE_CELL_CHARS)
+                normalized[key] = _complete_text(raw_value, MAX_DIRECT_TABLE_CELL_CHARS, "Table cell")
             else:
                 normalized[key] = raw_value
         normalized_rows.append(normalized)
@@ -924,7 +925,7 @@ def _normalize_chart_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, st
             raise ValueError(f"Chart row {row_index} must be an object.")
         normalized: dict[str, Any] = {}
         for raw_key, raw_value in row.items():
-            key = truncate_text(str(raw_key).strip(), MAX_DIRECT_TABLE_KEY_CHARS)
+            key = _complete_text(str(raw_key).strip(), MAX_DIRECT_TABLE_KEY_CHARS, "Column key")
             if not key:
                 raise ValueError(f"Chart row {row_index} contains a blank column key.")
             if not _is_table_scalar(raw_value):
@@ -934,7 +935,7 @@ def _normalize_chart_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, st
                 )
             if key not in ordered_keys:
                 ordered_keys.append(key)
-            normalized[key] = truncate_text(raw_value, MAX_CHART_CELL_CHARS) if isinstance(raw_value, str) else raw_value
+            normalized[key] = _complete_text(raw_value, MAX_CHART_CELL_CHARS, "Chart cell") if isinstance(raw_value, str) else raw_value
         normalized_rows.append(normalized)
 
     if len(ordered_keys) > MAX_DIRECT_TABLE_COLUMNS:
@@ -1077,7 +1078,7 @@ def _snapshot_report_embed(context: AgentToolContext, embed: ReportEmbedArgs) ->
         }
 
     artifact_type = str(artifact.get("type") or "unknown")
-    if artifact_type not in {"graph", "table", "chart"}:
+    if artifact_type not in {"graph", "table", "chart", "map", "matrix", "timeline", "diagram", "workbook", "presentation", "interactive"}:
         return {
             "artifact_id": embed.artifact_id,
             "caption": embed.caption,
@@ -1085,7 +1086,7 @@ def _snapshot_report_embed(context: AgentToolContext, embed: ReportEmbedArgs) ->
             "type": artifact_type,
             "title": str(artifact.get("title") or "Referenced artifact"),
             "data": {},
-            "reason": "Only graph, table, and chart artifacts can be embedded in reports.",
+            "reason": "This artifact type cannot be embedded in reports.",
         }
 
     return {
@@ -1094,9 +1095,9 @@ def _snapshot_report_embed(context: AgentToolContext, embed: ReportEmbedArgs) ->
         "available": True,
         "type": artifact_type,
         "title": str(artifact.get("title") or "Embedded artifact"),
-        # 250: the most rows or nodes any builder accepts (charts, graphs), so an embed never drops any.
-        "data": truncate_payload(artifact.get("data") or {}, max_items=250, max_text_chars=2000),
-        "metadata": truncate_payload(artifact.get("metadata") or {}, max_items=30, max_text_chars=1000),
+        # Embed the complete immutable revision. Paging applies to model messages, never saved content.
+        "data": to_jsonable(artifact.get("data") or {}),
+        "metadata": to_jsonable(artifact.get("metadata") or {}),
     }
 
 
@@ -1109,7 +1110,7 @@ def _normalize_report_sections(
     seen_embed_ids: set[str] = set()
 
     for index, section in enumerate(sections, start=1):
-        section_id = f"section-{index}"
+        section_id = section.id or f"section-{index}"
         section_embeds: list[dict[str, Any]] = []
         for embed in section.embeds:
             snapshot = _snapshot_report_embed(context, embed)
@@ -1124,8 +1125,8 @@ def _normalize_report_sections(
             {
                 "id": section_id,
                 "heading": truncate_text(section.heading, 160),
-                "content": link_document_citations(truncate_text(section.content, 12000)),
-                "level": max(1, min(int(section.level or 2), 3)),
+                "content": link_document_citations(section.content),
+                "level": max(1, min(int(section.level or 2), 6)),
                 "embeds": section_embeds,
             }
         )
@@ -2703,10 +2704,25 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         try:
             page = page_for_model(view, budget_chars=budget, result_id=source, offset=offset, path=path)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
+            saved_data = view.get('data') if isinstance(view.get('data'), dict) else {}
+            details = saved_data.get('metadata_details') or {}
+            details = details if isinstance(details, dict) else {}
+            if (list(path[:2]) == ['data', 'metadata'] and len(path) > 2
+                    and path[2] in details.get('omitted_fields', []) and details.get('read_full_metadata')):
+                return context.result('read_tool_result_page', {
+                    'page_of': result_id, 'requested_content_returned': False,
+                    'reason': 'This artifact read deliberately omitted verbose audit receipts. The saved content is still available.',
+                    'next_read': {'tool': 'read_artifact', **details['read_full_metadata']}},
+                    summary='Use the exact read_artifact arguments in next_read to retrieve the full metadata. '
+                            'This is an explicit continuation, not missing source material.')
             fixed = None
             if not (fit.on("B") or fit.on("T")):
-                return context.result("read_tool_result_page", {"error": str(exc) or "That path is not in the result."},
-                    summary="That page could not be read; use the path and offset from the _paging note.",
+                original_id = (view.get('data') or {}).get('page_of') if isinstance(view.get('data'), dict) else None
+                original_id = original_id if original_id in context.model_views else result_id
+                recovery = page_for_model(context.model_views[original_id], budget_chars=4_000, result_id=original_id)
+                return context.result("read_tool_result_page", {"error": str(exc) or "That path is not in the result.",
+                    "_paging": recovery.get('_paging') or [], "original_result_id": original_id},
+                    summary="That page could not be read. Use the unchanged result_id, path and offset in _paging; do not guess a new offset.",
                     status="error", error=str(exc) or "Invalid path.")
             # A wrong path is answered with the right one (lx-agentfit B: 4 demo page reads named a path the result
             # does not have). The path without its "data" or "artifact" root is read at that root; otherwise the
@@ -2740,7 +2756,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         context.page_reads.add(key)
         out = context.result("read_tool_result_page", {"page_of": source, **page,
                                                        **({"path_used": fixed} if fixed else {})},
-            summary=(f"Read items {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} "
+            summary=(f"Read {note.get('unit', 'items')} {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} "
                      f"at {where}; {note['remaining']} remain."
                      + (f" The path is {fixed}, not {asked}." if fixed else "")))
         context.reread_source[out["result_id"]] = source
@@ -3010,7 +3026,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "max_nodes": max_nodes,
                 "max_relationships": max_relationships,
                 "include_bridge_nodes": include_bridge_nodes,
-                "source_result_ids": list(source_result_ids or [])[:12],
+                "source_result_ids": list(source_result_ids or []),
                 "source_result_count": source_count,
                 "query": repaired_query,
                 "query_row_count": len(query_rows),
@@ -3066,7 +3082,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         metadata = {
             "row_count": len(normalized_rows),
             "direct_rows": True,
-            "source_result_ids": list(source_result_ids or [])[:20],
+            "source_result_ids": list(source_result_ids or []),
         }
         if notes:
             metadata["notes"] = truncate_text(notes, 1000)
@@ -3137,7 +3153,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             {
                 "row_count": row_count,
                 "chart_type": chart_type,
-                "source_result_ids": list(source_result_ids or [])[:20],
+                "source_result_ids": list(source_result_ids or []),
                 "direct_rows": True,
             },
         )
@@ -3165,7 +3181,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         revision_note: str | None = None,
     ) -> dict[str, Any]:
         normalized_sections, embedded_artifacts = _normalize_report_sections(context, sections)
-        clean_included = [truncate_text(item, 300) for item in included_items if str(item).strip()]
+        clean_included = [str(item) for item in included_items if str(item).strip()]
         if not clean_included:
             return context.result(
                 "build_report_artifact",
@@ -3186,12 +3202,12 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "included_items": clean_included,
                 "sections": normalized_sections,
                 "embedded_artifacts": embedded_artifacts,
-                "open_questions": [truncate_text(item, 300) for item in (open_questions or []) if str(item).strip()],
+                "open_questions": [str(item) for item in (open_questions or []) if str(item).strip()],
             },
             {
                 "section_count": len(normalized_sections),
                 "embedded_artifact_count": len(embedded_artifacts),
-                "source_result_ids": list(source_result_ids or [])[:30],
+                "source_result_ids": list(source_result_ids or []),
                 "revision_note": truncate_text(revision_note, 1000) if revision_note else "",
                 "status": "draft",
             },
@@ -3731,4 +3747,24 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "what the casework report would hold, section by section, if it were exported now."),
             args_schema=ReportsArgs,
         ),
-    ] + _proposal_tools(context) + _cross_case_tools(context) + _match_tools(context)
+    ] + _proposal_tools(context) + _cross_case_tools(context) + _match_tools(context) + _deliverable_tools(context) + _source_read_tools(context) + _conversation_read_tools(context) + _workspace_read_tools(context)
+
+
+def _deliverable_tools(context):
+    from services.agent.deliverable_tools import make_deliverable_tools
+    return make_deliverable_tools(context)
+
+
+def _source_read_tools(context):
+    from services.agent.source_read_tools import make_source_read_tools
+    return make_source_read_tools(context)
+
+
+def _conversation_read_tools(context):
+    from services.agent.conversation_read_tools import make_conversation_read_tools
+    return make_conversation_read_tools(context)
+
+
+def _workspace_read_tools(context):
+    from services.agent.workspace_read_tools import make_workspace_read_tools
+    return make_workspace_read_tools(context)

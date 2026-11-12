@@ -49,6 +49,19 @@ class EntryProposalArgs(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     body: str = Field(..., min_length=1, max_length=8000)
     citations: list[str] = Field(..., min_length=1, max_length=20)
+    dossier_id: str | None = Field(None, description='Optionally attach the saved entry to this existing dossier on acceptance.')
+    event_date: date | None = Field(None, description='For a finding, optionally add its dated timeline event in the same acceptance.')
+
+
+class DossierProposalArgs(BaseModel):
+    operation: Literal['create', 'update', 'attach']
+    dossier_id: str | None = Field(None, description='Existing dossier ID for update or attach.')
+    fields: dict[str, str | None] = Field(default_factory=dict, description='Only display_name, summary, importance, dossier_type. '
+                                        'Create needs display_name. Updates preserve unmentioned fields.')
+    links: list[dict[str, str]] = Field(default_factory=list, max_length=50,
+        description='Attachments with target_type and target_id, e.g. entry, evidence, agent_artifact. Existing links stay.')
+    why: str = Field(..., min_length=1, max_length=1200)
+    citations: list[str] = Field(..., min_length=1, max_length=20)
 
 
 class SweepPlanArgs(BaseModel):
@@ -193,6 +206,15 @@ def make_proposal_tools(context) -> list[StructuredTool]:
                                   status='error', error=message)
         try:
             with _write_session() as session:
+                from postgres.models.user import User
+                from services.case_service import check_case_access
+                current_user = session.get(User, _as_uuid(who.get('for_user_id')))
+                if current_user is None or not current_user.is_active:
+                    raise ProposalError('An active case editor is required.', 403)
+                try:
+                    check_case_access(session, _as_uuid(context.case_id), current_user, required_permission=('case', 'edit'))
+                except Exception as exc:
+                    raise ProposalError('Case edit access is required to record a proposal.', 403) from exc
                 item = work(session, origin())
         except ProposalError as exc:
             return context.result(name, {'error': str(exc), 'recorded': False},
@@ -221,7 +243,15 @@ def make_proposal_tools(context) -> list[StructuredTool]:
         from services.agent import workspace_proposals as W
         return call('propose_workspace_entry', 'Workspace proposals', lambda s, o: W.propose_entry(
             s, case_id=context.case_id, entry_type=args.entry_type, title=args.title, body=args.body,
-            citations=args.citations, origin=o, requested_by_user_id=(context.proposer or {}).get('for_user_id')))
+            citations=args.citations, origin=o, requested_by_user_id=(context.proposer or {}).get('for_user_id'),
+            dossier_id=args.dossier_id, event_date=args.event_date))
+
+    def propose_dossier_change(**kw):
+        from services.agent.dossier_proposals import propose_dossier
+        args = DossierProposalArgs(**kw)
+        return call('propose_dossier_change', 'Workspace proposals', lambda s, o: propose_dossier(
+            s, case_id=context.case_id, **args.model_dump(), origin=o,
+            requested_by_user_id=(context.proposer or {}).get('for_user_id')))
 
     def propose_lead_card(**kw):
         args = LeadCardArgs(**kw)
@@ -347,7 +377,8 @@ def make_proposal_tools(context) -> list[StructuredTool]:
         return sweep('propose_counter_arguments', work)
 
     rule = (' Records a proposal only: nothing changes until a person accepts it after opening a cited source. Use '
-            'it when the user asks you to propose, draft or suggest work, never to answer a question.')
+            'it when the user asks you to create, add, change, propose, draft or suggest casework; explain the saved '
+            'proposal and destination. Do not use it merely to answer a question.')
     return [
         StructuredTool.from_function(
             func=plan_theory_sweep, name='plan_theory_sweep', args_schema=SweepPlanArgs,
@@ -367,7 +398,11 @@ def make_proposal_tools(context) -> list[StructuredTool]:
                          'side of a payment is.' + rule)),
         StructuredTool.from_function(
             func=propose_workspace_entry, name='propose_workspace_entry', args_schema=EntryProposalArgs,
-            description='Draft a Workspace note or finding with cited sources.' + rule),
+            description='Draft a cited note or finding, optionally attached to a dossier and added as a dated event in one review.' + rule),
+        StructuredTool.from_function(
+            func=propose_dossier_change, name='propose_dossier_change', args_schema=DossierProposalArgs,
+            description='Create a dossier, update its name/summary/importance/type, or attach sources, findings or artifacts. '
+                        'Keeps existing links and detects investigator edits made since the proposal.' + rule),
         StructuredTool.from_function(
             func=propose_lead_card, name='propose_lead_card', args_schema=LeadCardArgs,
             description=('Draft a lead card from a phone account lead: institution, account ending, the period a '

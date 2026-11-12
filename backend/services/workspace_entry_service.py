@@ -939,6 +939,7 @@ def create_entry(
     legacy_source: str | None = None,
     legacy_id: str | None = None,
     compatibility_metadata: dict[str, Any] | None = None,
+    commit: bool = True,
 ) -> dict[str, Any]:
     normalized_type = str(entry_type).strip().lower()
     normalized_title = _validate_title(normalized_type, title)
@@ -997,7 +998,10 @@ def create_entry(
                 target_id=str(entry.id),
             )
         )
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return entry_to_dict(
         _load_entry(db, case_id=case_id, entry_id=entry.id), include_history=True
     )

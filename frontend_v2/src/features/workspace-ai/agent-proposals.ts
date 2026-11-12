@@ -13,6 +13,7 @@ export type AgentProposalKind =
   | "entity_proposal"
   | "glossary_term"
   | "counter_argument"
+  | "dossier_change"
 
 export interface LeadAlert {
   cite: string
@@ -31,6 +32,7 @@ export interface AgentProposal {
   review_status: "pending_review" | "accepted" | "rejected"
   created_at?: string | null
   reviewed_at?: string | null
+  accepted_targets?: { target_type: string; target_id: string; href?: string; label?: string }[]
   /** Why this kind sits where it does in the waiting list: what people did with earlier proposals of it. */
   order_reason?: string | null
   content: Record<string, unknown> & { citations?: string[] }
@@ -225,6 +227,7 @@ export const AGENT_PROPOSAL_LABELS: Record<AgentProposalKind, string> = {
   entity_proposal: "Entity for the graph",
   glossary_term: "Code-word meaning",
   counter_argument: "Counter-argument (disconfirm sweep)",
+  dossier_change: "Dossier changes",
 }
 
 const base = (caseId: string) => `/api/workspace/${encodeURIComponent(caseId)}/proposals`

@@ -1,0 +1,31 @@
+.loupe-document-layout { container-type: inline-size; background: var(--muted); padding: 12px; }
+.loupe-document-contents { border: 1px solid var(--border); border-radius: 6px; background: var(--background); margin-bottom: 16px; padding: 12px 16px; font-size: 12px; }
+.loupe-document-contents summary { font-weight: 600; cursor: pointer; }
+.loupe-document-contents ol { max-height: 180px; overflow: auto; margin-top: 8px; }
+.loupe-document-contents a { display: flex; gap: 12px; padding: 5px 0; color: var(--muted-foreground); }
+.loupe-document-contents a:hover { color: var(--primary); text-decoration: underline; }
+.loupe-document-contents a span { color: var(--primary); min-width: 16px; font-variant-numeric: tabular-nums; }
+.loupe-document { max-width: 920px; margin: 0 auto; border: 1px solid var(--border); border-radius: 3px; background: var(--background); color: var(--foreground); box-shadow: 0 3px 14px #00000008; font-family: "IBM Plex Sans", sans-serif; }
+.loupe-document-cover, .loupe-document-section { padding: clamp(20px, 6cqw, 52px); }
+.loupe-document-cover { border-top: 4px solid #b41624; }
+.loupe-document-masthead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 36px; font-size: 11px; color: var(--muted-foreground); }
+.loupe-document-masthead > span:first-child { font-family: "Space Grotesk", sans-serif; font-size: 24px; letter-spacing: -1px; font-weight: 700; color: var(--foreground); }
+.loupe-document h1 { font-family: "Space Grotesk", sans-serif; font-weight: 600; font-size: clamp(24px, 4.8cqw, 38px); line-height: 1.14; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.loupe-document-lead { margin-top: 22px; font-size: 16px; line-height: 1.7; color: var(--muted-foreground); }
+.loupe-document-audience, .loupe-document-note { margin-top: 16px; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+.loupe-document-scope { border-left: 2px solid #b41624; padding-left: 14px; margin-top: 24px; font-size: 12px; line-height: 1.7; }
+.loupe-document-scope > span { font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .14em; }
+.loupe-document-section { border-top: 1px solid var(--border); scroll-margin-top: 12px; }
+.loupe-document-section:focus { outline: 2px solid var(--primary); outline-offset: -2px; }
+.loupe-document-section-number { color: #b41624; font: 500 11px "IBM Plex Mono", monospace; margin-bottom: 12px; }
+.loupe-document-section h2 { font: 600 23px/1.3 "Space Grotesk", sans-serif; letter-spacing: -.025em; margin-bottom: 18px; }
+.loupe-document-section h3, .loupe-document-section h4, .loupe-document-section h5, .loupe-document-section h6 { font: 600 18px/1.4 "Space Grotesk", sans-serif; margin-bottom: 16px; }
+.loupe-document-body { font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
+.loupe-document-body p { white-space: pre-line; }
+.loupe-document-section figure { margin-top: 24px; }
+.loupe-document-footer { border-top: 1px solid var(--border); padding: 16px 24px; color: var(--muted-foreground); font-size: 10px; }
+.loupe-document-compact .loupe-document-cover, .loupe-document-compact .loupe-document-section { padding: 20px 28px; }
+.loupe-document-compact .loupe-document-masthead { margin-bottom: 16px; }
+.loupe-document-compact .loupe-document-section h2 { font-size: 20px; margin-bottom: 10px; }
+.loupe-document-compact .loupe-document-body { line-height: 1.55; }
+@media print { .loupe-document-contents { display: none; } .loupe-document-layout { overflow: visible; padding: 0; } .loupe-document { border: 0; box-shadow: none; color: #17181c; background: white; } .loupe-document-section h2 { break-after: avoid; } .loupe-document-section figure { break-inside: avoid; } }

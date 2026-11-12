@@ -96,6 +96,41 @@ function panel() {
   )
 }
 
+it("previews the complete finding action and keeps its saved destinations after the pending card disappears", async () => {
+  const item = waiting({ output_type: "entry_draft", content: { title: "Synthetic finding", body: "Source-backed summary", entry_type: "finding", dossier_name: "Synthetic witness", event_date: "2026-01-15", citations: ["doc://1"] } })
+  let accepted = false
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/glossary")) return { total: 0, items: [] }
+    if (url.includes("/opened")) return { opened: ["doc://1"] }
+    if (url.includes("/accept")) {
+      accepted = true
+      return { ...item, review_status: "accepted", accepted_targets: [
+        { target_type: "workspace_entry", target_id: "e-1", label: "Open saved finding", href: "/cases/case-a/workspace?view=casework&kind=finding&entry=e-1" },
+        { target_type: "dossier", target_id: "d-1", label: "Open dossier", href: "/cases/case-a/dossiers?dossier=d-1" },
+        { target_type: "timeline_entry", target_id: "t-1", label: "Open dated event", href: "/cases/case-a/timeline?event=timeline-entry:t-1" },
+      ] }
+    }
+    return { items: accepted ? [] : [item], total: accepted ? 0 : 1, returned: accepted ? 0 : 1, limit: 50, offset: 0 }
+  })
+  panel()
+  expect(await screen.findByText("Attach to dossier: Synthetic witness.")).toBeVisible()
+  expect(screen.getByText("Add dated timeline event: 2026-01-15.")).toBeVisible()
+  fireEvent.click(screen.getByTestId("proposal-open-source"))
+  await screen.findByText("✓ opened")
+  fireEvent.click(screen.getByTestId("proposal-accept"))
+  await waitFor(() => expect(screen.queryByTestId("agent-proposal")).toBeNull())
+  expect(screen.getByRole("link", { name: "Open dossier" })).toHaveAttribute("href", "/cases/case-a/dossiers?dossier=d-1")
+  expect(screen.getByRole("link", { name: "Open dated event" })).toBeVisible()
+  expect(screen.getByLabelText("Saved proposal result")).toHaveFocus()
+})
+
+it("shows exactly which dossier fields and attachments the proposal will change", async () => {
+  serve([waiting({ output_type: "dossier_change", content: { title: "Update dossier: Synthetic witness", operation: "update", why: "Requested correction", fields: { summary: "Revised description" }, before: { summary: "Original description" }, links: [{ target_type: "entry", target_id: "e-1", label: "Cited finding" }], citations: ["doc://1"] } })])
+  panel()
+  expect(await screen.findByTestId("dossier-proposal")).toHaveTextContent("Original description → Revised description")
+  expect(screen.getByLabelText("Material to attach")).toHaveTextContent("Cited finding")
+})
+
 it("shows a lead card's draft schedule, labelled, and sends a person's edit", async () => {
   vi.mocked(fetchAPI).mockReset()
   serve([waiting({ output_type: "lead_card", content: { institution: "Synthetic Bank", schedule: "Institution: Synthetic Bank", schedule_label: "Drafted by the case agent, not confirmed. A person edits it; it is not a legal document.", citations: ["doc://1"] } })])

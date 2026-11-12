@@ -33,12 +33,13 @@ export function AgentCapabilitiesHelp({ onPick }: { onPick: (question: string) =
           What can I ask?
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="max-h-[70vh] w-[28rem] overflow-y-auto p-3">
+      <PopoverContent align="end" className="max-h-[70vh] w-[28rem] max-w-[calc(100vw-2rem)] overflow-y-auto p-3">
         <h2 className="text-sm font-semibold">What can I ask?</h2>
         {error && <p className="mt-2 text-sm text-muted-foreground">{error}</p>}
         {!help && !error && <p className="mt-2 text-sm text-muted-foreground">Loading…</p>}
         {help && (
           <>
+            {!!help.actions?.length && <section className="mt-3 border-b border-border pb-3" aria-label="Supported actions"><h3 className="text-sm font-semibold">Work the agent can do</h3><p className="mt-1 text-xs text-muted-foreground">{help.review}</p><ul className="mt-3 space-y-3">{help.actions.map((action) => <li key={action.id}><h4 className="text-sm font-medium">{action.label}</h4><p className="text-xs text-muted-foreground">{action.description}</p><span className="mt-1 inline-block rounded bg-muted px-2 py-0.5 text-[11px]">{action.mode === "saved_draft" ? "Saved draft" : "Investigator review"}</span></li>)}</ul>{help.scope && <p className="mt-3 text-xs text-muted-foreground">{help.scope}</p>}</section>}
             <p className="mt-1 text-xs text-muted-foreground">
               {help.note} The agent can work with these {help.total} kinds of case material.
             </p>
@@ -65,6 +66,7 @@ export function AgentCapabilitiesHelp({ onPick }: { onPick: (question: string) =
                 </li>
               ))}
             </ul>
+            {!!help.unavailable_actions?.length && <details className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground"><summary className="cursor-pointer">Actions outside this agent</summary><ul className="mt-2 list-disc pl-4">{help.unavailable_actions.map((action) => <li key={action}>{action}</li>)}</ul></details>}
           </>
         )}
       </PopoverContent>

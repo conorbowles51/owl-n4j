@@ -60,6 +60,7 @@ KIND_LABELS = {
     'statement_claim': 'Statement claim',
     'entity_proposal': 'Entity for the graph',
     'glossary_term': 'Code-word meaning',
+    'dossier_change': 'Dossier creation, update or attachments',
 }
 MAX_CITATIONS = 20
 MAX_RECORD_CITATIONS = 500

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+import copy
+import json
+from collections import OrderedDict
+from threading import RLock
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -31,7 +35,9 @@ from services.case_service import check_case_access
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_ARTIFACT_TYPES = {"graph", "table", "map", "report", "chart"}
+from services.agent.deliverables import ARTIFACT_TYPES
+
+SUPPORTED_ARTIFACT_TYPES = ARTIFACT_TYPES
 
 
 def summarize_title(message: str) -> str:
@@ -89,7 +95,29 @@ def get_run_for_user(db: Session, *, run_id: UUID, user: User) -> AgentRun:
     thread = get_thread_for_user(db, thread_id=run.thread_id, user=user, case_id=run.case_id)
     if thread.owner_user_id != user.id:
         raise PermissionError("Agent run belongs to another user")
+    check_run_source_access(db, run, user)
     return run
+
+
+def check_run_source_access(db, run, user):
+    from services.agent.all_cases import may_open
+    meta = run.extra_metadata or {}
+    source_ids = {str(c['case_id']) for c in meta.get('cases_read', []) if isinstance(c, dict) and c.get('case_id')}
+    source_ids.update((meta.get('execution_checkpoint') or {}).get('cases_read', {}).keys())
+    for source_id in source_ids:
+        if source_id != str(run.case_id) and not may_open(db, user, source_id):
+            raise PermissionError("Access to a source case changed; this saved answer cannot be opened.")
+
+
+def readable_artifacts(db, artifacts, user):
+    readable = []
+    for artifact in supported_artifacts(artifacts):
+        try:
+            check_artifact_access(db, artifact, user)
+        except PermissionError:
+            continue
+        readable.append(artifact)
+    return readable
 
 
 def get_artifact_for_user(db: Session, *, artifact_id: UUID, user: User) -> AgentArtifactRecord:
@@ -97,7 +125,24 @@ def get_artifact_for_user(db: Session, *, artifact_id: UUID, user: User) -> Agen
     if not artifact:
         raise ValueError("Agent artifact not found")
     get_thread_for_user(db, thread_id=artifact.thread_id, user=user)
+    check_artifact_access(db, artifact, user)
     return artifact
+
+
+def check_artifact_access(db, artifact, user):
+    """Saved cross-case outputs retain their source access requirements after export or reopen."""
+    from services.agent.all_cases import may_open
+    meta = artifact.extra_metadata or {}
+    run_meta = artifact.run.extra_metadata or {} if artifact.run else {}
+    source_ids = set(meta.get("source_case_ids") or [])
+    source_ids.update(str(c["case_id"]) for c in run_meta.get("cases_read", []) if isinstance(c, dict) and c.get("case_id"))
+    source_ids.update((run_meta.get("execution_checkpoint") or {}).get("cases_read", {}).keys())
+    own_case = str(artifact.thread.case_id)
+    if (meta.get("all_cases") or run_meta.get("all_cases")) and not source_ids:
+        raise PermissionError("This older cross-case artifact has no source-access record; rebuild it before opening.")
+    for source_id in source_ids:
+        if source_id != own_case and not may_open(db, user, source_id):
+            raise PermissionError("Access to a source case changed; this artifact cannot be opened.")
 
 
 def list_threads(db: Session, *, user: User, case_id: UUID | None = None) -> list[AgentThreadSummary]:
@@ -256,8 +301,8 @@ def citation_check_for(db: Session, *, case_id, content: str) -> dict[str, Any]:
 
 
 def update_run_metadata(db: Session, *, run: AgentRun, metadata: dict[str, Any]) -> AgentRun:
-    run.extra_metadata = to_jsonable({**(run.extra_metadata or {}), **metadata})
-    db.flush()
+    from services.agent.durable_execution import write_metadata
+    write_metadata(db, run, metadata)
     db.refresh(run)
     return run
 
@@ -322,12 +367,38 @@ def persist_artifacts(
     run: AgentRun,
     artifacts: list[dict[str, Any]],
 ) -> list[AgentArtifactRecord]:
+    # All revision writers serialize on the thread, including the interactive edit API.
+    db.query(AgentThread).filter(AgentThread.id == thread.id).with_for_update().first()
     records: list[AgentArtifactRecord] = []
     for artifact in artifacts:
         artifact_type = sanitize_text(artifact.get("type") or "table")
         if artifact_type not in SUPPORTED_ARTIFACT_TYPES:
             continue
         artifact_id = artifact.get("id")
+        if artifact_id:
+            existing = db.get(AgentArtifactRecord, uuid.UUID(str(artifact_id)))
+            if existing is not None:
+                if existing.thread_id != thread.id:
+                    raise PermissionError("Artifact belongs to another conversation")
+                records.append(existing)
+                continue
+        metadata = dict(artifact.get("metadata") or {})
+        previous_id = metadata.get("previous_revision_id")
+        if previous_id:
+            previous = db.get(AgentArtifactRecord, uuid.UUID(str(previous_id)))
+            if previous is None or previous.thread_id != thread.id:
+                raise ValueError("The report revision is not in this conversation")
+            deliverable_id = metadata.get("deliverable_id")
+            siblings = db.query(AgentArtifactRecord).filter(AgentArtifactRecord.thread_id == thread.id).all()
+            current = max((a for a in siblings if (a.extra_metadata or {}).get("deliverable_id", str(a.id)) == deliverable_id),
+                          key=lambda a: int((a.extra_metadata or {}).get("revision", 1)), default=previous)
+            if current.id != previous.id:
+                # Keep generated work as a separate conflict draft; never replace the investigator's newer revision.
+                metadata.update(conflict_draft=True, intended_deliverable_id=deliverable_id,
+                                deliverable_id=artifact_id, revision=1)
+                metadata.pop("previous_revision_id", None)
+                metadata["validation"] = {"status": "needs_revision", "issues": [
+                    "The source report changed while this revision was prepared. Review and merge this draft."]}
         record = AgentArtifactRecord(
             id=uuid.UUID(artifact_id) if artifact_id else uuid.uuid4(),
             thread_id=thread.id,
@@ -335,7 +406,7 @@ def persist_artifacts(
             type=artifact_type,
             title=sanitize_text(artifact.get("title") or "Agent artifact"),
             payload=to_jsonable(artifact.get("data") or {}),
-            extra_metadata=to_jsonable(artifact.get("metadata") or {}),
+            extra_metadata=to_jsonable(metadata),
         )
         db.add(record)
         records.append(record)
@@ -348,13 +419,94 @@ def supported_artifacts(records: list[AgentArtifactRecord]) -> list[AgentArtifac
 
 
 def to_api_artifact(record: AgentArtifactRecord) -> AgentArtifact:
+    metadata = copy.deepcopy(record.extra_metadata or {})
+    metadata.pop('completion_review', None)
+    run = getattr(record, 'run', None)
+    run_metadata = (run.extra_metadata or {}) if run else {}
+    completed = run_metadata.get('completion_checks')
+    problems = (completed.get('issues', []) if completed is not None else
+                (run_metadata.get('execution_checkpoint') or {}).get('completion_issues', []))
+    issues = list(dict.fromkeys(str(issue) for problem in problems
+        if problem.get('artifact_id') in (None, str(record.id)) for issue in problem.get('issues', [])))
+    if issues:
+        metadata['completion_review'] = {'status': 'needs_revision', 'issues': issues,
+            'scope': 'Automated completion review of this saved revision; not investigator approval.'}
     return AgentArtifact(
         id=str(record.id),
         type=record.type,
         title=record.title,
         data=record.payload or {},
-        metadata=record.extra_metadata or {},
+        metadata=metadata,
     )
+
+
+_validation_views = OrderedDict()
+_validation_view_lock = RLock()
+_validation_view_bytes = 0
+
+
+def _checked_artifact_metadata(saved, sources, accessible, *, canonical_digest):
+    """Bounded metadata-only cache. Call only after run/source access has been checked."""
+    from services.agent.claim_validation import apply_claim_validation, validation_signature
+    global _validation_view_bytes
+    signature = validation_signature(saved, sources, accessible, canonical_digest=canonical_digest)
+    if saved['metadata'].get('claim_validation_signature') == signature:
+        return saved['metadata']
+    key = (saved['id'], signature)
+    # Serialize cache misses to avoid a polling stampede rechecking the same draft.
+    with _validation_view_lock:
+        cached = _validation_views.get(key)
+        if cached is not None:
+            _validation_views.move_to_end(key)
+            return copy.deepcopy(cached[0])
+        apply_claim_validation(saved, sources, accessible)
+        metadata = saved['metadata']
+        size = len(json.dumps(metadata, ensure_ascii=False).encode('utf8'))
+        if size <= 512 * 1024:
+            _validation_views[key] = (copy.deepcopy(metadata), size)
+            _validation_view_bytes += size
+            while len(_validation_views) > 128 or _validation_view_bytes > 8 * 1024 * 1024:
+                _, (_, removed) = _validation_views.popitem(last=False)
+                _validation_view_bytes -= removed
+        return metadata
+
+
+def artifact_views(db: Session, records, user, *, available=None) -> list[AgentArtifact]:
+    """Refresh dependency notices from accessible revisions without altering saved content."""
+    from services.agent.deliverables import dependency_metadata
+    records = readable_artifacts(db, list(records), user)
+    if not records:
+        return []
+    if available is None:
+        thread_ids = {record.thread_id for record in records}
+        available = db.query(AgentArtifactRecord).filter(AgentArtifactRecord.thread_id.in_(thread_ids)).all()
+    accessible = readable_artifacts(db, available, user)
+    by_thread = {}
+    for record in accessible:
+        by_thread.setdefault(record.thread_id, {})[str(record.id)] = to_api_artifact(record).model_dump()
+    views, source_digests = [], {}
+    for record in records:
+        view = to_api_artifact(record)
+        saved = view.model_dump()
+        if 'claim_evidence' in view.metadata:
+            from services.agent.claim_validation import canonical_source_fingerprint
+            sources = ((record.run.extra_metadata or {}).get('execution_checkpoint') or {}).get('result_store', {}) if record.run else {}
+            run_key = record.run_id
+            if run_key not in source_digests:
+                source_digests[run_key] = canonical_source_fingerprint(sources)
+            saved['metadata'] = _checked_artifact_metadata(saved, sources, by_thread.get(record.thread_id, {}),
+                                                          canonical_digest=source_digests[run_key])
+        view.metadata = dependency_metadata(saved, by_thread.get(record.thread_id, {}))
+        # Completion state is live run metadata, never a cached content check.
+        view.metadata.pop('completion_review', None)
+        completion_review = to_api_artifact(record).metadata.get('completion_review')
+        if completion_review:
+            view.metadata['completion_review'] = completion_review
+        from services.agent.source_presentation import present_sources
+        sources = ((record.run.extra_metadata or {}).get('execution_checkpoint') or {}).get('result_store', {}) if record.run else {}
+        view.data = present_sources(view.data, sources)
+        views.append(view)
+    return views
 
 
 def to_api_tool_trace(record: AgentToolCall) -> AgentToolTraceItem:
@@ -386,7 +538,7 @@ def get_run_detail(db: Session, *, run_id: UUID, user: User) -> AgentRunDetail:
         usage=run.usage,
         started_at=run.started_at,
         completed_at=run.completed_at,
-        artifacts=[to_api_artifact(artifact) for artifact in supported_artifacts(run.artifacts)],
+        artifacts=artifact_views(db, run.artifacts, user),
         tool_trace=[to_api_tool_trace(tool_call) for tool_call in run.tool_calls],
         mandate_version_id=str(run.mandate_version_id) if run.mandate_version_id else None,
         mandate_override=run.mandate_override,
@@ -447,6 +599,14 @@ def _written_by(message) -> str | None:
 
 def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThreadDetail:
     thread = get_thread_for_user(db, thread_id=thread_id, user=user)
+    visible_messages = []
+    for message in thread.messages:
+        if message.run is not None and message.role == 'assistant':
+            try:
+                check_run_source_access(db, message.run, user)
+            except PermissionError:
+                continue
+        visible_messages.append(message)
     messages = [
         AgentStoredMessage(
             id=str(message.id),
@@ -469,7 +629,7 @@ def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThrea
             ),
             created_at=message.created_at,
         )
-        for message in thread.messages
+        for message in visible_messages
     ]
     return AgentThreadDetail(
         id=str(thread.id),
@@ -483,5 +643,5 @@ def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThrea
         updated_at=thread.updated_at,
         mandate_version_id=str(thread.mandate_version_id) if thread.mandate_version_id else None,
         messages=messages,
-        artifacts=[to_api_artifact(artifact) for artifact in supported_artifacts(thread.artifacts)],
+        artifacts=artifact_views(db, thread.artifacts, user, available=thread.artifacts),
     )

@@ -49,12 +49,12 @@ it("shows the progress line with Stop, and Stop is wired", () => {
   expect(stop).toHaveBeenCalled()
 })
 
-it("a run that stopped heart-beating says so and offers Retry instead of spinning", () => {
+it("a run that stopped heart-beating says so and offers Resume run instead of spinning", () => {
   const retry = vi.fn()
   render(<AgentRunProgress run={running({ stale: true })} onRetry={retry} onDismiss={() => {}} />)
   expect(screen.getByText(/This run stopped responding/)).toBeInTheDocument()
   expect(screen.queryByTestId("agent-run-progress")).toBeNull()
-  fireEvent.click(screen.getByRole("button", { name: /Retry/ }))
+  fireEvent.click(screen.getByRole("button", { name: /Resume run/ }))
   expect(retry).toHaveBeenCalled()
 })
 

@@ -7,9 +7,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-AgentArtifactType = Literal["graph", "table", "map", "report", "chart"]
+AgentArtifactType = Literal["graph", "table", "map", "report", "chart", "workbook", "presentation", "interactive", "timeline", "matrix", "diagram"]
 AgentToolStatus = Literal["success", "error"]
-AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required", "interrupted"]
+AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required", "interrupted", "needs_revision"]
 AgentArtifactPreference = Literal[
     "auto",
     "none",
@@ -18,11 +18,12 @@ AgentArtifactPreference = Literal[
     "map",
     "report",
     "chart",
+    "workbook", "presentation", "interactive", "timeline", "matrix", "diagram",
 ]
 
 
 class AgentMessageRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=12000)
+    message: str = Field(..., min_length=1, max_length=250000)
     case_id: UUID
     thread_id: UUID | None = None
     provider: str | None = None

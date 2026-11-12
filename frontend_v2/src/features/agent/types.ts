@@ -4,6 +4,12 @@ export type AgentArtifactType =
   | "map"
   | "report"
   | "chart"
+  | "workbook"
+  | "presentation"
+  | "interactive"
+  | "timeline"
+  | "matrix"
+  | "diagram"
 
 export interface AgentArtifact {
   id: string
@@ -95,7 +101,7 @@ export interface AgentMessageResponse {
   model_info: AgentModelInfo
   cost?: AgentCost | null
   clarification?: AgentClarification | null
-  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required" | "interrupted"
+  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required" | "interrupted" | "needs_revision"
   created_at: string
   mandate: AgentMandateUsage
 }
@@ -184,7 +190,7 @@ export type AgentStreamEvent =
 export interface AgentRunStatus {
   run_id: string
   thread_id: string
-  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required" | "interrupted"
+  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required" | "interrupted" | "needs_revision"
   error?: string | null
   completed_at?: string | null
 }
@@ -358,4 +364,8 @@ export interface AgentCapabilities {
   types: AgentCapabilityType[]
   total: number
   note: string
+  actions?: { id: string; label: string; mode: string; description: string }[]
+  scope?: string
+  review?: string
+  unavailable_actions?: string[]
 }

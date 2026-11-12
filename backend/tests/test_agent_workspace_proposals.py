@@ -103,8 +103,9 @@ def test_accepting_creates_the_entry_with_the_model_origin_and_records_the_open(
     origin = entry.migration_metadata["actor_origin"]
     assert origin["origin"]["model"] == "DeepSeek V4 Pro"
     assert origin["accepted_by"]["name"] == "Alex"
-    with pytest.raises(proposals.ProposalError, match="already accepted"):
-        W.accept(db, case_id=db.info["case"].id, output_id=item["id"], reviewer=owner)
+    repeated = W.accept(db, case_id=db.info["case"].id, output_id=item["id"], reviewer=owner)
+    assert repeated['accepted_targets'] == done['accepted_targets']
+    assert len(db.scalars(select(WorkspaceEntry)).all()) == 1
 
 
 def test_accepting_without_opening_is_recorded_as_such(db):

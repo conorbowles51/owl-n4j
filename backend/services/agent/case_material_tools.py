@@ -196,7 +196,8 @@ def interviews(db, case_id, *, dossier=None, offset=0, limit=20) -> dict[str, An
         CaseProfile.id.in_([r.dossier_id for r in rows])))} if rows else {}
     items = []
     for r in rows:
-        notes, cut = _clip(r.working_notes, NOTES_LIMIT)
+        # Keep the canonical notes intact; model-facing paging supplies continuation.
+        notes, cut = r.working_notes, None
         files = []
         for link in db.scalars(select(DossierInterviewEvidenceLink).where(
                 DossierInterviewEvidenceLink.interview_id == r.id).order_by(DossierInterviewEvidenceLink.created_at)):

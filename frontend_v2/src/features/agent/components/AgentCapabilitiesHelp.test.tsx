@@ -10,6 +10,8 @@ const help: AgentCapabilities = {
   schema: "loupe.agent.capabilities/1",
   total: 2,
   note: "Ask in your own words.",
+  actions: [{ id: "finding", label: "Create a cited finding", mode: "reviewed_proposal", description: "Prepared for investigator review." }],
+  review: "Case changes follow Workspace review.",
   types: [
     { id: "phones", label: "Phones", description: "Messages and calls.", examples: ["Who does this phone contact most?"] },
     {
@@ -29,6 +31,9 @@ it("lists every kind of material from the registry and puts an example in the qu
   fireEvent.click(screen.getByRole("button", { name: "What can I ask?" }))
   expect(await screen.findByText("Evidence files and their processing")).toBeInTheDocument()
   expect(screen.getByText("Phones")).toBeInTheDocument()
+  expect(screen.getByText("Create a cited finding")).toBeInTheDocument()
+  expect(screen.getByText("Case changes follow Workspace review.")).toBeInTheDocument()
+  expect(screen.getByText("Investigator review")).toBeInTheDocument()
   expect(screen.getByText(/these 2 kinds of case material/)).toBeInTheDocument()
   expect(screen.queryByText(/_/)).toBeNull()
   fireEvent.click(screen.getByRole("button", { name: "Which files failed, and why?" }))

@@ -3,7 +3,7 @@ import type { AgentArtifact } from "../types"
 export function AgentArtifactNotes({ artifact }: { artifact: AgentArtifact }) {
   const notes = [
     ...new Set(
-      [artifact.data.notes, artifact.metadata.notes]
+      [artifact.data.notes, artifact.data.note, artifact.data.description, artifact.metadata.notes]
         .filter(
           (value): value is string =>
             typeof value === "string" && !!value.trim()

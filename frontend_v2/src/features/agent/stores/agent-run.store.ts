@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-export type AgentRunTerminalState = "completed" | "failed" | "cancelled"
+export type AgentRunTerminalState = "completed" | "failed" | "cancelled" | "needs_revision"
 
 /** The plain line for the step a run is on (backend services/agent/live_runs.py). */
 export interface AgentRunProgress {

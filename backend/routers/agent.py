@@ -5,7 +5,7 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -27,6 +27,21 @@ from services.case_service import CaseAccessDenied, CaseNotFound
 
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
+
+
+@router.post("/briefs/preview")
+async def preview_agent_brief(file: UploadFile = File(...), current_user: User = Depends(get_current_db_user)):
+    from services.agent.report_brief_import import MAX_BRIEF_BYTES, preview_brief
+    from starlette.concurrency import run_in_threadpool
+    try:
+        content = await file.read(MAX_BRIEF_BYTES + 1)
+        return await run_in_threadpool(preview_brief, file.filename or "reference", content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="The document could not be read. No brief was attached.") from exc
+    finally:
+        await file.close()
 
 
 def _sse(event: dict) -> str:
@@ -158,13 +173,17 @@ def stream_agent_message(
     db: Session = Depends(get_run_db),
     current_user: User = Depends(get_current_db_user),
 ):
+    return _stream_agent_response(request, db, current_user)
+
+
+def _stream_agent_response(request, db, current_user, resume_run_id=None, resume_claim=None):
     from services.agent import live_runs
 
     started = False
     try:
         user = db.get(User, current_user.id) or current_user
         live = live_runs.LiveRun()
-        events = agent_service.stream_message(db=db, user=user, request=request, live=live)
+        events = agent_service.stream_message(db=db, user=user, request=request, live=live, resume_run_id=resume_run_id, resume_claim=resume_claim)
         event_iterator = iter(events)
         first_event = next(event_iterator)
         started = True
@@ -321,7 +340,7 @@ def cancel_agent_run(
 @router.get("/artifacts/{artifact_id}/export")
 def export_agent_artifact(
     artifact_id: UUID,
-    format: Literal["csv", "pdf", "docx"] = Query(default="csv"),
+    format: Literal["csv", "pdf", "docx", "html", "xlsx", "pptx", "svg", "png"] = Query(default="csv"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -383,3 +402,81 @@ def accept_answer_into_assessment(message_id: UUID, body: AcceptAnswerBody, db: 
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+class ArtifactRevisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    title: str | None = Field(None, min_length=1, max_length=255)
+    data: dict
+    revision_note: str = Field("", max_length=2000)
+
+
+def _artifact_http_error(exc):
+    from services.agent.artifact_workspace import StaleArtifact
+    if isinstance(exc, StaleArtifact):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, (PermissionError, CaseAccessDenied)):
+        return HTTPException(status_code=403, detail=str(exc))
+    if isinstance(exc, CaseNotFound) or "not found" in str(exc).lower():
+        return HTTPException(status_code=404, detail="Artifact not found")
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/artifacts/{artifact_id}")
+def get_agent_artifact(artifact_id: UUID, db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_db_user)):
+    from services.agent import storage
+    try:
+        record = storage.get_artifact_for_user(db, artifact_id=artifact_id, user=current_user)
+        return storage.artifact_views(db, [record], current_user)[0]
+    except (ValueError, PermissionError, CaseNotFound, CaseAccessDenied) as exc:
+        raise _artifact_http_error(exc) from exc
+
+
+@router.get("/artifacts/{artifact_id}/versions")
+def get_agent_artifact_versions(artifact_id: UUID, db: Session = Depends(get_db),
+                                current_user: User = Depends(get_current_db_user)):
+    from services.agent import storage, artifact_workspace
+    try:
+        return storage.artifact_views(db, artifact_workspace.versions(db, current_user, artifact_id), current_user)
+    except (ValueError, PermissionError, CaseNotFound, CaseAccessDenied) as exc:
+        raise _artifact_http_error(exc) from exc
+
+
+@router.post("/artifacts/{artifact_id}/revisions", status_code=201)
+def revise_agent_artifact(artifact_id: UUID, body: ArtifactRevisionBody, db: Session = Depends(get_db),
+                           current_user: User = Depends(get_current_db_user)):
+    from services.agent import storage, artifact_workspace
+    try:
+        record = artifact_workspace.save_revision(db, current_user, artifact_id, **body.model_dump())
+        result = storage.to_api_artifact(record)
+        db.commit()
+        return result
+    except (ValueError, PermissionError, CaseNotFound, CaseAccessDenied) as exc:
+        db.rollback()
+        raise _artifact_http_error(exc) from exc
+
+
+@router.post("/runs/{run_id}/resume")
+def resume_agent_run(run_id: UUID, db: Session = Depends(get_run_db),
+                     current_user: User = Depends(get_current_db_user)):
+    from services.agent import storage
+    try:
+        run = storage.get_run_for_user(db, run_id=run_id, user=current_user)
+        meta = run.extra_metadata or {}
+        if run.status not in {"interrupted", "failed", "cancelled", "clarification_required"}:
+            raise ValueError("This run cannot be resumed in its current state.")
+        clarification = meta.get("clarification") or {}
+        if run.status == "clarification_required" and (clarification.get("context") or {}).get("reason") not in {"tool_budget_exhausted", "no_progress"}:
+            raise ValueError("Answer the outstanding question in the conversation before continuing.")
+        if not meta.get("execution_checkpoint") or not meta.get("execution_request"):
+            raise ValueError("This older run has no resumable checkpoint. Ask the question again.")
+        request = AgentMessageRequest(**meta["execution_request"])
+        request.thread_id, request.model, request.provider = run.thread_id, run.model_id, run.provider
+        from services.agent.durable_execution import claim_resume
+        run, claim = claim_resume(db, run.id, current_user)
+    except (ValueError, PermissionError, CaseNotFound, CaseAccessDenied) as exc:
+        db.close()
+        raise _artifact_http_error(exc) from exc
+    return _stream_agent_response(request, db, current_user, resume_run_id=run_id, resume_claim=claim)
