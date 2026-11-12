@@ -175,6 +175,18 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
                     engine_job_id=job.id,
                     doc=doc,
                 )
+                # What the photo's own data says (date taken, place, camera) is kept on the evidence file. It is
+                # auxiliary, like the geometry below: a failure costs the photo's Timeline and map entries only.
+                if doc.metadata.get('photo_data'):
+                    try:
+                        from sqlalchemy import text as _sql_text
+                        from services.photo_metadata import STORE_SQL, store_params
+                        await db.execute(_sql_text(STORE_SQL),
+                                         store_params(job.source_evidence_file_id, doc.metadata['photo_data']))
+                        await db.commit()
+                    except Exception:
+                        logger.exception("Photo data persistence failed for job %s", job.id)
+                        await db.rollback()
                 # Geometry is auxiliary to the job: a failure here costs the
                 # click-through highlight, not the text or the transactions,
                 # so it is logged rather than allowed to fail the ingestion.

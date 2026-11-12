@@ -891,6 +891,15 @@ def _extract_image_metadata(file_path: str) -> dict[str, Any]:
         img.close()
     except Exception:
         pass
+    # Date taken, place and camera, as the photo's own data says (kept on the evidence file, labelled as read).
+    try:
+        from services.photo_metadata import PHOTO_KEY, photo_data_record
+
+        record = photo_data_record(file_path)
+        if record:
+            metadata[PHOTO_KEY] = record
+    except Exception:
+        logger.exception("Photo data could not be read from %s", file_path)
     return metadata
 
 
