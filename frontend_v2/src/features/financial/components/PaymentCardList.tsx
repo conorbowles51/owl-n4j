@@ -219,7 +219,6 @@ export function PaymentCardList({
                       </div>
                       <PaymentBank institution={row.account_institution} className="mt-0.5" />
                       <RowJudgementMarkers transaction={row} />
-                      <ReviewCorrectionNote correction={row.review_correction} currency={row.currency} />
                     </div>
                     <div className="col-start-3 flex flex-wrap items-center gap-1.5 sm:col-start-auto">
                       <button
@@ -263,6 +262,11 @@ export function PaymentCardList({
                       </button>
                     </div>
                   </div>
+                  {row.review_correction && (
+                    <div className="mx-4 mb-3">
+                      <ReviewCorrectionNote correction={row.review_correction} currency={row.currency} />
+                    </div>
+                  )}
                   {rowFindings.length > 0 && (
                     <button type="button" className="mx-4 mb-3 text-[12px] underline" onClick={() => onOpen?.(row)}>
                       {rowFindings.length} linked findings

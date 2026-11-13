@@ -65,3 +65,17 @@ it("card and table lines show the bank, and the printed line wraps instead of be
   render(<InvestigationTransactionTable rows={[withBank]} selected={[]} onToggle={vi.fn()} />)
   expect(screen.getAllByTestId("payment-bank").length).toBe(2)
 })
+
+it("a card corrected before import shows the value read beside the corrected value, on its own full-width line", () => {
+  cards([
+    {
+      ...inn,
+      amount_minor: "11900",
+      review_correction: { changes: [{ field: "amount", read: "12000", saved: "11900" }], reason: "Page prints 119.00." },
+    } as LedgerTransaction,
+  ])
+  const note = screen.getByRole("note", { name: "Corrected before import" })
+  expect(note).toHaveTextContent("Amount: read as 120.00 MXN, corrected to 119.00 MXN")
+  // Not squeezed into the description column: the note sits outside the card's column grid.
+  expect(note.closest(".grid")).toBeNull()
+})
