@@ -12,6 +12,7 @@ import type { ReactNode } from "react"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 import { PaymentBank } from "./PaymentBank"
 import { DescriptionCorrectionNote } from "./DescriptionCorrectionNote"
+import { ReviewCorrectionNote } from "./ReviewCorrectionNote"
 import { MONEY, SourceTag } from "@/lib/data-colour"
 import { dayTotals } from "./day-totals"
 import { PaymentPlace } from "@/features/pattern/components/PaymentPlace"
@@ -218,6 +219,7 @@ export function PaymentCardList({
                       </div>
                       <PaymentBank institution={row.account_institution} className="mt-0.5" />
                       <RowJudgementMarkers transaction={row} />
+                      <ReviewCorrectionNote correction={row.review_correction} currency={row.currency} />
                     </div>
                     <div className="col-start-3 flex flex-wrap items-center gap-1.5 sm:col-start-auto">
                       <button

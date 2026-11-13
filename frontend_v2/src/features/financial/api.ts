@@ -5,6 +5,7 @@ import type { TrendsServerView } from "./lib/trends-view"
 import type { PeopleServerView } from "./lib/people-first-view"
 import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
 import type { DescriptionCorrection } from "./components/DescriptionCorrectionNote"
+import type { ReviewCorrection } from "./components/ReviewCorrectionNote"
 
 export interface TransactionEntity {
   key: string | null
@@ -317,6 +318,9 @@ export interface LedgerTransaction {
   description: string | null
   /** A model read the first printed line again and corrected it: shown as the model's reading, not confirmed. */
   description_correction?: DescriptionCorrection
+  /** Amount, direction or date a person changed in the statement review before import: the value read beside the
+   * value saved. Only the saved value (this row's own) is used. */
+  review_correction?: ReviewCorrection
   account_alias_ids?: string[]
   canonical_account_id?: string | null
   canonical_account_label?: string | null

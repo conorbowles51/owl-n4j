@@ -623,3 +623,32 @@ describe("FIN-15 payment line: description, From, To and bank", () => {
     expect(screen.getByTestId("payment-bank").textContent).toMatch(/Bank\s*BBVA Mexico/)
   })
 })
+
+describe("LedgerTable correction made before import", () => {
+  it("shows the value read beside the corrected value, and the amount column holds only the corrected one", () => {
+    render(
+      <LedgerTable
+        transactions={[
+          makeRow({
+            amount_minor: "253830",
+            direction: "credit",
+            review_correction: {
+              changes: [{ field: "amount", read: "253930", saved: "253830" }],
+              reason: "The page prints 2,538.30.",
+            },
+          }),
+        ]}
+      />
+    )
+    const note = screen.getByRole("note", { name: "Corrected before import" })
+    expect(note).toHaveTextContent("Amount: read as 2,539.30 USD, corrected to 2,538.30 USD")
+    expect(note).toHaveTextContent("The corrected value is the one used.")
+    expect(note).toHaveTextContent("Reason: The page prints 2,538.30.")
+    expect(screen.getAllByTestId("ledger-amount").map((el) => el.textContent)).toEqual(["2,538.30"])
+  })
+
+  it("adds nothing to a payment saved as it was read", () => {
+    render(<LedgerTable transactions={[makeRow()]} />)
+    expect(screen.queryByRole("note", { name: "Corrected before import" })).toBeNull()
+  })
+})

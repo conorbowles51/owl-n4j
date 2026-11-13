@@ -78,6 +78,7 @@ import {
 } from "@/components/ui/table"
 
 import type { LedgerStatus, LedgerTransaction } from "../api"
+import { ReviewCorrectionNote } from "./ReviewCorrectionNote"
 import {
   changeAvailableFor,
   formatLedgerAmount,
@@ -369,6 +370,7 @@ function LedgerRow({
           <span className="text-sm">{transaction.description}</span>
         )}
         <RowJudgementMarkers transaction={transaction} />
+        <ReviewCorrectionNote correction={transaction.review_correction} currency={transaction.currency} />
         {transaction.counterparty_raw !== null && (
           <div
             className="text-xs text-muted-foreground"
