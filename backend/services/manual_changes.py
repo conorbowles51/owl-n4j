@@ -258,6 +258,20 @@ def _clip(value):
     return value if len(text) <= _CLIP else text[:_CLIP] + '…'
 
 
+def actor_kind(name, email):
+    """Who saved a change, for the lessons feed: 'jobs' (the automated-checks logins), 'system' (a reader, model or
+    other automatic save: a ``@system.local`` address or a model or system name, as the backfill decides) or
+    'person'. Only a person's change teaches a lesson. The page-image reader saves as System
+    <vision-reader@system.local>; exported as 'person', its 64 saves in the verification case (12 Nov) sent false
+    lessons and a false 'recurred' mark."""
+    if (email or '').strip().lower() in JOBS_EMAILS:
+        return 'jobs'
+    if not (name or '').strip() and not (email or '').strip():
+        return 'person'  # no actor recorded: counted as before, never dropped
+    from services.manual_changes_backfill import is_person
+    return 'person' if is_person(name or '', email or '') else 'system'
+
+
 def as_line(row):
     phone = row.source in PHONE_SOURCES
     at = row.created_at or datetime.now(timezone.utc)
@@ -266,7 +280,7 @@ def as_line(row):
                kind=row.kind, type=row.change_type, case=str(row.case_id or ''), subject_type=row.subject_type,
                subject_id=row.subject_id, field=row.field, producer=row.producer, layout=row.layout,
                pattern_key=row.pattern_key, link=row.link, test=bool(row.is_test), historic=bool(row.historic),
-               source=row.source, actor='jobs' if (row.actor_email or '').lower() in JOBS_EMAILS else 'person')
+               source=row.source, actor=actor_kind(row.actor_name, row.actor_email))
     if not phone:
         out.update(before=_clip(row.before), after=_clip(row.after), reason=' '.join((row.reason or '').split())[:400])
     if row.kind in DELIVERED_ELSEWHERE:
@@ -328,14 +342,55 @@ def sync(session):
     return added
 
 
+def relabel(session):
+    """Correct the actor of inbox lines exported before ``actor_kind`` (a system save written as 'person'), in place
+    under the append lock, so a save appending meanwhile waits and lands after them. Only the actor field of those
+    lines changes; every line stays. Returns the number corrected."""
+    from postgres.models.manual_change import ManualChange as M
+    kinds = {}
+    for ident, name, email in session.execute(select(M.id, M.actor_name, M.actor_email)):
+        kind = actor_kind(name, email)
+        if kind != 'person':
+            kinds[str(ident)] = kind
+    if not kinds or not INBOX.exists():
+        return 0
+    corrected = 0
+    with INBOX.open('r+') as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            lines = handle.read().splitlines(keepends=True)
+            out = []
+            for raw in lines:
+                try:
+                    line = json.loads(raw)
+                except ValueError:
+                    out.append(raw)
+                    continue
+                kind = kinds.get(line.get('id')) if isinstance(line, dict) else None
+                if kind and line.get('actor') != kind:
+                    line['actor'] = kind
+                    raw = json.dumps(line, ensure_ascii=False, sort_keys=True) + '\n'
+                    corrected += 1
+                out.append(raw)
+            if corrected:
+                handle.seek(0)
+                handle.write(''.join(out))
+                handle.truncate()
+                handle.flush()
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return corrected
+
+
 def check(session):
-    out = dict(inbox=str(INBOX), appended=0, error='')
+    out = dict(inbox=str(INBOX), appended=0, relabelled=0, error='')
     try:
         if not _ready(session):
             out['error'] = 'the manual_changes table does not exist yet'
             out['missing'] = []
             return out
         out['appended'] = sync(session)
+        out['relabelled'] = relabel(session)
     except Exception as exc:  # noqa: BLE001 - shown on the status board
         out['error'] = f'{type(exc).__name__}: {exc}'
     try:

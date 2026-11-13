@@ -204,3 +204,34 @@ class JudgementLineTests(FeedTestBase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SystemActorTests(FeedTestBase):
+    """The page-image reader saves as System <vision-reader@system.local>; it is not a person (12 Nov, cded78d0)."""
+    READER = dict(name='System', email='vision-reader@system.local', user_id='')
+
+    def test_a_reader_save_is_exported_as_system_and_a_person_stays_a_person(self):
+        with Session(self.engine) as session:
+            self.change(session, actor=self.READER, field='holder')
+            self.change(session, field='amount')
+            self.change(session, actor=dict(name='', email='', user_id=''), field='bank')
+            session.commit()
+        self.assertEqual({line['field']: line['actor'] for line in self.lines()},
+                         {'holder': 'system', 'amount': 'person', 'bank': 'person'})
+
+    def test_check_corrects_lines_exported_before_and_keeps_every_line(self):
+        with Session(self.engine) as session:
+            reader = self.change(session, actor=self.READER, field='holder', committed=True)
+            person = self.change(session, field='amount', committed=True)
+        # As the old export wrote them: every non-jobs line 'person'.
+        old = [{**line, 'actor': 'person'} for line in self.lines()]
+        self.inbox.write_text(''.join(json.dumps(line, ensure_ascii=False, sort_keys=True) + '\n' for line in old))
+        with Session(self.engine) as session:
+            out = mc.check(session)
+            self.assertEqual(out['relabelled'], 1)
+            self.assertEqual(mc.check(session)['relabelled'], 0)
+        lines = self.lines()
+        self.assertEqual([line['id'] for line in lines], [str(reader), str(person)])
+        self.assertEqual([line['actor'] for line in lines], ['system', 'person'])
+        self.assertEqual({k: v for k, v in lines[0].items() if k != 'actor'},
+                         {k: v for k, v in old[0].items() if k != 'actor'})
