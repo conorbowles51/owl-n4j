@@ -68,6 +68,12 @@ def reader_of(location: dict[str, Any] | None) -> dict[str, Any]:
     if kind in FILE_TEXT_KINDS:
         return dict(kind="file_text", words="The file's own text", machine_read=False, model=None, confidence=None,
                     low_confidence=False)
+    if method == "vision_model":  # a wordless scanned page read by a picture-reading model (page_image_reading)
+        reading = location.get("page_image_reading") or {}
+        model = reading.get("model") or (location.get("model_origin") or {}).get("model_id")
+        return dict(kind="model", words=f"Read from the page image by a picture-reading model ({model or 'not recorded'}) "
+                    "after OCR found no words, not confirmed by a person", machine_read=True, model=model,
+                    confidence=None, low_confidence=False)
     if method == "tesseract_ocr":
         return dict(kind="ocr", words="Read from the page image by OCR software (Tesseract), not confirmed by a person",
                     machine_read=True, model=None, confidence=confidence,
@@ -166,6 +172,12 @@ def _missing_words(section: dict[str, Any] | None, failure: str | None) -> str:
         why = "OCR ran out of time on this page, so it was not read."
     elif status == "no_text":
         why = "OCR ran on this page and found no text. It may be blank or hold only a picture."
+        reading = location.get("page_image_reading") or {}
+        if reading.get("status") == "no_words":
+            why += f" A picture-reading model ({reading.get('model') or 'not recorded'}) also found no words on it."
+        elif reading.get("status") in ("failed", "not_read") and reading.get("message"):
+            why += (" Reading it with a picture-reading model failed: " if reading["status"] == "failed" else " ") \
+                + str(reading["message"]).rstrip(".") + "."
     elif location.get("extraction_method") == "native":
         why = "This page has no text layer and holds no text."
     else:

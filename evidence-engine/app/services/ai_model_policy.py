@@ -24,6 +24,8 @@ DEFAULT_POLICY = {
     "ingestion_entity_summary": {"provider": "openai", "model_id": settings.openai_summary_model},
     "ingestion_document_summary": {"provider": "openai", "model_id": settings.openai_document_summary_model},
     "ingestion_quality": {"provider": "openai", "model_id": settings.openai_quality_model},
+    # Wordless scanned pages (app.pipeline.page_image_reading): DeepSeek's image model, as the backend's default.
+    "scanned_page_reading": {"provider": "deepseek", "model_id": "deepseek-flash"},
 }
 
 _current_policy: ContextVar[dict[str, dict[str, str]]] = ContextVar(

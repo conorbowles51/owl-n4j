@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     pdf_ocr_page_timeout_seconds: int = 300
     pdf_ocr_max_concurrency: int = 2
     openai_vision_model: str = "gpt-4o"
+    # Scanned PDF pages where OCR finds no words (handwriting) are read by the picture-reading model of the
+    # scanned_page_reading workload (app.pipeline.page_image_reading). Off = they stay empty, as before.
+    scanned_page_reading_enabled: bool = True
+    scanned_page_reading_max_pages: int = 25
+    scanned_page_reading_long_side_px: int = 2000
     openai_transcription_model: str = "gpt-4o-transcribe-diarize"
     audio_transcription_segment_seconds: int = 240
     audio_transcription_max_single_seconds: int = 240

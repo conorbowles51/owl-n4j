@@ -73,6 +73,31 @@ class Pages(Base_):
         self.assertEqual(pages[1]["reader"]["confidence"], 71.5)
         self.assertTrue(pages[1]["reader"]["low_confidence"])
 
+    def test_a_page_read_by_a_picture_model_is_labelled_the_models_never_a_persons(self):
+        reading = dict(status="read", provider="deepseek", model="deepseek-flash", cost_usd=0.0004)
+        origin = dict(kind="model", model="deepseek-flash", model_id="deepseek-flash", citation=dict(page=1))
+        record = self.file(content="Room A Kitchen", locations=[page(1, 0, 14, extraction_method="vision_model",
+                           text_origin="recognised_glyphs", ocr_status="no_text", page_image_reading=reading,
+                           model_origin=origin)])
+        shown = self.pages(record)["pages"][0]
+        self.assertEqual(shown["text"], "Room A Kitchen")
+        self.assertIsNone(shown["text_missing"])
+        self.assertEqual(shown["reader"]["kind"], "model")
+        self.assertTrue(shown["reader"]["machine_read"])
+        self.assertEqual(shown["reader"]["model"], "deepseek-flash")
+        self.assertIn("picture-reading model (deepseek-flash)", shown["reader"]["words"])
+        self.assertIn("not confirmed by a person", shown["reader"]["words"])
+
+    def test_a_wordless_page_says_what_the_picture_model_found(self):
+        none = dict(status="no_words", model="deepseek-flash")
+        failed = dict(status="failed", message="DeepSeek is not connected")
+        record = self.file(content="\n\n", locations=[
+            page(1, 0, 0, extraction_method="tesseract_ocr", ocr_status="no_text", page_image_reading=none),
+            page(2, 2, 2, extraction_method="tesseract_ocr", ocr_status="no_text", page_image_reading=failed)])
+        shown = self.pages(record)["pages"]
+        self.assertIn("also found no words", shown[0]["text_missing"])
+        self.assertIn("failed: DeepSeek is not connected.", shown[1]["text_missing"])
+
     def test_a_page_with_no_text_says_why_never_blank(self):
         pages = self.pages(self.file(content=self.TEXT, locations=self.locations()))["pages"]
         self.assertIn("found no text", pages[2]["text_missing"])

@@ -75,6 +75,12 @@ WORKLOADS: dict[str, dict[str, str]] = {
         "description": "Reads held bank statement pages from their images; saved only when the figures reconcile exactly.",
         "group": "Financial",
     },
+    "scanned_page_reading": {
+        "label": "Handwritten and wordless scanned pages",
+        "description": "Reads scanned pages where text recognition finds no words, such as handwriting. The text is "
+                       "shown as the model's reading with its page until a person confirms it.",
+        "group": "Ingestion",
+    },
 }
 
 # Statement page images are read by a chain of models, in order (Neil, 2026-10-28): DeepSeek first ("the reader of
@@ -125,6 +131,9 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
     # using deep seek everywhere possible in the platform. Deepseek at max performance.").
     "phone_mapping_draft": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
     "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
+    # The evidence engine's reader of wordless scanned pages (app.pipeline.page_image_reading): DeepSeek's image model,
+    # the reader of choice for page images (financial_vision above). Only models that read images may be chosen.
+    "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
 }
 
 # A recommended profile sets models, never the "DeepSeek only" switch: applying one keeps the switch as it is.
@@ -146,6 +155,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "statement_claim_drafting": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "phone_mapping_draft": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
+        "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
     },
     "gemini": {
         "chat": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
@@ -159,6 +169,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "statement_claim_drafting": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "phone_mapping_draft": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
+        "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
     },
     "deepseek": {
         "chat": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
@@ -172,6 +183,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "statement_claim_drafting": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "phone_mapping_draft": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
+        "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
     },
 }
 
@@ -281,7 +293,7 @@ def get_workload_chain(db: Session, workload: str) -> list[dict[str, str]]:
 
 
 # Workloads that send page images (each must use a model that takes images).
-IMAGE_WORKLOADS = frozenset({"financial_vision"})
+IMAGE_WORKLOADS = frozenset({"financial_vision", "scanned_page_reading"})
 
 
 def _provider_key(provider: str, db: Session | None) -> str | None:
@@ -324,6 +336,14 @@ def _validated_entry(workload: str, entry: Any, db: Session | None) -> dict[str,
         if not readable and unconfirmed and api_key and {"provider": provider, "model_id": model_id} in FINANCIAL_VISION_CHAIN:
             # The code default cannot be confirmed while DeepSeek's model list is down (a key is connected): saving
             # other settings is not blocked by it. With no DeepSeek key it stays refused (add the key or remove it). Nothing is sent unconfirmed: each reading checks again and fails closed.
+            logger.warning("%s %s kept in %s without confirming it reads images: %s", provider, model_id, workload, why)
+            readable = True
+        default = DEFAULT_POLICY.get(workload) or {}
+        if not readable and unconfirmed and workload not in CHAIN_WORKLOADS and \
+                (provider, model_id) == (default.get("provider"), default.get("model_id")):
+            # A one-model image workload left at its code default (scanned_page_reading: DeepSeek's image model,
+            # measured reading page images) does not block saving other settings while DeepSeek cannot be asked. The
+            # engine's reading fails closed with its reason on the page when DeepSeek is not connected.
             logger.warning("%s %s kept in %s without confirming it reads images: %s", provider, model_id, workload, why)
             readable = True
         if not readable:

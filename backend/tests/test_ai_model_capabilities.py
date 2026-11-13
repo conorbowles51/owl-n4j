@@ -256,6 +256,18 @@ class PolicyTests(unittest.TestCase):
                                                          'deepseek_only': True})
         validate_policy(self.policy('openai', 'gpt-5.6-terra'), require_configured_provider=False)
 
+    def test_scanned_page_reading_takes_only_an_image_model(self):
+        configuration = self.chain(('openai', 'gpt-5.6-terra'))
+        configuration['financial_vision']['deepseek_only'] = False
+        self.assertEqual(configuration['scanned_page_reading'], {'provider': 'deepseek', 'model_id': 'deepseek-flash'})
+        # Left at its default with no DeepSeek key, it does not block saving the rest (the reading fails closed).
+        validate_policy(configuration, require_configured_provider=False)
+        configuration['scanned_page_reading'] = {'provider': 'deepseek', 'model_id': 'deepseek-v4-pro'}
+        with self.assertRaisesRegex(ValueError, 'cannot read page images'):
+            validate_policy(configuration, require_configured_provider=False)
+        configuration['scanned_page_reading'] = {'provider': 'openai', 'model_id': 'gpt-5.6-terra'}
+        validate_policy(configuration, require_configured_provider=False)
+
     def chain(self, *entries):
         configuration = {key: dict(value) for key, value in DEFAULT_POLICY.items()}
         chain = [{'provider': p, 'model_id': m} for p, m in entries]

@@ -74,6 +74,8 @@ def build_canonical_document_text(doc: ExtractedDocument) -> CanonicalDocumentTe
                 "ocr_low_confidence",
                 "ocr_dpi",
                 "ocr_language",
+                "page_image_reading",
+                "model_origin",
             ):
                 if key in span:
                     location[key] = span[key]

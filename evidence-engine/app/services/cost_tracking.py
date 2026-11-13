@@ -193,12 +193,21 @@ async def record_ai_cost(
     duration_seconds: float | None = None,
     description: str | None = None,
     extra_metadata: dict[str, Any] | None = None,
-) -> None:
+    fallback_price: tuple[float, float, str] | None = None,
+) -> float:
+    """Write one cost record and return its cost. ``fallback_price`` (USD per million input and output tokens, and
+    the version of that price): used when Loupe's pricing table has no line for the model, so the call is not
+    recorded as free."""
     context = _current_context.get()
     normalized_usage = normalize_usage(usage, duration_seconds=duration_seconds)
     rate = await _resolve_pricing_rate(provider, model_id, operation_kind)
     cost_usd = _calculate_cost(rate, normalized_usage)
     pricing_version = rate.pricing_version if rate else None
+    if rate is None and fallback_price is not None:
+        rate_in, rate_out, pricing_version = fallback_price
+        cost_usd = (Decimal(str(normalized_usage.get("prompt_tokens") or 0)) * Decimal(str(rate_in))
+                    + Decimal(str(normalized_usage.get("completion_tokens") or 0)) * Decimal(str(rate_out))
+                    ) / Decimal(1_000_000)
     metadata = {
         "source": "evidence_engine",
         **(context.extra_metadata if context else {}),
@@ -240,6 +249,7 @@ async def record_ai_cost(
             )
         )
         await db.commit()
+    return float(cost_usd)
 
 
 async def record_openai_cost(**kwargs: Any) -> None:

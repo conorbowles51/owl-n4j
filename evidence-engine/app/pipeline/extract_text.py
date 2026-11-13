@@ -1324,9 +1324,11 @@ async def extract_text(
     if ext == ".pdf":
         pdf = await extract_pdf(file_path, progress_callback=progress_callback,
             reading_mode=pdf_reading_mode)
+        from app.pipeline.page_image_reading import read_wordless_pages
+        text, metadata = await read_wordless_pages(file_path, file_name, pdf.text, pdf.metadata)
         doc = ExtractedDocument(
-            text=pdf.text,
-            metadata=pdf.metadata,
+            text=text,
+            metadata=metadata,
             tables=pdf.tables,
         )
     elif ext in WORD_EXTENSIONS and await asyncio.to_thread(is_ole_file, file_path):
