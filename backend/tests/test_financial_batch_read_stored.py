@@ -21,6 +21,7 @@ from services.financial import statement_import as reader
 from services.financial.statement_import import StatementReviewDraft
 from tests import test_financial_import_batches as fixtures
 from tests.financial_legacy_batch_read import legacy_checked_batch_items
+from services.financial.statement_import_overlap import duplicate_matches
 
 # Concurrency tokens derived from the stored item status. A refresh may store
 # the projected ready/attention status, so these follow the stored item.
@@ -58,6 +59,14 @@ class StoredBatchReadTests(TestCase):
     def view(self, projected, coverage_tokens=True):
         result = {str(i.id): _normal(dict(status=i.status, review_request=i.review_request, review_revision=i.review_revision,
             summary={k: v for k, v in i.summary.items() if k not in STATUS_TOKENS and k != 'readiness'})) for i in projected}
+        for value in result.values():
+            # A duplicate hold names its matches for the review queue (added after the frozen
+            # former path). They must be exactly the matching candidates of the item's own
+            # coverage review; the rest of the problem is compared with the former path.
+            summary = value['summary']
+            for problem in summary.get('problems') or []:
+                if 'matches' in problem:
+                    self.assertEqual(problem.pop('matches'), _normal(duplicate_matches(summary['coverage_review'])))
         if not coverage_tokens:
             # The former path built the coverage token of an item without a
             # saved request from its stale stored reading revision while
