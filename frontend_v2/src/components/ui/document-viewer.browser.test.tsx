@@ -16,6 +16,8 @@ import { resetPageImagesForTests } from "./pdf-page-images"
 const requests: number[] = []
 let totalPages = 1928
 let failedPage: number | null = null
+let pageSize = { width: 600, height: 1000 }
+let delayMs = 0
 vi.mock("@/lib/protected-file", () => ({
   useProtectedObjectUrl: () => ({
     objectUrl: null,
@@ -30,6 +32,8 @@ beforeEach(() => {
   requests.length = 0
   totalPages = 1928
   failedPage = null
+  pageSize = { width: 600, height: 1000 }
+  delayMs = 0
   localStorage.setItem("loupeSession", "synthetic-user")
   vi.stubGlobal(
     "fetch",
@@ -39,11 +43,12 @@ beforeEach(() => {
       requests.push(pageNumber)
       if (pageNumber === failedPage) return new Response(null, { status: 503 })
       const canvas = document.createElement("canvas")
-      canvas.width = 600
-      canvas.height = 1000
+      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs))
+      canvas.width = pageSize.width
+      canvas.height = pageSize.height
       const context = canvas.getContext("2d")!
       context.fillStyle = "white"
-      context.fillRect(0, 0, 600, 1000)
+      context.fillRect(0, 0, pageSize.width, pageSize.height)
       context.fillStyle = "black"
       context.font = "28px sans-serif"
       context.fillText(`Synthetic page ${pageNumber}`, 30, 60)
@@ -125,6 +130,31 @@ it("opens the cited page and permits scrolling back to earlier pages", async () 
   expect(
     await screen.findByRole("img", { name: "Page 11 of the original PDF" })
   ).toBeVisible()
+})
+
+it("opens a later page on a narrow screen and stays on it while the pages before it load", async () => {
+  // As live (13 Nov, OPDMD66 statement 2): letter-size pages that take a while each.
+  await page.viewport(390, 844)
+  pageSize = { width: 1275, height: 1650 }
+  delayMs = 400
+  render(<Viewer initialPage={5} />)
+  await screen.findByRole("img", { name: "Page 5 of the original PDF" })
+  // The list measures the pages it mounted and settles with page 5 at the top, and the page shown stays 5.
+  const region = screen.getByRole("region", { name: "PDF document pages" })
+  await waitFor(
+    () => {
+      const fifth = region.querySelector<HTMLElement>('[data-index="4"]')
+      expect(fifth).not.toBeNull()
+      expect(
+        Math.abs(fifth!.getBoundingClientRect().top - region.getBoundingClientRect().top)
+      ).toBeLessThan(40)
+    },
+    { timeout: 10000 }
+  )
+  await new Promise((resolve) => setTimeout(resolve, 1500))
+  const fifth = region.querySelector<HTMLElement>('[data-index="4"]')!
+  expect(Math.abs(fifth.getBoundingClientRect().top - region.getBoundingClientRect().top)).toBeLessThan(40)
+  expect(screen.getByText("Page 5 of 1928")).toBeVisible()
 })
 
 it("retries a failed page while retaining the surrounding document", async () => {

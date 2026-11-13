@@ -18,6 +18,21 @@ export function EvidencePdfDocument({
   const scrollRef = useRef<HTMLDivElement>(null)
   const visiblePage = useRef(page)
   const positioned = useRef(false)
+  // Only scrolling the person does names the page they are on, and until they scroll the list holds the requested
+  // page. Live 13 Nov at 390 px a statement starting at page 5 settled on page 4 while page sizes were measured.
+  const personScrolling = useRef(false)
+  useEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+    const mark = () => {
+      personScrolling.current = true
+    }
+    const events = ["wheel", "touchstart", "pointerdown", "keydown"] as const
+    for (const name of events) element.addEventListener(name, mark, { passive: true })
+    return () => {
+      for (const name of events) element.removeEventListener(name, mark)
+    }
+  }, [])
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [zoom, setZoom] = useState(100)
   // The first page's pixel size, from the first image to arrive. Pages still loading take that shape, so the
@@ -52,7 +67,21 @@ export function EvidencePdfDocument({
     initialOffset: () => (page - 1) * 1000,
     overscan: 1,
     onChange: (instance, scrolling) => {
-      if (!scrolling || !pageCount || !positioned.current) return
+      if (!pageCount || !positioned.current) return
+      if (!personScrolling.current) {
+        // Until the person scrolls, keep the requested page at the top while the pages around it are measured
+        // and their sizes replace the estimates (the list otherwise drifted to page 4 when page 5 was asked for).
+        const target = instance.measurementsCache[visiblePage.current - 1]
+        const element = scrollRef.current
+        if (!target || !element) return
+        const wanted = Math.min(target.start, Math.max(0, instance.getTotalSize() - element.clientHeight))
+        if (Math.abs((instance.scrollOffset ?? 0) - wanted) > 2)
+          requestAnimationFrame(() => {
+            if (!personScrolling.current) instance.scrollToOffset(wanted)
+          })
+        return
+      }
+      if (!scrolling) return
       const offset = instance.scrollOffset ?? 0
       const item = instance
         .getVirtualItems()
@@ -67,12 +96,14 @@ export function EvidencePdfDocument({
   useEffect(() => {
     if (!pageCount) return
     if (!positioned.current) {
+      personScrolling.current = false
       virtualizer.scrollToIndex(page - 1, { align: "start" })
       positioned.current = true
       return
     }
     if (page === visiblePage.current) return
     visiblePage.current = page
+    personScrolling.current = false
     virtualizer.scrollToIndex(page - 1, { align: "start" })
   }, [page, pageCount, virtualizer])
 
