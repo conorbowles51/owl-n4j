@@ -36,7 +36,7 @@ from app.pipeline.resolve_relationships import resolve_relationships
 from app.pipeline.write_graph import write_graph
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.ai_model_policy import get_ai_runtime_snapshot, load_ai_model_policy
-from app.services.evidence_document_text import upsert_evidence_document_text
+from app.services.evidence_document_text import store_photo_data, upsert_evidence_document_text
 from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.redis_client import publish_progress
 from app.services.pipeline_run_state import (
@@ -224,6 +224,8 @@ async def _extract_file(
                     engine_job_id=job_id,
                     doc=doc,
                 )
+            async with async_session() as photo_db:
+                await store_photo_data(photo_db, evidence_file_id=source_evidence_file_id, doc=doc)
             # Geometry is auxiliary: a failure here costs the click-through
             # highlight, not the text or the transactions, so it is logged
             # rather than allowed to fail the ingestion.  Its own session, so

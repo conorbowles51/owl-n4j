@@ -33,7 +33,7 @@ from app.pipeline.write_graph import write_graph
 from app.services.ai_budget import hold_if_reached
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.ai_model_policy import get_ai_runtime_snapshot, load_ai_model_policy
-from app.services.evidence_document_text import upsert_evidence_document_text
+from app.services.evidence_document_text import store_photo_data, upsert_evidence_document_text
 from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.redis_client import publish_progress
 from app.services.pipeline_run_state import (
@@ -175,18 +175,8 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
                     engine_job_id=job.id,
                     doc=doc,
                 )
-                # What the photo's own data says (date taken, place, camera) is kept on the evidence file. It is
-                # auxiliary, like the geometry below: a failure costs the photo's Timeline and map entries only.
-                if doc.metadata.get('photo_data'):
-                    try:
-                        from sqlalchemy import text as _sql_text
-                        from services.photo_metadata import STORE_SQL, store_params
-                        await db.execute(_sql_text(STORE_SQL),
-                                         store_params(job.source_evidence_file_id, doc.metadata['photo_data']))
-                        await db.commit()
-                    except Exception:
-                        logger.exception("Photo data persistence failed for job %s", job.id)
-                        await db.rollback()
+                # What the photo's own data says (date taken, place, camera) is kept on the evidence file.
+                await store_photo_data(db, evidence_file_id=job.source_evidence_file_id, doc=doc)
                 # Geometry is auxiliary to the job: a failure here costs the
                 # click-through highlight, not the text or the transactions,
                 # so it is logged rather than allowed to fail the ingestion.

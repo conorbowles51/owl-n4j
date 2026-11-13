@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -190,3 +191,23 @@ async def upsert_evidence_document_text(
     if commit:
         await db.commit()
     return canonical
+
+
+async def store_photo_data(db: AsyncSession, *, evidence_file_id: uuid.UUID | str, doc: ExtractedDocument) -> bool:
+    """Keep what a photo's own data says (date taken, place, camera) on the evidence file under
+    ``metadata.photo_data``. Auxiliary like the table geometry: a failure is logged and costs the photo's Timeline and
+    map entries only, never the ingestion. Returns whether a record was stored."""
+    record = (doc.metadata or {}).get("photo_data")
+    if not record:
+        return False
+    try:
+        from sqlalchemy import text
+        from services.photo_metadata import STORE_SQL, store_params
+
+        await db.execute(text(STORE_SQL), store_params(evidence_file_id, record))
+        await db.commit()
+        return True
+    except Exception:
+        logging.getLogger(__name__).exception("Photo data persistence failed for file %s", evidence_file_id)
+        await db.rollback()
+        return False
