@@ -364,6 +364,49 @@ SAVED_PRINTED_PERIOD_ACROSS_BANKS = os.environ.get('LOUPE_FINANCIAL_SAVED_PRINTE
 IDENTICAL_UNSAVED_TO_RETAINED = os.environ.get('LOUPE_FINANCIAL_COVERAGE_IDENTICAL_UNSAVED_TO_RETAINED', '1') != '0'
 
 
+# A saved statement of the same account whose dates differ from this reading's by one day at one end (the other end
+# equal) and whose saved payments are this reading's payments (every date, amount and direction, at least one) is
+# the same printed statement read with another start or end date: it holds this one for a person, as the same
+# dates do. OPDMD66 Truist 5630 Feb 2024 (12 Nov): the Feb file saved 28 Oct with a start one day early
+# (2024-01-31..02-29) and statement 4 of 'STATEMENTS 5630.pdf' (2024-02-01..02-29) carried only a note, so the same
+# 48 payments were saved twice. Measured 12 Nov: this is the only such pair of saved statements on live. Never sets a
+# copy aside by itself. Reverse: LOUPE_FINANCIAL_BOUNDARY_DAY_COPIES=0.
+BOUNDARY_DAY_COPIES = os.environ.get('LOUPE_FINANCIAL_BOUNDARY_DAY_COPIES', '1') != '0'
+
+
+BOUNDARY_DAY_MESSAGE = ('A saved statement for this account has the same payments, with dates one day apart. '
+                        'Compare it, then leave this copy unimported or record why both are needed.')
+
+
+def _boundary_day_copy(session, own, other, request):
+    if not BOUNDARY_DAY_COPIES or other.get('status') != 'imported' or not other.get('source_document_id'):
+        return False
+    try:
+        start, end = date.fromisoformat(own['start']), date.fromisoformat(own['end'])
+        other_start, other_end = date.fromisoformat(other['period_start']), date.fromisoformat(other['period_end'])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not ((start == other_start and abs((end - other_end).days) == 1)
+            or (end == other_end and abs((start - other_start).days) == 1)):
+        return False
+    from services.financial.repeated_activity import _review_lines
+    lines, _ = _review_lines(request.get('rows'), request.get('currency') or '')
+    payments = sorted((line.date, line.amount, line.direction) for line in lines)
+    if not payments:
+        return False
+    from uuid import UUID
+    from postgres.models.financial import FinancialTransaction as Txn
+    period_ids = list(session.scalars(select(FinancialStatementPeriod.id).where(
+        FinancialStatementPeriod.source_document_id == UUID(other['source_document_id']),
+        FinancialStatementPeriod.period_start == other_start, FinancialStatementPeriod.period_end == other_end)))
+    if len(period_ids) != 1:
+        return False
+    saved = sorted((day.isoformat(), abs(int(amount)), direction) for day, amount, direction in session.execute(
+        select(Txn.ordering_date, Txn.amount_minor, Txn.direction).where(
+            Txn.statement_period_id == period_ids[0], Txn.ledger_status == 'admitted', Txn.superseded_by_id.is_(None))))
+    return saved == payments
+
+
 def _usable_here(row, session):
     """A snapshot row this session can read: a plain copy (CaseFile), or an ORM row of this very session.
 
@@ -443,6 +486,8 @@ def coverage_review(session, *, case_id, file_id, request, sources=None, repeate
         # reference and exact printed period is still another copy of this
         # statement until its payments show otherwise, so it is held, not warned.
         exact = same_statement(own, other.get('scope')) or same_printed_period(own, other.get('scope'))
+        boundary_day = bool(not exact and identifier[0] != own_key[0] and _boundary_day_copy(session, own, other, request))
+        exact = exact or boundary_day
         same_file = False
         if identifier[0] == own_key[0] and exact:
             # Reader upgrades can change section keys. A verified internal version
@@ -464,7 +509,8 @@ def coverage_review(session, *, case_id, file_id, request, sources=None, repeate
         # Prefer the imported record if the same source is in another batch.
         if identifier not in candidates or other['status'] == 'imported':
             candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
-                'matching_statement': exact, 'same_file_statement': same_file}
+                'matching_statement': exact, 'same_file_statement': same_file,
+                **({'boundary_day': True} if boundary_day else {})}
     if SAVED_PRINTED_PERIOD_ACROSS_BANKS:
         # A saved statement of the same printed account reference, product,
         # currency and exact dates, filed under another bank identity (another
@@ -495,6 +541,7 @@ def coverage_review(session, *, case_id, file_id, request, sources=None, repeate
             matching_statement=v['matching_statement']) for k,v in ordered]))
     return dict(available=True, revision=revision, candidates=[v for _,v in ordered],
                 matching_statement=any(v['matching_statement'] for _, v in ordered),
+                **(dict(boundary_day=True) if any(v.get('boundary_day') for _, v in ordered) else {}),
                 same_file_statement=any(v['same_file_statement'] for _, v in ordered),
                 **(dict(repeated_activity=True) if repeats else {}))
 

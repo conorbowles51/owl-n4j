@@ -1156,7 +1156,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
     if not items:
         return [], None
     from services.financial.statement_import_overlap import (coverage_review, summary_request, requires_decision,
-        comparison_sources, duplicate_hold, duplicate_matches, ReadingDeferred)
+        comparison_sources, duplicate_hold, duplicate_matches, ReadingDeferred, BOUNDARY_DAY_MESSAGE)
     from services.financial.repeated_activity import HOLD_MESSAGE as REPEATED_HOLD
     with stage('batch_pending'):
         pending = _pending_with_files(session, case_id)
@@ -1221,6 +1221,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     message=(REPEATED_HOLD if review.get('repeated_activity') else
                         'This file prints another statement for the same bank, full account, holder, currency and statement period on a different page. Compare the two before importing either.'
                         if duplicate_hold(review, raw) and review.get('same_file_statement') else
+                        BOUNDARY_DAY_MESSAGE if duplicate_hold(review, raw) and review.get('boundary_day') else
                         'A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
                         if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.'
                         + ((' ' + summary['overlap_trim']['message']) if (summary.get('overlap_trim') or {}).get('message') else '')),

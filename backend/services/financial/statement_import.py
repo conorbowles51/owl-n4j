@@ -1525,7 +1525,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     if coverage.get('repeated_activity'):
                         from services.financial.repeated_activity import HOLD_MESSAGE
                         raise PdfMappingError(HOLD_MESSAGE, 409)
-                    raise PdfMappingError('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement, then leave this copy unimported or record why both are needed.', 409)
+                    from services.financial.statement_import_overlap import BOUNDARY_DAY_MESSAGE
+                    raise PdfMappingError(BOUNDARY_DAY_MESSAGE if coverage.get('boundary_day') and not coverage.get('same_file_statement') else 'A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement, then leave this copy unimported or record why both are needed.', 409)
                 coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
                 from services.financial.review_arithmetic import check_proposed_rows
                 arithmetic = check_proposed_rows(proposal, [r.model_dump() for r in request.rows])

@@ -201,7 +201,10 @@ class StatementOverlapTests(TestCase):
         review = self.review(other, raw)
         self.assertEqual(len(review['candidates']), 1)
         raw.update(coverage_review_revision=review['revision'], coverage_review_reason='Both contain records needed for this synthetic test.')
-        edited = {**raw, 'period_end': '2024-01-01', 'details_reason': 'Date was corrected.'}
+        # One day later with the same payments is a copy held for a person (BOUNDARY_DAY_COPIES); two days is an overlap.
+        with self.assertRaisesRegex(PdfMappingError, 'dates one day apart'):
+            self.f.confirm({**raw, 'period_end': '2024-01-01', 'details_reason': 'Date was corrected.'})
+        edited = {**raw, 'period_end': '2024-01-02', 'details_reason': 'Date was corrected.'}
         result = self.f.confirm(edited)
         self.assertTrue(result['created'])
         self.assertTrue(any(issue['kind'] == 'coverage' for issue in result['issues']))
@@ -288,6 +291,27 @@ class StatementOverlapTests(TestCase):
         self.assertTrue(second['created'])
         self.assertNotEqual(first['source_document_id'], second['source_document_id'])
         self.assertFalse(self.f.confirm(raw)['created'])
+
+    def test_a_saved_statement_one_day_apart_with_the_same_payments_holds_the_copy(self):
+        # OPDMD66 Truist 5630 Feb 2024: saved 2024-01-31..02-29, the copy read 2024-02-01..02-29, same 48 payments.
+        self.f.confirm()
+        other = self.copy_file()
+        self.f.file = other
+        raw = self.f.request()
+        for start, end in (('2023-01-02', '2023-12-31'), ('2022-12-31', '2023-12-31'), ('2023-01-01', '2023-12-30')):
+            review = self.review(other, {**raw, 'period_start': start, 'period_end': end})
+            self.assertTrue(review['matching_statement'], (start, end))
+            self.assertTrue(review.get('boundary_day'))
+            self.assertTrue(overlap.duplicate_hold(review, raw))
+            self.assertEqual([m['status'] for m in overlap.duplicate_matches(review)], ['imported'])
+        # Two days apart, or other payments: a note to compare, never a hold.
+        self.assertFalse(self.review(other, {**raw, 'period_start': '2023-01-03'})['matching_statement'])
+        rows = deepcopy(raw['rows'])
+        paid = next(row for row in rows if not row['excluded'] and int(row['amount_minor'] or 0))
+        paid['amount_minor'] = str(int(paid['amount_minor']) + 1)
+        self.assertFalse(self.review(other, {**raw, 'period_start': '2023-01-02', 'rows': rows})['matching_statement'])
+        with patch.object(overlap, 'BOUNDARY_DAY_COPIES', False):
+            self.assertFalse(self.review(other, {**raw, 'period_start': '2023-01-02'})['matching_statement'])
 
     def test_identity_match_does_not_guess_masked_accounts_holders_or_different_products(self):
         raw = self.f.request()
