@@ -162,3 +162,26 @@ def test_files_are_checked_side_by_side_and_a_changed_file_still_stops_registrat
     assert answer.status_code == 409, answer.text
     with Session(f.engine) as db:
         assert len(list(db.scalars(select(EvidenceFile)))) == before == 0
+
+
+def test_a_folder_upload_leaves_out_the_files_macos_and_windows_add(groups, monkeypatch):
+    """Case d5b330d1 (23 Sep upload) holds 1,435 macOS ``._`` files as evidence, 977 named .jpg: 4 KB of Finder data
+    each, never a picture. The old code registered every one; the archive and single-file paths already left them out."""
+    f = groups
+    Base.metadata.create_all(f.engine, tables=[ActivityEvent.__table__])
+    content = {'Chat/photo.jpg': b'\xff\xd8\xff\xe0\x00\x10JFIF\x00 a picture', 'Chat/._photo.jpg': b'\x00\x05\x16\x07Mac OS X',
+               'Chat/.DS_Store': b'finder', 'Chat/Thumbs.db': b'windows', '__MACOSX/Chat/._x.jpg': b'mac',
+               'Chat/notes.txt': b'kept'}
+    state, _ = start(f, content)
+    response = batch(f, state, [(m, content[m['path']]) for m in state['members']])
+    assert [r['status'] for r in response.json()['files']] == ['staged'] * len(content), response.text
+    monkeypatch.setattr(api, 'COMPLETE_WAIT_SECONDS', 3600)
+    receipt = control(f, state, 'complete').json()
+    assert receipt['status'] == 'completed', receipt
+    with Session(f.engine) as db:
+        kept = sorted(r.metadata_['relative_path'] for r in db.scalars(select(EvidenceFile)))
+    assert kept == ['Chat/notes.txt', 'Chat/photo.jpg']
+    assert len(receipt['receipt']['file_ids']) == 2
+    assert receipt['receipt']['message'] == (
+        'Uploaded 2 files. Folder structure is retained. Left out 4 system files that macOS or Windows adds to'
+        ' folders (names starting ._, .DS_Store, Thumbs.db). Select Process to start ingestion.')

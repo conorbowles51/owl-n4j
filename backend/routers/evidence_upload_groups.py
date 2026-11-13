@@ -532,8 +532,14 @@ def register_payload(db, group, user, prepared):
         if relative_path not in folders:
             folders[relative_path] = folder_for_path(db, group, user, relative_path)
         return folders[relative_path]
+    # The files macOS and Windows add to a folder (``._`` copies of each file's Finder data, .DS_Store, Thumbs.db) are
+    # not evidence: extraction leaves them out of an archive, the single-file upload refuses them, and a folder upload
+    # leaves them out here. Their bytes stay in the upload's saved copy. Case d5b330d1 held 1,435 such rows, 977 of
+    # them named .jpg, none of them pictures.
+    members = [m for m in prepared['members'] if not skipped_name(m['path'])]
+    left_out = len(prepared['members']) - len(members)
     entries = []
-    for member in prepared['members']:
+    for member in members:
         path = PurePosixPath(member['path'])
         entries.append((folder_of(str(path.parent)), dict(
             original_filename=path.name, stored_path=member['stored_path'], sha256=member['sha256'], size=member['size'],
@@ -576,12 +582,15 @@ def register_payload(db, group, user, prepared):
             dispatch.append(dict(request_id=str(uuid5(group.id, 'phone-capture:%s:%s' % (phone['path'], rp))),
                 container_path=container, root_path=rp, evidence_folder_id=str(folder) if folder else None,
                 container_evidence_id=str(record.id), upload_sha256=phone['sha256'], original_name=phone['name']))
-    count = len(prepared['members']) + sum(len(p.get('member_paths') or [1]) for p in prepared['phones'])
+    count = len(members) + sum(len(p.get('member_paths') or [1]) for p in prepared['phones'])
     message = f"Uploaded {count:,} {'file' if count == 1 else 'files'}." + (
         ' Folder structure is retained.' if group.kind != 'files' else '')
+    if left_out:
+        message += (f" Left out {left_out:,} system {'file' if left_out == 1 else 'files'} that macOS or Windows adds"
+                    " to folders (names starting ._, .DS_Store, Thumbs.db).")
     if notices:
         message += ' ' + ' '.join(notices)
-    elif prepared['members']:
+    elif members:
         message += ' Select Process to start ingestion.'
     checked_words = evidence_signature.summary_words(file_checks)
     if checked_words:
