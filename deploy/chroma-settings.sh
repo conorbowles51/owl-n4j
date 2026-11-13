@@ -15,10 +15,12 @@
 set -uo pipefail
 umask 077
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOL="${HERE}/../backend/scripts/chroma_reach.py"
+TOOL="${CHROMA_REACH_TOOL:-${HERE}/../backend/scripts/chroma_reach.py}"
 CHROMA_URL="${CHROMA_URL:-http://127.0.0.1:8101}"
 CHROMA_CONTAINER="${CHROMA_CONTAINER:-owl-v2-chromadb}"
 CHROMA_RELINK_LISTS="${CHROMA_RELINK_LISTS:-/mnt/owl-data/backups/chroma-relink}"
+# The daily reach verdict backup-check.sh reuses (its REACH_STATE). A relink makes it out of date.
+REACH_STATE="${REACH_STATE:-/mnt/owl-data/backups/chroma-reach.txt}"
 DOCKER="${DOCKER:-docker}"
 READY_TRIES="${READY_TRIES:-60}"
 CHROMA_REBUILD_STATE="${CHROMA_REBUILD_STATE:-/mnt/owl-data/backups/chroma-rebuild}"
@@ -73,4 +75,11 @@ for list in "${CHROMA_RELINK_LISTS}"/*.ids; do
         > "${list}.result" || { echo "chroma: relink of ${collection} failed: $(cat "${list}.result")" >&2; exit 1; }
     mv -f -- "${list}" "${list}.done"
     echo "chroma: relink ${collection}: $(cat "${list}.result")"
+    relinked=1
 done
+# The verdict that listed these records is now out of date. Removed, the next hourly backup-check sweeps again, so the
+# board shows the repair within the hour instead of the old alert until the day is up (12 Nov 2026: 58 relinked at
+# 20:09, the alert stayed until the next sweep at 20:51 the day after).
+if [[ -n "${relinked:-}" ]]; then
+    rm -f -- "${REACH_STATE}"
+fi
