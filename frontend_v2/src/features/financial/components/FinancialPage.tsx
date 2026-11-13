@@ -282,9 +282,13 @@ function FinancialPageContent() {
   const pageScroll = useRef<HTMLDivElement>(null)
   useEffect(() => {
     statementScroll.current?.scrollTo?.({ top: 0 })
-    // Narrow screens scroll the whole page (see narrowStatements below).
+    // Narrow screens scroll the whole page (see narrowPage below).
     pageScroll.current?.scrollTo?.({ top: 0 })
   }, [section, workspaceReview?.open, workspaceReview?.fileId])
+  // The narrow page scroller is shared by Statements and Transactions; a switch starts the new view at its top.
+  useEffect(() => {
+    pageScroll.current?.scrollTo?.({ top: 0 })
+  }, [store.mainView])
   useEffect(() => {
     const panel = useUIStore.getState()
     if (store.mainView !== "statements" && panel.graphPanelTab === "detail")
@@ -700,13 +704,15 @@ function FinancialPageContent() {
   }
 
   // Below md the section menu and the workspace bar left about 190 of 844 px for rows (390 px wide, 13 Nov), so
-  // there the Statements view scrolls as one page: the menu scrolls away and the bar does not stick.
-  const narrowStatements = store.mainView === "statements"
+  // there the Statements view scrolls as one page: the menu scrolls away and the bar does not stick. Transactions
+  // the same: its list panel started at 534 px and the search bar filled it, so no payment showed.
+  const narrowTransactions = store.mainView === "transactions" && isTransactionsMode
+  const narrowPage = store.mainView === "statements" || narrowTransactions
   return (
     <div
       ref={pageScroll}
-      data-narrow-page-scroll={narrowStatements ? "true" : undefined}
-      className={`flex h-full flex-col bg-background ${narrowStatements ? "max-md:overflow-y-auto" : ""}`}
+      data-narrow-page-scroll={narrowPage ? "true" : undefined}
+      className={`flex h-full flex-col bg-background ${narrowPage ? "max-md:overflow-y-auto" : ""}`}
     >
       <div className="flex shrink-0 items-center gap-3 bg-[#0b0c0f] px-4 pt-2.5 text-[#f7f7f8]">
         <span
@@ -743,7 +749,7 @@ function FinancialPageContent() {
         key={`financial-tabs:${caseId}`}
         value={store.mainView}
         onValueChange={(value) => navigateFinancial(value as FinancialMainView)}
-        className={`flex min-h-0 flex-1 flex-col ${narrowStatements ? "max-md:flex-none" : ""}`}
+        className={`flex min-h-0 flex-1 flex-col ${narrowPage ? "max-md:flex-none" : ""}`}
       >
         <FinancialNavigation
           value={store.mainView}
@@ -1199,7 +1205,7 @@ function FinancialPageContent() {
           style={
             store.mainView !== "transactions" ? { display: "none" } : undefined
           }
-          className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          className={`flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden ${narrowTransactions ? "max-md:flex-none" : ""}`}
           active={store.mainView === "transactions"}
         >
           <RecordsModeSwitch
@@ -1208,7 +1214,7 @@ function FinancialPageContent() {
             aside={<FinancialAccessNotice inline view="transactions" />}
           />
           <div
-            className="min-h-0 flex-1 space-y-4 overflow-auto px-4 pb-4"
+            className="min-h-0 flex-1 space-y-4 overflow-auto px-4 pb-4 max-md:flex-none max-md:overflow-visible"
             style={!isTransactionsMode ? { display: "none" } : undefined}
           >
             {/* No top padding on this scroller: a sticky bar sticks inside it, so padding would leave a gap above the bar with rows showing. The header carries the space instead. */}

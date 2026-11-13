@@ -413,6 +413,19 @@ describe("FinancialPage", () => {
     expect(page?.className.split(/\s+/)).toContain("max-md:overflow-y-auto")
   })
 
+  // 390 px wide (13 Nov): the menu, the payments switch and the search bar filled the screen and the payment list
+  // scrolled in a 282 px inner panel below them.
+  it("scrolls Transactions as one page on narrow screens", () => {
+    graphWithRows()
+    renderPage()
+    selectTab("Transactions")
+    const heading = screen.getByRole("heading", { level: 2, name: /^Transactions/ })
+    const list = heading.closest("header")?.parentElement
+    expect(list?.className.split(/\s+/)).toContain("max-md:overflow-visible")
+    const page = heading.closest("[data-narrow-page-scroll]")
+    expect(page?.className.split(/\s+/)).toContain("max-md:overflow-y-auto")
+  })
+
   // This journey renders every retained tab repeatedly and checks the original file input.
   // It is one journey on purpose: the same input element has to survive every switch.
   // Measured on the shared deploy box: 41.5 s run alone, 252 s in a full run under load. On 4 Nov: 129 s alone at

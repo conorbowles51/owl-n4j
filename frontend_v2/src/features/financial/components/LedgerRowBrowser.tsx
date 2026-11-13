@@ -1171,7 +1171,7 @@ export function LedgerRowBrowser({
   const transactionToolbar = (
     <div
       ref={toolbarRef}
-      className="sticky top-0 z-20 max-h-[55vh] overflow-y-auto rounded border bg-background p-3 shadow-sm"
+      className="z-20 max-h-[55vh] overflow-y-auto rounded border bg-background p-3 shadow-sm md:sticky md:top-0"
       role="region"
       aria-label="Transaction tools and filters"
     >
@@ -1191,11 +1191,12 @@ export function LedgerRowBrowser({
     </div>
   )
   // On the Transactions page the bar above the table holds only search and downloads; every filter and page
-  // switch is in the control panel on the right.
+  // switch is in the control panel on the right. It pins from md up only: at 390 px it was 307 px tall, taller than
+  // the room left for payments (13 Nov).
   const searchBar = (
     <div
       ref={toolbarRef}
-      className="sticky top-0 z-20 rounded-b border bg-background px-3 py-2 shadow-sm"
+      className="z-20 rounded-b border bg-background px-3 py-2 shadow-sm md:sticky md:top-0"
       role="region"
       aria-label="Transaction tools and filters"
     >

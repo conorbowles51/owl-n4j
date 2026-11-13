@@ -101,6 +101,9 @@ describe("the Transactions control panel", () => {
     const bar = screen.getByRole("region", { name: "Transaction tools and filters" })
     expect(within(bar).getByLabelText("Search payments")).toBeInTheDocument()
     expect(within(bar).queryByLabelText("Currency")).toBeNull()
+    // 390 px (13 Nov): pinned, the bar was 307 px tall and covered the whole payment list; it pins from md up only.
+    expect(bar.className.split(/\s+/)).not.toContain("sticky")
+    expect(bar.className.split(/\s+/)).toContain("md:sticky")
   }, 400_000)
 
   it("starts with the table and the money in/out totals only, and remembers each switch", () => {
