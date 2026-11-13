@@ -44,3 +44,11 @@ def test_no_error_no_words_and_unknown_text_kept():
 def test_a_batch_that_could_not_reach_the_ai_service_says_so():
     # 11 Nov: httpx.ConnectTimeout has no text; the engine now stores its name.
     assert 'could not be reached' in plain_failure('Batch pipeline failed: ConnectTimeout')
+
+
+def test_a_picture_that_timed_out_twice_says_the_server_was_busy():
+    """The engine tries a picture's OCR twice (evidence-engine extract_text._image_ocr_with_one_retry); the old words
+    called a camera photo a "scanned page" and did not say the file was not at fault."""
+    words = plain_failure('Tesseract process timeout on both tries for this picture')
+    assert words.startswith('Reading the text in this picture took too long twice. The server was busy')
+    assert 'scanned page' in plain_failure('OCR failed on PDF page 3: Tesseract process timeout')

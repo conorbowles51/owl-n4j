@@ -23,6 +23,8 @@ _RULES = [
      'Processing was interrupted by a restart before this file finished. ' + AGAIN),
     (re.compile(r'^Orphaned:', re.I),
      'This file waited in the queue and was never picked up. ' + AGAIN),
+    (re.compile(r'Tesseract process timeout on both tries', re.I),
+     'Reading the text in this picture took too long twice. The server was busy; the file is not at fault. ' + AGAIN),
     (re.compile(r'Tesseract process timeout', re.I),
      'Reading the text of a scanned page took too long, so the file was not finished. ' + AGAIN),
     (re.compile(r'OCR pixel limit', re.I),

@@ -923,14 +923,37 @@ def _extract_text_tesseract(file_path: str) -> str:
         if pixels > settings.image_ocr_max_pixels:
             scale = (settings.image_ocr_max_pixels / pixels) ** 0.5
             page = page.resize((max(1, int(page.width * scale)), max(1, int(page.height * scale))))
-        text = pytesseract.image_to_string(
-            page,
-            lang=settings.tesseract_lang,
-            timeout=settings.pdf_ocr_page_timeout_seconds,
-        )
+        text = _image_ocr_with_one_retry(pytesseract, page)
     finally:
         img.close()
     return text.strip()
+
+
+# Raised when both tries time out; backend/services/evidence_failure_words.py turns it into the user's words.
+IMAGE_OCR_TIMED_OUT_TWICE = "Tesseract process timeout on both tries for this picture"
+
+
+def _image_ocr_with_one_retry(pytesseract, page) -> str:
+    """Tesseract on one picture, tried again once after a pause when it runs out of time. A timeout says the server
+    was busy, not that the file is bad: two Thomas Keyes camera photos (DSCF0034.JPG, DSCF0028.JPG) timed out at
+    300 s on 12 Nov 22:51 under host load 23-35 and read without error when sent again at load 13."""
+    import time
+
+    for attempt in (1, 2):
+        try:
+            return pytesseract.image_to_string(
+                page,
+                lang=settings.tesseract_lang,
+                timeout=settings.pdf_ocr_page_timeout_seconds,
+            )
+        except RuntimeError as exc:
+            if "timeout" not in str(exc).lower():
+                raise
+            if attempt == 2:
+                raise RuntimeError(IMAGE_OCR_TIMED_OUT_TWICE) from exc
+            logger.warning("Picture OCR timed out after %s s; trying once more in %s s",
+                           settings.pdf_ocr_page_timeout_seconds, settings.image_ocr_retry_wait_seconds)
+            time.sleep(settings.image_ocr_retry_wait_seconds)
 
 
 async def _describe_image_vision(file_path: str, file_name: str) -> str:

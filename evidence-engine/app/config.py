@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     max_image_pixels: int = 120_000_000
     # Images above this are scaled down to it before OCR, which bounds Tesseract time and memory.
     image_ocr_max_pixels: int = 50_000_000
+    # A picture whose OCR times out is tried once more after this pause (a timeout means a busy server).
+    image_ocr_retry_wait_seconds: int = 30
     max_image_file_bytes: int = 50_000_000
     max_text_input_bytes: int = 100_000_000
     max_office_uncompressed_bytes: int = 500_000_000
