@@ -159,6 +159,29 @@ class ImportTests(base_import.StatementImportTests):
                          ('confirmed', 'Sam Reviewer', 'sam@example.test'))
         self.assertEqual([c.actor_name for c in changes if c.kind == 'judgement_confirm'], ['Sam Reviewer'])
 
+    def test_a_value_corrected_before_import_shows_the_value_read_and_only_the_saved_one_counts(self):
+        from services.financial.transaction_query import to_view
+        request, _ = self._request()
+        payments = [r for r in request['rows'] if not r['excluded'] and r['amount_minor'] not in ('', '0')]
+        first = payments[0]
+        read = int(first['amount_minor'])
+        first['amount_minor'] = str(read - 100)
+        first['reason'] = 'Corrected: the page prints one less unit.'
+        self.confirm_legacy(request)
+        with self.SessionLocal() as db:
+            rows = db.scalars(select(FinancialTransaction)).all()
+            row = next(t for t in rows if ((t.provenance or {}).get('statement_import_original') or {}).get('id') == first['id'])
+            shown = to_view(row).to_json()
+            others = [to_view(t).to_json() for t in rows if t.id != row.id]
+        self.assertEqual(int(shown['amount_minor']), read - 100, 'the saved value is the payment amount used in sums')
+        self.assertEqual(shown['review_correction'], dict(
+            changes=[dict(field='amount', read=str(read), saved=str(read - 100))],
+            reason='Corrected: the page prints one less unit.'))
+        self.assertTrue(all('review_correction' not in o for o in others), 'only on the corrected payment')
+        # A later change after import has its own record: the note stops naming a value the payment no longer holds.
+        row.amount_minor = read - 50
+        self.assertNotIn('review_correction', to_view(row).to_json())
+
     def test_the_request_contract_takes_checks(self):
         request, _ = self._request(checks=[('', None)])
         parsed = StatementImportRequest.model_validate(request)

@@ -176,6 +176,35 @@ def description_correction(row) -> Optional[dict]:
             'for_name': (origin.get('for') or {}).get('name'), 'confirmed': False}
 
 
+def _amount_digits(value) -> str:
+    return ''.join(ch for ch in str(value or '') if ch.isdigit()).lstrip('0') or ('0' if str(value or '').strip() else '')
+
+
+def review_correction(row) -> Optional[dict]:
+    """A payment whose amount, direction or date a person changed in the statement review before import: the value
+    read beside the value saved, and the reason given. Only while the saved value is still the payment's own (a later
+    correction after import has its own record), so the note never names a value the payment no longer holds. The
+    payment's own values are the ones used; the value read is shown, never counted."""
+    provenance = row.provenance or {}
+    review = provenance.get('statement_import_review') or {}
+    read = (provenance.get('statement_import_original') or {}).get('fields') or {}
+    if not review or not read:
+        return None
+    changes = []
+    read_amount, saved_amount = _amount_digits(read.get('amount_minor')), _amount_digits(review.get('amount_minor'))
+    if read_amount and saved_amount and read_amount != saved_amount and str(row.amount_minor) == saved_amount:
+        changes.append({'field': 'amount', 'read': read_amount, 'saved': saved_amount})
+    if (read.get('direction') and review.get('direction') and read['direction'] != review['direction']
+            and row.direction == review['direction']):
+        changes.append({'field': 'direction', 'read': read['direction'], 'saved': review['direction']})
+    if (read.get('date') and review.get('date') and read['date'] != review['date']
+            and _isoformat(row.transaction_date) == review['date']):
+        changes.append({'field': 'date', 'read': read['date'], 'saved': review['date']})
+    if not changes:
+        return None
+    return {'changes': changes, 'reason': review.get('reason') or None}
+
+
 @dataclass(frozen=True)
 class TransactionView:
     """One ledger row, shaped for a reader rather than for storage.
@@ -232,6 +261,7 @@ class TransactionView:
     label_sources: dict = field(default_factory=dict)
     balance_status: str = 'unavailable'
     description_correction: Optional[dict] = None
+    review_correction: Optional[dict] = None
     # The printable per-case number (postgres.models.financial_transaction_number); None until numbered.
     txn_number: Optional[int] = None
 
@@ -277,6 +307,7 @@ class TransactionView:
             **({"ordering_date_context": self.ordering_date_context} if self.ordering_date_context else {}),
             "description": self.description,
             **({"description_correction": self.description_correction} if self.description_correction else {}),
+            **({"review_correction": self.review_correction} if self.review_correction else {}),
             "counterparty_raw": self.counterparty_raw,
             "transaction_type": self.transaction_type,
             "bank_reference": self.bank_reference,
@@ -365,6 +396,7 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None, ca
         ordering_date_context=("statement_end_ordering_only" if (row.provenance or {}).get("date_basis") == "statement_end_ordering_only" else None),
         description=row.description,
         description_correction=description_correction(row),
+        review_correction=review_correction(row),
         counterparty_raw=row.counterparty_raw,
         transaction_type=row.transaction_type,
         bank_reference=row.bank_reference,
