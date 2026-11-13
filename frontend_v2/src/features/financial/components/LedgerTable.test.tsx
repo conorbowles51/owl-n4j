@@ -641,8 +641,8 @@ describe("LedgerTable correction made before import", () => {
       />
     )
     const note = screen.getByRole("note", { name: "Corrected before import" })
-    expect(note).toHaveTextContent("Amount: read as 2,539.30 USD, corrected to 2,538.30 USD")
-    expect(note).toHaveTextContent("The corrected value is the one used.")
+    expect(note).toHaveTextContent("Amount: 2,538.30 USD (read as 2,539.30 USD)")
+    expect(note).toHaveTextContent("The corrected value comes first and is the one used.")
     expect(note).toHaveTextContent("Reason: The page prints 2,538.30.")
     expect(screen.getAllByTestId("ledger-amount").map((el) => el.textContent)).toEqual(["2,538.30"])
   })

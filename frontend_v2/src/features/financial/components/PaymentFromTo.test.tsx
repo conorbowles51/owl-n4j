@@ -75,7 +75,7 @@ it("a card corrected before import shows the value read beside the corrected val
     } as LedgerTransaction,
   ])
   const note = screen.getByRole("note", { name: "Corrected before import" })
-  expect(note).toHaveTextContent("Amount: read as 120.00 MXN, corrected to 119.00 MXN")
+  expect(note).toHaveTextContent("Amount: 119.00 MXN (read as 120.00 MXN)")
   // Not squeezed into the description column: the note sits outside the card's column grid.
   expect(note.closest(".grid")).toBeNull()
 })
