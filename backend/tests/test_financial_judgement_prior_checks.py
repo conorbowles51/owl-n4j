@@ -119,6 +119,18 @@ class ImportTests(base_import.StatementImportTests):
         with self.SessionLocal() as db:
             self.assertEqual(db.get(FinancialJudgement, call.id).status, 'confirmed')
 
+    def test_a_value_corrected_after_looks_right_is_not_confirmed(self):
+        at = (datetime.now(timezone.utc) - timedelta(minutes=3)).replace(microsecond=0)
+        request, row_id = self._request(checks=[(at.isoformat(), None)])
+        payment = next(r for r in request['rows'] if r['id'] == row_id)
+        self.assertTrue(payment['date'])
+        payment['date'] = payment['date'][:8] + ('02' if payment['date'][8:] != '02' else '03')
+        self.confirm(request)
+        calls, changes = self._calls()
+        dated = [r for r, reading_row in calls if r.rule_id == 'image.date' and reading_row == row_id]
+        self.assertEqual([r.status for r in dated], ['open'])
+        self.assertEqual([c for c in changes if c.kind == 'judgement_confirm'], [])
+
     def test_without_a_check_the_call_stays_open_as_before(self):
         request, row_id = self._request()
         self.confirm(request)

@@ -1355,6 +1355,26 @@ def stamp_checks(request, previous=None, actor=None):
     return request.model_copy(update=dict(judgement_checks=stamped))
 
 
+_REVIEW_FIELDS = {'amount': ('amount_minor', 'amount_minor'), 'date': ('date', 'date'),
+                  'direction': ('direction', 'direction'), 'balance': ('balance_minor', 'balance')}
+
+
+def _review_changed(provenance):
+    """{value} a person changed in the review from what the reading read (amount, date, direction, balance)."""
+    review = provenance.get('statement_import_review') or {}
+    fields = (provenance.get('statement_import_original') or {}).get('fields') or {}
+    out = set()
+    for target, (draft_key, read_key) in _REVIEW_FIELDS.items():
+        if draft_key not in review:
+            continue
+        mine, read = review.get(draft_key), fields.get(read_key)
+        if target in ('amount', 'balance'):
+            mine, read = _digits(mine).lstrip('0'), _digits(read).lstrip('0')
+        if read not in (None, '') and str(mine or '') != str(read):
+            out.add(target)
+    return out
+
+
 def apply_prior_checks(session, rows, transactions, checks, *, statement=''):
     """At import: each saved call a person marked Looks right before import is recorded confirmed, under that person
     and at that time, as the saved-statement marker records it, and fed to the lessons feed as a confirmation.
@@ -1369,6 +1389,7 @@ def apply_prior_checks(session, rows, transactions, checks, *, statement=''):
         return []
     reading_row = {str(t.id): str(((t.provenance or {}).get('statement_import_original') or {}).get('id') or '')
                    for t in transactions or ()}
+    changed = {str(t.id): _review_changed(t.provenance or {}) for t in transactions or ()}
     from services.manual_changes import record_confirmation
     done = []
     for row in rows or ():
@@ -1379,6 +1400,10 @@ def apply_prior_checks(session, rows, transactions, checks, *, statement=''):
             continue
         item = wanted.get(check_key(row.rule_id, on_row, row.target_key))
         if item is None:
+            continue
+        if row.subject_type == 'transaction' and row.target_key in changed.get(str(row.subject_id), ()):
+            # The value was corrected in the review after it was marked Looks right: the call stays open, to be
+            # answered with the correction's reason on the saved statement.
             continue
         by = item['checked_by']
         try:

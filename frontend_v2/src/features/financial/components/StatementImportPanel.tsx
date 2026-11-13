@@ -2643,6 +2643,12 @@ function EditableStatement({
         : judgementBalance(item.target_key) ||
           !!judgementFields[item.target_key],
     onCorrect: (item: JudgementPreview) => {
+      // Correcting the value withdraws a Looks right given to it earlier.
+      setJudgementChecks((previous) =>
+        previous.filter(
+          (one) => judgementCheckKey(one) !== judgementCheckKey(item)
+        )
+      )
       if (item.row_id && originals.has(item.row_id)) {
         inspectBlocker({
           message: "",

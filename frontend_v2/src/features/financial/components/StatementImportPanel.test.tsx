@@ -3530,7 +3530,15 @@ it("Correct this opens that row's own amount correction, and Show on page opens 
   withCall()
   mount()
   await open(false)
+  // A Looks right given earlier is withdrawn when the value is corrected.
+  fireEvent.click(await screen.findByRole("button", { name: /Looks right/ }))
+  expect(
+    screen.getByText(/Recorded when the statement is imported\./)
+  ).toBeVisible()
   fireEvent.click(await screen.findByRole("button", { name: "Correct this" }))
+  expect(
+    screen.queryByText(/Recorded when the statement is imported\./)
+  ).toBeNull()
   await waitFor(() =>
     expect(document.activeElement).toBe(
       screen.getByLabelText("Corrected credit")
