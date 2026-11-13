@@ -3334,7 +3334,7 @@ function EditableStatement({
             id="statement-duplicate-box"
             data-highlighted={duplicateHighlight ? "true" : undefined}
             tabIndex={-1}
-            className={`rounded space-y-2 outline-none transition-shadow ${
+            className={`rounded space-y-2 outline-none lg:scroll-mt-72 transition-shadow ${
               duplicateHighlight
                 ? "ring-4 ring-amber-500 ring-offset-2"
                 : ""
