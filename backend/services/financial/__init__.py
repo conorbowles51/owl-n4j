@@ -2417,3 +2417,6 @@ __all__ += ["REPEATED_ACTIVITY_HOLD_MESSAGE", "repeated_candidates"]
 from services.financial.link_suggestions import (LinkSuggestionError, grade_payments, search_payments,
                                                  suggest_connected, suggest_onward)
 __all__ += ["LinkSuggestionError", "grade_payments", "search_payments", "suggest_connected", "suggest_onward"]
+
+from services.financial.statement_compare_facts import statement_compare_facts as read_statement_compare_facts
+__all__ += ["read_statement_compare_facts"]

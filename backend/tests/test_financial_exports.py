@@ -80,6 +80,7 @@ ALIASED_EXPORTS = {
     "ledger_source": "read_ledger_source",
     "ledger_summary": "summarise_ledger",
     "ledger_timeline": "build_ledger_timeline",
+    "statement_compare_facts": "read_statement_compare_facts",
     "reconcile_case": "reconcile_case_periods",
     "statement_delta_hints": "find_statement_delta_hints",
     "statement_file_status": "read_statement_file_status",
