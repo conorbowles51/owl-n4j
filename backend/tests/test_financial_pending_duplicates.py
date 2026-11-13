@@ -111,6 +111,30 @@ class PendingDuplicateTests(TestCase):
             self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), before)
             self.assertIsNotNone(db.get(EvidenceFile, other.id))
 
+    def test_investigator_can_set_aside_a_typed_account_copy_the_screen_matches(self):
+        # Live 13 Nov (Truist 5630, a checking statement): the screen found two imported matches,
+        # but "Don't import this duplicate" answered 409 because its match check lacked the
+        # reading's account type while the saved account carries it.
+        from unittest.mock import patch
+        from postgres.models.financial import FinancialAccount
+        import services.financial.statement_import as statement_import
+        self.f.confirm()
+        other = self.fixture.copy_file()
+        with self.f.SessionLocal() as db:
+            for account in db.scalars(select(FinancialAccount)):
+                account.account_type = 'checking'
+            db.commit()
+        original = statement_import.read_statement_import
+        def typed(*args, **kwargs):
+            proposal = original(*args, **kwargs)
+            proposal['metadata']['account_type'] = 'checking'
+            return proposal
+        with patch.object(statement_import, 'read_statement_import', typed):
+            ignored = self.decision(other, 'ignore')
+        self.assertEqual(ignored['status'], 'ignored')
+        self.assertEqual(ignored['basis'], 'investigator_decision')
+        self.assertEqual(ignored['retained']['evidence_file_id'], str(self.primary.id))
+
     def test_ignore_requires_a_current_matching_statement(self):
         with self.assertRaises(PdfMappingError):
             self.decision(self.primary, 'ignore')

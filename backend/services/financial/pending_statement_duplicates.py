@@ -763,7 +763,10 @@ def decide_duplicate_disposition(session, *, case_id, evidence_file_id, action, 
             raise PdfMappingError('Save your compared review before deciding to leave this copy unimported.', 409)
         request = _raw(proposal)
         from services.financial.statement_import_overlap import coverage_review
-        review = coverage_review(session, case_id=case_id, file_id=file.id, request=request, repeated=True)
+        # The same values the screen's coverage check compares: the saved account carries its type,
+        # so the reading's type must be in the request or no saved copy can match.
+        review = coverage_review(session, case_id=case_id, file_id=file.id, repeated=True,
+            request={**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''})
         candidates = [c for c in review['candidates'] if c.get('matching_statement')]
         if not candidates:
             raise PdfMappingError('No matching statement remains. Reopen this review to check its current status.', 409)
