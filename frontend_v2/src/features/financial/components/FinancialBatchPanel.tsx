@@ -1944,7 +1944,7 @@ export function BatchStatementReview({
         {queue ? "Back to review queue" : "Back to bulk import"}
       </Button>
       <div
-        className="flex flex-wrap gap-2 items-center sticky top-0 z-10 bg-background p-2 border rounded"
+        className="flex flex-wrap gap-2 items-center lg:sticky lg:top-0 z-20 bg-background p-2 border rounded"
         aria-label="Review batch statements"
       >
         {queue?.issue && (
