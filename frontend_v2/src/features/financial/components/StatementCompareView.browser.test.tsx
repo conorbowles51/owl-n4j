@@ -63,7 +63,8 @@ const reading = {
   currency: "USD",
   revision,
   statement_id: "b".repeat(64),
-  page_numbers: [5, 6],
+  // A combined PDF: this statement is pages 5 and 6 of 8.
+  page_numbers: [1, 2, 3, 4, 5, 6, 7, 8],
   statement_page_numbers: [5, 6],
   metadata: {
     holder: "Example Ltd",

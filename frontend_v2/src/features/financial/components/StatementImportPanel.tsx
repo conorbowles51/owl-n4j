@@ -3221,7 +3221,19 @@ function EditableStatement({
         ]
       : [],
   }
-  const ownPages = data.page_numbers.length ? data.page_numbers : balancePages
+  // This statement's own pages: a combined PDF prints several statements, so the file's page list is not it.
+  const ownRowPages = [
+    ...new Set(
+      included
+        .map((row) => originals.get(row.id)?.page_number)
+        .filter((page): page is number => typeof page === "number")
+    ),
+  ].sort((a, b) => a - b)
+  const ownPages = data.statement_page_numbers.length
+    ? data.statement_page_numbers
+    : ownRowPages.length
+      ? ownRowPages
+      : data.page_numbers
   const ownStatus =
     excludedCopy ||
     (duplicateDecision?.status === "ignored" && duplicateDecision.current)
