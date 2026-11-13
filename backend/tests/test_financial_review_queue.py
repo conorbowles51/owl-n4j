@@ -338,6 +338,19 @@ class QueueReadTests(TestCase):
             entry = self.queue()['copies'][0]
         self.assertEqual((entry['original']['imported'], entry['original']['period_start']), (False, ''))
 
+        # A page-identical copy matched on pages, not on the period: the kept statement's period is its own entry's.
+        def page_copy(session, case_id, items, **kwargs):
+            out = decided(['page_images', 'source_pages'])(session, case_id, items, **kwargs)
+            for value in out:
+                value.summary['duplicate_disposition']['retained'].update(evidence_file_id=str(value.file_id),
+                                                                          statement_id=value.statement_key)
+            return out
+        with patch.object(service, 'checked_batch_items', side_effect=page_copy), \
+                patch.object(batch_import_history, 'current_imports', return_value={}):
+            entry = self.queue()['copies'][0]
+        self.assertEqual((entry['original']['period_start'], entry['original']['period_end']),
+                         (entry['period_start'], entry['period_end']))
+
     def test_nothing_read_from_pages_with_text_is_a_reader_fix_not_a_person_s_task(self):
         # OPDMD66 Truist before its reader (fin-holes B): 249 lines read, no payment, period or balance.
         batch = self.create(); self.advance(batch)

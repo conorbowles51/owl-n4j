@@ -646,9 +646,16 @@ def _build(session, case_id):
             entry.update(copy_of=retained.get('filename') or (original or {}).get('filename') or None,
                 set_aside=item.status == 'duplicate_ignored', **(dict(original=original) if original else {}))
         result.append(entry)
-    # A kept statement counts as imported only while its saved source is a current import.
+    # A kept statement counts as imported only while its saved source is a current import. Its period is its own
+    # queue entry's when it is listed (a page-identical copy matched on pages, not on the period).
     kept = [entry['original'] for entry in result if '_source' in (entry.get('original') or {})]
     if kept:
+        periods = {(entry['file_id'], entry.get('statement_id') or None): (entry['period_start'], entry['period_end'])
+                   for entry in result if entry.get('period_start') or entry.get('period_end')}
+        for original in kept:
+            own = periods.get((original['file_id'], original['statement_id'] or None))
+            if own:
+                original['period_start'], original['period_end'] = own
         from services.financial.batch_import_history import current_imports
         sources = []
         for original in kept:
