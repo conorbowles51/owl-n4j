@@ -1019,6 +1019,18 @@ export function ReviewQueuePanel({
                           : `${needsLabel(user, entry)}: this may be a copy of another statement. Open it and compare it with the original; keep one.`}
                       </p>
                     )}
+                    {list === "copies" && entry.set_aside && entry.original && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" aria-label="Original">
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium">Kept instead:</span> {originalLine(entry.original)}
+                        </span>
+                        {entry.batch_id && (
+                          <Button size="sm" variant="outline" onClick={() => open(entry, list, true)}>
+                            Compare
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {entry.batch_id && (
                     <Button

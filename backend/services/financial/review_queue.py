@@ -633,9 +633,32 @@ def _build(session, case_id):
             disposition = item.summary.get('duplicate_disposition') or {}
             retained = disposition.get('retained') or {}
             original = copy_original(item.summary)
+            if not original and item.status == 'duplicate_ignored' and retained.get('filename'):
+                # A decided copy names the statement it was set aside for. The decision only stands while the
+                # matched fields (the period among them) are equal, so the kept statement's period is this one's.
+                same_period = 'period_start' in (disposition.get('matched_fields') or [])
+                original = dict(filename=retained['filename'], file_id=retained.get('evidence_file_id'),
+                    statement_id=retained.get('statement_id'),
+                    period_start=entry['period_start'] if same_period else '',
+                    period_end=entry['period_end'] if same_period else '', page=retained.get('page_number'),
+                    imported=False, same_file=retained.get('evidence_file_id') == str(item.file_id), others=0,
+                    _source=retained.get('source_document_id'))
             entry.update(copy_of=retained.get('filename') or (original or {}).get('filename') or None,
                 set_aside=item.status == 'duplicate_ignored', **(dict(original=original) if original else {}))
         result.append(entry)
+    # A kept statement counts as imported only while its saved source is a current import.
+    kept = [entry['original'] for entry in result if '_source' in (entry.get('original') or {})]
+    if kept:
+        from services.financial.batch_import_history import current_imports
+        sources = []
+        for original in kept:
+            try:
+                sources.append(UUID(original['_source']))
+            except (TypeError, ValueError):
+                pass
+        current = {str(key) for key in current_imports(session, case_id, sources)} if sources else set()
+        for original in kept:
+            original['imported'] = str(original.pop('_source')) in current
     # Statement order inside its file, so an entry can say "statement 12 of 54".
     by_file = {}
     for entry in result:

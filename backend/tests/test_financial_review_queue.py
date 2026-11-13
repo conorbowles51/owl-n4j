@@ -302,6 +302,42 @@ class QueueReadTests(TestCase):
         self.assertEqual(queue['copies'][0]['original']['filename'], 'Dec 2023 (5630) (2).pdf')
         self.assertTrue(queue['copies'][0]['set_aside'])
 
+    def test_a_decided_copy_names_the_kept_statement_its_period_and_whether_it_is_imported(self):
+        # fin-alexcopies D: a copy set aside by her decision named only the kept file; its period, its state and
+        # Compare were missing because a decided copy carries no coverage problem.
+        if type(self) is not QueueReadTests:
+            self.skipTest('one statement fixture: QueueReadTests only')
+        batch = self.create(); self.advance(batch)
+        source = '00000000-0000-0000-0000-0000000000a1'
+        real = service.checked_batch_items
+
+        def decided(matched_fields):
+            def run(session, case_id, items, **kwargs):
+                out = real(session, case_id, items, **kwargs)
+                for value in out:
+                    value.summary = dict(value.summary, can_import=False, problems=[], problem_count=0,
+                        duplicate_disposition=dict(status='duplicate_ignored', matched_fields=matched_fields,
+                            retained=dict(evidence_file_id='f1', statement_id='s1', source_document_id=source,
+                                          filename='Dec 2023 (5630) (2).pdf', page_number=1)))
+                    value.status = 'duplicate_ignored'
+                return out
+            return run
+        from services.financial import batch_import_history
+        with patch.object(service, 'checked_batch_items', side_effect=decided(['bank', 'period_start', 'period_end'])), \
+                patch.object(batch_import_history, 'current_imports', return_value={source: object()}):
+            entry = self.queue()['copies'][0]
+        self.assertEqual(entry['copy_of'], 'Dec 2023 (5630) (2).pdf')
+        self.assertEqual({k: entry['original'][k] for k in ('filename', 'period_start', 'period_end', 'imported')},
+                         dict(filename='Dec 2023 (5630) (2).pdf', period_start=entry['period_start'],
+                              period_end=entry['period_end'], imported=True))
+        self.assertTrue(entry['period_start'])
+        self.assertNotIn('_source', entry['original'])
+        # The kept statement is no longer a current import, and the period was not among the matched fields.
+        with patch.object(service, 'checked_batch_items', side_effect=decided(['source_sha256'])), \
+                patch.object(batch_import_history, 'current_imports', return_value={}):
+            entry = self.queue()['copies'][0]
+        self.assertEqual((entry['original']['imported'], entry['original']['period_start']), (False, ''))
+
     def test_nothing_read_from_pages_with_text_is_a_reader_fix_not_a_person_s_task(self):
         # OPDMD66 Truist before its reader (fin-holes B): 249 lines read, no payment, period or balance.
         batch = self.create(); self.advance(batch)

@@ -65,3 +65,30 @@ it("lists an undecided possible copy under Needs you, names its original, and Co
   expect(search.get("queueItem")).toBe("i2")
   expect(search.get("queueCompare")).toBe("i2")
 })
+
+it("names the statement kept instead of a copy set aside on purpose, and Compare opens the copy to compare", async () => {
+  const decided = { ...copy, id: "i3", status: "duplicate_ignored", bucket: "copies", set_aside: true, issue: "",
+    issue_reason: "", reasons: [], issue_messages: [], problem_total: 0 }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue"))
+      return { case_id: "case", file_ids: [], counts: { ...counts, waiting: 0, copies: 1 }, status_line: "",
+        items: url.includes("page_list=copies") ? [decided] : [], ready: [], copies: [decided],
+        unreadable: [], unreadable_files: [], rechecking: [] } as never
+    return {} as never
+  })
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={["/cases/case/financial?view=statements&queue=1&queueList=copies"]}>
+        <ReviewQueuePanel caseId="case" onOpenBatch={vi.fn()} />
+        <Where />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText("Set aside as a copy of Dec 2023 (5630) (2).pdf. It counts nothing.")).toBeInTheDocument()
+  const original = screen.getByLabelText("Original")
+  expect(original).toHaveTextContent("Kept instead: Dec 2023 (5630) (2).pdf, 2023-12-01 to 2023-12-29: already imported")
+  fireEvent.click(within(original).getByRole("button", { name: "Compare" }))
+  const search = new URLSearchParams(screen.getByLabelText("where").textContent ?? "")
+  expect(search.get("queueItem")).toBe("i3")
+  expect(search.get("queueCompare")).toBe("i3")
+})
