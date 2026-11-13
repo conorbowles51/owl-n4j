@@ -18,6 +18,7 @@ import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 import { StatementImportPanel } from "./StatementImportPanel"
+import { BatchReviewContext } from "../lib/batch-review-context"
 
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
@@ -358,4 +359,25 @@ it("shows both documents together on a wide screen", async () => {
   expect(within(dialog).getByRole("region", { name: "This statement" })).toBeVisible()
   expect(within(dialog).getByRole("region", { name: "Matching statement" })).toBeVisible()
   expect(dialog.querySelector('[aria-label="Choose a document"]')).not.toBeVisible()
+})
+
+it("opens one comparison from the queue's Compare, not a second one from the register behind it", async () => {
+  holdAsPossibleDuplicate()
+  const before = window.location.href
+  window.history.replaceState(null, "", "?view=statements&queue=1&queueItem=q1&queueCompare=q1")
+  try {
+    render(
+      <QueryClientProvider client={client}>
+        <StatementImportPanel caseId={caseId} onImported={vi.fn()} />
+        <BatchReviewContext.Provider value={{ save: vi.fn(), saved: vi.fn() }}>
+          <StatementImportPanel caseId={caseId} onImported={vi.fn()} />
+        </BatchReviewContext.Provider>
+      </QueryClientProvider>
+    )
+    expect(await screen.findByRole("dialog", { name: "Compare side by side" })).toBeVisible()
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(screen.getAllByRole("dialog", { name: "Compare side by side" })).toHaveLength(1)
+  } finally {
+    window.history.replaceState(null, "", before)
+  }
 })

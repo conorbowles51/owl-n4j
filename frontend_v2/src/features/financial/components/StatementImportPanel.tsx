@@ -1481,8 +1481,10 @@ function EditableStatement({
   )
   // Opened from a row's Compare in the review queue (its queueCompare names the queue item opened): show the
   // side-by-side compare once the overlap check names the matching statement. Read once per opened statement.
+  // Only the statement opened inside the queue answers it: the register's own panel stays mounted, hidden,
+  // behind the queue and would open a second comparison over the first.
   const [compareAsked] = useState(() => {
-    if (typeof window === "undefined") return false
+    if (typeof window === "undefined" || !batchReview) return false
     const params = new URLSearchParams(window.location.search)
     const asked = params.get("queueCompare")
     return !!asked && asked === params.get("queueItem")
