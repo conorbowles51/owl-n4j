@@ -167,7 +167,7 @@ run(
       )
     )
     const held = await screen.findByRole("heading", {
-      name: "Possible duplicate statement — import on hold",
+      name: "Possible duplicate statement: import on hold",
     })
     expect(
       screen.getAllByRole("button", { name: "Import 12 transactions" })[0]

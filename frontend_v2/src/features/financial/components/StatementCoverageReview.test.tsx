@@ -51,7 +51,7 @@ it("holds a statement repeating earlier activity as a suggestion, naming what ma
       inBatch={false}
     />
   )
-  expect(screen.getByRole("heading", { name: "Possible repeated activity — import on hold" })).toBeVisible()
+  expect(screen.getByRole("heading", { name: "Possible repeated activity: import on hold" })).toBeVisible()
   expect(screen.getByText(/This is a suggestion from matching printed values, not a finding/)).toBeVisible()
   expect(screen.getByText(/Nothing has been removed from either statement/)).toBeVisible()
   expect(
@@ -91,4 +91,22 @@ it("opens the side-by-side compare with the chosen statement", () => {
   expect(screen.queryByRole("button", { name: "Compare original PDF" })).toBeNull()
   fireEvent.click(screen.getByRole("button", { name: "Compare side by side" }))
   expect(onCompare).toHaveBeenCalledWith(review.candidates[0])
+})
+
+it("says a copy already set aside is left unimported, not on hold", () => {
+  render(
+    <StatementCoverageReview
+      onCompare={vi.fn()}
+      review={{ ...review, repeated_activity: undefined, candidates: [{ ...review.candidates[0], repeated_activity: undefined }] }}
+      decision={{ revision: "", reason: "" }}
+      change={vi.fn()}
+      canEdit
+      inBatch
+      setAside
+    />
+  )
+  expect(screen.getByRole("heading", { name: "Possible duplicate statement: left unimported" })).toBeVisible()
+  expect(screen.queryByText(/import on hold/)).toBeNull()
+  expect(screen.queryByText(/If this is a copy, choose/)).toBeNull()
+  expect(screen.getByText(/so this statement is left unimported/)).toBeVisible()
 })

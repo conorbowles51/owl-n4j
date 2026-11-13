@@ -401,6 +401,18 @@ describe("FinancialPage", () => {
     expect(screen.queryByText("Account checks")).not.toBeInTheDocument()
   })
 
+  // 390 px wide (13 Nov): the section menu plus a pinned workspace bar covered ~650 of 844 px, hiding queue rows.
+  it("scrolls Statements as one page on narrow screens with the workspace bar unpinned", () => {
+    graphWithRows()
+    renderPage()
+    selectTab("Statements & accounts")
+    const bar = screen.getByRole("group", { name: "Statement workspace" })
+    expect(bar.className.split(/\s+/)).not.toContain("sticky")
+    expect(bar.className.split(/\s+/)).toContain("md:sticky")
+    const page = bar.closest("[data-narrow-page-scroll]")
+    expect(page?.className.split(/\s+/)).toContain("max-md:overflow-y-auto")
+  })
+
   // This journey renders every retained tab repeatedly and checks the original file input.
   // It is one journey on purpose: the same input element has to survive every switch.
   // Measured on the shared deploy box: 41.5 s run alone, 252 s in a full run under load. On 4 Nov: 129 s alone at

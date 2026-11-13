@@ -279,8 +279,11 @@ function FinancialPageContent() {
       return next
     })
   }
+  const pageScroll = useRef<HTMLDivElement>(null)
   useEffect(() => {
     statementScroll.current?.scrollTo?.({ top: 0 })
+    // Narrow screens scroll the whole page (see narrowStatements below).
+    pageScroll.current?.scrollTo?.({ top: 0 })
   }, [section, workspaceReview?.open, workspaceReview?.fileId])
   useEffect(() => {
     const panel = useUIStore.getState()
@@ -696,8 +699,15 @@ function FinancialPageContent() {
     )
   }
 
+  // Below md the section menu and the workspace bar left about 190 of 844 px for rows (390 px wide, 13 Nov), so
+  // there the Statements view scrolls as one page: the menu scrolls away and the bar does not stick.
+  const narrowStatements = store.mainView === "statements"
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div
+      ref={pageScroll}
+      data-narrow-page-scroll={narrowStatements ? "true" : undefined}
+      className={`flex h-full flex-col bg-background ${narrowStatements ? "max-md:overflow-y-auto" : ""}`}
+    >
       <div className="flex shrink-0 items-center gap-3 bg-[#0b0c0f] px-4 pt-2.5 text-[#f7f7f8]">
         <span
           aria-hidden="true"
@@ -733,7 +743,7 @@ function FinancialPageContent() {
         key={`financial-tabs:${caseId}`}
         value={store.mainView}
         onValueChange={(value) => navigateFinancial(value as FinancialMainView)}
-        className="flex min-h-0 flex-1 flex-col"
+        className={`flex min-h-0 flex-1 flex-col ${narrowStatements ? "max-md:flex-none" : ""}`}
       >
         <FinancialNavigation
           value={store.mainView}
@@ -835,12 +845,12 @@ function FinancialPageContent() {
           style={
             store.mainView !== "statements" ? { display: "none" } : undefined
           }
-          className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden max-md:flex-none"
           active={store.mainView === "statements"}
         >
           <div
             ref={statementScroll}
-            className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
+            className="min-h-0 flex-1 space-y-4 overflow-auto p-4 max-md:flex-none max-md:overflow-visible"
           >
             <header className="space-y-1">
               <h2 className="text-2xl font-semibold">Statements & accounts</h2>
@@ -860,7 +870,7 @@ function FinancialPageContent() {
               </ErrorBoundary>
             )}
             <div
-              className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background py-2"
+              className="md:sticky md:top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background py-2"
               role="group"
               aria-label="Statement workspace"
             >

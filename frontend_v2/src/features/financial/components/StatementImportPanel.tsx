@@ -3355,6 +3355,7 @@ function EditableStatement({
                 change={setCoverageDecision}
                 canEdit={canEdit}
                 inBatch={!!batchReview}
+                setAside={duplicateIgnored}
                 onCompare={setCompareWith}
               />
             )}

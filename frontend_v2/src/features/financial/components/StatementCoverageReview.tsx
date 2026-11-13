@@ -85,9 +85,12 @@ export function StatementCoverageReview({
   change,
   canEdit,
   inBatch,
+  setAside = false,
   onCompare,
 }: {
   inBatch: boolean
+  /** The duplicate decision already left this statement unimported. */
+  setAside?: boolean
   review: CoverageReview
   decision: { revision: string; reason: string }
   change: (value: { revision: string; reason: string }) => void
@@ -106,12 +109,16 @@ export function StatementCoverageReview({
       <h3 className="font-semibold">
         {review.repeated_activity
           ? decided
-            ? "Possible repeated activity — comparison recorded"
-            : "Possible repeated activity — import on hold"
+            ? "Possible repeated activity: comparison recorded"
+            : setAside
+            ? "Possible repeated activity: left unimported"
+            : "Possible repeated activity: import on hold"
           : review.matching_statement
           ? decided
-            ? "Possible duplicate statement — comparison recorded"
-            : "Possible duplicate statement — import on hold"
+            ? "Possible duplicate statement: comparison recorded"
+            : setAside
+            ? "Possible duplicate statement: left unimported"
+            : "Possible duplicate statement: import on hold"
           : "Another statement covers these dates"}
       </h3>
       <p>
@@ -149,7 +156,12 @@ export function StatementCoverageReview({
         ))}
       </ul>
       <p>
-        {inBatch ? (
+        {setAside ? (
+          <>
+            You chose <strong>Don’t import this duplicate</strong>, so this
+            statement is left unimported.
+          </>
+        ) : inBatch ? (
           <>
             If this is a copy, choose{" "}
             <strong>Don’t import this duplicate</strong> above or{" "}
