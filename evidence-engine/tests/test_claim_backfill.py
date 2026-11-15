@@ -68,6 +68,11 @@ async def test_cheapest_file_first_earlier_verdict_kept_and_the_limit_stops_the_
     monkeypatch.setattr(B, "_file_candidates", candidates)
     monkeypatch.setattr(B, "check_candidates", check)
     monkeypatch.setattr(B.uuid, "UUID", lambda value: value)
+
+    async def no_policy(db):
+        return {}
+    from app.services import ai_model_policy
+    monkeypatch.setattr(ai_model_policy, "load_ai_model_policy", no_policy)
     outcome = await B.check_case(lambda: _Db(writes), "c1", apply=True)
     assert seen == [1, 3]  # the smaller file first
     assert [(f.checked, f.left) for f in outcome.files] == [(1, 0), (1, 2)]
