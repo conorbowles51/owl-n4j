@@ -43,6 +43,8 @@ MAX_MODEL_ITEMS = 40       # sentences sent to the model per answer (one call)
 MAX_SOURCE_CHARS = 200_000  # text read per cited source
 EXCERPT_CHARS = 2_400      # text of one source given to the model for one sentence
 MODEL_TIMEOUT_S = 120
+CHUNK_ITEMS = 3            # sentence-source pairs per model call: a call's time grows with its items (about 5 s for
+CHUNK_CALLS = 8            # 1-3, 13 s for 7-10, 20 s for 11-20), so small calls side by side keep the wait short
 JUDGE_MODEL_SETTING = "LOUPE_CITATION_JUDGE_MODEL"
 # reasoning effort for an OpenAI GPT-5 judge; "low" measured 15 Nov 2026 against the model's default (lx-citeproof)
 JUDGE_EFFORT_SETTING = "LOUPE_CITATION_JUDGE_EFFORT"
@@ -486,6 +488,41 @@ def _ask_model(items: list[dict[str, Any]], judge) -> tuple[dict[int, Verdict], 
                  "sentences": len({item["sentence"] for item in items})}
 
 
+def _ask_in_chunks(items: list[dict[str, Any]], judge) -> tuple[dict[int, Verdict], dict[str, Any], dict[int, str]]:
+    """The items in chunks of ``CHUNK_ITEMS``, up to ``CHUNK_CALLS`` calls at once: the wait is the slowest chunk, not
+    the sum. A chunk that fails leaves its own items unchecked, saying why."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    chunks = [items[i:i + CHUNK_ITEMS] for i in range(0, len(items), CHUNK_ITEMS)]
+    started = time.monotonic()
+    verdicts: dict[int, Verdict] = {}
+    failures: dict[int, str] = {}
+    runs: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(CHUNK_CALLS, len(chunks))) as pool:
+        futures = [(chunk, pool.submit(_ask_model, chunk, judge)) for chunk in chunks]
+        for chunk, future in futures:
+            try:
+                got, run = future.result()
+                verdicts.update(got)
+                runs.append(run)
+            except Exception as exc:  # noqa: BLE001 - the citations stay, unchecked, saying why
+                logger.warning("Citation check model call failed", exc_info=True)
+                for item in chunk:
+                    failures[item["id"]] = "The model check failed (%s)." % exc.__class__.__name__
+    usage: dict[str, Any] = {}
+    for run in runs:
+        for key, value in (run.get("usage") or {}).items():
+            if isinstance(value, (int, float)):
+                usage[key] = usage.get(key, 0) + value
+    model_run = {"model": runs[0]["model"] if runs else None, "usage": usage,
+                 "seconds": round(time.monotonic() - started, 2), "items": len(items),
+                 "sentences": len({item["sentence"] for item in items}), "calls": len(chunks),
+                 "failed_calls": len(chunks) - len(runs)}
+    if not runs:
+        model_run["error"] = "every call failed"
+    return verdicts, model_run, failures
+
+
 # ---- the check -----------------------------------------------------------------------------------------------------
 
 
@@ -533,21 +570,19 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
     if model_items:
         refusal = budget() if budget else None
         verdicts_by_model: dict[int, Verdict] = {}
+        failures: dict[int, str] = {}
         failure = None
         if refusal:
             failure = refusal
         elif judge is None:
             failure = "No model was available to read this sentence against its source."
         else:
-            try:
-                verdicts_by_model, model_run = _ask_model(model_items, judge)
-            except Exception as exc:  # noqa: BLE001 - the citations stay, unchecked, saying why
-                logger.warning("Citation check model call failed", exc_info=True)
-                failure = "The model check failed (%s)." % exc.__class__.__name__
-                model_run = {"error": exc.__class__.__name__}
+            verdicts_by_model, model_run, failures = _ask_in_chunks(model_items, judge)
+            if failures and not verdicts_by_model:
+                failure = next(iter(failures.values()))
         for key, (index, href) in pending.items():
             verdict = verdicts_by_model.get(key) or Verdict(
-                UNCHECKED, failure or "The model gave no verdict for this source.", "none")
+                UNCHECKED, failure or failures.get(key) or "The model gave no verdict for this source.", "none")
             misses = near_misses(results[index]["wanted"]["figures"], hay[href].figures)
             if verdict.state == SUPPORTS and misses:
                 # the model reads 39.288533 as 39.288503; code does not

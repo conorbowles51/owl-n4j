@@ -112,6 +112,25 @@ class SupportTests(_Case):
         result = S.check(self.db, self.case.id, answer, judge=None)
         self.assertEqual((result["claims"][0]["state"], result["claims"][0]["citations"][0]["by"]), (S.SUPPORTS, "code"))
 
+    def test_many_citations_go_to_the_model_in_concurrent_chunks_and_a_failed_chunk_is_named(self):
+        answer = "\n".join(f"Nobody {i} holds the keys [p]({self.p2})." for i in range(23))
+        good = self.judge("supports")
+
+        def judge(prompt):
+            items = json.loads(prompt.split("\n\n", 1)[1])["items"]
+            if items[0]["id"] == S.CHUNK_ITEMS:
+                raise TimeoutError("slow")
+            return good(prompt)
+        result = S.check(self.db, self.case.id, answer, judge=judge)
+        chunks = -(-23 // S.CHUNK_ITEMS)
+        self.assertEqual(sum(len(json.loads(p.split("\n\n", 1)[1])["items"]) for p in self.calls), 23 - S.CHUNK_ITEMS)
+        self.assertTrue(all(len(json.loads(p.split("\n\n", 1)[1])["items"]) <= S.CHUNK_ITEMS for p in self.calls))
+        self.assertEqual((result["model"]["calls"], result["model"]["failed_calls"]), (chunks, 1))
+        states = [c["citations"][0]["state"] for c in result["claims"]]
+        self.assertEqual(states.count(S.SUPPORTS), 23 - S.CHUNK_ITEMS)
+        self.assertEqual({c["citations"][0]["reason"] for c in result["claims"][S.CHUNK_ITEMS:2 * S.CHUNK_ITEMS]},
+                         {"The model check failed (TimeoutError)."})
+
     def test_a_failed_model_call_leaves_the_citation_unchecked_saying_why_and_marks_nothing(self):
         def broken(prompt):
             raise TimeoutError("slow")
