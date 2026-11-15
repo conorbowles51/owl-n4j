@@ -21,3 +21,14 @@ def test_the_chat_prompt_gives_no_page_when_none_is_known_and_promises_no_record
     assert "[document name](<Cite>)" in prompt  # the no-page form
     assert "Never build a doc:// link yourself" in prompt  # the passage's Cite carries the evidence file id
     assert "rec://" not in prompt  # the passage headers carry no record id, so the model would have to invent one
+
+
+def test_the_chat_prompt_says_a_shared_name_is_not_an_identity_link():
+    """lx-retrieval 15 Nov, demo case F27/Q8: chat called the phone contact 'Mateo 🔧' (+1 443-555-0181) Mateo Ruiz,
+    whose own number is +1 443-555-0112, 4 runs of 4: the context held both numbers, and nothing linked them."""
+    ctx = object.__new__(LLMExecutionContext)
+    ctx.system_context, ctx.analysis_guidance = "synthetic system", "synthetic guidance"
+    ctx.call = lambda prompt, temperature=0.0: "synthetic answer"
+    _, prompt = ctx.answer_question_with_prompt("Is the contact Mateo the same person as Mateo Ruiz?", "x")
+    assert "A shared name is not a link" in prompt
+    assert "only when the context links them" in prompt
