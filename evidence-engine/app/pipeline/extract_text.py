@@ -1062,47 +1062,94 @@ def _get_video_metadata(file_path: str) -> dict[str, Any]:
     return metadata
 
 
+def _media_timeout_seconds(file_path: str, floor: int = 300) -> int:
+    """Time allowed for one ffmpeg pass over the whole file: five minutes plus the recording's own length. Reading
+    the audio out of an 81-minute body-cam video at load must not be cut off at a fixed 300 s."""
+    duration = _probe_media_duration_seconds(file_path) or 0
+    return int(duration) + floor
+
+
+def _clock(seconds: int) -> str:
+    hours, rest = divmod(int(seconds), 3600)
+    return f"{hours}:{rest // 60:02d}:{rest % 60:02d}" if hours else f"{rest // 60:02d}:{rest % 60:02d}"
+
+
+VIDEO_FRAME_TIMEOUT_SECONDS = 120
+
+
+def _frame_times(duration: float, interval: int, max_frames: int) -> list[int]:
+    """Frame times spread over the whole recording: every ``interval`` seconds, or wider when that would take more
+    than ``max_frames``, so a long video is read to its end rather than only its first max_frames x interval."""
+    interval = max(1, int(interval))
+    max_frames = max(1, int(max_frames))
+    step = max(interval, -(-int(duration) // max_frames))
+    return list(range(0, max(1, int(duration)), step))[:max_frames]
+
+
 def _extract_key_frames(
     file_path: str, output_dir: str
 ) -> list[dict[str, Any]]:
-    """Extract key frames from a video at regular intervals."""
+    """Take key frames across the whole video, one ffmpeg seek per frame.
+
+    A seek decodes only from the nearest key frame, so a 3.3 GB 4K drone video costs seconds a frame instead of
+    decoding every picture up to the last frame taken (which ran past the fixed 300 s on one CPU). A frame that
+    could not be taken is returned with its ``error`` and counted as not read. With no known duration the frames
+    are taken in one pass as before."""
     interval = settings.video_frame_interval
     max_frames = settings.video_max_frames
+    duration = _probe_media_duration_seconds(file_path)
 
-    subprocess.run(
-        [
-            "ffmpeg", "-i", file_path,
-            "-vf", f"fps=1/{interval}",
-            "-frames:v", str(max_frames),
-            "-q:v", "2",
-            os.path.join(output_dir, "frame_%04d.jpg"),
-        ],
-        check=True, capture_output=True, timeout=300,
-    )
+    if not duration:
+        subprocess.run(
+            [
+                "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", file_path,
+                "-vf", f"fps=1/{interval}",
+                "-frames:v", str(max_frames),
+                "-q:v", "2",
+                os.path.join(output_dir, "frame_%04d.jpg"),
+            ],
+            check=True, capture_output=True, timeout=_media_timeout_seconds(file_path),
+        )
+        return [
+            {"path": str(frame_file), "timestamp_seconds": i * interval, "timestamp_str": _clock(i * interval)}
+            for i, frame_file in enumerate(sorted(Path(output_dir).glob("frame_*.jpg")))
+        ]
 
     frames: list[dict[str, Any]] = []
-    for i, frame_file in enumerate(sorted(Path(output_dir).glob("frame_*.jpg"))):
-        timestamp = i * interval
-        frames.append({
-            "path": str(frame_file),
-            "timestamp_seconds": timestamp,
-            "timestamp_str": f"{timestamp // 60:02d}:{timestamp % 60:02d}",
-        })
+    for number, timestamp in enumerate(_frame_times(duration, interval, max_frames), start=1):
+        path = os.path.join(output_dir, f"frame_{number:04d}.jpg")
+        frame: dict[str, Any] = {"path": path, "timestamp_seconds": timestamp, "timestamp_str": _clock(timestamp)}
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                    "-ss", str(timestamp), "-i", file_path,
+                    "-frames:v", "1", "-q:v", "2", path,
+                ],
+                check=True, capture_output=True, timeout=VIDEO_FRAME_TIMEOUT_SECONDS,
+            )
+            if not os.path.exists(path) or os.path.getsize(path) == 0:
+                frame["error"] = "ffmpeg wrote no picture at this time"
+        except subprocess.TimeoutExpired:
+            frame["error"] = f"taking the frame ran past {VIDEO_FRAME_TIMEOUT_SECONDS} s"
+        except subprocess.CalledProcessError as exc:
+            frame["error"] = (exc.stderr or b"").decode("utf-8", "replace").strip()[:200] or "ffmpeg failed"
+        frames.append(frame)
     return frames
 
 
 def _extract_audio_track(file_path: str, output_dir: str) -> str | None:
-    """Extract audio track from video as WAV."""
+    """Extract audio track from video as WAV. ffmpeg reads the file from disk; nothing is held in memory."""
     audio_path = os.path.join(output_dir, "audio.wav")
     try:
         subprocess.run(
             [
-                "ffmpeg", "-i", file_path,
+                "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", file_path,
                 "-vn", "-acodec", "pcm_s16le",
                 "-ar", "16000", "-ac", "1",
                 audio_path,
             ],
-            check=True, capture_output=True, timeout=300,
+            check=True, capture_output=True, timeout=_media_timeout_seconds(file_path),
         )
         if os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
             return audio_path
@@ -1195,6 +1242,10 @@ async def _extract_video(file_path: str, file_name: str) -> ExtractedDocument:
         failures: list[str] = []
         without_text = 0
         for frame in frames:
+            if frame.get("error"):
+                logger.warning("Frame not taken at %s: %s", frame["timestamp_str"], frame["error"])
+                failures.append(f"frame not taken: {frame['error']}")
+                continue
             try:
                 text = await _read_video_frame(
                     frame["path"], f"{file_name} @ {frame['timestamp_str']}", provider
