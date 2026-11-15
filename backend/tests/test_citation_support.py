@@ -77,6 +77,7 @@ class SupportTests(_Case):
         items = json.loads(self.calls[0].split("\n\n", 1)[1])["items"]
         self.assertEqual(len(items), 2)
         self.assertEqual({type(item["source"]) for item in items}, {str})
+        self.assertEqual({item["cites"] for item in items}, {2})  # each source may hold its share of the sentence
         self.assertEqual([c["by"] for c in result["claims"][0]["citations"]], ["model:m1", "model:m1"])
         self.assertEqual(result["model"]["sentences"], 1)
 

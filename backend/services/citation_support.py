@@ -375,6 +375,12 @@ JUDGE_INSTRUCTIONS = (
     "Words that give the writer's own reading (suggests, may, consistent with, likely) are not facts and need no "
     "support. When the source carries some of the facts and not others, the state is partly and the reason names "
     "the missing fact. "
+    "A sentence may cite several sources that each hold one part of it, such as one record per date, place or "
+    "message; the item's cites field says how many sources its sentence cites. When it is more than one, a source "
+    "that states its share of the sentence's facts (one of the listed dates, points or messages, correctly) supports; "
+    "partly is for a source that holds only some of its share or gets part of it wrong. "
+    "Figures must match digit for digit: an amount, coordinate, time or number that differs in any digit from the "
+    "source is not supported, however close, and the reason gives both values. "
     "Answer every item, one verdict each, even when several items share a sentence. "
     "Do not use outside knowledge. Reply with JSON only: {\"items\": [{\"id\": <item id>, \"state\": "
     "\"supports\", \"partly\" or \"does_not_mention\", \"reason\": \"<one short sentence naming the fact found or "
@@ -487,7 +493,7 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
                 for h in undecided:
                     pending[len(model_items)] = (index, h)
                     model_items.append({"id": len(model_items), "sentence": claim.plain[:1200],
-                                        "source": _excerpt(sources[h].text, wanted)})
+                                        "cites": len(claim.hrefs), "source": _excerpt(sources[h].text, wanted)})
             else:
                 for h in undecided:
                     verdicts[h] = Verdict(UNCHECKED, f"Over this answer's limit of {MAX_MODEL_ITEMS} sentences read "
