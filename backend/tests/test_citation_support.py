@@ -98,6 +98,20 @@ class SupportTests(_Case):
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(result["claims"][0]["citations"][0]["by"], "model:m1")
 
+    def test_a_link_whose_text_states_the_fact_is_read_as_part_of_its_sentence(self):
+        # live 15 Nov 2026: "- [2024-03-17, USD 1,200.00](txn://...) from [kell-2024-03.pdf, p.1](doc://...)" was read
+        # as the sentence "from", which no source states
+        answer = f"- [1 October 2023, $650.00]({self.p2}) from [lease.pdf, p.2]({self.p2})"
+        found = S.claims(answer)
+        self.assertEqual(found[0].plain, "1 October 2023, $650.00 from")
+        for named in ("Phone 1 · Native Messages · Travis Kell", f"doc://{self.file.id}/2", "Phone 4 · Telegram · PTT-20240609"):
+            self.assertEqual(S.claims(f"He wrote back [{named}]({self.p2}).")[0].plain, "He wrote back .")
+        # a citation standing alone still backs the sentence before it, whatever its link says
+        alone = S.claims(f"Travis Kell paid the rent. [message of 8 Jun 2024 17:50 UTC]({self.p2})")
+        self.assertEqual([(c.plain, c.hrefs) for c in alone], [("Travis Kell paid the rent.", [self.p2])])
+        result = S.check(self.db, self.case.id, answer, judge=None)
+        self.assertEqual((result["claims"][0]["state"], result["claims"][0]["citations"][0]["by"]), (S.SUPPORTS, "code"))
+
     def test_a_failed_model_call_leaves_the_citation_unchecked_saying_why_and_marks_nothing(self):
         def broken(prompt):
             raise TimeoutError("slow")

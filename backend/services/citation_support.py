@@ -117,8 +117,20 @@ def enabled() -> bool:
 # ---- the sentences and their citations ---------------------------------------------------------------------------
 
 
-def _plain(text: str) -> str:
-    text = _LINK.sub(" ", text)
+_SOURCE_LABEL = re.compile(r"\.(pdf|csv|xlsx?|docx?|txt|eml|msg|rtf|html?|jpe?g|png|zip|json|xml)\b|\bp\.\s?\d|^\s*(source|page|"
+                           r"record|row)\b", re.I)
+
+
+def _label(m: re.Match) -> str:
+    """A link's text where it states the fact (``[2024-03-17, USD 1,200.00](txn://...)``), else nothing: a source's
+    name (``[kell-2024-03.pdf, p.1]``) is not part of what the sentence says."""
+    label = m.group(1)
+    named = _SOURCE_LABEL.search(label) or "·" in label or "://" in label  # "Phone 1 · Native Messages · T", an address
+    return f" {label} " if _figures(label) and not named else " "
+
+
+def _plain(text: str, labels: bool = True) -> str:
+    text = _LINK.sub(_label if labels else " ", text)
     text = re.sub(r"[*_`#>]+", " ", text)
     text = re.sub(r"\(\s*[,;]?\s*\)", " ", text)
     return re.sub(r"\s+", " ", text).strip(" |-•\t")
@@ -158,7 +170,7 @@ def claims(answer: str) -> list[Claim]:
                 continue
             hrefs = list(dict.fromkeys(m.group(2) for m in _LINK.finditer(piece) if C.parse_citation(m.group(2))))
             plain = _plain(piece)
-            if hrefs and not _WORD.search(plain or ""):
+            if hrefs and not _WORD.search(_plain(piece, labels=False)):
                 # a citation on its own: it backs the uncited sentences before it on this line
                 for claim in pending:
                     claim.hrefs = list(hrefs)
