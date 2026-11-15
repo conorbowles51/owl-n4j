@@ -36,7 +36,8 @@ from services.evidence_db_storage import EvidenceDBStorage
 logger = logging.getLogger(__name__)
 
 FILE_MISSING_KEY = "file_missing"
-FILE_MISSING_DETAIL = "The stored file for this evidence is missing from the server. The record is kept."
+FILE_MISSING_DETAIL = ("File missing from the server: upload it again to restore. The record and what was read from it "
+                       "are kept.")
 NEW_MISSING_FLOOR = 50   # more newly missing rows than this, and than the share below, is not believed
 NEW_MISSING_SHARE = 0.01
 
@@ -92,6 +93,7 @@ class CheckResult:
     new: list = field(default_factory=list)            # [(case id, row id, file name)] marked by this run
     back: list = field(default_factory=list)           # [(case id, row id, file name)] cleared by this run
     wrong_bytes: list = field(default_factory=list)    # [(case id, row id, file name)] a file is there, not this row's
+    known: list = field(default_factory=list)          # [(case id, row id, file name)] gone, marked by an earlier run
     refused: Optional[str] = None
 
 
@@ -148,6 +150,7 @@ def check_files(db, root: Path, *, apply: bool = True, now: Optional[datetime] =
     gone_ids = {row.id for row in gone}
     result.missing = len(gone)
     new = [row for row in gone if row.id not in marked]
+    result.known = [row for row in gone if row.id in marked]
     if len(new) > max(NEW_MISSING_FLOOR, len(rows) * NEW_MISSING_SHARE):
         result.refused = (f"{len(new)} of {len(rows)} rows are newly missing, too many to be real: check the disks are "
                           "mounted. Nothing was marked")
@@ -259,3 +262,41 @@ def restore_files(db, case_id: uuid.UUID, root: Path, search: Iterable[Path], *,
             result.outcome = "restored"
         results.append(result)
     return results
+
+
+def restore_from_upload(db, created: Iterable) -> list:
+    """An upload whose bytes match a row of the same case marked missing puts the file back under that row.
+
+    "Upload it again to restore" is what a missing row tells its reader, so a new upload with the row's sha256 restores
+    it through the same proof as ``restore_files``: copied beside the row's path, hashed, then linked in, never over a
+    file already there. The row keeps its id, its readings and everything cited from it; the new upload stays as its
+    duplicate. Returns the restored rows' ids. A failure is logged on the row and never fails the upload."""
+    restored = []
+    for new in created:
+        if not new.sha256 or not new.stored_path:
+            continue
+        candidates = db.scalars(select(EvidenceFile).where(
+            EvidenceFile.case_id == new.case_id, EvidenceFile.sha256 == new.sha256, EvidenceFile.id != new.id,
+            EvidenceFile.deleted_at.is_(None), cast(EvidenceFile.metadata_, Text).like(f'%"{FILE_MISSING_KEY}"%'))).all()
+        for row in candidates:
+            if FILE_MISSING_KEY not in (row.metadata_ or {}) or not str(row.stored_path or "").startswith("/"):
+                continue
+            target = Path(row.stored_path)
+            if target.exists():
+                continue
+            try:
+                _place(Path(new.stored_path), target, row.sha256)
+            except Exception as exc:  # the upload itself stands; the row stays marked and says why
+                logger.warning("Could not restore %s from upload %s: %s", row.id, new.id, exc)
+                EvidenceDBStorage.add_log(db, case_id=row.case_id, evidence_file_id=row.id,
+                                          filename=row.original_filename, level="warning",
+                                          message=f"{row.original_filename} was uploaded again but could not be put "
+                                                  f"back: {exc}")
+                continue
+            _lock_case(db, row.case_id)  # held already by the upload's own audited insert; one order, audit then rows
+            _set_mark(_locked(db, row.id), None)
+            EvidenceDBStorage.add_log(db, case_id=row.case_id, evidence_file_id=row.id, filename=row.original_filename,
+                                      level="info", message=f"File restored: {row.original_filename} was uploaded "
+                                                            "again and matches its checksum.")
+            restored.append(row.id)
+    return restored

@@ -147,6 +147,14 @@ def _record_upload_each(db, case_id, created_by_id, files):
                                 event.source_address or '-', event.case_id or '-')
 
 
+def _restore_missing(db, case_id, created):
+    """A new upload with the bytes of a row marked missing puts that row's file back (evidence_file_check)."""
+    if not any(f.is_duplicate for f in created):
+        return  # a missing row's bytes, uploaded again, always find that row as their duplicate
+    from services.evidence_file_check import restore_from_upload
+    restore_from_upload(db, [f for f in created if f.is_duplicate])
+
+
 def _new_file(case_id, folder_id, fd, is_dup, dup_of_id, owner, created_by_id):
     ef = EvidenceFile(
         case_id=case_id,
@@ -666,6 +674,7 @@ class EvidenceDBStorage:
 
         db.flush()
         _record_upload(db, case_id, folder_id, created_by_id, created)
+        _restore_missing(db, case_id, created)
         return created
 
     @staticmethod
@@ -703,6 +712,7 @@ class EvidenceDBStorage:
             created.append(ef)
         db.flush()
         _record_upload_each(db, case_id, created_by_id, created)
+        _restore_missing(db, case_id, created)
         return created
 
     @staticmethod

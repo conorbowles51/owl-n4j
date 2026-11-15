@@ -111,7 +111,7 @@ describe("FileRow workspace pin actions", () => {
 
   it("says a file is gone and offers no processing for it", async () => {
     renderRow({ file: { ...file, file_missing_since: "2026-11-05T20:00:00Z" } })
-    expect(screen.getByText("File missing")).toHaveAttribute("title", expect.stringContaining("record is kept"))
+    expect(screen.getByText("File missing")).toHaveAttribute("title", expect.stringContaining("upload it again to restore"))
     fireEvent.pointerDown(
       screen.getByRole("button", { name: "Actions for bank-statement.pdf" }),
       { button: 0, ctrlKey: false },
