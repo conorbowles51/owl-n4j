@@ -14,7 +14,7 @@ This module moves the rest of the case's own work that points at a source key:
   ``merged_from``; the member count follows, and the collection index of every link to that group follows too.
 
 ``lineage`` reads the merge records (``merge_jobs``) and the recycled sources' names (``graph_recycle_bin``): the
-merges that made an entity, oldest first, each with the keys and names merged and who merged them. Reads only.
+merges that made an entity, oldest first, each with the keys and names merged and who merged them (by name). Reads only.
 """
 from __future__ import annotations
 
@@ -134,6 +134,17 @@ def lineage(db, *, case_id, entity_key: str, depth: int = 10) -> list[dict[str, 
     case = case_id if isinstance(case_id, uuid.UUID) else uuid.UUID(str(case_id))
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
+    people: dict[str, str] = {}
+
+    def person(signed_in_as: str | None) -> str | None:
+        """The merge records the sign-in it was made under (an email address); show that person's name."""
+        if not signed_in_as:
+            return None
+        if signed_in_as not in people:
+            from postgres.models.user import User
+            name = db.scalar(select(User.name).where(User.email == signed_in_as))
+            people[signed_in_as] = name or signed_in_as
+        return people[signed_in_as]
 
     def walk(key: str, level: int):
         if level > depth or key in seen:
@@ -147,7 +158,7 @@ def lineage(db, *, case_id, entity_key: str, depth: int = 10) -> list[dict[str, 
             for source in sources:
                 walk(source, level + 1)
             names = _names(db, case, sources)
-            out.append({"merge_job_id": str(job.id), "into": key, "by": job.created_by,
+            out.append({"merge_job_id": str(job.id), "into": key, "by": person(job.created_by),
                         "at": job.updated_at.isoformat() if getattr(job, "updated_at", None) else None,
                         "status": job.status,
                         "sources": [{"key": k, "name": names.get(k)} for k in sources]})

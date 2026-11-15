@@ -115,3 +115,11 @@ class MergeCarryTests(base.TheoryAdditionTests):
                                                 {"key": "person:bob", "name": "A. Smith"}])
         self.assertEqual((merges[0]["by"], merges[0]["merge_job_id"]), ("Investigator", str(job.id)))
         self.assertEqual(merge_carry.lineage(self.db, case_id=self.case.id, entity_key="person:ann"), [])
+
+    def test_the_lineage_names_the_person_who_merged_not_their_sign_in(self):
+        _, job = self.carry()
+        job.created_by = self.user.email
+        self.db.commit()
+        merges = merge_carry.lineage(self.db, case_id=self.case.id, entity_key=MERGED)
+        self.assertEqual(merges[0]["by"], self.user.name)
+        self.assertNotEqual(self.user.name, self.user.email)
