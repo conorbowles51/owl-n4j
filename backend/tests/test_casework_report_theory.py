@@ -140,3 +140,24 @@ class CaseworkReportTheoryTests(DuplicateTestCase):
         self.assertIn("Agent answer: Answer in “List each account&#x27;s holder”, 2026-11-08, deepseek-v4-pro", html)
         self.assertNotIn("**", html)
         self.assertNotIn("# Case", html)
+
+    def test_citation_links_in_an_entry_body_print_as_their_words_and_cited_place_never_their_ids(self):
+        """lx-theorycase 15 Nov: Verification finding 'Citation check (automated)' printed
+        '[C20 I.S.R. RETENIDO](txn://...)' and '(doc://.../1)' as text in the PDF."""
+        stray = uuid.uuid4()
+        body = (f"Paid [C20 I.S.R. RETENIDO](txn://{self.pay.id}) per [the statement, p.1](doc://{self.produced.id}/1);"
+                f" also [an old file](doc://{stray}/2) and [doc://{self.produced.id}] & as written.")
+        found = create_entry(self.db, case_id=self.case.id, current_user=self.user, entry_type="finding",
+                             title="Citation check (automated)", body=body)
+        entries = {"findings": [get_entry(self.db, case_id=self.case.id, entry_id=uuid.UUID(found["id"]))]}
+        facts.gather(self.db, self.case.id, entries)
+        html = cr.render_casework_report_html(entries, sections=["findings"], case_name="Matter A",
+                                              generated_by="Investigator")
+        for raw in ("txn://", "doc://", str(self.pay.id), str(self.produced.id), str(stray)):
+            self.assertNotIn(raw, html)
+        self.assertIn("Paid C20 I.S.R. RETENIDO", html)
+        self.assertIn("the statement, p.1 <span class=\"cite\">(USA-000046.pdf, page 1 · Production numbers: USA-000046",
+                      html)
+        self.assertIn("an old file <span class=\"cite\">(Not in this case.)</span>", html)
+        self.assertIn("document <span class=\"cite\">(USA-000046.pdf, page not given", html)
+        self.assertIn("&amp; as written.", html)  # the rest of the body stays verbatim, escaped

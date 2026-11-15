@@ -9,7 +9,9 @@ Per entry, under ``entry["_report"]``:
 * ``counter_arguments``: for a theory, each accepted counter-argument: its title, strength, the model's text (a model
   reading, with the model's name), the person's edit when there is one, and who accepted it;
 * ``timeline``: for a theory, every dated member of every addition, in date order;
-* ``production``: per link id, the production (Bates) numbers of the cited file and page, each saying what kind it is.
+* ``production``: per link id, the production (Bates) numbers of the cited file and page, each saying what kind it is;
+* ``body_citations``: per citation link in the entry's body (``doc://``, ``txn://``, ``rec://``), the words printed
+  after the link's own words: the cited file and page with its production numbers, or that it is not in this case.
 
 Links saved without a label get the current name of what they point to (``link_names``). A record that cannot be read
 is reported as unread in the entry (``missing``); nothing is dropped silently.
@@ -125,6 +127,40 @@ def _production(db, case_id, entries: list[dict[str, Any]]) -> None:
         entry.setdefault("_report", {})["production"] = words
 
 
+def body_citation_words(db, case_id, body: str | None) -> dict[str, str]:
+    """For each citation link in an entry's body, what the report prints after the link's words (its href is never
+    printed): a file page as "<file>, page N" (or "page not given") with its production numbers."""
+    from services import case_citations as C
+    from services.production_numbers import reference_words
+    text = C.link_bare_citations(body or "")
+    found = C.citations_in(text)
+    if not found:
+        return {}
+    out = {}
+    for r in C.resolve_citations(db, _uuid(case_id), found):
+        if r.status == "other_case":
+            out[r.href] = "a payment of another case"
+        elif r.status != "ok":
+            out[r.href] = r.reason or C.NOT_IN_CASE
+        elif r.scheme == "doc":
+            words = f"{r.filename or 'a document'}, " + (f"page {r.page}" if r.page_given else "page not given")
+            numbers = reference_words(r.production_numbers)
+            out[r.href] = words + (f" · Production numbers: {numbers}" if numbers else "")
+        elif r.scheme == "txn":
+            out[r.href] = "ledger row" + (f", statement page {r.page}" if r.page_given else "")
+    return out
+
+
+def _body_citations(db, case_id, entries: list[dict[str, Any]]) -> None:
+    for entry in entries:
+        try:
+            words = body_citation_words(db, case_id, entry.get("body"))
+        except Exception:  # noqa: BLE001 - the links still print as their words, without the cited place
+            db.rollback()
+            words = {}
+        entry.setdefault("_report", {})["body_citations"] = words
+
+
 # --- counter-arguments -----------------------------------------------------------------------------------------------
 
 def _counter_arguments(db, case_id, theory_ids: set[str]) -> dict[str, list[dict[str, Any]]]:
@@ -196,6 +232,7 @@ def gather(db, case_id, entries_by_section: dict[str, list[dict[str, Any]]]) -> 
             for entry in entries:
                 if str(entry["id"]) in theories:
                     entry["_report"]["counter_arguments"] = by_theory.get(str(entry["id"]), [])
+    _body_citations(db, case_id, entries)
     try:
         _production(db, case_id, entries)
     except Exception:  # noqa: BLE001

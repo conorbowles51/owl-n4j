@@ -15,6 +15,7 @@ export, chosen by the exporter, printed on the cover and every page footer, and 
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime
 from typing import Any, Callable
 
@@ -133,6 +134,31 @@ def _link_words(link: dict[str, Any]) -> str:
     if link.get("target_type") == "evidence" and anchor.get("page"):
         words += f", page {anchor['page']}"
     return words
+
+
+# A citation link in an entry's body: [words](doc://...), [words](txn://...), [words](rec://...).
+_BODY_LINK = re.compile(r"\[([^\]]*)\]\(\s*<?((?:doc|txn|rec)://[^)>\s]*)>?(?:\s+\"[^\"]*\")?\s*\)")
+_SCHEME_WORDS = {"doc": "document", "txn": "payment", "rec": "phone record"}
+
+
+def _body_html(body: Any, cited: dict[str, str]) -> str:
+    """An entry's body verbatim, except that each citation link prints as its words and the place it cites
+    (``cited``, read from the case), never as its raw id. Everything else is escaped as written."""
+    from services.case_citations import link_bare_citations
+    text = link_bare_citations(str(body or ""))
+    out, at = [], 0
+    for match in _BODY_LINK.finditer(text):
+        out.append(_e(text[at:match.start()]))
+        words, href = match.group(1).strip(), match.group(2)
+        scheme = href.split(":", 1)[0]
+        place = cited.get(href)
+        if not place and scheme == "doc":
+            page = href.rstrip("/").rsplit("/", 1)[-1] if href.count("/") > 2 else ""
+            place = f"page {page}" if page.isdigit() else "page not given"
+        out.append(_e(words or _SCHEME_WORDS[scheme]) + (f' <span class="cite">({_e(place)})</span>' if place else ""))
+        at = match.end()
+    out.append(_e(text[at:]))
+    return "".join(out)
 
 
 def _e(value: Any) -> str:
@@ -258,7 +284,7 @@ def _entry_html(entry: dict[str, Any]) -> str:
     <article class="entry">
       <h3>{_e(title)}</h3>
       <p class="facts">{' · '.join(facts)}</p>
-      <div class="body">{_e(entry.get('body'))}</div>
+      <div class="body">{_body_html(entry.get('body'), report.get('body_citations') or {})}</div>
       {_narrative_html(report.get('fit'), 'How it fits together')}
       {f'<div class="links"><p class="links-head">Linked evidence and material ({len(links)})</p><ul>{link_rows}</ul></div>' if links else '<p class="muted">No linked evidence.</p>'}
       {_counter_html(report.get('counter_arguments') or [])}
