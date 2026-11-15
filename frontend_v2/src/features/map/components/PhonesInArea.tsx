@@ -11,12 +11,17 @@ const n = (v: number) => v.toLocaleString("en-US")
  * Drawing an area on the Map lists "Phones seen in this area" (03 13.3, 07 J-10): each phone with a position inside
  * it, the exact count, the first and last time there, and its conversations over that time. Nothing is capped.
  */
-export function PhonesInArea({ caseId, shape }: { caseId: string; shape: BoundingShape }) {
-  const ring = shape.coordinates.map(([lng, lat]) => [lng, lat])
-  const q = useQuery({
-    queryKey: ["phone-map-area", caseId, shape.id, ring.map((c) => c.join(",")).join(";")],
+export function usePhonesInArea(caseId: string, shape: BoundingShape | null) {
+  const ring = (shape?.coordinates ?? []).map(([lng, lat]) => [lng, lat])
+  return useQuery({
+    queryKey: ["phone-map-area", caseId, shape?.id ?? null, ring.map((c) => c.join(",")).join(";")],
     queryFn: ({ signal }) => getPhoneMapArea(caseId, ring, {}, signal),
+    enabled: shape != null,
   })
+}
+
+export function PhonesInArea({ caseId, shape }: { caseId: string; shape: BoundingShape }) {
+  const q = usePhonesInArea(caseId, shape)
   return (
     <section aria-label="Phones seen in this area" className="absolute right-14 top-14 z-10 flex max-h-[50%] w-80 flex-col gap-1 overflow-auto rounded-lg border border-border bg-card/95 p-3 text-xs shadow-md backdrop-blur">
       <h2 className="text-sm font-semibold">Phones seen in this area</h2>

@@ -116,3 +116,30 @@ describe("MapToolbar count with the phone layer", () => {
     expect(screen.getByText("0 locations")).toBeInTheDocument()
   })
 })
+
+describe("MapToolbar area banner with the phone layer (sitefilms 15 Nov)", () => {
+  beforeEach(() => {
+    useMapStore.setState({ boundingShapes: [{ id: "a1", coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]] }] } as never)
+  })
+  it("counts the phone positions inside the area beside the case's locations, never a bare 0 of 0", () => {
+    const queryClient = new QueryClient()
+    const ui = (v: number | "counting" | null) => (
+      <QueryClientProvider client={queryClient}>
+        <MapToolbar caseId="case-1" locations={[]} phonePositions={4000} areaPhonePositions={v} />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(ui("counting"))
+    expect(screen.getByText(/Showing 0 of 0 case locations; counting phone positions inside the area \(1 area\)/)).toBeInTheDocument()
+    rerender(ui(106))
+    expect(screen.getByText(/Showing 0 of 0 case locations; 106 phone positions inside the area \(1 area\)/)).toBeInTheDocument()
+  })
+  it("keeps the old wording when the phone layer is off", () => {
+    const queryClient = new QueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MapToolbar caseId="case-1" locations={[]} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText(/Showing 0 of 0 locations \(1 area\)/)).toBeInTheDocument()
+  })
+})

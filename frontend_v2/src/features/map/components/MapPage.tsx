@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { getPhoneMapNear, getPhoneMapPoints, getPhoneMapSummary, type PhoneMapFilter } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
 import { NearMessageNote } from "./NearMessageNote"
-import { PhonesInArea } from "./PhonesInArea"
+import { PhonesInArea, usePhonesInArea } from "./PhonesInArea"
 import { useParams, useSearchParams } from "react-router-dom"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
@@ -84,6 +84,8 @@ export function MapPage() {
   const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint || !!nearUid || scoped, nearFilter ?? carriedFilter)
   const shapes = useMapStore((s) => s.boundingShapes)
   const lastShape = shapes.length ? shapes[shapes.length - 1] : null
+  // the same query the "Phones seen in this area" panel reads, so the banner counts what the panel lists
+  const areaPhones = usePhonesInArea(caseId ?? "", phones.on ? lastShape : null)
 
   // Auto-expand CaseLayout's side panel to detail tab when a node is selected from the map
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
@@ -170,7 +172,12 @@ export function MapPage() {
           <ScopeCrossings caseId={caseId!} scope={carried.scope} here="map" />
         </ScopeBar>
       )}
-      <MapToolbar caseId={caseId!} locations={safeLocations} phonePositions={phones.on ? phones.summary.data?.positioned ?? null : null} />
+      <MapToolbar
+        caseId={caseId!}
+        locations={safeLocations}
+        phonePositions={phones.on ? phones.summary.data?.positioned ?? null : null}
+        areaPhonePositions={phones.on && lastShape ? (areaPhones.data ? areaPhones.data.points_total : "counting") : null}
+      />
 
       <div className="relative flex-1">
         <MapCanvas

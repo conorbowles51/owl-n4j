@@ -35,6 +35,8 @@ interface MapToolbarProps {
   locations: MapLocation[]
   /** Phone positions the phone layer draws (only when the layer is on); counted beside the case's locations. */
   phonePositions?: number | null
+  /** Phone positions inside the last drawn area ("counting" while the query runs); null when the phone layer is off. */
+  areaPhonePositions?: number | "counting" | null
 }
 
 function FilterCheckmark({ checked }: { checked: boolean }) {
@@ -52,7 +54,7 @@ function FilterCheckmark({ checked }: { checked: boolean }) {
   )
 }
 
-export function MapToolbar({ caseId, locations, phonePositions }: MapToolbarProps) {
+export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositions = null }: MapToolbarProps) {
   const [areasOpen, setAreasOpen] = useState(false)
   const showHeatmap = useMapStore((s) => s.showHeatmap)
   const toggleHeatmap = useMapStore((s) => s.toggleHeatmap)
@@ -117,6 +119,17 @@ export function MapToolbar({ caseId, locations, phonePositions }: MapToolbarProp
       ? `${boundingShapes.length} area${boundingShapes.length !== 1 ? "s" : ""}`
       : null,
   ].filter(Boolean)
+
+  // The area filter acts on the case's locations; the phone layer is counted on its own, so a 0 never sits beside the
+  // phone positions the "Phones seen in this area" panel lists (sitefilms 15 Nov: "0 of 0" next to 106 positions).
+  const inWhichArea = boundingShapes.length === 1 ? "the area" : "the last area drawn"
+  const areaPhonesText =
+    !shapeFilterActive || areaPhonePositions == null
+      ? ""
+      : areaPhonePositions === "counting"
+        ? `; counting phone positions inside ${inWhichArea}`
+        : `; ${areaPhonePositions.toLocaleString("en-US")} phone position${areaPhonePositions !== 1 ? "s" : ""} inside ${inWhichArea}`
+  const locationsWord = phonePositions != null || areaPhonePositions != null ? "case locations" : "locations"
 
   const clearActiveFilters = () => {
     clearConfidenceFilter()
@@ -259,7 +272,9 @@ export function MapToolbar({ caseId, locations, phonePositions }: MapToolbarProp
             <div className="mb-2 flex items-center justify-between gap-2 px-1">
               <span className="text-xs font-medium">Area filter</span>
               <span className="text-[10px] text-muted-foreground">
-                {visibleCount} of {locations.length}
+                {visibleCount} of {locations.length} {locationsWord}
+                {typeof areaPhonePositions === "number" &&
+                  ` · ${areaPhonePositions.toLocaleString("en-US")} phone position${areaPhonePositions !== 1 ? "s" : ""}`}
               </span>
             </div>
 
@@ -477,7 +492,7 @@ export function MapToolbar({ caseId, locations, phonePositions }: MapToolbarProp
           ) : (
             <ShieldCheck className="size-3.5" />
           )}
-          {`Showing ${visibleCount} of ${locations.length} locations (${activeFilterLabels.join(", ")})`}
+          {`Showing ${visibleCount} of ${locations.length} ${locationsWord}${areaPhonesText} (${activeFilterLabels.join(", ")})`}
           {needsReviewMode && reviewCount > 0
             ? `; ${reviewCount} total locations need review`
             : ""}
