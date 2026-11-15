@@ -736,10 +736,10 @@ Based on this investigation context, please answer the question:
 
 Guidelines:
 - {self.analysis_guidance}
+- SAME PERSON: a shared name is not a link. A first name, nickname or saved contact name that matches a person, and matching circumstances (a trade, a business, a sign-off), do not make a contact or number that person. They are the same person only when the context links them: the same phone number or account, or an identity a person linked. Otherwise, whether asked if they are the same or what one did with another, answer that it is not established: name the contact as saved with its number, never as the person, say what points to the person and what would link them
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
 - CITE SOURCES: When referencing specific facts, create a clickable markdown link to the passage's Cite target, copied exactly: [document name, p.N](<Cite>) where N is the page in the passage header. For example, a passage headed "USA-ET-000021.pdf (page 3)" with "Cite: doc://0b6c.../3" is cited as [USA-ET-000021.pdf, p.3](doc://0b6c.../3). When the header gives no page, the Cite has none: write [document name](<Cite>) and never write p.1 for an unknown page. Never build a doc:// link yourself.
-- A shared name is not a link: two contacts, numbers or people with the same first name, nickname or saved name are the same person only when the context links them (the same number, or an identity a person linked). Otherwise say they share a name, give each one's number as the context shows it, and say nothing links them
 - When verified facts are provided with quotes, reference the original quote to support your answer
 - Be specific and cite document names when relevant
 - If you identify patterns or important information, explain them

@@ -30,5 +30,5 @@ def test_the_chat_prompt_says_a_shared_name_is_not_an_identity_link():
     ctx.system_context, ctx.analysis_guidance = "synthetic system", "synthetic guidance"
     ctx.call = lambda prompt, temperature=0.0: "synthetic answer"
     _, prompt = ctx.answer_question_with_prompt("Is the contact Mateo the same person as Mateo Ruiz?", "x")
-    assert "A shared name is not a link" in prompt
+    assert "SAME PERSON: a shared name is not a link" in prompt
     assert "only when the context links them" in prompt
