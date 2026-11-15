@@ -47,6 +47,7 @@ import { useFolderContents } from "../hooks/use-folder-contents"
 import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ProductionNumbersPanel } from "./ProductionNumbersPanel"
+import { UncheckedClaimsNotice } from "./UncheckedClaimsNotice"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
@@ -708,6 +709,8 @@ function DetailsPanelContent({
               </div>
             </div>
           )}
+
+          <UncheckedClaimsNotice fileId={file.id} caseId={caseId} canEdit={canEdit} />
 
           {/* Details section (always shown) */}
           <CollapsibleSection title="Details">

@@ -5,7 +5,7 @@ import { fetchAPI } from "@/lib/api-client"
 import { type UncheckedClaims, uncheckedClaimsText } from "../utils/unchecked-claims"
 
 /** How many of this file's claims are unchecked, with the request to check the case's unchecked claims. */
-export function UncheckedClaimsNotice({ fileId, caseId }: { fileId: string; caseId: string }) {
+export function UncheckedClaimsNotice({ fileId, caseId, canEdit }: { fileId: string; caseId: string; canEdit: boolean }) {
   const queryClient = useQueryClient()
   const counts = useQuery({
     queryKey: ["claim-checks", caseId],
@@ -29,11 +29,14 @@ export function UncheckedClaimsNotice({ fileId, caseId }: { fileId: string; case
       <p>{uncheckedClaimsText(count)}</p>
       <p>
         Checking reads each claim against its file and spends from the case&apos;s AI budget.
+        {canEdit ? "" : " Someone who can edit this case can start it."}
         {total > count ? ` The case has ${total.toLocaleString()} unchecked claims in all; the check takes them all, smallest file first.` : ""}
       </p>
-      <Button size="sm" variant="outline" disabled={check.isPending} onClick={() => check.mutate()}>
-        Check them
-      </Button>
+      {canEdit && (
+        <Button size="sm" variant="outline" disabled={check.isPending} onClick={() => check.mutate()}>
+          Check them
+        </Button>
+      )}
     </div>
   )
 }

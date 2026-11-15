@@ -5,17 +5,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { UncheckedClaimsNotice } from "./UncheckedClaimsNotice"
 import { uncheckedClaimsText } from "../utils/unchecked-claims"
+import sidebarSource from "./EvidenceContextSidebar.tsx?raw"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const mocked = vi.mocked(fetchAPI)
 
-function renderNotice(fileId: string) {
+function renderNotice(fileId: string, canEdit = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <UncheckedClaimsNotice fileId={fileId} caseId="c1" />
+      <UncheckedClaimsNotice fileId={fileId} caseId="c1" canEdit={canEdit} />
     </QueryClientProvider>,
   )
 }
@@ -36,6 +37,18 @@ describe("UncheckedClaimsNotice", () => {
     expect(screen.getByText(/1,250 unchecked claims in all/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Check them" }))
     await waitFor(() => expect(mocked).toHaveBeenCalledWith("/api/claim-checks/c1/check", { method: "POST" }))
+  })
+
+  it("offers the check only to someone who can edit the case", async () => {
+    renderNotice("f1", false)
+    expect(await screen.findByText(uncheckedClaimsText(250))).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Check them" })).toBeNull()
+    expect(screen.getByText(/Someone who can edit this case can start it/)).toBeTruthy()
+  })
+
+  it("is shown in the file panel of the evidence page", () => {
+    // it first sat in FilePreviewPanel, which no page renders
+    expect(sidebarSource).toContain("<UncheckedClaimsNotice fileId={file.id} caseId={caseId} canEdit={canEdit} />")
   })
 
   it("says nothing for a file whose claims were all checked", async () => {
