@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
-import { type UncheckedClaims, uncheckedClaimsText } from "../utils/unchecked-claims"
+import { CHECKED_NOT_IN_GRAPH, type UncheckedClaims, uncheckedClaimsText } from "../utils/unchecked-claims"
 
 /** How many of this file's claims are unchecked, with the request to check the case's unchecked claims. */
 export function UncheckedClaimsNotice({ fileId, caseId, canEdit }: { fileId: string; caseId: string; canEdit: boolean }) {
@@ -29,6 +29,7 @@ export function UncheckedClaimsNotice({ fileId, caseId, canEdit }: { fileId: str
       <p>{uncheckedClaimsText(count)}</p>
       <p>
         Checking reads each claim against its file and spends from the case&apos;s AI budget.
+        {" "}{CHECKED_NOT_IN_GRAPH}
         {canEdit ? "" : " Someone who can edit this case can start it."}
         {total > count ? ` The case has ${total.toLocaleString()} unchecked claims in all; the check takes them all, smallest file first.` : ""}
       </p>
