@@ -569,6 +569,23 @@ def _addition(link: WorkspaceEntryLink, rows: list[TheoryNarrative], names: Mapp
     }
 
 
+def _name_unnamed_singles(db, case_id, links: list[WorkspaceEntryLink], additions: list[dict[str, Any]]) -> None:
+    """A single addition saved with no name takes its item's name now (a dated graph event, a ledger row, a file), in
+    one read for all of them; one that still has none keeps "no name on record"."""
+    unnamed = [(a, l) for a, l in zip(additions, links)
+               if a["kind"] == "single" and a["label"] == NO_NAME and l.target_type != "agent_answer"]
+    if not unnamed:
+        return
+    try:
+        facts = member_facts(db, case_id, [m for _, l in unnamed for m in _single_members(l)])
+    except Exception:  # noqa: BLE001 - the additions still show, unnamed
+        db.rollback()
+        return
+    by_ref = {f["ref"]: f["label"] for f in facts}
+    for addition, link in unnamed:
+        addition["label"] = by_ref.get(f"{link.target_type}:{link.target_id}") or NO_NAME
+
+
 def reading(db, *, case_id, entry_id) -> dict[str, Any]:
     """The theory read as a whole: each addition with its why and narrative, and how it all fits together."""
     entry = _entry(db, case_id, entry_id)
@@ -577,10 +594,12 @@ def reading(db, *, case_id, entry_id) -> dict[str, Any]:
     names = _names(db, [l.created_by_user_id for l in links] + [r.user_id for r in rows]
                    + [r.confirmed_by_user_id for r in rows])
     fit = _current(_versions(rows, None))
+    additions = [_addition(l, rows, names) for l in links]
+    _name_unnamed_singles(db, entry.case_id, links, additions)
     return {
         "entry": {"id": str(entry.id), "entry_type": entry.entry_type, "title": entry.title, "body": entry.body,
                   "version": entry.version},
-        "additions": [_addition(l, rows, names) for l in links],
+        "additions": additions,
         "fit": serialize_narrative(fit, names) if fit else None,
         "fit_versions": len(_versions(rows, None)),
     }
@@ -596,9 +615,12 @@ def loupe(db, *, case_id, entry_id, link_id, member_limit: int = 2000) -> dict[s
     names = _names(db, [link.created_by_user_id] + [r.user_id for r in versions]
                    + [r.confirmed_by_user_id for r in versions])
     held = addition_members(db, entry.case_id, link, limit=member_limit)
+    addition = _addition(link, rows, names)
+    if addition["kind"] == "single" and addition["label"] == NO_NAME and held["members"]:
+        addition["label"] = held["members"][0]["label"]
     return {
         "entry": {"id": str(entry.id), "title": entry.title, "entry_type": entry.entry_type},
-        "addition": _addition(link, rows, names),
+        "addition": addition,
         **held,
         "history": [serialize_narrative(r, names) for r in reversed(versions)],
     }

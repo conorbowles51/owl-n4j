@@ -307,6 +307,15 @@ class TheoryAdditionTests(DuplicateTestCase):
             self.assertNotIn(raw, member["text"])
         additions = {a["link_id"]: a for a in self.reading()["additions"]}
         self.assertEqual(additions[bare["added_link_ids"][0]]["label"], "no name on record")
+        # a dated graph event saved with no name takes its name from the graph (live: fffbf98e, a transfer)
+        event = self.add(surface="timeline", items=[{"target_type": "graph_entity", "target_id": "event:meeting-1",
+                                                     "target_label": "event:meeting-1"}])
+        with mock.patch.object(case_selections, "graph_event_dates",
+                               return_value={"event:meeting-1": {"date": "14/06/2022", "name": "Meeting"}}):
+            named = {a["link_id"]: a for a in self.reading()["additions"]}[event["added_link_ids"][0]]
+            lens = self.loupe(event["added_link_ids"][0])
+        self.assertEqual((named["label"], lens["addition"]["label"], lens["members"][0]["label"]),
+                         ("Meeting", "Meeting", "Meeting"))
         run = stub("Ann [a1] met Bob [a2].", [])
         fit = T.infer_narrative(self.db, case_id=self.case.id, entry_id=self.theory["id"], link_id=None,
                                 user=self.user, generator=run)
