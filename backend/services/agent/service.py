@@ -318,7 +318,11 @@ class AgentService:
                 answer = "I could not produce an answer from the available case data."
             answer, plain_check = plain_answer.checked(answer)  # internal terms in plain words (lx-agentlive C)
             answer, citation_check = storage.checked_answer(db, case_id=thread.case_id, answer=answer)
+            # each cited sentence read against its source; one that no source supports is marked (lx-citeproof B)
+            answer, citation_support = storage.supported_answer(db, case_id=thread.case_id, answer=answer,
+                                                                user_id=user.id)
             storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check,
+                                                               "citation_support": citation_support,
                                                                "plain_check": plain_check})
 
             usage = final_result.get("usage")

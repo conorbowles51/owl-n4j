@@ -227,7 +227,10 @@ if RunRecordFixture is not None:
                     answer, run = self.run_service(path)
                     self.assertEqual(leaks(answer), [])
                     self.assertEqual(run.final_answer, answer)
-                    self.assertEqual(LINKS.findall(answer), LINKS.findall(LIVE))
+                    # the answer's own links are kept; the source check after it lists its sources (lx-citeproof B)
+                    body = answer.split("\n\n**Source check**")[0]
+                    self.assertEqual(LINKS.findall(body), LINKS.findall(LIVE))
+                    self.assertIn("citation_support", run.extra_metadata)
                     check = run.extra_metadata["plain_check"]
                     self.assertTrue(check["available"])
                     self.assertGreater(check["rewritten"], 20)

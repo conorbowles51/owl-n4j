@@ -289,6 +289,23 @@ def checked_answer(db: Session, *, case_id, answer: str) -> tuple[str, dict[str,
         return answer, {"available": False, "reason": "The citations in this answer could not be checked."}
 
 
+def supported_answer(db: Session, *, case_id, answer: str, user_id=None) -> tuple[str, dict[str, Any]]:
+    """The answer with each cited sentence read against the page, payment or record it cites
+    (services.citation_support): a sentence no cited source supports is marked, and the answer ends with the source
+    check. On failure the answer is kept unmarked and the result says it was not checked."""
+    from services import citation_support
+
+    if not case_id:
+        return answer, {"schema": citation_support.SCHEMA, "available": False, "reason": "No case to check against."}
+    try:
+        with db.begin_nested():
+            return citation_support.check_and_mark(db, case_id, answer, user_id=user_id)
+    except Exception:  # noqa: BLE001 - an unchecked answer says so; it is never shown as checked
+        logger.exception("Source check failed for case %s", case_id)
+        return answer, {"schema": citation_support.SCHEMA, "available": False,
+                        "reason": "The cited sources could not be read against this answer."}
+
+
 def citation_check_for(db: Session, *, case_id, content: str) -> dict[str, Any]:
     from services import case_citations
 

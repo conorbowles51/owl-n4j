@@ -314,16 +314,21 @@ def chat(
             )
 
         cost_record = None
-        if llm.last_usage:
+        llm_usage = llm.last_usage
+        # each cited sentence read against its source before the answer is stored (lx-citeproof B)
+        from services.agent.storage import supported_answer
+        result["answer"], result["citation_support"] = supported_answer(
+            db, case_id=request.case_id, answer=result.get("answer") or "", user_id=current_user.id)
+        if llm_usage:
             cost_record = record_cost(
                 db=db,
                 job_type=CostJobType.AI_ASSISTANT,
                 provider=llm.provider,
                 model_id=llm.model_id,
                 operation_kind=CostOperationKind.CHAT_COMPLETION,
-                prompt_tokens=llm.last_usage.get("prompt_tokens"),
-                completion_tokens=llm.last_usage.get("completion_tokens"),
-                total_tokens=llm.last_usage.get("total_tokens"),
+                prompt_tokens=llm_usage.get("prompt_tokens"),
+                completion_tokens=llm_usage.get("completion_tokens"),
+                total_tokens=llm_usage.get("total_tokens"),
                 case_id=request.case_id,
                 user_id=current_user.id,
                 description=f"AI Assistant Query: {question[:100]}",
