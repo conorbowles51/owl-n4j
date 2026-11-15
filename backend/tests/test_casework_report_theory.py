@@ -118,3 +118,13 @@ class CaseworkReportTheoryTests(DuplicateTestCase):
         self.assertIn("Financial finding, saved from the ledger", html)
         self.assertEqual(html.count("Cash out in March"), 1)
         self.assertLess(html.index("Cash out in March"), html.index("Theories ("))
+
+    def test_a_timeline_item_with_no_name_prints_as_having_none_never_its_id(self):
+        key = str(uuid.uuid4())
+        entry = {"id": "t1", "entry_type": "theory", "title": "T", "body": "", "links": [],
+                 "_report": {"timeline": [{"type": "graph_entity", "id": key, "label": key, "date": "2021-07-10"}],
+                             "timeline_total": 1}}
+        html = cr.render_casework_report_html({"theories": [entry]}, sections=["theories"], case_name="Matter A",
+                                              generated_by="Investigator")
+        self.assertNotIn(key, html)
+        self.assertIn("2021-07-10 · Graph item: no name on record", html)

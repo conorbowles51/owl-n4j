@@ -198,6 +198,12 @@ def _counter_html(items: list[dict[str, Any]]) -> str:
     return f'<div class="links"><p class="links-head">Counter-arguments accepted ({len(items)})</p><ul>{"".join(rows)}</ul></div>'
 
 
+def _member_label(member: dict[str, Any]) -> str:
+    """A member's name; one with no name of its own (its label is only its id) prints as having none."""
+    label = str(member.get("label") or "").strip()
+    return UNRESOLVED_LABEL if not label or label == str(member.get("id") or "") else label
+
+
 def _timeline_html(report: dict[str, Any]) -> str:
     if report.get("timeline_missing"):
         return f'<p class="muted">{_e(report["timeline_missing"])}</p>'
@@ -206,7 +212,7 @@ def _timeline_html(report: dict[str, Any]) -> str:
         return ""
     total = int(report.get("timeline_total") or len(dated))
     rows = "".join(
-        f"<li>{_e(m.get('date'))} · {_e(type_words(m.get('type')))}: {_e(m.get('label'))}"
+        f"<li>{_e(m.get('date'))} · {_e(type_words(m.get('type')))}: {_e(_member_label(m))}"
         + (f" ({_e(m['state'])})" if m.get("state") not in (None, "present") else "") + "</li>"
         for m in dated)
     note = ""
