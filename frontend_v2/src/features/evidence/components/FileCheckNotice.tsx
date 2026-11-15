@@ -26,8 +26,8 @@ export function FileCheckBadges({ file }: { file: EvidenceFile | EvidenceFileRec
   )
 }
 
-/** The same marks in words, above the file's preview, with the release a person makes. */
-export function FileCheckNotice({ file, caseId }: { file: EvidenceFile; caseId: string }) {
+/** The same marks in words, in the file's side panel above its details, with the release a person makes. */
+export function FileCheckNotice({ file, caseId }: { file: EvidenceFile | EvidenceFileRecord; caseId: string }) {
   const queryClient = useQueryClient()
   const release = useMutation({
     mutationFn: () => evidenceAPI.releaseHold(file.id, caseId),

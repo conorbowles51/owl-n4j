@@ -48,6 +48,7 @@ import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ProductionNumbersPanel } from "./ProductionNumbersPanel"
 import { UncheckedClaimsNotice } from "./UncheckedClaimsNotice"
+import { FileCheckNotice } from "./FileCheckNotice"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
@@ -710,6 +711,7 @@ function DetailsPanelContent({
             </div>
           )}
 
+          <FileCheckNotice file={file} caseId={caseId} />
           <UncheckedClaimsNotice fileId={file.id} caseId={caseId} canEdit={canEdit} />
 
           {/* Details section (always shown) */}
