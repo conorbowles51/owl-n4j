@@ -36,9 +36,9 @@ class _Case(LedgerToolFixture):
         def call(prompt):
             self.calls.append(prompt)
             items = json.loads(prompt.split("\n\n", 1)[1])["items"]
-            return json.dumps({"items": [{"id": item["id"], "sources": [
-                {"n": src["n"], "state": verdicts, "reason": "The page names the lease, not the keys."}
-                for src in item["sources"]]} for item in items]}), {"prompt_tokens": 10, "completion_tokens": 5}, "m1"
+            return json.dumps({"items": [{"id": item["id"], "state": verdicts,
+                                          "reason": "The page names the lease, not the keys."} for item in items]}), \
+                {"prompt_tokens": 10, "completion_tokens": 5}, "m1"
         return call
 
 
@@ -68,6 +68,17 @@ class SupportTests(_Case):
         self.assertNotIn(S.MARK, marked)  # partly is not a failure
         self.assertIn("read by a model (m1), not by a person", marked)
         self.assertEqual(result["model"]["usage"], {"prompt_tokens": 10, "completion_tokens": 5})
+
+    def test_a_sentence_citing_two_sources_gets_a_model_verdict_for_each(self):
+        # live 15 Nov 2026: given one item per sentence with its sources listed, gpt-5-mini judged the first source
+        # and skipped the rest (6 of 24 answered); each sentence-source pair is now its own item
+        answer = f"The tenant holds the keys [a](doc://{self.file.id}/1) [b]({self.p2})."
+        _, result = S.check_and_mark(self.db, self.case.id, answer, judge=self.judge("supports"))
+        items = json.loads(self.calls[0].split("\n\n", 1)[1])["items"]
+        self.assertEqual(len(items), 2)
+        self.assertEqual({type(item["source"]) for item in items}, {str})
+        self.assertEqual([c["by"] for c in result["claims"][0]["citations"]], ["model:m1", "model:m1"])
+        self.assertEqual(result["model"]["sentences"], 1)
 
     def test_a_failed_model_call_leaves_the_citation_unchecked_saying_why_and_marks_nothing(self):
         def broken(prompt):

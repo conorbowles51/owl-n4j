@@ -368,16 +368,17 @@ def read_sources(session, case_id, hrefs: Iterable[str]) -> dict[str, Source]:
 
 
 JUDGE_INSTRUCTIONS = (
-    "You check citations in an investigator's answer. For each item you get one sentence and the text of each "
-    "source it cites. For each source decide whether that source states the specific facts of the sentence (names, "
+    "You check citations in an investigator's answer. Each item is one sentence and the text of one source it "
+    "cites. For every item decide whether that source states the specific facts of the sentence (names, "
     "amounts, dates, times, places, what happened). A source that mentions the topic but not the sentence's facts "
     "does not support it. Facts the sentence derives (a count, a sum) are supported when the source shows the parts. "
     "Words that give the writer's own reading (suggests, may, consistent with, likely) are not facts and need no "
     "support. When the source carries some of the facts and not others, the state is partly and the reason names "
     "the missing fact. "
-    "Do not use outside knowledge. Reply with JSON only: {\"items\": [{\"id\": <item id>, \"sources\": [{\"n\": "
-    "<source number>, \"state\": \"supports\", \"partly\" or \"does_not_mention\", \"reason\": \"<one short sentence naming the "
-    "fact found or missing>\"}]}]}"
+    "Answer every item, one verdict each, even when several items share a sentence. "
+    "Do not use outside knowledge. Reply with JSON only: {\"items\": [{\"id\": <item id>, \"state\": "
+    "\"supports\", \"partly\" or \"does_not_mention\", \"reason\": \"<one short sentence naming the fact found or "
+    "missing>\"}]}"
 )
 
 
@@ -426,29 +427,27 @@ def default_judge(case_id, user_id=None) -> Callable[[str], tuple[str, dict[str,
     return call
 
 
-def _ask_model(items: list[dict[str, Any]], judge) -> tuple[dict[tuple[int, int], Verdict], dict[str, Any]]:
+def _ask_model(items: list[dict[str, Any]], judge) -> tuple[dict[int, Verdict], dict[str, Any]]:
+    """One call; each item is one sentence with one cited source (a sentence citing several sources is several items,
+    so a reply cannot judge the first source and skip the rest)."""
     prompt = JUDGE_INSTRUCTIONS + "\n\n" + json.dumps({"items": items}, ensure_ascii=False)
     started = time.monotonic()
     reply, usage, model_id = judge(prompt)
     seconds = round(time.monotonic() - started, 2)
     data = json.loads(reply) if isinstance(reply, str) else reply
-    out: dict[tuple[int, int], Verdict] = {}
+    out: dict[int, Verdict] = {}
     for item in (data or {}).get("items") or []:
         try:
             item_id = int(item.get("id"))
         except (TypeError, ValueError):
             continue
-        for src in item.get("sources") or []:
-            try:
-                n = int(src.get("n"))
-            except (TypeError, ValueError):
-                continue
-            state = {"supports": SUPPORTS, "partly": PARTLY, "does_not_mention": NOT_MENTIONED}.get(src.get("state"))
-            if state is None:
-                continue
-            reason = re.sub(r"\s+", " ", str(src.get("reason") or "")).strip()[:300]
-            out[(item_id, n)] = Verdict(state, reason or WORDS[state].capitalize() + ".", f"model:{model_id}")
-    return out, {"model": model_id, "usage": usage, "seconds": seconds, "items": len(items)}
+        state = {"supports": SUPPORTS, "partly": PARTLY, "does_not_mention": NOT_MENTIONED}.get(item.get("state"))
+        if state is None:
+            continue
+        reason = re.sub(r"\s+", " ", str(item.get("reason") or "")).strip()[:300]
+        out[item_id] = Verdict(state, reason or WORDS[state].capitalize() + ".", f"model:{model_id}")
+    return out, {"model": model_id, "usage": usage, "seconds": seconds, "items": len(items),
+                 "sentences": len({item["sentence"] for item in items})}
 
 
 # ---- the check -----------------------------------------------------------------------------------------------------
@@ -466,7 +465,8 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
     hay = {h: _Haystack(s.text) for h, s in sources.items() if s.reason is None}
     results: list[dict[str, Any]] = []
     model_items: list[dict[str, Any]] = []
-    pending: dict[tuple[int, int], tuple[int, str]] = {}
+    pending: dict[int, tuple[int, str]] = {}
+    sentences_sent = 0
     for index, claim in enumerate(found):
         wanted = specifics(claim.text)
         verdicts: dict[str, Verdict] = {}
@@ -482,11 +482,12 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
                 verdicts[href] = verdict
         undecided = [h for h in readable if h not in verdicts]
         if undecided:
-            if len(model_items) < MAX_MODEL_ITEMS:
-                model_items.append({"id": index, "sentence": claim.plain[:1200], "sources": [
-                    {"n": n, "text": _excerpt(sources[h].text, wanted)} for n, h in enumerate(undecided, 1)]})
-                for n, h in enumerate(undecided, 1):
-                    pending[(index, n)] = (index, h)
+            if sentences_sent < MAX_MODEL_ITEMS:
+                sentences_sent += 1
+                for h in undecided:
+                    pending[len(model_items)] = (index, h)
+                    model_items.append({"id": len(model_items), "sentence": claim.plain[:1200],
+                                        "source": _excerpt(sources[h].text, wanted)})
             else:
                 for h in undecided:
                     verdicts[h] = Verdict(UNCHECKED, f"Over this answer's limit of {MAX_MODEL_ITEMS} sentences read "
@@ -495,7 +496,7 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
     model_run: dict[str, Any] | None = None
     if model_items:
         refusal = budget() if budget else None
-        verdicts_by_model: dict[tuple[int, int], Verdict] = {}
+        verdicts_by_model: dict[int, Verdict] = {}
         failure = None
         if refusal:
             failure = refusal
