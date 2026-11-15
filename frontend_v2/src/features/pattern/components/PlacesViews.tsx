@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, lazy, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { PLACE_LABEL } from "@/features/map/lib/place-label"
@@ -227,13 +227,8 @@ export function TogetherView({ caseId, subject, list }: { caseId: string; subjec
   const [res, setRes] = useState<TogetherResponse | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const started = useRef("")
-  useEffect(() => {
-    const key = `${me}|${other}`
-    if (!other || started.current === key) return
-    started.current = key
-    void run()
-  })
+  // Nothing runs until the user presses Compare (sitefilms 15 Nov: a default week ran on open and, under load, showed
+  // "0 pairs compared" before the user had chosen a phone or dates).
   async function run() {
     setErr(null); setRes(null)
     setBusy("Comparing pairs of points…")
@@ -263,7 +258,7 @@ export function TogetherView({ caseId, subject, list }: { caseId: string; subjec
     <section aria-label="Together" className="flex flex-col gap-2 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <label htmlFor="together-other">Compare with</label>
-        <select id="together-other" className="rounded border bg-background px-2 py-1" value={other} onChange={(e) => setOther(e.target.value)}>
+        <select id="together-other" className="rounded border bg-background px-2 py-1" disabled={!!busy} value={other} onChange={(e) => { setOther(e.target.value); setRes(null); setErr(null) }}>
           {options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
       </div>
@@ -278,6 +273,7 @@ export function TogetherView({ caseId, subject, list }: { caseId: string; subjec
       {!allowed && <p role="alert" className="text-destructive">The radius is 1 m to 100,000 m and the speed 1 to 1,440 km/h.</p>}
       <div><Button size="sm" onClick={run} disabled={!other || !!busy || !allowed}>Compare {win.start} to {win.end}</Button></div>
       {options.length === 0 && <p>Together needs a second phone or person in the case.</p>}
+      {options.length > 0 && !res && !busy && !err && <p className="text-muted-foreground">Choose who to compare with and the dates, then press Compare.</p>}
       {busy && <p aria-live="polite">{busy}</p>}
       {err && <p role="alert" className="text-destructive">{err}</p>}
       {res && (

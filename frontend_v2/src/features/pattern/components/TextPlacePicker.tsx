@@ -21,7 +21,7 @@ export default function TextPlacePicker({ point, radiusM, suggestions, onPick, h
   onPick: (p: PickerPoint) => void
   height?: number
 }) {
-  const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
+  const { mapStyle, transformRequest, onMapError, onMapSourceData, onMapView, basemapNote } = useMapTheme()
   const mapRef = useRef<MapRef>(null)
   // the map follows the point (a click, a suggestion chosen, coordinates typed): zoomed in far enough to see the
   // radius, and never moved when the point is already in view at that zoom
@@ -59,6 +59,7 @@ export default function TextPlacePicker({ point, radiusM, suggestions, onPick, h
           mapStyle={mapStyle}
           transformRequest={transformRequest}
           onError={onMapError}
+          onSourceData={onMapSourceData}
           attributionControl={{ compact: true }}
           cursor="crosshair"
           onLoad={(e) => { const c = e.target.getCenter(); onMapView(c.lng, c.lat) }}

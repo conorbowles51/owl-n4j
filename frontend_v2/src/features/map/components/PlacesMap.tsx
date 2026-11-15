@@ -24,7 +24,7 @@ export interface PlacesMapLayers {
  * (04 sections 8.3, 8.4 and 8.6). It carries the investigative label on its face.
  */
 export function PlacesMap({ layers, height = 360 }: { layers: PlacesMapLayers; height?: number }) {
-  const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
+  const { mapStyle, transformRequest, onMapError, onMapSourceData, onMapView, basemapNote } = useMapTheme()
   const bounds = useMemo(() => {
     const coords: [number, number][] = []
     for (const f of layers.dots?.features ?? []) coords.push(f.geometry.coordinates as [number, number])
@@ -44,6 +44,7 @@ export function PlacesMap({ layers, height = 360 }: { layers: PlacesMapLayers; h
           mapStyle={mapStyle}
           transformRequest={transformRequest}
           onError={onMapError}
+          onSourceData={onMapSourceData}
           attributionControl={{ compact: true }}
           onLoad={(e) => { const c = e.target.getCenter(); onMapView(c.lng, c.lat) }}
           onMoveEnd={(e) => { const c = e.target.getCenter(); onMapView(c.lng, c.lat) }}

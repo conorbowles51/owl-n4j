@@ -1,6 +1,5 @@
-import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { getPhoneMapArea } from "@/features/phones/api"
+import { usePhonesInArea } from "../hooks/use-phones-in-area"
 import type { BoundingShape } from "../stores/map.store"
 import { PLACE_LABEL } from "../lib/place-label"
 import { areaConversationsHref } from "../lib/area-links"
@@ -11,15 +10,6 @@ const n = (v: number) => v.toLocaleString("en-US")
  * Drawing an area on the Map lists "Phones seen in this area" (03 13.3, 07 J-10): each phone with a position inside
  * it, the exact count, the first and last time there, and its conversations over that time. Nothing is capped.
  */
-export function usePhonesInArea(caseId: string, shape: BoundingShape | null) {
-  const ring = (shape?.coordinates ?? []).map(([lng, lat]) => [lng, lat])
-  return useQuery({
-    queryKey: ["phone-map-area", caseId, shape?.id ?? null, ring.map((c) => c.join(",")).join(";")],
-    queryFn: ({ signal }) => getPhoneMapArea(caseId, ring, {}, signal),
-    enabled: shape != null,
-  })
-}
-
 export function PhonesInArea({ caseId, shape }: { caseId: string; shape: BoundingShape }) {
   const q = usePhonesInArea(caseId, shape)
   return (

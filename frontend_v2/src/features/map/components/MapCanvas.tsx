@@ -109,7 +109,7 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint, fo
   }, [boxKey])
   const boxDragRef = useRef<BoxDragState | null>(null)
   const secondaryPanRef = useRef<SecondaryPanState | null>(null)
-  const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
+  const { mapStyle, transformRequest, onMapError, onMapSourceData, onMapView, basemapNote } = useMapTheme()
   const { bounds } = useMapAnalysis(locations)
 
   // Hover state for popup
@@ -528,6 +528,7 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint, fo
       mapStyle={mapStyle}
       transformRequest={transformRequest}
       onError={onMapError}
+      onSourceData={onMapSourceData}
       style={{ width: "100%", height: "100%" }}
       dragPan={!drawMode}
       dragRotate={!drawMode}

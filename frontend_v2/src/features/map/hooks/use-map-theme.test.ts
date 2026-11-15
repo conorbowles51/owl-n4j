@@ -109,3 +109,18 @@ describe("the base map is held on this server", () => {
     expect(outsideCoverage(null, 2.35, 48.85)).toBe(false)
   })
 })
+
+describe("the base-map note", () => {
+  it("clears when a base-map tile arrives after a failed request, so a map still loading is not called unavailable", async () => {
+    const { act } = await import("@testing-library/react")
+    const { BASEMAP_SOURCE_ID } = await import("../lib/basemap-style")
+    const { result } = renderHook(() => useMapTheme())
+    act(() => result.current.onMapError({ sourceId: BASEMAP_SOURCE_ID, error: new Error("timeout") } as never))
+    expect(result.current.basemapNote).toMatch(/could not be loaded/)
+    // style or other sources' data do not clear it; a base-map tile does
+    act(() => result.current.onMapSourceData({ sourceId: "phones", tile: {} } as never))
+    expect(result.current.basemapNote).toMatch(/could not be loaded/)
+    act(() => result.current.onMapSourceData({ sourceId: BASEMAP_SOURCE_ID, tile: {} } as never))
+    expect(result.current.basemapNote).toBeNull()
+  })
+})

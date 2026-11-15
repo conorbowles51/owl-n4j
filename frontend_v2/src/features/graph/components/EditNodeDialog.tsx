@@ -137,7 +137,7 @@ function LocationPicker({
   onChange: (next: Coordinates) => void
   className?: string
 }) {
-  const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
+  const { mapStyle, transformRequest, onMapError, onMapSourceData, onMapView, basemapNote } = useMapTheme()
   const center = coordinates ?? { latitude: 20, longitude: 0 }
 
   return (
@@ -148,6 +148,7 @@ function LocationPicker({
         mapStyle={mapStyle}
         transformRequest={transformRequest}
         onError={onMapError}
+        onSourceData={onMapSourceData}
         onLoad={(event) => onMapView(event.target.getCenter().lng, event.target.getCenter().lat)}
         onMoveEnd={(event) => onMapView(event.target.getCenter().lng, event.target.getCenter().lat)}
         initialViewState={{

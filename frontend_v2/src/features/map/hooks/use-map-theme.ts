@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
-import type { ErrorEvent as MapErrorEvent } from "react-map-gl/maplibre"
+import type { ErrorEvent as MapErrorEvent, MapSourceDataEvent } from "react-map-gl/maplibre"
 import {
   basemapCoverage,
   outsideCoverage,
@@ -37,11 +37,16 @@ export function useMapTheme() {
   const onMapError = useCallback((event: MapErrorEvent) => {
     if (isBasemapError(event)) setFailed(true)
   }, [])
+  /** A base-map tile that arrives clears the note: one request that failed or timed out on a loaded box while the
+   *  map was still loading is not "could not be loaded" (sitefilms 15 Nov: the note showed, then the map drew). */
+  const onMapSourceData = useCallback((event: MapSourceDataEvent) => {
+    if (event.sourceId === BASEMAP_SOURCE_ID && event.tile != null) setFailed(false)
+  }, [])
   /** Call with the view centre after the map loads or moves. */
   const onMapView = useCallback((lng: number, lat: number) => {
     void basemapCoverage().then((coverage) => setNotHeld(outsideCoverage(coverage, lng, lat)))
   }, [])
   const basemapNote = failed ? BASEMAP_UNAVAILABLE_NOTE : notHeld ? BASEMAP_NOT_HELD_NOTE : null
 
-  return { mapStyle, isDark, transformRequest: basemapTransformRequest, onMapError, onMapView, basemapNote }
+  return { mapStyle, isDark, transformRequest: basemapTransformRequest, onMapError, onMapSourceData, onMapView, basemapNote }
 }
