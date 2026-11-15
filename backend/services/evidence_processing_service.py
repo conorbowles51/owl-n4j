@@ -18,6 +18,7 @@ from services.evidence_job_sync import reconcile_case_jobs
 from services.financial.admission_gate import gate_document_processing
 from services.folder_context_service import build_processing_snapshot
 from services.evidence_file_check import FILE_MISSING_DETAIL
+from services.evidence_archive import MAX_EXPANDED_BYTES
 from services.job_status_subscriber import get_subscriber
 
 # Said when the files were sent from outside the backend (a script): nothing there follows their jobs live.
@@ -182,7 +183,7 @@ async def _send_files(
     refused: list[tuple[EvidenceFile, str]] = []
     recovered = False
     not_sent = 0
-    chunks = _send_chunks(per_file_metadata)
+    chunks = _send_chunks(per_file_metadata, [_size_on_disk(path) for _, path, _ in file_tuples])
     # More than one request joins one open engine batch, closed once at the end, so the engine still reads and
     # deduplicates the whole press in one pass (engine upload.py; the trap of splitting a press).
     batch = {"id": str(uuid.uuid4()) if len(chunks) > 1 else None}
@@ -271,20 +272,36 @@ async def _send_files(
 # 28 Oct). The margin under 1 MiB covers the JSON separators between entries.
 MAX_FILES_PER_SEND = 25
 MAX_METADATA_BYTES_PER_SEND = 900_000
+# The engine's limit on one request's file bytes (evidence-engine config max_upload_batch_bytes), equal to the
+# largest file the backend accepts (evidence_archive.MAX_EXPANDED_BYTES).
+MAX_FILE_BYTES_PER_SEND = MAX_EXPANDED_BYTES
 
 
-def _send_chunks(per_file_metadata: list[dict[str, Any]]) -> list[list[int]]:
+def _size_on_disk(path) -> int:
+    try:
+        return Path(path).stat().st_size
+    except OSError:
+        return 0
+
+
+def _send_chunks(per_file_metadata: list[dict[str, Any]], file_sizes: list[int] | None = None) -> list[list[int]]:
+    """Group the files into requests within the engine's file count, metadata and byte limits. A file alone always
+    gets its own request: the engine takes one file up to MAX_FILE_BYTES_PER_SEND, the backend's own upload limit."""
     import json
     chunks: list[list[int]] = []
     current: list[int] = []
     size = 0
+    file_bytes = 0
     for index, metadata in enumerate(per_file_metadata):
         item = len(json.dumps(metadata)) + 2
-        if current and (len(current) >= MAX_FILES_PER_SEND or size + item > MAX_METADATA_BYTES_PER_SEND):
+        item_bytes = int(file_sizes[index] or 0) if file_sizes else 0
+        if current and (len(current) >= MAX_FILES_PER_SEND or size + item > MAX_METADATA_BYTES_PER_SEND
+                        or file_bytes + item_bytes > MAX_FILE_BYTES_PER_SEND):
             chunks.append(current)
-            current, size = [], 0
+            current, size, file_bytes = [], 0, 0
         current.append(index)
         size += item
+        file_bytes += item_bytes
     if current:
         chunks.append(current)
     return chunks

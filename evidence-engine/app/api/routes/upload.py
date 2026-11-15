@@ -17,6 +17,10 @@ from app.services.pipeline_run_state import transition_batch_dispatch
 router = APIRouter()
 
 
+def _gigabytes(size: int) -> str:
+    return f"{size / 1024**3:g} GB" if size % 1024**3 == 0 else f"{size / 1024**3:.2f} GB"
+
+
 def _safe_upload_name(file_name: str) -> str:
     candidate = str(file_name or "")
     if (
@@ -123,15 +127,18 @@ async def upload_files(
                         raise HTTPException(
                             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                             detail=(
-                                f"{safe_name} exceeds the {settings.max_upload_file_bytes}-byte upload limit"
+                                f"{safe_name} is larger than the {_gigabytes(settings.max_upload_file_bytes)} "
+                                "the processing service takes for one file, so it was not processed. "
+                                "Split the recording into shorter parts and upload those."
                             ),
                         )
                     if batch_size > settings.max_upload_batch_bytes:
                         raise HTTPException(
                             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                             detail=(
-                                "The combined upload exceeds the configured "
-                                f"{settings.max_upload_batch_bytes}-byte batch limit"
+                                f"These files together are larger than the {_gigabytes(settings.max_upload_batch_bytes)} "
+                                "the processing service takes in one request, so none was processed. "
+                                "Process them in smaller groups."
                             ),
                         )
                     hasher.update(chunk)
