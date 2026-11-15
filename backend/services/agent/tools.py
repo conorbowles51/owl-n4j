@@ -2194,9 +2194,36 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             summary=f"Found {len(paths)} shortest path(s) between {source_key} and {target_key}.",
         )
 
-    def search_documents(query: str, limit: int = 8, offset: int = 0) -> dict[str, Any]:
+    scope_documents: list[str] | None = None
+
+    def _document_passages(vector_db, embedding, query: str, wanted: int) -> list[dict[str, Any]]:
+        """Chat's passages for this query (lx-retrieval E): the chunks by meaning, then the passages behind the
+        graph connections of the entities found, ranked together (rag_service.search_passages). In the Significant
+        layer only the documents linked to its entities are searched, and only its entities are read."""
+        nonlocal scope_documents
+        from config import CHUNK_SEARCH_TOP_K
+        from services.rag_service import rag_service
+        top_k = max(wanted, CHUNK_SEARCH_TOP_K)
+        where: dict[str, Any] = {"case_id": context.case_id}
         if context.significant_scope:
-            return scope_error("search_documents", "Case-wide document search")
+            keys = list(context.allowed_entity_keys or [])
+            scope_documents = rag_service._chunk_doc_keys(
+                rag_service._get_documents_for_entities(keys, context.case_id), context.case_id)
+            if not scope_documents:
+                return []
+            where = {"$and": [{"case_id": context.case_id}, {"doc_key": {"$in": scope_documents}}]}
+        chunks = vector_db.search_chunks(embedding, top_k=top_k, filter_metadata=where)
+        try:
+            return rag_service.search_passages(
+                query, context.case_id, chunks, query_embedding=embedding, vectors=vector_db,
+                scope_entity_keys=list(context.allowed_entity_keys) if context.significant_scope else None)
+        except Exception:  # noqa: BLE001 - the meaning search's own order, as before
+            logger.exception("Graph passages could not be added for case %s", context.case_id)
+            return sorted(chunks, key=lambda c: c.get("distance") if c.get("distance") is not None else 9.0)
+
+    def search_documents(query: str, limit: int = 8, offset: int = 0) -> dict[str, Any]:
+        nonlocal scope_documents
+        scope_documents = None
         from services import meaning_search
         from services.vector_db_service import get_vector_db_health
 
@@ -2217,14 +2244,17 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 with ai_cost_context(job_type=CostJobType.AI_ASSISTANT, case_id=uuid.UUID(str(context.case_id)),
                                      description="Agent document search"):
                     embedding = embedding_service.generate_embedding(query)
-                chunks = vector_db.search_chunks(
-                    embedding,
-                    top_k=offset + limit,
-                    filter_metadata={"case_id": context.case_id},
-                )
+                chunks = _document_passages(vector_db, embedding, query, offset + limit)
             except Exception as exc:  # noqa: BLE001 - every failure falls back to the words (lx-docsearch 1)
                 logger.warning("Meaning search failed for case %s: %s", context.case_id, exc)
                 failure = meaning_search.describe_failure(exc)
+        if failure is None and context.significant_scope and scope_documents is not None and not scope_documents:
+            message = ("No document is linked to the entities in the Significant layer, so no document was searched. "
+                       "Switch the case layer to All data to search every document.")
+            return context.result("search_documents", {"available": True, "search": "meaning", "chunks": [],
+                                                       "count": 0, "offset": offset, "scope": "significant",
+                                                       "search_coverage": {"search": "meaning", "note": message}},
+                                  summary=message)
         collection = getattr(vector_db, "chunk_collection", None) if vector_db is not None else None
         gap = None
         if collection is not None:
@@ -2234,10 +2264,13 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             except Exception:  # noqa: BLE001 - the gap sentence then says it could not be measured
                 logger.exception("Vector gap could not be measured for case %s", context.case_id)
         if failure is not None:
+            if context.significant_scope:
+                return scope_error("search_documents", "Document search by words")
             return word_search_documents_result(query, limit, offset, failure, gap)
         from services.case_citations import chunk_cite
-        compact = [
-            {
+        compact = []
+        for chunk in chunks[offset:offset + limit]:
+            entry = {
                 "id": chunk.get("id"),
                 "text": sanitize_text(chunk.get("text")),
                 "metadata": chunk.get("metadata") or {},
@@ -2245,8 +2278,12 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 # the passage's doc:// citation (file id and page; no page when the passage gives none)
                 "cite": chunk_cite(chunk.get("metadata") or {}),
             }
-            for chunk in chunks[offset:offset + limit]
-        ]
+            about = chunk.get("_about") or ([chunk["about"]] if chunk.get("about") else [])
+            if about:
+                entry["source_of"] = about  # the graph connections and entities this passage was read for
+            if chunk.get("quote"):
+                entry["quote"] = sanitize_text(chunk["quote"])
+            compact.append(entry)
         gap_note = meaning_search.gap_sentence(gap)
         coverage = {"search": "meaning", "note": gap_note,
                     "documents_without_vector": (gap or {}).get("documents_without_vector"),
