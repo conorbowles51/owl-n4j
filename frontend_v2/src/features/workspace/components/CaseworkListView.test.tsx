@@ -5,11 +5,13 @@ import { CaseworkListView } from "./CaseworkListView"
 
 const hooks = vi.hoisted(() => ({
   list: vi.fn(),
+  changes: vi.fn(),
 }))
 
 vi.mock("../hooks/use-casework", () => ({
   useCaseworkEntries: (...args: unknown[]) => hooks.list(...args),
   useCaseworkAuthors: () => ({ data: [] }),
+  useFindingEvidenceChanges: (...args: unknown[]) => hooks.changes(...args),
 }))
 vi.mock("../hooks/use-current-casework-links", () => ({
   useCurrentCaseworkLinks: () => [],
@@ -47,6 +49,8 @@ describe("CaseworkListView", () => {
     expect(screen.queryByText("All confidence")).not.toBeInTheDocument()
   })
   beforeEach(() => {
+    hooks.changes.mockReset()
+    hooks.changes.mockReturnValue({ data: undefined })
     hooks.list.mockReset()
     hooks.list.mockReturnValue({
       data: { entries: [finding], total: 26 },
@@ -180,5 +184,40 @@ describe("CaseworkListView", () => {
     expect(screen.getByText("No matching casework")).toBeVisible()
     fireEvent.click(screen.getAllByRole("button", { name: "Clear filters" })[0])
     expect(screen.getByText("No casework yet")).toBeVisible()
+  })
+
+  it("marks a theory whose cited payment changed since it was cited, asking only for entries that cite payments", () => {
+    const theory: CaseworkEntry = {
+      ...finding,
+      id: "theory-1",
+      entry_type: "theory",
+      title: "Acme pays Ann",
+      links: [
+        {
+          id: "l-pay", entry_id: "theory-1", case_id: "case-1", target_type: "financial_transaction",
+          target_id: "tx-1", target_label: "Payment", relationship: "contradicts", source_anchor: {}, metadata: {},
+        },
+      ],
+    }
+    hooks.list.mockReturnValue({
+      data: { entries: [finding, theory], total: 2 },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    })
+    hooks.changes.mockReturnValue({
+      data: {
+        case_id: "case-1",
+        entries: {
+          "theory-1": {
+            cited: 1, not_compared: 0,
+            changed: [{ transaction_id: "tx-1", state: "corrected", link_id: "l-pay", changes: [] }],
+          },
+        },
+      },
+    })
+    render(<CaseworkListView caseId="case-1" entryType="all" canEdit />)
+    expect(hooks.changes.mock.calls.at(-1)).toEqual(["case-1", ["theory-1"]])
+    expect(screen.getByTestId("changed-since-cited")).toHaveTextContent("1 cited payment changed since cited")
   })
 })

@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest"
 import type { CaseworkEntry, CaseworkLink } from "../casework-api"
 import { CaseworkDetailSheet } from "./CaseworkDetailSheet"
 
-const hooks = vi.hoisted(() => ({ setRelationship: vi.fn() }))
+const hooks = vi.hoisted(() => ({ setRelationship: vi.fn(), changes: undefined as unknown }))
 
 const link = (over: Partial<CaseworkLink>): CaseworkLink => ({
   id: "l", entry_id: "t1", case_id: "case-1", target_type: "evidence", target_id: "x", target_label: null,
@@ -33,7 +33,7 @@ vi.mock("../hooks/use-casework", () => {
     useChangeCaseworkConfidence: mutation, useChangeCaseworkSignificance: mutation,
     useSetLinkRelationship: () => ({ mutate: hooks.setRelationship, isPending: false }),
     useAttachmentOptions: () => ({ data: { items: [] }, isLoading: false }),
-    useFindingEvidenceChanges: () => ({ data: undefined }),
+    useFindingEvidenceChanges: () => ({ data: hooks.changes }),
   }
 })
 vi.mock("../hooks/use-current-casework-links", () => ({ useCurrentCaseworkLinks: () => [] }))
@@ -41,7 +41,10 @@ vi.mock("@/features/dossiers/hooks", () => ({ useDossiers: () => ({ data: { doss
 vi.mock("@/features/phones/link-states", () => ({ useLinkStates: () => ({}), useLinkChoice: () => ({ isPending: false }) }))
 vi.mock("@/features/phones/PhoneLinkDetail", () => ({ PhoneLinkDetail: () => null }))
 
-beforeEach(() => hooks.setRelationship.mockReset())
+beforeEach(() => {
+  hooks.setRelationship.mockReset()
+  hooks.changes = undefined
+})
 
 function show(canEdit = true) {
   return render(
@@ -79,4 +82,29 @@ it("shows a viewer the links to review without the buttons to change them", () =
   const review = within(screen.getByRole("region", { name: "Links to review" }))
   expect(review.getByText("Ann's checking")).toBeTruthy()
   expect(review.queryByRole("button", { name: "Context" })).toBeNull()
+})
+
+it("shows a payment corrected since the theory cited it, the value as cited beside the value now, on its link", () => {
+  hooks.changes = {
+    case_id: "case-1",
+    entries: {
+      t1: {
+        cited: 2, not_compared: 0,
+        changed: [{
+          transaction_id: "tx-1", ref_id: "row-0001", state: "corrected", current_id: "tx-2", currency: "USD",
+          link_id: "l-pay",
+          changes: [{ field: "amount_minor", label: "Amount", cited: "50000", current: "50500" }],
+        }],
+      },
+    },
+  }
+  show()
+  const changes = within(screen.getByRole("region", { name: "Changes to cited evidence" }))
+  expect(changes.getByText("Changed since cited")).toBeTruthy()
+  expect(changes.getByText(/This theory still shows the values it cited/)).toBeTruthy()
+  expect(changes.getByText(/row-0001: Corrected by a later version/)).toBeTruthy()
+  expect(changes.getByText(/Amount: cited\s+\$?500\.00 USD, now\s+\$?505\.00 USD/)).toBeTruthy()
+  const marks = screen.getAllByText("Changed since cited")
+  expect(marks).toHaveLength(2) // the heading, and the one link it came through
+  expect(marks[1].closest("button")?.textContent).toContain("ACME")
 })

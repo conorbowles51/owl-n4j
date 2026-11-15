@@ -23,7 +23,7 @@ vi.mock("../hooks/use-casework", () => {
     useCaseworkEntry: () => ({ data: entry, isLoading: false }),
     useChangeCaseworkLifecycle: mutation, useConvertTheory: mutation, useDeleteCaseworkEntry: mutation,
     useRestoreCaseworkEntry: mutation,
-    useSetLinkRelationship: mutation, useCreateCaseworkEntry: mutation, useUpdateCaseworkEntry: mutation,
+    useSetLinkRelationship: mutation, useFindingEvidenceChanges: () => ({ data: undefined }), useCreateCaseworkEntry: mutation, useUpdateCaseworkEntry: mutation,
     useChangeCaseworkConfidence: mutation, useChangeCaseworkSignificance: mutation,
     useAttachmentOptions: () => ({ data: { items: [] }, isLoading: false }),
   }

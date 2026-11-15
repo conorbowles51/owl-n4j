@@ -27,9 +27,12 @@ function shown(
 export function FindingEvidenceChangeList({
   evidence,
   onOpen,
+  noun = "finding",
 }: {
   evidence: FindingEvidenceChanges["entries"][string]
   onOpen: (id: string) => void
+  /** what holds the citations: a finding, theory or note */
+  noun?: string
 }) {
   if (!evidence.changed.length && !evidence.not_compared) return null
   return (
@@ -42,7 +45,7 @@ export function FindingEvidenceChangeList({
         <>
           <h4 className="font-medium">Changed since cited</h4>
           <p>
-            This finding still shows the values it cited. They are not updated
+            This {noun} still shows the values it cited. They are not updated
             here.
           </p>
           <ul className="space-y-2">

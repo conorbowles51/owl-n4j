@@ -44,13 +44,18 @@ import type {
 } from "../casework-api"
 import {
   caseworkTitle,
+  citesPayments,
   ENTRY_LABELS,
   ENTRY_PLURAL_LABELS,
   FINDING_STATES,
   formatCaseworkDate,
   THEORY_STATES,
 } from "../casework-utils"
-import { useCaseworkAuthors, useCaseworkEntries } from "../hooks/use-casework"
+import {
+  useCaseworkAuthors,
+  useCaseworkEntries,
+  useFindingEvidenceChanges,
+} from "../hooks/use-casework"
 import { useCurrentCaseworkLinks } from "../hooks/use-current-casework-links"
 import { ReviewBadge } from "./CaseworkBadges"
 import { CaseworkDetailSheet } from "./CaseworkDetailSheet"
@@ -79,6 +84,10 @@ const TYPE_DESCRIPTIONS = {
   note: "Observations and notes captured as you investigate.",
   finding: "Conclusions supported by the material in your case.",
   theory: "Working explanations to test as the evidence develops.",
+}
+
+function citedChangeWords(count: number) {
+  return `${count.toLocaleString("en-US")} cited ${count === 1 ? "payment" : "payments"} changed since cited`
 }
 
 function recentDate(value: string) {
@@ -186,6 +195,10 @@ export function CaseworkListView({
   const entriesQuery = useCaseworkEntries(caseId, params)
   const entries = entriesQuery.data?.entries ?? []
   const total = entriesQuery.data?.total ?? 0
+  const citationChanges = useFindingEvidenceChanges(
+    caseId,
+    entries.filter((entry) => !entry.deleted_at && citesPayments(entry)).map((entry) => entry.id)
+  )
   useEffect(() => {
     if (
       entriesQuery.data &&
@@ -583,6 +596,18 @@ export function CaseworkListView({
                       <span>· {entry.confidence}% confidence</span>
                     )}
                     <ReviewBadge entry={entry} />
+                    {!!citationChanges.data?.entries[entry.id]?.changed
+                      .length && (
+                      <Badge
+                        variant="outline"
+                        data-testid="changed-since-cited"
+                        className="border-amber-300 text-amber-800 dark:border-amber-800 dark:text-amber-300"
+                      >
+                        {citedChangeWords(
+                          citationChanges.data.entries[entry.id].changed.length
+                        )}
+                      </Badge>
+                    )}
                     {entry.deleted_at && (
                       <Badge variant="destructive">Deleted</Badge>
                     )}

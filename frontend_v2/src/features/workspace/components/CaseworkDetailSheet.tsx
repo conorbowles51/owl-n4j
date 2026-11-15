@@ -70,6 +70,7 @@ import { useUIStore } from "@/stores/ui.store"
 import type { CaseworkLink, FindingSignificance } from "../casework-api"
 import {
   caseworkTitle,
+  citesPayments,
   FINDING_STATES,
   formatCaseworkDate,
   THEORY_STATES,
@@ -81,7 +82,9 @@ import {
   useDeleteCaseworkEntry,
   useRestoreCaseworkEntry,
   useSetLinkRelationship,
+  useFindingEvidenceChanges,
 } from "../hooks/use-casework"
+import { FindingEvidenceChangeList } from "@/features/financial/components/FindingEvidenceChangeList"
 import { linkTypeWords } from "@/generated/link-types"
 import { useCurrentCaseworkLinks } from "../hooks/use-current-casework-links"
 import { financialLinkHref, isFinancialLinkType } from "../financial-links"
@@ -191,6 +194,14 @@ export function CaseworkDetailSheet({
   const deleteMutation = useDeleteCaseworkEntry(caseId)
   const restoreMutation = useRestoreCaseworkEntry(caseId)
   const setRelationship = useSetLinkRelationship(caseId)
+  const citationChanges = useFindingEvidenceChanges(
+    caseId,
+    open && entry && !entry.deleted_at && citesPayments(entry) ? [entry.id] : []
+  )
+  const changedHere = citationChanges.data?.entries[entry?.id ?? ""]
+  const changedLinks = new Set(
+    (changedHere?.changed ?? []).map((item) => item.link_id).filter(Boolean)
+  )
   const currentSelection = useCurrentCaseworkLinks(caseId)
   const selectNodes = useGraphStore((state) => state.selectNodes)
   const expandGraphPanelTo = useUIStore((state) => state.expandGraphPanelTo)
@@ -794,6 +805,22 @@ export function CaseworkDetailSheet({
                   </section>
                 )}
 
+                {citationChanges.isError && (
+                  <p role="status" className="text-sm">
+                    Whether its cited payments changed could not be checked.
+                  </p>
+                )}
+                {changedHere && (
+                  <FindingEvidenceChangeList
+                    evidence={changedHere}
+                    noun={entry.entry_type}
+                    onOpen={(id) =>
+                      navigate(
+                        financialLinkHref(caseId, "financial_transaction", id)
+                      )
+                    }
+                  />
+                )}
                 {!!entry.links.length && (
                   <section className="space-y-3 border-t border-border/70 pt-5">
                     <div>
@@ -866,6 +893,11 @@ export function CaseworkDetailSheet({
                                   <RelationshipBadge
                                     relationship={link.relationship}
                                   />
+                                  {changedLinks.has(link.id) && (
+                                    <span className="text-[10px] font-medium text-amber-800 dark:text-amber-300">
+                                      Changed since cited
+                                    </span>
+                                  )}
                                   {anchor && (
                                     <span className="text-[10px] text-muted-foreground">
                                       {anchor}

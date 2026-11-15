@@ -11,6 +11,11 @@ Reverse: add a field to ``FIELDS``, or drop the ``labels`` check, here.
 
 A citation with no saved values can still show a payment corrected, set aside or gone, but not what changed in it;
 it is counted in ``not_compared``, so a clean mark is never claimed for values that were not compared.
+
+Cited payments are read from three places: a finding's payment selection (``financial_transaction_ids`` on an evidence
+link, values in ``metadata.transactions``), a single payment link of any entry (values in ``metadata.cited``, written
+by the server when the link is added, ``cited_values``), and the payments in a group of any entry (each member's
+``cited``, written when the group is stored). Each change names the link it came through (``link_id``).
 """
 from __future__ import annotations
 
@@ -37,6 +42,23 @@ COLUMNS = (Payment.id, Payment.case_id, Payment.ref_id, Payment.amount_minor, Pa
 
 class EvidenceChangeError(ValueError):
     pass
+
+
+def cited_values(db: Session, case_id: Any, ids: list[str]) -> dict[str, dict[str, Any]]:
+    """The values a citation shows, as the ledger has them now, keyed by payment id: what "changed since cited"
+    later compares against. Ids not in the case are left out."""
+    wanted = [UUID(str(v)) for v in ids if _is_uuid(str(v))]
+    case = case_id if isinstance(case_id, UUID) else UUID(str(case_id))
+    out: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(wanted), 1000):
+        for row in db.scalars(select(Payment).options(load_only(*COLUMNS, raiseload=True)).where(
+                Payment.case_id == case, Payment.id.in_(wanted[start:start + 1000]))):
+            values = {field: _text(getattr(row, field)) for field, _ in FIELDS}
+            values["amount_minor"] = row.amount_minor
+            labels = (row.metadata_ or {}).get("investigation_labels") or {}
+            values.update({field: _text(labels[field]) for field, _ in LABELS if field in labels})
+            out[str(row.id)] = {"key": str(row.id), "ref_id": row.ref_id, **values}
+    return out
 
 
 def _text(value: Any) -> str | None:
@@ -84,20 +106,36 @@ def _differences(saved: dict[str, Any], row: Payment) -> list[dict[str, Any]]:
     return changes
 
 
-def _citations(links: list[WorkspaceEntryLink]) -> dict[str, dict[str, Any]]:
+def _citations(db: Session, links: list[WorkspaceEntryLink]) -> dict[str, dict[str, Any]]:
+    from postgres import link_types
+    from postgres.models.case_selection import CaseSelection
     cited: dict[str, dict[str, Any]] = {}
     for link in links:
         anchor, metadata = link.source_anchor or {}, link.link_metadata or {}
         ids = anchor.get("financial_transaction_ids")
         refs = anchor.get("financial_ref_ids")
-        if not isinstance(ids, list):
-            continue
         saved = metadata.get("transactions")
         by_id = {item.get("key"): item for item in saved if isinstance(item, dict)} if isinstance(saved, list) else {}
-        for index, value in enumerate(ids):
-            if isinstance(value, str) and value not in cited:
-                ref = refs[index] if isinstance(refs, list) and index < len(refs) else None
-                cited[value] = dict(ref_id=ref, saved=by_id.get(value))
+        if isinstance(ids, list):
+            for index, value in enumerate(ids):
+                if isinstance(value, str) and value not in cited:
+                    ref = refs[index] if isinstance(refs, list) and index < len(refs) else None
+                    cited[value] = dict(ref_id=ref, saved=by_id.get(value), link_id=str(link.id))
+        elif link.target_type == "financial_transaction":
+            value = str(link.target_id)
+            if value not in cited:
+                single = metadata.get("cited") if isinstance(metadata.get("cited"), dict) else None
+                saved_values = single or by_id.get(value)
+                cited[value] = dict(ref_id=(saved_values or {}).get("ref_id"), saved=saved_values, link_id=str(link.id))
+        elif link_types.is_group_type(link.target_type) and _is_uuid(str(link.target_id)):
+            group = db.get(CaseSelection, UUID(str(link.target_id)))
+            if group is None or group.case_id != link.case_id:
+                continue
+            for member in group.members or []:
+                if member.get("type") == "financial_transaction" and member.get("id") not in cited:
+                    saved_values = member.get("cited") if isinstance(member.get("cited"), dict) else None
+                    cited[str(member["id"])] = dict(ref_id=(saved_values or {}).get("ref_id"), saved=saved_values,
+                                                    link_id=str(link.id))
     return cited
 
 
@@ -122,7 +160,7 @@ def finding_evidence_changes(db: Session, *, case_id: UUID, entry_ids: list[str]
     for link in links:
         grouped.setdefault(str(link.entry_id), []).append(link)
     for entry_id, entry_links in grouped.items():
-        by_entry[entry_id] = _citations(entry_links)
+        by_entry[entry_id] = _citations(db, entry_links)
     ids = {value for cited in by_entry.values() for value in cited if _is_uuid(value)}
     rows = _load(db, case_id, ids) if ids else {}
     entries = {}
@@ -132,7 +170,7 @@ def finding_evidence_changes(db: Session, *, case_id: UUID, entry_ids: list[str]
             saved, row = citation["saved"], rows.get(value)
             if row is None:
                 changed.append(dict(transaction_id=value, ref_id=citation["ref_id"], state="missing",
-                                    current_id=None, changes=[]))
+                                    current_id=None, changes=[], link_id=citation["link_id"]))
                 continue
             current = _current(row, rows)
             state = None
@@ -146,6 +184,6 @@ def finding_evidence_changes(db: Session, *, case_id: UUID, entry_ids: list[str]
             if state or changes:
                 changed.append(dict(transaction_id=value, ref_id=citation["ref_id"] or row.ref_id,
                                     state=state or "changed", current_id=str(current.id),
-                                    currency=current.currency, changes=changes))
+                                    currency=current.currency, changes=changes, link_id=citation["link_id"]))
         entries[entry_id] = dict(cited=len(cited), not_compared=not_compared, changed=changed)
     return dict(case_id=str(case_id), entries=entries)

@@ -106,6 +106,8 @@ export interface CitedPaymentChange {
   state: "changed" | "corrected" | "set_aside" | "missing"
   current_id?: string | null
   currency?: string
+  /** the entry's link the payment is cited through: the payment itself, a ledger group, or a payment selection */
+  link_id?: string | null
   changes: {
     field: string
     label: string

@@ -252,6 +252,13 @@ def freeze(db, *, case_id, group_type: str, members: Iterable[Mapping[str, Any]]
     left = [m for m in named if m["id"] not in found[m["type"]]]
     if not kept:
         raise SelectionError("None of the chosen items is in this case, so nothing was added.")
+    payments = [m["id"] for m in kept if m["type"] == "financial_transaction"]
+    if payments:
+        # Each payment as it is now, so "changed since cited" can show the value as cited beside the value now.
+        from services.financial.finding_evidence_changes import cited_values
+        values = cited_values(db, case, payments)
+        kept = [{**m, "cited": values[str(_uuid(m["id"]))]}
+                if m["type"] == "financial_transaction" and str(_uuid(m["id"])) in values else m for m in kept]
     row = CaseSelection(id=uuid.uuid4(), case_id=case, group_type=group_type, words=words, how=dict(how or {}),
                         members=kept, member_count=len(kept), left_out=len(left),
                         created_by_user_id=getattr(user, "id", None))

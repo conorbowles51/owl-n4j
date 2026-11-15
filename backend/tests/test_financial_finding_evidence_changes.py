@@ -18,7 +18,7 @@ from services.workspace_entry_service import create_entry, get_entry
 from tests.test_financial_duplicates import DuplicateTestCase
 
 
-class EvidenceChangeTests(DuplicateTestCase):
+class EvidenceChangeFixture(DuplicateTestCase):
     def setUp(self):
         super().setUp()
         Base.metadata.create_all(self.engine, tables=[
@@ -54,6 +54,8 @@ class EvidenceChangeTests(DuplicateTestCase):
         self.db.commit()
         return new
 
+
+class EvidenceChangeTests(EvidenceChangeFixture):
     def test_an_unchanged_citation_reports_nothing(self):
         entry = self.finding(self.rows[:2])
         self.assertEqual(self.read(entry), {"cited": 2, "not_compared": 0, "changed": []})
@@ -123,3 +125,58 @@ class EvidenceChangeTests(DuplicateTestCase):
     def test_more_findings_than_a_request_takes_are_refused(self):
         with self.assertRaises(EvidenceChangeError):
             finding_evidence_changes(self.db, case_id=self.case.id, entry_ids=[str(uuid4()) for _ in range(MAX_ENTRIES + 1)])
+
+
+class TheoryCitationChangeTests(EvidenceChangeFixture):
+    """A theory's payment links and ledger groups say when a cited payment changed (lx-theorycase B)."""
+
+    def setUp(self):
+        super().setUp()
+        from postgres.models.case_selection import CaseSelection
+        from postgres.models.collection_membership import CollectionMembership
+        from postgres.models.theory_narrative import TheoryNarrative
+        Base.metadata.create_all(self.engine, tables=[CaseSelection.__table__, CollectionMembership.__table__,
+                                                      TheoryNarrative.__table__])
+        self.theory = create_entry(self.db, case_id=self.case.id, current_user=self.user, entry_type="theory",
+                                   title="T", body="Acme pays Ann")
+
+    def add(self, **kw):
+        from services import theory_additions as T
+        return T.add(self.db, case_id=self.case.id, entry_id=self.theory["id"], user=self.user, **kw)
+
+    def test_a_single_payment_link_keeps_its_cited_values_and_shows_the_value_as_cited_beside_now(self):
+        row = self.rows[0]
+        result = self.add(surface="financial", relationship="contradicts",
+                          items=[{"target_type": "financial_transaction", "target_id": str(row.id)}])
+        link_id = result["added_link_ids"][0]
+        self.assertEqual(self.read(self.theory), {"cited": 1, "not_compared": 0, "changed": []})
+        old = row.amount_minor
+        new = self.replacement(row, amount_minor=old + 250)
+        change = self.read(self.theory)["changed"][0]
+        self.assertEqual((change["state"], change["current_id"], change["link_id"]), ("corrected", str(new.id), link_id))
+        self.assertEqual(change["changes"], [{"field": "amount_minor", "label": "Amount", "cited": str(old),
+                                              "current": str(old + 250)}])
+
+    def test_a_resave_cannot_rewrite_or_drop_the_cited_values(self):
+        from services.workspace_entry_service import update_entry
+        row = self.rows[0]
+        self.add(surface="financial", items=[{"target_type": "financial_transaction", "target_id": str(row.id)}])
+        entry = get_entry(self.db, case_id=self.case.id, entry_id=UUID(self.theory["id"]))
+        links = [{**link, "metadata": {**link["metadata"], "cited": {"amount_minor": 1}}} for link in entry["links"]]
+        update_entry(self.db, case_id=self.case.id, entry_id=UUID(self.theory["id"]), current_user=self.user,
+                     expected_version=entry["version"], links=links)
+        saved = get_entry(self.db, case_id=self.case.id, entry_id=UUID(self.theory["id"]))["links"][0]["metadata"]
+        self.assertEqual(saved["cited"]["amount_minor"], row.amount_minor)
+
+    def test_payments_in_a_ledger_group_are_compared_member_by_member(self):
+        rows = self.rows[:2]
+        result = self.add(surface="financial", group={
+            "group_type": "financial_selection", "words": "two payments", "how": {},
+            "members": [{"type": "financial_transaction", "id": str(r.id)} for r in rows]})
+        self.assertEqual(self.read(self.theory), {"cited": 2, "not_compared": 0, "changed": []})
+        self.replacement(rows[1], description="CORRECTED WORDS")
+        changed = self.read(self.theory)["changed"]
+        self.assertEqual(len(changed), 1)
+        self.assertEqual((changed[0]["transaction_id"], changed[0]["link_id"]), (str(rows[1].id), result["added_link_ids"][0]))
+        self.assertEqual([c["field"] for c in changed[0]["changes"]], ["description"])
+        self.assertEqual(changed[0]["changes"][0]["current"], "CORRECTED WORDS")

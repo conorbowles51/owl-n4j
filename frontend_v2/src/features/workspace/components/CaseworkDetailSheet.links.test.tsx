@@ -64,6 +64,7 @@ vi.mock("../hooks/use-casework", () => {
     useDeleteCaseworkEntry: mutation,
     useRestoreCaseworkEntry: mutation,
     useSetLinkRelationship: mutation,
+    useFindingEvidenceChanges: () => ({ data: undefined }),
   }
 })
 vi.mock("../hooks/use-current-casework-links", () => ({

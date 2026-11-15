@@ -575,9 +575,10 @@ def _sanitize_link(
         raise WorkspaceEntryValidationError("source_anchor must be an object")
     if metadata is not None and not isinstance(metadata, dict):
         raise WorkspaceEntryValidationError("metadata must be an object")
-    if metadata and "addition" in metadata:
-        # Who added it (a person, or a model whose proposal a person accepted) and why is written by the server only.
-        metadata = {key: value for key, value in metadata.items() if key != "addition"}
+    if metadata and ("addition" in metadata or "cited" in metadata):
+        # Who added it (a person, or a model whose proposal a person accepted) and why, and the values a payment had
+        # when it was cited, are written by the server only.
+        metadata = {key: value for key, value in metadata.items() if key not in ("addition", "cited")}
     phone = None
     group_members: tuple[str, ...] = ()
     if link_types.is_phone_type(target_type):
@@ -689,6 +690,14 @@ def _append_link(
     data = link if prepared else _sanitize_link(
         db, case_id=entry.case_id, link=link, validate_target=validate_target
     )
+    metadata = data["metadata"]
+    if data["target_type"] == "financial_transaction" and not metadata.get("transactions"):
+        # The payment as it is now, kept so "changed since cited" can show the value as cited beside the value now.
+        from services.financial.finding_evidence_changes import cited_values
+        found = cited_values(db, entry.case_id, [data["target_id"]])
+        values = next(iter(found.values()), None)
+        if values:
+            metadata = {**metadata, "cited": values}
     record = WorkspaceEntryLink(
         id=uuid4(),
         entry_id=entry.id,
@@ -698,7 +707,7 @@ def _append_link(
         target_label=data["target_label"],
         relationship_type=data["relationship"],
         source_anchor=data["source_anchor"],
-        link_metadata=data["metadata"],
+        link_metadata=metadata,
         created_by_user_id=user.id if user else None,
     )
     db.add(record)
@@ -751,9 +760,11 @@ def _replace_links(
             continue
         current.relationship_type = data["relationship"]
         metadata = dict(data["metadata"] or {})
-        if "addition" in (current.link_metadata or {}):
-            # Why it was chosen, where from and by whom (person or model) is written once, when it is added.
-            metadata["addition"] = current.link_metadata["addition"]
+        for kept in ("addition", "cited"):
+            if kept in (current.link_metadata or {}):
+                # Why it was chosen, where from and by whom (person or model), and the values a payment had when it
+                # was cited, are written once, when it is added.
+                metadata[kept] = current.link_metadata[kept]
         current.link_metadata = metadata
         if current.target_type == "evidence_passage":
             continue

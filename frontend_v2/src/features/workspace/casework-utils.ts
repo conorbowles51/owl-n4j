@@ -77,3 +77,22 @@ export function toLinkInput(link: CaseworkLinkInput): CaseworkLinkInput {
     metadata: link.metadata ?? {},
   }
 }
+
+const PAYMENT_HOLDING_TYPES = new Set([
+  "financial_transaction",
+  "financial_selection",
+  "graph_selection",
+  "significant_set",
+  "timeline_range",
+  "evidence_selection",
+  "map_selection",
+])
+
+/** Whether an entry cites payments: a payment, a group that may hold payments, or a ledger payment selection. */
+export function citesPayments(entry: { links: CaseworkLinkInput[] }) {
+  return entry.links.some(
+    (link) =>
+      PAYMENT_HOLDING_TYPES.has(link.target_type) ||
+      Array.isArray(link.source_anchor?.financial_transaction_ids)
+  )
+}
