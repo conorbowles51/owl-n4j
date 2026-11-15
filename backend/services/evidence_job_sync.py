@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 import time
 import uuid
@@ -15,6 +16,8 @@ from starlette.concurrency import run_in_threadpool
 
 from postgres.models.evidence import EvidenceFile
 from services import evidence_engine_client
+
+logger = logging.getLogger(__name__)
 
 
 _ACTIVE_JOB_STATUSES = {
@@ -51,6 +54,15 @@ def _keep_cancelled_file(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
     db_rec.status = state
     db_rec.last_error = message
     return changed
+
+
+def _schedule_summary_check(case_id) -> None:
+    """A file finished: its entity summaries may have been rewritten, so check their figures against the ledger."""
+    try:
+        from services.summary_ledger_check import schedule_case_check
+        schedule_case_check(case_id)
+    except Exception:
+        logger.exception("Could not schedule the summary ledger check for case %s", case_id)
 
 
 def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None, *, request_checked=False) -> bool:
@@ -103,6 +115,8 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None,
         if db_rec.status != "processed":
             db_rec.status = "processed"
             changed = True
+            if getattr(db_rec, "case_id", None):
+                _schedule_summary_check(db_rec.case_id)
         if db_rec.last_error is not None:
             db_rec.last_error = None
             changed = True

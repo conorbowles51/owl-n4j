@@ -841,6 +841,7 @@ def run_due(session_factory=None, graph_session_factory=None, *, stop: Optional[
                 state.last_error = None
                 state.last_outcome = report.get("outcome")
         _notify_identity_graph(case)
+        _notify_summary_check(case)
         results.append(dict(case_id=case, **{k: report[k] for k in ("outcome", "transaction_count", "digest")}))
     return results
 
@@ -857,6 +858,15 @@ def _notify_identity_graph(case_id) -> None:
             os.utime(stamp)
     except Exception:  # pragma: no cover
         log.exception("Could not wake the reviewed identity sweep for case %s", case_id)
+
+
+def _notify_summary_check(case_id) -> None:
+    """The ledger changed: check the case's entity summaries against it (services.summary_ledger_check)."""
+    try:
+        from services.summary_ledger_check import schedule_case_check
+        schedule_case_check(case_id)
+    except Exception:  # pragma: no cover
+        log.exception("Could not schedule the summary ledger check for case %s", case_id)
 
 
 async def follow_up_round(session_factory=None, graph_session_factory=None) -> list[dict]:
