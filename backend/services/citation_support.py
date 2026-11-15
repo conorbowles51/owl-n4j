@@ -252,6 +252,21 @@ def _minor_units(text: str) -> set[str]:
     return out
 
 
+def near_misses(stated: set[str], held: set[str]) -> list[tuple[str, str]]:
+    """Figures of the sentence the source holds with one or two digits changed (39.288503 stated, 39.288533 held):
+    numbers of five or more digits written the same way, the held one stated nowhere in the sentence. Dates are left
+    out: a sentence citing one record per night names nights the record next to it holds."""
+    out = []
+    for f in sorted(stated - held):
+        if "-" in f or sum(c.isdigit() for c in f) < 5:
+            continue
+        for g in sorted(held - stated):
+            if len(g) == len(f) and f.find(".") == g.find(".") and 0 < sum(x != y for x, y in zip(f, g)) <= 2:
+                out.append((f, g))
+                break
+    return out
+
+
 def code_verdict(wanted: dict[str, set[str]], sources: list[_Haystack]) -> Verdict | None:
     """Settled by code, or None for the model: supports when every specific is in the cited text and at least one is a
     figure, date, time or identifier; does not mention when two or more specifics and none of them are."""
@@ -518,6 +533,11 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
         for key, (index, href) in pending.items():
             verdict = verdicts_by_model.get(key) or Verdict(
                 UNCHECKED, failure or "The model gave no verdict for this source.", "none")
+            misses = near_misses(results[index]["wanted"]["figures"], hay[href].figures)
+            if verdict.state == SUPPORTS and misses:
+                # the model reads 39.288533 as 39.288503; code does not
+                verdict = Verdict(PARTLY, "The source has %s where the sentence has %s." % (misses[0][1], misses[0][0]),
+                                  "code")
             results[index]["verdicts"][href] = verdict
     claims_out = []
     counts = {SUPPORTS: 0, PARTLY: 0, NOT_MENTIONED: 0, UNCHECKED: 0}

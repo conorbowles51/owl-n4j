@@ -10,7 +10,7 @@ from postgres.models.runtime_state import AIModelPolicy  # read by services.ai_b
 from services import citation_support as S
 from tests.test_agent_financial_ledger_tools import LedgerToolFixture
 
-PAGE_1 = "Bay 4 lease. Tenant: Travis Kell. Landlord: Ruiz Auto & Tire."
+PAGE_1 = "Bay 4 lease. Tenant: Travis Kell. Landlord: Ruiz Auto & Tire. Gate at 39.288533, -76.623911."
 PAGE_2 = "Rent: $650.00 a month, due on the 1st. Signed 1 October 2023 by Travis Kell and Mateo Ruiz."
 
 
@@ -80,6 +80,15 @@ class SupportTests(_Case):
         self.assertEqual({item["cites"] for item in items}, {2})  # each source may hold its share of the sentence
         self.assertEqual([c["by"] for c in result["claims"][0]["citations"]], ["model:m1", "model:m1"])
         self.assertEqual(result["model"]["sentences"], 1)
+
+    def test_a_figure_the_source_holds_with_a_digit_changed_is_not_supported_whatever_the_model_says(self):
+        # live 15 Nov 2026: gpt-5-mini quoted 39.288533 from the record and still said it supports 39.288503
+        answer = f"The gate stands at 39.288503, -76.623911 [p](doc://{self.file.id}/1)."
+        _, result = S.check_and_mark(self.db, self.case.id, answer, judge=self.judge("supports"))
+        cite = result["claims"][0]["citations"][0]
+        self.assertEqual((cite["state"], cite["by"]), (S.PARTLY, "code"))
+        self.assertEqual(cite["reason"], "The source has 39.288533 where the sentence has 39.288503.")
+        self.assertEqual(S.near_misses({"2024-05-04", "650"}, {"2024-05-03", "660"}), [])  # dates, short numbers
 
     def test_a_failed_model_call_leaves_the_citation_unchecked_saying_why_and_marks_nothing(self):
         def broken(prompt):
