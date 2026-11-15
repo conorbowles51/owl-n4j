@@ -192,4 +192,10 @@ describe("Where things open", () => {
     expect(memberHref("c1", "financial_transaction", "p1", {})).toBe("/cases/c1/financial?view=transactions&payment=p1")
     expect(memberHref("c1", "interview", "i1", { dossier_id: "d1" })).toBe("/cases/c1/dossiers?dossier=d1&tab=interviews")
   })
+
+  it("opens an agent answer added to a theory at that answer: its thread and message", async () => {
+    const { memberHref } = await import("./source-links")
+    expect(memberHref("c1", "agent_answer", "m 2", { thread_id: "t/1" })).toBe("/cases/c1/agent?thread=t%2F1&message=m%202")
+    expect(memberHref("c1", "agent_answer", "m2", {})).toBe("/cases/c1/agent")
+  })
 })

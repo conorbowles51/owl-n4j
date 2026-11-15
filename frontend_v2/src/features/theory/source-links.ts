@@ -36,7 +36,12 @@ export function memberHref(caseId: string, type: string, id: string, anchor: Rec
       return anchor.dossier_id ? `${c(caseId)}/dossiers?dossier=${encodeURIComponent(String(anchor.dossier_id))}&tab=interviews` : null
     case "dossier":
       return `${c(caseId)}/dossiers?dossier=${encodeURIComponent(id)}`
-    case "agent_answer":
+    case "agent_answer": {
+      // The answer itself: its thread, scrolled to the message (AgentPage reads ?thread=&message=).
+      const thread = typeof anchor.thread_id === "string" ? anchor.thread_id : ""
+      if (!thread) return `${c(caseId)}/agent`
+      return `${c(caseId)}/agent?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(id)}`
+    }
     case "agent_artifact":
       return `${c(caseId)}/agent`
     default:

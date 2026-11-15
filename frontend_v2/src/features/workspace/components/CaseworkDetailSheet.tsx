@@ -95,6 +95,7 @@ import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAI
 import { DisconfirmPanel } from "@/features/workspace-ai/components/DisconfirmPanel"
 import { RedCellPanel } from "@/features/workspace-ai/components/RedCellPanel"
 import { TheoryReadingSection } from "@/features/theory/TheoryReading"
+import { memberHref } from "@/features/theory/source-links"
 
 interface CaseworkDetailSheetProps {
   caseId: string
@@ -323,6 +324,14 @@ export function CaseworkDetailSheet({
         (item) => item.target_type === targetType && item.target_id === targetId
       )
       const href = link ? phoneLinkHref(caseId, link) : null
+      if (href) navigate(href)
+      return
+    }
+    if (targetType === "agent_answer") {
+      const link = entry?.links.find(
+        (item) => item.target_type === targetType && item.target_id === targetId
+      )
+      const href = memberHref(caseId, targetType, targetId, link?.source_anchor ?? {})
       if (href) navigate(href)
       return
     }
@@ -856,6 +865,7 @@ export function CaseworkDetailSheet({
                                     "task",
                                     "deadline",
                                     "timeline_event",
+                                    "agent_answer",
                                   ] as string[]
                                 ).includes(link.target_type) &&
                                 !isPhoneLinkType(link.target_type) &&

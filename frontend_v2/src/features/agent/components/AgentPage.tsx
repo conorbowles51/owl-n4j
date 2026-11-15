@@ -2,7 +2,7 @@ import { announce } from "@/features/guidance/announce"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import type { MutableRefObject, ReactNode } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import ForceGraph2D, {
   type ForceGraphMethods,
   type LinkObject,
@@ -664,6 +664,7 @@ export function AgentPage() {
     loadThreads()
   }, [loadThreads])
 
+
   const loadThread = useCallback(async (threadId: string) => {
     initialRunRecovery.current = true
     const sequence = ++threadLoadSequence.current
@@ -702,6 +703,25 @@ export function AgentPage() {
       toast.error("Failed to load agent thread")
     }
   }, [caseId])
+
+  // Opened from a theory (or any link to an answer): ?thread=<id>&message=<id> opens that thread and shows that answer.
+  const [searchParams] = useSearchParams()
+  const linkedThread = searchParams.get("thread")
+  const linkedMessage = searchParams.get("message")
+  const openedLink = useRef<string | null>(null)
+  useEffect(() => {
+    if (!caseId || !linkedThread || openedLink.current === linkedThread) return
+    openedLink.current = linkedThread
+    void loadThread(linkedThread)
+  }, [caseId, linkedThread, loadThread])
+  const [shownMessage, setShownMessage] = useState<string | null>(null)
+  useEffect(() => {
+    if (!linkedMessage || shownMessage === linkedMessage || activeThreadId !== linkedThread) return
+    const node = document.getElementById(`agent-message-${linkedMessage}`)
+    if (!node) return
+    node.scrollIntoView({ block: "center" })
+    setShownMessage(linkedMessage)
+  }, [activeThreadId, linkedMessage, linkedThread, messages, shownMessage])
 
   useEffect(() => {
     if (!sharedRun?.isLoading || !sharedRun.threadId || initialRunRecovery.current) return
@@ -1234,6 +1254,7 @@ export function AgentPage() {
                     <MessageBubble
                       key={message.id}
                       message={message}
+                      linked={message.id === linkedMessage && activeThreadId === linkedThread}
                       caseId={caseId}
                       showInvestigationTrail={showInvestigationTrail}
                       onClarificationAnswer={
@@ -1392,8 +1413,11 @@ function MessageBubble({
   showInvestigationTrail,
   onClarificationAnswer,
   onRetry,
+  linked = false,
 }: {
   message: AgentClientMessage
+  /** the answer a link opened (a theory's addition): marked so it is found at once */
+  linked?: boolean
   caseId?: string
   showInvestigationTrail: boolean
   onClarificationAnswer?: (answer: string) => void
@@ -1422,7 +1446,12 @@ function MessageBubble({
   }
 
   return (
-    <article className="flex gap-3">
+    <article
+      id={`agent-message-${message.id}`}
+      aria-current={linked ? "true" : undefined}
+      className={cn("flex gap-3", linked && "rounded-lg ring-2 ring-primary/60 ring-offset-2")}
+    >
+      {linked && <span className="sr-only">The answer added to the theory</span>}
       <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60">
         <Bot className="size-4" />
       </div>
