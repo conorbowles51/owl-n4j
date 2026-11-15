@@ -22,7 +22,8 @@ vi.mock("../hooks/use-casework", () => {
   return {
     useCaseworkEntry: () => ({ data: entry, isLoading: false }),
     useChangeCaseworkLifecycle: mutation, useConvertTheory: mutation, useDeleteCaseworkEntry: mutation,
-    useRestoreCaseworkEntry: mutation, useCreateCaseworkEntry: mutation, useUpdateCaseworkEntry: mutation,
+    useRestoreCaseworkEntry: mutation,
+    useSetLinkRelationship: mutation, useCreateCaseworkEntry: mutation, useUpdateCaseworkEntry: mutation,
     useChangeCaseworkConfidence: mutation, useChangeCaseworkSignificance: mutation,
     useAttachmentOptions: () => ({ data: { items: [] }, isLoading: false }),
   }
@@ -55,10 +56,10 @@ it("shows who drafted and accepted an entry, and opens its payment on the Financ
 it("keeps the underlying work open when its draft blocks navigation from linked material", () => {
   const onBeforeNavigate = vi.fn().mockReturnValue(false)
   render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/cases/case-1/workspace?view=work"]}><CaseworkDetailSheet caseId="case-1" entryId="finding-1" open canEdit onOpenChange={vi.fn()} onBeforeNavigate={onBeforeNavigate} /><Where /></MemoryRouter></QueryClientProvider>)
-  fireEvent.click(screen.getByRole("button", { name: /Wire to ACME/ }))
+  fireEvent.click(screen.getAllByRole("button", { name: /Wire to ACME/ })[0])
   expect(onBeforeNavigate).toHaveBeenCalledOnce()
   expect(screen.getByTestId("where")).toHaveTextContent("/cases/case-1/workspace?view=work")
   onBeforeNavigate.mockReturnValue(true)
-  fireEvent.click(screen.getByRole("button", { name: /Wire to ACME/ }))
+  fireEvent.click(screen.getAllByRole("button", { name: /Wire to ACME/ })[0])
   expect(screen.getByTestId("where")).toHaveTextContent(`/cases/case-1/financial?view=transactions&payment=${TXN}`)
 })

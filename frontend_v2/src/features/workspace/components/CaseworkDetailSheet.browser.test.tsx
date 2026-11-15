@@ -41,6 +41,7 @@ vi.mock("../hooks/use-casework", () => ({
     mutateAsync: browserHooks.restore,
     isPending: false,
   }),
+  useSetLinkRelationship: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateCaseworkEntry: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateCaseworkEntry: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useChangeCaseworkConfidence: () => ({

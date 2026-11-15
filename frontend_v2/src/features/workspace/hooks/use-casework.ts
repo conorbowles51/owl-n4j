@@ -6,6 +6,7 @@ import {
   type CaseworkUpdateInput,
   type CaseworkLinkTargetType,
   type FindingSignificance,
+  type LinkRelationship,
 } from "../casework-api"
 
 export const caseworkKeys = {
@@ -95,6 +96,19 @@ export function useAddFindingPayments(caseId: string) {
       entryId: string
       input: { expected_version: number; transaction_ids: string[] }
     }) => caseworkAPI.addFindingPayments(caseId, entryId, input),
+    onSuccess: refresh,
+  })
+}
+
+export function useSetLinkRelationship(caseId: string) {
+  const refresh = useRefreshCasework(caseId)
+  return useMutation({
+    mutationFn: ({ entryId, linkId, version, relationship }: {
+      entryId: string
+      linkId: string
+      version: number
+      relationship: LinkRelationship
+    }) => caseworkAPI.setLinkRelationship(caseId, entryId, linkId, version, relationship),
     onSuccess: refresh,
   })
 }

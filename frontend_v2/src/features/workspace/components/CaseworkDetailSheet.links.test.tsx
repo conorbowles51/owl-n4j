@@ -63,6 +63,7 @@ vi.mock("../hooks/use-casework", () => {
     useConvertTheory: mutation,
     useDeleteCaseworkEntry: mutation,
     useRestoreCaseworkEntry: mutation,
+    useSetLinkRelationship: mutation,
   }
 })
 vi.mock("../hooks/use-current-casework-links", () => ({

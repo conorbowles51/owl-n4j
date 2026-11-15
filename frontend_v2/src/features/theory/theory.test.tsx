@@ -104,6 +104,32 @@ describe("Add to theory", () => {
   })
 })
 
+describe("Add to theory asks how it bears on the theory", () => {
+  beforeEach(() => Object.values(mocks).forEach((m) => m.mockReset()))
+
+  it("saves Context by default with one click, and the person's choice when they make one", async () => {
+    mocks.add.mockResolvedValue(result)
+    const items = [{ target_type: "financial_transaction" as const, target_id: "tx-1", target_label: "Payment to Acme" }]
+    const first = wrap(<AddToTheory caseId="c1" surface="financial" items={items} />)
+    fireEvent.click(screen.getByRole("button", { name: "Add to theory…" }))
+    const radios = screen.getAllByRole("radio").map((r) => (r as HTMLInputElement).value)
+    expect(radios).toEqual(["supports", "contradicts", "context"])
+    expect((screen.getByRole("radio", { name: "Context" }) as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(screen.getAllByRole("option")[0])
+    await waitFor(() => expect(mocks.add).toHaveBeenCalledTimes(1))
+    expect(mocks.add.mock.calls[0][2].relationship).toBe("context")
+    expect(await screen.findByText(/as context\./)).toBeTruthy()
+    first.unmount()
+
+    wrap(<AddToTheory caseId="c1" surface="financial" items={items} />)
+    fireEvent.click(screen.getByRole("button", { name: "Add to theory…" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Contradicts" }))
+    fireEvent.click(screen.getAllByRole("option")[0])
+    await waitFor(() => expect(mocks.add).toHaveBeenCalledTimes(2))
+    expect(mocks.add.mock.calls[1][2].relationship).toBe("contradicts")
+  })
+})
+
 describe("The theory read as a whole", () => {
   beforeEach(() => Object.values(mocks).forEach((m) => m.mockReset()))
 

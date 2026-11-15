@@ -80,7 +80,9 @@ import {
   useConvertTheory,
   useDeleteCaseworkEntry,
   useRestoreCaseworkEntry,
+  useSetLinkRelationship,
 } from "../hooks/use-casework"
+import { linkTypeWords } from "@/generated/link-types"
 import { useCurrentCaseworkLinks } from "../hooks/use-current-casework-links"
 import { financialLinkHref, isFinancialLinkType } from "../financial-links"
 import { CaseworkEditor } from "./CaseworkEditor"
@@ -188,6 +190,7 @@ export function CaseworkDetailSheet({
   const conversionMutation = useConvertTheory(caseId)
   const deleteMutation = useDeleteCaseworkEntry(caseId)
   const restoreMutation = useRestoreCaseworkEntry(caseId)
+  const setRelationship = useSetLinkRelationship(caseId)
   const currentSelection = useCurrentCaseworkLinks(caseId)
   const selectNodes = useGraphStore((state) => state.selectNodes)
   const expandGraphPanelTo = useUIStore((state) => state.expandGraphPanelTo)
@@ -280,12 +283,8 @@ export function CaseworkDetailSheet({
       unclassified: [] as CaseworkLink[],
     }
     if (!entry) return groups
-    for (const link of entry.links.filter(
-      (item) =>
-        item.target_type === "evidence" ||
-        item.target_type === "evidence_passage" ||
-        isPhoneLinkType(item.target_type)
-    )) {
+    // Every link counts: files, quotes, phone records, payments, accounts, groups, agent answers.
+    for (const link of entry.links) {
       groups[link.relationship ?? "unclassified"].push(link)
     }
     return groups
@@ -861,7 +860,7 @@ export function CaseworkDetailSheet({
                               )}
                               <span className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
                                 <span className="truncate text-xs font-semibold">
-                                  {link.target_label || "Linked item"}
+                                  {link.target_label || linkTypeWords(link.target_type)}
                                 </span>
                                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
                                   <RelationshipBadge
@@ -910,21 +909,19 @@ export function CaseworkDetailSheet({
                   </section>
                 )}
 
-                {entry.links.some(
-                  (link) =>
-                    link.target_type === "evidence" ||
-                    link.target_type === "evidence_passage" ||
-                    isPhoneLinkType(link.target_type)
-                ) && (
+                {entry.links.length > 0 && (
                   <details className="space-y-3 border-t border-border pt-3">
                     <summary className="cursor-pointer text-xs font-semibold">
-                      Compare supporting and contradicting evidence
+                      Compare what supports and contradicts it (
+                      {evidenceGroups.supports.length} for,{" "}
+                      {evidenceGroups.contradicts.length} against)
                     </summary>
                     <div className="grid gap-3 md:grid-cols-2">
                       {(["supports", "contradicts"] as const).map(
                         (relationship) => (
                           <div
                             key={relationship}
+                            data-testid={`compare-${relationship}`}
                             className="rounded-lg border border-border bg-muted/15 p-3"
                           >
                             <RelationshipBadge relationship={relationship} />
@@ -939,15 +936,22 @@ export function CaseworkDetailSheet({
                                       openLink(link.target_type, link.target_id)
                                     }
                                   >
+                                    <span className="text-muted-foreground">
+                                      {linkTypeWords(link.target_type)}:{" "}
+                                    </span>
                                     {link.target_label ||
                                       (isPhoneLinkType(link.target_type)
                                         ? phoneLinkSummary(link).kind
-                                        : "Evidence")}
+                                        : linkTypeWords(link.target_type))}
                                   </button>
                                 ))
                               ) : (
                                 <p className="py-2 text-xs text-muted-foreground">
-                                  No evidence classified here.
+                                  Nothing is marked{" "}
+                                  {relationship === "supports"
+                                    ? "as supporting"
+                                    : "as contradicting"}{" "}
+                                  it.
                                 </p>
                               )}
                             </div>
@@ -955,15 +959,89 @@ export function CaseworkDetailSheet({
                         )
                       )}
                     </div>
-                    {(evidenceGroups.context.length > 0 ||
-                      evidenceGroups.unclassified.length > 0) && (
+                    {evidenceGroups.context.length > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        Also linked: {evidenceGroups.context.length} context and{" "}
-                        {evidenceGroups.unclassified.length} unclassified
-                        item(s).
+                        Also linked as context:{" "}
+                        {evidenceGroups.context.length.toLocaleString("en-US")}.
                       </p>
                     )}
                   </details>
+                )}
+
+                {evidenceGroups.unclassified.length > 0 && (
+                  <section
+                    aria-label="Links to review"
+                    className="space-y-2 border-t border-border pt-3"
+                  >
+                    <h3 className="text-xs font-semibold">
+                      {evidenceGroups.unclassified.length.toLocaleString(
+                        "en-US"
+                      )}{" "}
+                      {evidenceGroups.unclassified.length === 1
+                        ? "link was"
+                        : "links were"}{" "}
+                      added without saying how{" "}
+                      {evidenceGroups.unclassified.length === 1 ? "it bears" : "they bear"}{" "}
+                      on this {entry.entry_type}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      They stay as they are until you choose.
+                    </p>
+                    <div className="divide-y divide-border">
+                      {evidenceGroups.unclassified.map((link) => (
+                        <div
+                          key={link.id}
+                          className="flex flex-wrap items-center gap-2 py-1.5 text-xs"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            <span className="text-muted-foreground">
+                              {linkTypeWords(link.target_type)}:{" "}
+                            </span>
+                            {link.target_label ||
+                              linkTypeWords(link.target_type)}
+                          </span>
+                          {canEdit &&
+                            !entry.deleted_at &&
+                            (
+                              [
+                                ["supports", "Supports"],
+                                ["contradicts", "Contradicts"],
+                                ["context", "Context"],
+                              ] as const
+                            ).map(([value, words]) => (
+                              <Button
+                                key={value}
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-[11px]"
+                                disabled={setRelationship.isPending}
+                                onClick={() =>
+                                  setRelationship.mutate(
+                                    {
+                                      entryId: entry.id,
+                                      linkId: link.id,
+                                      version: entry.version,
+                                      relationship: value,
+                                    },
+                                    {
+                                      onSuccess: () => void entryQuery.refetch(),
+                                      onError: (error) =>
+                                        toast.error(
+                                          error instanceof Error
+                                            ? error.message
+                                            : "The choice was not saved"
+                                        ),
+                                    }
+                                  )
+                                }
+                              >
+                                {words}
+                              </Button>
+                            ))}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 )}
 
                 {!entry.deleted_at &&

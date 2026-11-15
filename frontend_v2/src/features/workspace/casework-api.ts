@@ -243,6 +243,19 @@ export const caseworkAPI = {
       { method: "POST", body: input }
     ),
 
+  /** Sets how one link bears on its entry (supports, contradicts, context). The link's record is kept. */
+  setLinkRelationship: (
+    caseId: string,
+    entryId: string,
+    linkId: string,
+    expectedVersion: number,
+    relationship: LinkRelationship
+  ) =>
+    fetchAPI<CaseworkEntry>(
+      `${base(caseId)}/entries/${encodeURIComponent(entryId)}/links/${encodeURIComponent(linkId)}`,
+      { method: "PATCH", body: { expected_version: expectedVersion, relationship } }
+    ),
+
   changeLifecycle: (
     caseId: string,
     entryId: string,

@@ -117,6 +117,50 @@ CONTAINERS: dict[str, tuple[str, ...]] = {
 
 ALL_TYPES: tuple[str, ...] = tuple(dict.fromkeys(value for types in CONTAINERS.values() for value in types))
 
+# What each type is called on screens and in reports. Every type in every container has words
+# (tests/test_link_types.py), so nothing prints a raw type name.
+TYPE_WORDS: dict[str, str] = {
+    "evidence": "Evidence file",
+    "graph_entity": "Graph item",
+    "dossier": "Dossier",
+    "entry": "Workspace entry",
+    "task": "Task",
+    "deadline": "Deadline",
+    "timeline_event": "Timeline event",
+    "agent_artifact": "Agent output",
+    "witness": "Witness",
+    "phone_record": "Phone record",
+    "phone_file": "Phone file",
+    "phone_thread": "Phone conversation",
+    "phone_identity": "Phone identity",
+    "phone_extraction": "Phone extraction",
+    "phone_analysis": "Phone analysis",
+    "phone_selection": "Phone collection",
+    "phone_view": "Saved phone view",
+    "statement_check": "Statement check",
+    "financial_account": "Bank account",
+    "financial_party": "Payer or payee",
+    "financial_transaction": "Payment",
+    "evidence_passage": "Quote",
+    "graph_selection": "Graph selection",
+    "significant_set": "Significant set",
+    "timeline_range": "Timeline range",
+    "financial_selection": "Ledger selection",
+    "evidence_selection": "Evidence selection",
+    "map_selection": "Map area",
+    "step_trail": "Step trail",
+    "agent_answer": "Agent answer",
+    "interview": "Interview",
+    "entity": "Graph item",
+    "document": "Evidence file",
+}
+
+
+def type_words(target_type: str | None) -> str:
+    """The plain name of a link type; an unknown type reads "Linked item", never its raw name."""
+    return TYPE_WORDS.get(str(target_type or ""), "Linked item")
+
+
 PHONE_TYPE_UNAVAILABLE_MESSAGE = (
     "Phone links of type {target_type} cannot be added yet: phone records are not loaded in Loupe until the "
     "phone intake is built, so the link could not be checked against this case"

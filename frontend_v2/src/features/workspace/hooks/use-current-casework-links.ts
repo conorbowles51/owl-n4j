@@ -90,7 +90,7 @@ export function useCurrentCaseworkLinks(caseId: string) {
       target_type: "graph_entity",
       target_id: key,
       target_label: knownLabels.get(key) || fetchedLabels.get(key) || "Selected graph entity",
-      relationship: "unclassified",
+      relationship: "context",
       source_anchor: {},
       metadata: { source: "current_selection" },
     }))
@@ -100,7 +100,7 @@ export function useCurrentCaseworkLinks(caseId: string) {
         target_type: "evidence",
         target_id: id,
         target_label: option?.label || "Selected evidence",
-        relationship: "unclassified",
+        relationship: "context",
         source_anchor: {},
         metadata: { ...(option?.metadata ?? {}), source: "current_selection" },
       })
@@ -111,7 +111,7 @@ export function useCurrentCaseworkLinks(caseId: string) {
           target_type: "phone_record",
           target_id: id,
           target_label: "Selected phone record",
-          relationship: "unclassified",
+          relationship: "context",
           source_anchor: {},
           metadata: { source: "current_selection" },
         })

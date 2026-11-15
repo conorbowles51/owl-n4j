@@ -130,6 +130,11 @@ const FORMAT_ACTIONS = [
 
 const EMPTY_LINKS: CaseworkLinkInput[] = []
 
+/** A link being added now: Context unless the person or the caller chose otherwise. Saved links keep theirs. */
+function asNewLink(link: CaseworkLinkInput): CaseworkLinkInput {
+  return { ...link, relationship: link.relationship ?? "context" }
+}
+
 function mergeLinks(
   existing: CaseworkLinkInput[],
   incoming: CaseworkLinkInput[]
@@ -138,7 +143,7 @@ function mergeLinks(
   const seen = new Set(next.map(linkKey))
   for (const link of incoming) {
     if (!seen.has(linkKey(link))) {
-      next.push(toLinkInput(link))
+      next.push(toLinkInput(asNewLink(link)))
       seen.add(linkKey(link))
     }
   }
@@ -160,7 +165,9 @@ function initialValue(
     confidence:
       entry?.entry_type === "theory" ? (entry.confidence ?? null) : null,
     confidence_rationale: null,
-    links: entry?.links.map(toLinkInput) ?? links.map(toLinkInput),
+    links:
+      entry?.links.map(toLinkInput) ??
+      links.map((link) => toLinkInput(asNewLink(link))),
   }
 }
 
@@ -630,7 +637,12 @@ export function CaseworkComposer({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent align="end">
-                      {RELATIONSHIPS.map(
+                      {RELATIONSHIPS.filter(
+                        // "Unclassified" is shown only for a link saved that way before; new links choose.
+                        (item) =>
+                          item.value !== "unclassified" ||
+                          relationship === "unclassified"
+                      ).map(
                         ({ value: option, icon: Icon, description }) => (
                           <SelectItem key={option} value={option}>
                             <Icon className="size-3.5" />

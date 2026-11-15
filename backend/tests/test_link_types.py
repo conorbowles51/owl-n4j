@@ -197,3 +197,12 @@ def test_a_phone_analysis_link_freezes_its_snapshot_and_refuses_one_that_does_no
     assert data["source_anchor"]["mapping_versions"] == {"location": "m1"}
     with pytest.raises(WorkspaceEntryValidationError, match="does not match its snapshot"):
         _sanitize_link(object(), case_id=CASE, link={"target_type": "phone_analysis", "target_id": "pa_recomputed"})
+
+
+def test_every_link_type_has_plain_words_and_an_unknown_type_never_prints_raw():
+    missing = [t for t in link_types.ALL_TYPES if t not in link_types.TYPE_WORDS]
+    assert missing == []
+    for words in link_types.TYPE_WORDS.values():
+        assert "_" not in words and words[:1].isupper()
+    assert link_types.type_words("financial_transaction") == "Payment"
+    assert link_types.type_words("no_such_type") == "Linked item"

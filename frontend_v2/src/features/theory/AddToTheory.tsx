@@ -7,6 +7,14 @@ import { theoryHref } from "./source-links"
 import { announce } from "@/features/guidance/announce"
 import { theoryAPI, choiceWords, type AdditionInput, type AdditionResult, type GroupInput, type ItemInput, type Surface } from "./api"
 
+/** How an addition bears on the theory. Context is the default, so one click adds it. */
+export const ADD_RELATIONSHIPS = [
+  { value: "supports", words: "Supports" },
+  { value: "contradicts", words: "Contradicts" },
+  { value: "context", words: "Context" },
+] as const
+export type AddRelationship = (typeof ADD_RELATIONSHIPS)[number]["value"]
+
 /**
  * "Add to theory…" (lx-theorybuild A, G): one control on every surface, for one item or a group. What is added
  * becomes a unit of the theory that knows why it was chosen: the dialog states what goes in ("12 items from the
@@ -54,6 +62,7 @@ export function AddToTheoryDialog({ caseId, surface, items, group, onClose }: Om
   const [why, setWhy] = useState(group?.words ?? "")
   const [narrative, setNarrative] = useState("")
   const [askModel, setAskModel] = useState(false)
+  const [relationship, setRelationship] = useState<AddRelationship>("context")
   const [newTitle, setNewTitle] = useState("")
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -69,6 +78,7 @@ export function AddToTheoryDialog({ caseId, surface, items, group, onClose }: Om
     surface,
     why: why.trim() || undefined,
     narrative: narrative.trim() || undefined,
+    relationship,
     ...(group ? { group: { ...group, words: why.trim() || group.words } } : { items }),
   })
 
@@ -144,7 +154,7 @@ export function AddToTheoryDialog({ caseId, surface, items, group, onClose }: Om
           <div role="status" className="flex flex-col gap-2 text-sm">
             <p>
               {done.result.added
-                ? `Added ${group ? "the group" : `${done.result.added.toLocaleString("en-US")} ${done.result.added === 1 ? "item" : "items"}`} to ${done.target}.`
+                ? `Added ${group ? "the group" : `${done.result.added.toLocaleString("en-US")} ${done.result.added === 1 ? "item" : "items"}`} to ${done.target} as ${ADD_RELATIONSHIPS.find((r) => r.value === relationship)?.words.toLowerCase()}.`
                 : `Already in ${done.target}; nothing new was added.`}
               {done.result.skipped > 0 && done.result.added > 0 && ` ${done.result.skipped} ${done.result.skipped === 1 ? "was" : "were"} already there.`}
               {done.result.group && done.result.group.left_out > 0 &&
@@ -174,6 +184,26 @@ export function AddToTheoryDialog({ caseId, surface, items, group, onClose }: Om
                 onChange={(e) => setWhy(e.target.value)}
               />
             </label>
+            <fieldset className="flex flex-col gap-1">
+              <legend className="mb-1">How it bears on the theory</legend>
+              <div role="radiogroup" aria-label="How it bears on the theory" className="flex flex-wrap gap-1.5">
+                {ADD_RELATIONSHIPS.map((r) => (
+                  <label
+                    key={r.value}
+                    className="flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+                  >
+                    <input
+                      type="radio"
+                      name="add-relationship"
+                      value={r.value}
+                      checked={relationship === r.value}
+                      onChange={() => setRelationship(r.value)}
+                    />
+                    {r.words}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <label className="flex flex-col gap-1">
               What it shows (optional)
               <textarea

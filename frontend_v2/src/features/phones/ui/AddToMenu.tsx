@@ -41,7 +41,6 @@ const RELATIONSHIPS: { id: Relationship; words: string }[] = [
   { id: "supports", words: "Supports" },
   { id: "contradicts", words: "Contradicts" },
   { id: "context", words: "Context" },
-  { id: "unclassified", words: "Unclassified" },
 ]
 const ROLES: { id: DossierRole; words: string }[] = [
   { id: "link", words: "Link" },
@@ -90,7 +89,7 @@ export function AddToMenu({
 }) {
   const [open, setOpen] = useState(false)
   const [kind, setKind] = useState<TargetKind | null>(null)
-  const [relationship, setRelationship] = useState<Relationship>("unclassified")
+  const [relationship, setRelationship] = useState<Relationship>("context")
   const [role, setRole] = useState<DossierRole>("link")
   const [confirmBig, setConfirmBig] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number; startedAt: number; movedAt: number } | null>(null)

@@ -117,6 +117,47 @@ export const INTERVIEW_EVIDENCE_LINK_TYPES = [
 ] as const
 export type InterviewEvidenceLinkType = (typeof INTERVIEW_EVIDENCE_LINK_TYPES)[number]
 
+export const LINK_TYPE_WORDS: Record<string, string> = {
+  evidence: "Evidence file",
+  graph_entity: "Graph item",
+  dossier: "Dossier",
+  entry: "Workspace entry",
+  task: "Task",
+  deadline: "Deadline",
+  timeline_event: "Timeline event",
+  agent_artifact: "Agent output",
+  witness: "Witness",
+  phone_record: "Phone record",
+  phone_file: "Phone file",
+  phone_thread: "Phone conversation",
+  phone_identity: "Phone identity",
+  phone_extraction: "Phone extraction",
+  phone_analysis: "Phone analysis",
+  phone_selection: "Phone collection",
+  phone_view: "Saved phone view",
+  statement_check: "Statement check",
+  financial_account: "Bank account",
+  financial_party: "Payer or payee",
+  financial_transaction: "Payment",
+  evidence_passage: "Quote",
+  graph_selection: "Graph selection",
+  significant_set: "Significant set",
+  timeline_range: "Timeline range",
+  financial_selection: "Ledger selection",
+  evidence_selection: "Evidence selection",
+  map_selection: "Map area",
+  step_trail: "Step trail",
+  agent_answer: "Agent answer",
+  interview: "Interview",
+  entity: "Graph item",
+  document: "Evidence file",
+}
+
+/** The plain name of a link type; an unknown type reads "Linked item", never its raw name. */
+export function linkTypeWords(value: string | null | undefined): string {
+  return (value && LINK_TYPE_WORDS[value]) || "Linked item"
+}
+
 export function isPhoneLinkType(value: string): value is PhoneLinkType {
   return (PHONE_LINK_TYPES as readonly string[]).includes(value)
 }

@@ -100,7 +100,7 @@ export function CaseworkAttachmentPicker({
                 target_type: "graph_entity",
                 target_id: link.target_id,
                 target_label: link.target_label,
-                relationship: "unclassified",
+                relationship: "context",
                 metadata: link.metadata,
               })
             }
@@ -154,7 +154,7 @@ export function CaseworkAttachmentPicker({
                         target_type: option.target_type,
                         target_id: option.target_id,
                         target_label: option.label,
-                        relationship: "unclassified",
+                        relationship: "context",
                         metadata: option.metadata,
                       })
                     }
