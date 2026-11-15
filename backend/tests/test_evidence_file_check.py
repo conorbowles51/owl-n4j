@@ -203,3 +203,76 @@ def test_the_daily_check_prints_its_result_last(world, capsys):
     last = capsys.readouterr().out.strip().splitlines()[-1]
     assert code == cli.FOUND
     assert last == "ok: 2 rows checked, 1 have no file, 1 new, 0 back"
+
+
+def test_uploading_the_same_bytes_again_restores_the_missing_row(world, tmp_path):
+    """15 Nov: a missing row says "upload it again to restore", so an upload with its bytes puts its file back. The
+    row keeps its id and readings; another row's bytes, another case's row or a file already there are left alone."""
+    db, root, case_id = world
+    gone = _row(db, root, case_id, "Interview.mp4", b"recording", on_disk=False)
+    other = _row(db, root, case_id, "Other.mp4", b"other", on_disk=False)
+    check.check_files(db, root)
+    upload_dir = root / "_uploads" / "u1"
+    upload_dir.mkdir(parents=True)
+    (upload_dir / "Interview.mp4").write_bytes(b"recording")
+    new = EvidenceFile(id=uuid.uuid4(), case_id=case_id, original_filename="Interview.mp4",
+                       stored_path=str(upload_dir / "Interview.mp4"), size=9,
+                       sha256=hashlib.sha256(b"recording").hexdigest(), status="unprocessed", is_duplicate=True,
+                       duplicate_of_id=gone.id, metadata_={})
+    db.add(new)
+    db.flush()
+
+    assert check.restore_from_upload(db, [new]) == [gone.id]
+    db.commit()
+    db.refresh(gone), db.refresh(other)
+    assert Path(gone.stored_path).read_bytes() == b"recording"
+    assert check.file_missing_since(gone) is None and check.file_missing_since(other)
+    logs = [log.message for log in db.query(IngestionLog).filter_by(evidence_file_id=gone.id, level="info")]
+    assert logs == ["File restored: Interview.mp4 was uploaded again and matches its checksum."]
+    assert check.restore_from_upload(db, [new]) == []  # once back, nothing more happens
+
+    result = check.check_files(db, root)
+    assert (result.missing, [r.id for r in result.known]) == (1, [other.id])
+
+
+def test_registering_an_upload_restores_through_the_storage_path(world):
+    db, root, case_id = world
+    gone = _row(db, root, case_id, "Interview.mp4", b"recording", on_disk=False)
+    check.check_files(db, root)
+    upload = root / "_uploads" / "Interview.mp4"
+    upload.parent.mkdir()
+    upload.write_bytes(b"recording")
+    with patch("services.evidence_db_storage._record_upload", lambda *a, **k: None):
+        created = EvidenceDBStorage.add_files(db, case_id, [{"original_filename": "Interview.mp4",
+                                                             "stored_path": str(upload), "size": 9,
+                                                             "sha256": gone.sha256}])
+    db.commit()
+    db.refresh(gone)
+    assert created[0].is_duplicate and created[0].duplicate_of_id == gone.id
+    assert Path(gone.stored_path).exists() and check.file_missing_since(gone) is None
+
+
+def test_the_daily_check_names_known_missing_files_as_a_warning(world, capsys):
+    from contextlib import contextmanager
+    from scripts import evidence_file_check as cli
+
+    db, root, case_id = world
+    _row(db, root, case_id, "CDR_Mediations.xls", on_disk=False)
+    check.check_files(db, root)  # found and alerted the first day
+
+    @contextmanager
+    def session():
+        yield db
+
+    with patch.object(cli, "get_background_session", session), patch.object(cli, "EVIDENCE_DATA_ROOT", root), \
+            patch.object(cli, "read_unread", lambda *a, **k: {"read": 0}):
+        code = cli.check(dry_run=True)
+    out = capsys.readouterr().out.strip().splitlines()
+    assert code == 0  # known, so not a finding
+    assert any(line.startswith("warn: known missing ") and line.endswith(" CDR_Mediations.xls") for line in out)
+    assert out[-1] == ("ok: 1 rows checked, 1 have no file, 0 new, 0 back. Warning, 1 known missing, waiting to be "
+                       "uploaded again: CDR_Mediations.xls")
+
+
+def test_the_missing_file_words_say_how_to_restore():
+    assert check.FILE_MISSING_DETAIL.startswith("File missing from the server: upload it again to restore.")

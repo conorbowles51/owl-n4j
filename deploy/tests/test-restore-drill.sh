@@ -27,6 +27,7 @@ drill() {  # prints nothing; the verdicts go to the report
         note() { printf "%s\n" "$*" >> "${report}"; }
         pass() { note "PASS $*"; }
         fail() { note "FAIL $*"; failures=$(( failures + 1 )); }
+        warn() { note "WARN $*"; }
         elapsed() { echo 0; }
         drill_evidence' _ "${source_dir}/restore-drill.sh"
 }
@@ -46,7 +47,8 @@ grep -q 'FAIL evidence: 1 of 4 rows' "${report}" || fail "missing row did not fa
 grep -q 'FAIL evidence: 1 of 4 rows name a file that is not on disk: 0 known (listed in .*), 1 new' "${report}" ||
     fail "a missing row not on the known list was not counted new"
 
-# Rows on the known list still fail the drill (no hiding), counted apart from new ones.
+# Rows on the known list alone are a warning that names each one, not a failure (Neil, 15 Nov: "work should not be
+# blocked by mismatches"); a new one beside them still fails, counted apart.
 printf '# files to be supplied again\nr4\n' > "${test_root}/known.ids"
 printf 'r5\t%s\tzz\n' "${ev}/gone-too" >> "${rows}"
 KNOWN="${test_root}/known.ids" drill
@@ -54,6 +56,17 @@ grep -q "FAIL evidence: 2 of 5 rows name a file that is not on disk: 1 known (li
     "${report}" || fail "known and new missing rows not counted apart"
 grep -q 'no file on disk: row r4 (known)' "${report}" || fail "known row not marked"
 grep -q 'no file on disk: row r5$' "${report}" || fail "new row not named"
+
+known_only="${test_root}/known-only"
+printf 'k1\t%s\tzz\tOPDMD28 - Test\tCDR.xls\t381440\t2026-11-06T01:50:38+00:00\n' "${ev}/gone-k" > "${known_only}"
+printf 'r1\t%s\t%s\n' "${ev}/a" "$(sha "${ev}/a")" >> "${known_only}"
+printf 'k1\n' > "${test_root}/known-only.ids"
+saved_rows="${rows}"; rows="${known_only}"
+KNOWN="${test_root}/known-only.ids" drill
+rows="${saved_rows}"
+grep -q '^FAIL evidence' "${report}" && fail "a known gap alone failed the drill"
+grep -qF "WARN evidence: 1 of 2 rows name a file that is not on disk, all known (listed in ${test_root}/known-only.ids), 0 new: OPDMD28 - Test: CDR.xls" \
+    "${report}" || fail "a known gap alone was not a named warning"
 
 # Each gap is named: case, file, size, and when the daily check first found it gone (or that it has not yet).
 printf 'r6\t%s\tzz\tOPDMD66 - Test\tInterview.mp4\t401768097\t2026-11-06T01:50:38+00:00\n' "${ev}/gone-3" >> "${rows}"
@@ -153,6 +166,7 @@ EOF
         note() { printf "%s\n" "$*" >> "${report}"; }
         pass() { note "PASS $*"; }
         fail() { note "FAIL $*"; failures=$(( failures + 1 )); }
+        warn() { note "WARN $*"; }
         elapsed() { echo 0; }
         stamp() { echo now; }
         drill_chroma_reach http://scratch'

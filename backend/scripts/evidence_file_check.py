@@ -40,6 +40,8 @@ def check(dry_run: bool) -> int:
         print(f"ALERT: {len(result.wrong_bytes)} missing evidence files are back with other bytes than the row's hash: "
               f"{per_case(result.wrong_bytes)}. They stay marked missing")
         code = FOUND
+    for row in result.known:
+        print(f"warn: known missing {row.case_id} {row.id} {row.original_filename}")
     for row in result.new:
         print(f"missing {row.case_id} {row.id} {row.original_filename}")
     for row in result.back:
@@ -49,8 +51,22 @@ def check(dry_run: bool) -> int:
     print(f"signatures: {dict(read)}")
     # Last: evidence-file-check.sh keeps the last line as the day's result (status.tsv, the hourly repeat).
     print(f"ok: {result.rows} rows checked, {result.missing} have no file, {len(result.new)} new, "
-          f"{len(result.back)} back")
+          f"{len(result.back)} back{known_warning(result.known)}")
     return code
+
+
+KNOWN_NAMES_SHOWN = 10
+
+
+def known_warning(rows) -> str:
+    """The known missing files by name, on the summary line the board and the hourly repeat keep: a warning, not a
+    failure, since each was found and alerted the day it went and waits to be uploaded again."""
+    if not rows:
+        return ""
+    names = [row.original_filename for row in rows]
+    shown = "; ".join(names[:KNOWN_NAMES_SHOWN])
+    more = f"; and {len(names) - KNOWN_NAMES_SHOWN} more (warn: lines above)" if len(names) > KNOWN_NAMES_SHOWN else ""
+    return f". Warning, {len(names)} known missing, waiting to be uploaded again: {shown}{more}"
 
 
 def restore(case_id: str, search: list, apply: bool) -> int:

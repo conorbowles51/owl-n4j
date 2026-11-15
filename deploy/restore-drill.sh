@@ -50,10 +50,12 @@ COUNTS_QUERY="MATCH (n) OPTIONAL MATCH (n)-[r]->() RETURN coalesce(toString(n.ca
 API=api/v2/tenants/default_tenant/databases/default_database
 
 failures=0
+warnings=0
 report=""
 note() { printf '%s\n' "$*" | tee -a "${report}"; }
 pass() { note "PASS $*"; }
 fail() { note "FAIL $*"; failures=$(( failures + 1 )); }
+warn() { note "WARN $*"; warnings=$(( warnings + 1 )); }
 elapsed() { echo $(( $(date -u +%s) - $1 )); }
 
 cleanup() {
@@ -179,7 +181,7 @@ drill_evidence() {
     if [[ -f "${known_file}" ]]; then
         while read -r id _; do [[ -n "${id}" && "${id}" != \#* ]] && known_ids["${id}"]=1; done < "${known_file}"
     fi
-    local case_title name size since what
+    local case_title name size since what known_names=""
     while IFS=$'\t' read -r id path sha case_title name size since; do
         if [[ -f "${path}" ]]; then printf '%s\t%s\t%s\n' "${id}" "${path}" "${sha}" >> "${WORK}/present.tsv"
         elif [[ -d "${path}" ]]; then folders=$(( folders + 1 ))
@@ -189,6 +191,7 @@ drill_evidence() {
             what="${case_title:+: ${case_title}, ${name}, ${size} bytes, missing since ${since:-not yet marked by the daily check}}"
             if [[ -n "${known_ids[${id}]:-}" ]]; then
                 known=$(( known + 1 ))
+                known_names+="${known_names:+; }${case_title}: ${name}"
                 (( missing > 40 )) || note "  no file on disk: row ${id} (known)${what}"
             else
                 (( missing > 40 )) || note "  no file on disk: row ${id}${what}"
@@ -197,8 +200,12 @@ drill_evidence() {
     done < "${WORK}/rows.tsv"
     if (( rows == 0 )); then
         fail "evidence: the restored database named no files"
-    elif (( missing )); then
+    elif (( missing > known )); then
         fail "evidence: ${missing} of ${rows} rows name a file that is not on disk: ${known} known (listed in ${known_file}), $(( missing - known )) new ($(elapsed "${t0}") s)"
+    elif (( missing )); then
+        # Neil, 15 Nov: "work should not be blocked by mismatches". A known gap was alerted the day it was found and
+        # waits to be uploaded again; it is named above and here, and only a new one fails the drill.
+        warn "evidence: ${known} of ${rows} rows name a file that is not on disk, all known (listed in ${known_file}), 0 new: ${known_names} ($(elapsed "${t0}") s)"
     else
         pass "evidence: all ${rows} rows name a file or folder that is on disk, ${folders} folders ($(elapsed "${t0}") s)"
     fi
@@ -445,7 +452,9 @@ do_run() {
         drill_chroma
     fi
     note "total $(elapsed "${t0}") s"
-    if (( failures )); then note "RESULT FAIL (${failures})"; else note "RESULT PASS"; fi
+    if (( failures )); then note "RESULT FAIL (${failures})"
+    elif (( warnings )); then note "RESULT PASS (${warnings} warning, named above)"
+    else note "RESULT PASS"; fi
     mv -f -- "${report}" "${BACKUP_DIR}/${name}"
     report="${BACKUP_DIR}/${name}"
     if (( failures )); then
