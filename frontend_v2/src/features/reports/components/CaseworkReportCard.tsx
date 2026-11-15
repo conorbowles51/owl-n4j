@@ -31,8 +31,10 @@ export function CaseworkReportCard({ caseId }: { caseId: string }) {
     <section className="rounded border p-4" aria-labelledby="casework-report-heading">
       <h2 id="casework-report-heading" className="font-medium">Casework report</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        The case's Findings with the evidence linked to each, then Theories and Notes, in the order you set. The audit log
-        and timeline are not included.
+        The case's Findings, including financial findings saved from the ledger, with what each cites, then Theories and
+        Notes, in the order you set. Each item cited shows whether it supports or contradicts, the reason it was added, who
+        added it and when, and its production numbers; model readings are marked as such. A theory adds its accepted
+        counter-arguments and its timeline. The audit log is not included.
       </p>
       <ol className="mt-3 space-y-1">
         {order.map((section, index) => (

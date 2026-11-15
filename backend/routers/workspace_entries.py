@@ -476,18 +476,28 @@ def casework_report_pdf(
     from services.snapshot_report import SnapshotReportError
 
     try:
+        from services import casework_report_facts
+
         sections = casework_report.normalise_sections(request.sections)
-        entries = {
-            section: casework_report.collect_entries(
+
+        def collect(section: str):
+            return casework_report.collect_entries(
                 lambda entry_type, limit, offset: list_entries(
                     db, case_id=case_id, entry_type=entry_type, sort_by="created_at", sort_direction="asc",
                     limit=limit, offset=offset,
                 ),
                 casework_report.SECTIONS[section],
             )
-            for section in sections
-        }
-        casework_report.fill_missing_link_labels(entries, lambda t, ids: _link_names(db, case_id, t, ids))
+
+        entries = {section: collect(section) for section in sections}
+        if "findings" in entries:
+            # Financial findings saved from the ledger are notes; they belong under Findings by default.
+            casework_report.fold_financial_findings(entries, entries["notes"] if "notes" in entries else collect("notes"))
+        casework_report.fill_missing_link_labels(
+            entries,
+            lambda t, ids: _link_names(db, case_id, t, ids) or casework_report_facts.link_names(db, case_id, t, ids),
+        )
+        casework_report_facts.gather(db, case_id, entries)
         case = db.query(Case).filter(Case.id == case_id).first()
         content = casework_report.render_casework_report_pdf(
             entries,

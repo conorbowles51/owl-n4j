@@ -80,7 +80,7 @@ def test_links_saved_without_a_label_print_the_current_name_never_a_bare_id():
 
     cr.fill_missing_link_labels(entries, lookup)
     labels = [link["target_label"] for link in entries["findings"][0]["links"]]
-    assert labels == ["BBVA Nov 2022.pdf", "Jane Roe", "k-gone (name not found)", "Saved name.pdf"]
+    assert labels == ["BBVA Nov 2022.pdf", "Jane Roe", "no name on record", "Saved name.pdf"]
     assert asked == {"evidence": {"e-1"}, "graph_entity": {"k-1", "k-gone"}}  # saved labels are not looked up
     html = cr.render_casework_report_html(entries, sections=["findings"], case_name="C", generated_by="J")
     assert "BBVA Nov 2022.pdf" in html and "Jane Roe" in html
@@ -95,4 +95,4 @@ def test_an_unreachable_store_keeps_every_link_with_its_id():
         raise RuntimeError("graph store unreachable")
 
     cr.fill_missing_link_labels(entries, broken)
-    assert entries["notes"][0]["links"][0]["target_label"] == "k-1 (name not found)"
+    assert entries["notes"][0]["links"][0]["target_label"] == "no name on record"

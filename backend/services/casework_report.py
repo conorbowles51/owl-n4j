@@ -2,9 +2,14 @@
 the investigator chose.
 
 Sections are Findings, Theories and Notes; the order and which are included are the exporter's choice, Findings
-first by default. Each entry prints its title, state, significance, author, text and every item linked to it (with
-the link's relationship: supports, contradicts, context). Deleted entries never print. The audit log and the
-investigation timeline are not part of this report. The privilege marking is the same three values as the ledger
+first by default. A financial finding saved from the ledger (a note tagged ``financial-entry-finding``) prints under
+Findings, so it is in the report by default. Each entry prints its title, state, significance, author (or the model
+that drafted it and who accepted it), text and every item linked to it: the link's relationship (supports,
+contradicts, context), the person's reason, who added it and when, whether the model chose it, its narrative (a model
+reading is marked as one, with the model's name) and the production numbers of a cited page. A theory adds how it
+fits together, its accepted counter-arguments (the model's text marked as a model reading) and its timeline: the
+dated items it holds, in date order. Every link type prints its plain name (``postgres.link_types.TYPE_WORDS``).
+Deleted entries never print. The audit log is not part of this report. The privilege marking is the same three values as the ledger
 export, chosen by the exporter, printed on the cover and every page footer, and is not a legal determination.
 """
 from __future__ import annotations
@@ -13,6 +18,7 @@ import html
 from datetime import datetime
 from typing import Any, Callable
 
+from postgres.link_types import type_words
 from services.snapshot_report import PRIVILEGE_BASIS, privilege_label
 
 SECTIONS = {"findings": "finding", "theories": "theory", "notes": "note"}
@@ -20,11 +26,9 @@ SECTION_TITLES = {"findings": "Findings", "theories": "Theories", "notes": "Note
 DEFAULT_ORDER = ["findings", "theories", "notes"]
 MAX_REPORT_ENTRIES = 2000
 _SIGNIFICANCE_RANK = {"high": 0, "medium": 1, "low": 2, None: 3}
-_RELATIONSHIP_WORDS = {"supports": "Supports", "contradicts": "Contradicts", "context": "Context", "unclassified": "Linked"}
-_TARGET_WORDS = {
-    "evidence": "Evidence file", "evidence_passage": "Quote", "graph_entity": "Entity", "dossier": "Dossier", "entry": "Casework",
-    "task": "Task", "deadline": "Deadline", "timeline_event": "Timeline event", "agent_artifact": "Agent output",
-}
+_RELATIONSHIP_WORDS = {"supports": "Supports", "contradicts": "Contradicts", "context": "Context",
+                       "unclassified": "Not yet classified"}
+FINANCIAL_FINDING_TAG = "financial-entry-finding"
 
 
 class CaseworkReportError(ValueError):
@@ -63,7 +67,20 @@ def collect_entries(list_page: Callable[[str, int, int], dict[str, Any]], entry_
     return entries
 
 
-UNRESOLVED_LABEL = "name not found"
+UNRESOLVED_LABEL = "no name on record"
+
+
+def fold_financial_findings(entries_by_section: dict[str, list[dict[str, Any]]], notes: list[dict[str, Any]]) -> None:
+    """Financial findings saved from the ledger are notes; they print under Findings and not again under Notes."""
+    if "findings" not in entries_by_section:
+        return
+    moved = [n for n in notes if FINANCIAL_FINDING_TAG in (n.get("tags") or [])]
+    ids = {id(n) for n in moved}
+    for note in moved:
+        note["_financial_finding"] = True
+    entries_by_section["findings"] = list(entries_by_section["findings"]) + moved
+    if "notes" in entries_by_section:
+        entries_by_section["notes"] = [n for n in entries_by_section["notes"] if id(n) not in ids]
 
 
 def fill_missing_link_labels(
@@ -91,7 +108,7 @@ def fill_missing_link_labels(
                 if not link.get("target_label") and link.get("target_id"):
                     target_id = str(link["target_id"])
                     name = names.get(str(link.get("target_type") or ""), {}).get(target_id)
-                    link["target_label"] = name or f"{target_id} ({UNRESOLVED_LABEL})"
+                    link["target_label"] = name or UNRESOLVED_LABEL
 
 
 def _sort(section: str, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -107,40 +124,135 @@ def _link_words(link: dict[str, Any]) -> str:
         reader = (anchor.get("reader") or {}).get("words")
         place = ", ".join(str(value) for value in (anchor.get("document_name"), anchor.get("page_label")) if value)
         return "“%s”, %s%s" % (anchor["quote"], place, " · %s" % reader if reader else "")
-    return str(link.get("target_label") or link.get("target_id") or "")
+    words = str(link.get("target_label") or UNRESOLVED_LABEL)
+    if link.get("target_type") == "evidence" and anchor.get("page"):
+        words += f", page {anchor['page']}"
+    return words
+
+
+def _e(value: Any) -> str:
+    return html.escape(str(value or ""))
+
+
+def _day(value: Any) -> str:
+    return str(value or "")[:10]
+
+
+def _narrative_html(narrative: dict[str, Any] | None, lead: str) -> str:
+    if not narrative or not narrative.get("text"):
+        return ""
+    model = narrative.get("origin") == "agent"
+    cls = "narrative model" if model else "narrative"
+    return (f'<p class="{cls}"><span class="who">{_e(lead)} ({_e(narrative.get("words"))}):</span> '
+            f'{_e(narrative["text"])}</p>')
+
+
+def _link_html(link: dict[str, Any], report: dict[str, Any]) -> str:
+    addition = (report.get("additions") or {}).get(str(link.get("id"))) or {}
+    head = "<strong>{}</strong> · {}: {}".format(
+        _e(_RELATIONSHIP_WORDS.get(link.get("relationship"), "Not yet classified")),
+        _e(type_words(link.get("target_type"))),
+        _e(_link_words(link)),
+    )
+    production = (report.get("production") or {}).get(str(link.get("id")))
+    if production:
+        head += f' · <span class="bates">Production numbers: {_e(production)}</span>'
+    lines = []
+    meta = link.get("metadata") or {}
+    if meta.get("counter_argument"):
+        model = ((meta.get("actor_origin") or {}).get("origin") or {}).get("model") or "the case agent"
+        lines.append(f"From the counter-argument “{_e(meta.get('title'))}”, proposed by {_e(model)} (the model's choice)")
+    elif addition.get("origin") == "agent":
+        chosen = f"Chosen by the model ({addition.get('model') or 'the case agent'})"
+        if addition.get("accepted_by"):
+            chosen += f", accepted by {addition['accepted_by']}"
+        lines.append(_e(chosen))
+    if link.get("target_type") == "agent_answer":
+        lines.append("An agent answer: a model reading, not a person's finding")
+    if addition.get("why"):
+        lines.append(f"Why: {_e(addition['why'])}")
+    who = addition.get("added_by")
+    when = _day(addition.get("added_at") or link.get("created_at"))
+    if who or when:
+        lines.append("Added" + (f" by {_e(who)}" if who else "") + (f" on {_e(when)}" if when else ""))
+    sub = "".join(f'<span class="sub">{line}</span>' for line in lines)
+    return f"<li>{head}{sub}{_narrative_html(addition.get('narrative'), 'What it shows')}</li>"
+
+
+def _counter_html(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    rows = []
+    for item in items:
+        head = f"<strong>{_e(item.get('title') or 'Counter-argument')}</strong>"
+        if item.get("strength"):
+            head += f" · Strength: {_e(str(item['strength']).capitalize())}"
+        accepted = f"Accepted by {_e(item.get('accepted_by') or 'a person')}" + (
+            f" on {_e(_day(item.get('accepted_at')))}" if item.get("accepted_at") else "")
+        body = (f'<p class="narrative model"><span class="who">Model reading ({_e(item.get("model"))}):</span> '
+                f'{_e(item.get("model_text"))}</p>') if item.get("model_text") else ""
+        if item.get("person_text"):
+            body += (f'<p class="narrative"><span class="who">Edited by {_e(item.get("accepted_by") or "a person")}:</span> '
+                     f'{_e(item["person_text"])}</p>')
+        rows.append(f'<li>{head}<span class="sub">{accepted}</span>{body}</li>')
+    return f'<div class="links"><p class="links-head">Counter-arguments accepted ({len(items)})</p><ul>{"".join(rows)}</ul></div>'
+
+
+def _timeline_html(report: dict[str, Any]) -> str:
+    if report.get("timeline_missing"):
+        return f'<p class="muted">{_e(report["timeline_missing"])}</p>'
+    dated = report.get("timeline")
+    if not dated:
+        return ""
+    total = int(report.get("timeline_total") or len(dated))
+    rows = "".join(
+        f"<li>{_e(m.get('date'))} · {_e(type_words(m.get('type')))}: {_e(m.get('label'))}"
+        + (f" ({_e(m['state'])})" if m.get("state") not in (None, "present") else "") + "</li>"
+        for m in dated)
+    note = ""
+    if total > len(dated):
+        note = f'<p class="muted">The first {len(dated):,} of {total:,} dated items are printed; Loupe shows all of them on the theory.</p>'
+    if report.get("timeline_cut"):
+        note += '<p class="muted">The theory holds more items than its timeline reads at once; Loupe shows the count.</p>'
+    return f'<div class="links"><p class="links-head">Timeline ({total:,} dated items)</p><ul>{rows}</ul>{note}</div>'
 
 
 def _entry_html(entry: dict[str, Any]) -> str:
+    report = entry.get("_report") or {}
     facts = []
+    if entry.get("_financial_finding"):
+        facts.append("Financial finding, saved from the ledger")
     if entry.get("lifecycle_state"):
-        facts.append(f"State: {html.escape(str(entry['lifecycle_state']).capitalize())}")
+        facts.append(f"State: {_e(str(entry['lifecycle_state']).capitalize())}")
     if entry.get("significance"):
-        facts.append(f"Significance: {html.escape(str(entry['significance']).capitalize())}")
+        facts.append(f"Significance: {_e(str(entry['significance']).capitalize())}")
     if entry.get("confidence") is not None:
         facts.append(f"Confidence: {int(entry['confidence'])}%")
     if entry.get("review_state") and entry.get("review_state") != "accepted":
-        facts.append(f"Review: {html.escape(str(entry['review_state']))}")
-    author = entry.get("author_name") or entry.get("author_email")
-    if author:
-        facts.append(f"Author: {html.escape(str(author))}")
+        facts.append(f"Review: {_e(entry['review_state'])}")
+    if entry.get("origin_label"):
+        facts.append(_e(entry["origin_label"]))
+    else:
+        author = entry.get("author_name") or entry.get("author_email")
+        if author:
+            facts.append(f"Author: {_e(author)}")
     if entry.get("updated_at"):
-        facts.append(f"Updated: {html.escape(str(entry['updated_at'])[:10])}")
+        facts.append(f"Updated: {_e(_day(entry['updated_at']))}")
     links = entry.get("links") or []
-    link_rows = "".join(
-        "<li><strong>{}</strong> · {}: {}</li>".format(
-            html.escape(_RELATIONSHIP_WORDS.get(link.get("relationship"), "Linked")),
-            html.escape(_TARGET_WORDS.get(link.get("target_type"), str(link.get("target_type") or "Item"))),
-            html.escape(_link_words(link)),
-        )
-        for link in links
-    )
+    link_rows = "".join(_link_html(link, report) for link in links)
+    missing = "".join(f'<p class="muted">{_e(report[key])}</p>'
+                      for key in ("missing", "counter_missing", "production_missing") if report.get(key))
     title = entry.get("title") or "Untitled note"
     return f"""
     <article class="entry">
-      <h3>{html.escape(str(title))}</h3>
+      <h3>{_e(title)}</h3>
       <p class="facts">{' · '.join(facts)}</p>
-      <div class="body">{html.escape(str(entry.get('body') or ''))}</div>
+      <div class="body">{_e(entry.get('body'))}</div>
+      {_narrative_html(report.get('fit'), 'How it fits together')}
       {f'<div class="links"><p class="links-head">Linked evidence and material ({len(links)})</p><ul>{link_rows}</ul></div>' if links else '<p class="muted">No linked evidence.</p>'}
+      {_counter_html(report.get('counter_arguments') or [])}
+      {_timeline_html(report)}
+      {missing}
     </article>
     """
 
@@ -178,7 +290,10 @@ def render_casework_report_html(
       .marking span {{ display: block; color: #475569; font-size: 9px; }}
       .facts {{ color: #475569; font-size: 9px; margin: 0 0 4px; }} .body {{ white-space: pre-wrap; }}
       .links {{ margin-top: 4px; }} .links-head {{ font-weight: bold; margin: 2px 0; }} .links ul {{ margin: 0; padding-left: 16px; }}
-      .entry {{ break-inside: avoid; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }} .muted {{ color: #64748b; }}
+      .entry {{ border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }} .muted {{ color: #64748b; }}
+      .links li {{ margin-bottom: 3px; break-inside: avoid; }} .sub {{ display: block; color: #475569; font-size: 9px; }}
+      .narrative {{ margin: 2px 0 2px 0; }} .narrative.model {{ border-left: 2px solid #a78bfa; padding-left: 5px; }}
+      .who {{ font-weight: bold; }} .bates {{ color: #334155; }}
     </style></head><body>
       <div class="eyebrow">Casework report</div>
       <h1>{html.escape(case_name or 'Case')}</h1>
