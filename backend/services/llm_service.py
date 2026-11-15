@@ -43,6 +43,9 @@ class IncompleteAnswer(ValueError):
         self.finish_reason = finish_reason
 
 
+OPENAI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
+
+
 class LLMExecutionContext:
     def __init__(
         self,
@@ -80,8 +83,9 @@ class LLMExecutionContext:
         timeout: int = 600,
         reasoning_effort: str | None = None,
     ) -> str:
-        """``reasoning_effort`` (DeepSeek only): thinking enabled at that effort, e.g. ``"max"`` for a draft a person
-        reviews (Neil, 2026-11-04: "Deepseek at max performance"). Other providers ignore it."""
+        """``reasoning_effort``: DeepSeek, thinking enabled at that effort, e.g. ``"max"`` for a draft a person
+        reviews (Neil, 2026-11-04: "Deepseek at max performance"); an OpenAI GPT-5 model, one of
+        ``OPENAI_REASONING_EFFORTS`` (any other value is not sent). Other providers ignore it."""
         self.last_prompt = prompt
         self.last_raw_response = None
         self.last_usage = None
@@ -90,7 +94,9 @@ class LLMExecutionContext:
 
         try:
             if self.provider == "openai":
-                result = self._call_openai(prompt, temperature, json_mode, timeout)
+                effort = (reasoning_effort if reasoning_effort in OPENAI_REASONING_EFFORTS
+                          and self.model_id.startswith("gpt-5") else None)
+                result = self._call_openai(prompt, temperature, json_mode, timeout, reasoning_effort=effort)
             elif self.provider == "anthropic":
                 result = self._call_anthropic(prompt, temperature, json_mode, timeout)
             elif self.provider == "gemini":
@@ -114,6 +120,7 @@ class LLMExecutionContext:
         temperature: float,
         json_mode: bool,
         timeout: int,
+        reasoning_effort: str | None = None,
     ) -> str:
         openai_client = self._client or client
         if not openai_client:
@@ -142,6 +149,8 @@ class LLMExecutionContext:
             kwargs["temperature"] = temperature
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         log_section(
             source_file=__file__,

@@ -136,3 +136,28 @@ def test_every_stored_answer_goes_through_the_source_check():
     agent = (root / "services" / "agent" / "service.py").read_text()
     assert agent.index("storage.supported_answer(") < agent.index('"citation_support": citation_support')
 
+
+
+def test_an_openai_gpt5_call_carries_a_reasoning_effort_and_other_values_are_not_sent():
+    from types import SimpleNamespace
+
+    import importlib
+
+    L = importlib.import_module("services.llm_service")
+
+    sent = []
+
+    class Client:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    sent.append(kwargs)
+                    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))],
+                                           usage=None, model="gpt-5-mini", id="x")
+    context = L.LLMExecutionContext("openai", "gpt-5-mini")
+    context._client = Client()
+    context.call("p", json_mode=True, reasoning_effort="low")
+    context.call("p", json_mode=True, reasoning_effort="max")  # a DeepSeek value: not sent to OpenAI
+    assert sent[0].get("reasoning_effort") == "low"
+    assert "reasoning_effort" not in sent[1]

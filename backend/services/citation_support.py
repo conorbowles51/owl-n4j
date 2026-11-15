@@ -44,6 +44,8 @@ MAX_SOURCE_CHARS = 200_000  # text read per cited source
 EXCERPT_CHARS = 2_400      # text of one source given to the model for one sentence
 MODEL_TIMEOUT_S = 120
 JUDGE_MODEL_SETTING = "LOUPE_CITATION_JUDGE_MODEL"
+# reasoning effort for an OpenAI GPT-5 judge; "low" measured 15 Nov 2026 against the model's default (lx-citeproof)
+JUDGE_EFFORT_SETTING = "LOUPE_CITATION_JUDGE_EFFORT"
 SWITCH = "LOUPE_CITATION_SUPPORT"  # "0" turns the check off (the answer is stored as before, saying so in metadata)
 MARK = "*(the cited source does not mention this)*"
 SECTION = "**Source check**"
@@ -417,7 +419,9 @@ def default_judge(case_id, user_id=None) -> Callable[[str], tuple[str, dict[str,
                              user_id=uuid.UUID(str(user_id)) if user_id else None,
                              description="Citation check: does each cited source say what its sentence says",
                              meter_calls=True):
-            reply = context.call(prompt, temperature=0, json_mode=True, timeout=MODEL_TIMEOUT_S)
+            effort = os.environ.get(JUDGE_EFFORT_SETTING, "low") if context.provider == "openai" else None
+            reply = context.call(prompt, temperature=0, json_mode=True, timeout=MODEL_TIMEOUT_S,
+                                 reasoning_effort=effort)
         return reply, dict(context.last_usage or {}), context.model_id
     return call
 
