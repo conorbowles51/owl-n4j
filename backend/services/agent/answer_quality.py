@@ -135,9 +135,29 @@ def _bare(link: str) -> str:
     return link.split("/", 3)[2] if link.count("/") >= 2 else link
 
 
+_CHECK_SECTION_STARTS = ("**Figures to check", "**Source check**")
+
+
+def answer_body(answer: str) -> str:
+    """The answer without the checks appended to it (item V's figure list, the source check of
+    services.citation_support): their lines repeat the answer's figures and links, so counting them would score a
+    check as claims of its own (measured 15 Nov 2026: V alone raised "not in record" on 5 of 29 gate questions with
+    the answer text unchanged)."""
+    out, skipping = [], False
+    for line in (answer or "").split("\n"):
+        if line.strip().startswith(_CHECK_SECTION_STARTS):
+            skipping = True
+            continue
+        if skipping and (line.startswith("- ") or not line.strip()):
+            continue
+        skipping = False
+        out.append(line)
+    return "\n".join(out).rstrip()
+
+
 def claims(answer: str) -> list[str]:
-    """The answer's sentences and table rows that state a figure, a date or a source."""
-    parts = [p.strip() for p in _SENTENCE.split(answer or "") if p and p.strip()]
+    """The answer's sentences and table rows that state a figure, a date or a source (the appended checks left out)."""
+    parts = [p.strip() for p in _SENTENCE.split(answer_body(answer)) if p and p.strip()]
     return [p for p in parts if not re.fullmatch(r"\|?[\s:\-|]+\|?", p) and (figures(p) or _LINK.search(p))]
 
 
@@ -152,7 +172,7 @@ def score(answer: str, outputs: Iterable[Any], *, question: str = "", stopped_at
     found = claims(answer)
     cited = [c for c in found if _LINK.search(c)]
     uncited = [c for c in found if not _LINK.search(c) and figures(c)]
-    links = set(_LINK.findall(answer or ""))
+    links = set(_LINK.findall(answer_body(answer)))
     not_read = sorted(link for link in links if link not in rows and _bare(link) not in read_ids)
     in_record = not_in_record = 0
     unsupported: list[dict[str, Any]] = []
@@ -170,9 +190,9 @@ def score(answer: str, outputs: Iterable[Any], *, question: str = "", stopped_at
         if missing:
             unsupported.append({"claim": claim[:300], "figures": missing, "sources": claim_links})
     unfinished = bool(stopped_at_limit or results_with_more)
-    unfinished_stated = bool(_UNFINISHED.search(answer or ""))
+    unfinished_stated = bool(_UNFINISHED.search(answer_body(answer)))
     factual = is_factual(question)
-    other_side = bool(_OTHER_SIDE.search(answer or ""))
+    other_side = bool(_OTHER_SIDE.search(answer_body(answer)))
     return {
         "schema": SCHEMA, "check": "rule check (code), not a reader's check",
         "claims": len(found), "cited": len(cited), "uncited": len(uncited),
@@ -181,7 +201,7 @@ def score(answer: str, outputs: Iterable[Any], *, question: str = "", stopped_at
         "unfinished": unfinished, "unfinished_stated": unfinished_stated,
         "unfinished_unstated": int(unfinished and not unfinished_stated),
         "factual": factual, "other_side": other_side, "other_side_missing": int(factual and not other_side),
-        "certainty": len(_CERTAIN.findall(answer or "")),
+        "certainty": len(_CERTAIN.findall(answer_body(answer))),
     }
 
 

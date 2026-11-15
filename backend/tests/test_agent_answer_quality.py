@@ -46,6 +46,19 @@ def test_unfinished_and_other_side_and_certainty_are_counted():
     assert s["unfinished_unstated"] == 0 and s["other_side_missing"] == 0
 
 
+def test_the_checks_appended_to_an_answer_are_not_scored_as_its_claims():
+    # 15 Nov 2026 gate: V's figure list repeats each figure with its source link, so V alone raised "not in record"
+    # on 5 of 29 questions with the answer text unchanged; the source check's list would do the same
+    answer = f"It received 3,800,000.00 MXN ([payment]({TXN})). The phone was seized on 14 June 2024 ([record]({REC}))."
+    marked = AQ.mark_unsupported(answer, OUTPUTS)
+    checked = marked + (f"\n\n**Source check**: 1 of 2 citations support their sentence; 1 does not mention it.\n"
+                        f"- \"It received 3,800,000.00 MXN\" [source]({TXN}): does not mention this. It confirms 1,200,000.")
+    assert AQ.UNSUPPORTED_HEADING in marked
+    assert AQ.score(checked, OUTPUTS) == AQ.score(answer, OUTPUTS)
+    # text after a check's list is the answer again
+    assert AQ.claims(marked + "\n\nPaid 5,000.00 on 1 May 2024.")[-1] == "Paid 5,000.00 on 1 May 2024."
+
+
 def test_losses_name_every_count_that_got_worse_whatever_else_gained():
     before = {"cited": 5, "citations": 5, "in_record": 8, "not_in_record": 0, "uncited": 2}
     after = {"cited": 9, "citations": 4, "in_record": 12, "not_in_record": 1, "uncited": 0}
