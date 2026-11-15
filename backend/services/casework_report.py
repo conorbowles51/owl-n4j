@@ -137,20 +137,25 @@ def _link_words(link: dict[str, Any]) -> str:
 
 
 # A citation link in an entry's body: [words](doc://...), [words](txn://...), [words](rec://...).
-_BODY_LINK = re.compile(r"\[([^\]]*)\]\(\s*<?((?:doc|txn|rec)://[^)>\s]*)>?(?:\s+\"[^\"]*\")?\s*\)")
+# An older payment link names the Financial page row (``/cases/<case>/financial?...&payment=<id>``): read as txn://.
+_BODY_LINK = re.compile(r"\[([^\]]*)\]\(\s*<?((?:doc|txn|rec)://[^)>\s]*|(?:https?://[^)\s>]*?)?/?cases/[^)\s>]*)>?"
+                        r"(?:\s+\"[^\"]*\")?\s*\)")
 _SCHEME_WORDS = {"doc": "document", "txn": "payment", "rec": "phone record"}
 
 
 def _body_html(body: Any, cited: dict[str, str]) -> str:
     """An entry's body verbatim, except that each citation link prints as its words and the place it cites
     (``cited``, read from the case), never as its raw id. Everything else is escaped as written."""
-    from services.case_citations import link_bare_citations
+    from services.case_citations import link_bare_citations, parse_citation
     text = link_bare_citations(str(body or ""))
     out, at = [], 0
     for match in _BODY_LINK.finditer(text):
-        out.append(_e(text[at:match.start()]))
         words, href = match.group(1).strip(), match.group(2)
-        scheme = href.split(":", 1)[0]
+        citation = parse_citation(href)
+        if citation is None:  # a link to another Loupe page, not a citation: left as written
+            continue
+        out.append(_e(text[at:match.start()]))
+        scheme = citation.scheme
         place = cited.get(href)
         if not place and scheme == "doc":
             page = href.rstrip("/").rsplit("/", 1)[-1] if href.count("/") > 2 else ""
