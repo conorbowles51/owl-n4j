@@ -228,6 +228,25 @@ class ChatFallbackTests(Fixture):
         self.assertEqual(debug["entity_search"]["source"], "name")
         self.assertIn("Entities were found by name instead of by meaning: 1 matched.", debug["search_notes"])
 
+    def test_entity_name_search_runs_when_the_vector_store_did_not_start(self):
+        # The vector store failed at import (vector_db_service is None) and the embedding call fails: the
+        # entity search still answers by name instead of returning nothing.
+        import services.rag_service as rag
+
+        rag_service = self._rag()
+        debug = {}
+        with patch.object(rag, "vector_db_service", None), patch.object(
+                rag, "embedding_service", QuotaEmbeddings()), patch.object(
+                rag, "VECTOR_DB_AVAILABLE", True), patch.object(rag, "ENTITY_SEARCH_ENABLED", True), patch(
+                "services.neo4j.graph_service.graph_service.search_nodes",
+                side_effect=lambda term, limit, case_id: [{"key": "northgate-ltd"}]
+                if term.lower() == "northgate" else []), patch.object(
+                type(rag_service), "_get_entity_nodes_from_neo4j",
+                lambda self, keys, case_id=None: [{"key": k, "name": "Northgate Ltd"} for k in keys]):
+            entities = rag_service._retrieve_entities("Who is Northgate?", str(self.case_id), debug_log=debug)
+        self.assertEqual([e["key"] for e in entities], ["northgate-ltd"])
+        self.assertEqual(debug["entity_search"]["source"], "name")
+
 
 class ReviewFindingTests(Fixture):
     def test_a_repeated_file_name_never_hides_a_document_with_no_vector(self):

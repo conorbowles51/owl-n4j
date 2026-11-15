@@ -936,7 +936,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             List of entity dicts from Neo4j with verified_facts, ai_insights, and distance scores.
         """
         vectors = vectors if vectors is not None else vector_db_service
-        if not ENTITY_SEARCH_ENABLED or (query_embedding is None and not VECTOR_DB_AVAILABLE) or vectors is None:
+        if not ENTITY_SEARCH_ENABLED or (query_embedding is None and not VECTOR_DB_AVAILABLE):
             if debug_log is not None:
                 debug_log["entity_search"] = {"enabled": False, "reason": "Disabled or unavailable"}
             return []
@@ -964,6 +964,11 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 return self._retrieve_entities_by_name(question, case_id, top_k=top_k, debug_log=debug_log,
                                                        allowed_entity_keys=allowed_entity_keys, exc=exc)
             print("[RAG] Entity embedding done"); sys.stdout.flush()
+            if vectors is None:
+                # No vector store: the meaning search cannot run. A failed embedding above still reaches the name search.
+                if debug_log is not None:
+                    debug_log["entity_search"] = {"enabled": False, "reason": "Disabled or unavailable"}
+                return []
 
             # Enforce case_id isolation — never search without it
             if not case_id:
