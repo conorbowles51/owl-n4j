@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     extraction_max_concurrency: int = 6
     document_summary_max_concurrency: int = 3
     claim_verification_enabled: bool = True
-    claim_verification_max_claims: int = 250
+    claim_verification_max_claims: int = 0  # 0: every claim of a file, bounded by the case's AI spending limit
     claim_verification_batch_size: int = 20
     claim_verification_max_concurrency: int = 2
 

@@ -285,3 +285,71 @@ async def test_bounded_budget_prioritizes_relationships_over_low_importance_fact
     assert relationship.verification_status == "verified"
     assert entities[0].verified_facts[0]["verification_status"] == "unreviewed"
     assert result.unreviewed_count == 1
+
+
+def _supporting_completion(calls):
+    async def fake_completion(**kwargs) -> str:
+        candidates = json.loads(kwargs["messages"][1]["content"].split("CANDIDATES:\n", 1)[1])
+        calls.append(len(candidates))
+        return json.dumps({"decisions": [
+            {"candidate_id": c["candidate_id"], "decision": "SUPPORTED", "reason": "Directly stated"}
+            for c in candidates]})
+    return fake_completion
+
+
+def _entity_with_facts(count: int) -> RawEntity:
+    location = {"source_document_id": "evidence-1", "quote_start_char": 0}
+    return RawEntity(
+        "E1", "Person", "Person", "Alex Smith", source_quote="Alex Smith", source_location=location,
+        verified_facts=[{"text": f"Alex Smith signed form {i}.", "quote": f"Alex Smith signed form {i}.",
+                         "source_location": location} for i in range(count)])
+
+
+@pytest.mark.asyncio
+async def test_every_claim_of_a_file_is_checked_by_default(monkeypatch) -> None:
+    """lx-citeproof D: the old default stopped at 250 claims a file and left the rest out of the graph."""
+    from app.config import Settings
+
+    calls: list[int] = []
+    monkeypatch.setattr(verify_claims, "chat_completion", _supporting_completion(calls))
+    monkeypatch.setattr(verify_claims.settings, "claim_verification_max_claims",
+                        Settings.model_fields["claim_verification_max_claims"].default)
+    entity = _entity_with_facts(300)
+
+    result = await verify_claims.verify_grounded_claims([entity], [])
+
+    assert result.unreviewed_count == 0
+    assert result.reviewed_count == 300
+    assert sum(calls) == 300
+    assert {fact["verification_status"] for fact in entity.verified_facts} == {"verified"}
+
+
+@pytest.mark.asyncio
+async def test_the_case_spending_limit_stops_the_next_round_and_names_what_was_left(monkeypatch) -> None:
+    from app.services import ai_budget
+    from app.services.cost_tracking import ingestion_cost_context
+
+    calls: list[int] = []
+    reads: list[str] = []
+
+    async def limit_after_first_round(case_id):
+        reads.append(case_id)
+        return "Held: limit" if len(reads) > 1 else None
+
+    monkeypatch.setattr(verify_claims, "chat_completion", _supporting_completion(calls))
+    monkeypatch.setattr(verify_claims.settings, "claim_verification_max_claims", 0)
+    monkeypatch.setattr(verify_claims.settings, "claim_verification_batch_size", 10)
+    monkeypatch.setattr(verify_claims.settings, "claim_verification_max_concurrency", 2)
+    monkeypatch.setattr(ai_budget, "limit_reached", limit_after_first_round)
+    entity = _entity_with_facts(50)
+
+    async with ingestion_cost_context(case_id="11111111-1111-1111-1111-111111111111"):
+        result = await verify_claims.verify_grounded_claims([entity], [])
+
+    assert calls == [10, 10]  # one round of two batches, then the limit
+    assert reads == ["11111111-1111-1111-1111-111111111111"] * 2
+    assert (result.reviewed_count, result.unreviewed_count) == (20, 30)
+    reason = verify_claims.budget_stop_reason(20, 50)
+    assert reason.startswith("Not checked: this case's AI spending limit was reached after 20 of 50 claims")
+    assert [f["verification_reason"] for f in entity.verified_facts[20:]] == [reason] * 30
+    assert result.quality_metadata()["unreviewed_claim_reason"] == reason
