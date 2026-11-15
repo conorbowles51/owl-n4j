@@ -90,6 +90,8 @@ export interface Narrative {
   citations: Citation[]
   basis: { read?: number; of?: number; invalid_citations?: number }
   replaces_id: string | null
+  /** set when a finding carries a narrative from the theory it was converted from */
+  from_theory?: { id: string; title: string | null; narrative_id: string } | null
   confirmed_by: string | null
   confirmed_at: string | null
   created_at: string | null

@@ -354,3 +354,53 @@ class TheoryAdditionTests(DuplicateTestCase):
         row = self.reading()["additions"][0]
         self.assertEqual((row["origin"], row["model"], row["accepted_by"], row["why"]),
                          ("agent", "gpt-test", "Investigator", "the statement shows the January payments"))
+
+
+class TheoryConversionCarriesItsRecordTests(TheoryAdditionTests):
+    """Converting a theory to a finding carries its narratives, labelled as the theory's, and each addition's
+    reason, author and cited values as they were (lx-theorycase F)."""
+
+    # The fixture of TheoryAdditionTests, without running its tests a second time here.
+    locals().update({name: None for name in dir(TheoryAdditionTests) if name.startswith("test_")})
+
+    def test_converting_carries_each_narrative_labelled_as_the_theorys_and_each_additions_record(self):
+        from services.workspace_entry_service import convert_theory_to_finding
+        person = self.add(surface="graph", why="the hub", narrative="Ann receives every payment",
+                          items=[{"target_type": "graph_entity", "target_id": "person:ann", "target_label": "Ann"}])
+        payment = self.add(surface="financial", relationship="contradicts", why="it goes the other way",
+                           items=[{"target_type": "financial_transaction", "target_id": str(self.rows[0].id)}])
+        T.infer_narrative(self.db, case_id=self.case.id, entry_id=self.theory["id"],
+                          link_id=payment["added_link_ids"][0], user=self.user,
+                          generator=stub("The payment leaves Ann [m1].", ["m1"]))
+        T.infer_narrative(self.db, case_id=self.case.id, entry_id=self.theory["id"], user=self.user,
+                          generator=stub("Ann is paid, and one payment runs back [a1][a2].", ["a1", "a2"]))
+        cited_before = get_entry(self.db, case_id=self.case.id, entry_id=uuid.UUID(self.theory["id"]))
+        cited_before = {l["target_id"]: l["metadata"].get("cited") for l in cited_before["links"]}
+        self.rows[0].amount_minor += 1
+        self.db.commit()
+        entry = get_entry(self.db, case_id=self.case.id, entry_id=uuid.UUID(self.theory["id"]))
+        theory_rows = self.db.query(TheoryNarrative).filter_by(entry_id=uuid.UUID(self.theory["id"])).count()
+        out = convert_theory_to_finding(self.db, case_id=self.case.id, theory_id=uuid.UUID(self.theory["id"]),
+                                        current_user=self.user, expected_version=entry["version"], significance="high")
+        finding_id = out["finding"]["id"]
+        read = T.reading(self.db, case_id=self.case.id, entry_id=finding_id)
+        by_target = {a["target_id"]: a for a in read["additions"]}
+        ann = by_target["person:ann"]
+        self.assertEqual((ann["why"], ann["added_by"], ann["surface"]), ("the hub", "Investigator", "graph"))
+        self.assertEqual(ann["narrative"]["text"], "Ann receives every payment")
+        self.assertEqual(ann["narrative"]["words"], "From the theory “Acme pays Ann” · Written by Investigator")
+        pay = by_target[str(self.rows[0].id)]
+        self.assertEqual((pay["relationship"], pay["why"]), ("contradicts", "it goes the other way"))
+        self.assertEqual(pay["narrative"]["words"],
+                         "From the theory “Acme pays Ann” · Model reading · stub-model-1 · not confirmed")
+        self.assertEqual(pay["narrative"]["origin"], "agent")
+        self.assertEqual(read["fit"]["words"], "From the theory “Acme pays Ann” · Model reading · stub-model-1 · not confirmed")
+        finding_links = {l["id"] for l in out["finding"]["links"]}
+        self.assertTrue(all(c["ref"][5:] in finding_links for c in read["fit"]["citations"]))
+        # the values cited by the theory, not the payment as it is now
+        copied = {l["target_id"]: l["metadata"].get("cited") for l in out["finding"]["links"]}
+        self.assertEqual(copied[str(self.rows[0].id)], cited_before[str(self.rows[0].id)])
+        # the theory keeps its own narratives
+        self.assertEqual(self.db.query(TheoryNarrative).filter_by(entry_id=uuid.UUID(self.theory["id"])).count(),
+                         theory_rows)
+        self.assertEqual(person["added"], 1)

@@ -328,6 +328,9 @@ def serialize_narrative(row: TheoryNarrative, names: Mapping[str, str]) -> dict[
         words += f" · confirmed by {confirmer}" if confirmer else " · not confirmed"
     else:
         words = f"Written by {person or 'a person'}"
+    source = (row.basis or {}).get("from_theory") or {}
+    if source:
+        words = f"From the theory “{source.get('title') or 'Untitled'}” · {words}"
     return {
         "id": str(row.id), "link_id": str(row.link_id) if row.link_id else None, "text": row.text,
         "origin": row.origin, "model": row.model, "words": words,
@@ -335,6 +338,7 @@ def serialize_narrative(row: TheoryNarrative, names: Mapping[str, str]) -> dict[
         "asked_by": person if row.origin == "agent" else None,
         "citations": list(row.citations or []), "basis": dict(row.basis or {}),
         "replaces_id": str(row.replaces_id) if row.replaces_id else None,
+        "from_theory": dict((row.basis or {}).get("from_theory") or {}) or None,
         "confirmed_by": confirmer, "confirmed_at": row.confirmed_at.isoformat() if row.confirmed_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
     }
@@ -388,6 +392,37 @@ def confirm_narrative(db, *, case_id, entry_id, narrative_id, user: User) -> dic
         row.confirmed_at = _now()
         db.commit()
     return serialize_narrative(row, _names(db, [row.user_id, row.confirmed_by_user_id]))
+
+
+def copy_narratives(db, *, theory: WorkspaceEntry, finding: WorkspaceEntry,
+                    links: Mapping[Any, WorkspaceEntryLink]) -> int:
+    """A theory converted to a finding: each current narrative (of an addition, and of how it fits together) is
+    copied to the finding as it stands, with its author or model, confirmation and citations, and labelled as the
+    theory's ("From the theory “...”"). The theory keeps its own narratives and their history. Returns the count."""
+    rows = _narratives(db, theory.id)
+    held = {link.id for link in links.values()}
+    count = 0
+    for link_id in [None, *links.keys()]:
+        current = _current(_versions(rows, link_id))
+        if current is None:
+            continue
+        target = links[link_id].id if link_id is not None else None
+        if target is not None and target not in held:
+            continue
+        citations = []
+        for cite in current.citations or []:
+            ref = str((cite or {}).get("ref") or "")
+            if ref.startswith("link:") and _uuid(ref[5:]) in links:
+                cite = {**cite, "ref": f"link:{links[_uuid(ref[5:])].id}"}
+            citations.append(cite)
+        db.add(TheoryNarrative(
+            id=uuid.uuid4(), case_id=finding.case_id, entry_id=finding.id, link_id=target, text=current.text,
+            origin=current.origin, user_id=current.user_id, model=current.model, citations=citations,
+            basis={**(current.basis or {}), "from_theory": {"id": str(theory.id), "title": theory.title,
+                                                            "narrative_id": str(current.id)}},
+            confirmed_by_user_id=current.confirmed_by_user_id, confirmed_at=current.confirmed_at))
+        count += 1
+    return count
 
 
 _MARK = re.compile(r"\[(m\d+|a\d+)\]")

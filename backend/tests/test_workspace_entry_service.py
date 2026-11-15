@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.removed_record import RemovedRecord
+from postgres.models.theory_narrative import TheoryNarrative
 from postgres.models.case_deadline import CaseDeadline
 from postgres.models.case_profile import CaseProfile
 from postgres.models.evidence import EvidenceFile
@@ -51,6 +52,7 @@ ENTRY_TABLES = [
     WorkspaceEntryEvent.__table__,
     WorkspaceLegacyMapping.__table__,
     RemovedRecord.__table__,  # removed links are kept in Deleted items
+    TheoryNarrative.__table__,  # a theory's narratives go with it when it becomes a finding
 ]
 
 

@@ -1497,6 +1497,7 @@ def convert_theory_to_finding(
     )
     db.add(finding)
     db.flush()
+    copied_links: dict[Any, WorkspaceEntryLink] = {}
     for link in theory.links:
         copied = {
             "target_type": link.target_type,
@@ -1511,11 +1512,20 @@ def convert_theory_to_finding(
             from services import collection_index
 
             copied["phone_members"] = collection_index.members_of(db, link_id=link.id)
-            _append_link(db, finding, current_user, copied, prepared=True)
+            record = _append_link(db, finding, current_user, copied, prepared=True)
         elif link.target_type == "evidence_passage":  # a kept quote stays as taken, even if the document was read again
-            _append_link(db, finding, current_user, copied, prepared=True)
+            record = _append_link(db, finding, current_user, copied, prepared=True)
         else:
-            _append_link(db, finding, current_user, copied)
+            record = _append_link(db, finding, current_user, copied)
+        # Why it was added, by whom, and the values a payment had when the theory cited it, are the theory's records:
+        # the finding carries them as they were, never a fresh reading.
+        kept = {key: (link.link_metadata or {})[key] for key in ("addition", "cited") if key in (link.link_metadata or {})}
+        if kept:
+            record.link_metadata = {**(record.link_metadata or {}), **kept}
+        copied_links[link.id] = record
+    db.flush()
+    from services.theory_additions import copy_narratives
+    copy_narratives(db, theory=theory, finding=finding, links=copied_links)
     _record_revision(db, finding, current_user)
     _record_event(
         db,
