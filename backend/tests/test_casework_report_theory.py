@@ -128,3 +128,15 @@ class CaseworkReportTheoryTests(DuplicateTestCase):
                                               generated_by="Investigator")
         self.assertNotIn(key, html)
         self.assertIn("2021-07-10 · Graph item: no name on record", html)
+
+    def test_an_agent_answer_prints_the_question_it_answers_never_its_markdown(self):
+        link = {"id": "l1", "target_type": "agent_answer", "target_id": "m1", "relationship": "context",
+                "target_label": "Agent answer · # Case Financial Summary ## 1. Accounts **2 registered accounts**",
+                "source_anchor": {"thread_title": "List each account's holder", "answered_at": "2026-11-08T11:45:21+00:00",
+                                  "model": "deepseek-v4-pro", "excerpt": "# Case Financial Summary"}}
+        entry = {"id": "t1", "entry_type": "theory", "title": "T", "body": "", "links": [link], "_report": {}}
+        html = cr.render_casework_report_html({"theories": [entry]}, sections=["theories"], case_name="Matter A",
+                                              generated_by="Investigator")
+        self.assertIn("Agent answer: Answer in “List each account&#x27;s holder”, 2026-11-08, deepseek-v4-pro", html)
+        self.assertNotIn("**", html)
+        self.assertNotIn("# Case", html)

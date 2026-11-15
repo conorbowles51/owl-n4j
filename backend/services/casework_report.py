@@ -124,6 +124,11 @@ def _link_words(link: dict[str, Any]) -> str:
         reader = (anchor.get("reader") or {}).get("words")
         place = ", ".join(str(value) for value in (anchor.get("document_name"), anchor.get("page_label")) if value)
         return "“%s”, %s%s" % (anchor["quote"], place, " · %s" % reader if reader else "")
+    if link.get("target_type") == "agent_answer" and anchor.get("thread_title"):
+        # Named by the question it answers, never by its first lines of markdown.
+        words = "Answer in “%s”" % anchor["thread_title"]
+        facts = [_day(anchor.get("answered_at")), anchor.get("model")]
+        return words + "".join(f", {fact}" for fact in facts if fact)
     words = str(link.get("target_label") or UNRESOLVED_LABEL)
     if link.get("target_type") == "evidence" and anchor.get("page"):
         words += f", page {anchor['page']}"
