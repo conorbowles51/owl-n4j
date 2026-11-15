@@ -269,7 +269,8 @@ def near_misses(stated: set[str], held: set[str]) -> list[tuple[str, str]]:
 
 def code_verdict(wanted: dict[str, set[str]], sources: list[_Haystack]) -> Verdict | None:
     """Settled by code, or None for the model: supports when every specific is in the cited text and at least one is a
-    figure, date, time or identifier; does not mention when two or more specifics and none of them are."""
+    figure, date, time or identifier; does not mention when two or more specifics, one of them a figure, date or
+    identifier, and none of them are."""
     items = [(kind, value) for kind, values in wanted.items() for value in sorted(values)]
     if not items:
         return None
@@ -279,7 +280,9 @@ def code_verdict(wanted: dict[str, set[str]], sources: list[_Haystack]) -> Verdi
         # names alone do not carry a sentence (a page naming a person says nothing of what they did): the model reads it
         return Verdict(SUPPORTS, "Every name, figure and date of the sentence is in the cited source: "
                        + ", ".join(found[:8]) + ".", "code", found=found)
-    if not found and len(items) >= 2:
+    if not found and len(items) >= 2 and any(kind in ("figures", "identifiers") for kind, _ in items):
+        # names and times alone do not settle it: a record holds 02:40 UTC where the answer writes 22:40 local time,
+        # and a phone's record does not repeat its owner's name
         return Verdict(NOT_MENTIONED, "None of the sentence's names, figures or dates is in the cited source: "
                        + ", ".join(missing[:8]) + ".", "code", missing=missing)
     return None

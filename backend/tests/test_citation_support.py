@@ -90,6 +90,14 @@ class SupportTests(_Case):
         self.assertEqual(cite["reason"], "The source has 39.288533 where the sentence has 39.288503.")
         self.assertEqual(S.near_misses({"2024-05-04", "650"}, {"2024-05-03", "660"}), [])  # dates, short numbers
 
+    def test_a_sentence_of_names_and_local_times_is_read_by_the_model_not_settled_by_code(self):
+        # live 15 Nov 2026: "left a fixed point at 22:40 local time" against records holding 02:40 UTC was marked as
+        # not mentioning it by code, without a model reading
+        answer = f"Harold Vint left at 22:40 local time and was back by 23:20 [p]({self.p2})."
+        _, result = S.check_and_mark(self.db, self.case.id, answer, judge=self.judge("supports"))
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(result["claims"][0]["citations"][0]["by"], "model:m1")
+
     def test_a_failed_model_call_leaves_the_citation_unchecked_saying_why_and_marks_nothing(self):
         def broken(prompt):
             raise TimeoutError("slow")
