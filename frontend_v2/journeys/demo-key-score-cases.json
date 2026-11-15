@@ -18,5 +18,13 @@
     {"term": "bay 4", "text": "Rent for bay 4 from October 2023.", "hit": true},
     {"term": "tow", "text": "At the tow yard.", "hit": true},
     {"term": "tow", "text": "In the township.", "hit": false}
+  ],
+  "about_wrong": "Shared cases for the key's wrong words (demo-key-score.mjs wrongWords, financial_agent_fit_replay.py wrong_words): a wrong word counts anywhere in the answer except its labelled other version (a paragraph that starts 'Other version', or the paragraph under an 'Other version' heading). Measured 15 Nov 2026: a right demo Q2 answer scored wrong for naming the theft nights in its other version.",
+  "wrong_cases": [
+    {"must_not": ["Brightwater"], "text": "He was at the hospital [note](doc://a/1).\n\nOther version for 3 May 2024. That night is one of the Brightwater theft nights [report](doc://b/1).", "wrong": []},
+    {"must_not": ["Brightwater"], "text": "He was at the hospital.\n\n**Other version**\n\nThe State places a phone near Brightwater.\n\n**Limits**\n\nPoints are sparse.", "wrong": []},
+    {"must_not": ["Brightwater"], "text": "He took part in the Brightwater theft.\n\nOther version: he was at the hospital.", "wrong": ["Brightwater"]},
+    {"must_not": ["Brightwater"], "text": "He was at the hospital.\n\n**Other version**\n\nThe State places a phone nearby.\n\nHe was at Brightwater that night.", "wrong": ["Brightwater"]},
+    {"must_not": ["yes"], "text": "Yes, it is the same person.\n\nOther version: the records do not settle it.", "wrong": ["yes"]}
   ]
 }

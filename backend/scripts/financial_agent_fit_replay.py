@@ -113,11 +113,37 @@ def expect_hit(term: str, text: str) -> bool:
     return re.search(left + re.escape(t) + right, s) is not None
 
 
+_OTHER_VERSION = re.compile(r'^[\s#*_>]*other version\b', re.I)
+
+
+def without_other_version(text: str) -> str:
+    """journeys/demo-key-score.mjs withoutOtherVersion: the answer without its labelled other version (a paragraph
+    that starts "Other version", or the paragraph under an "Other version" heading). The final-answer checklist asks
+    for the strongest other version there; naming it is not stating it. Measured 15 Nov 2026 (lx-citeproof gate, demo
+    Q2 run 3): a right answer scored wrong because its other version named the Brightwater theft nights."""
+    kept, skip_next = [], False
+    for para in re.split(r'\n\s*\n', text or ''):
+        if skip_next:
+            skip_next = False
+            continue
+        if _OTHER_VERSION.match(para):
+            plain = re.sub(r'[#*_>]', '', para).strip()
+            skip_next = '\n' not in plain and not re.search(r'[.!?]$', plain) and len(plain) <= 80
+            continue
+        kept.append(para)
+    return '\n\n'.join(kept)
+
+
+def wrong_words(must_not, answer: str) -> list:
+    """journeys/demo-key-score.mjs wrongWords: the key's wrong words the answer states outside its other version."""
+    body = without_other_version(answer).lower()
+    return [w for w in must_not or [] if str(w).lower() in body]
+
+
 def score_key(answer: str, key: dict, citation_check: dict) -> dict:
     """The demo key's score for one answer, as journeys/live-demo-key.mjs scores it."""
     hit = [w for w in key['expect'] if expect_hit(w, answer)]
-    text = (answer or '').lower()
-    bad = [w for w in key.get('must_not') or [] if w.lower() in text]
+    bad = wrong_words(key.get('must_not') or [], answer)
     ok = int((citation_check or {}).get('ok') or 0)
     result = 'wrong' if bad else 'found' if len(hit) == len(key['expect']) and ok > 0 else 'missed'
     return dict(result=result, expected='%d/%d' % (len(hit), len(key['expect'])), wrong_words=bad,

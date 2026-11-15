@@ -156,6 +156,22 @@ def test_answer_requirements_and_plan_reach_the_model_only_with_their_switch():
     assert 'if fit.on("A"):\n        request += ANSWER_REQUIREMENTS' in src
 
 
+def test_answer_requirements_label_the_other_version_the_key_check_reads_past():
+    """15 Nov gate (W vs W,A): an unlabelled other version scored a right answer wrong, the not-read line opened
+    answers, and pasted record text added uncited lines. The checklist asks for the label the key check skips."""
+    import re
+    import sys
+    from pathlib import Path
+    from services.agent import graph
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import financial_agent_fit_replay as replay
+    label = re.search(r"starts '([^']+)'", graph.ANSWER_REQUIREMENTS).group(1)
+    answer = f"He was at the hospital [note](doc://a/1).\n\n{label} the State's report names Brightwater [r](doc://b/1)."
+    assert replay.wrong_words(["Brightwater"], answer) == []
+    assert "at the end, not at the start" in graph.ANSWER_REQUIREMENTS
+    assert "not as a pasted block" in graph.ANSWER_REQUIREMENTS
+
+
 def test_check_before_answer_lists_unsupported_figures_only_with_v():
     from services.agent import graph
     from services.agent.tools import AgentToolContext

@@ -400,14 +400,20 @@ _FINAL_ANSWER_REQUEST = (
 
 # lx-agentfit round 2, R2b item A: what a good answer has, said last, where the model reads it just before writing.
 # Rule 1: nothing more certain than its record. Measured by services.agent.answer_quality (uncited, not_in_record,
-# unfinished_unstated, other_side_missing, certainty).
+# unfinished_unstated, other_side_missing, certainty). Items 1, 3 and 4 reworded after the 15 Nov gate (lx-citeproof,
+# W vs W,A on DeepSeek): answers cut cited figures, the other version was unlabelled and uncited, and the not-read
+# line opened the answer. The key check (financial_agent_fit_replay.wrong_words) reads the answer without the
+# paragraph that starts 'Other version'.
 ANSWER_REQUIREMENTS = (
-    " Before you write, check the answer against these, in order: (1) every fact has the link of the record it comes "
-    "from, copied from a result above; a fact no result above carries is not stated as found. (2) Every figure and "
-    "date is written as its record writes it. (3) For a question of fact (where, whose, who, did, is it true), give "
-    "the strongest other version and what the records say about it. (4) Say what was not read or not finished. "
-    "(5) A reading by a model, a suggestion or a rule's match is called that, never confirmed; write 'shows' or "
-    "'suggests', never 'proves' or 'confirms'.")
+    " Before you write, check the answer against these, in order: (1) give each fact, figure and date the question "
+    "needs that a result above carries, each sentence with the link of its record copied from that result; state "
+    "nothing as found that no result above carries. (2) Every figure and date is written as its record writes it; "
+    "quote a record in short phrases inside sentences that carry its link, not as a pasted block. (3) For a question "
+    "of fact (where, whose, who, did, is it true), give the strongest other version in one paragraph that starts "
+    "'Other version:', each of its facts with its record's link, and what the records say about it. (4) If something "
+    "was not read or not finished, say so in one line at the end, not at the start. (5) A reading by a model, a "
+    "suggestion or a rule's match is called that, never confirmed; write 'shows' or 'suggests', never 'proves' or "
+    "'confirms'.")
 
 _OUT_OF_STEPS_REQUEST = (
     " The step limit for one answer ended the search before it finished. Write the answer from what was found, and "

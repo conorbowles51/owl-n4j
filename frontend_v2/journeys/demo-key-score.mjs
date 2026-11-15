@@ -25,3 +25,30 @@ export function expectHit(term, text) {
   const right = /[\p{L}\p{N}_]$/u.test(t) ? "(?![\\p{L}\\p{N}_])" : ""
   return new RegExp(left + escape(t) + right, "u").test(s)
 }
+
+// The answer a key's wrong words are read in: without its labelled other version. The final-answer checklist asks
+// for the strongest other version in one paragraph that starts "Other version"; naming it there is not stating it.
+// Measured 15 Nov 2026 (lx-citeproof gate, demo Q2 run 3): an answer placing Mateo Ruiz at the hospital with its
+// discharge note scored wrong because its "Other version for 3 May" paragraph named the Brightwater theft nights.
+// A heading line alone ("**Other version**") leaves out the paragraph under it as well. Mirrored by
+// backend/scripts/financial_agent_fit_replay.py (without_other_version); demo-key-score-cases.json "wrong_cases".
+const OTHER_VERSION = /^[\s#*_>]*other version\b/iu
+export function withoutOtherVersion(text) {
+  const kept = []
+  let skipNext = false
+  for (const para of String(text || "").split(/\n\s*\n/u)) {
+    if (skipNext) { skipNext = false; continue }
+    if (OTHER_VERSION.test(para)) {
+      const plain = para.replace(/[#*_>]/gu, "").trim()
+      skipNext = !plain.includes("\n") && !/[.!?]$/u.test(plain) && plain.length <= 80
+      continue
+    }
+    kept.push(para)
+  }
+  return kept.join("\n\n")
+}
+
+export function wrongWords(mustNot, text) {
+  const body = withoutOtherVersion(text).toLowerCase()
+  return (mustNot || []).filter((w) => body.includes(String(w).toLowerCase()))
+}
