@@ -671,6 +671,19 @@ def mark(answer: str, result: dict[str, Any]) -> str:
     return text.rstrip() + "\n\n" + "\n".join(lines)
 
 
+def summary(result: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What a stored answer keeps of its source check, without the sentences: the counts, who read them, the model's
+    calls and tokens, and the seconds the answer waited for it."""
+    if not result:
+        return None
+    model = result.get("model") or {}
+    return {"available": result.get("available"), "reason": result.get("reason"),
+            "citations": result.get("citations"), "counts": result.get("counts"), "by": result.get("by"),
+            "seconds": result.get("seconds"),
+            "model": {k: model.get(k) for k in ("model", "usage", "seconds", "items", "calls", "failed_calls", "error")
+                      if k in model} or None}
+
+
 def check_and_mark(session, case_id, answer: str, *, user_id=None, judge=None) -> tuple[str, dict[str, Any]]:
     """The stored form of an answer and its check. A check that fails stores the answer unmarked and says so in the
     result; it never shows the answer as checked."""

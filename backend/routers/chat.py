@@ -317,6 +317,7 @@ def chat(
         llm_usage = llm.last_usage
         # each cited sentence read against its source before the answer is stored (lx-citeproof B)
         from services.agent.storage import supported_answer
+        from services.citation_support import summary as citation_summary
         result["answer"], result["citation_support"] = supported_answer(
             db, case_id=request.case_id, answer=result.get("answer") or "", user_id=current_user.id)
         if llm_usage:
@@ -338,6 +339,8 @@ def chat(
                     "selected_entity_keys": selected_entity_keys,
                     "conversation_id": str(conversation.id) if conversation else None,
                     "view_context": request.view_context,
+                    # the source check's counts, model calls and seconds (its own calls are metered separately)
+                    "citation_support": citation_summary(result.get("citation_support")),
                 },
             )
 

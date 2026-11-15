@@ -131,6 +131,15 @@ class SupportTests(_Case):
         self.assertEqual({c["citations"][0]["reason"] for c in result["claims"][S.CHUNK_ITEMS:2 * S.CHUNK_ITEMS]},
                          {"The model check failed (TimeoutError)."})
 
+    def test_the_summary_a_chat_answer_keeps_has_the_counts_and_seconds_and_no_sentence(self):
+        _, result = S.check_and_mark(self.db, self.case.id, f"The tenant holds the keys [p]({self.p2}).",
+                                     judge=self.judge("partly"))
+        kept = S.summary(result)
+        self.assertEqual(kept["counts"][S.PARTLY], 1)
+        self.assertEqual(kept["model"]["usage"], {"prompt_tokens": 10, "completion_tokens": 5})
+        self.assertIsInstance(kept["seconds"], float)
+        self.assertNotIn("keys", json.dumps(kept))
+
     def test_a_failed_model_call_leaves_the_citation_unchecked_saying_why_and_marks_nothing(self):
         def broken(prompt):
             raise TimeoutError("slow")
@@ -195,6 +204,8 @@ def test_every_stored_answer_goes_through_the_source_check():
     root = Path(__file__).resolve().parents[1]
     chat = (root / "routers" / "chat.py").read_text()
     assert chat.index("supported_answer(") < chat.index("append_conversation_turn(\n")
+    # chat keeps the check's counts, model calls and seconds with the answer's cost record
+    assert chat.index("supported_answer(") < chat.index('"citation_support": citation_summary(')
     agent = (root / "services" / "agent" / "service.py").read_text()
     assert agent.index("storage.supported_answer(") < agent.index('"citation_support": citation_support')
 
