@@ -1738,6 +1738,26 @@ def get_merge_job(
     }
 
 
+@router.get("/merge-lineage")
+def get_merge_lineage(
+    case_id: str,
+    entity_key: str,
+    current_user = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """What an entity was merged from: each merge that made it, oldest first, with the keys and names merged."""
+    from services.merge_carry import lineage
+
+    try:
+        case_uuid = UUID(str(case_id))
+        check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="That is not a case id")
+    except (CaseNotFound, CaseAccessDenied) as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return {"entity_key": entity_key, "merges": lineage(db, case_id=case_uuid, entity_key=entity_key)}
+
+
 # --- Rejected Merge Pairs Endpoints ---
 
 class RejectMergeRequest(BaseModel):

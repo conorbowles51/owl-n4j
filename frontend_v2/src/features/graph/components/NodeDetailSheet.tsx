@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/dialog"
 import { useCreateDossier } from "@/features/dossiers"
 import { NodePhoneConversations } from "./NodePhoneConversations"
+import { MergeLineage } from "./MergeLineage"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 import { entityPanelColour } from "../lib/entity-panel-colours"
@@ -441,6 +442,7 @@ export function NodeDetailSheet({
 
       <ScrollArea className="flex-1 min-w-0 overflow-hidden">
         <NodePhoneConversations caseId={caseId} entityKey={detail.key} />
+        <MergeLineage caseId={caseId} entityKey={detail.key} />
         {managedIdentity && (
           <section className="m-3 rounded border p-3 text-sm space-y-2">
             <p>

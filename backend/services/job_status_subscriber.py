@@ -672,6 +672,17 @@ class JobStatusSubscriber:
                         source_entity_keys=source_keys,
                         merged_entity_key=merged_key,
                     )
+                    from services.merge_carry import carry_casework_after_merge
+
+                    # Theory, finding and note links and saved groups follow the merged entity, each noting what it
+                    # pointed at before.
+                    carry_casework_after_merge(
+                        db,
+                        case_id=merge_job.case_id,
+                        source_entity_keys=source_keys,
+                        merged_entity_key=merged_key,
+                        merge_job_id=merge_job.id,
+                    )
                     from services.dossier_service import transfer_dossiers_after_merge
 
                     transfer_dossiers_after_merge(

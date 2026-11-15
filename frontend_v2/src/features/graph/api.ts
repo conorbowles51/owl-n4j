@@ -299,6 +299,12 @@ export const graphAPI = {
       search_pending?: boolean | null
     }>(`/api/graph/merge-jobs/${encodeURIComponent(mergeJobId)}`),
 
+  /** The merges that made this entity, oldest first, each with the keys and names merged into it. */
+  getMergeLineage: (caseId: string, entityKey: string) =>
+    fetchAPI<MergeLineage>(
+      `/api/graph/merge-lineage?case_id=${encodeURIComponent(caseId)}&entity_key=${encodeURIComponent(entityKey)}`
+    ),
+
   findSimilarEntities: (
     caseId: string,
     entityTypes?: string[] | null,
@@ -585,4 +591,16 @@ export function findSimilarEntitiesStream(
   })
 
   return () => es.close()
+}
+
+export interface MergeLineage {
+  entity_key: string
+  merges: {
+    merge_job_id: string
+    into: string
+    by: string | null
+    at: string | null
+    status: "completed" | "partial"
+    sources: { key: string; name: string | null }[]
+  }[]
 }
