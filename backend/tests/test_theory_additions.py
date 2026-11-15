@@ -294,6 +294,26 @@ class TheoryAdditionTests(DuplicateTestCase):
         self.assertEqual(whole["fit"]["id"], fit["id"])
         self.assertEqual([x["link_id"] for x in whole["additions"]], a["added_link_ids"] + b["added_link_ids"])
 
+    def test_an_item_with_no_name_reads_no_name_on_record_never_its_raw_id_or_type(self):
+        """lx-theorycase 15 Nov: Verification theory 'Live check theory 2026-11-08T20:17' showed a timeline member's
+        raw id as its name, and narrative refs fell back to the raw link type."""
+        bare = self.add(surface="graph", items=[{"target_type": "graph_entity", "target_id": "person:ann"}])
+        same = self.add(surface="graph", items=[{"target_type": "graph_entity", "target_id": "person:bob",
+                                                 "target_label": "person:bob"}])
+        grp = self.group("timeline_range", [{"type": "graph_entity", "id": "event:meeting-1"}], {}, "Jan", "timeline")
+        for added, raw in ((bare, "person:ann"), (same, "person:bob"), (grp, "event:meeting-1")):
+            member = self.loupe(added["added_link_ids"][0])["members"][0]
+            self.assertEqual(member["label"], "no name on record")
+            self.assertNotIn(raw, member["text"])
+        additions = {a["link_id"]: a for a in self.reading()["additions"]}
+        self.assertEqual(additions[bare["added_link_ids"][0]]["label"], "no name on record")
+        run = stub("Ann [a1] met Bob [a2].", [])
+        fit = T.infer_narrative(self.db, case_id=self.case.id, entry_id=self.theory["id"], link_id=None,
+                                user=self.user, generator=run)
+        self.assertNotIn("graph_entity", run.calls[0])
+        self.assertIn("no name on record", run.calls[0])
+        self.assertNotIn("graph_entity", " ".join(c.get("label") or "" for c in fit["citations"]))
+
     def test_new_theory_from_a_selection(self):
         made = T.new_theory(self.db, case_id=self.case.id, user=self.user, title="Bob is a mule", surface="graph",
                             group={"group_type": "graph_selection", "members": [{"type": "graph_entity", "id": "person:bob"}],

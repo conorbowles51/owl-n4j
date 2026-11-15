@@ -254,9 +254,9 @@ def member_facts(db, case_id, members: list[dict[str, Any]]) -> list[dict[str, A
         fact = known.get((m["type"], m["id"]), {})
         # A ledger row or file is named by what it is now; other members by the words they were chosen with.
         if m["type"] in ("financial_transaction", "evidence"):
-            label = fact.get("label") or m.get("label") or m["id"]
+            label = fact.get("label") or _named(m.get("label"), m["id"]) or NO_NAME
         else:
-            label = m.get("label") or fact.get("name") or fact.get("label") or m["id"]
+            label = _named(m.get("label"), m["id"]) or fact.get("name") or fact.get("label") or NO_NAME
         if "date_shown" in fact:
             fact = {**fact, "date": case_selections.iso_day(fact["date_shown"]) or fact["date_shown"]}
         state = m.get("state") if m.get("state") not in (None, "present") else fact.get("state", "present")
@@ -273,9 +273,23 @@ def member_facts(db, case_id, members: list[dict[str, Any]]) -> list[dict[str, A
     return out
 
 
+NO_NAME = "no name on record"
+
+
+def _named(label: Any, ident: Any) -> str | None:
+    """An item's own name; a label that is only its id is no name (it would print the raw id)."""
+    text = str(label or "").strip()
+    return text if text and text != str(ident or "") else None
+
+
+def _link_words(link: WorkspaceEntryLink) -> str:
+    """A link's name, or its type in plain words with "no name on record", never its raw id or type."""
+    return _named(link.target_label, link.target_id) or f"{link_types.type_words(link.target_type)}, {NO_NAME}"
+
+
 def _single_members(link: WorkspaceEntryLink) -> list[dict[str, Any]]:
     anchor = link.source_anchor or {}
-    member = {"type": link.target_type, "id": link.target_id, "label": link.target_label or link.target_id}
+    member = {"type": link.target_type, "id": link.target_id, "label": _named(link.target_label, link.target_id)}
     if link.target_type == "agent_answer":
         member["label"] = link.target_label or "Agent answer"
     return [member]
@@ -472,7 +486,7 @@ def infer_narrative(db, *, case_id, entry_id, link_id=None, user: User,
         total = held["member_count"]
         why = (link.link_metadata or {}).get("addition", {}).get("why")
         group = held.get("group")
-        subject = (f"This addition is: {link.target_label or link.target_type}."
+        subject = (f"This addition is: {_link_words(link)}."
                    + (f" It was chosen: {why}." if why else "")
                    + (f" How it was chosen: {json.dumps(group['how'])[:600]}." if group and group.get("how") else ""))
         marks = [(f"m{i + 1}", f) for i, f in enumerate(facts)]
@@ -490,11 +504,11 @@ def infer_narrative(db, *, case_id, entry_id, link_id=None, user: User,
             mark = f"a{i + 1}"
             now = _current(_versions(rows, l.id))
             why = (l.link_metadata or {}).get("addition", {}).get("why")
-            text = (f"{l.target_label or l.target_type}" + (f" — chosen: {why}" if why else "")
+            text = (f"{_link_words(l)}" + (f" — chosen: {why}" if why else "")
                     + (f" — its narrative ({'model reading' if now.origin == 'agent' and not now.confirmed_at else 'person'}): {now.text}"
                        if now else " — no narrative yet"))
             prompt_facts.append((mark, text[:MAX_FACT * 3]))
-            refs[mark] = {"mark": mark, "ref": f"link:{l.id}", "label": l.target_label or l.target_type}
+            refs[mark] = {"mark": mark, "ref": f"link:{l.id}", "label": _link_words(l)}
         total = len(links)
         subject = "Below are the theory's additions, in the order they were added."
         target_link = None
@@ -537,7 +551,7 @@ def _addition(link: WorkspaceEntryLink, rows: list[TheoryNarrative], names: Mapp
     origin = record.get("origin") or ("agent" if link.target_type == "agent_answer" else "person")
     return {
         "link_id": str(link.id), "target_type": link.target_type, "target_id": link.target_id,
-        "label": link.target_label or link.target_id, "relationship": link.relationship_type,
+        "label": _named(link.target_label, link.target_id) or NO_NAME, "relationship": link.relationship_type,
         "kind": "group" if group else "single",
         "surface": record.get("surface") or anchor.get("surface"),
         "why": record.get("why") or (anchor.get("words") if group else None),
