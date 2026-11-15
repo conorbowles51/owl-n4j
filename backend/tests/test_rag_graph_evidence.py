@@ -114,6 +114,16 @@ class GraphEvidenceTests(unittest.TestCase):
             self.assertEqual(stats["unresolved_locations"], 1)
 
 
+    def test_one_chunk_gives_at_most_two_passages(self):
+        # a statement chunk sources many payments: five windows of one CSV chunk crowded out other evidence
+        rows = " ".join("Row %d: CHECK %d TRAVIS KELL 500.00." % (i, 1040 + i) + " filler" * 60 for i in range(5))
+        locs = [dict(LOCATION, quote="CHECK %d TRAVIS KELL" % (1040 + i)) for i in range(5)]
+        rels = {("kell", "marsh", "PAID"): [json.dumps(locs[:2])], ("kell", "okafor", "KNOWS"): [json.dumps(locs[2:])]}
+        passages, stats = self._passages(chunks=_chunks(text=rows), rel_locations=rels)
+        self.assertEqual(len(passages), 2)
+        self.assertGreaterEqual(stats["same_chunk_skipped"], 1)
+
+
 class AnswerContextTests(unittest.TestCase):
     """Through answer_question: the context the model reads holds the relationship's own passage and cite."""
 

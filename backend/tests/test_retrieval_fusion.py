@@ -73,6 +73,19 @@ class FusionTests(unittest.TestCase):
         self.assertEqual([c["id"] for c in fused], ["f1:r:chunk:0"])
 
 
+    def test_graph_passages_never_outrank_the_best_searched_passage(self):
+        # demo case, "Which of Travis Kell's proffer statements are contradicted?": counted twice (graph and entity
+        # order), eleven graph passages sat above the proffer itself and the answers stopped citing it
+        from services import retrieval_fusion
+        chunks = [_vector(i, 0.9 + i * 0.01) for i in range(20)]
+        evidence = [{"id": "g%d:r:chunk:0@1" % i, "text": "row %d" % i, "metadata": {}, "about": "K -[PAID]-> P",
+                     "about_keys": ["kell"], "_graph_evidence": True} for i in range(11)]
+        pinned, fused, stats = retrieval_fusion.fuse(chunks, evidence, [{"key": "kell"}])
+        kept = retrieval_fusion.select(pinned, fused, 15, stats)
+        self.assertEqual(kept[0]["id"], "f0:r:chunk:0")
+        self.assertLessEqual([c["id"] for c in kept].index("g0:r:chunk:0@1"), 2)  # interleaved, not buried
+
+
 class ThresholdSpaceTests(unittest.TestCase):
     def test_similarity_reads_the_collections_space(self):
         from services.retrieval_fusion import collection_space, min_similarity, similarity

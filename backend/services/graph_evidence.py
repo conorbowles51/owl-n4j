@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 MAX_PASSAGES = 12  # passages behind connections and entities in one answer
 MAX_LOCATIONS_PER_ITEM = 2  # passages per connection or entity
+MAX_PER_CHUNK = 2  # passages from one stored chunk (a statement chunk sources many payments)
 MAX_RELATIONSHIPS = 80  # connections whose provenance is read
 MAX_ENTITIES = 20  # entities whose own provenance is read
 WINDOW = 500  # characters of chunk text kept on each side of the quote
@@ -214,6 +215,7 @@ def evidence_passages(
     chunks = read_chunks(collection, case_id, wanted)
     passages: List[Dict[str, Any]] = []
     seen: set = set()
+    per_chunk: Dict[str, int] = {}
     for item in items:
         used = 0
         for loc in item.get("locations", []):
@@ -229,10 +231,12 @@ def evidence_passages(
                 continue
             text, meta = stored
             dedupe = (cid, span[0] // 200)
-            if dedupe in seen:
+            if dedupe in seen or per_chunk.get(cid, 0) >= MAX_PER_CHUNK:
+                stats["same_chunk_skipped"] = stats.get("same_chunk_skipped", 0) + 1
                 used += 1
                 continue
             seen.add(dedupe)
+            per_chunk[cid] = per_chunk.get(cid, 0) + 1
             page = loc.get("page_start")
             meta = dict(meta)
             if isinstance(page, int) and page >= 1:

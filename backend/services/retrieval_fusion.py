@@ -7,7 +7,8 @@ used to sort them all by raw distance, so a phone window's invented distance com
 graph passages, having none, came last.
 
 Reciprocal rank fusion (Cormack, Clarke and Buettcher, SIGIR 2009) needs only each list's order: a passage scores
-``sum(1 / (K + rank))`` over the lists it appears in. The entity list counts for the passages behind its entities.
+``sum(1 / (K + rank))`` over the lists it appears in. The entity search orders the graph passages (the passages
+behind its entities' connections), which count as one list.
 Passages the person chose (selected documents, selected phone records) stay first, as before.
 
 Distances: the chunk and entity collections the backend made first use Chroma's default space, squared L2 (measured
@@ -111,13 +112,13 @@ def fuse(
         if chunk_key in by_chunk:
             passage["_folds_into"] = chunk_key
         own.append(passage)
+    # The graph's order already follows the entity search (services/graph_evidence.candidate_items: connections
+    # between named entities, then by the entities' search ranks), so graph passages count as one list. Counted as
+    # two (graph and entity), every graph passage outranked the best searched passage: on the demo case's "Which of
+    # Travis Kell's proffer statements are contradicted?" the proffer itself fell to 12th and three live answers in
+    # three stopped citing it.
     for rank, passage in enumerate(own, 1):
         credit(passage, rank)
-    by_entity = sorted(own, key=lambda p: min([entity_rank.get(k, 10 ** 6) for k in p.get("about_keys") or []]
-                                              or [10 ** 6]))
-    for rank, passage in enumerate(by_entity, 1):
-        if any(k in entity_rank for k in passage.get("about_keys") or []):
-            credit(passage, rank)
 
     pinned_keys = {_key(c) for c in pinned}
     fused = [items[k] for k in sorted(scores, key=lambda k: -scores[k]) if k not in pinned_keys]
