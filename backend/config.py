@@ -78,7 +78,7 @@ CHROMADB_PORT = int(os.getenv("CHROMADB_PORT", "8101"))  # 8101 = host-mapped po
 # RAG Configuration
 VECTOR_SEARCH_ENABLED = os.getenv("VECTOR_SEARCH_ENABLED", "true").lower() == "true"
 VECTOR_SEARCH_TOP_K = int(os.getenv("VECTOR_SEARCH_TOP_K", "50"))  # Raised from 10→50 for full case analysis. For Ollama <32K context, reduce to 15.
-VECTOR_SEARCH_CONFIDENCE_THRESHOLD = float(os.getenv("VECTOR_SEARCH_CONFIDENCE_THRESHOLD", "2.0"))  # Maximum distance for L2 metric (lower = more strict, typical range 0.0-3.0)
+VECTOR_SEARCH_CONFIDENCE_THRESHOLD = float(os.getenv("VECTOR_SEARCH_CONFIDENCE_THRESHOLD", "2.0"))  # Maximum squared-L2 distance between unit vectors (the live collections' space, 0.0-4.0 = 2 - 2 cos); 2.0 keeps cosine similarity >= 0. Applied as that cosine floor in any space (services/retrieval_fusion.py)
 HYBRID_FILTERING_ENABLED = os.getenv("HYBRID_FILTERING_ENABLED", "true").lower() == "true"
 
 # Chunk-level search configuration

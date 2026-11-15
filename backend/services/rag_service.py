@@ -445,6 +445,19 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"[RAG] Error finding documents for scoped entities: {exc}")
             return []
 
+    def _chunk_space(self) -> str:
+        """The distance space of the chunk collection (services/retrieval_fusion.py), read once."""
+        space = getattr(self, "_chunk_space_cache", None)
+        if space is None:
+            from services.retrieval_fusion import collection_space
+            collection = getattr(vector_db_service, "chunk_collection", None) if vector_db_service is not None else None
+            try:
+                space = collection_space(collection) if collection is not None else "l2"
+            except Exception:  # noqa: BLE001 - Chroma's default
+                space = "l2"
+            self._chunk_space_cache = space
+        return space
+
     def _chunk_doc_keys(self, doc_keys: List[str], case_id: Optional[str]) -> List[str]:
         """The passage keys of Document nodes: a node's key, and the document key of its file name.
 
@@ -859,13 +872,15 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 all_results = []
                 source = "chunks"
 
-            # Apply confidence threshold
+            # Apply confidence threshold: the saved value is a maximum squared-L2 distance (the live collections'
+            # space); it is applied as the cosine similarity it means, so a cosine collection reads it the same way
+            from services.retrieval_fusion import min_similarity, similarity
+            space = self._chunk_space()
+            floor = min_similarity(threshold)
             filtered = []
             for r in all_results:
                 distance = r.get("distance")
-                if distance is not None and distance <= threshold:
-                    filtered.append(r)
-                elif distance is None:
+                if distance is None or similarity(distance, space) >= floor - 1e-12:
                     filtered.append(r)
 
             print(f"[RAG] Chunk search ({source}): {len(all_results)} total, {len(filtered)} after threshold ({threshold})"
@@ -910,14 +925,18 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         top_k: Optional[int] = None,
         debug_log: Optional[Dict] = None,
         allowed_entity_keys: Optional[List[str]] = None,
+        query_embedding: Optional[List[float]] = None,
+        vectors: Any = None,
     ) -> List[Dict]:
         """
-        Retrieve relevant entities via vector search, then enrich from Neo4j.
+        Retrieve relevant entities via vector search, then enrich from Neo4j. ``query_embedding`` and ``vectors``
+        let a caller that has already embedded the question (the agent's document search) reuse it.
 
         Returns:
             List of entity dicts from Neo4j with verified_facts, ai_insights, and distance scores.
         """
-        if not VECTOR_DB_AVAILABLE or not ENTITY_SEARCH_ENABLED:
+        vectors = vectors if vectors is not None else vector_db_service
+        if not ENTITY_SEARCH_ENABLED or (query_embedding is None and not VECTOR_DB_AVAILABLE) or vectors is None:
             if debug_log is not None:
                 debug_log["entity_search"] = {"enabled": False, "reason": "Disabled or unavailable"}
             return []
@@ -939,7 +958,8 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         try:
             print("[RAG] Generating entity embedding..."); sys.stdout.flush()
             try:
-                query_embedding = embedding_service.generate_embedding(question)
+                if query_embedding is None:
+                    query_embedding = embedding_service.generate_embedding(question)
             except Exception as exc:
                 return self._retrieve_entities_by_name(question, case_id, top_k=top_k, debug_log=debug_log,
                                                        allowed_entity_keys=allowed_entity_keys, exc=exc)
@@ -953,7 +973,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             vector_filter = {"case_id": case_id}
 
             print("[RAG] Searching entity vectors (ChromaDB)..."); sys.stdout.flush()
-            entity_results = vector_db_service.search_entities(
+            entity_results = vectors.search_entities(
                 query_embedding=query_embedding,
                 top_k=top_k,
                 filter_metadata=vector_filter,
@@ -1097,6 +1117,71 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 debug_log["graph_traversal"] = {"error": str(e)}
             return {"selected_entities": []}
 
+    def _graph_evidence(
+        self,
+        question: str,
+        entity_results: List[Dict],
+        graph_context: Dict,
+        case_id: Optional[str],
+        debug_log: Optional[Dict] = None,
+        vectors: Any = None,
+    ) -> List[Dict]:
+        """The source passages behind the connections and entities in the context (services/graph_evidence.py)."""
+        from services import graph_evidence as ge
+        stats: Dict[str, Any] = {}
+        vectors = vectors if vectors is not None else vector_db_service
+        collection = getattr(vectors, "chunk_collection", None) if vectors is not None else None
+        passages: List[Dict] = []
+        if case_id and collection is not None:
+            try:
+                passages = ge.evidence_passages(question, entity_results, graph_context, case_id,
+                                                session_factory=self.neo4j.session, collection=collection,
+                                                stats=stats)
+            except Exception as exc:  # noqa: BLE001 - the answer goes on with the graph's names and summaries
+                print(f"[RAG] Graph evidence error: {exc}")
+                stats["error"] = str(exc)[:300]
+        elif case_id:
+            stats["error"] = "the vector store is not available"
+        if debug_log is not None:
+            debug_log["graph_evidence"] = stats
+        return passages
+
+    MAX_TRAVERSAL_ENTITIES = 50
+
+    def _traversal_keys(self, entity_results: List[Dict]) -> List[str]:
+        """The entities whose connections are read: the closest 50 by distance."""
+        keys = [e.get("key") for e in entity_results if e.get("key")]
+        if len(keys) <= self.MAX_TRAVERSAL_ENTITIES:
+            return keys
+        ranked = sorted(entity_results, key=lambda e: e.get("distance") if e.get("distance") is not None else 1.0)
+        return [e.get("key") for e in ranked[:self.MAX_TRAVERSAL_ENTITIES] if e.get("key")]
+
+    def search_passages(
+        self,
+        question: str,
+        case_id: str,
+        chunks: List[Dict],
+        *,
+        query_embedding: Optional[List[float]] = None,
+        vectors: Any = None,
+        scope_entity_keys: Optional[List[str]] = None,
+        debug_log: Optional[Dict] = None,
+    ) -> List[Dict]:
+        """The passages chat reads, for a caller that ran its own passage search (the agent's search_documents):
+        entities by meaning, their connections, the passages behind those, all ranked with ``chunks`` by
+        reciprocal rank fusion (services/retrieval_fusion.py). Best first; selected passages lead."""
+        from services import retrieval_fusion
+        debug_log = debug_log if debug_log is not None else {}
+        entity_results = self._retrieve_entities(question, case_id, debug_log=debug_log,
+                                                 allowed_entity_keys=scope_entity_keys,
+                                                 query_embedding=query_embedding, vectors=vectors)
+        graph_context = self._traverse_graph(self._traversal_keys(entity_results), case_id, debug_log=debug_log,
+                                             allowed_entity_keys=scope_entity_keys)
+        evidence = self._graph_evidence(question, entity_results, graph_context, case_id, debug_log, vectors=vectors)
+        pinned, fused, stats = retrieval_fusion.fuse(list(chunks), evidence, entity_results)
+        debug_log["fusion"] = stats
+        return retrieval_fusion.select(pinned, fused, len(fused), stats)
+
     # =====================
     # NEW: Hybrid Context Builder
     # =====================
@@ -1163,8 +1248,13 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 passage_cite = chunk_cite({**metadata, "filename": doc_name})
                 if passage_cite:
                     lines.append(f"Cite: {passage_cite}")
-                if distance is not None:
-                    lines.append(f"Relevance: {1 - distance:.4f}")
+                for about in chunk.get("_about") or ([chunk["about"]] if chunk.get("about") else []):
+                    lines.append(f"Source of: {about}")
+                if chunk.get("quote"):
+                    lines.append(f'Quote: "{chunk["quote"]}"')
+                if distance is not None and not str(chunk.get("id") or "").startswith("phone"):
+                    from services.retrieval_fusion import similarity
+                    lines.append(f"Relevance: {similarity(distance, self._chunk_space()):.4f}")
                 if chunk.get("_word_match"):
                     lines.append("Found by word search (literal match for '%s'), not by meaning."
                                  % metadata.get("matched_term", ""))
@@ -1383,27 +1473,31 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         chunk_results: List[Dict],
         entity_results: List[Dict],
         debug_log: Optional[Dict] = None,
+        graph_evidence: Optional[List[Dict]] = None,
     ) -> tuple:
         """
-        Re-rank and filter retrieval results before sending to LLM.
+        Re-rank and filter retrieval results before sending to LLM. The passages behind graph connections
+        (``graph_evidence``) are ranked with the searched passages and returned among them.
 
         Returns:
             Tuple of (filtered_chunks, filtered_entities)
         """
+        graph_evidence = list(graph_evidence or [])
         if not RERANK_ENABLED:
-            return chunk_results, entity_results
+            return list(chunk_results) + graph_evidence, entity_results
 
         if RERANK_METHOD == "llm":
-            return self._rerank_by_llm(
+            chunks, entities = self._rerank_by_llm(
                 question, chunk_results, entity_results,
                 RERANK_TOP_CHUNKS, RERANK_TOP_ENTITIES, debug_log,
             )
+            return list(chunks) + graph_evidence, entities
         else:
             # Default: score-based (fast, no LLM call)
             return self._rerank_by_score(
                 chunk_results, entity_results,
                 RERANK_TOP_CHUNKS, RERANK_TOP_ENTITIES, CONTEXT_TOKEN_BUDGET,
-                debug_log,
+                debug_log, graph_evidence=graph_evidence,
             )
 
     def _rerank_by_score(
@@ -1414,25 +1508,20 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         top_entities: int,
         token_budget: int,
         debug_log: Optional[Dict] = None,
+        graph_evidence: Optional[List[Dict]] = None,
     ) -> tuple:
-        """Fast re-ranking: sort by distance, apply top-k and token budget.
+        """Fused re-ranking (services/retrieval_fusion.py), then top-k and the character budget.
 
-        Document boost: doc-scoped chunks are placed FIRST (sorted by
-        distance within their group), then case-wide chunks fill the
-        remaining budget. This guarantees the selected document's content
-        is prioritized while still allowing cross-document discovery.
-        Doc-associated entities get a -0.2 distance boost.
+        Passages the person chose (selected documents and phone records) come first. The rest are ordered by
+        reciprocal rank fusion of the meaning search, the word and phone search, the passages behind graph
+        connections and the entity search. At most ``top_chunks`` searched passages are kept; the passages behind
+        graph connections (at most services/graph_evidence.MAX_PASSAGES, short) take no searched passage's place,
+        and everything stays within ``token_budget`` characters. Doc-associated entities get a -0.2 distance boost.
         """
-        # Partition chunks: doc-scoped first, then case-wide
-        doc_scoped = [c for c in chunk_results if c.get("_doc_scoped")]
-        case_wide = [c for c in chunk_results if not c.get("_doc_scoped")]
-
-        # Sort each group by distance independently
-        doc_scoped.sort(key=lambda r: r.get("distance", float("inf")))
-        case_wide.sort(key=lambda r: r.get("distance", float("inf")))
-
-        # Doc-scoped first, then case-wide to fill remaining slots
-        sorted_chunks = (doc_scoped + case_wide)[:top_chunks]
+        from services import retrieval_fusion
+        pinned, fused, fusion_stats = retrieval_fusion.fuse(chunk_results, list(graph_evidence or []),
+                                                            entity_results)
+        sorted_chunks = retrieval_fusion.select(pinned, fused, top_chunks, fusion_stats)
 
         # Sort entities: doc-associated get a distance boost
         def _entity_effective_distance(result):
@@ -1449,10 +1538,12 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         # Apply token budget (approximate 1 token ~ 4 chars)
         total_chars = 0
         budget_chunks = []
+        left_out = 0
         for chunk in sorted_chunks:
             chunk_len = len(chunk.get("text", ""))
             if total_chars + chunk_len > token_budget:
-                break
+                left_out += 1
+                continue
             budget_chunks.append(chunk)
             total_chars += chunk_len
 
@@ -1474,6 +1565,11 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 "output_entities": len(budget_entities),
                 "total_chars": total_chars,
                 "token_budget": token_budget,
+                "fusion": fusion_stats,
+                "passages_over_budget": left_out,
+                "scores": [{"id": c.get("id"), "rrf": c.get("_rrf"), "distance": c.get("distance"),
+                            "graph_evidence": bool(c.get("_graph_evidence")), "about": c.get("_about") or
+                            ([c["about"]] if c.get("about") else None)} for c in budget_chunks[:30]],
             }
 
         print(f"[RAG] Re-rank (score): chunks {len(chunk_results)}->{len(budget_chunks)}, entities {len(entity_results)}->{len(budget_entities)}, chars={total_chars}")
@@ -2235,15 +2331,11 @@ Only include candidates with score >= 5."""
         # ── Stage 4: Graph traversal ─────────────────────────────────────
         # Cap traversal to the most relevant entities to avoid context explosion.
         # Sort by distance (vector search relevance), then take top N.
-        MAX_TRAVERSAL_ENTITIES = 50
         all_entity_keys = [e.get("key") for e in entity_results if e.get("key")]
-        if len(all_entity_keys) > MAX_TRAVERSAL_ENTITIES:
-            # Sort entities by distance (lower = more relevant), traverse only the top ones
-            sorted_entities = sorted(entity_results, key=lambda e: e.get("distance", 1.0))
-            traversal_keys = [e.get("key") for e in sorted_entities[:MAX_TRAVERSAL_ENTITIES] if e.get("key")]
+        traversal_keys = self._traversal_keys(entity_results)
+        if len(all_entity_keys) > len(traversal_keys):
             print(f"[RAG] Starting Stage 4: Graph traversal (top {len(traversal_keys)} of {len(all_entity_keys)} entities)..."); sys.stdout.flush()
         else:
-            traversal_keys = all_entity_keys
             print(f"[RAG] Starting Stage 4: Graph traversal ({len(traversal_keys)} entities)..."); sys.stdout.flush()
         t4 = time.time()
         graph_context = self._traverse_graph(
@@ -2278,11 +2370,23 @@ Only include candidates with score >= 5."""
             },
         )
 
+        # ── Stage 4b: Passages behind the graph ──────────────────────────
+        t4b = time.time()
+        graph_evidence = self._graph_evidence(question, entity_results, graph_context, case_id, debug_log)
+        _add_stage(
+            "Graph Evidence", "4b", t4b,
+            input={"connections": total_connections, "entities": len(entity_results)},
+            output=dict(debug_log.get("graph_evidence") or {}),
+            details={"passages": [{"about": p["about"], "cite": p.get("cite"), "quote": p["quote"][:200]}
+                                  for p in graph_evidence]},
+        )
+
         # ── Stage 5: Re-ranking ──────────────────────────────────────────
         t5 = time.time()
         chunk_results, entity_results = self._rerank_results(
-            question, chunk_results, entity_results, debug_log
+            question, chunk_results, entity_results, debug_log, graph_evidence=graph_evidence,
         )
+        graph_evidence_used = sum(1 for c in chunk_results if c.get("_graph_evidence") or c.get("_about"))
         rerank_info = debug_log.get("rerank") or {}
         stage5_details = {
             "method": rerank_info.get("method", "disabled"),
@@ -2328,13 +2432,15 @@ Only include candidates with score >= 5."""
         # Build context description
         parts = []
         if chunk_results:
-            source = debug_log.get("chunk_search", {}).get("source", "unknown")
+            source = (debug_log.get("chunk_search") or {}).get("source", "unknown")
             parts.append(f"{len(chunk_results)} text passages ({source})")
         if entity_results:
             parts.append(f"{len(entity_results)} entities")
         graph_entity_count = len(graph_context.get("selected_entities", []))
         if graph_entity_count:
             parts.append(f"{graph_entity_count} graph connections")
+        if graph_evidence_used:
+            parts.append(f"{graph_evidence_used} source passages behind graph connections")
         if cypher_context:
             parts.append("Cypher query results")
         context_prefix = "Significant layer" if strict_entity_scope else "Hybrid retrieval"
