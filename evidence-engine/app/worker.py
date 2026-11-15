@@ -75,6 +75,14 @@ async def process_merge(ctx: dict, job_id: str, case_id: str) -> None:
     logger.info("Completed merge job %s", job_id)
 
 
+async def check_unreviewed_claims(ctx: dict, case_id: str) -> None:
+    """Check the claims earlier ingestions left unreviewed in this case (app.services.claim_backfill), cheapest file
+    first, until the case's AI spending limit."""
+    from app.services import claim_backfill
+    outcome = await claim_backfill.check_case(async_session, case_id, apply=True)
+    logger.info("Claim check of case %s: %s", case_id, claim_backfill.summary([outcome]))
+
+
 async def process_phone_capture(ctx: dict, job_id: str, case_id: str) -> None:
     """Capture one phone report root (01 section 10)."""
     from app.phone.job import run_phone_capture
@@ -116,7 +124,7 @@ def recovers(queue_name, then=None):
 
 class WorkerSettings:
     on_startup = recovers(default_queue_name)
-    functions = [process_file, process_batch, process_merge]
+    functions = [process_file, process_batch, process_merge, check_unreviewed_claims]
     cron_jobs = [
         # Stale-job janitor: every 5 minutes, mark any non-terminal job whose
         # updated_at hasn't moved in JANITOR_STALE_THRESHOLD_SECONDS (default 2h)

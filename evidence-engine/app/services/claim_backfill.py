@@ -144,6 +144,10 @@ async def check_case(session_factory, case_id: str, *, apply: bool, max_claims: 
     if not counts:
         return CaseOutcome(case_id, 0)
     outcome = CaseOutcome(case_id, counts[0]["unreviewed"])
+    if apply:
+        from app.services.ai_model_policy import load_ai_model_policy
+        async with session_factory() as db:
+            await load_ai_model_policy(db)  # the models and keys an ingestion run uses (orchestrator does the same)
     budget = max_claims
     for entry in counts[0]["files"]:
         file_id = entry["evidence_file_id"]

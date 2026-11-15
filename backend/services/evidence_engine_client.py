@@ -338,3 +338,11 @@ async def request_reparse(case_id: str, extraction_id: str, os_family: str, requ
         return {"refused": response.json().get("detail") or "The re-parse could not be queued."}
     response.raise_for_status()
     return response.json()
+
+
+async def check_unreviewed_claims(case_id: str) -> Dict[str, Any]:
+    """Ask the engine to check the claims earlier ingestions left unreviewed in this case (lx-citeproof D)."""
+    client = _get_client()
+    response = await client.post(f"/cases/{case_id}/claims/unreviewed/check")
+    response.raise_for_status()
+    return response.json()

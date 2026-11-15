@@ -8,6 +8,7 @@ import { VideoPreview } from "./previews/VideoPreview"
 import { PdfPreview } from "./previews/PdfPreview"
 import { fileMissingText } from "../utils/file-missing"
 import { FileCheckNotice } from "./FileCheckNotice"
+import { UncheckedClaimsNotice } from "./UncheckedClaimsNotice"
 
 const TEXT_EXTS = new Set(["txt", "md", "json", "xml", "csv", "log", "rtf", "sri"])
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"])
@@ -28,6 +29,7 @@ export function FilePreviewPanel({ file, caseId }: FilePreviewPanelProps) {
   return (
     <>
       <FileCheckNotice file={file} caseId={caseId} />
+      <UncheckedClaimsNotice fileId={file.id} caseId={caseId} />
       <FilePreview file={file} caseId={caseId} />
     </>
   )
