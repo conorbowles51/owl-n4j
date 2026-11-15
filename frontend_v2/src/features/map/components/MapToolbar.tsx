@@ -270,11 +270,9 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
           </PopoverTrigger>
           <PopoverContent align="start" className="w-64 p-2">
             <div className="mb-2 flex items-center justify-between gap-2 px-1">
-              <span className="text-xs font-medium">Area filter</span>
+              <span className="shrink-0 text-xs font-medium">Area filter</span>
               <span className="text-[10px] text-muted-foreground">
                 {visibleCount} of {locations.length} {locationsWord}
-                {typeof areaPhonePositions === "number" &&
-                  ` · ${areaPhonePositions.toLocaleString("en-US")} phone position${areaPhonePositions !== 1 ? "s" : ""}`}
               </span>
             </div>
 
