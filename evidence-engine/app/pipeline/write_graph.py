@@ -412,6 +412,7 @@ async def write_graph(
                     await retire_graph_contributions(tx, case_id, retired_claims)
                     await _write_entities(entities, case_id, job_id)
                     await _write_relationships(relationships, case_id)
+                    await _write_document_links(entities, case_id)
                     await _embed_entities(entities, case_id)
                     await tx.commit()
                 finally:
@@ -419,7 +420,17 @@ async def write_graph(
         return
     await _write_entities(entities, case_id, job_id)
     await _write_relationships(relationships, case_id)
+    await _write_document_links(entities, case_id)
     await _embed_entities(entities, case_id)
+
+
+async def _write_document_links(entities: list[ResolvedEntity], case_id: str) -> None:
+    """Each entity MENTIONED_IN the Document node of every file it was read from (pipeline/document_links.py)."""
+    from app.pipeline.document_links import write_document_links
+
+    rows = [{"id": e.id, "source_files": e.source_files, "source_locations": e.source_locations}
+            for e in entities if e.category != "Document"]
+    await write_document_links(_checkpointed_graph_write, case_id, rows)
 
 
 async def _checkpointed_graph_write(query, parameters):

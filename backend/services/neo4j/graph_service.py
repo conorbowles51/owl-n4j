@@ -850,7 +850,9 @@ class GraphService:
                 WHERE n.key IN $keys
                   AND {active_node_predicate("n")}
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE connected IS NULL OR ({active_node_predicate("connected")})
+                WHERE (connected IS NULL OR ({active_node_predicate("connected")}))
+                  // a file's provenance link (evidence-engine document_links) is not a connection
+                  AND coalesce(r.link_origin, '') <> 'source_files'
                 WITH n, r, connected
                 ORDER BY CASE WHEN connected IS NULL THEN 1 ELSE 0 END, connected.name
                 WITH n,

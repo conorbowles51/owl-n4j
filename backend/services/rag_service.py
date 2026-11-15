@@ -445,6 +445,27 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"[RAG] Error finding documents for scoped entities: {exc}")
             return []
 
+    def _chunk_doc_keys(self, doc_keys: List[str], case_id: Optional[str]) -> List[str]:
+        """The passage keys of Document nodes: a node's key, and the document key of its file name.
+
+        Passages carry ``doc_key``, the file name's document key (evidence-engine chunk_embed). A Document node made
+        by the ledger's projection is keyed ``DOC-<hash>`` and one made by the extraction model by an entity id, so
+        filtering passages by the node key alone found none of their passages (lx-retrieval C).
+        """
+        keys = [k for k in dict.fromkeys(doc_keys or []) if k]
+        if not keys or not case_id:
+            return keys
+        try:
+            with self.neo4j.session() as session:
+                rows = session.run(
+                    "MATCH (d:Document {case_id: $case_id}) WHERE d.key IN $keys RETURN d.key AS key, d.name AS name",
+                    keys=keys, case_id=case_id)
+                names = [row["name"] for row in rows if row["name"]]
+        except Exception as exc:  # noqa: BLE001 - the node keys alone, as before
+            print(f"[RAG] Error reading document names: {exc}")
+            return keys
+        return list(dict.fromkeys(keys + [k for k in (_document_key(n) for n in names) if k]))
+
     def _get_document_node_by_key(self, doc_key: str, case_id: str) -> Optional[Dict]:
         """Get a Document node from Neo4j by its key."""
         try:
@@ -2079,7 +2100,7 @@ Only include candidates with score >= 5."""
         if question_type != "structural" or not cypher_context:
             chunk_results = self._retrieve_chunks(
                 question, case_id,
-                doc_keys=doc_keys if doc_keys else None,
+                doc_keys=self._chunk_doc_keys(doc_keys, case_id) if doc_keys else None,
                 confidence_threshold=confidence_threshold,
                 debug_log=debug_log,
                 strict_doc_scope=strict_entity_scope,

@@ -1435,7 +1435,8 @@ def _find_paths(case_id: str, source_key: str, target_key: str, max_depth: int) 
         MATCH (target {{key: $target_key, case_id: $case_id}})
         MATCH path = allShortestPaths((source)-[*..{depth}]-(target))
         WHERE all(node IN nodes(path) WHERE node.case_id = $case_id)
-          AND all(rel IN relationships(path) WHERE rel.case_id = $case_id)
+          AND all(rel IN relationships(path) WHERE rel.case_id = $case_id
+                  AND coalesce(rel.link_origin, '') <> 'source_files')
         RETURN
           [node IN nodes(path) | {{
             key: node.key,
