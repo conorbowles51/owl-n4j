@@ -164,12 +164,6 @@ def _fit_on(item: str) -> bool:
 def _cypher_description() -> str:
     """run_readonly_cypher's description; with agent-fit T it says what the checker accepts, what the tool is not
     for, and gives one query that runs (services.agent.tool_errors.CYPHER_EXAMPLE)."""
-    from services.agent import fit
-    if not fit.on("T"):
-        return ("Run a strictly read-only Neo4j query. Every matched node and relationship must have explicit case scope, "
-                "preferably (n:Label {case_id: $case_id}) and [r:TYPE {case_id: $case_id}]. Use simple MATCH/OPTIONAL MATCH and RETURN; "
-                "UNION, subqueries, rebinding and variable-length paths are not supported. "
-                "Put ORDER BY after RETURN, avoid NULLS FIRST/LAST, and use numeric LIMITs.")
     from services.agent.tool_errors import CYPHER_EXAMPLE
     return ("A read-only graph query, for counts, filters and tables no graph tool gives. Not for finding entities by "
             "name (search_graph_entities), an entity's connections (get_entity_neighborhood), how two entities "
@@ -3382,11 +3376,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             try:
                 return func(**kwargs)
             except UnsafeCypherError as exc:
-                from services.agent import fit
-                text = str(exc)
-                if fit.on("T"):
-                    from services.agent.tool_errors import cypher_fix
-                    text = cypher_fix(text)
+                from services.agent.tool_errors import cypher_fix
+                text = cypher_fix(str(exc))
                 return context.result(
                     name,
                     {"error": text},

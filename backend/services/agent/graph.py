@@ -1067,9 +1067,8 @@ def _phone_prompt() -> str:
 def _cypher_rule_lines() -> str:
     """The first Cypher rule lines. With agent-fit T they say what the query checker accepts (it refuses WITH,
     UNWIND, map projections and patterns after RETURN: 25 of 134 recorded queries were refused, 11 Nov 2026)."""
-    from services.agent import fit
-    if not fit.on("T"):
-        return "- Only write read-only MATCH/OPTIONAL MATCH/WITH/UNWIND queries that RETURN data.\n"
+    # lx-agentquick D: always the wording the checker accepts (the old line taught WITH and UNWIND, which it refuses:
+    # 33 of 188 run_readonly_cypher calls failed in 14 days). Reverse: never; the checker is the rule.
     return ("- Write one read-only query: MATCH or OPTIONAL MATCH clauses, each with an optional WHERE, then RETURN. "
             "No WITH, UNWIND, UNION, EXISTS, subqueries or variable-length paths. After RETURN and in WHERE use "
             "properties, built-in functions and aggregates of matched names only: no patterns, no maps, and lists "

@@ -503,8 +503,7 @@ def validate_readonly_cypher(
     if found:
         raise UnsafeCypherError(f"Cypher contains disallowed keyword(s): {', '.join(found)}")
 
-    from services.agent import fit
-    _assert_case_scope(tokens, literal_lists=fit.on("T"))
+    _assert_case_scope(tokens, literal_lists=True)  # lx-agentquick D: the prompt teaches literal lists
     return _enforce_limit(normalized_query, limit, max_limit, params)
 
 

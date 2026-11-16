@@ -84,19 +84,17 @@ class ErrorsForTheModelTests(unittest.TestCase):
                "MATCH (n {case_id: $case_id}) RETURN {a: n.key} LIMIT 5",
                "MATCH (n {case_id: $case_id}) RETURN [x IN n.list | x] AS xs LIMIT 5",
                "MATCH (n) WHERE n.key IN ['a'] RETURN n.key LIMIT 5"]
-        with on(""):
-            self.assertRaises(UnsafeCypherError, validate_readonly_cypher, good)
-        with on("T"):
-            validate_readonly_cypher(good)
-            for query in bad:
-                self.assertRaises(UnsafeCypherError, validate_readonly_cypher, query)
+        for items in ("", "T"):  # lx-agentquick D: no longer behind the switch
+            with on(items):
+                validate_readonly_cypher(good)
+                for query in bad:
+                    self.assertRaises(UnsafeCypherError, validate_readonly_cypher, query)
 
     def test_t_prompt_no_longer_says_with_and_unwind_are_allowed(self):
-        with on(""):
-            self.assertIn("MATCH/OPTIONAL MATCH/WITH/UNWIND", graph._cypher_rule_lines())
-        with on("T"):
-            self.assertNotIn("WITH/UNWIND", graph._cypher_rule_lines())
-            self.assertIn("No WITH, UNWIND", graph._cypher_rule_lines())
+        for items in ("", "T"):  # lx-agentquick D: always
+            with on(items):
+                self.assertNotIn("WITH/UNWIND", graph._cypher_rule_lines())
+                self.assertIn("No WITH, UNWIND", graph._cypher_rule_lines())
 
     def test_t_turns_an_argument_error_into_a_line_per_field_without_the_input_dump(self):
         class Args(BaseModel):
