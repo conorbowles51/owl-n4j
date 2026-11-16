@@ -22,6 +22,11 @@ def _source_count(properties: Dict) -> int:
     return len({str(item).strip() for item in source_files if str(item).strip()})
 
 
+# n.aliases is a list of text; a single text value is read as a list of one.
+_ALIASES = ("CASE WHEN n.aliases IS NULL THEN [] WHEN valueType(n.aliases) STARTS WITH 'LIST' THEN n.aliases "
+            "ELSE [n.aliases] END")
+_ALIAS_HAS = "ANY(a IN %s WHERE toLower(toString(a)) CONTAINS $search_lower)" % _ALIASES
+
 _NODE_COLUMNS = ("key", "name", "type", "confidence", "mentioned", "aliases", "source_files")
 _LINK_COLUMNS = ("source", "target", "type", "weight")
 
@@ -756,7 +761,12 @@ class GraphService:
             # Normalize the search term to lowercase for case-insensitive matching
             search_lower = query.lower().strip()
             # case_id is always required
-            params = {"search_lower": search_lower, "limit": limit, "case_id": case_id}
+            # lx-agentquick F: the aliases are searched (the tool's description says so), and a query of several
+            # words also matches an entity where every word is found somewhere in its name, key, summary, notes
+            # or aliases. The whole-phrase match is a subset of this, so nothing found before is lost; the order
+            # below still ranks the whole phrase first.
+            terms = list(dict.fromkeys(search_lower.split()))[:8] or [search_lower]
+            params = {"search_lower": search_lower, "limit": limit, "case_id": case_id, "terms": terms}
 
             result = session.run(
                 f"""
@@ -766,6 +776,13 @@ class GraphService:
                     OR (n.key IS NOT NULL AND toLower(n.key) CONTAINS $search_lower)
                     OR (n.summary IS NOT NULL AND toLower(n.summary) CONTAINS $search_lower)
                     OR (n.notes IS NOT NULL AND size(n.notes) > 0 AND toLower(n.notes) CONTAINS $search_lower)
+                    OR {_ALIAS_HAS}
+                    OR ALL(t IN $terms WHERE
+                        (n.name IS NOT NULL AND toLower(n.name) CONTAINS t)
+                        OR (n.key IS NOT NULL AND toLower(n.key) CONTAINS t)
+                        OR (n.summary IS NOT NULL AND toLower(n.summary) CONTAINS t)
+                        OR (n.notes IS NOT NULL AND size(n.notes) > 0 AND toLower(n.notes) CONTAINS t)
+                        OR ANY(a IN {_ALIASES} WHERE toLower(toString(a)) CONTAINS t))
                 )
                 AND {active_node_predicate("n")}
                 RETURN
@@ -780,6 +797,7 @@ class GraphService:
                     WHEN toLower(coalesce(n.name, '')) STARTS WITH $search_lower THEN 1
                     WHEN toLower(coalesce(n.name, '')) CONTAINS $search_lower THEN 2
                     WHEN toLower(coalesce(n.key, '')) = $search_lower THEN 3
+                    WHEN ANY(a IN {_ALIASES} WHERE toLower(toString(a)) = $search_lower) THEN 3
                     ELSE 4 END,
                     toLower(coalesce(n.name, '')), n.key
                 LIMIT $limit
