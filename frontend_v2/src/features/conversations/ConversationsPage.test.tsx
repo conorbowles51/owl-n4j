@@ -167,15 +167,15 @@ describe("Conversations", () => {
     })
     page("/cases/case-1/conversations?phones=e1,e2")
     const group = await screen.findByRole("group", { name: "Phone layers" })
-    expect(await within(group).findByText("12 messages and calls")).toBeInTheDocument()
-    expect(within(group).getByText("5 messages and calls")).toBeInTheDocument()
-    expect(within(group).getByText("0 messages and calls")).toBeInTheDocument()
+    expect(await within(group).findByText("12 records")).toBeInTheDocument()
+    expect(within(group).getByText("5 records")).toBeInTheDocument()
+    expect(within(group).getByText("0 records")).toBeInTheDocument()
     expect(within(group).getByLabelText("C3 on")).not.toBeChecked()
     fireEvent.click(within(group).getByLabelText("C2 on"))
     await waitFor(() => expect(seen.search).toContain("phones=e1"))
     expect(seen.search).not.toContain("e2")
     // the phone that is off still states its number
-    expect(await within(group).findByText("5 messages and calls")).toBeInTheDocument()
+    expect(await within(group).findByText("5 records")).toBeInTheDocument()
   })
 
   it("moves off an open thread a phone scope leaves out, so the count is never 0 for a thread off the list (07 4.5)", async () => {
