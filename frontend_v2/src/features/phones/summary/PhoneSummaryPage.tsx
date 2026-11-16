@@ -1,3 +1,4 @@
+import { AddOtherPhones } from "../ui/AddOtherPhones"
 import { useQuery } from "@tanstack/react-query"
 import { ReviewCoverage } from "./ReviewCoverage"
 import { Link, useParams } from "react-router-dom"
@@ -88,6 +89,7 @@ export function PhoneSummaryPage() {
           </Button>
         </span>
       </header>
+      <AddOtherPhones caseId={caseId} extraction={extraction} />
       <FirstPhoneCard caseId={caseId} />
       <p className="text-sm font-medium">
         {p.verdict.sentence}

@@ -1,3 +1,4 @@
+import { AddOtherPhones } from "../ui/AddOtherPhones"
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
@@ -167,6 +168,7 @@ export function RecordListPage({ caseId, extraction, modelType }: { caseId: stri
           <AddToMenu caseId={caseId} links={links} noun="records" targets={targets.data ?? []} client={liveCollectClient} origin={`Added from the ${modelType} list`} />
         </span>
       </header>
+      <AddOtherPhones caseId={caseId} extraction={extraction} />
       <form aria-label="Filter the list" className="flex flex-wrap items-end gap-3 text-xs" onSubmit={(e) => e.preventDefault()}>
         <label className="flex flex-col gap-0.5">
           <span className="font-medium">Phones</span>
