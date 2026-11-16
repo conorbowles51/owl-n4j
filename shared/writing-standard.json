@@ -232,6 +232,9 @@
  "report_generators": [
   "backend/services/case_cost_report.py",
   "backend/services/casework_report.py",
+  "backend/services/relations/report.py",
+  "backend/services/relations/rules.py",
+  "backend/services/relations/hypotheses.py",
   "backend/services/dossier_service.py",
   "backend/services/financial_export_service.py",
   "backend/services/snapshot_report.py",

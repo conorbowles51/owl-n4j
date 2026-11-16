@@ -324,7 +324,7 @@ def _fineness(source: str | None) -> int:
     return 2
 
 
-def place_overlap(items: list[dict], place_stats, offsets: dict | None = None) -> tuple[list[dict], list[dict]]:
+def place_overlap(items: list[dict], place_stats, offsets: dict | None = None, pair_stats=None) -> tuple[list[dict], list[dict]]:
     """Two items with a place and a time, near each other in both. Beside each: how many other phones were near the
     same place in the period, whether it is a routine place of the phone, the coarsest location source of the two, and
     whether the link survives the phones' clock offset."""
@@ -353,13 +353,27 @@ def place_overlap(items: list[dict], place_stats, offsets: dict | None = None) -
             words.append(f"{_n(stats['phones_near'])} of {_n(stats['phones_total'])} phones in the case were within "
                          f"{round(max(reach, 100))} m of this place at some time in the period.")
         routine = False
+        once = False
+        repeated = False
+        together = pair_stats(a.get("phone"), b.get("phone")) if pair_stats and a.get("phone") and b.get("phone") \
+            and a.get("phone") != b.get("phone") else None
+        if together and together.get("days_both_active"):
+            n, of = together["days_together"], together["days_both_active"]
+            words.append(f"The two phones were together on {_n(n)} of the {_n(of)} days both were active in the period.")
+            if n >= 3:
+                repeated = True
+                words.append(f"Together on {_n(n)} separate days. One shared moment can be chance; a repeat is less likely to be.")
+            if n <= 1:
+                once = True
+                level = weaker(level, "weak")
+                words.append("A single occasion: one shared moment can be chance.")
         for ref, item in ((a["ref"], a), (b["ref"], b)):
             mine = (stats.get("days_at_place") or {}).get(item.get("phone"))
             if mine is not None and stats.get("days_active", {}).get(item.get("phone")):
                 total = stats["days_active"][item["phone"]]
                 words.append(f"{item['label']}: that phone was there on {_n(mine)} of {_n(total)} days it was active.")
                 routine = routine or (mine / total) >= 0.25
-        if routine:
+        if routine and not repeated:
             words.append("A routine place for at least one phone, so being there is ordinary.")
         offset_a, offset_b = offsets.get(a.get("phone")), offsets.get(b.get("phone"))
         if offset_a is None and offset_b is None:
@@ -374,11 +388,12 @@ def place_overlap(items: list[dict], place_stats, offsets: dict | None = None) -
         reasons = [f"{a['label']} and {b['label']} are {round(dist)} m apart, {gap_words(gap)} apart in time.",
                    f"Coarsest location source: {coarse_source or 'not stated'}.", survive]
         chance = {"words": " ".join(words) or "No baseline for this place: no other position was found near it.",
-                  "reading": "ordinary" if routine or (stats.get("phones_total") and stats.get("phones_near", 0) * 2 >= stats["phones_total"])
-                  else "uncommon" if stats.get("phones_total") else "none", "share_of_days": None}
+                  "reading": "ordinary" if once or (not repeated and (routine or (stats.get("phones_total") and stats.get("phones_near", 0) * 2 >= stats["phones_total"])))
+                  else "uncommon" if (repeated or stats.get("phones_total")) else "none", "share_of_days": None}
         cands.append(candidate("place_overlap", [a["ref"], b["ref"]], "place", level, reasons, chance=chance,
                                extra={"distance_m": round(dist), "gap_seconds": int(gap.total_seconds()),
-                                      "source": coarse_source, "routine": routine}))
+                                      "source": coarse_source, "routine": routine,
+                                      **({"days_together": together["days_together"]} if together else {})}))
     if len(placed) < len([i for i in items if i.get("phone")]) or not placed:
         left = [i["ref"] for i in items if i["ref"] not in {p["ref"] for p in placed}]
         if left:

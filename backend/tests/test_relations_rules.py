@@ -89,3 +89,17 @@ def test_sequence_names_the_order():
              item("p", T0 + timedelta(days=1, hours=20), label="payment")]
     s = rules.sequences(items, BASE)
     assert s and "message then meeting then payment" in s[0]["reasons"][0]
+
+
+def test_a_one_off_meeting_at_a_busy_place_is_weak_and_reads_as_chance():
+    pl = {"lat": 39.3105, "lon": -76.7448, "radius_m": 15, "source": "device_location"}
+    a = item("a", T0, type="phone_record", place=pl, phone="A")
+    b = item("b", T0 + timedelta(minutes=3), type="phone_record", place=dict(pl, radius_m=25), phone="B")
+    stats = lambda lat, lon, r: {"phones_near": 2, "phones_total": 6, "days_at_place": {}, "days_active": {}}
+    once = lambda pa, pb: {"days_together": 1, "days_both_active": 113}
+    c, _ = rules.place_overlap([a, b], stats, pair_stats=once)
+    assert c[0]["strength"] == "weak" and c[0]["chance"]["reading"] == "ordinary"
+    assert "1 of the 113 days" in c[0]["chance"]["words"]
+    often = lambda pa, pb: {"days_together": 5, "days_both_active": 40}
+    c, _ = rules.place_overlap([a, b], stats, pair_stats=often)
+    assert c[0]["strength"] == "strong" and c[0]["chance"]["reading"] != "ordinary"

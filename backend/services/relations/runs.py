@@ -25,6 +25,24 @@ log = logging.getLogger(__name__)
 WORDS = "Look into how these relate"
 
 
+def normalise(db, case_id, members: list[dict]) -> list[dict]:
+    """A marked passage becomes its document with the quote, as written from the stored text now (a passage that cannot
+    be read is refused with the reason, never dropped)."""
+    out = []
+    for m in members:
+        if m.get("type") != "evidence_passage":
+            out.append(m)
+            continue
+        from services.evidence_page_text import PassageError, passage_anchor
+        try:
+            label, anchor = passage_anchor(db, case_id, str(m["id"]))
+        except PassageError as exc:
+            raise case_selections.SelectionError(str(exc)) from exc
+        out.append({"type": "evidence", "id": str(m["id"]).split(":")[0], "label": label,
+                    "quote": str((anchor or {}).get("quote") or "")})
+    return out
+
+
 def save_group(db, *, case_id, members: list[dict], user=None, extends: str | None = None, surface: str = "relation") -> dict:
     """Save the group. ``extends`` is a group of this case whose members are kept and added to."""
     held: list[dict] = []
@@ -33,7 +51,7 @@ def save_group(db, *, case_id, members: list[dict], user=None, extends: str | No
         if base is None or base["group_type"] != "relation_query":
             raise case_selections.SelectionError("The query to add to is not in this case.")
         held = [{k: v for k, v in m.items() if k in ("type", "id", "label", "quote")} for m in base["members"]]
-    return case_selections.freeze(db, case_id=case_id, group_type="relation_query", members=held + list(members),
+    return case_selections.freeze(db, case_id=case_id, group_type="relation_query", members=held + normalise(db, case_id, list(members)),
                                   how={"surface": surface, **({"extends": extends} if extends else {})},
                                   words=WORDS, user=user)
 

@@ -90,3 +90,23 @@ class HypothesisTests(DuplicateTestCase):
             H.validate([good, routine, {**planned, "for": []}])  # a named cause with no cited record
         with self.assertRaises(H.HypothesisError):
             H.validate([good, routine, {**planned, "search": ""}])
+
+
+def test_a_marked_passage_becomes_its_document_with_the_quote():
+    from unittest import mock
+    from services.relations import runs
+    with mock.patch("services.evidence_page_text.passage_anchor", return_value=("Contract, page 2", {"quote": "Harbor Trading LLC"})):
+        out = runs.normalise(None, "c", [{"type": "evidence_passage", "id": "abc:def:1:9"}, {"type": "place", "id": "1,1,5"}])
+    assert out[0] == {"type": "evidence", "id": "abc", "label": "Contract, page 2", "quote": "Harbor Trading LLC"}
+    assert out[1]["type"] == "place"
+
+
+def test_a_passage_that_cannot_be_read_is_refused_with_the_reason():
+    import pytest
+    from unittest import mock
+    from services import case_selections
+    from services.evidence_page_text import PassageError
+    from services.relations import runs
+    with mock.patch("services.evidence_page_text.passage_anchor", side_effect=PassageError("read again since")):
+        with pytest.raises(case_selections.SelectionError, match="read again"):
+            runs.normalise(None, "c", [{"type": "evidence_passage", "id": "abc:def:1:9"}])

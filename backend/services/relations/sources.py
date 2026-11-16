@@ -218,6 +218,20 @@ class DbSources:
         return {"phones_near": len(near), "phones_total": total, "days_at_place": {k: len(v) for k, v in near.items()},
                 "days_active": active}
 
+    def pair_stats(self, ea: str, eb: str) -> dict:
+        """Days the two phones were within about 30 minutes and 250 m of each other, and days both were active."""
+        row = self.db.execute(text("""
+            WITH a AS (SELECT floor(extract(epoch FROM instant) / 900) AS bin, round(lat / 0.002) AS la, round(lon / 0.002) AS lo,
+                              instant::date AS d FROM phone_location_points
+                       WHERE case_id = :c AND extraction_id = CAST(:a AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL),
+                 b AS (SELECT floor(extract(epoch FROM instant) / 900) AS bin, round(lat / 0.002) AS la, round(lon / 0.002) AS lo,
+                              instant::date AS d FROM phone_location_points
+                       WHERE case_id = :c AND extraction_id = CAST(:b AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL)
+            SELECT (SELECT count(DISTINCT a.d) FROM a JOIN b ON abs(a.bin - b.bin) <= 1 AND abs(a.la - b.la) <= 1 AND abs(a.lo - b.lo) <= 1),
+                   (SELECT count(*) FROM (SELECT d FROM a INTERSECT SELECT d FROM b) x)"""),
+            {"c": self.case, "a": ea, "b": eb}).first()
+        return {"days_together": int(row[0] or 0), "days_both_active": int(row[1] or 0)}
+
     # -- phone streams -----------------------------------------------------------------------------------------
     def events(self, extractions: list[str]) -> list[dict]:
         if not extractions:

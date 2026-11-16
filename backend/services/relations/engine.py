@@ -86,7 +86,7 @@ def run(sources, members: list[dict], progress: Callable[[str, int, int], None] 
     pp = pairs_for("place_overlap")
     if pp:
         try:
-            c, s = rules.place_overlap(items, sources.place_stats)
+            c, s = rules.place_overlap(items, sources.place_stats, pair_stats=getattr(sources, "pair_stats", None))
         except Exception as exc:  # noqa: BLE001
             c, s = [], []
             out_of_reach.append({"analysis": "place_overlap", "reason": f"Positions could not be read: {exc}"})
