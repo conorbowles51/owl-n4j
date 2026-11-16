@@ -437,12 +437,14 @@ def _overlap(a, b):
 
 
 def shared_silence(streams: dict[str, list[datetime]], minimum: timedelta = SILENCE_MIN) -> tuple[list[dict], dict]:
-    """Two phones both silent for at least ``minimum`` over the same stretch, each active either side of it. Beside it:
-    how many of that phone's silences of this length there are in the period, and how many fall at the same hours (a
-    night is ordinary silence)."""
+    """Two phones both silent for at least ``minimum`` over the same stretch. Beside it: how many of each phone's
+    silences of this length there are in the period, and how many fall at the same hours (a night is ordinary
+    silence). The shared silences at both phones' usual hours are one candidate per pair of phones, with every stretch
+    listed in its detail; each shared silence outside their usual hours is a candidate of its own."""
     gaps = {p: silences(ts, minimum) for p, ts in streams.items()}
     out = []
     for pa, pb in combinations(sorted(gaps), 2):
+        usual, unusual = [], []
         for ga in gaps[pa]:
             for gb in gaps[pb]:
                 both = _overlap(ga, gb)
@@ -452,15 +454,26 @@ def shared_silence(streams: dict[str, list[datetime]], minimum: timedelta = SILE
                 usual_a = sum(1 for g in gaps[pa] if _hour_overlap(g, both))
                 usual_b = sum(1 for g in gaps[pb] if _hour_overlap(g, both))
                 ordinary = usual_a * 2 >= max(len(gaps[pa]), 1) and usual_b * 2 >= max(len(gaps[pb]), 1)
-                words = (f"Phone {pa[:8]} has {_n(len(gaps[pa]))} silences of {minimum.total_seconds() / 3600:.0f} hours or more "
-                         f"in the period, {_n(usual_a)} of them at these hours; phone {pb[:8]} has {_n(len(gaps[pb]))}, "
-                         f"{_n(usual_b)} at these hours.")
-                level = "faint" if ordinary else ("moderate" if hours >= 24 else "weak")
-                out.append(candidate("shared_silence", [pa, pb], "time", level,
-                                     [f"Both phones were silent for {hours:.1f} hours from {both[0]:%Y-%m-%d %H:%M} to {both[1]:%H:%M}."
-                                      + (" This is their usual quiet time of day." if ordinary else "")],
-                                     chance={"words": words, "reading": "ordinary" if ordinary else "uncommon", "share_of_days": None},
-                                     extra={"start": both[0].isoformat(), "end": both[1].isoformat(), "hours": round(hours, 1)}))
+                row = {"start": both[0].isoformat(), "end": both[1].isoformat(), "hours": round(hours, 1),
+                       "usual_a": usual_a, "usual_b": usual_b}
+                (usual if ordinary else unusual).append(row)
+        words = (f"Phone {pa[:8]} has {_n(len(gaps[pa]))} silences of {minimum.total_seconds() / 3600:.0f} hours or more "
+                 f"in the period; phone {pb[:8]} has {_n(len(gaps[pb]))}.")
+        for row in unusual:
+            out.append(candidate("shared_silence", [pa, pb], "time", "moderate" if row["hours"] >= 24 else "weak",
+                                 [f"Both phones were silent for {row['hours']} hours from {row['start'][:16].replace('T', ' ')} "
+                                  f"to {row['end'][11:16]}, outside their usual quiet hours."],
+                                 chance={"words": words + f" {_n(row['usual_a'])} of the first and {_n(row['usual_b'])} of the "
+                                                  "second fall at these hours.", "reading": "uncommon", "share_of_days": None},
+                                 extra=row))
+        if usual:
+            longest = max(usual, key=lambda r: r["hours"])
+            out.append(candidate("shared_silence", [pa, pb], "time", "faint",
+                                 [f"Both phones were silent together {_n(len(usual))} times at their usual quiet hours; the longest was "
+                                  f"{longest['hours']} hours from {longest['start'][:16].replace('T', ' ')}. Being quiet at night is ordinary."],
+                                 chance={"words": words + f" All {_n(len(usual))} shared stretches fall at both phones' usual hours.",
+                                         "reading": "ordinary", "share_of_days": None},
+                                 extra={"stretches": usual, "count": len(usual)}))
     return out, {"silences": {p: len(g) for p, g in gaps.items()}}
 
 

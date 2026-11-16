@@ -128,12 +128,18 @@ class DbSources:
             item["at"] = item["at"] or (pt[5].isoformat() if pt[5] else None)
             item["place"] = {"lat": pt[1], "lon": pt[2], "radius_m": float(pt[3] or 0), "source": pt[4]}
             item.setdefault("time_kind", "phone_location")
+        kind_word = {"phone_call": "Call", "phone_message": "Message", "phone_location": "Position"}.get(item.get("time_kind"), "Phone record")
+        if item.get("at"):
+            when = rules.parse_when(item["at"])
+            item["label"] = f"{kind_word} {when:%Y-%m-%d %H:%M} on phone {item.get('phone', '')[:8]}".strip()
         if not ev and not pt:
             act = self.db.execute(text(
                 "SELECT extraction_id, instant_utc FROM pol_activity_event WHERE case_id = :c AND record_uid = :u "
                 "ORDER BY instant_utc LIMIT 1"), {"c": self.case, "u": u}).first()
             if act:
                 item["phone"], item["at"] = str(act[0]), act[1].isoformat() if act[1] else None
+                if act[1]:
+                    item["label"] = f"Phone record {act[1]:%Y-%m-%d %H:%M} on phone {str(act[0])[:8]}"
         for row in self.db.execute(text(
                 "SELECT identifier_raw, name_in_record FROM phone_participations WHERE case_id = :c AND record_uid = :u "
                 "AND COALESCE(is_phone_owner, false) = false"), {"c": self.case, "u": u}):

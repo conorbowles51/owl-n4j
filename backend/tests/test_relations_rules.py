@@ -81,7 +81,7 @@ def test_shared_silence_ordinary_night_is_faint():
     a = sum((day(d, range(8, 21)) for d in range(5)), [])
     b = sum((day(d, range(9, 22)) for d in range(5)), [])
     c, n = rules.shared_silence({"A": a, "B": b})
-    assert c and all(x["strength"] == "faint" for x in c)
+    assert len(c) == 1 and c[0]["strength"] == "faint" and c[0]["detail"]["count"] > 1
 
 
 def test_sequence_names_the_order():

@@ -31,6 +31,7 @@ from routers.work import router as work_router
 from routers.workspace_overview import router as workspace_overview_router
 from routers.workspace_entries import router as workspace_entries_router
 from routers.theory_additions import router as theory_additions_router
+from routers.relation_queries import router as relation_queries_router
 from routers.workspace_ai import router as workspace_ai_router
 from routers.agent_proposals import router as agent_proposals_router
 from routers.phone_monitoring import router as phone_monitoring_router
@@ -85,6 +86,7 @@ __all__ = [
     "workspace_overview_router",
     "workspace_entries_router",
     "theory_additions_router",
+    "relation_queries_router",
     "workspace_ai_router",
     "agent_proposals_router",
     "phone_monitoring_router",
