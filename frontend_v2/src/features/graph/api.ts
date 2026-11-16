@@ -74,7 +74,7 @@ export interface UpdateNodePayload {
 
 type RawNode = Record<string, unknown>
 type RawEdge = Record<string, unknown>
-type RawGraphData = { nodes: RawNode[]; links: RawEdge[]; total_node_count?: number }
+type RawGraphData = { nodes: RawNode[]; links: RawEdge[]; total_node_count?: number; ledger_repeats_hidden?: number }
 
 function asString(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value
@@ -105,6 +105,7 @@ function toGraphData(raw: RawGraphData): GraphData {
       weight: asNumber(e.weight),
     })),
     ...(typeof raw.total_node_count === "number" ? { total_node_count: raw.total_node_count } : {}),
+    ...(typeof raw.ledger_repeats_hidden === "number" ? { ledger_repeats_hidden: raw.ledger_repeats_hidden } : {}),
   }
 }
 
@@ -124,6 +125,8 @@ export const graphAPI = {
     scope?: CaseLayer
     /** The Graph page on a case with phones: top 2,000 by degree, the total stated (03 D-21). */
     phone_cap?: boolean
+    /** The Graph page: leave out the document model's copies of payments the ledger holds from the same file. */
+    hide_ledger_repeats?: boolean
   }) => {
     const qs = new URLSearchParams({ case_id: params.case_id, lightweight: "true" })
     if (params.start_date) qs.set("start_date", params.start_date)
@@ -132,6 +135,7 @@ export const graphAPI = {
     if (params.sort_by) qs.set("sort_by", params.sort_by)
     if (params.scope) qs.set("scope", params.scope)
     if (params.phone_cap) qs.set("phone_cap", "true")
+    if (params.hide_ledger_repeats) qs.set("hide_ledger_repeats", "true")
     const raw = await fetchAPI<RawGraphData>(`/api/graph?${qs}`)
     return toGraphData(raw)
   },

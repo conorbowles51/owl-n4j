@@ -2,11 +2,11 @@ import { useQuery } from "@tanstack/react-query"
 import { graphAPI } from "../api"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
-export function useGraphData(caseId: string | undefined, opts: { phoneCap?: boolean } = {}) {
+export function useGraphData(caseId: string | undefined, opts: { phoneCap?: boolean; hideLedgerRepeats?: boolean } = {}) {
   const scope = useCaseLayer(caseId)
   return useQuery({
-    queryKey: ["graph", caseId, scope, ...(opts.phoneCap ? ["phone-cap"] : [])],
-    queryFn: () => graphAPI.getGraph({ case_id: caseId!, scope, phone_cap: opts.phoneCap }),
+    queryKey: ["graph", caseId, scope, ...(opts.phoneCap ? ["phone-cap"] : []), ...(opts.hideLedgerRepeats ? ["no-ledger-repeats"] : [])],
+    queryFn: () => graphAPI.getGraph({ case_id: caseId!, scope, phone_cap: opts.phoneCap, hide_ledger_repeats: opts.hideLedgerRepeats }),
     enabled: !!caseId,
   })
 }

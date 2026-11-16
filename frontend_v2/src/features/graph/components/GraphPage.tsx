@@ -69,7 +69,7 @@ export function GraphPage() {
   const [layoutWork, setLayoutWork] = useState<PageWork | null>(null)
   // The phone-case cap (03 D-21) stays off: search and expand read only the loaded nodes, so a capped graph would
   // leave the rest unreachable. It is switched on once both reach past the cap.
-  const { data: graphData, isLoading } = useGraphData(caseId, { phoneCap: PHONE_GRAPH_CAP_ON })
+  const { data: graphData, isLoading } = useGraphData(caseId, { phoneCap: PHONE_GRAPH_CAP_ON, hideLedgerRepeats: true })
   const { filteredData, filteredNodes, totalNodes } = useGraphSearch(graphData)
   const significantManifest = useSignificantManifest(caseId ?? "")
   const theorySearch = useGraphStore((s) => s.appliedSearchQuery)
@@ -315,6 +315,13 @@ export function GraphPage() {
         <p role="status" className="border-b border-border bg-status-review-soft px-4 py-1.5 text-xs">
           Showing the {graphData.nodes.length.toLocaleString("en-US")} most connected of {graphData.total_node_count.toLocaleString("en-US")} items in this case.
           Search or open a node's neighbours to reach the rest; the Table lists every item.
+        </p>
+      )}
+      {!!graphData?.ledger_repeats_hidden && (
+        <p role="status" data-testid="graph-ledger-repeats" className="border-b border-border px-4 py-1.5 text-xs text-muted-foreground">
+          {graphData.ledger_repeats_hidden.toLocaleString("en-US")} {graphData.ledger_repeats_hidden === 1 ? "payment" : "payments"} the
+          document model read from a statement {graphData.ledger_repeats_hidden === 1 ? "is" : "are"} not drawn: the ledger
+          already has {graphData.ledger_repeats_hidden === 1 ? "it" : "each"} from the same statement. The Table still lists them.
         </p>
       )}
       {graphData && caseId && <GraphPhoneScope caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} />}

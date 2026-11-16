@@ -79,12 +79,15 @@ class WarmedPageTests(unittest.TestCase):
     def test_the_graph_page_after_the_warm_up_is_served_without_a_read(self):
         from routers import graph
         case = "d5b330d1-b3fe-4b03-8539-98d9cc3115e0"
-        with patch.object(graph.neo4j_service, "get_graph_structure", side_effect=self.read("graph")):
+        with patch.object(graph.neo4j_service, "get_graph_structure", side_effect=self.read("graph")), \
+                patch.object(graph.neo4j_service, "drop_ledger_repeats",
+                             side_effect=lambda case_id, result, keys: {**result, "ledger_repeats_hidden": 0}):
             graph.warm_graph_page(__import__("uuid").UUID(case))
             response = graph.get_graph(case_id=case, start_date=None, end_date=None, lightweight=True, limit=None,
-                                       sort_by=None, scope="all", request=None, db=None, user={})
+                                       sort_by=None, scope="all", hide_ledger_repeats=True, request=None, db=None,
+                                       user={})
         self.assertEqual(len(self.calls), 1)
-        self.assertEqual(json.loads(response.body), {"read": "graph"})
+        self.assertEqual(json.loads(response.body), {"read": "graph", "ledger_repeats_hidden": 0})
         self.assertEqual(self.calls[0][1], dict(case_id=case, start_date=None, end_date=None, limit=None,
                                                 sort_by=None, entity_keys=None))
 

@@ -76,6 +76,19 @@ describe("graphAPI edit helpers", () => {
     expect(graph.nodes[0].source_count).toBe(2)
   })
 
+  it("asks for the Graph page's read without the model's copies of ledger payments, and keeps their count", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async () =>
+      new Response(JSON.stringify({ nodes: [], links: [], ledger_repeats_hidden: 215 }), { status: 200 })
+    )
+
+    const graph = await graphAPI.getGraph({ case_id: "case-1", hide_ledger_repeats: true })
+
+    expect(String(vi.mocked(globalThis.fetch).mock.calls[0][0])).toContain("hide_ledger_repeats=true")
+    expect(graph.ledger_repeats_hidden).toBe(215)
+    await graphAPI.getGraph({ case_id: "case-1" })
+    expect(String(vi.mocked(globalThis.fetch).mock.calls[1][0])).not.toContain("hide_ledger_repeats")
+  })
+
   it("maps the case-scoped search contract for Notebook consumers", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(

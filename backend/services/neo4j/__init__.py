@@ -50,6 +50,7 @@ class Neo4jServiceFacade:
     get_existing_node_keys = staticmethod(graph_service.get_existing_node_keys)
     get_existing_relationships = staticmethod(graph_service.get_existing_relationships)
     get_graph_structure = staticmethod(graph_service.get_graph_structure)
+    drop_ledger_repeats = staticmethod(graph_service.drop_ledger_repeats)
     get_node_with_neighbours = staticmethod(graph_service.get_node_with_neighbours)
     expand_nodes = staticmethod(graph_service.expand_nodes)
     get_node_details = staticmethod(graph_service.get_node_details)

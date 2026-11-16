@@ -231,6 +231,32 @@ class GraphService:
 
         return {"nodes": nodes, "links": links}
 
+    def drop_ledger_repeats(self, case_id: str, result: Dict, entity_keys: Optional[List[str]] = None) -> Dict:
+        """The Graph page's read without the document model's copies of ledger payments.
+
+        The document model also writes a statement's lines as payments of its own. One with the same file, date
+        and amount as a ledger row is that row again (the Timeline's rule, timeline_service._ledger_repeat_keys):
+        on the demo case 214 of its 266 model payments, so the Graph drew most statement payments twice. Those
+        nodes and their links are left out of the drawing and counted in ``ledger_repeats_hidden``, so the page
+        can say so; the Table and the node's own reads still show them, marked as the model's reading.
+        """
+        from services.neo4j.timeline_service import timeline_service
+
+        hidden = set(timeline_service.ledger_repeat_keys(case_id))
+        if entity_keys is not None:
+            hidden &= set(entity_keys)
+        if not hidden:
+            return {**result, "ledger_repeats_hidden": 0}
+        nodes = [n for n in result.get("nodes", []) if n.get("key") not in hidden]
+        links = [l for l in result.get("links", []) if l.get("source") not in hidden and l.get("target") not in hidden]
+        out = {**result, "nodes": nodes, "links": links, "ledger_repeats_hidden": len(hidden)}
+        if isinstance(result.get("total_node_count"), int):
+            # The capped read: the total counts every node, drawn or not.
+            out["total_node_count"] = max(0, result["total_node_count"] - len(hidden))
+        else:
+            out["ledger_repeats_hidden"] = len(result.get("nodes", [])) - len(nodes)
+        return out
+
     def get_case_node_index(self, case_id: str) -> List[Dict]:
         """Key, name, type, summary and degree of every active node in the case, most-connected first.
 

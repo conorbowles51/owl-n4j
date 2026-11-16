@@ -47,6 +47,8 @@ export interface GraphData {
   edges: GraphEdge[]
   /** Set when the read was capped (03 D-21): how many nodes the case has in all. */
   total_node_count?: number
+  /** The Graph page: the document model's copies of ledger payments left out of the drawing. */
+  ledger_repeats_hidden?: number
 }
 
 export interface NodeDetail {

@@ -136,6 +136,11 @@ class TimelineService:
             return []
         return [str(f).strip() for f in value if str(f or "").strip()]
 
+    def ledger_repeat_keys(self, case_id: str) -> list[str]:
+        """The keys of _ledger_repeat_keys in a session of their own (the Graph page leaves the same events out)."""
+        with driver.session() as session:
+            return self._ledger_repeat_keys(session, case_id)
+
     def _ledger_repeat_keys(self, session, case_id: str) -> list[str]:
         """Keys of the document model's events that repeat a ledger row: same file, same date, same amount."""
         sort_date = self.SORT_DATE_CYPHER
