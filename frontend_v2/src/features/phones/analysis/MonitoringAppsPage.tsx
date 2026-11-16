@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input"
 import { fetchAPI } from "@/lib/api-client"
 import { citationHref } from "@/features/financial/lib/judgements"
 import { caseMembersAPI } from "@/features/cases/members-api"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { usePhoneLayerParam } from "@/features/phones/ui/use-phone-layer-param"
+import { layersOn } from "@/features/phones/lib/phone-layers"
 
 /**
  * Monitoring apps beside bank control notices (coercive control, economic abuse). An indicator with its basis, never a
@@ -73,6 +76,7 @@ function Item({ caseId, item }: { caseId: string; item: LaneItem }) {
 export default function MonitoringAppsPage() {
   const { id: caseId = "" } = useParams()
   const client = useQueryClient()
+  const layers = usePhoneLayerParam(caseId)
   // case edit permission as the server grants it; when the membership cannot be read the server decides
   const membership = useQuery({ queryKey: ["case-membership-mapped", caseId], queryFn: () => caseMembersAPI.getMyMembership(caseId), enabled: !!caseId, retry: false })
   const canEdit = membership.isError ? true : !!(membership.data?.permissions as { case?: { edit?: boolean } } | undefined)?.case?.edit
@@ -95,6 +99,11 @@ export default function MonitoringAppsPage() {
   const remove = (id: string) => fetchAPI(`${base(caseId)}/entries/${id}`, { method: "DELETE" }).then(refresh).catch((e: Error) => setErr(e.message))
   const d = q.data
   const src = d?.list_summary.source
+  // Phone layers: an item names its phone by label, so a phone off drops its items; an item that names no phone stays
+  const onPhones = layers.phones.length ? layersOn(layers.phones.map((p) => p.id), layers.chosen) : []
+  const onLabels = new Set(layers.phones.filter((p) => onPhones.includes(p.id)).map((p) => p.label))
+  const phoneCounts = Object.fromEntries(layers.phones.map((p) => [p.id, (d?.items ?? []).filter((i) => i.phone === p.label).length]))
+  const items = !d ? [] : layers.chosen.length ? d.items.filter((i) => !i.phone || onLabels.has(i.phone)) : d.items
   return (
     <div className="space-y-3 p-4" data-testid="monitoring-apps-page">
       <p className="text-sm"><Link className="underline" to={`/cases/${caseId}/phone-analyses`}>Phone analyses</Link></p>
@@ -104,6 +113,8 @@ export default function MonitoringAppsPage() {
         <label className="flex items-center gap-2">From <Input type="date" className="h-8 w-40" value={start} onChange={(e) => setStart(e.target.value)} /></label>
         <label className="flex items-center gap-2">To <Input type="date" className="h-8 w-40" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
       </div>
+      {layers.enabled && <PhoneLayers phones={layers.phones} chosen={layers.chosen} noun="items" counts={d ? phoneCounts : undefined} onChange={layers.set} />}
+      {layers.enabled && d && layers.chosen.length > 0 && <p className="text-sm" role="note">Showing {items.length.toLocaleString("en-US")} of {d.items.length.toLocaleString("en-US")} items; the counts above are for every phone. An item that names no phone stays.</p>}
       {q.isPending ? <p role="status">Comparing the phones' apps and notices with the list…</p> : q.isError ? <p role="alert">{q.error.message}</p> : d && (
         <>
           <p className="text-sm font-medium" data-testid="monitoring-counts">
@@ -112,8 +123,8 @@ export default function MonitoringAppsPage() {
           </p>
           <p className="text-xs" data-testid="monitoring-limits">{d.limits}</p>
           <p className="text-xs text-muted-foreground">{d.coverage} {d.not_read}</p>
-          {d.items.length === 0 ? <p className="text-sm">Nothing on the list or among the notices.</p> : (
-            <ul className="space-y-2">{d.items.map((x) => <Item key={x.rec} caseId={caseId} item={x} />)}</ul>
+          {items.length === 0 ? <p className="text-sm">{d.items.length === 0 ? "Nothing on the list or among the notices." : "Nothing on the list or among the notices for the phones that are on."}</p> : (
+            <ul className="space-y-2">{items.map((x) => <Item key={x.rec} caseId={caseId} item={x} />)}</ul>
           )}
           {d.set_aside.length > 0 && (
             <section aria-label="Set aside" className="space-y-2">

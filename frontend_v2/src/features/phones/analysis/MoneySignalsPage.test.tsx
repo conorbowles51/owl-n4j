@@ -11,6 +11,10 @@ const api = vi.hoisted(() => ({
   },
 }))
 vi.mock("./money-api", () => api)
+vi.mock("@/features/phones/api", async (orig) => ({
+  ...(await orig<object>()),
+  getPhones: vi.fn().mockResolvedValue({ case_id: "c1", total: 2, phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }], case_zone: { name: "UTC", basis: "default", note: null } }),
+}))
 const perms = vi.hoisted(() => ({ canEdit: true }))
 vi.mock("@/features/cases/members-api", () => ({ caseMembersAPI: { getMyMembership: () =>
   Promise.resolve({ user_id: "u1", user_name: "Synthetic Reviewer", user_email: "", preset: perms.canEdit ? "owner" : "viewer",
@@ -47,7 +51,7 @@ const PAIRED = { ...READING, measures: { ...READING.measures, record_uid: "rec-1
   pair_counts: { by_level: { strong: 1, moderate: 0, weak: 1, faint: 0 }, confirmed: 0, rejected: 1 },
   pairings_left_out_words: "Not listed: payments on these accounts 1 more than 31 days away." } }
 
-function page() {
+function page(entry = "/cases/c1/phone-money") {
   api.moneyAPI.runs.mockResolvedValue({ items: [RUN] })
   api.moneyAPI.coverage.mockResolvedValue({ sentence: RUN.coverage.sentence })
   api.moneyAPI.orphaned.mockResolvedValue({ items: [], search: SEARCH })
@@ -57,7 +61,7 @@ function page() {
     { record_uid: null, extraction_id: null, field_path: null, ledger_transaction_id: "tx-1", ledger_ref_id: "T-1", role: "ledger_match" }] })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={["/cases/c1/phone-money"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes><Route path="/cases/:id/phone-money" element={<MoneySignalsPage />} /></Routes>
       </MemoryRouter>
     </QueryClientProvider>)
@@ -208,5 +212,17 @@ describe("Also recorded on phone (05 4.4)", () => {
         <MemoryRouter><PhoneMentions caseId="c1" transactionId="candidate:7" /></MemoryRouter>
       </QueryClientProvider>)
     expect(api.moneyAPI.ledgerLinks).not.toHaveBeenCalled()
+  })
+})
+
+describe("Money on the phones: phone layers", () => {
+  it("asks only for the phones that are on, and every phone with all on", async () => {
+    localStorage.setItem("loupe.phone_layers", "on")
+    page("/cases/c1/phone-money?phones=e1")
+    const group = await screen.findByRole("group", { name: "Phone layers" })
+    await waitFor(() => expect(api.moneyAPI.results).toHaveBeenCalledWith("c1", "run-1", "money_reading", "", 0, 100, "strength", ["e1"]))
+    fireEvent.click(within(group).getByLabelText("C2 on"))
+    await waitFor(() => expect(api.moneyAPI.results).toHaveBeenLastCalledWith("c1", "run-1", "money_reading", "", 0, 100, "strength", []))
+    localStorage.clear()
   })
 })

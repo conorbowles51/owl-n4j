@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it, vi } from "vitest"
@@ -8,9 +8,12 @@ const pattern = vi.hoisted(() => ({ subjects: vi.fn() }))
 const fetchAPI = vi.hoisted(() => vi.fn().mockResolvedValue({ run: null, items: [] }))
 vi.mock("@/lib/api-client", () => ({ fetchAPI }))
 vi.mock("@/features/pattern/api", () => ({ patternAPI: pattern }))
+vi.mock("@/features/phones/api", () => ({
+  getPhones: vi.fn().mockResolvedValue({ case_id: "c1", total: 2, phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }], case_zone: { name: "UTC", basis: "default", note: null } }),
+}))
 vi.mock("@/features/pattern/components/WindowPanel", () => ({
-  WindowPanel: (p: { at: string; day?: string | null; range?: { start: string; end: string } | null; zone?: string }) => (
-    <div data-testid="window">{JSON.stringify({ at: p.at, day: p.day ?? null, range: p.range ?? null, zone: p.zone })}</div>),
+  WindowPanel: (p: { at: string; day?: string | null; range?: { start: string; end: string } | null; zone?: string; phones?: string[] }) => (
+    <div data-testid="window" data-phones={(p.phones ?? []).join(",")}>{JSON.stringify({ at: p.at, day: p.day ?? null, range: p.range ?? null, zone: p.zone })}</div>),
 }))
 
 import IncidentWindowPage, { WHAT_IT_DOES } from "./IncidentWindowPage"
@@ -63,5 +66,15 @@ describe("Incident window (05 16, J-5c)", () => {
     fetchAPI.mockResolvedValueOnce({ run: null, items: [] })
     mount("/cases/c1/w?at=2023-05-01T10:00:00Z")
     expect(await screen.findByText(/no difference between the phones' clocks is known; each time is shown as its phone recorded it/)).toBeInTheDocument()
+  })
+
+  it("phone layers: the lanes are for the phones that are on, and typing a moment keeps them", async () => {
+    localStorage.setItem("loupe.phone_layers", "on")
+    mount("/cases/c1/w?at=2023-05-01T10:15:00Z&phones=e1")
+    const win = await screen.findByTestId("window")
+    expect(win.getAttribute("data-phones")).toBe("e1")
+    fireEvent.click(await screen.findByLabelText("C2 on"))
+    await waitFor(() => expect(screen.getByTestId("window").getAttribute("data-phones")).toBe(""))
+    localStorage.clear()
   })
 })

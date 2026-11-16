@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { patternAPI } from "@/features/pattern/api"
 import { WindowPanel } from "@/features/pattern/components/WindowPanel"
 import { ClockOffsets } from "./ClockOffsets"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { usePhoneLayerParam } from "@/features/phones/ui/use-phone-layer-param"
 
 /**
  * Approach 13, the incident window (05 section 16; 07 J-5): every phone in the case around one anchor, one lane group
@@ -25,6 +27,7 @@ export default function IncidentWindowPage() {
   const zone = search.get("zone") || "case"
   const label = search.get("label")
   const [typed, setTyped] = useState("")
+  const layers = usePhoneLayerParam(caseId)
   const subjects = useQuery({ queryKey: ["pattern-subjects", caseId], queryFn: () => patternAPI.subjects(caseId), enabled: !!caseId && !at && !day && !(start && end) })
   const latest = subjects.data?.extractions.map((e) => e.last).filter(Boolean).sort().pop() || null
   const range = start && end ? { start, end } : null
@@ -34,7 +37,7 @@ export default function IncidentWindowPage() {
   function open() {
     const d = new Date(typed)
     if (Number.isNaN(d.getTime())) return
-    setSearch({ at: d.toISOString(), label: "the typed moment" })
+    setSearch((prev) => { const next = new URLSearchParams(); if (prev.get("phones")) next.set("phones", prev.get("phones")!); next.set("at", d.toISOString()); next.set("label", "the typed moment"); return next })
   }
   return (
     <div className="space-y-4 p-4" data-testid="incident-window-page">
@@ -47,11 +50,12 @@ export default function IncidentWindowPage() {
         <Button size="sm" onClick={open} disabled={!typed}>Open the window</Button>
       </div>
       <p data-part="coverage" className="text-sm">Around {named}.</p>
+      {layers.enabled && <PhoneLayers phones={layers.phones} chosen={layers.chosen} noun="phones" counts={null} onChange={layers.set} />}
       <section data-part="results" aria-label="Results">
         {subjects.isLoading && <p className="text-sm">Finding the latest moment on the phones…</p>}
         {!anchor && !subjects.isLoading && <p className="text-sm">The case's phones hold no timed record yet. Choose a moment above.</p>}
         {anchor && <ClockOffsets caseId={caseId} />}
-        {anchor && <WindowPanel key={`${anchor}|${day}|${range?.end}|${zone}`} caseId={caseId} at={anchor} day={day} range={range} caseEvents={[]} zone={zone} exportable />}
+        {anchor && <WindowPanel key={`${anchor}|${day}|${range?.end}|${zone}|${layers.chosen.join(",")}`} phones={layers.chosen} caseId={caseId} at={anchor} day={day} range={range} caseEvents={[]} zone={zone} exportable />}
       </section>
     </div>
   )

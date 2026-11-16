@@ -117,8 +117,8 @@ export const moneyAPI = {
   run: (caseId: string, runId: string) => fetchAPI<AnalysisRun>(`${BASE}/runs/${runId}?${q({ case_id: caseId })}`),
   cancel: (caseId: string, runId: string) => fetchAPI<AnalysisRun>(`${BASE}/runs/${runId}/cancel?${q({ case_id: caseId })}`, { method: "POST" }),
   coverage: (caseId: string) => fetchAPI<{ sentence: string }>(`${BASE}/coverage?${q({ case_id: caseId, approach: "money_signals" })}`),
-  results: (caseId: string, runId: string, kind: string, strength: string, offset: number, limit = 100, order = "strength") =>
-    fetchAPI<ResultPage>(`${BASE}/runs/${runId}/results?${q({ case_id: caseId, kind, strength, offset, limit, order })}`),
+  results: (caseId: string, runId: string, kind: string, strength: string, offset: number, limit = 100, order = "strength", phones: string[] = []) =>
+    fetchAPI<ResultPage>(`${BASE}/runs/${runId}/results?${q({ case_id: caseId, kind, strength, offset, limit, order, phones: phones.length ? phones.join(",") : undefined })}`),
   decidePair: (caseId: string, recordUid: string, fieldPath: string, transactionId: string, decision: PairDecision | "undo", note: string) =>
     fetchAPI<{ decision: PairDecision | null; decision_words: string | null }>(`${BASE}/money/pairs/decisions`, {
       method: "POST",

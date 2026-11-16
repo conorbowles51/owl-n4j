@@ -38,7 +38,9 @@ export interface CaseEventLike {
 
 export const DATE_ONLY_WORDS = "This payment has a date but no time. Showing the whole day."
 
-export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case", onClose, exportable = false }: {
+export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case", onClose, exportable = false, phones }: {
+  /** Only these phones' lanes (phone layers); absent, every phone. */
+  phones?: string[]
   caseId: string
   /** The moment the window is around; for a date-only anchor, the start of its day. */
   at: string
@@ -63,7 +65,7 @@ export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case",
     const b = new Date(q.data.end).getTime()
     const mark = (i: LaneItem) => ({ key: `${i.ref_kind}:${i.id}`, at: i.at, label: i.ref_kind === "comm_event" ? `${i.kind} ${i.direction}` : `${i.record_type} · ${i.field}`,
       tone: (i.strength as never) || "none", href: i.record_uid ? phoneLinkHref(caseId, { target_type: "phone_record", target_id: i.record_uid }) : null })
-    rows = q.data.phones.flatMap((p): LaneRow[] => {
+    rows = q.data.phones.filter((p) => !phones?.length || phones.includes(p.extraction_id)).flatMap((p): LaneRow[] => {
       const name = p.label || "Phone"
       const items: LaneItem[] = ["interaction", "communications", "places", "others"].flatMap((k) => p.lanes[k] || [])
       const main: LaneRow = {

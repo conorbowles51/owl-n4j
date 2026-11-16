@@ -10,6 +10,8 @@ import { moneyAPI, type AnalysisDecisionKind, type AnalysisResult, type Analysis
 import { DECISION_WORDS } from "./decision-words"
 import { amountWords } from "./money-words"
 import { LevelBadge, MoneyPairings } from "./MoneyPairings"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { usePhoneLayerParam } from "@/features/phones/ui/use-phone-layer-param"
 import { caseMembersAPI } from "@/features/cases/members-api"
 
 /**
@@ -182,6 +184,7 @@ export default function MoneySignalsPage() {
   const [strength, setStrength] = useState("")
   const [offset, setOffset] = useState(0)
   const presence = useFinancialPresence(caseId)
+  const layers = usePhoneLayerParam(caseId)
   // case edit permission as the server grants it (members/me permissions.case.edit); when the membership cannot be
   // read (a super admin outside the case) the buttons show and the server decides
   const membership = useQuery({ queryKey: ["case-membership-mapped", caseId], queryFn: () => caseMembersAPI.getMyMembership(caseId), enabled: !!caseId, retry: false })
@@ -206,8 +209,8 @@ export default function MoneySignalsPage() {
   }, [active, run, caseId, qc])
   const done = run?.status === "completed" ? run : null
   const results = useQuery({
-    queryKey: ["money-results", caseId, done?.id, kind, strength, offset],
-    queryFn: () => moneyAPI.results(caseId, done!.id, kind, strength, offset, 100, kind === "account_lead" ? "lead_rank" : "strength"),
+    queryKey: ["money-results", caseId, done?.id, kind, strength, offset, layers.chosen.join(",")],
+    queryFn: () => moneyAPI.results(caseId, done!.id, kind, strength, offset, 100, kind === "account_lead" ? "lead_rank" : "strength", layers.chosen),
     enabled: !!done,
   })
   const total = results.data?.total ?? 0
@@ -233,6 +236,10 @@ export default function MoneySignalsPage() {
       <p data-part="what">{WHAT_IT_DOES}</p>
       <div data-part="run"><RunControl caseId={caseId} run={run} onRequested={setRun} /></div>
       <p data-part="coverage" className="text-sm">{done?.coverage?.sentence || coverage.data?.sentence}</p>
+      {layers.enabled && (
+        <PhoneLayers phones={layers.phones} chosen={layers.chosen} noun="results" counts={null} onChange={(ids) => { setOffset(0); layers.set(ids) }} />
+      )}
+      {layers.enabled && layers.chosen.length > 0 && <p className="text-sm" role="note">Results that rest on at least one of the phones that are on.</p>}
       {presence.data && !presence.data.has_financial_evidence && presence.data.phone_sentence && (
         // 07 section 8, SA-3: the readings are still read from the phones; there is no ledger to compare them with
         <p data-part="no-ledger" className="text-sm">{presence.data.phone_sentence} The readings below are not compared with any payment.</p>

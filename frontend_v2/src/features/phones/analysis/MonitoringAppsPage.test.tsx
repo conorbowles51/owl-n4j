@@ -1,6 +1,10 @@
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("@/features/cases/members-api", () => ({ caseMembersAPI: { getMyMembership: vi.fn().mockResolvedValue({ permissions: { case: { edit: true } } }) } }))
-import { render, screen } from "@testing-library/react"
+vi.mock("@/features/phones/api", async (orig) => ({
+  ...(await orig<object>()),
+  getPhones: vi.fn().mockResolvedValue({ case_id: "c", total: 2, phones: [{ extraction_id: "e1", label: "Phone 1" }, { extraction_id: "e2", label: "Phone 2" }], case_zone: { name: "UTC", basis: "default", note: null } }),
+}))
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { expect, it, vi } from "vitest"
@@ -17,11 +21,11 @@ const data = {
   list_summary: { version: "v1", apps: 130, identifiers: 618, edits: [], source: { name: "Echap stalkerware-indicators", url: "https://example.test", license: "CC-BY 4.0", commit: "abc", retrieved_on: "2026-11-05", note: "No person has reviewed these entries." } },
 }
 
-function show() {
-  vi.mocked(fetchAPI).mockResolvedValue(data as never)
+function show(entry = "/cases/c/phone-analyses/monitoring-apps", withData = data) {
+  vi.mocked(fetchAPI).mockResolvedValue(withData as never)
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={["/cases/c/phone-analyses/monitoring-apps"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes><Route path="/cases/:id/phone-analyses/monitoring-apps" element={<MonitoringAppsPage />} /></Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -40,4 +44,17 @@ it("names the list's source and offers the edit to someone who can", async () =>
   show()
   expect((await screen.findByTestId("monitoring-source")).textContent).toContain("130 apps, 618 identifiers")
   expect(await screen.findByRole("button", { name: "Save" })).toBeDisabled()
+})
+
+it("phone layers: a phone off drops its items, says how many of how many it shows, and each phone states its own count", async () => {
+  localStorage.setItem("loupe.phone_layers", "on")
+  const two = { ...data, items: [data.items[0], { ...data.items[1], phone: "Phone 2" }] }
+  show("/cases/c/phone-analyses/monitoring-apps?phones=e1,e2", two)
+  const group = await screen.findByRole("group", { name: "Phone layers" })
+  await waitFor(() => expect(within(group).getAllByText("1 item")).toHaveLength(2))
+  expect(screen.getAllByTestId("monitoring-item")).toHaveLength(2)
+  fireEvent.click(within(group).getByLabelText("Phone 2 on"))
+  await waitFor(() => expect(screen.getAllByTestId("monitoring-item")).toHaveLength(1))
+  expect(screen.getByText(/Showing 1 of 2 items; the counts above are for every phone/)).toBeTruthy()
+  localStorage.clear()
 })
