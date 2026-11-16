@@ -4,9 +4,10 @@
 // screens use, and scores each check found / missed / wrong (a link to a decoy is wrong, never noise). Then it asks the
 // agent the key's questions and scores each answer against its expected words. Never tuned to pass: a check reads
 // what the product shows and compares it with the key. Prints a table per module and writes the full result.
-//   node journeys/live-demo-key.mjs --out <file.json> [--only F01,F02] [--no-agent]
+//   node journeys/live-demo-key.mjs --out <file.json> [--only F01,F02] [--no-agent] [--no-report]
 import { readFileSync, writeFileSync } from "node:fs"
 import { expectHit, wrongWords } from "./demo-key-score.mjs"
+import { scoreReport } from "./demo-report-score.mjs"
 import { chromium } from "playwright"
 import { CASES, readLogin, signIn } from "./lib.mjs"
 
@@ -443,6 +444,18 @@ if (!process.argv.includes("--no-agent") && !only) {
   }
 }
 
+// The report-level question (lx-deepinvest A): a long answer scored against the rubric's facts and decoys. It is the
+// slowest question (a detailed report starts a deep investigation), so --no-report leaves it out.
+let report = null
+if (!process.argv.includes("--no-agent") && !process.argv.includes("--no-report") && !only) {
+  const rubric = JSON.parse(readFileSync(new URL("../../evidence-engine/tests/phone/planted-report-rubric.json", import.meta.url)))
+  const t0 = Date.now()
+  const r = await req("POST", "/api/agent/messages", { message: rubric.question, case_id: C })
+  const text = String(r.body?.answer || "")
+  report = { id: rubric.question_id, status: r.status, seconds: Math.round((Date.now() - t0) / 1000), thread_id: r.body?.thread_id, citations: r.body?.citation_check || {}, score: scoreReport(text, rubric), answer: text }
+  console.log(`${rubric.question_id.padEnd(4)} report           facts ${report.score.facts_found}/${report.score.facts_of}, decoys wrong ${report.score.decoys_wrong}, dropped names ${report.score.defects.dropped_names}, doubled sections ${report.score.defects.duplicated_sections}, ${report.seconds} s`)
+}
+
 await browser.close()
 const table = {}
 for (const r of results) {
@@ -453,4 +466,4 @@ console.log("\nmodule            found missed wrong")
 for (const [m, v] of Object.entries(table).sort()) console.log(`${m.padEnd(17)} ${String(v.found).padStart(5)} ${String(v.missed).padStart(6)} ${String(v.wrong).padStart(5)}`)
 const ag = { found: agent.filter((a) => a.result === "found").length, of: agent.length, wrong: agent.filter((a) => a.result === "wrong").length }
 console.log(`agent: ${ag.found} of ${ag.of} answered as the key says, ${ag.wrong} wrong`)
-writeFileSync(out, JSON.stringify({ at: new Date().toISOString(), case: C, phones: Object.fromEntries(Object.entries(PH).map(([k, p]) => [k, { label: p.label, state: p.state, counts: p.counts }])), ledger_rows: ledgerRows.length, results, table, agent, agent_score: ag }, null, 1))
+writeFileSync(out, JSON.stringify({ at: new Date().toISOString(), case: C, phones: Object.fromEntries(Object.entries(PH).map(([k, p]) => [k, { label: p.label, state: p.state, counts: p.counts }])), ledger_rows: ledgerRows.length, results, table, agent, agent_score: ag, report }, null, 1))
