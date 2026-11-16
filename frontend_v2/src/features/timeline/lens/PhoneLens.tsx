@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,9 @@ import { SignificantNote } from "@/features/phones/ui/SignificantNote"
 import { DEFAULT_VIEW, viewToFilter } from "@/features/phones/lib/filter-url"
 import { phoneSettingsQuery } from "@/features/phones/phone-queries"
 import { ScopeBar } from "@/features/phones/ui/ScopeBar"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { useCasePhones } from "@/features/phones/ui/use-case-phones"
+import { phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
 import { ScopeCrossings } from "@/features/phones/ui/ScopeCrossings"
 import { scopeToSearch } from "@/features/phones/ui/scope"
 import { useUrlScope } from "@/features/phones/ui/use-phone-scope"
@@ -204,6 +207,23 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
     enabled: significant,
   })
   const stream = useStream(filter, { source: LENS_SOURCE })
+  // Phone layers (behind the phone_layers setting): each phone's entries under the other filters, one read per phone
+  // so a phone switched off still states its number.
+  const layersOn = phoneLayersEnabled()
+  const phoneList = useCasePhones(caseId)
+  const { phones: _chosenPhones, ...otherFilters } = scoped
+  void _chosenPhones
+  const perPhone = useQueries({
+    queries: (layersOn ? phoneList : []).map((p) => ({
+      queryKey: ["phone-lens-count", caseId, kinds, p.id, otherFilters],
+      queryFn: () => lensIndex({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy, ...otherFilters, phones: [p.id] }),
+      staleTime: 30_000,
+    })),
+  })
+  const layerCounts = perPhone.some((q) => q.isError) ? null
+    : phoneList.length && perPhone.length === phoneList.length && perPhone.every((q) => q.data)
+      ? Object.fromEntries(phoneList.map((p, i) => { const d = perPhone[i].data as { total?: number; counts: Record<string, number> }; return [p.id, d.total ?? d.counts.events ?? 0] }))
+      : undefined
   const idx = stream.index as (typeof stream.index & { total?: number; hidden?: { count: number; words: string | null } }) | null
   const hiddenShown = kinds.includes("device") || kinds.includes("sensor")
   const toggleKind = (k: LensKind) => setKinds((ks) => (ks.includes(k) ? ks.filter((x) => x !== k) : [...ks, k]))
@@ -231,6 +251,10 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
   }, [focusRecord, snapshot]) // eslint-disable-line react-hooks/exhaustive-deps -- once per record and result
   return (
     <section aria-label="Phone entries" className="flex min-h-0 flex-1 flex-col gap-2 p-3">
+      {layersOn && (
+        <PhoneLayers phones={phoneList} chosen={carried.scope.phones.map((p) => p.id)} noun="entries" counts={layerCounts}
+          onChange={(ids) => carried.apply({ ...carried.scope, phones: phoneList.filter((p) => ids.includes(p.id)) })} />
+      )}
       <ScopeBar scope={carried.scope} onChange={carried.apply} presets={carried.presets} recent={carried.recent} restored={carried.restored} notApplied={carried.notApplied}
         count={idx ? { shown: idx.total ?? idx.counts.events ?? 0, total: idx.total ?? idx.counts.events ?? 0, noun: "phone entries" } : null}>
         <ScopeCrossings caseId={caseId} scope={carried.scope} here="timeline" />

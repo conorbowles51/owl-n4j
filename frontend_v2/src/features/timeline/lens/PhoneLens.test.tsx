@@ -40,6 +40,10 @@ vi.mock("@/lib/api-client", async (orig) => ({
     throw new Error(`unexpected ${url}`)
   }),
 }))
+vi.mock("@/features/phones/api", async (orig) => ({
+  ...(await orig<object>()),
+  getPhones: vi.fn().mockResolvedValue({ case_id: "c", total: 3, phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }, { extraction_id: "e3", label: "C3" }], case_zone: { name: "UTC", basis: "default", note: null } }),
+}))
 const lists = vi.hoisted(() => ({ filters: [] as unknown[] }))
 vi.mock("@/features/phones/components/StreamList", () => ({
   StreamList: (p: { stream: { index: unknown; total: number }; filterWords: string }) => {
@@ -78,6 +82,20 @@ describe("Timeline phone lens (03 section 9)", () => {
     expect(sent).toMatchObject({ phones: ["e1"], participant_mode: "sent_by" })
     expect(screen.getByRole("region", { name: "Scope" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Remove +1" })).toBeInTheDocument()
+  })
+
+  it("phone layers: lists every phone with its entries, a phone off is not asked for but still states its number", async () => {
+    localStorage.setItem("loupe.phone_layers", "on")
+    wrap(<PhoneLens caseId="c" caseName="Synthetic case" />, "/cases/c/timeline?phones=e1,e2")
+    const group = await screen.findByRole("group", { name: "Phone layers" })
+    await waitFor(() => expect(within(group).getAllByText("6 entries")).toHaveLength(3))
+    expect(within(group).getByLabelText("C3 on")).not.toBeChecked()
+    // the stream is asked for the phones that are on; each phone's own count is asked for that phone alone
+    const asked = net.calls.filter((c) => c.url.endsWith("/timeline/index")).map((c) => c.body.phones)
+    expect(asked).toContainEqual(["e1", "e2"])
+    expect(asked).toContainEqual(["e3"])
+    fireEvent.click(within(group).getByLabelText("C2 on"))
+    await waitFor(() => expect(net.calls.at(-1)!.body.phones).toEqual(["e1"]))
   })
 
   it("T-2: a result of 4,000 entries is fetched whole in windows of 1,000, with no load-more control", async () => {
