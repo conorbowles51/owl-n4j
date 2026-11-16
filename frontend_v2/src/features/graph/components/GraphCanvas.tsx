@@ -1,5 +1,6 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from "react"
 import { useEdgeWindow, windowStyle } from "../stores/edge-window.store"
+import { isLitLink, litPairs, usePairHighlight } from "../stores/pair-highlight.store"
 import ForceGraph2D, {
   type ForceGraphMethods,
   type NodeObject,
@@ -17,6 +18,8 @@ import { GraphEdgeMenu, type EdgeMenuState } from "./GraphEdgeMenu"
 
 /** A relationship marked significant (GR-01): drawn amber and heavier, and kept at every zoom. */
 export const SIGNIFICANT_EDGE_COLOR = "#d97706"
+/** The People in contact panel's pair on the canvas (lx-graphclarity B4): a blue apart from the significant amber. */
+export const PAIR_HIGHLIGHT_COLOR = "#0ea5e9"
 
 /* ------------------------------------------------------------------ */
 /*  Types for react-force-graph-2d                                     */
@@ -330,6 +333,11 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownData.nodes.length, arranging])
 
+  // the People in contact panel's pair under the pointer or chosen there (lx-graphclarity B4)
+  const pairHover = usePairHighlight((st) => st.hover)
+  const pairChosen = usePairHighlight((st) => st.chosen)
+  const lit = useMemo(() => litPairs(pairHover, pairChosen), [pairHover, pairChosen])
+
   /* ---- Custom node renderer with LOD tiers ---- */
   const paintNode = useCallback(
     (node: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -348,6 +356,16 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
       // Opacity based on mentioned flag
       const alpha = node.mentioned === false ? 0.45 : 1.0
       const color = getNodeColor(node.type)
+
+      // a person in the pair the People in contact panel points at: a wide ring at every zoom
+      if (lit.nodes.has(node.key)) {
+        ctx.globalAlpha = 1
+        ctx.beginPath()
+        ctx.arc(x, y, sz + 4 / Math.min(globalScale, 1), 0, 2 * Math.PI)
+        ctx.strokeStyle = PAIR_HIGHLIGHT_COLOR
+        ctx.lineWidth = 3 / globalScale
+        ctx.stroke()
+      }
       ctx.globalAlpha = alpha
 
       /* LOD: Dots tier (globalScale < 0.3) — circle only */
@@ -443,7 +461,7 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
 
       ctx.globalAlpha = 1.0
     },
-    [selectedNodeKeys, hoveredNode, canvasColors]
+    [selectedNodeKeys, hoveredNode, canvasColors, lit]
   )
 
   const edgeWindow = useEdgeWindow((st) => st.window)
@@ -457,6 +475,21 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
       if (!src?.x || !tgt?.x) return
       const marked = significantLinks.size > 0 &&
         significantLinks.has(relationshipMarkKey(String(src.key ?? ""), link.type, String(tgt.key ?? "")))
+
+      const litLink = isLitLink(link.type, String(src.id ?? ""), String(tgt.id ?? ""), lit.links)
+      if (litLink) {
+        // the pair the People in contact panel points at: drawn at every zoom, over the usual line
+        ctx.beginPath()
+        ctx.moveTo(src.x, src.y!)
+        ctx.lineTo(tgt.x, tgt.y!)
+        ctx.strokeStyle = PAIR_HIGHLIGHT_COLOR
+        ctx.lineWidth = 4 / Math.sqrt(globalScale)
+        ctx.globalAlpha = 1
+        ctx.setLineDash([])
+        ctx.stroke()
+        ctx.globalAlpha = 1.0
+        return
+      }
 
       /* LOD: skip links entirely at very low zoom (a significant one is still drawn) */
       if (globalScale < 0.3 && !marked) return
@@ -540,7 +573,7 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
 
       ctx.globalAlpha = 1.0
     },
-    [showRelationshipLabels, canvasColors, edgeWindow, edgeCounts, significantLinks]
+    [showRelationshipLabels, canvasColors, edgeWindow, edgeCounts, significantLinks, lit]
   )
 
   /* ---- Click handlers ---- */

@@ -103,6 +103,7 @@ function toGraphData(raw: RawGraphData): GraphData {
       target: asString(e.target),
       type: asString(e.type ?? e.relationship),
       weight: asNumber(e.weight),
+      ...(typeof e.contact === "number" ? { contact: e.contact } : {}),
     })),
     ...(typeof raw.total_node_count === "number" ? { total_node_count: raw.total_node_count } : {}),
     ...(typeof raw.ledger_repeats_hidden === "number" ? { ledger_repeats_hidden: raw.ledger_repeats_hidden } : {}),

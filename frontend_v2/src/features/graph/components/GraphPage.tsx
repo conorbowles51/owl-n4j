@@ -289,6 +289,7 @@ export function GraphPage() {
   }
 
   const displayData = filteredData ?? graphData
+  const shownNodeKeys = new Set(displayData.nodes.map((n) => n.key))
 
   const graphTypeCounts = new Map<string, number>()
   for (const node of graphData.nodes) {
@@ -326,7 +327,7 @@ export function GraphPage() {
         </p>
       )}
       {graphData && caseId && <GraphPhoneScope caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} />}
-      {graphData && caseId && <PhoneCommunicationEdges caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} />}
+      {graphData && caseId && <PhoneCommunicationEdges caseId={caseId} nodes={graphData.nodes} edges={graphData.edges} shownKeys={shownNodeKeys} />}
       {caseId && graphData && (() => {
         // This view as one group for a theory (lx-theorybuild A): the whole Significant layer, or the graph as
         // filtered now. A graph showing only its most connected items says so in the group's words.

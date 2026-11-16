@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -11,19 +12,23 @@ import { useFinancialPresence } from "@/features/phones/financial-presence"
 import type { GraphEdge, GraphNode } from "@/types/graph.types"
 import { pairConversationsHref } from "@/features/graph/lib/pair-href"
 import { edgeKey, useEdgeWindow } from "@/features/graph/stores/edge-window.store"
+import { usePairHighlight } from "@/features/graph/stores/pair-highlight.store"
+import { contactSummary, contactWords } from "@/features/graph/lib/contact-words"
 import { PhoneFlowView } from "./PhoneFlowView"
 
 const PREFIX = "phone-identity:"
 const SHOWN = 8
 const fmt = (n: number) => n.toLocaleString("en-US")
-const plural = (n: number, one: string, many: string) => `${fmt(n)} ${n === 1 ? one : many}`
 
-function PairEdge({ caseId, a, b, aName, bName, picked, onPick }: {
+function PairRow({ caseId, a, b, aName, bName, picked, onPick, missing }: {
   caseId: string; a: string; b: string; aName: string; bName: string; picked: boolean; onPick: (on: boolean) => void
+  /** Names of the two people the graph does not draw now (a filter or the type list hides them). */
+  missing: string[]
 }) {
   const navigate = useNavigate()
   const win = useEdgeWindow((s) => s.window)
   const setCount = useEdgeWindow((s) => s.setCount)
+  const setHover = usePairHighlight((s) => s.setHover)
   const q = useQuery({
     queryKey: ["graph-pair-edge", caseId, a, b, win?.from ?? null, win?.to ?? null],
     queryFn: () => (win
@@ -42,17 +47,36 @@ function PairEdge({ caseId, a, b, aName, bName, picked, onPick }: {
   }, [win, messages, calls, emails, a, b, q.data, edge, setCount])
   const A = edge?.a.label || aName
   const B = edge?.b.label || bName
-  const words = messages === null
-    ? `Counting messages between ${A} and ${B}`
-    : `${plural(messages, "message", "messages")}${calls ? ` and ${plural(calls, "call", "calls")}` : ""}${emails ? ` and ${plural(emails, "email", "emails")}` : ""} between ${A} and ${B}${win ? " in the window" : ""}`
+  const words = q.isError
+    ? "Could not be counted just now"
+    : messages === null
+      ? (q.data ? (win ? "No contact in these dates" : "No contact") : "Counting")
+      : `${contactWords(messages, calls, emails)}${win ? " in these dates" : ""}`
+  const k = edgeKey(a, b)
   return (
-    <li className="flex items-center gap-1">
-      <input type="checkbox" checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label={`Choose ${A} and ${B} to add`} />
-      <Button size="sm" variant="outline" className="h-auto whitespace-normal text-left text-xs" disabled={q.isError}
-        onClick={() => navigate(pairConversationsHref(caseId, a, b, win))}>
-        {q.isError ? `Could not count the messages between ${A} and ${B}` : words}
-      </Button>
-    </li>
+    <tr className="border-t border-border align-top hover:bg-muted/50" data-testid="contact-pair"
+      onMouseEnter={() => setHover(k)} onMouseLeave={() => setHover(null)}
+      onFocus={() => setHover(k)} onBlur={() => setHover(null)}>
+      <td className="py-1 pr-2">
+        <input type="checkbox" checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label={`Choose ${A} and ${B}`} />
+      </td>
+      <td className="py-1 pr-2">
+        <span className="font-medium">{A}</span> and <span className="font-medium">{B}</span>
+        {missing.length > 0 && (
+          <span className="block text-muted-foreground">
+            {missing.length === 2 ? "Neither is drawn on the graph now." : `${missing[0]} is not drawn on the graph now.`}
+          </span>
+        )}
+      </td>
+      <td className="py-1 pr-2 whitespace-nowrap" role={q.isError ? "alert" : undefined}>{words}</td>
+      <td className="py-1 text-right">
+        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={q.isError}
+          aria-label={`Show the messages between ${A} and ${B}`}
+          onClick={() => navigate(pairConversationsHref(caseId, a, b, win))}>
+          Show their messages
+        </Button>
+      </td>
+    </tr>
   )
 }
 
@@ -94,8 +118,8 @@ function ChosenPairs({ caseId, pairs }: { caseId: string; pairs: Pair[] }) {
       }
       setKept({ key, links: out })
     } catch (e) {
-      const kept = out.length ? ` ${fmt(out.length)} of ${fmt(pairs.length)} were kept; nothing was added.` : ""
-      setErr(`The pairs could not all be kept just now.${kept} ${e instanceof Error ? e.message : ""}`.trim())
+      const kept = out.length ? ` ${fmt(out.length)} of ${fmt(pairs.length)} were saved; nothing was added.` : ""
+      setErr(`The pairs could not all be saved just now.${kept} ${e instanceof Error ? e.message : ""}`.trim())
     } finally {
       setBusy(null)
     }
@@ -105,7 +129,7 @@ function ChosenPairs({ caseId, pairs }: { caseId: string; pairs: Pair[] }) {
     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" aria-label="Add the chosen pairs">
       {!current && (
         <Button size="sm" variant="outline" disabled={!!busy || !settings.isSuccess} onClick={keep}>
-          {busy ? `Keeping ${fmt(busy.done)} of ${fmt(busy.total)}…` : `Add ${n === 1 ? "this pair's" : `these ${fmt(n)} pairs'`} messages to…`}
+          {busy ? `Saving ${fmt(busy.done)} of ${fmt(busy.total)}…` : `Add the ${n === 1 ? "chosen pair's" : `${fmt(n)} chosen pairs'`} messages to a dossier, theory or note`}
         </Button>
       )}
       {current && (
@@ -118,44 +142,66 @@ function ChosenPairs({ caseId, pairs }: { caseId: string; pairs: Pair[] }) {
   )
 }
 
-/**
- * Communication edges on the Graph (03-11, 07 J-3 Graph start): one entry per pair of phone identities that wrote to
- * or called each other, with the count Conversations shows for Between A and B, opening that list.
- */
 /** The Graph time slider (03 14.3): a window of whole days (UTC) that recounts every listed pair and restyles the
- * canvas edges from those counts; "All time" clears it. Nodes are not reloaded. */
-function EdgeWindowControls() {
+ * canvas lines from those counts; "Clear dates" goes back to all dates. Nodes are not reloaded. */
+function DateRange() {
   const win = useEdgeWindow((s) => s.window)
   const setWindow = useEdgeWindow((s) => s.setWindow)
   const [from, setFrom] = useState(win?.from.slice(0, 10) ?? "")
   const [to, setTo] = useState(win?.to.slice(0, 10) ?? "")
-  useEffect(() => () => setWindow(null), [setWindow])  // leaving the Graph clears the window
+  useEffect(() => () => setWindow(null), [setWindow])  // leaving the Graph clears the dates
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to
   const apply = () => {
     const end = new Date(`${to}T00:00:00Z`); end.setUTCDate(end.getUTCDate() + 1)
     setWindow({ from: `${from}T00:00:00Z`, to: new Date(end.getTime() - 1000).toISOString().replace(".000Z", "Z") })
   }
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" aria-label="Time window for the edges">
-      <label htmlFor="edge-from">Edges from</label>
-      <input id="edge-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded border bg-background px-1" />
-      <label htmlFor="edge-to">to</label>
-      <input id="edge-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border bg-background px-1" />
-      <Button size="sm" variant="outline" disabled={!valid} onClick={apply}>Count this window</Button>
-      {win && <Button size="sm" variant="ghost" onClick={() => { setWindow(null); setFrom(""); setTo("") }}>All time</Button>}
+    <div className="mt-1.5 flex flex-wrap items-center gap-2" role="group" aria-label="Dates to count">
+      <label htmlFor="contact-from">Count only between</label>
+      <input id="contact-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded border bg-background px-1" />
+      <label htmlFor="contact-to">and</label>
+      <input id="contact-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border bg-background px-1" />
+      <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={!valid} onClick={apply}>Count</Button>
+      {win && <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => { setWindow(null); setFrom(""); setTo("") }}>Clear dates</Button>}
       <span className="text-muted-foreground">{win
-        ? `Counts and edge widths are for ${win.from.slice(0, 10)} to ${win.to.slice(0, 10)} (UTC); a dashed edge has none in the window.`
-        : "Counts are for all time."}</span>
+        ? `Counts cover ${win.from.slice(0, 10)} to ${win.to.slice(0, 10)} (UTC). On the graph, a dashed line means no contact in those dates.`
+        : "Counts cover all dates."}</span>
     </div>
   )
 }
 
-export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: string; nodes: GraphNode[]; edges: GraphEdge[] }) {
+const openKey = (caseId: string) => `loupe.graph.people-in-contact.${caseId}`
+function readOpen(caseId: string): boolean {
+  try { return localStorage.getItem(openKey(caseId)) === "open" } catch { return false }
+}
+
+/**
+ * People in contact (lx-graphclarity B; was "Messages and calls between people", 03-11, 07 J-3): one row per pair of
+ * phone identities that wrote to, called or emailed each other, busiest first, with the count Conversations shows for
+ * Between A and B. Closed by default to one line; open or closed is remembered per case. Pointing at or choosing a
+ * row highlights the two people and their line on the graph.
+ */
+export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
+  caseId: string; nodes: GraphNode[]; edges: GraphEdge[]
+  /** Keys of the nodes the graph draws now; a pair with someone missing says so. Defaults to every node. */
+  shownKeys?: Set<string>
+}) {
+  const [open, setOpen] = useState(() => readOpen(caseId))
   const [all, setAll] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
   const [flow, setFlow] = useState(false)
+  const setChosen = usePairHighlight((s) => s.setChosen)
+  const setHover = usePairHighlight((s) => s.setHover)
   const presence = useFinancialPresence(caseId)
-  const pairs = edges.filter((e) => e.type === "COMMUNICATED" && e.source.startsWith(PREFIX) && e.target.startsWith(PREFIX))
+  useEffect(() => { setOpen(readOpen(caseId)); setPicked([]) }, [caseId])
+  useEffect(() => { setChosen(open ? picked.map((k) => { const [a, b] = k.split("|"); return edgeKey(a, b) }) : []) }, [open, picked, setChosen])
+  useEffect(() => () => { setChosen([]); setHover(null) }, [setChosen, setHover])
+  const pairs = useMemo(() => edges
+    .filter((e) => e.type === "COMMUNICATED" && e.source.startsWith(PREFIX) && e.target.startsWith(PREFIX))
+    .map((e, i) => ({ e, i }))
+    // busiest first by the count the link stores; ties and uncounted links keep the graph's order
+    .sort((x, y) => (y.e.contact ?? -1) - (x.e.contact ?? -1) || x.i - y.i)
+    .map(({ e }) => e), [edges])
   if (!pairs.length) return null
   const name = new Map(nodes.map((n) => [n.key, n.label]))
   const shown = all ? pairs : pairs.slice(0, SHOWN)
@@ -165,36 +211,66 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: stri
     return { a, b, aName: name.get(e.source) || a, bName: name.get(e.target) || b }
   }
   const chosen = pairs.map(asPair).filter((p) => picked.includes(pairKey(p)))
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    try { localStorage.setItem(openKey(caseId), next ? "open" : "closed") } catch { /* private mode: not remembered */ }
+    if (!next) setHover(null)
+  }
+  const Chevron = open ? ChevronDown : ChevronRight
   return (
-    <section aria-label="Messages and calls between people" className="border-b border-border bg-card px-4 py-2">
-      <h2 className="text-xs font-medium">Messages and calls between people on the phones ({fmt(pairs.length)} {pairs.length === 1 ? "pair" : "pairs"})</h2>
-      {presence.data && !presence.data.has_financial_evidence && presence.data.phone_sentence && (
-        // 07 section 8, SA-3 and SA-4: the edges carry no money words; the absence is said once
-        <p className="text-xs text-muted-foreground">{presence.data.phone_sentence}</p>
-      )}
-      <EdgeWindowControls />
-      <Button size="sm" variant="outline" className="mt-1 text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
-        {flow ? "List of pairs" : "Flow view"}
-      </Button>
-      {flow ? (
-        <PhoneFlowView caseId={caseId} pairs={pairs.map(asPair)} />
-      ) : (
-        <>
-          <ul className="mt-1 flex flex-wrap gap-1.5">
-            {shown.map((e) => {
-              const p = asPair(e)
-              const k = pairKey(p)
-              return <PairEdge key={k} caseId={caseId} {...p} picked={picked.includes(k)}
-                onPick={(on) => setPicked((was) => (on ? [...was.filter((x) => x !== k), k] : was.filter((x) => x !== k)))} />
-            })}
-          </ul>
-          {pairs.length > SHOWN && (
-            <Button size="sm" variant="ghost" className="mt-1 text-xs" onClick={() => setAll(!all)}>
-              {all ? `Show the first ${SHOWN}` : `Show all ${fmt(pairs.length)} pairs`}
-            </Button>
+    <section aria-label="People in contact" className="border-b border-border bg-card px-4 py-1.5 text-xs">
+      <button type="button" aria-expanded={open} aria-controls="people-in-contact-body" onClick={toggle}
+        className="flex w-full items-start gap-1 text-left hover:text-foreground">
+        <Chevron className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+        <span><span className="font-medium">People in contact:</span> {contactSummary(pairs.length)}</span>
+      </button>
+      {open && (
+        <div id="people-in-contact-body" className="mt-1 max-h-[45vh] overflow-auto pl-4.5">
+          <p className="text-muted-foreground">
+            Each row is two people on the phones. The numbers count their messages, calls and emails, busiest first.
+            Point at a row to see the two people on the graph; Show their messages opens the messages themselves.
+          </p>
+          {presence.data && !presence.data.has_financial_evidence && presence.data.phone_sentence && (
+            // 07 section 8, SA-3 and SA-4: the pairs carry no money words; the absence is said once
+            <p className="text-muted-foreground">{presence.data.phone_sentence}</p>
           )}
-          <GraphEdgeCollect caseId={caseId} pairs={chosen} />
-        </>
+          <DateRange />
+          <Button size="sm" variant="outline" className="mt-1.5 h-6 px-2 text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
+            {flow ? "Show the list of pairs" : "Show one person's contacts, each direction apart"}
+          </Button>
+          {flow ? (
+            <PhoneFlowView caseId={caseId} pairs={pairs.map(asPair)} />
+          ) : (
+            <>
+              <table className="mt-1.5 w-full border-collapse">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th scope="col" className="pr-2 font-normal">Choose</th>
+                    <th scope="col" className="pr-2 font-normal">People</th>
+                    <th scope="col" className="pr-2 font-normal">Contact</th>
+                    <th scope="col" className="font-normal"><span className="sr-only">Messages</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((e) => {
+                    const p = asPair(e)
+                    const k = pairKey(p)
+                    const missing = shownKeys ? [e.source, e.target].filter((key) => !shownKeys.has(key)).map((key) => name.get(key) || key.slice(PREFIX.length)) : []
+                    return <PairRow key={k} caseId={caseId} {...p} picked={picked.includes(k)} missing={missing}
+                      onPick={(on) => setPicked((was) => (on ? [...was.filter((x) => x !== k), k] : was.filter((x) => x !== k)))} />
+                  })}
+                </tbody>
+              </table>
+              {pairs.length > SHOWN && (
+                <Button size="sm" variant="ghost" className="mt-1 h-6 px-2 text-xs" onClick={() => setAll(!all)}>
+                  {all ? `Show the ${SHOWN} busiest` : `Show all ${fmt(pairs.length)} pairs`}
+                </Button>
+              )}
+              <GraphEdgeCollect caseId={caseId} pairs={chosen} />
+            </>
+          )}
+        </div>
       )}
     </section>
   )

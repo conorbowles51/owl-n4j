@@ -39,6 +39,8 @@ export interface GraphEdge {
   target: string
   type: string
   weight?: number
+  /** A phone pair's messages, calls and emails in all, as its COMMUNICATED edge stores them (orders the pair list). */
+  contact?: number
   properties?: Record<string, unknown>
 }
 
