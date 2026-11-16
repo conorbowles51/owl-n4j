@@ -250,6 +250,8 @@ class SearchDocumentsArgs(BaseModel):
     query: str = Field(..., min_length=1)
     limit: int = Field(8, ge=1, le=20)
     offset: int = Field(0, ge=0, description="Next page of documents (the result's next_offset).")
+    include_below_floor: bool = Field(False, description="Also return the passages that fell below the relevance "
+                                      "floor chat uses (each marked below_floor); the result says how many there are.")
 
 
 class SearchExactWordsArgs(BaseModel):
@@ -2196,13 +2198,16 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
 
     scope_documents: list[str] | None = None
 
-    def _document_passages(vector_db, embedding, query: str, wanted: int) -> list[dict[str, Any]]:
+    def _document_passages(vector_db, embedding, query: str, wanted: int,
+                           include_below_floor: bool = False) -> tuple[list[dict[str, Any]], int]:
         """Chat's passages for this query (lx-retrieval E): the chunks by meaning, then the passages behind the
         graph connections of the entities found, ranked together (rag_service.search_passages). In the Significant
         layer only the documents linked to its entities are searched, and only its entities are read."""
         nonlocal scope_documents
         from config import CHUNK_SEARCH_TOP_K
         from services.rag_service import rag_service
+        from services.retrieval_fusion import min_similarity, similarity
+        from services.vector_search_settings import get_confidence_threshold
         top_k = max(wanted, CHUNK_SEARCH_TOP_K)
         where: dict[str, Any] = {"case_id": context.case_id}
         if context.significant_scope:
@@ -2210,20 +2215,32 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             scope_documents = rag_service._chunk_doc_keys(
                 rag_service._get_documents_for_entities(keys, context.case_id), context.case_id)
             if not scope_documents:
-                return []
+                return [], 0
             where = {"$and": [{"case_id": context.case_id}, {"doc_key": {"$in": scope_documents}}]}
         chunks = vector_db.search_chunks(embedding, top_k=top_k, filter_metadata=where)
+        # lx-agentquick C: the relevance floor chat applies (rag_service.search_passages' caller). Chunks below it
+        # are counted and, with include_below_floor, returned marked; never dropped without a count.
+        floor = min_similarity(get_confidence_threshold())
+        space = rag_service._chunk_space()
+        below = [c for c in chunks if c.get("distance") is not None
+                 and similarity(c["distance"], space) < floor - 1e-12]
+        below_ids = {id(c) for c in below}
+        kept = chunks if include_below_floor else [c for c in chunks if id(c) not in below_ids]
+        for c in below:
+            c["below_floor"] = True
         try:
             return rag_service.search_passages(
-                query, context.case_id, chunks, query_embedding=embedding, vectors=vector_db,
-                scope_entity_keys=list(context.allowed_entity_keys) if context.significant_scope else None)
+                query, context.case_id, kept, query_embedding=embedding, vectors=vector_db,
+                scope_entity_keys=list(context.allowed_entity_keys) if context.significant_scope else None), len(below)
         except Exception:  # noqa: BLE001 - the meaning search's own order, as before
             logger.exception("Graph passages could not be added for case %s", context.case_id)
-            return sorted(chunks, key=lambda c: c.get("distance") if c.get("distance") is not None else 9.0)
+            return sorted(kept, key=lambda c: c.get("distance") if c.get("distance") is not None else 9.0), len(below)
 
-    def search_documents(query: str, limit: int = 8, offset: int = 0) -> dict[str, Any]:
+    def search_documents(query: str, limit: int = 8, offset: int = 0, include_below_floor: bool = False
+                         ) -> dict[str, Any]:
         nonlocal scope_documents
         scope_documents = None
+        below_floor_count = 0
         from services import meaning_search
         from services.vector_db_service import get_vector_db_health
 
@@ -2244,7 +2261,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 with ai_cost_context(job_type=CostJobType.AI_ASSISTANT, case_id=uuid.UUID(str(context.case_id)),
                                      description="Agent document search"):
                     embedding = embedding_service.generate_embedding(query)
-                chunks = _document_passages(vector_db, embedding, query, offset + limit)
+                chunks, below_floor_count = _document_passages(vector_db, embedding, query, offset + limit,
+                                                               include_below_floor)
             except Exception as exc:  # noqa: BLE001 - every failure falls back to the words (lx-docsearch 1)
                 logger.warning("Meaning search failed for case %s: %s", context.case_id, exc)
                 failure = meaning_search.describe_failure(exc)
@@ -2283,18 +2301,29 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 entry["source_of"] = about  # the graph connections and entities this passage was read for
             if chunk.get("quote"):
                 entry["quote"] = sanitize_text(chunk["quote"])
+            if chunk.get("below_floor"):
+                entry["below_floor"] = True
             compact.append(entry)
         gap_note = meaning_search.gap_sentence(gap)
         coverage = {"search": "meaning", "note": gap_note,
                     "documents_without_vector": (gap or {}).get("documents_without_vector"),
                     "documents_with_text": (gap or {}).get("documents_with_text"),
                     "documents_without_text": (gap or {}).get("documents_without_text")}
+        total = len(chunks)
+        next_offset = offset + len(compact) if offset + len(compact) < total else None
+        floor_note = (f"{below_floor_count} more passage(s) fell below the relevance floor"
+                      + (" and are included, marked below_floor." if include_below_floor
+                         else "; pass include_below_floor to read them.")) if below_floor_count else None
+        coverage["below_floor"] = below_floor_count
+        coverage["floor_note"] = floor_note
         return context.result(
             "search_documents",
             {"available": True, "search": "meaning", "health": health, "chunks": compact, "count": len(compact),
-             "offset": offset, "vector_gap": meaning_search.public_gap(gap), "search_coverage": coverage},
-            summary=f"Found {len(compact)} semantically similar document chunk(s)."
-            + (f" {gap_note}" if gap_note else ""),
+             "offset": offset, "total_matching": total, "returned": len(compact), "next_offset": next_offset,
+             "has_more": next_offset is not None, "below_floor": below_floor_count,
+             "vector_gap": meaning_search.public_gap(gap), "search_coverage": coverage},
+            summary=f"Found {total} passage(s) above the relevance floor, showing {len(compact)} from {offset}."
+            + (f" {floor_note}" if floor_note else "") + (f" {gap_note}" if gap_note else ""),
         )
 
     def word_search_documents_result(query: str, limit: int, offset: int, failure: tuple[str, str],
@@ -3434,8 +3463,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             name="search_documents",
             description=("Search the current case's documents: by meaning when the meaning-search service answers, "
                          "otherwise by the query's words (the result's 'search' and 'note' say which ran; word hits "
-                         "are literal matches, never meaning matches; say so when you use them). Paged: pass "
-                         "next_offset for more."),
+                         "are literal matches, never meaning matches; say so when you use them). Meaning results "
+                         "are above the relevance floor and carry total_matching and next_offset: pass "
+                         "next_offset for more. below_floor counts the weaker passages left out; "
+                         "include_below_floor returns them marked."),
             args_schema=SearchDocumentsArgs,
         ),
         wrap(
