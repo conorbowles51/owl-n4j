@@ -151,3 +151,12 @@ def test_loop_writes_with_open_items_stated_when_gate_is_spent():
 def test_normal_run_is_not_gated():
     r, events = run_stream([None], deep=False)
     assert not [e for e in events if e["type"] == "deep_progress"]
+
+
+def test_method_names_only_tools_this_build_registers():
+    import re
+    from services.agent import workflows
+    have = workflows.registered_tool_names()
+    named = {w for text in D.METHOD.values() for w in re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", text)}
+    named -= {"has_more", "phone_messages_x"}
+    assert named - have == set(), sorted(named - have)

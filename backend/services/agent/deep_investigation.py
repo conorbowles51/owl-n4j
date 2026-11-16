@@ -311,6 +311,25 @@ def not_done_block(plan: dict) -> str:
 
 # ---- prompts (no case-specific wording: a test greps this file for the demo case's names) ---------------------------
 
+METHOD = {
+    "phones": ("How to read the phones: phone_coverage and get_person_phones for the inventory and owners; "
+               "phone_messages for each phone and each incident window, paging (offset) until has_more is false; "
+               "get_day_activity, get_together_apart and phone_places for positions and gaps in each window; "
+               "get_analysis_results for each stored analysis kind; get_money_signal_matches and "
+               "get_payment_conversation for the ledger; search_documents and get_document_text for the incident "
+               "dates and the documents; get_near_identical_pictures and phone_record for photos and files; "
+               "get_identity_suggestions for the same person under several numbers."),
+    "money": ("How to read the money: get_financial_coverage first; get_financial_transactions and "
+              "analyze_financial_transactions for flows (page until has_more is false); get_money_between, "
+              "find_connected_payments, get_transfer_pairs and get_payment_other_legs for counterparties and "
+              "chains; get_statement_continuity for gaps; get_account_mentions and search_documents for who and "
+              "why; phone_messages for what was said about a payment."),
+    "documents": ("How to read the documents: get_evidence_files for the inventory and how far each was read; "
+                  "search_documents, search_exact_words and get_document_text to read each one; search_case for "
+                  "names and numbers across all kinds; check_statements for what a document says against the rest."),
+}
+
+
 def render_block(plan: dict) -> str:
     """The working method the agent sees for the whole run."""
     lines = [
@@ -334,6 +353,7 @@ def render_block(plan: dict) -> str:
         "Dates and times of events at night are given in the local time with the zone named, with the date the "
         "people lived it; say UTC where UTC is used.",
         "Your readings are your readings: label them as such until a person confirms.",
+        METHOD.get(plan["domain"], ""),
         "Checklist for this question (%s): %s" % (plan["domain"], "; ".join(i["id"] for i in plan["items"])),
     ]
     return "\n".join(lines)
