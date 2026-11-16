@@ -28,7 +28,12 @@ _ALIASES = ("CASE WHEN n.aliases IS NULL THEN [] WHEN valueType(n.aliases) START
 _ALIAS_HAS = "ANY(a IN %s WHERE toLower(toString(a)) CONTAINS $search_lower)" % _ALIASES
 
 _NODE_COLUMNS = ("key", "name", "type", "confidence", "mentioned", "aliases", "source_files")
-_LINK_COLUMNS = ("source", "target", "type", "weight")
+_LINK_COLUMNS = ("source", "target", "type", "weight", "contact")
+# A phone pair's messages, calls and emails in all, as its COMMUNICATED edge stores them: the Graph lists the pairs
+# busiest first from it without a request per pair. Null on every other link.
+_CONTACT = ("CASE WHEN type(r) = 'COMMUNICATED' THEN coalesce(r.messages_ab, 0) + coalesce(r.messages_ba, 0)"
+            " + coalesce(r.calls_ab, 0) + coalesce(r.calls_ba, 0) + coalesce(r.emails_ab, 0)"
+            " + coalesce(r.emails_ba, 0) END")
 
 
 
@@ -392,18 +397,21 @@ class GraphService:
                         WHERE a.key IN $node_keys AND b.key IN $node_keys
                           AND r.case_id = $case_id
                         RETURN a.key AS source, b.key AS target,
-                               type(r) AS type, r.weight AS weight
+                               type(r) AS type, r.weight AS weight, """ + _CONTACT + """ AS contact
                         """,
                         _LINK_COLUMNS,
                         node_keys=list(node_keys), case_id=case_id,
                     )
                     for record in rels_result:
-                        links.append({
+                        link = {
                             "source": record["source"],
                             "target": record["target"],
                             "type": record["type"],
                             "weight": record["weight"],
-                        })
+                        }
+                        if record.get("contact") is not None:
+                            link["contact"] = record["contact"]
+                        links.append(link)
 
                 return {"nodes": nodes, "links": links, "total_node_count": total_node_count}
 
@@ -483,7 +491,8 @@ class GraphService:
                         a.key AS source,
                         b.key AS target,
                         type(r) AS type,
-                        r.weight AS weight
+                        r.weight AS weight,
+                        """ + _CONTACT + """ AS contact
                 """
                 rels_result = run_packed(session, rels_query, _LINK_COLUMNS, node_keys=keys_list, case_id=case_id)
             else:
@@ -491,12 +500,15 @@ class GraphService:
 
             links = []
             for record in rels_result:
-                links.append({
+                link = {
                     "source": record["source"],
                     "target": record["target"],
                     "type": record["type"],
                     "weight": record["weight"],
-                })
+                }
+                if record.get("contact") is not None:
+                    link["contact"] = record["contact"]
+                links.append(link)
 
         return {"nodes": nodes, "links": links}
 
