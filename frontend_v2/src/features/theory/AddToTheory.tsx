@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useCollectTargets } from "@/features/phones/collect-targets"
 import { theoryHref } from "./source-links"
 import { announce } from "@/features/guidance/announce"
+import { LookIntoButton } from "@/features/relations/LookIntoButton"
 import { theoryAPI, choiceWords, type AdditionInput, type AdditionResult, type GroupInput, type ItemInput, type Surface } from "./api"
 
 /** How an addition bears on the theory. Context is the default, so one click adds it. */
@@ -32,16 +33,18 @@ export interface AddToTheoryProps {
   group?: GroupInput
   /** Button words; defaults to "Add to theory…". */
   label?: string
+  /** Words on the "Look into how these relate" button beside it; compact places pass a short form. */
+  lookLabel?: string
   size?: "sm" | "default"
   disabledReason?: string
 }
 
-export function AddToTheory({ caseId, surface, items, group, label = "Add to theory…", size = "sm", disabledReason }: AddToTheoryProps) {
+export function AddToTheory({ caseId, surface, items, group, label = "Add to theory…", lookLabel, size = "sm", disabledReason }: AddToTheoryProps) {
   const [open, setOpen] = useState(false)
   const count = group ? group.members.length : (items?.length ?? 0)
   const nothing = count === 0
   return (
-    <span className="inline-flex flex-col gap-1">
+    <span className="inline-flex flex-row flex-wrap items-center gap-1">
       <Button
         size={size}
         variant="outline"
@@ -51,6 +54,7 @@ export function AddToTheory({ caseId, surface, items, group, label = "Add to the
       >
         {label}
       </Button>
+      {surface !== "history" && <LookIntoButton caseId={caseId} surface={surface} items={items} group={group} size={size} label={lookLabel ?? (label.length <= 10 ? "Relate…" : undefined)} />}
       {open && <AddToTheoryDialog caseId={caseId} surface={surface} items={items} group={group} onClose={() => setOpen(false)} />}
     </span>
   )

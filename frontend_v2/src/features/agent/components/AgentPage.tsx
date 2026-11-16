@@ -1023,6 +1023,17 @@ export function AgentPage() {
     }
   }
 
+  // Started from another page: ?workflow=<id>&question=<text> sends that guided question once (the link analysis page).
+  const startedFromLink = useRef(false)
+  const linkedWorkflow = searchParams.get("workflow")
+  const linkedQuestion = searchParams.get("question")
+  useEffect(() => {
+    if (startedFromLink.current || !caseId || !linkedWorkflow || !linkedQuestion || isLoading) return
+    startedFromLink.current = true
+    void sendMessage(linkedQuestion, linkedWorkflow)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, linkedWorkflow, linkedQuestion])
+
   const adoptCurrentMandate = async () => {
     if (!activeThreadId) return
     try {
