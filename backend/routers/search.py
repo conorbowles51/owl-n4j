@@ -40,6 +40,30 @@ def search(case_id: UUID = Query(...), q: str = Query(..., max_length=500), exac
     return out
 
 
+@router.get("/meaning")
+def search_meaning(case_id: UUID = Query(...), q: str = Query(..., min_length=1, max_length=500),
+                   areas: Optional[str] = None, phones: Optional[str] = None, person: Optional[str] = None,
+                   start: Optional[str] = Query(None, alias="from"), end: Optional[str] = Query(None, alias="to"),
+                   limit: int = Query(20, ge=1, le=50), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_db_user)):
+    """Search by meaning and words together across every area of the case (lx-embedall D). Each hit says why it matched;
+    the answer lists what was not searched."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from datetime import date
+    from services.agent.phone_tools import _phone_ids
+    from services.embed_all import search as ES
+    try:
+        a = date.fromisoformat(start) if start else None
+        b = date.fromisoformat(end) if end else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Dates are written YYYY-MM-DD.")
+    ext_ids, unknown = _phone_ids(db.connection(), case_id, _phones(phones) or [])
+    if unknown:
+        raise HTTPException(status_code=422, detail="There is no phone %s in this case." % ", ".join(unknown))
+    return ES.search(None, case_id, q, conn=db.connection(), areas=[x for x in (areas or "").split(",") if x] or None,
+                     phone=(ext_ids[0] if ext_ids else None), person=person, date_from=a, date_to=b, limit=limit)
+
+
 @router.get("/group")
 def search_group(case_id: UUID = Query(...), q: str = Query(..., max_length=500), group: str = Query(...),
                  cursor: Optional[str] = None, limit: int = 200, exact: bool = False, phones: Optional[str] = None,

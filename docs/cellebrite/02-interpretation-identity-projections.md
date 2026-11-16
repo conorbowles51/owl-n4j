@@ -1495,26 +1495,31 @@ The engine embeds with OpenAI, fixed in code: `EMBEDDING_PROVIDER = "openai"`,
 client is `AsyncOpenAI` (`app/services/openai_client.py:74-86`, `embed_texts` at 668). Plan decision 8: no
 evidence goes to a third-party service unless Neil decides so for a case.
 
-**Decision:** phone text is not embedded while the only provider is a third party. It is embedded when
-either a local embedding provider exists, or a per-case decision `allow_phone_external_processing` (recorded by
-Neil through the decision log on each `phone_extraction`, reason mandatory) permits it. When embedded:
-collection `chunks` (the one the chat searches, `backend/services/vector_db_service.py:55-58`), ids
-`<evidence_file_id>:<content_sha256>:chunk:<n>` (engine format, `chunk_embed.py:235-238`), chunks built
-from consecutive message lines up to 3,500 characters, metadata the engine's keys (`case_id`, `doc_id`,
-`doc_name`, `evidence_file_id`, `revision_id`, `ingestion_state`, `start_char`, `end_char`;
-`chunk_embed.py:241-262`) plus `source_kind: "phone_text"`, `extraction_id`, `first_record_uid`,
-`last_record_uid`. Activation uses the engine's staged-then-active protocol (the search filters
-`ingestion_state`, `vector_db_service.py:377-379`).
+**Decision (Neil, 16 Nov 2026: "Embed everything in the system."):** phone text and every other case text may be sent
+to the OpenAI embedding service, in every case, by default. This replaces the earlier rule that held phone text back
+until a local embedding provider existed or `allow_phone_external_processing` was recorded (it never was, so phone text
+was never embedded). The decision covers phone conversations, e-mails, voice-note transcripts and image text, and the
+ledger, graph, timeline and casework text. *Reverse if* Neil withdraws it: set `LOUPE_EMBED_ALL=0` to stop the sweep
+and remove the vectors with `PgChromaStore.remove_case` and the `source_kind = "phone_text"` chunks.
 
-Until then, chat reaches phone text by lexical retrieval: `rag_service._retrieve_chunks` (vector only today,
-`backend/services/rag_service.py:673-689`) gains a step that runs the folded search over `phone_text`
-documents and `phone_texts` for the question's terms. *Reverse if* Neil records the per-case decision or a
-local model is installed.
+Phone conversations are embedded by window, in collection `chunks` (the one the chat searches,
+`backend/services/vector_db_service.py:55-58`), by `backend/services/embed_all/phone.py`: ids
+`<evidence_file_id>:<content_sha256>:chunk:<n>` (engine format, `chunk_embed.py:235-238`), windows of consecutive
+message lines of one thread up to 3,500 characters, every line ending in its `[rec://<record_uid>]` link, metadata the
+engine's keys (`case_id`, `doc_id`, `doc_name`, `evidence_file_id`, `revision_id`, `ingestion_state`, `start_char`,
+`end_char`) plus `source_kind: "phone_text"`, `extraction_id`, `first_record_uid`, `last_record_uid`, `record_uid`,
+`url`. The vector is made from the lines without the links. A thread file whose text changes gets new windows and
+loses the old ones; a deleted file or a phone that is no longer active loses its windows. The other areas (ledger rows,
+accounts, judgement calls, statement pages, saved groups, notes, findings and theories, timeline, parties,
+transcripts) are embedded by the same sweep into collection `case_items` (`services/embed_all/sources.py`).
+
+Chat still also reaches phone text by the folded word search: `rag_service._retrieve_chunks` runs
+`chat_retrieval.windows` for the question's terms beside the vector search.
 
 **What reaches an external model.** Chat retrieval, the agent's phone tools, Workspace AI, theory analysis
 and statement drafting read phone records in full (text, names, numbers, account ids, addresses) through
 the existing model policy, with no opaque labels and no separate case setting (Neil, 2026-11-01: "the agent
-should have full visibility of the phones"; 07 section 7.1). Embeddings, transcription, translation, image
+should have full visibility of the phones"; 07 section 7.1). Embeddings are decided above. Transcription, translation, image
 search and geocoding stay on the per-case `allow_phone_external_processing` decision (plan standing
 decision 8). *Reverse* if Neil restricts the agent's visibility.
 

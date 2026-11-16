@@ -87,6 +87,7 @@ _TOOL_LINES: dict[str, tuple[str, str]] = {
     "inspect_graph_schema": ("Checking what kinds of records the graph holds",
                              "Checking what kinds of records the graph holds"),
     "search_case": ("Searching the whole case for “{s}”", "Searching the whole case"),
+    "search_by_meaning": ("Searching the case by meaning for “{s}”", "Searching the case by meaning"),
     "search_documents": ("Searching the documents for “{s}”", "Searching the documents"),
     "search_exact_words": ("Looking for the exact words “{s}” in the documents",
                            "Looking for exact words in the documents"),

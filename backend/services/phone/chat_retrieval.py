@@ -1,8 +1,7 @@
-"""Chat reaches phone text by lexical retrieval (docs/cellebrite/02 section 9.8; 02-U14).
+"""Chat reaches phone text by vector search and by lexical retrieval (docs/cellebrite/02 section 9.8; 02-U14).
 
-Phone text is never embedded while the only embedding provider is a third party and the case has no
-``allow_phone_external_processing`` decision (plan standing decision 8). Chat instead runs the folded search over the
-case's thread documents (02 section 9.7, ``source_type = 'phone_text'``) for the question's terms and adds up to 8
+Phone text is embedded in every case (Neil, 16 Nov 2026: "Embed everything in the system."; services/embed_all/phone.py).
+Beside the vector search, chat runs the folded search over the case's thread documents (02 section 9.7, ``source_type = 'phone_text'``) for the question's terms and adds up to 8
 message windows as chunks: consecutive lines of one thread up to 3,500 characters around the lines that match,
 read in full (no opaque labels; Neil 2026-11-01), each line citing its record (``rec://``). The windows carry the
 engine's chunk metadata keys plus ``source_kind = "phone_text"``, ``extraction_id``, ``first_record_uid`` and

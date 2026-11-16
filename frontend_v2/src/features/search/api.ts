@@ -83,6 +83,32 @@ export async function searchCase(caseId: string, q: string, exact = false, signa
   return SearchSchema.parse(await fetchAPI(`/api/search?${p}`, { signal }))
 }
 
+/** Search by meaning and words together across every area of the case (lx-embedall D). */
+export const MeaningHitSchema = lazySchema(() => z.object({
+  area: z.string(),
+  key: z.string(),
+  title: z.string().default(""),
+  cite: z.string().default(""),
+  snippet: z.string().default(""),
+  matched: z.enum(["meaning", "words", "both"]),
+  as_read: z.boolean().optional(),
+}))
+export type MeaningHit = z.infer<typeof MeaningHitSchema>
+export const MeaningSchema = lazySchema(() => z.object({
+  query: z.string(),
+  hits: z.array(MeaningHitSchema),
+  areas_searched: z.array(z.string()),
+  not_searched: z.array(z.string()),
+  notes: z.array(z.string()),
+  meaning_search: z.boolean(),
+}))
+export type MeaningResult = z.infer<typeof MeaningSchema>
+
+export async function searchMeaning(caseId: string, q: string, signal?: AbortSignal): Promise<MeaningResult> {
+  const p = new URLSearchParams({ case_id: caseId, q, limit: "12" })
+  return MeaningSchema.parse(await fetchAPI(`/api/search/meaning?${p}`, { signal }))
+}
+
 export async function searchGroup(caseId: string, q: string, group: string, cursor: string | null, exact = false, signal?: AbortSignal, phones?: string[]) {
   const p = new URLSearchParams({ case_id: caseId, q, group, exact: String(exact), limit: "200" })
   if (cursor) p.set("cursor", cursor)

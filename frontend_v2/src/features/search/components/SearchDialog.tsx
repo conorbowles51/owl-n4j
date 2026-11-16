@@ -4,10 +4,10 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { failureText } from "@/features/phones/api"
-import { saveKeywordList, searchCase, splitTerms, type PaymentTotals, type SearchGroup, type SearchHit } from "../api"
+import { saveKeywordList, searchCase, searchMeaning, splitTerms, type MeaningResult, type PaymentTotals, type SearchGroup, type SearchHit } from "../api"
 import { formatLedgerAmount } from "@/features/financial/lib/ledger-format"
-import { GROUP_KINDS, GROUP_NAMES, rememberQuery, recentQueries } from "../lib/search-words"
-import { conversationsWithText, hitPath } from "../lib/open-hit"
+import { GROUP_KINDS, GROUP_NAMES, MEANING_AREAS, MEANING_WHY, rememberQuery, recentQueries } from "../lib/search-words"
+import { conversationsWithText, hitPath, meaningPath } from "../lib/open-hit"
 import { confirmUnsavedNavigation } from "@/hooks/use-unsaved-history-guard"
 
 /**
@@ -67,6 +67,14 @@ export function SearchDialog({ caseId, initialOpen = false }: { caseId: string; 
     retry: false,
   })
   const data = res.data && res.data.query === q ? res.data : undefined
+  // by meaning and words together, every area (lx-embedall D); exact characters search words only
+  const meaning = useQuery({
+    queryKey: ["case-search-meaning", caseId, q],
+    queryFn: ({ signal }) => searchMeaning(caseId, q, signal),
+    enabled: open && q.length > 0 && !exact,
+    staleTime: 15_000,
+    retry: false,
+  })
   const shown = useMemo(() => (data ? data.groups.filter((g) => g.total > 0) : []), [data])
   const empty = data ? data.groups.filter((g) => g.total === 0).map((g) => GROUP_NAMES[g.group] ?? g.group) : []
 
@@ -123,6 +131,9 @@ export function SearchDialog({ caseId, initialOpen = false }: { caseId: string; 
               shown={shown}
               empty={empty}
               error={res.isError ? failureText(res.error, "The search could not be run.") : null}
+              meaning={exact ? undefined : meaning.data && meaning.data.query === q ? meaning.data : undefined}
+              meaningError={!exact && meaning.isError ? failureText(meaning.error, "Search by meaning could not be run.") : null}
+              onOpenMeaning={(cite) => go(meaningPath(caseId, cite))}
               setTyped={setTyped}
               onOpen={(hit) => go(hitPath(caseId, hit))}
               onAll={(g) =>
@@ -151,6 +162,9 @@ function SearchBody(props: {
   shown: SearchGroup[]
   empty: string[]
   error: string | null
+  meaning: MeaningResult | undefined
+  meaningError: string | null
+  onOpenMeaning: (cite: string) => void
   setTyped: (v: string) => void
   onOpen: (hit: SearchHit) => void
   onAll: (g: SearchGroup) => void
@@ -202,6 +216,7 @@ function SearchBody(props: {
           )}
         </CommandGroup>
       ))}
+      <MeaningGroup meaning={props.meaning} error={props.meaningError} onOpen={props.onOpenMeaning} />
       <div className="border-t px-4 py-2 text-xs text-muted-foreground">
         {empty.length > 0 && <p>No matches in: {empty.join(", ")}.</p>}
         {data.groups.filter((g) => g.searched).map((g) => (
@@ -212,6 +227,31 @@ function SearchBody(props: {
         ))}
       </div>
     </>
+  )
+}
+
+/** The hits found by meaning and words together, each saying which found it, and what was not searched. */
+function MeaningGroup({ meaning, error, onOpen }: { meaning: MeaningResult | undefined; error: string | null; onOpen: (cite: string) => void }) {
+  if (error) return <p role="alert" className="px-4 pt-3 text-xs">{error}</p>
+  if (!meaning) return <p className="px-4 pt-3 text-xs text-muted-foreground">Searching by meaning</p>
+  return (
+    <CommandGroup heading={`By meaning (${meaning.hits.length.toLocaleString("en-US")})`}>
+      {meaning.hits.map((h) => (
+        <CommandItem key={`meaning:${h.area}:${h.key}`} value={`meaning:${h.area}:${h.key}`} onSelect={() => onOpen(h.cite)}>
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-xs text-muted-foreground">
+              {[MEANING_AREAS[h.area] ?? h.area, MEANING_WHY[h.matched], h.as_read ? "read by a model, not confirmed" : null, h.title].filter(Boolean).join(" · ")}
+            </span>
+            <span className="line-clamp-2 text-sm">{h.snippet.replace(/ \[rec:\/\/[0-9a-f-]{36}\]/g, "")}</span>
+          </span>
+        </CommandItem>
+      ))}
+      {meaning.hits.length === 0 && <p className="px-2 pb-1 text-xs">Nothing found by meaning.</p>}
+      {meaning.notes.map((n) => (
+        <p key={n} role="note" className="px-2 pb-1 text-xs">{n}</p>
+      ))}
+      {meaning.not_searched.length > 0 && <p className="px-2 pb-1 text-xs text-muted-foreground">Not searched: {meaning.not_searched.join("; ")}.</p>}
+    </CommandGroup>
   )
 }
 

@@ -349,7 +349,16 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
     more = [g for g in out_groups if g["next_offset"] is not None]
     lim_words = [x.get("message") or x.get("words") or str(x) for x in limits]
     zero = _zero_reason(query, windowed, bool(a or b), bool(group)) if not total else None
+    meaning = None
+    if not exact and not group:
+        # Search by meaning is the default beside the words (lx-embedall D); exact=true searches the words only.
+        try:
+            meaning = search_by_meaning(conn, case_id, query, phones=phones, start=start, end=end, limit=10)
+        except Exception as exc:  # a failure here never hides the word results
+            meaning = {"available": False, "reason": "Search by meaning failed: %s" % str(exc)[:160]}
     return _base(tool, case_id, query=query, total_matching=total, returned=len(items), has_more=bool(more),
+                 by_meaning=(None if meaning is None else {k: meaning.get(k) for k in (
+                     "items", "areas_searched", "not_searched", "notes", "meaning_search", "reason") if k in meaning}),
                  next_offset=more[0]["next_offset"] if len(more) == 1 else None, groups=out_groups, items=items,
                  coverage="Searched %s: %s." % ("the %s group" % group if group else "every group", ", ".join(
                      "%s %d" % (g["group"], g["total"]) for g in out_groups)),
@@ -358,6 +367,32 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
                          g["group"] for g in more)) if more else None,
                      "Not complete: %s" % " ".join(lim_words) if not complete else None, zero,
                      " ".join(n.get("reason", "") for n in not_searched) or None) if x) or None)
+
+
+def search_by_meaning(conn, case_id, query, *, areas=(), phones=(), person=None, start=None, end=None,
+                      limit=15) -> dict:
+    """Search by meaning and words together across every area of the case (``services.embed_all.search``): phone
+    messages, ledger rows, accounts, judgement calls, statement pages, notes and findings, timeline, parties,
+    transcripts and documents. Each hit says why it matched and the result says what was not searched."""
+    from services.embed_all import search as ES
+    tool = "search_by_meaning"
+    ext_ids, unknown = _phone_ids(conn, case_id, phones)
+    if unknown:
+        return _not_in_case(tool, case_id, "There is no phone %s in this case." % ", ".join(unknown))
+    a, b = _instant(start), _instant(end, end=True)
+    res = ES.search(None, case_id, query, conn=conn, areas=list(areas) or None, phone=(ext_ids[0] if ext_ids else None),
+                    person=person, date_from=a, date_to=b, limit=_limit(limit))
+    items = []
+    for h in res["hits"]:
+        cite = h.get("cite") or ""
+        items.append({"area": h["area"], "title": h.get("title"), "matched": h["matched"], "snippet": h.get("snippet"),
+                      "cite": cite, "rec": cite if cite.startswith("rec://") else None,
+                      "read_by_a_model": bool(h.get("as_read"))})
+    return _base(tool, case_id, query=query, total_matching=len(items), returned=len(items), has_more=False, items=items,
+                 areas_searched=res["areas_searched"], not_searched=res["not_searched"], notes=res["notes"],
+                 meaning_search=res["meaning_search"], terms_searched=res["terms"],
+                 coverage="Searched %s by %s." % (", ".join(res["areas_searched"]) or "nothing",
+                                                  "meaning and words" if res["meaning_search"] else "words only"))
 
 
 # ---- people and their phones ----------------------------------------------------------------------------------------
@@ -2146,6 +2181,19 @@ class SearchCaseArgs(_Page):
     end: str | None = None
 
 
+class MeaningSearchArgs(BaseModel):
+    query: str = Field(..., description="What you are looking for, as a sentence or a few words: meaning is matched, so "
+                       "'paying the guard' finds a message that says 'sent the watchman cash'. Names and numbers also match as words.")
+    areas: list[Literal["phone_text", "ledger", "accounts", "judgements", "trails", "statement_pages", "casework",
+                        "timeline", "parties", "transcripts", "documents"]] = Field(
+        default_factory=list, description="Limit to these areas; leave empty to search all of them.")
+    phones: list[str] = Field(default_factory=list, description="Limit phone messages to these phones (label or id).")
+    person: str | None = Field(None, description="Keep hits that name this person.")
+    start: str | None = Field(None, description="First day, YYYY-MM-DD (not applied to phone messages or documents).")
+    end: str | None = None
+    limit: int = Field(15, ge=1, le=50)
+
+
 class PersonArgs(BaseModel):
     person: str = Field(..., description="A person (dossier) name or id.")
 
@@ -2295,6 +2343,12 @@ class PurposeArgs(BaseModel):
 
 
 TOOLS = [
+    ("search_by_meaning", "search_by_meaning", MeaningSearchArgs,
+     "For: finding records by what they mean when you do not know the exact words (\"paying the guard\", \"the other "
+     "phone\", \"where the goods were kept\"), across phone messages, ledger rows, accounts, judgement calls, statement "
+     "pages, notes and findings, the timeline, parties, transcripts and documents. Meaning and words are searched "
+     "together; each hit says which matched and the result lists what was not searched. Cite phone hits by rec://, "
+     "payments by txn://. Not for: exact numbers or phrases (use search_case with exact)."),
     ("search_case", "search_case", SearchCaseArgs,
      "Search everything in this case as Search does: messages, calls, emails, people, other phone records, documents "
      "and machine text. Without group: every group's exact total and first hits; with group: a page of it. Cite "

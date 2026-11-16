@@ -165,7 +165,7 @@ def fuse(meaning: list[dict], words: list[dict], limit: int) -> list[dict]:
     return out
 
 
-def search(engine, case_id, query: str, *, areas: Iterable[str] | None = None, phone: str | None = None,
+def search(engine, case_id, query: str, *, conn=None, areas: Iterable[str] | None = None, phone: str | None = None,
            person: str | None = None, date_from=None, date_to=None, limit: int = 20,
            embed_query: Callable[[str], list[float]] | None = None, items_collection=None,
            chunks_collection=None) -> dict[str, Any]:
@@ -207,8 +207,12 @@ def search(engine, case_id, query: str, *, areas: Iterable[str] | None = None, p
         except Exception:
             reason = str(exc)[:200]
         notes.append("Meaning search unavailable (%s); searched the words only." % reason)
-    with engine.connect() as conn:
+    if conn is not None:
         words = word_hits(conn, case_id, terms, wanted, phone=phone, person=person, date_from=date_from, date_to=date_to)
+    else:
+        with engine.connect() as own:
+            words = word_hits(own, case_id, terms, wanted, phone=phone, person=person, date_from=date_from,
+                              date_to=date_to)
     if "documents" in wanted:
         not_searched.append("documents by words (use the document search for exact words)")
     hits = fuse(meaning, words, limit)

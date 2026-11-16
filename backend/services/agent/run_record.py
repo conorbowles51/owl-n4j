@@ -54,7 +54,7 @@ CATEGORY_BY_TOOL = {
     "get_reports": "casework", "get_interviews": "casework", "get_transcript": "evidence",
     "get_evidence_files": "evidence", "get_significant_layer": "significant",
     # agent-phones cross tools (phone_cross_tools.TOOLS): phones read as the screens read them, joined to money.
-    "search_case": "case_search", "get_person_phones": "phones", "get_day_activity": "phones",
+    "search_case": "case_search", "search_by_meaning": "case_search", "get_person_phones": "phones", "get_day_activity": "phones",
     "get_together_apart": "phones", "get_routine_deviations": "phones", "get_phone_map_summary": "phones",
     "get_contact_and_money_between": "phones", "get_money_signal_matches": "phones",
     "get_money_signal_leads": "phones", "evaluate_statement": "phones",

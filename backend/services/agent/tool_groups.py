@@ -39,11 +39,11 @@ GROUPS: tuple[dict[str, Any], ...] = (
      "words": r"documents?|files?|proffers?|interviews?|transcripts?|reports?|letters?|emails?|pages?|"
               r"statements?|says?|said|claims?|wrote|written|contract|agreement|testimony|affidavit",
      "tools": ("search_documents", "search_exact_words", "get_document_text", "get_evidence_files", "get_interviews",
-               "get_transcript", "search_case", "check_statements")},
+               "get_transcript", "search_case", "search_by_meaning", "check_statements")},
     {"id": "people", "name": "People and identities", "about": "Who a name, number or account belongs to",
      "words": r"who|whom|whose|person|people|names?|identit\w*|owners?|belongs?|numbers?|same person|"
               r"dossiers?|between",
-     "tools": ("phone_find_people", "get_person_phones", "get_identity_suggestions", "identifier_in_other_cases",
+     "tools": ("phone_find_people", "search_by_meaning", "get_person_phones", "get_identity_suggestions", "identifier_in_other_cases",
                "get_contact_and_money_between", "list_dossiers", "get_dossier")},
     {"id": "places", "name": "Map and places", "about": "Where phones and people were, and who was together",
      "words": r"where|places?|locations?|located|map|near|together|apart|with whom|nights?|evenings?|home|"

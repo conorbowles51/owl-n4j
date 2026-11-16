@@ -314,7 +314,7 @@ def pending_chunk_counts(db, *, evidence_ids: Iterable[Any] | None = None, case_
 
 def vector_gap(case_id: str, *, db=None, collection=None, fresh: bool = False) -> dict[str, Any] | None:
     """Documents of the case with stored text and no searchable meaning-search vector. Phone thread text is left
-    out: it is never embedded by design (docs/cellebrite/02 section 9.8). None when it could not be measured."""
+    out: the embed_all sweep embeds it (docs/cellebrite/02 section 9.8), not the engine's chunk backfill. None when it could not be measured."""
     case_id = str(case_id)
     if not fresh:
         with _gap_lock:

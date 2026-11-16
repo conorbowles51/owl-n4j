@@ -6,7 +6,7 @@ import type { SearchResult } from "../api"
 import { useUnsavedHistoryGuard } from "@/hooks/use-unsaved-history-guard"
 
 /** Loupe-wide search dialog (03 section 11.4) with the server stubbed. Synthetic data only. */
-const api = vi.hoisted(() => ({ searchCase: vi.fn() }))
+const api = vi.hoisted(() => ({ searchCase: vi.fn(), searchMeaning: vi.fn() }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 
 import { HitLine, SearchDialog } from "./SearchDialog"
@@ -87,6 +87,37 @@ describe("Search dialog", () => {
     sessionStorage.clear()
     api.searchCase.mockReset()
     api.searchCase.mockResolvedValue(result())
+    api.searchMeaning.mockReset()
+    api.searchMeaning.mockImplementation(async (_c: string, q: string) => ({
+      query: q, meaning_search: true, areas_searched: ["phone_text", "ledger"], not_searched: ["documents by words (use the document search for exact words)"], notes: [],
+      hits: [
+        { area: "phone_text", key: "k1", title: "C3 thread", cite: "rec://11111111-1111-1111-1111-111111111111", snippet: "sent the watchman cash [rec://11111111-1111-1111-1111-111111111111]", matched: "meaning" },
+        { area: "ledger", key: "k2", title: "12 March 2024", cite: "txn://22222222-2222-2222-2222-222222222222", snippet: "Payment to the security firm", matched: "both" },
+      ],
+    }))
+  })
+
+  it("shows hits found by meaning with why each matched and what was not searched, and opens a cited record (lx-embedall D)", async () => {
+    page()
+    await openAndType("jose")
+    expect(await screen.findByText(/By meaning \(2\)/, undefined, { timeout: 10_000 })).toBeInTheDocument()
+    expect(screen.getByText(/Phone messages · by meaning · C3 thread/)).toBeInTheDocument()
+    expect(screen.getByText(/Payments · by meaning and words/)).toBeInTheDocument()
+    expect(screen.getByText("sent the watchman cash")).toBeInTheDocument() // the record link is not shown as text
+    expect(screen.getByText(/Not searched: documents by words/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText("sent the watchman cash"))
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/cases/case-1/records/11111111-1111-1111-1111-111111111111"))
+  })
+
+  it("exact characters search words only: nothing is asked by meaning", async () => {
+    page()
+    await openAndType("jose")
+    fireEvent.click(await screen.findByLabelText("Exact characters"))
+    await screen.findByText(/Messages \(41\)/, undefined, { timeout: 10_000 })
+    api.searchMeaning.mockClear()
+    fireEvent.change(screen.getByPlaceholderText("Search words, names, numbers or accounts"), { target: { value: "jose smith" } })
+    await screen.findByText(/Messages \(41\)/, undefined, { timeout: 10_000 })
+    expect(api.searchMeaning).not.toHaveBeenCalled()
   })
 
   it("Ctrl/Cmd+K pressed again while open keeps the box open and selects the words, so typing starts anew (07 J-6)", async () => {

@@ -37,6 +37,19 @@ export function hitPath(caseId: string, hit: SearchHit): string {
   }
 }
 
+/** Where a hit of the search by meaning opens, from its citation: a phone record, a payment, a document page, or the
+ * app page the area names. */
+export function meaningPath(caseId: string, cite: string): string {
+  const c = `/cases/${encodeURIComponent(caseId)}`
+  if (cite.startsWith("rec://")) return recordPath(caseId, cite.slice(6).split("#")[0])
+  if (cite.startsWith("txn://")) return paymentPath(caseId, cite.slice(6))
+  if (cite.startsWith("doc://")) {
+    const [file, page] = cite.slice(6).split("/")
+    return `${c}/evidence?file=${encodeURIComponent(file)}${page ? `&page=${encodeURIComponent(page)}` : ""}`
+  }
+  return cite.startsWith("/cases/") ? cite : c
+}
+
 /** Conversations with the text filter: the full list behind a group's total (S-4). */
 export function conversationsWithText(caseId: string, q: string, kinds: string[], exact: boolean): string {
   const p = new URLSearchParams({ q })

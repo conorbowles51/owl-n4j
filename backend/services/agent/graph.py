@@ -316,7 +316,7 @@ _INTERNAL_TOOL_MARKERS = (
     "get_reports",
 )
 
-_CROSS_TITLES = {"search_case": "Searched the case", "get_person_phones": "Read a person's phones",
+_CROSS_TITLES = {"search_case": "Searched the case", "search_by_meaning": "Searched the case by meaning", "get_person_phones": "Read a person's phones",
                  "get_day_activity": "Read a day on the phones", "get_together_apart": "Compared two people's places",
                  "get_phone_company": "Compared the phones' movements",
                  "get_period_activity": "Read a period on the phones",
