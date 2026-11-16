@@ -871,6 +871,11 @@ def _free_call_refusal(name: str | None, tool_context: AgentToolContext) -> dict
     """None when the call runs: an investigative tool, or a free one under its cap (counted here). Past the cap, the
     refusal the model reads instead of a result."""
     from services.agent import fit
+    from services.agent.deep_investigation import DEEP_TOOLS
+    if name in DEEP_TOOLS:
+        # The checklist and notebook calls of a deep run are bookkeeping, not investigation: never a budget step.
+        tool_context.free_calls += 1
+        return None
     if name not in FREE_TOOLS or not fit.on("B"):
         return None
     if fit.on("N"):
@@ -1491,6 +1496,7 @@ class AgentGraphRunner:
         access_check=None,
         delivery_contract=None,
         steering=None,
+        deep_plan=None,
     ):
         # ``steering``: the person's tool switches and notes, read before each step (services.agent.tool_groups);
         # taken by the saved-work loop, which every app run uses.
@@ -1503,7 +1509,8 @@ class AgentGraphRunner:
                 final_answer_rules=final_answer_rules, proposer=proposer, user_id=user_id, all_cases=all_cases,
                 on_progress=on_progress, hidden_tools=hidden_tools, checkpoint_callback=checkpoint_callback,
                 resume_checkpoint=resume_checkpoint, automatic_windows=automatic_windows, access_check=access_check,
-                delivery_contract=delivery_contract, steering=steering)
+                delivery_contract=delivery_contract, steering=steering,
+                deep_plan=deep_plan)
             return
         from services.agent import live_runs
 

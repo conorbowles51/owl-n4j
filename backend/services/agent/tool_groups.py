@@ -74,7 +74,8 @@ GROUPS: tuple[dict[str, Any], ...] = (
                "propose_glossary_term", "propose_assumption", "propose_relation_hypotheses")},
     {"id": ALWAYS_ON, "name": "Always on", "about": "Asking you a question, its working notes, reading the rest of a result",
      "words": "",
-     "tools": ("request_clarification", "record_working_notes", "read_tool_result_page", "read_conversation_history",
+     "tools": ("request_clarification", "record_working_notes", "deep_checklist", "deep_mark",
+               "deep_notebook_add", "deep_notebook_read", "read_tool_result_page", "read_conversation_history",
                "read_prior_result")},
 )
 

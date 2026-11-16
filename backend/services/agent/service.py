@@ -223,11 +223,15 @@ class AgentService:
             db.commit()
         # What the question names, so the answer stays on it (services.agent.question_scope, AG-02).
         focus_plan, focus = self._question_focus(db, request)
+        deep_plan = self._deep_plan(db, request, user, run)
         final_result: dict[str, Any] | None = None
         collected_trace: list[dict[str, Any]] = list((resume_checkpoint or {}).get("trace", []))
 
         # Beaten while this worker lives, so a restart-killed run is settled as interrupted (services.agent.run_settle).
         hidden_tools, offer_note = self._tools_not_offered(db, request)
+        if deep_plan is None:
+            from services.agent.deep_investigation import DEEP_TOOLS
+            hidden_tools = frozenset(hidden_tools) | frozenset(DEEP_TOOLS)
         if hidden_tools:
             storage.update_run_metadata(db, run=run, metadata={"tools_not_offered": sorted(hidden_tools)})
             db.commit()
@@ -259,9 +263,12 @@ class AgentService:
                 should_cancel=lambda: is_cancelled(run_id) or heartbeat.lost_lease,
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block="\n\n".join(x for x in (self._prompt_block(mandate_context.block, request, feedback),
-                                                               offer_note, focus_plan) if x),
+                                                               offer_note, focus_plan,
+                                                               self._deep_block(deep_plan)) if x),
                 hidden_tools=hidden_tools,
-                final_answer_rules="\n\n".join(x for x in (self._final_rules(request), focus) if x),
+                deep_plan=deep_plan,
+                final_answer_rules="\n\n".join(x for x in (self._final_rules(request), focus,
+                                                              self._deep_final_rules(deep_plan)) if x),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
                 all_cases=request.all_cases,
@@ -275,6 +282,10 @@ class AgentService:
                 if event.get("type") == "steering":
                     # What the run took and at which step: the agent page's trail and card read it back.
                     storage.update_run_metadata(db, run=run, metadata={"steering_applied": event.get("applied") or []})
+                    db.commit()
+                if event.get("type") == "deep_progress":
+                    # The page reads the checklist's true counts from the run record as well as the stream.
+                    storage.update_run_metadata(db, run=run, metadata={"deep_progress": event.get("progress")})
                     db.commit()
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
@@ -709,6 +720,68 @@ class AgentService:
         )
         db.commit()
         return exported
+
+    @staticmethod
+    def _deep_plan(db: Session, request: AgentMessageRequest, user, run) -> dict[str, Any] | None:
+        """The deep investigation's checklist, or None for a normal run. A deep run is asked for in so many words
+        ('a detailed report', 'a deep investigation') or by the person's choice (``deep``). Not in all-cases mode.
+        Phone runs also request the stored analyses that have not run, as a system run (deep_investigation D-a)."""
+        from services.agent import deep_investigation as D
+        if request.all_cases or not (request.deep or D.wants_deep(request.message)):
+            return None
+        from services.agent import workflows
+        conn = db.connection()
+        counts = workflows.case_counts(conn, request.case_id)
+        domain = D.domain_for(request.message, counts)
+        labels: list[str] = []
+        if domain == "phones" and counts.get("phones"):
+            try:
+                from services.phone import records
+                labels = [str(p["label"]) for p in records.phones(conn, request.case_id)]
+            except Exception:  # noqa: BLE001 - the checklist then has no per-phone units, and says so by its count
+                logger.warning("Deep investigation: phone labels not read", exc_info=True)
+        plan = D.build_plan(domain, question=request.message, counts=counts, phone_labels=labels)
+        if domain == "phones" and labels:
+            plan["analyses"] = AgentService._request_stored_analyses(db, request.case_id)
+        storage.update_run_metadata(db, run=run, metadata={"deep_investigation": {
+            "domain": domain, "items": [i["id"] for i in plan["items"]], "analyses": plan["analyses"]},
+            "deep_progress": D.progress(plan)})
+        db.commit()
+        return plan
+
+    DEEP_ANALYSES = ("relationships", "deletion_timeline", "message_reconciliation", "awareness")
+
+    @staticmethod
+    def _request_stored_analyses(db: Session, case_id) -> list[dict[str, Any]]:
+        """Each stored phone analysis with no current run is requested through the framework's own route, as a
+        system run; one with a run keeps it. Returns what each is: requested, or its existing status."""
+        out: list[dict[str, Any]] = []
+        try:
+            from services.phone_analysis import approaches, framework as F
+            approaches.install()
+        except Exception:  # noqa: BLE001
+            logger.warning("Deep investigation: analyses not available", exc_info=True)
+            return out
+        for code in AgentService.DEEP_ANALYSES:
+            try:
+                with db.begin_nested():
+                    run, created = F.request_run(db.connection(), case_id, code, None, "agent-deep-investigation")
+                out.append({"approach": code, "status": run.get("status"), "created": bool(created),
+                            "run_id": str(run.get("id"))})
+            except Exception as exc:  # noqa: BLE001 - said in the checklist, never skipped silently
+                out.append({"approach": code, "status": "not requested: %s" % str(exc)[:120], "created": False})
+        db.commit()
+        return out
+
+    @staticmethod
+    def _deep_block(plan) -> str:
+        from services.agent import deep_investigation as D
+        return D.render_block(plan) if plan else ""
+
+    @staticmethod
+    def _deep_final_rules(plan) -> str:
+        from services.agent import deep_investigation as D
+        return D.final_rules() if plan else ""
 
     @staticmethod
     def _workflow_metadata(request: AgentMessageRequest) -> dict[str, Any]:

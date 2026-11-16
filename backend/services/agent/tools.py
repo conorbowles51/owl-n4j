@@ -84,6 +84,8 @@ class AgentToolContext:
     reread_source: dict[str, str] = field(default_factory=dict)
     page_reads: set[tuple[str, tuple, int]] = field(default_factory=set)
     working_notes: list[dict[str, Any]] = field(default_factory=list)
+    # Deep investigation (services.agent.deep_investigation): the run's checklist and notebook; None on a normal run.
+    deep_plan: dict[str, Any] | None = None
     # Calls made of the tools that do not count against the investigative budget (graph.FREE_TOOLS).
     free_calls: int = 0
     # lx-agentfit N: of those, the re-reads and page reads (notes are capped by size instead).
@@ -500,6 +502,33 @@ class WorkingNote(BaseModel):
 
 class WorkingNotesArgs(BaseModel):
     facts: list[WorkingNote] = Field(..., min_length=1, max_length=20)
+
+
+class DeepMark(BaseModel):
+    item: str = Field(..., description="The checklist item id.")
+    status: Literal["done", "not_done", "in_progress"] = Field(...)
+    units: list[str] = Field(default_factory=list, description="The phones, accounts or windows covered, by their "
+                             "labels. An item with units is done only when every unit is named.")
+    reason: str | None = Field(None, description="Required for not_done: why it could not be done.")
+
+
+class DeepMarksArgs(BaseModel):
+    updates: list[DeepMark] = Field(..., min_length=1, max_length=20)
+
+
+class DeepNote(BaseModel):
+    item: str | None = Field(None, description="The checklist item id the finding belongs to.")
+    fact: str = Field(..., description="One finding, in plain words, with who, which phone and when.")
+    cite: str = Field(..., description="The citation link the result carried (rec://, txn://, doc://, a page link).")
+
+
+class DeepNotesArgs(BaseModel):
+    notes: list[DeepNote] = Field(..., min_length=1, max_length=30)
+
+
+class DeepNotebookReadArgs(BaseModel):
+    item: str | None = Field(None, description="Only this checklist item's notes.")
+    offset: int = Field(0, ge=0)
 
 
 class StatementToCheck(BaseModel):
@@ -2887,6 +2916,46 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                             "they are your working, not a finding." % (len(added), len(context.working_notes)) + full),
                 "data": {"noted": added, "label": "The agent's working notes, not confirmed by a person."}}
 
+    def _deep():
+        return context.deep_plan
+
+    def deep_checklist() -> dict[str, Any]:
+        from services.agent import deep_investigation as D
+        plan = _deep()
+        if plan is None:
+            return {"status": "error", "error": "This is not a deep investigation run.", "summary": "No checklist."}
+        p = D.progress(plan)
+        return {"status": "success", "summary": "%d of %d checklist items closed; %d notes." % (p["closed"], p["total"],
+                                                                                              p["notes"]),
+                "data": p}
+
+    def deep_mark(updates: list[dict[str, Any]]) -> dict[str, Any]:
+        from services.agent import deep_investigation as D
+        plan = _deep()
+        if plan is None:
+            return {"status": "error", "error": "This is not a deep investigation run.", "summary": "No checklist."}
+        got = D.mark(plan, [u.model_dump() if hasattr(u, "model_dump") else u for u in updates])
+        p = D.progress(plan)
+        return {"status": "success", "summary": "%d marked, %d refused; %d of %d items closed." % (
+            len(got["applied"]), len(got["refused"]), p["closed"], p["total"]), "data": {**got, "progress": p}}
+
+    def deep_notebook_add(notes: list[dict[str, Any]]) -> dict[str, Any]:
+        from services.agent import deep_investigation as D
+        plan = _deep()
+        if plan is None:
+            return {"status": "error", "error": "This is not a deep investigation run.", "summary": "No notebook."}
+        got = D.notebook_add(plan, [n.model_dump() if hasattr(n, "model_dump") else n for n in notes])
+        return {"status": "success", "summary": "Noted %d; %d in the notebook; %d refused." % (
+            got["added"], got["total"], len(got["refused"])), "data": got}
+
+    def deep_notebook_read(item: str | None = None, offset: int = 0) -> dict[str, Any]:
+        from services.agent import deep_investigation as D
+        plan = _deep()
+        if plan is None:
+            return {"status": "error", "error": "This is not a deep investigation run.", "summary": "No notebook."}
+        got = D.notebook_read(plan, item, offset)
+        return {"status": "success", "summary": "%d of %d notes." % (got["returned"], got["total"]), "data": got}
+
     def get_map_locations(
         entity_types: list[str] | None = None,
         entity_keys: list[str] | None = None,
@@ -3669,6 +3738,20 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "search_case), reading a known record, or building a table or report."),
             args_schema=CheckStatementsArgs,
         ),
+        wrap(deep_checklist, name="deep_checklist",
+             description=("Deep investigation only: the coverage checklist with true counts of items closed and units "
+                          "covered. Free: not a tool step."), args_schema=EmptyArgs),
+        wrap(deep_mark, name="deep_mark",
+             description=("Deep investigation only: mark checklist items done (with the units covered, such as every "
+                          "phone), not_done (with the reason) or in_progress. Free: not a tool step."),
+             args_schema=DeepMarksArgs),
+        wrap(deep_notebook_add, name="deep_notebook_add",
+             description=("Deep investigation only: keep findings in the run notebook, each with its citation link. "
+                          "The notebook is outside your context and is given in full to the report writer. Free: not "
+                          "a tool step."), args_schema=DeepNotesArgs),
+        wrap(deep_notebook_read, name="deep_notebook_read",
+             description=("Deep investigation only: read back the notebook's notes, all or one item's, in pages. Free."),
+             args_schema=DeepNotebookReadArgs),
         wrap(
             record_working_notes,
             name="record_working_notes",

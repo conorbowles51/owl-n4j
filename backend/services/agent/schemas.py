@@ -40,6 +40,9 @@ class AgentMessageRequest(BaseModel):
     workflow_id: str | None = Field(None, max_length=64)
     # All-cases mode (Neil 2026-11-01: an option, never the default). Per message: a new conversation starts off.
     all_cases: bool = False
+    # Deep investigation (services.agent.deep_investigation): the person picked it; a request for a "detailed
+    # report" starts it too.
+    deep: bool = False
 
     @field_validator("message")
     @classmethod

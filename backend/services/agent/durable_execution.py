@@ -189,7 +189,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
            mandate_context_block="", final_answer_rules="", proposer=None, user_id=None,
            all_cases=False, on_progress=None, hidden_tools=frozenset(),
            checkpoint_callback=None, resume_checkpoint=None, automatic_windows=DEFAULT_WINDOWS,
-           access_check=None, delivery_contract=None, steering=None, **_ignored):
+           access_check=None, delivery_contract=None, steering=None, deep_plan=None, **_ignored):
     from services.agent import graph as g, live_runs, fit, tool_groups
     checkpoint = deepcopy(resume_checkpoint or {})
     if checkpoint and (checkpoint.get("version") != VERSION or checkpoint.get("case_id") != case_id
@@ -214,6 +214,9 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
         getattr(context, key).update(checkpoint.get(key, {}))
     context.page_reads = {(item[0], tuple(item[1]), item[2]) for item in checkpoint.get('page_reads', [])}
     context.working_notes = deepcopy(checkpoint.get('working_notes', []))
+    # Deep investigation: the checklist and notebook live in the checkpoint, never in the model's context.
+    from services.agent import deep_investigation as D
+    context.deep_plan = deepcopy(checkpoint.get('deep_plan') or deep_plan)
     context.free_calls = int(checkpoint.get('free_calls', 0))
     context.reread_calls = int(checkpoint.get('reread_calls', 0))
     for artifact in context.artifact_store.values():
@@ -262,6 +265,8 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
             'tools. Earlier checker results can be stale after an application update. Recheck first and repair '
             'only current problems; do not convert valid tables or remove content to satisfy an obsolete error.')
     used = int(checkpoint.get('used_steps', len(trace)))
+    if context.deep_plan is not None:
+        automatic_windows = max(automatic_windows, D.DEEP_WINDOWS)
     total_budget = checkpoint.get("budget_base", 0) + max(1, max_tool_calls) * max(1, min(automatic_windows, 32))
     elapsed_before = checkpoint.get("elapsed_seconds", 0)
     started = time.monotonic()
@@ -293,7 +298,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                        malformed_streak=malformed_streak,
                        resume_note=resume_note,
                        used_steps=used, free_calls=context.free_calls, reread_calls=context.reread_calls,
-                       working_notes=context.working_notes, rereads=context.rereads,
+                       working_notes=context.working_notes, deep_plan=context.deep_plan, rereads=context.rereads,
                        reread_source=context.reread_source,
                        page_reads=[[source, list(path), offset] for source, path, offset in context.page_reads],
                        steering_applied=steer_applied,
@@ -457,6 +462,10 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                     phase = "finalize"
                 save()
                 yield {"type": "tool_result", "tool": item}
+                if name in D.DEEP_TOOLS and context.deep_plan is not None:
+                    deep_progress = D.progress(context.deep_plan)
+                    note({**live_runs.progress_thinking(step=used), "deep": deep_progress})
+                    yield {"type": "deep_progress", "progress": deep_progress}
                 if artifact:
                     yield {"type": "artifact", "artifact": artifact}
                 if phase == "finalize":
@@ -464,6 +473,18 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
             else:
                 phase = "finalize" if clarification else "agent"
             save()
+        if phase == "finalize" and context.deep_plan is not None and not clarification and used < total_budget:
+            # Completeness gate (deep investigation): back to work while a checklist item is open.
+            gate = D.gate_message(context.deep_plan)
+            if gate:
+                state_messages.append(HumanMessage(content=gate))
+                phase = "agent"
+                save()
+                deep_progress = D.progress(context.deep_plan)
+                yield {"type": "deep_progress", "progress": deep_progress}
+                yield {"type": "status", "stage": "reasoning", "message": "%d of %d checklist items still open: "
+                       "going back to work" % (deep_progress["open"], deep_progress["total"])}
+                continue
         if phase == "finalize":
             note(live_runs.progress_writing(step=used))
             yield {'type': 'status', 'stage': 'checking', 'message': 'Checking saved deliverables against the request'}
@@ -521,6 +542,9 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 answer = completion_checks.revision_needed_answer(completion_checks.latest_outputs(context, artifacts), completion_issues)
             elif not clarification or (clarification.get("context") or {}).get("reason") in ("tool_budget_exhausted", "no_progress"):
                 note(live_runs.progress_writing(step=used))
+                if context.deep_plan is not None:
+                    final_answer_rules = "\n\n".join(x for x in (final_answer_rules, D.not_done_block(context.deep_plan),
+                                                                  D.notebook_block(context.deep_plan)) if x)
                 checked_final_rules = final_answer_rules + ('\nThe saved work still needs revision. State the remaining '
                         'issues and do not claim the request is complete: ' + json.dumps(completion_issues, ensure_ascii=False)
                         if completion_issues else '')

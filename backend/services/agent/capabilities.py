@@ -219,6 +219,8 @@ SUPPORT_TOOLS: dict[str, str] = {
     "request_clarification": "asks the person a question",
     "read_tool_result_page": "reads the rest of an earlier result",
     "record_working_notes": "keeps its working notes",
+    "deep_checklist": "shows the deep investigation checklist", "deep_mark": "marks checklist items",
+    "deep_notebook_add": "keeps findings in the run notebook", "deep_notebook_read": "reads the run notebook",
     "build_graph_artifact": "builds a view", "build_table_artifact": "builds a view",
     "build_table_artifact_from_rows": "builds a view", "build_chart_artifact": "builds a view",
     "build_report_artifact": "builds a view", "build_map_artifact": "builds a view",
