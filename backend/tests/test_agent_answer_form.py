@@ -47,5 +47,18 @@ class AnswerForm(unittest.TestCase):
         self.assertNotIn("professional, concise", inspect.getsource(graph))
 
 
+
+class SearchStrategyPrompt(unittest.TestCase):
+    """lx-agentquick H: the prompt teaches several phrasings and whole reads, and no longer forbids another search."""
+
+    def test_the_prompt_teaches_search_strategy_and_does_not_forbid_a_second_search(self):
+        import inspect
+        source = inspect.getsource(graph)
+        self.assertIn("Search strategy", source)
+        self.assertIn("at least three different ways", source)
+        self.assertIn("read whole", source)
+        self.assertNotIn("never look for it another way", source)
+
+
 if __name__ == "__main__":
     unittest.main()
