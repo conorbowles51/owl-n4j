@@ -344,6 +344,14 @@ def phone_map_summary(body: MapSummaryBody, db: Session = Depends(get_db), user:
     return phone_map.summary(db.connection(), body.case_id, body.filter.model_dump())
 
 
+@router.post("/map/trajectory")
+def phone_map_trajectory(body: MapSummaryBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Timed positions in time order for the Map's routes (the frontend splits them per phone and at 2-hour gaps)."""
+    from services.phone import map as phone_map
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return phone_map.trajectory(db.connection(), body.case_id, body.filter.model_dump())
+
+
 @router.post("/map/points")
 def phone_map_points(body: MapPointsBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """Phone positions in a viewport: points up to 5,000, else exact clusters with a limit (03 13.2, G-1)."""

@@ -74,10 +74,61 @@ def summary(conn, case_id, f: dict | None = None) -> dict:
     missing = [{"reason": NOT_POSITIONABLE[r.model_type], "model_type": r.model_type, "count": int(r.n),
                 "phones": int(r.phones)} for r in rows]
     positioned = int(row.n or 0)
-    return {"case_id": str(case_id), "positioned": positioned,
+    by_phone = _by_phone(conn, case_id, f)
+    return {"case_id": str(case_id), "positioned": positioned, "by_phone": by_phone,
             "total": positioned + sum(m["count"] for m in missing), "not_positionable": missing,
             "by_source": by_source,
             "bbox": [row.w, row.s, row.e, row.nn] if positioned else None}
+
+
+def _by_phone(conn, case_id, f: dict) -> list[dict]:
+    """Every phone in the case with its positions under the other filters (not the phone filter), so a phone switched
+    off still states its number and a phone with nothing says 0 (the phone layer control)."""
+    from services.phone.readings import phone_labels
+    g, p = {k: v for k, v in f.items() if k != "phones"}, {"c": str(case_id)}
+    counts = {str(r.k): int(r.n) for r in conn.execute(text(
+        "SELECT t.extraction_id AS k, count(*) AS n FROM pv_location_point t WHERE %s GROUP BY 1" % _where(g, p)), p)}
+    return [{"extraction_id": ext, "label": label, "positioned": counts.get(ext, 0)}
+            for ext, label in phone_labels(conn, case_id).items()]
+
+
+TRAJECTORY_MAX = 20_000
+
+
+def trajectory(conn, case_id, f: dict | None = None) -> dict:
+    """Every timed position of the phones in scope in time order, for the Map's routes. Positions without a time have
+    no place in a route and are counted in ``untimed``. Above ``TRAJECTORY_MAX`` the list is thinned evenly
+    (first and last kept) and ``limits`` says so with exact counts."""
+    f, p = dict(f or {}), {"c": str(case_id)}
+    f["include_no_time"] = True
+    where = _where(f, p)
+    untimed = int(conn.execute(text(
+        "SELECT count(*) FROM pv_location_point t WHERE %s AND t.instant IS NULL" % where), p).scalar() or 0)
+    rows = conn.execute(text(
+        "SELECT t.point_uid, t.extraction_id, t.lat, t.lon, t.accuracy_m, t.instant FROM pv_location_point t WHERE %s "
+        "AND t.instant IS NOT NULL ORDER BY t.extraction_id, t.instant, t.point_uid" % where), p).fetchall()
+    total = len(rows)
+    keep = thin_indexes(total, TRAJECTORY_MAX) if total > TRAJECTORY_MAX else None
+    items, limits = [], []
+    for i, r in enumerate(rows):
+        if keep is not None and i not in keep:
+            continue
+        items.append({"point_uid": str(r.point_uid), "extraction_id": str(r.extraction_id), "lat": r.lat, "lon": r.lon,
+                      "accuracy_m": float(r.accuracy_m) if r.accuracy_m is not None else None,
+                      "instant": T.iso(r.instant)})
+    if keep is not None:
+        limits.append({"kind": "thinned", "shown": len(items), "total": total,
+                       "message": "%s timed positions are used for routes; %s are drawn. The routes are thinned, the dots are not."
+                       % ("{:,}".format(total), "{:,}".format(len(items)))})
+    return {"case_id": str(case_id), "total": total, "untimed": untimed, "items": items, "limits": limits}
+
+
+def thin_indexes(total: int, cap: int) -> set:
+    """``cap`` indexes spread evenly over ``total``, always including the first and the last."""
+    if total <= cap:
+        return set(range(total))
+    step = (total - 1) / (cap - 1)
+    return {round(i * step) for i in range(cap)}
 
 
 def _grid(zoom: float) -> float:
