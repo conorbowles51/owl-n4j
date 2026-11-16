@@ -455,7 +455,7 @@ def _instant(name, value):
         raise AnalysisError("%s is not a date and time." % name) from None
 
 
-def _filters(case_id, run_id, kind=None, strength=None, start=None, end=None, phone=None, identity=None):
+def _filters(case_id, run_id, kind=None, strength=None, start=None, end=None, phone=None, identity=None, phones=None):
     w = ["r.run_id = CAST(:run AS uuid)", "r.case_id = :c"]
     p = {"run": str(run_id), "c": str(case_id)}
     if kind:
@@ -474,6 +474,10 @@ def _filters(case_id, run_id, kind=None, strength=None, start=None, end=None, ph
         w.append("EXISTS (SELECT 1 FROM phone_analysis_result_records x WHERE x.result_id = r.id AND x.extraction_id = "
                  "CAST(:phone AS uuid))")
         p["phone"] = phone
+    if phones:
+        w.append("EXISTS (SELECT 1 FROM phone_analysis_result_records x WHERE x.result_id = r.id AND "
+                 "x.extraction_id::text = ANY(:phones))")
+        p["phones"] = [str(x) for x in phones]
     if identity:
         w.append("EXISTS (SELECT 1 FROM phone_analysis_result_records x JOIN phone_participations pp ON pp.record_uid = "
                  "x.record_uid WHERE x.result_id = r.id AND pp.identity_key = :ident)")
@@ -491,13 +495,13 @@ ORDERS = {"time": "r.period_start NULLS LAST, r.id",
 
 
 def results(conn, case_id, run_id, *, kind=None, strength=None, start=None, end=None, phone=None, identity=None,
-            offset=0, limit=100, order="time") -> dict:
+            offset=0, limit=100, order="time", phones=None) -> dict:
     run = get_run(conn, case_id, run_id)
     if limit > MAX_LIMIT or limit < 1 or offset < 0:
         raise AnalysisError("limit is 1 to %d." % MAX_LIMIT)
     if order not in ORDERS:
         raise AnalysisError("order is one of %s." % ", ".join(ORDERS))
-    where, p = _filters(case_id, run_id, kind, strength, start, end, phone, identity)
+    where, p = _filters(case_id, run_id, kind, strength, start, end, phone, identity, phones)
     total = int(conn.execute(text("SELECT count(*) FROM phone_analysis_results r WHERE " + where), p).scalar() or 0)
     p.update({"off": offset, "lim": limit})
     rows = conn.execute(text(

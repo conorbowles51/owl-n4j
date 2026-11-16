@@ -111,10 +111,20 @@ def cancel_run(run_id: UUID, case_id: UUID = Query(...), db: Session = Depends(g
     return out
 
 
+def _phone_ids(raw):
+    if not raw:
+        return None
+    try:
+        return [str(UUID(x)) for x in raw.split(",") if x]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="phones is a comma-separated list of phone ids.")
+
+
 @router.get("/runs/{run_id}/results")
 def run_results(run_id: UUID, case_id: UUID = Query(...), kind: Optional[str] = Query(None, max_length=48),
                 strength: Optional[str] = Query(None, max_length=24), from_: Optional[str] = Query(None, alias="from"),
                 to: Optional[str] = Query(None), phone: Optional[UUID] = Query(None),
+                phones: Optional[str] = Query(None, max_length=1500, description="comma-separated phone ids: any of them"),
                 identity: Optional[str] = Query(None, max_length=512), offset: int = Query(0, ge=0),
                 limit: int = Query(100, ge=1, le=F.MAX_LIMIT), order: str = Query("time", max_length=16),
                 db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
@@ -124,7 +134,8 @@ def run_results(run_id: UUID, case_id: UUID = Query(...), kind: Optional[str] = 
     authorize_case(db, case_id, user, ("case", "view"))
     try:
         return F.results(db.connection(), case_id, run_id, kind=kind, strength=strength, start=from_, end=to,
-                         phone=str(phone) if phone else None, identity=identity, offset=offset, limit=limit,
+                         phone=str(phone) if phone else None, identity=identity,
+                         phones=_phone_ids(phones), offset=offset, limit=limit,
                          order=order)
     except F.AnalysisError as exc:
         _fail(exc)
