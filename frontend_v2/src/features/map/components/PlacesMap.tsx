@@ -5,7 +5,8 @@ import "maplibre-gl/dist/maplibre-gl.css"
 import type { FeatureCollection, LineString, Point, Polygon } from "geojson"
 import { useMapTheme } from "../hooks/use-map-theme"
 import { BasemapNote } from "./BasemapNote"
-import { boundsOf } from "../lib/places-geo"
+import { boundsOf, type Trajectory } from "../lib/places-geo"
+import { RouteLayers } from "./RouteLayers"
 import { PLACE_LABEL } from "../lib/place-label"
 
 const EMPTY = { type: "FeatureCollection", features: [] } as FeatureCollection<never>
@@ -23,7 +24,12 @@ export interface PlacesMapLayers {
  * with their radii, the trajectory with gaps over 2 hours left undrawn, routine places, and Together pairs
  * (04 sections 8.3, 8.4 and 8.6). It carries the investigative label on its face.
  */
-export function PlacesMap({ layers, height = 360 }: { layers: PlacesMapLayers; height?: number }) {
+export function PlacesMap({ layers, height = 360, route }: {
+  layers: PlacesMapLayers
+  height?: number
+  /** With phone layers on: each phone's route in its colour with arrowheads showing direction, replacing the plain line. */
+  route?: { trajectory: Trajectory; colours: Record<string, string>; labels: Record<string, string>; zone: string }
+}) {
   const { mapStyle, transformRequest, onMapError, onMapSourceData, onMapView, basemapNote } = useMapTheme()
   const bounds = useMemo(() => {
     const coords: [number, number][] = []
@@ -60,9 +66,13 @@ export function PlacesMap({ layers, height = 360 }: { layers: PlacesMapLayers; h
           <Source id="pm-areas" type="geojson" data={layers.areas ?? EMPTY}>
             <Layer id="pm-areas-fill" type="fill" paint={{ "fill-color": "#0284c7", "fill-opacity": 0.08 }} />
           </Source>
-          <Source id="pm-lines" type="geojson" data={layers.lines ?? EMPTY}>
-            <Layer id="pm-lines" type="line" paint={{ "line-color": "#0369a1", "line-width": 2, "line-opacity": 0.8 }} />
-          </Source>
+          {route ? (
+            <RouteLayers route={route.trajectory} colours={route.colours} labels={route.labels} zone={route.zone} idPrefix="pm-route" />
+          ) : (
+            <Source id="pm-lines" type="geojson" data={layers.lines ?? EMPTY}>
+              <Layer id="pm-lines" type="line" paint={{ "line-color": "#0369a1", "line-width": 2, "line-opacity": 0.8 }} />
+            </Source>
+          )}
           <Source id="pm-pairs" type="geojson" data={layers.pairs ?? EMPTY}>
             <Layer id="pm-pairs" type="line" paint={{
               "line-width": 2,

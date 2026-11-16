@@ -43,6 +43,10 @@ interface MapCanvasProps {
   locations: MapLocation[]
   /** The phone layer's points and clusters (03 section 13), drawn apart from graph locations. */
   phoneItems?: PhoneMapItem[]
+  /** Phone layers: each phone's colour by extraction id; absent, every phone is drawn in the one blue. */
+  phoneColours?: Record<string, string>
+  /** Drawn inside the map (the phones' routes). */
+  children?: React.ReactNode
   /** Called with the viewport [w, s, e, n] and zoom after the map moves. */
   onView?: (bbox: number[], zoom: number) => void
   /** Fit to this [w, s, e, n] once when there are no graph locations to fit to. */
@@ -90,7 +94,7 @@ function getPointDistance(a: ScreenPoint, b: ScreenPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint, focusBox }: MapCanvasProps) {
+export function MapCanvas({ locations, phoneItems, phoneColours, children, onView, fitTo, focusPoint, focusBox }: MapCanvasProps) {
   const mapRef = useRef<MapRef>(null)
   // a focus that arrives or changes after the map loaded moves it too (onLoad covers the first one)
   const focusKey = focusPoint ? focusPoint.join(",") : ""
@@ -636,26 +640,32 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint, fo
       </Source>
 
       {/* Phone layer (03 section 13.3): a radius when accuracy is known, a dashed-looking hollow ring when not */}
-      {phoneItems && phoneItems.length > 0 && (
+      {phoneItems && phoneItems.length > 0 && (() => {
+        const blue = "#2563eb"
+        const pc: never = (phoneColours && Object.keys(phoneColours).length
+          ? ["match", ["get", "phone"], ...Object.entries(phoneColours).flatMap(([k, v]) => [k, v]), blue] : blue) as never
+        return (
         <Source id="phone-points" type="geojson" data={phoneGeoJSON(phoneItems)}>
           <Layer id="phone-accuracy" type="circle" filter={["==", ["get", "has_accuracy"], true]} paint={{
             // the reported accuracy in screen pixels: metres per pixel on 512-pixel tiles, corrected for latitude
             "circle-radius": ["interpolate", ["exponential", 2], ["zoom"], 0, ["/", ["get", "r20"], 1048576], 20, ["get", "r20"]],
-            "circle-color": "#2563eb", "circle-opacity": 0.12, "circle-stroke-color": "#2563eb", "circle-stroke-width": 1,
+            "circle-color": pc, "circle-opacity": 0.12, "circle-stroke-color": pc, "circle-stroke-width": 1,
           }} />
           <Layer id="phone-point" type="circle" filter={["==", ["get", "kind"], "point"]} paint={{
             "circle-radius": 5,
-            "circle-color": ["case", ["get", "has_accuracy"], "#2563eb", "rgba(0,0,0,0)"],
-            "circle-stroke-color": "#2563eb", "circle-stroke-width": ["case", ["get", "has_accuracy"], 1, 2],
+            "circle-color": ["case", ["get", "has_accuracy"], pc, "rgba(0,0,0,0)"],
+            "circle-stroke-color": pc, "circle-stroke-width": ["case", ["get", "has_accuracy"], 1, 2],
             "circle-stroke-opacity": ["case", ["get", "has_accuracy"], 1, 0.7],
           }} />
           <Layer id="phone-cluster" type="circle" filter={["==", ["get", "kind"], "cluster"]} paint={{
             "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 10, 1000, 24],
-            "circle-color": "#2563eb", "circle-opacity": 0.6,
+            "circle-color": phoneColours ? "#374151" : blue, "circle-opacity": 0.6,
           }} />
           <Layer id="phone-cluster-count" type="symbol" filter={["==", ["get", "kind"], "cluster"]} layout={{ "text-field": ["get", "label"], "text-font": ["Noto Sans Regular"], "text-size": 11 }} paint={{ "text-color": "#fff" }} />
         </Source>
-      )}
+        )
+      })()}
+      {children}
 
       {/* Proximity circle */}
       {proximityCircle && (
@@ -690,7 +700,7 @@ function phoneGeoJSON(items: PhoneMapItem[]): GeoJSON.FeatureCollection {
       type: "Feature",
       geometry: { type: "Point", coordinates: [i.lon, i.lat] },
       properties: i.type === "point"
-        ? { kind: "point", has_accuracy: i.accuracy_m !== null, accuracy_m: i.accuracy_m ?? 0, r20: accuracyPixelsAtZoom20(i.accuracy_m ?? 0, i.lat), label: i.phone_label }
+        ? { kind: "point", has_accuracy: i.accuracy_m !== null, accuracy_m: i.accuracy_m ?? 0, r20: accuracyPixelsAtZoom20(i.accuracy_m ?? 0, i.lat), label: i.phone_label, phone: i.extraction_id }
         : { kind: "cluster", has_accuracy: false, count: i.count, label: i.count.toLocaleString("en-US") },
     })),
   }

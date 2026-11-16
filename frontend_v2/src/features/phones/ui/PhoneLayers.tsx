@@ -1,17 +1,8 @@
-import { useQuery } from "@tanstack/react-query"
-import { useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { phonesQuery } from "../phones-query"
 import { layersOn, onlyLayer, toChosen, toggleLayer } from "../lib/phone-layers"
 import { PhoneShape } from "./PhoneChip"
 
-export interface LayerPhone { id: string; label: string; index: number }
-
-/** Every phone of the case in the case's stable order (the order PhoneChip's colour index uses). */
-export function useCasePhones(caseId: string): LayerPhone[] {
-  const q = useQuery({ ...phonesQuery(caseId), enabled: !!caseId })
-  return useMemo(() => (q.data?.phones ?? []).map((p, index) => ({ id: p.extraction_id, label: p.label, index })), [q.data])
-}
+import type { LayerPhone } from "./use-case-phones"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -25,8 +16,8 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
   /** The `phones` address parameter: empty means every phone is on. */
   chosen: string[]
   onChange: (chosen: string[]) => void
-  /** Per phone count in the current view; undefined while it is being counted. */
-  counts?: Record<string, number>
+  /** Per phone count in the current view; undefined while it is being counted, null when the screen cannot give one. */
+  counts?: Record<string, number> | null
   /** What the counts are of, plural: "positions", "messages". */
   noun: string
 }) {
@@ -39,13 +30,13 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
         <span className="font-medium">Phones</span>
         {phones.map((p) => {
           const isOn = on.includes(p.id)
-          const count = counts?.[p.id]
+          const count = counts === null ? null : counts?.[p.id]
           return (
             <span key={p.id} className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 ${isOn ? "" : "opacity-60"}`} data-phone-layer={p.id} data-on={isOn}>
               <input type="checkbox" id={`pl-${p.id}`} checked={isOn} onChange={() => onChange(toggleLayer(all, chosen, p.id))} aria-label={`${p.label} on`} />
               <PhoneShape index={p.index} />
               <label htmlFor={`pl-${p.id}`} className={isOn ? "" : "line-through"}>{p.label}</label>
-              <span className="text-muted-foreground">{count === undefined ? "counting" : `${n(count)} ${count === 1 ? noun.replace(/s$/, "") : noun}`}</span>
+              {count !== null && <span className="text-muted-foreground">{count === undefined ? "counting" : `${n(count)} ${count === 1 ? noun.replace(/s$/, "") : noun}`}</span>}
               <button type="button" className="text-xs underline" onClick={() => onChange(onlyLayer(all, p.id))}>Only this</button>
             </span>
           )

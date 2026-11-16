@@ -20,6 +20,9 @@ export interface PlacePoint {
 
 export interface Trajectory {
   lines: FeatureCollection<LineString>
+  /** One two-position leg per move, from the earlier position to the later one (its first coordinate is where the
+   * phone was first): the direction of travel, with both times, for hovering. */
+  legs: FeatureCollection<LineString>
   /** Moves not drawn because the phone had no position for over 2 hours. */
   gaps: number
   segments: number
@@ -35,17 +38,26 @@ export function trajectory(points: PlacePoint[], gapMs = TRAJECTORY_GAP_MS): Tra
     byPhone.get(k)!.push(p)
   }
   const features: Feature<LineString>[] = []
+  const legs: Feature<LineString>[] = []
   let gaps = 0
   let segments = 0
   for (const [phone, list] of byPhone) {
     const sorted = [...list].sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc))
     let run: [number, number][] = []
+    let runPoints: PlacePoint[] = []
     const flush = () => {
       if (run.length >= 2) {
         features.push({ type: "Feature", properties: { phone }, geometry: { type: "LineString", coordinates: run } })
         segments += run.length - 1
+        for (let k = 1; k < runPoints.length; k++) {
+          const a = runPoints[k - 1]
+          const b = runPoints[k]
+          legs.push({ type: "Feature", properties: { phone, from: a.end_utc, to: b.start_utc, from_at: `${a.lat.toFixed(5)}, ${a.lon.toFixed(5)}`, to_at: `${b.lat.toFixed(5)}, ${b.lon.toFixed(5)}` },
+            geometry: { type: "LineString", coordinates: [[a.lon, a.lat], [b.lon, b.lat]] } })
+        }
       }
       run = []
+      runPoints = []
     }
     for (let i = 0; i < sorted.length; i++) {
       const p = sorted[i]
@@ -54,10 +66,11 @@ export function trajectory(points: PlacePoint[], gapMs = TRAJECTORY_GAP_MS): Tra
         flush()
       }
       run.push([p.lon, p.lat])
+      runPoints.push(p)
     }
     flush()
   }
-  return { lines: { type: "FeatureCollection", features }, gaps, segments }
+  return { lines: { type: "FeatureCollection", features }, legs: { type: "FeatureCollection", features: legs }, gaps, segments }
 }
 
 /** Each position as a point, and each position with a stated radius as its area (the radius used in comparisons). */

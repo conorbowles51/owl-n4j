@@ -18,6 +18,24 @@ describe("places on the map (04 8.3)", () => {
     expect(t.lines.features[0].geometry.coordinates).toEqual([[-74, 40.001], [-74, 40.002]])
   })
 
+  it("each leg points from the earlier position to the later one, whatever order the positions arrive in", () => {
+    const t = trajectory([p(3, "a", "2023-03-14T10:00:00Z"), p(1, "a", "2023-03-14T09:00:00Z"), p(2, "a", "2023-03-14T09:30:00Z"), p(9, "b", "2023-03-14T09:00:00Z"), p(8, "b", "2023-03-14T09:20:00Z")])
+    const a = t.legs.features.filter((f) => f.properties?.phone === "a")
+    expect(a.map((f) => f.geometry.coordinates)).toEqual([[[-74, 40.001], [-74, 40.002]], [[-74, 40.002], [-74, 40.003]]])
+    expect(a.map((f) => [f.properties?.from, f.properties?.to])).toEqual([["2023-03-14T09:00:00Z", "2023-03-14T09:30:00Z"], ["2023-03-14T09:30:00Z", "2023-03-14T10:00:00Z"]])
+    // b arrives later-first: its leg still runs from 09:00 (id 9) to 09:20 (id 8)
+    const b = t.legs.features.filter((f) => f.properties?.phone === "b")
+    expect(b).toHaveLength(1)
+    expect(b[0].geometry.coordinates).toEqual([[-74, 40.009], [-74, 40.008]])
+  })
+
+  it("has no leg across a gap over 2 hours", () => {
+    const t = trajectory([p(1, "a", "2023-03-14T09:00:00Z"), p(2, "a", "2023-03-14T12:30:00Z"), p(3, "a", "2023-03-14T12:40:00Z")])
+    expect(t.gaps).toBe(1)
+    expect(t.legs.features).toHaveLength(1)
+    expect(t.legs.features[0].properties?.from).toBe("2023-03-14T12:30:00Z")
+  })
+
   it("draws a radius only where one is stated and keeps every position as a dot", () => {
     const f = positionFeatures([p(1, "a", "2023-03-14T09:00:00Z"), p(2, "a", "2023-03-14T09:30:00Z", null)])
     expect(f.dots.features).toHaveLength(2)

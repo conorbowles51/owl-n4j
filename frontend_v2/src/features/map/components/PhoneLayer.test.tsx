@@ -15,7 +15,7 @@ const MemoryRouter = ({ children, ...rest }: MemoryRouterProps & { children: Rea
 )
 
 const summary = {
-  case_id: "c", positioned: 2, total: 6, by_source: { device_location: 2 }, bbox: [-74, 40, -73, 41],
+  case_id: "c", by_phone: [], positioned: 2, total: 6, by_source: { device_location: 2 }, bbox: [-74, 40, -73, 41],
   not_positionable: [{ reason: "Cell tower records without a position: the production gives tower identifiers only", model_type: "CellTower", count: 4, phones: 1 }],
 }
 const point = (uid: string, accuracy: number | null) => ({

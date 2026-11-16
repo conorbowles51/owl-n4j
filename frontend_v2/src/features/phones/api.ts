@@ -531,6 +531,8 @@ export const PhoneMapSummarySchema = lazySchema(() => z.object({
   total: z.number(),
   not_positionable: z.array(z.object({ reason: z.string(), model_type: z.string(), count: z.number(), phones: z.number() })),
   by_source: z.record(z.string(), z.number()),
+  /** Every phone of the case with its positions under the other filters (not the phone filter). */
+  by_phone: z.array(z.object({ extraction_id: z.string(), label: z.string(), positioned: z.number() })).default([]),
   bbox: z.array(z.number()).length(4).nullable(),
 }))
 const PhoneMapPointSchema = lazySchema(() => z.object({
@@ -555,6 +557,17 @@ export async function getPhoneMapSummary(caseId: string, filter: PhoneMapFilter 
 }
 export async function getPhoneMapPoints(caseId: string, bbox: number[], zoom: number, filter: PhoneMapFilter = {}, signal?: AbortSignal) {
   return PhoneMapPointsSchema.parse(await fetchAPI("/api/phones/map/points", { method: "POST", body: { case_id: caseId, bbox, zoom, filter }, read: true, signal }))
+}
+
+/** Timed positions in time order, for routes; `untimed` positions have no place in a route and are counted. */
+export const PhoneMapTrajectorySchema = lazySchema(() => z.object({
+  case_id: z.string(), total: z.number(), untimed: z.number(),
+  items: z.array(z.object({ point_uid: z.string(), extraction_id: z.string(), lat: z.number(), lon: z.number(), accuracy_m: z.number().nullable(), instant: z.string() })),
+  limits: z.array(z.object({ message: z.string() }).passthrough()),
+}))
+export type PhoneMapTrajectory = z.infer<typeof PhoneMapTrajectorySchema>
+export async function getPhoneMapTrajectory(caseId: string, filter: PhoneMapFilter = {}, signal?: AbortSignal) {
+  return PhoneMapTrajectorySchema.parse(await fetchAPI("/api/phones/map/trajectory", { method: "POST", body: { case_id: caseId, filter }, read: true, signal }))
 }
 
 /** Show on Map from a message (03 section 3.6 item 7): the positions on the same phone within the hour of it. */

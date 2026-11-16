@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { getPhoneMapNear, getPhoneMapPoints, getPhoneMapSummary, type PhoneMapFilter } from "@/features/phones/api"
+import { getPhoneMapNear, getPhoneMapPoints, getPhoneMapSummary, getPhoneMapTrajectory, type PhoneMapFilter } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
+import { RouteLayers } from "./RouteLayers"
+import { trajectory, type PlacePoint } from "../lib/places-geo"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { useCasePhones } from "@/features/phones/ui/use-case-phones"
+import { phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
+import { phoneMark } from "@/features/phones/lib/phone-palette"
 import { NearMessageNote } from "./NearMessageNote"
 import { PhonesInArea } from "./PhonesInArea"
 import { usePhonesInArea } from "../hooks/use-phones-in-area"
@@ -83,6 +89,26 @@ export function MapPage() {
   }, [carried.scope, caseId, zoneName])
   const scoped = !!carriedFilter || carried.scope.people.length > 0 || carried.scope.kinds.length > 0
   const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint || !!nearUid || scoped, nearFilter ?? carriedFilter)
+  // Phone layers (behind the phone_layers setting): each phone its own layer, and each phone's route over time
+  const layersOn = phoneLayersEnabled()
+  const phoneList = useCasePhones(caseId ?? "")
+  const [routes, setRoutes] = useState(false)
+  const routeScope = nearFilter ?? carriedFilter
+  const routeQuery = useQuery({
+    queryKey: ["phone-map-trajectory", caseId, routeScope ?? null],
+    queryFn: ({ signal }) => getPhoneMapTrajectory(caseId!, routeScope ?? {}, signal),
+    enabled: !!caseId && layersOn && routes && phones.on,
+    staleTime: 30_000,
+  })
+  const route = useMemo(() => {
+    const pts: PlacePoint[] = (routeQuery.data?.items ?? []).map((i) => ({
+      id: i.point_uid, extraction_id: i.extraction_id, lat: i.lat, lon: i.lon, radius_m: i.accuracy_m,
+      start_utc: i.instant, end_utc: i.instant, kind: "position", source_kind: "phone",
+    }))
+    return trajectory(pts)
+  }, [routeQuery.data])
+  const colours = useMemo(() => Object.fromEntries(phoneList.map((p) => [p.id, phoneMark(p.index).light])), [phoneList])
+  const labels = useMemo(() => Object.fromEntries(phoneList.map((p) => [p.id, p.label])), [phoneList])
   const shapes = useMapStore((s) => s.boundingShapes)
   const lastShape = shapes.length ? shapes[shapes.length - 1] : null
   // the same query the "Phones seen in this area" panel reads, so the banner counts what the panel lists
@@ -173,6 +199,28 @@ export function MapPage() {
           <ScopeCrossings caseId={caseId!} scope={carried.scope} here="map" />
         </ScopeBar>
       )}
+      {layersOn && phones.on && phoneList.length > 1 && (
+        <PhoneLayers phones={phoneList} chosen={carried.scope.phones.map((p) => p.id)} noun="positions"
+          counts={phones.summary.data ? Object.fromEntries(phones.summary.data.by_phone.map((b) => [b.extraction_id, b.positioned])) : undefined}
+          onChange={(ids) => carried.apply({ ...carried.scope, phones: phoneList.filter((p) => ids.includes(p.id)) })} />
+      )}
+      {layersOn && phones.on && (
+        <div className="flex flex-wrap items-center gap-3 border-b bg-card px-3 py-1 text-sm" data-testid="route-bar">
+          <label className="inline-flex items-center gap-1.5">
+            <input type="checkbox" checked={routes} onChange={(e) => setRoutes(e.target.checked)} /> Show routes
+          </label>
+          {routes && routeQuery.isLoading && <span role="status">Reading routes</span>}
+          {routes && routeQuery.isError && <span role="alert">The routes could not be read. Try again.</span>}
+          {routes && routeQuery.data && (
+            <span role="status">
+              {route.segments.toLocaleString("en-US")} {route.segments === 1 ? "move" : "moves"} drawn
+              {` · ${route.gaps.toLocaleString("en-US")} ${route.gaps === 1 ? "gap" : "gaps"} over 2 hours not drawn`}
+              {routeQuery.data.untimed > 0 ? ` · ${routeQuery.data.untimed.toLocaleString("en-US")} positions with no time are not in a route` : ""}
+              {routeQuery.data.limits.map((l) => ` · ${l.message}`).join("")}
+            </span>
+          )}
+        </div>
+      )}
       <MapToolbar
         caseId={caseId!}
         locations={safeLocations}
@@ -184,11 +232,14 @@ export function MapPage() {
         <MapCanvas
           locations={safeLocations}
           phoneItems={phones.on ? phones.points.data?.items : undefined}
+          phoneColours={layersOn ? colours : undefined}
           onView={phones.setView}
           fitTo={phones.on ? phones.summary.data?.bbox ?? null : null}
           focusPoint={focusPoint}
           focusBox={nearFilter ? near.data?.bbox ?? null : null}
-        />
+        >
+          {layersOn && phones.on && routes && <RouteLayers route={route} colours={colours} labels={labels} zone={zoneName} />}
+        </MapCanvas>
         {nearUid && !focusPoint && <NearMessageNote loading={near.isLoading} failed={near.isError} near={near.data} />}
         {phones.summary.data && phones.summary.data.total > 0 && (
           <button
@@ -248,6 +299,8 @@ function usePhoneLayer(caseId: string | undefined, graphLocations: number | null
     queryKey: ["phone-map-summary", caseId, scope ?? null],
     queryFn: ({ signal }) => getPhoneMapSummary(caseId!, scope ?? {}, signal),
     enabled: !!caseId,
+    // switching a phone layer asks again: the map stays up on the last answer instead of dropping to the loading panel
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
   useEffect(() => {
