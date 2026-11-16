@@ -3,36 +3,292 @@
   "question_id": "R1",
   "question": "Give me a detailed report about the phones in this case, include a summary of who owns each phone and flag any suspicious communications",
   "facts": [
-    {"id": "F03", "all": ["Vint", "tow"], "any": ["12 April", "April 12", "13 April", "April 13"]},
-    {"id": "F04", "all": ["Ferrowmere"], "any": ["3 May", "May 3", "4 May", "May 4", "emergency"]},
-    {"id": "F05", "all": ["Okafor"], "any": ["no contact", "no call", "no message", "no communication", "never contacted", "no record of contact", "did not contact", "no direct contact", "no calls or messages", "no contact, call or message"]},
-    {"id": "F07", "all": ["Ferrow Avenue"], "any": ["8 June", "June 8"]},
-    {"id": "F08", "all": ["glovebox"], "any": ["14 of the 16", "14 of 16", "fourteen of"]},
-    {"id": "F09", "all": ["glovebox", "garage"], "any": ["10 June", "June 10", "12 June", "June 12"]},
-    {"id": "F10", "all": ["gap"], "any": ["23:00", "11 pm", "11:00 pm", "11 p.m."]},
-    {"id": "F11", "all": ["Chicago"], "any": ["Maryland", "never left", "did not leave", "not in Chicago", "no evidence"]},
-    {"id": "F12", "all": ["Okafor", "deleted"], "any": ["left something in the tow truck", "need it back"]},
-    {"id": "F13", "all": ["Penn"], "any": ["price list", "drills", "table saws"]},
-    {"id": "F14", "all": ["alert", "deposit"]},
-    {"id": "F16", "all": ["Marsh"], "any": ["$500", "500"]},
-    {"id": "F20", "all": ["Brianna", "212"], "any": ["serial", "label"]},
-    {"id": "F21", "all": ["Brianna", "warehouse"], "any": ["received", "sent by Kell", "from Kell"]},
-    {"id": "F22", "all": ["badge"], "any": ["B-11032", "dock 3"]},
-    {"id": "F23", "all": ["B-20417"]},
-    {"id": "F24", "all": ["night crew"]},
-    {"id": "F26", "all": ["Okafor"], "any": ["Dee", "D.O."]},
-    {"id": "F40", "all": ["Okafor"], "any": ["voice note", "voice message"]},
-    {"id": "F43", "any": ["0.9 km", "cell sector", "same sector"]}
+    {
+      "id": "F03",
+      "all": [
+        "Vint",
+        "tow"
+      ],
+      "any": [
+        "12 April",
+        "April 12",
+        "13 April",
+        "April 13"
+      ]
+    },
+    {
+      "id": "F04",
+      "all": [
+        "Ferrowmere"
+      ],
+      "any": [
+        "3 May",
+        "May 3",
+        "4 May",
+        "May 4",
+        "emergency"
+      ]
+    },
+    {
+      "id": "F05",
+      "all": [
+        "Okafor"
+      ],
+      "any": [
+        "no contact",
+        "no call",
+        "no message",
+        "no communication",
+        "never contacted",
+        "no record of contact",
+        "did not contact",
+        "no direct contact",
+        "no calls or messages",
+        "no contact, call or message"
+      ]
+    },
+    {
+      "id": "F07",
+      "all": [
+        "Ferrow Avenue"
+      ],
+      "any": [
+        "8 June",
+        "June 8"
+      ]
+    },
+    {
+      "id": "F08",
+      "all": [
+        "glovebox"
+      ],
+      "any": [
+        "14 of the 16",
+        "14 of 16",
+        "fourteen of"
+      ]
+    },
+    {
+      "id": "F09",
+      "all": [
+        "glovebox",
+        "garage"
+      ],
+      "any": [
+        "10 June",
+        "June 10",
+        "12 June",
+        "June 12"
+      ]
+    },
+    {
+      "id": "F10",
+      "all": [
+        "gap"
+      ],
+      "any": [
+        "23:00",
+        "11 pm",
+        "11:00 pm",
+        "11 p.m."
+      ]
+    },
+    {
+      "id": "F11",
+      "all": [
+        "Chicago"
+      ],
+      "any": [
+        "Maryland",
+        "never left",
+        "did not leave",
+        "not in Chicago",
+        "no evidence"
+      ]
+    },
+    {
+      "id": "F12",
+      "all": [
+        "Okafor",
+        "deleted"
+      ],
+      "any": [
+        "left something in the tow truck",
+        "need it back"
+      ]
+    },
+    {
+      "id": "F13",
+      "all": [
+        "Penn"
+      ],
+      "any": [
+        "price list",
+        "drills",
+        "table saws"
+      ]
+    },
+    {
+      "id": "F14",
+      "all": [
+        "alert",
+        "deposit"
+      ]
+    },
+    {
+      "id": "F16",
+      "all": [
+        "Marsh"
+      ],
+      "any": [
+        "$500",
+        "500"
+      ]
+    },
+    {
+      "id": "F20",
+      "all": [
+        "Brianna",
+        "212"
+      ],
+      "any": [
+        "serial",
+        "label"
+      ]
+    },
+    {
+      "id": "F21",
+      "all": [
+        "Brianna",
+        "warehouse"
+      ],
+      "any": [
+        "received",
+        "sent by Kell",
+        "from Kell"
+      ]
+    },
+    {
+      "id": "F22",
+      "all": [
+        "badge"
+      ],
+      "any": [
+        "B-11032",
+        "dock 3"
+      ]
+    },
+    {
+      "id": "F23",
+      "all": [
+        "B-20417"
+      ]
+    },
+    {
+      "id": "F24",
+      "all": [
+        "night crew"
+      ]
+    },
+    {
+      "id": "F26",
+      "all": [
+        "Okafor"
+      ],
+      "any": [
+        "Dee",
+        "D.O."
+      ]
+    },
+    {
+      "id": "F40",
+      "all": [
+        "Okafor"
+      ],
+      "any": [
+        "voice note",
+        "voice message"
+      ]
+    },
+    {
+      "id": "F43",
+      "any": [
+        "0.9 km",
+        "cell sector",
+        "same sector"
+      ]
+    }
   ],
   "decoys": [
-    {"id": "F06", "wrong": ["quillan[^.]{0,200}(met|meeting|together|rendezvous)"], "explained": ["coincid", "chance", "busy", "weak", "public"]},
-    {"id": "F27", "wrong": ["mateo 🔧[^.]{0,160}mateo ruiz"], "explained": ["garza", "not mateo ruiz", "different"]},
-    {"id": "F28", "wrong": ["carla ruiz[^.]{0,160}(related|linked|connected|wife|sister|family|mateo)"], "explained": ["unrelated", "not related", "no relation", "coincid", "no link", "not linked"]},
-    {"id": "F29", "wrong": ["curtis fallowby[^.]{0,160}(owner of|user of|used the|belongs|carried|is the)"], "explained": ["2022", "recycled", "former", "previous", "not the 2024", "earlier"]},
-    {"id": "D01", "wrong": ["carla ruiz[^.]{0,100}(rosa|lucía|lucia)"], "explained": ["unrelated", "not related", "no relation", "no link"]}
+    {
+      "id": "F06",
+      "wrong": [
+        "quillan[^.]{0,200}(met|meeting|together|rendezvous)"
+      ],
+      "explained": [
+        "coincid",
+        "chance",
+        "busy",
+        "weak",
+        "public"
+      ]
+    },
+    {
+      "id": "F27",
+      "wrong": [
+        "mateo 🔧[^.]{0,160}mateo ruiz"
+      ],
+      "explained": [
+        "garza",
+        "not mateo ruiz",
+        "different"
+      ]
+    },
+    {
+      "id": "F28",
+      "wrong": [
+        "carla ruiz[^.]{0,160}(related|linked|connected|wife|sister|family|mateo)"
+      ],
+      "explained": [
+        "unrelated",
+        "not related",
+        "no relation",
+        "coincid",
+        "no link",
+        "not linked"
+      ]
+    },
+    {
+      "id": "F29",
+      "wrong": [
+        "curtis fallowby[^.]{0,160}(owner of|user of|used the|belongs|carried|is the)",
+        "disguis[^.]{0,200}curtis fallowby",
+        "fallowby[^.]{0,120}(disguis|alias|same phone)"
+      ],
+      "explained": [
+        "2022",
+        "recycled",
+        "former",
+        "previous",
+        "not the 2024",
+        "earlier"
+      ]
+    },
+    {
+      "id": "D01",
+      "wrong": [
+        "carla ruiz[^.]{0,100}(rosa|lucía|lucia)"
+      ],
+      "explained": [
+        "unrelated",
+        "not related",
+        "no relation",
+        "no link"
+      ]
+    }
   ],
   "defects": {
-    "dropped_name": "\\b(on|with|from|to|between|by|of|for|at)\\s+(and|or)\\s+(?=[\\w.,;])|\\b(and|or)\\s+[.,;:](?=\\s|$)",
+    "dropped_name": "\\b(on|with|from|to|by|of|for|at)\\s+and\\s*[.,;:)]|\\bbetween\\s+and\\b|\\band\\s+[.,;:](?=\\s|$)",
     "contents_listed": "^\\s*#{0,4}\\s*\\**(contents|table of contents)"
   }
 }

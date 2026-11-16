@@ -42,6 +42,9 @@ def test_dropped_names_are_found():
     assert R.dropped_names("The call between and lasted 4 minutes.")
     assert R.dropped_names("Sent to ( ) at noon.")
     assert not R.dropped_names("Copies appear on Phone 1 and Phone 3.")
+    for ok in ("The call was on or before 3 May.", "Calls to and from Phone 2.", "He was at or near the garage.",
+               "Messages with and without photos.", "It was sent by or on behalf of Kell."):
+        assert not R.dropped_names(ok), ok
 
 
 def test_duplicate_sections_are_found():

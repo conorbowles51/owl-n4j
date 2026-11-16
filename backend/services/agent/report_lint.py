@@ -6,15 +6,16 @@ from __future__ import annotations
 
 import re
 
-_HEADING = re.compile(r"^\s{0,3}(#{1,4})\s+(.+?)\s*#*\s*$|^\s*\*\*(.+?)\*\*\s*:?\s*$", re.M)
+_HEADING = re.compile(r"^\s{0,3}(#{1,4})\s+(.+?)\s*#*\s*$", re.M)
 _NUMBER = re.compile(r"^\s*(?:section\s+)?\d+[.)]?\s+")
 _CONTENTS = re.compile(r"^\s{0,3}(?:#{1,4}\s+)?\**(contents|table of contents)\**\s*:?\s*$", re.I | re.M)
 _ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$")
 
 # A gap where a name or label stood: "appear on and .", "between and", "( )", "[]( )", ", ,".
 _GAPS = (
-    (re.compile(r"\b(?:on|with|from|to|between|by|of|for|at)\s+(?:and|or)\s+(?=[\w.,;])", re.I), "a name is missing before 'and'"),
-    (re.compile(r"\b(?:and|or)\s+[.,;:](?=\s|$)", re.I), "a name is missing after 'and'"),
+    (re.compile(r"\b(?:on|with|from|to|by|of|for|at)\s+and\s*[.,;:)]", re.I), "a name is missing before 'and'"),
+    (re.compile(r"\bbetween\s+and\b", re.I), "a name is missing after 'between'"),
+    (re.compile(r"\band\s+[.,;:](?=\s|$)", re.I), "a name is missing after 'and'"),
     (re.compile(r"\b(?:on|with|from|to|by|of|for|at)\s+[.,;:](?=\s|$)", re.I), "a name is missing after a preposition"),
     (re.compile(r"\(\s*[,;]?\s*\)"), "empty brackets"),
     (re.compile(r"\[\s*\]\([^)]*\)"), "a link with no text"),
@@ -31,8 +32,8 @@ def _norm(title: str) -> str:
 def headings(text: str) -> list[tuple[int, str]]:
     out = []
     for m in _HEADING.finditer(text or ""):
-        level = len(m.group(1)) if m.group(1) else 5
-        title = m.group(2) or m.group(3) or ""
+        level = len(m.group(1))
+        title = m.group(2)
         out.append((level, title))
     return out
 
