@@ -112,6 +112,40 @@ STAY_ON_THE_QUESTION = (
     "reporting findings, not as a system describing the checks it ran."
 )
 
+# lx-agentquick A (audit cause 4): the one-to-three-sentence rule above flattened every answer, including a phone
+# report that asked for detail. It now applies to fact questions only. An analysis, broad or report question gets a
+# full answer with its sections. Decision: a question is a fact question when it has no analysis or report word and
+# either opens like a fact question or is short; everything else is full. Reverse with a replay showing a fact
+# question answered at length.
+_FULL = re.compile(r"\b(?:report|detail\w*|in depth|in-depth|thorough\w*|comprehensive|deep|analy[sz]\w*|"
+                   r"investigat\w*|summari[sz]\w*|summary|overview|review|assess\w*|compare|comparison|explain|"
+                   r"suspicious|flag|patterns?|go through|walk me through|everything|all the|each (?:phone|person|"
+                   r"account)|how (?:do|did|does) .{0,60}\b(?:relate|connect|link)\w*|brief(?:ing)?|"
+                   r"what happened|tell me about|who owns each|informe|resumen|analiza\w*|detallad\w*)\b", re.I)
+_SHORT_WORDS = 14
+
+
+def question_kind(question: str) -> str:
+    """"fact" (a short, direct answer) or "full" (analysis, broad or report: a full answer with its sections)."""
+    text = (question or "").strip()
+    if not text:
+        return "fact"
+    if _FULL.search(text):
+        return "full"
+    if is_factual(text) or len(text.split()) <= _SHORT_WORDS:
+        return "fact"
+    return "full"
+
+
+FULL_ANSWER = (
+    "Answer the question in full. Open with the answer to what was asked in two or three sentences, then give the "
+    "whole analysis under headed sections: what the records show with their citations, who and what each finding "
+    "concerns, what is uncertain and why, and what is not yet known. Include every relevant finding the tools "
+    "returned, with the reason it matters to the question. Where a person must still settle something, end with "
+    "'Open questions:', one line each. Never drop the citation of a fact you state. Write as an investigator "
+    "reporting findings, not as a system describing the checks it ran."
+)
+
 MAX_FOCUS_ACCOUNTS = 12
 
 
@@ -153,7 +187,7 @@ def is_factual(question: str) -> bool:
 def block(scope: Scope, *, planning: bool = False, question: str | None = None) -> str:
     """The focus lines for the prompts; empty when the question names nothing the case holds. ``planning``: the
     agent's planning prompt, which also asks for a case-wide search of each name (the final answer has no tools)."""
-    lines = [STAY_ON_THE_QUESTION]
+    lines = [FULL_ANSWER if question is not None and question_kind(question) == "full" else STAY_ON_THE_QUESTION]
     from services.agent import fit
     if planning and question is not None and fit.on("F") and is_factual(question):
         lines.append(TEST_OTHER_SIDE)
@@ -198,4 +232,4 @@ def focus_for(session, case_id, question: str) -> tuple[str, str]:
         logging.getLogger(__name__).warning("Question scope: case accounts could not be read", exc_info=True)
         accounts = []
     scope = build(question, accounts)
-    return block(scope, planning=True, question=question), block(scope)
+    return block(scope, planning=True, question=question), block(scope, question=question)

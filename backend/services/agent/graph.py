@@ -472,7 +472,7 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "Write for an investigator in plain words: never a proof-class code (P0 to P4; say 'counted as verified' or "
     "'left out of verified totals: its statement does not add up to its printed balances' instead), a field or tool name, or money in "
     "minor units (write 12,345.67 MXN). "
-    "Be concise, do not call tools, and mention any artifacts created. "
+    "Match the length to the question as the answer rules say (short for a fact question, full with sections for an analysis, broad or report question), do not call tools, and mention any artifacts created. "
     "Do not expose internal tool names, tool-call syntax, Cypher implementation details, or messages like "
     "'I will run a query'. "
     "If the previous assistant turn requested more tools than the run budget allowed, ignore that unexecuted "
@@ -1150,7 +1150,7 @@ Your job:
 - If the user says to continue after a tool-budget clarification, continue the previous unfinished request with this fresh run's tool budget.
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
-- Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
+- Keep final answers professional and specific: short for a fact question, full with its sections for an analysis, broad or report question (the answer rules say which). Mention artifact titles when you create them.
 - Answers are read by an investigator who is not technical: never write a check-status code (p0 to p4), the words proof class or population, a tool name, a tool call or a field name in the answer; say what it means in plain words.
 - When using document search results, cite each passage with its cite field as a link: [filename, p.N](doc://<evidence file id>/N) when it has a page, or [filename](doc://<evidence file id>) when it has none. Copy the cite; never invent a page or a link.
 {_fit_prompt_lines()}- A tool message with a _paging note is shown in part: _paging states total, returned and next_page. Read the rest with read_tool_result_page before drawing a conclusion that depends on the whole result. If you stop before reading every page (for example, the tool budget), the answer must say it covers <returned> of <total> and which result is partial.
