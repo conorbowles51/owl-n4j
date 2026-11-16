@@ -54,6 +54,7 @@ SURFACES: dict[str, str] = {
     "search": "search",
     "workspace": "Workspace",
     "history": "your step history",
+    "relation": "a look into how items relate",
 }
 MAX_WHY = 1000
 MAX_NARRATIVE = 8000

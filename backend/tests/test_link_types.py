@@ -94,8 +94,8 @@ def test_migration_allows_exactly_the_registry_types():
     groups = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(groups)
     assert parse(groups.OLD) == link_types.WORKSPACE_TYPES[:passage_at + 1]
-    assert parse(groups.OLD) + parse(groups.NEW) == tuple(t for t in link_types.WORKSPACE_TYPES if t != "step_trail")
-    assert parse(groups.GROUPS) + ("step_trail",) == link_types.GROUP_TYPES
+    assert parse(groups.OLD) + parse(groups.NEW) == tuple(t for t in link_types.WORKSPACE_TYPES if t not in ("step_trail", "relation_query"))
+    assert parse(groups.GROUPS) + ("step_trail", "relation_query") == link_types.GROUP_TYPES
     # a trail of steps from the step history came last (lx-guide), and its migration is the latest to write the check
     spec = importlib.util.spec_from_file_location(
         "s", BACKEND / "postgres/alembic/versions/20261109_guidance_and_steps.py"
@@ -103,8 +103,16 @@ def test_migration_allows_exactly_the_registry_types():
     steps = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(steps)
     assert parse(steps.OLD) == parse(groups.OLD) + parse(groups.NEW)
-    assert set(parse(steps.OLD) + parse(steps.NEW)) == set(link_types.WORKSPACE_TYPES)
-    assert parse(steps.OLD_GROUPS) + parse(steps.NEW) == link_types.GROUP_TYPES
+    assert set(parse(steps.OLD) + parse(steps.NEW)) == set(link_types.WORKSPACE_TYPES) - {"relation_query"}
+    assert parse(steps.OLD_GROUPS) + parse(steps.NEW) == link_types.GROUP_TYPES[:-1]
+    # a look into how items relate came last (lx-overlaps), and its migration is the latest to write the check
+    spec = importlib.util.spec_from_file_location(
+        "r", BACKEND / "postgres/alembic/versions/20261113_relation_queries.py"
+    )
+    relation = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(relation)
+    assert set(parse(relation.OLD) + parse(relation.NEW)) == set(link_types.WORKSPACE_TYPES)
+    assert parse(relation.OLD_GROUPS) + parse(relation.NEW) == link_types.GROUP_TYPES
 
 
 def test_every_phone_type_is_refused_with_a_stated_message_until_a_resolver_registers():

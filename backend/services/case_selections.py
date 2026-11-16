@@ -32,6 +32,7 @@ SURFACE_WORDS = {
     "evidence": "the evidence files",
     "map": "the map",
     "history": "your step history",
+    "relation": "a look into how items relate",
 }
 
 # Member types each group takes.
@@ -43,6 +44,8 @@ GROUP_MEMBER_TYPES: dict[str, tuple[str, ...]] = {
     "evidence_selection": ("evidence",),
     "map_selection": ("graph_entity", "phone_record"),
     "step_trail": ("history_step",),
+    "relation_query": ("graph_entity", "financial_transaction", "financial_account", "financial_party", "evidence",
+                       "timeline_event", "phone_record", "entry", "place"),
 }
 
 
@@ -190,6 +193,15 @@ def _phone_records(db, case_id, ids):
     return found
 
 
+def _is_place(value: str) -> bool:
+    """A place chosen on the map is named by its own numbers: ``lat,lon,radius_m``."""
+    try:
+        lat, lon, radius = (float(x) for x in str(value).split(","))
+    except ValueError:
+        return False
+    return -90 <= lat <= 90 and -180 <= lon <= 180 and 0 <= radius <= 100_000
+
+
 MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "graph_entity": _graph,
     "financial_transaction": _transactions,
@@ -198,6 +210,7 @@ MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "evidence": _evidence,
     "timeline_event": _timeline_events,
     "phone_record": _phone_records,
+    "place": lambda db, case_id, ids: {i for i in ids if _is_place(i)},
     "entry": _entries,
     "history_step": _steps,
 }
@@ -221,6 +234,9 @@ def _clean_members(group_type: str, members: Iterable[Mapping[str, Any]]) -> lis
         label = raw.get("label")
         if isinstance(label, str) and label.strip():
             member["label"] = label.strip()[:300]
+        quote = raw.get("quote")  # the passage a person marked in a document; kept as chosen
+        if group_type == "relation_query" and isinstance(quote, str) and quote.strip():
+            member["quote"] = quote.strip()[:2000]
         out.append(member)
     return out
 

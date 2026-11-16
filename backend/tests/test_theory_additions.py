@@ -433,3 +433,28 @@ class TheoryConversionCarriesItsRecordTests(TheoryAdditionTests):
         self.assertEqual(self.db.query(TheoryNarrative).filter_by(entry_id=uuid.UUID(self.theory["id"])).count(),
                          theory_rows)
         self.assertEqual(person["added"], 1)
+
+    def test_relation_query_group_holds_mixed_items_a_place_and_a_quote(self):
+        """lx-overlaps D: a group of any mix from any screen is saved, each member checked against the case."""
+        made = case_selections.freeze(
+            self.db, case_id=self.case.id, group_type="relation_query", words="Look into how these relate",
+            how={"surface": "payment", "extends": None},
+            members=[{"type": "financial_transaction", "id": str(self.rows[0].id)},
+                     {"type": "financial_transaction", "id": str(self.other_row.id)},
+                     {"type": "graph_entity", "id": "person:ann"},
+                     {"type": "evidence", "id": str(self.evidence_id), "quote": "  Acme Ltd agreed  "},
+                     {"type": "place", "id": "51.5,-0.12,80"}, {"type": "place", "id": "not,a,place"}])
+        self.assertEqual((made["member_count"], made["left_out"]), (4, 2))
+        group = case_selections.describe(self.db, self.case.id, made["id"])
+        quote = [m for m in group["members"] if m["type"] == "evidence"][0]
+        self.assertEqual(quote["quote"], "Acme Ltd agreed")
+        # the group goes into a theory like any other, as its own link type
+        added = self.group("relation_query", [{"type": "graph_entity", "id": "person:ann"},
+                                              {"type": "place", "id": "51.5,-0.12,80"}],
+                           {"surface": "graph"}, "Ann and a place", "relation")
+        self.assertEqual(added["group"]["member_count"], 2)
+
+    def test_other_groups_do_not_take_a_place_or_a_quote(self):
+        with self.assertRaises(case_selections.SelectionError):
+            case_selections.freeze(self.db, case_id=self.case.id, group_type="graph_selection", words="x", how={},
+                                   members=[{"type": "place", "id": "51.5,-0.12,80"}])

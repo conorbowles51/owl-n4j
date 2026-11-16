@@ -66,6 +66,8 @@ GROUP_TYPES: tuple[str, ...] = (
     "map_selection",
     # a run of steps from one person's step history, kept with each step's screen and view state (lx-guide)
     "step_trail",
+    # items from any screen the person suspects are related, and the analysis started on them (lx-overlaps)
+    "relation_query",
 )
 
 # A chat answer from the case agent, with its citations: a model reading until a person confirms what it says.
@@ -149,6 +151,7 @@ TYPE_WORDS: dict[str, str] = {
     "evidence_selection": "Evidence selection",
     "map_selection": "Map area",
     "step_trail": "Step trail",
+    "relation_query": "Look into how these relate",
     "agent_answer": "Agent answer",
     "interview": "Interview",
     "entity": "Graph item",

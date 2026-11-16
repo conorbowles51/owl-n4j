@@ -44,6 +44,7 @@ export const WORKSPACE_LINK_TYPES = [
   "evidence_selection",
   "map_selection",
   "step_trail",
+  "relation_query",
   "agent_answer",
   "interview",
 ] as const
@@ -147,6 +148,7 @@ export const LINK_TYPE_WORDS: Record<string, string> = {
   evidence_selection: "Evidence selection",
   map_selection: "Map area",
   step_trail: "Step trail",
+  relation_query: "Look into how these relate",
   agent_answer: "Agent answer",
   interview: "Interview",
   entity: "Graph item",
