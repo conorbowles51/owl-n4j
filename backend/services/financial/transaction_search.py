@@ -23,6 +23,8 @@ def transaction_search(query, mode='text'):
                 raise ValueError('Close each opening parenthesis.')
             index += 1
             return value
+        return leaf(token)
+    def leaf(token):
         match = re.fullmatch(r'([a-zA-Z]+):(.*)', token)
         field, term = (match[1].lower(), match[2]) if match else (None, token)
         if field and field not in FIELDS and field != 'amount':
@@ -51,6 +53,15 @@ def transaction_search(query, mode='text'):
         return value
     if not query.strip():
         tree = None
+    elif mode == 'terms':
+        # Every word (or quoted phrase) must be in the row, in any order and field: "rent bay 4" finds a row that
+        # says "bay 4 rent" (lx-agentquick F). Operators and brackets typed here are read as plain words' separators.
+        tree = None
+        for token in tokens:
+            if token in ('(', ')', 'AND', 'OR', 'NOT'):
+                continue
+            node = leaf(token)
+            tree = node if tree is None else ('AND', tree, node)
     elif mode == 'boolean':
         if re.sub(r'\s', '', ''.join(tokens)) != re.sub(r'\s', '', query):
             raise ValueError('Close each quoted phrase before searching.')

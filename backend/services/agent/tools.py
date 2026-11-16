@@ -357,7 +357,13 @@ class FinancialPageArgs(FinancialScopeArgs):
 class FinancialQueryArgs(FinancialPageArgs):
     categories: list[str] | None = Field(None, max_length=100)
     direction: Literal["credit", "debit"] | None = None
-    search: str = Field("", max_length=256)
+    search: str = Field("", max_length=256, description=(
+        "Words to find in the payment text. By default every word must appear, in any order (search_mode terms); a "
+        "quoted phrase is kept whole."))
+    search_mode: Literal["terms", "text", "boolean"] = Field("terms", description=(
+        "terms: every word must appear, any order. text: the whole text as one phrase. boolean: AND, OR, NOT, "
+        "brackets, quoted phrases and field:term (from, to, category, description, reference, account), e.g. "
+        "rent AND (bay OR garage) NOT refund."))
     minimum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$", description=(
         "Smallest amount in minor units (65000 is 650.00). An amount range needs currency as well, e.g. USD."))
     maximum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$", description=(
@@ -2536,10 +2542,13 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         from services.agent.financial_ledger_tools import kept_read_financial_ledger
         try:
             filters = {}
-            for key in ("currency", "source_document_id", "direction", "search", "minimum_minor", "maximum_minor"):
+            for key in ("currency", "source_document_id", "direction", "search", "search_mode", "minimum_minor",
+                        "maximum_minor"):
                 value = kwargs.pop(key, None)
                 if value is not None and value != "":
                     filters[key] = str(value)
+            if "search" not in filters:
+                filters.pop("search_mode", None)
             categories = kwargs.pop("categories", None)
             if categories:
                 filters["analysis_categories"] = categories

@@ -7,7 +7,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 
 class LedgerTableView(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    search_mode: Literal['text', 'boolean'] = 'text'
+    search_mode: Literal['text', 'boolean', 'terms'] = 'text'
     search: Annotated[str, Field(max_length=256)] = ''
     profile_id: Annotated[str, Field(max_length=1024, pattern=r'^$|^(account|name|owner):')] = ''
     profile_group: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}:(card|bank)$')] = ''
