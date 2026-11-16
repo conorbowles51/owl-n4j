@@ -257,6 +257,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
     from services.agent.claim_validation import fingerprint
     source_message_keys = {fingerprint([m.tool_call_id, m.content]) for m in source_messages}
     malformed_streak = int(checkpoint.get('malformed_streak', 0))
+    lint_repaired = False
     resume_note = checkpoint.get('resume_note')
     if checkpoint and not resume_note and phase != 'done':
         resume_note = ('Saved work has resumed; this is an execution note, not a new investigator instruction. '
@@ -563,6 +564,29 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 answer = g.link_named_files(g.link_document_citations(
                     g.replace_result_handles(answer, context.result_store)), g._tool_text({'messages': safe_messages}))
                 answer = g._with_kept_sources(answer, context, bool(clarification))
+            # Exact checks of the answer's shape; the writer repairs what they find once (services.agent.report_lint).
+            if answer and not completion_issues and not clarification:
+                from services.agent import report_lint
+                found = report_lint.defects(answer)
+                if found and not lint_repaired:
+                    lint_repaired = True
+                    note(live_runs.progress_writing(step=used))
+                    again = g.invoke_model(runner.base_model, [SystemMessage(content=g._final_answer_system_prompt(
+                        final_answer_rules)), *g.finalizer_messages(model_context(safe_messages)),
+                        AIMessage(content=answer), HumanMessage(content=report_lint.repair_request(found))],
+                        note=note, step=used, should_cancel=should_cancel)
+                    if not getattr(again, "tool_calls", []):
+                        spent.append(again)
+                        replies, fixed = g._in_plain_words(runner.base_model, again)
+                        spent.extend(replies)
+                        fixed = g.link_named_files(g.link_document_citations(
+                            g.replace_result_handles(fixed, context.result_store)), g._tool_text({'messages': safe_messages}))
+                        if fixed.strip() and len(report_lint.defects(fixed)) < len(found):
+                            answer = fixed
+                    left = report_lint.defects(answer)
+                    if left:
+                        answer = answer.rstrip() + "\n\n**Checks this answer did not pass**\n" + "\n".join(
+                            "- " + x for x in left[:10])
             # A group the person switched off is named under Not examined, with its steps (rule 1).
             answer = tool_groups.with_not_examined(answer, steer_applied, last_step=used)
             phase = "done"

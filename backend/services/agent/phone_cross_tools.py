@@ -991,7 +991,7 @@ def _pair_out(p):
 def _line(it, p):
     alert = "%s %s on %s, %s" % (it.get("source") or "record", " ".join(x for x in (it.get("amount_text") or "",
                                  {"debit": "out", "credit": "in"}.get(it.get("direction") or "", "")) if x),
-                                 it.get("phone") or "a phone", (it.get("instant") or "")[:10])
+                                 it.get("phone") or "a phone", it.get("event_date") or (it.get("instant") or "")[:10])
     return "%s | %s | payment %s, %s, %s | %s | %s%s" % (
         (p.get("strength") or "").capitalize(), alert, p.get("ref") or p["payment"], p.get("amount") or "",
         p.get("date") or "", "; ".join(p.get("how_well_matched") or []) or "no longer found by the rule",

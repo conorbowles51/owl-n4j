@@ -189,17 +189,37 @@ def _people_problem(tool, case_id, kind, detail):
 
 # ---- messages and calls -------------------------------------------------------------------------------------------
 
+def _local_day(full):
+    """``Fri, Mar 15, 2024`` from ``Fri, Mar 15, 2024, 11:07:12 PM EDT``: the date the people lived, in the zone shown."""
+    parts = [x.strip() for x in str(full or "").split(", ")]
+    return ", ".join(parts[:3]) if len(parts) >= 4 else None
+
+
+def _zone_of(full):
+    """The zone abbreviation the time is shown in (``EDT``), or None."""
+    parts = str(full or "").rsplit(" ", 1)
+    return parts[1].strip("()") if len(parts) == 2 and parts[1].strip("()").isalpha() and parts[1].isupper() else None
+
+
 def _row_out(r):
     from services.phone import labels as L
     t = r.get("time") or {}
+    sender = L.label_text(r["from"]) if r.get("from") else None
+    deleted = "Deleted" in (r.get("flags") or [])
     return {"rec": _rec(r["record_uid"]), "record_uid": r["record_uid"], "kind": r["kind"],
             "phone": r["phone"].get("label"), "app": r.get("app"), "direction": r.get("direction"),
-            "time": t.get("full"), "instant": t.get("instant"), "line": r.get("line"),
-            "from": L.label_text(r["from"]) if r.get("from") else None,
+            "time": t.get("full"), "local_day": _local_day(t.get("full")), "time_zone": _zone_of(t.get("full")),
+            # UTC is named as UTC: the date of a night event differs between UTC and the zone the people were in.
+            "instant_utc": t.get("instant"), "line": r.get("line"),
+            "from": sender,
             "to": [L.label_text(x) for x in r.get("to") or []], "body": r.get("body"), "subject": r.get("subject"),
             "call": (r.get("call") or {}).get("words"),
             "attachments": [a.get("filename") for a in r.get("attachments") or []],
             "badges": r.get("flags") or [], "copies": (r.get("copies") or {}).get("count", 1),
+            "recovered_deleted": deleted,
+            "direction_note": ("Recovered deleted copy found on %s. It was sent by %s, whichever phone it was found "
+                               "on; the other phone's copy may be missing." % (r["phone"].get("label"), sender)
+                               if deleted and sender else None),
             "thread": (r.get("thread") or {}).get("title"),
             "unconfirmed": r.get("interpretation_level") == "applied_unconfirmed"}
 
@@ -463,6 +483,7 @@ def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT
         items.append({
             "result_id": str(r.id), "rec": next((_rec(x.record_uid) for x in xs if x.record_uid), None),
             "phone": m.get("phone_label"), "source": m.get("source"), "instant": m.get("event_instant"),
+            "event_date": m.get("event_date"),
             "amount_minor": m.get("amount_minor"), "currency": m.get("currency"), "amount_text": m.get("amount_text"),
             "direction": m.get("direction"), "institution": (m.get("institution") or {}).get("name"),
             "account": m.get("account_ref"), "outcome": relabel.get(r.id, m.get("outcome")), "reason": m.get("reason"),
@@ -513,6 +534,7 @@ def _computed_money_readings(conn, case_id, outcome, offset, limit, run=None) ->
         items.append({
             "rec": next((_rec(x["record_uid"]) for x in xs if x.get("record_uid")), None),
             "phone": m.get("phone_label"), "source": m.get("source"), "instant": m.get("event_instant"),
+            "event_date": m.get("event_date"),
             "amount_minor": m.get("amount_minor"), "currency": m.get("currency"), "amount_text": m.get("amount_text"),
             "direction": m.get("direction"), "institution": (m.get("institution") or {}).get("name"),
             "account": m.get("account_ref"), "outcome": m.get("outcome"), "reason": m.get("reason"),
