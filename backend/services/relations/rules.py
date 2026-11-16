@@ -150,12 +150,17 @@ def time_proximity(items: list[dict], base: dict) -> tuple[list[dict], list[dict
             continue
         if day_precision:
             level = weaker(level, "moderate")
-        reasons = [f"{ordered[0]['label']} comes first; {ordered[1]['label']} follows {gap_words(gap)} later."]
+        same_day = day_precision and ta.date() == tb.date()
+        if day_precision and (same_day or effective <= timedelta(0)):
+            reasons = [f"{a['label']} and {b['label']} fall on the same day or the day beside it."]
+        else:
+            reasons = [f"{ordered[0]['label']} comes first; {ordered[1]['label']} follows {gap_words(gap)} later."]
         if day_precision:
-            reasons.append(f"One of them has a {DAY_WORDS}, so the gap is read by day.")
+            reasons.append(f"One of them has a {DAY_WORDS}, so the order within a day is not in the records and the gap is read by day.")
         cands.append(candidate("time_proximity", [a["ref"], b["ref"]], "time", level, reasons,
                                chance=_chance_sentence(base, _kind_of(a), _kind_of(b)),
-                               extra={"gap_seconds": int(gap.total_seconds()), "first": ordered[0]["ref"]}))
+                               extra={"gap_seconds": int(gap.total_seconds()),
+                                      **({} if day_precision and effective <= timedelta(0) else {"first": ordered[0]["ref"]})}))
     if undated:
         searched.append({"analysis": "time_proximity", "members": undated,
                          "searched": "no date on record, so no time was compared",
@@ -181,8 +186,11 @@ def sequences(items: list[dict], base: dict, *, link_gap: timedelta = timedelta(
         span = run[-1][0] - run[0][0]
         level = next((name for limit, name in TIME_TIERS if span <= limit * 2), "faint")
         order = " then ".join(i["label"] for _, i in run)
+        dayonly = [i["label"] for _, i in run if i.get("precision") == "day"]
+        note = (f" {len(dayonly)} of them {'has' if len(dayonly) == 1 else 'have'} a date only, so their order within a day is not in the records."
+                if dayonly else "")
         out.append(candidate("sequence", [i["ref"] for _, i in run], "time", level,
-                             [f"In order: {order}. The first and last are {gap_words(span)} apart."],
+                             [f"In order: {order}. The first and last are {gap_words(span)} apart." + note],
                              chance=_chance_sentence(base, *list(kinds)[:2]),
                              extra={"span_seconds": int(span.total_seconds()), "kinds": sorted(kinds)}))
     return out

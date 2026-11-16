@@ -103,3 +103,14 @@ def test_a_one_off_meeting_at_a_busy_place_is_weak_and_reads_as_chance():
     often = lambda pa, pb: {"days_together": 5, "days_both_active": 40}
     c, _ = rules.place_overlap([a, b], stats, pair_stats=often)
     assert c[0]["strength"] == "strong" and c[0]["chance"]["reading"] != "ordinary"
+
+
+def test_a_date_only_item_never_claims_an_order_within_its_day():
+    msg = item("m", T0, type="phone_message")
+    pay = item("p", T0 - timedelta(hours=5), precision="day", label="payment")
+    c, _ = rules.time_proximity([msg, pay], BASE)
+    assert "comes first" not in c[0]["reasons"][0] and "first" not in c[0]["detail"]
+    assert "order within a day is not in the records" in " ".join(c[0]["reasons"])
+    seq = rules.sequences([item("a", T0, type="phone_message", label="msg"), pay,
+                           item("c", T0 + timedelta(hours=30), type="phone_record", label="meeting")], BASE)
+    assert "date only" in seq[0]["reasons"][0]
