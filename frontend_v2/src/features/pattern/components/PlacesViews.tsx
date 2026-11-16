@@ -7,6 +7,11 @@ import { patternAPI, type PlaceObservation, type RoutinePlaceRow, type Subject, 
 import { errorWords, usualLast } from "../lanes-lib"
 import { allowanceWords, evidenceWords, towerMccWords } from "../together-words"
 import { KeepResult } from "./CollectBar"
+import { useCasePhones } from "@/features/phones/ui/use-case-phones"
+import { layersOn as phonesOn, phoneLayersEnabled, toChosen } from "@/features/phones/lib/phone-layers"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { useSearchParams } from "react-router-dom"
+import { phoneMark } from "@/features/phones/lib/phone-palette"
 
 // The map code loads only when a map view opens (the Patterns route's other views and the layouts never pull it).
 const LazyPlacesMap = lazy(() => import("@/features/map/components/PlacesMap").then((m) => ({ default: m.PlacesMap })))
@@ -58,6 +63,11 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
   const startIso = `${win.start}T00:00:00Z`
   const endIso = `${addDays(win.end, 1)}T00:00:00Z`
   const [pages, setPages] = useState(1)
+  const phoneList = useCasePhones(caseId)
+  const route = useMemo(() => phoneLayersEnabled() ? {
+    colours: Object.fromEntries(phoneList.map((p) => [p.id, phoneMark(p.index).light])),
+    labels: Object.fromEntries(phoneList.map((p) => [p.id, p.label])),
+  } : null, [phoneList])
   const q = useQuery({
     queryKey: ["pattern-places", caseId, subjectKey(subject), win.start, win.end, pages],
     queryFn: async () => {
@@ -71,11 +81,19 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
       return { ...first, observations: obs, returned: obs.length, next_cursor: next }
     },
   })
+  // Phone layers: the phones of this subject that have positions in the window, each on or off (`phones` in the address)
+  const [params, setParams] = useSearchParams()
+  const chosen = (params.get("phones") ?? "").split(",").filter(Boolean)
+  const located = useMemo(() => (q.data?.observations ?? []).filter((o) => Number.isFinite(o.lat) && Number.isFinite(o.lon)) as (PlaceObservation & PlacePoint)[], [q.data])
+  const layerIds = useMemo(() => (phoneList.filter((p) => located.some((o) => o.extraction_id === p.id))), [phoneList, located])
+  const layered = phoneLayersEnabled() && layerIds.length > 1
+  const phonesShown = layered ? phonesOn(layerIds.map((p) => p.id), chosen) : null
+  const layerCounts = useMemo(() => Object.fromEntries(layerIds.map((p) => [p.id, located.filter((o) => o.extraction_id === p.id).length])), [layerIds, located])
   const drawn = useMemo(() => {
-    const pts = (q.data?.observations ?? []).filter((o) => Number.isFinite(o.lat) && Number.isFinite(o.lon)) as (PlaceObservation & PlacePoint)[]
+    const pts = phonesShown ? located.filter((o) => phonesShown.includes(o.extraction_id ?? "")) : located
     const presence = pts.filter((o) => o.kind === "presence")
     return { pts, traj: trajectory(presence), pos: positionFeatures(pts) }
-  }, [q.data])
+  }, [located, phonesShown])
   const routine = useQuery({ queryKey: ["pattern-routine", caseId, subjectKey(subject)], queryFn: () => patternAPI.routine(caseId, subject) })
   const deviations = useQuery({ queryKey: ["pattern-deviations", caseId, subjectKey(subject)], queryFn: () => patternAPI.deviations(caseId, subject) })
   const routinePlaces = (routine.data?.places ?? []).filter((p) => p.routine)
@@ -95,8 +113,13 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
             <p>The map and list show the first {q.data.returned.toLocaleString()}; the rest are on later pages.{" "}
               <Button size="sm" variant="outline" onClick={() => setPages((n) => n + 1)}>Load the next {q.data.page_size.toLocaleString()}</Button></p>
           )}
+          {layered && (
+            <PhoneLayers phones={layerIds} chosen={chosen} noun="positions" counts={layerCounts}
+              onChange={(ids) => setParams((prev) => { const next = new URLSearchParams(prev); const c = toChosen(layerIds.map((p) => p.id), ids); if (c.length) next.set("phones", c.join(",")); else next.delete("phones"); return next }, { replace: true })} />
+          )}
           <PlacesMap layers={{ dots: drawn.pos.dots, areas: drawn.pos.areas, lines: drawn.traj.lines,
-            places: routineAreas(routinePlaces.map((p) => ({ ...p }))) }} />
+            places: routineAreas(routinePlaces.map((p) => ({ ...p }))) }}
+            route={route ? { trajectory: drawn.traj, ...route, zone: "UTC" } : undefined} />
           <p className="text-xs text-muted-foreground">
             Circles are each position's radius as used in comparisons; a faint dot has no accuracy recorded. Lines join
             presence positions in time order: {drawn.traj.segments.toLocaleString()} moves drawn,{" "}

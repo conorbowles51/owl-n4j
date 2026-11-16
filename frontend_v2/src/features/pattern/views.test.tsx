@@ -15,6 +15,11 @@ vi.mock("@/features/map/components/PlacesMap", () => ({
   ),
 }))
 
+vi.mock("@/features/phones/api", async (orig) => ({
+  ...(await orig<object>()),
+  getPhones: vi.fn().mockResolvedValue({ case_id: "c", total: 2, phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }], case_zone: { name: "UTC", basis: "default", note: null } }),
+}))
+
 // The body GET /api/pattern/{case}/places returns (routers/pattern_of_life.py get_places): the rows are under
 // "observations". The screen once read "items" and crashed the page on live.
 const body: PlacesResponse = {
@@ -90,7 +95,7 @@ describe("Places over time", () => {
     vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
     vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: 2, days_scored: 30, label: "x",
       flagged: [{ date: "2023-03-07", score_bits: 4, expectation: "Usually at Place 1 on Tuesdays 21:00 to 00:00.", hours: [{ hour: 21, place: "elsewhere" }, { hour: 22, place: "elsewhere" }] }] })
-    wrap(<PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" />)
+    wrap(<MemoryRouter><PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" /></MemoryRouter>)
     expect(await screen.findByText(/Showing 2 of 3 positioned records, 2023-03-08 to 2023-03-14/)).toBeTruthy()
     expect(screen.getByText(/9 more positions have no usable time, so no window can show them\./)).toBeTruthy()
     expect(screen.getByText("12 m")).toBeTruthy()
@@ -105,12 +110,28 @@ describe("Places over time", () => {
     expect(screen.getByText("Investigative location, not cell-site opinion.")).toBeTruthy()
   })
 
+  it("phone layers: a subject with two phones lists both with their positions, and a phone switched off is not drawn", async () => {
+    localStorage.setItem("loupe.phone_layers", "on")
+    const second = { ...body.observations[0], id: 7, extraction_id: "e2", lat: 41, start_utc: "2023-03-14T10:30:00+00:00", end_utc: "2023-03-14T10:30:00+00:00" }
+    vi.spyOn(patternAPI, "places").mockResolvedValue({ ...body, returned: 3, next_cursor: null, observations: [...body.observations, second] })
+    vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
+    vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: 2, days_scored: 30, label: "x", flagged: [] })
+    wrap(<MemoryRouter><PlacesView caseId="c" subject={{ kind: "dossier", dossier_id: "d1" }} last="2023-03-14" /></MemoryRouter>)
+    const group = await screen.findByRole("group", { name: "Phone layers" })
+    expect(screen.getByText("2 positions")).toBeTruthy()
+    expect(screen.getByText("1 position")).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId("places-map").textContent).toContain("dots:3"))
+    fireEvent.click(group.querySelector("#pl-e2") as HTMLElement)
+    await waitFor(() => expect(screen.getByTestId("places-map").textContent).toContain("dots:2"))
+    localStorage.clear()
+  })
+
   it("labels a harvested position plainly and leaves it out of the trajectory", async () => {
     const harvested = { ...body.observations[0], id: 3, kind: "harvested", source_kind: "harvested", radius_m: null, radius_basis: "precision_value" }
     vi.spyOn(patternAPI, "places").mockResolvedValue({ ...body, returned: 3, next_cursor: null, observations: [...body.observations, harvested] })
     vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
     vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: 2, days_scored: 30, label: "x", flagged: [] })
-    wrap(<PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" />)
+    wrap(<MemoryRouter><PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" /></MemoryRouter>)
     expect(await screen.findByText(/1 dot is the position of a network or tower the phone heard, not the phone's own position/)).toBeTruthy()
     expect(screen.getByText("A network or tower the phone heard, not the phone's position")).toBeTruthy()
   })
@@ -119,7 +140,7 @@ describe("Places over time", () => {
     const places = vi.spyOn(patternAPI, "places").mockResolvedValue(body)
     vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
     vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: null, days_scored: 0, flagged: [], label: "x" })
-    wrap(<PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" />)
+    wrap(<MemoryRouter><PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" /></MemoryRouter>)
     await screen.findByText(/Showing 2 of 3/)
     fireEvent.change(screen.getByLabelText("From"), { target: { value: "2023-01-01" } })
     await waitFor(() => expect(places).toHaveBeenLastCalledWith("c", { kind: "extraction", extraction_id: "e1" }, "2023-01-01T00:00:00Z", "2023-03-15T00:00:00Z", 0))
@@ -130,7 +151,7 @@ describe("Places over time", () => {
     vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
     vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: null, days_scored: 0, flagged: [], label: "x" })
     const name = vi.spyOn(patternAPI, "namePlace").mockResolvedValue({ place_id: "p2", decision_id: "d", label: "Home", previous_label: null })
-    wrap(<PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" />)
+    wrap(<MemoryRouter><PlacesView caseId="c" subject={{ kind: "extraction", extraction_id: "e1" }} last="2023-03-14" /></MemoryRouter>)
     fireEvent.click(await screen.findByRole("button", { name: "Name this place" }))
     fireEvent.change(screen.getByLabelText("Place name"), { target: { value: "Home" } })
     fireEvent.change(screen.getByLabelText("Why this name"), { target: { value: "Every night" } })

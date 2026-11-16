@@ -6,6 +6,9 @@ import { phoneSettingsQuery } from "@/features/phones/phone-queries"
 import { peopleAPI } from "@/features/phones/people.api"
 import { scopeHref, scopeWords } from "@/features/phones/ui/scope"
 import { useUrlScope } from "@/features/phones/ui/use-phone-scope"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { useCasePhones } from "@/features/phones/ui/use-case-phones"
+import { phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
 import { useEdgeWindow } from "@/features/graph/stores/edge-window.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { graphScopeKeys, graphScopeLimits } from "../lib/phone-scope"
@@ -23,7 +26,8 @@ export function GraphPhoneScope({ caseId, nodes, edges }: { caseId: string; node
 }
 
 function Carried({ caseId, nodes, edges }: { caseId: string; nodes: GraphNode[]; edges: GraphEdge[] }) {
-  const { scope } = useUrlScope(caseId)
+  const { scope, apply } = useUrlScope(caseId)
+  const phoneList = useCasePhones(caseId)
   const settings = useQuery({ ...phoneSettingsQuery(caseId) })
   const phoneIds = scope.phones.map((p) => p.id)
   const inScope = useQuery({
@@ -60,10 +64,16 @@ function Carried({ caseId, nodes, edges }: { caseId: string; nodes: GraphNode[];
   const held = scope.people.length ? scope.people.length + scope.phones.length : inScope.data ? inScope.data.total + phoneNodes : null
   const limits = graphScopeLimits(scope, keys.length, held)
   return (
-    <div role="status" aria-label="Phone scope on the Graph" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-status-review-soft px-4 py-1.5 text-xs">
-      <span className="font-medium">Phone scope: {scopeWords(scope)}.</span>
-      {limits.map((l) => <span key={l}>{l}</span>)}
-      <Link className="underline underline-offset-2" to={scopeHref(`/cases/${encodeURIComponent(caseId)}/conversations`, scope)}>Back to Conversations</Link>
-    </div>
+    <>
+      <div role="status" aria-label="Phone scope on the Graph" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-status-review-soft px-4 py-1.5 text-xs">
+        <span className="font-medium">Phone scope: {scopeWords(scope)}.</span>
+        {limits.map((l) => <span key={l}>{l}</span>)}
+        <Link className="underline underline-offset-2" to={scopeHref(`/cases/${encodeURIComponent(caseId)}/conversations`, scope)}>Back to Conversations</Link>
+      </div>
+      {phoneLayersEnabled() && (
+        <PhoneLayers phones={phoneList} chosen={phoneIds} noun="phones" counts={null}
+          onChange={(ids) => apply({ ...scope, phones: phoneList.filter((p) => ids.includes(p.id)) })} />
+      )}
+    </>
   )
 }
