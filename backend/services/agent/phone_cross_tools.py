@@ -337,13 +337,45 @@ def person_phones(conn, case_id, person) -> dict:
                   "linked_by": r.decided_by_name, "linked_at": _iso(r.decided_at),
                   "link_origin": (r.actor_origin or {}).get("kind") if r.actor_origin else "person"} for r in rows]
         named = [] if items else owner_records_naming(conn, case_id, d.display_name)
+        # lx-agentquick B: with no person-linked identity, the suggested and owner-record identities are counted and
+        # listed, each with its basis and strength, so the total and the headline never say none while they exist.
+        extra_items = []
+        if not items:
+            try:
+                suggestions = suggested_identities(conn, case_id, d.id)
+            except Exception:  # noqa: BLE001 - suggestions add to the answer; they never stop it
+                suggestions = []
+            shown_keys = {x["identity_key"] for x in suggestions}
+            for x in suggestions:
+                extra_items.append({"identity_key": x["identity_key"], "kind": None, "value": x["shown_as"],
+                                    "names": [], "linked_by": None, "linked_at": None, "link_origin": "suggested",
+                                    "basis": "identity suggestion, strength %s: %s" % (
+                                        x["strength"], "; ".join(x["reasons"]) or "no reason recorded"),
+                                    "strength": x["strength"]})
+            for x in named:
+                if x["identity_key"] not in shown_keys:
+                    extra_items.append({"identity_key": x["identity_key"], "kind": None,
+                                        "value": x.get("owner"), "names": [], "linked_by": None, "linked_at": None,
+                                        "link_origin": "owner_record", "basis": x["basis"], "strength": None})
+            extra_keys = [x["identity_key"] for x in extra_items]
+            xcounts = {k: int(n) for k, n in conn.execute(text(
+                "SELECT identity_key, count(DISTINCT event_uid) FROM pv_comm_party WHERE case_id = :c AND "
+                "identity_key = ANY(CAST(:k AS text[])) GROUP BY identity_key"),
+                {"c": str(case_id), "k": extra_keys})} if extra_keys else {}
+            for x in extra_items:
+                x["messages_and_calls"] = xcounts.get(x["identity_key"], 0)
+        all_items = items + extra_items
         return _base(tool, case_id, person={"dossier_id": d.id, "name": d.display_name},
                      owner_of_phones=[labels.get(e) or e for e in owned], owner_records_naming=named,
-                     total_matching=len(items),
-                     returned=len(items), has_more=False, next_offset=None, items=items,
-                     coverage="Every phone identity linked to %s (%d), linked by a person on People." % (
-                         d.display_name, len(items)),
-                     limitation=None if items else " ".join(x for x in (
+                     total_matching=len(all_items),
+                     returned=len(all_items), has_more=False, next_offset=None, items=all_items,
+                     coverage=("Every phone identity linked to %s (%d), linked by a person on People." % (
+                         d.display_name, len(items))) if not extra_items else (
+                         "No person has linked a phone identity to %s. %d identit%s counted through an identity "
+                         "suggestion or a phone's owner record instead (link_origin and basis say which, with the "
+                         "strength); none is a person's link." % (
+                             d.display_name, len(extra_items), "y is" if len(extra_items) == 1 else "ies are")),
+                     limitation=None if all_items else " ".join(x for x in (
                          "No person has linked a phone identity to %s on People yet." % d.display_name,
                          _owner_words(named)) if x))
     return _guard(tool, case_id, run)
@@ -844,13 +876,20 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
                      "basis, beside every count): %s" % (
                          people, "; ".join("%s and %s: %s" % (p["a"], p["b"], p["label_line"]) for p in pairs)))
             limits = [x for x in limits if not any(v["person"] in x for v in suggested.values())]
+            # lx-agentquick B: the totals count the suggested and owner-record identities too, labelled with their
+            # basis; the headline never says "none" while records sit under suggested_pairs.
+            counted = {k: sum(link_edges.comm_total(p["communication"], k) for p in pairs)
+                       for k in ("calls", "messages", "emails")}
+            extra["communication_through_suggested"] = dict(
+                counted, basis="identities an identity suggestion or a phone's owner record ties to the person, "
+                               "not linked by a person", pairs=len(pairs))
         elif unlinked:
             label = "Contact cannot be counted: no phone identity is linked to %s." % " or ".join(unlinked)
         if with_records and not suggested and fit.on("D"):
             extra["records"] = _between_records(conn, case_id, link_edges, sa, sb, a, b)
         return _paged(tool, case_id, rows, offset, limit, "payments", a=edge["a"], b=edge["b"], communication=c, **extra,
                       money=money, money_mentioned_on_phones=edge["money_mentioned_on_phones"],
-                      money_readings_available=edge["money_readings_available"], label_line=edge["label"],
+                      money_readings_available=edge["money_readings_available"], label_line=label,
                       named_unlinked_payments=named,
                       money_absent=out["money_absent"], zone=out["zone"],
                       coverage="%s and %s: %s. Money: %s." % (
