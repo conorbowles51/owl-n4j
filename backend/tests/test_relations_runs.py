@@ -72,3 +72,21 @@ class RunTests(DuplicateTestCase):
                               session_factory=lambda: self.db)
         self.assertEqual(view["status"], "failed")
         self.assertIn("not reachable", view["error"])
+
+
+class HypothesisTests(DuplicateTestCase):
+    def test_coincidence_and_routine_are_always_named_and_each_explanation_says_how_to_tell_it_apart(self):
+        from services.relations import hypotheses as H
+        good = {"kind": "coincidence", "statement": "Both happened by chance.", "distinguishing_record": "A third phone at the place",
+                "search": "Searched all phones for that day: nothing found"}
+        routine = {**good, "kind": "routine", "statement": "Routine"}
+        with self.assertRaises(H.HypothesisError) as one:
+            H.validate([good])
+        self.assertIn("routine", str(one.exception))
+        planned = {"kind": "planned_meeting", "statement": "Arranged", "for": [{"cite": "rec://x"}],
+                   "distinguishing_record": "A message arranging it", "search": "Searched messages 2 days before: 3 found"}
+        self.assertEqual(len(H.validate([good, routine, planned])), 3)
+        with self.assertRaises(H.HypothesisError):
+            H.validate([good, routine, {**planned, "for": []}])  # a named cause with no cited record
+        with self.assertRaises(H.HypothesisError):
+            H.validate([good, routine, {**planned, "search": ""}])

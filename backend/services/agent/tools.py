@@ -3791,7 +3791,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "what the casework report would hold, section by section, if it were exported now."),
             args_schema=ReportsArgs,
         ),
-    ] + _proposal_tools(context) + _cross_case_tools(context) + _match_tools(context) + _deliverable_tools(context) + _source_read_tools(context) + _conversation_read_tools(context) + _workspace_read_tools(context)
+    ] + _proposal_tools(context) + _cross_case_tools(context) + _match_tools(context) + _deliverable_tools(context) + _source_read_tools(context) + _conversation_read_tools(context) + _workspace_read_tools(context) + _relation_tools(context)
 
 
 def _deliverable_tools(context):
@@ -3807,6 +3807,11 @@ def _source_read_tools(context):
 def _conversation_read_tools(context):
     from services.agent.conversation_read_tools import make_conversation_read_tools
     return make_conversation_read_tools(context)
+
+
+def _relation_tools(context):
+    from services.agent.relation_tools import make_relation_tools
+    return make_relation_tools(context)
 
 
 def _workspace_read_tools(context):

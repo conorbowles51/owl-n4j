@@ -496,6 +496,37 @@ WORKFLOWS = WORKFLOWS + (
         adds_requirement="Sweep the whole case against a theory, and state what could not be searched.",
         requirement_met_by=("plan_theory_sweep", "propose_counter_arguments"),
     ),
+    Workflow(
+        id="link-group", number=19, title="How could these be linked", extra=True,
+        question="How could the items a person marked as possibly related be linked, and where is there clearly no link?",
+        starting_question=("The group {group} was marked as possibly related. State what the link analysis found, name the "
+                           "competing explanations, and say where no link was found and what was searched."),
+        steps=(
+            S("get_relation_results", "read the candidate links, the pairs with no link and what was searched, the analyses "
+                                      "run and the chance beside each; state the counts before anything else", ()),
+            S("search_case", "search every kind of data for the record that would tell the explanations apart", ()),
+            S("get_financial_transactions", "look in the ledger for that record when money is involved", (), optional=True),
+            S("phone_messages", "look in the phones for that record when messages or calls are involved", (), optional=True),
+            S("search_documents", "look in the documents for that record", (), optional=True),
+            S("plan_theory_sweep", "once a person has accepted an explanation into a theory, sweep the case for what breaks it",
+              (), optional=True),
+            S("propose_relation_hypotheses", "record the competing explanations, each with records for and against, the "
+                                             "record that would tell it apart and what was searched for it", ()),
+        ),
+        proposals=(("propose_relation_hypotheses", "each explanation, cited, as a model reading waiting for a person"),),
+        person_confirms="each explanation, after opening a cited record; accepted into a theory as supports or contradicts",
+        rules=("Records show what occurs together, never why. Never write that one thing caused, led to or proves another.",
+               "State what the analysis found with its counts first. Strength comes from the stated rules, not from you.",
+               "Always include coincidence and routine among the explanations, with the chance figures from the results.",
+               "For each explanation cite records for and against it, name the record that would tell it apart from the "
+               "others, and say what you searched for it and what came back.",
+               "Where no link was found, say what was searched, how much and what was out of reach; never present a search "
+               "that was not run as no link.",
+               "Name the model that wrote it and that no person has confirmed it."),
+        needs=(),
+        adds_requirement="Read how marked items could be linked, and where they clearly are not.",
+        requirement_met_by=("get_relation_results", "propose_relation_hypotheses"),
+    ),
 )
 BY_ID = {w.id: w for w in WORKFLOWS}
 

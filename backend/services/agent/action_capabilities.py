@@ -12,7 +12,7 @@ ACTIONS = [
     ('links', 'Link evidence to casework', 'reviewed_proposal', 'Propose supporting, contradicting or contextual links.', ['propose_link']),
     ('judgements', 'Suggest payment classifications and missing periods', 'reviewed_proposal', 'Prepared in Judgement calls for an investigator decision.', ['propose_judgement_call']),
     ('investigation', 'Prepare investigative leads and challenges', 'reviewed_proposal', 'Draft lead cards, claims, entities, code-word meanings and counter-arguments with sources.',
-     ['propose_lead_card', 'propose_claim', 'propose_entity', 'propose_glossary_term', 'propose_counter_arguments']),
+     ['propose_lead_card', 'propose_claim', 'propose_entity', 'propose_glossary_term', 'propose_counter_arguments', 'propose_relation_hypotheses']),
 ]
 
 

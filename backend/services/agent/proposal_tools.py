@@ -176,6 +176,17 @@ def _claim_subject(session, case_id, person, phone) -> dict:
         raise ProposalError('Not in this case.', 404) from exc
 
 
+class HypothesisArgs(BaseModel):
+    selection_id: str = Field(..., description='The group the explanations are about.')
+    explanations: list[dict] = Field(..., description=(
+        'Each: kind (coincidence, routine, and any others such as shared_contact or planned_meeting), statement, predicts '
+        '(what this explanation says should also be in the records), for and against (lists of {cite, text} with a '
+        'citation from get_relation_results or another tool), distinguishing_record (the record that would tell it apart '
+        'from the others), search (what you searched for that record, across which data, and what came back). '
+        'coincidence and routine must always be included.'))
+    no_links: str = Field('', description='The pairs where no link was found, with what was searched, in plain words.')
+
+
 def _as_uuid(value):
     import uuid
     try:
@@ -339,6 +350,19 @@ def make_proposal_tools(context) -> list[StructuredTool]:
                         status=mine.get('status'), used_in_result=False)
         return call('propose_assumption', 'the proceeds calculation', work)
 
+    def propose_relation_hypotheses(**kw):
+        args = HypothesisArgs(**kw)
+        from services.relations import hypotheses as H
+
+        def work(session, origin_):
+            try:
+                made = H.save(session, case_id=context.case_id, selection_id=args.selection_id,
+                              items=args.explanations, origin=origin_, no_link_words=args.no_links)
+            except H.HypothesisError as exc:
+                raise ProposalError(str(exc), 422) from exc
+            return dict(id=made['run_id'], count=made['count'])
+        return call('propose_relation_hypotheses', 'the page that shows how the group could be linked', work)
+
     def sweep(name, work):
         """The disconfirm sweep is a write like a proposal: the same refusals, the screen's own counts."""
         from services.agent import disconfirm as D
@@ -380,6 +404,12 @@ def make_proposal_tools(context) -> list[StructuredTool]:
             'it when the user asks you to create, add, change, propose, draft or suggest casework; explain the saved '
             'proposal and destination. Do not use it merely to answer a question.')
     return [
+        StructuredTool.from_function(
+            func=propose_relation_hypotheses, name='propose_relation_hypotheses', args_schema=HypothesisArgs,
+            description=('Record competing explanations of how a group the person marked could be linked: coincidence and '
+                         'routine always, each with records for and against, the record that would tell it apart, and what '
+                         'you searched for it. Stored under your name as a model reading; a person accepts one into a '
+                         'theory as supports or contradicts.' + rule)),
         StructuredTool.from_function(
             func=plan_theory_sweep, name='plan_theory_sweep', args_schema=SweepPlanArgs,
             description=('Plan a whole-case sweep for what breaks a Workspace theory: one model call derives what the '

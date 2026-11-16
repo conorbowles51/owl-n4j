@@ -58,7 +58,7 @@ GROUPS: tuple[dict[str, Any], ...] = (
     {"id": "casework", "name": "Case notes and theories", "about": "Notes, findings, theories, tasks and the case set-up",
      "words": r"notes?|findings?|theor\w*|tasks?|deadlines?|mandate|glossary|code words?|casework|background",
      "tools": ("get_casework", "get_theory", "get_case_configuration", "get_case_work", "get_glossary",
-               "plan_theory_sweep")},
+               "plan_theory_sweep", "get_relation_results")},
     {"id": "outputs", "name": "Tables, charts and reports", "about": "Build and revise tables, charts, maps and reports",
      "words": r"tables?|charts?|diagrams?|draw|build|make|create|reports?|workbook|spreadsheet|slides?|"
               r"presentation|export|update|revise|summar\w*",
@@ -71,7 +71,7 @@ GROUPS: tuple[dict[str, Any], ...] = (
      "tools": ("propose_counter_arguments", "propose_judgement_call", "propose_workspace_entry",
                "propose_dossier_change", "propose_lead_card", "propose_timeline_addition", "propose_link",
                "propose_control_claim", "propose_payment_purpose", "propose_claim", "propose_entity",
-               "propose_glossary_term", "propose_assumption")},
+               "propose_glossary_term", "propose_assumption", "propose_relation_hypotheses")},
     {"id": ALWAYS_ON, "name": "Always on", "about": "Asking you a question, its working notes, reading the rest of a result",
      "words": "",
      "tools": ("request_clarification", "record_working_notes", "read_tool_result_page", "read_conversation_history",

@@ -77,3 +77,22 @@ def read_run(case_id: UUID, run_id: UUID, db: Session = Depends(get_db)) -> dict
         return runs.view(db, case_id, str(run_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+class AcceptRequest(BaseModel):
+    entry_id: UUID
+    relationship: str = Field(pattern="^(supports|contradicts)$")
+
+
+@router.post("/{case_id}/relation-runs/{run_id}/hypotheses/{number}:accept", dependencies=[Depends(require_case_edit)])
+def accept_hypothesis(case_id: UUID, run_id: UUID, number: int, request: AcceptRequest, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_db_user)) -> dict[str, Any]:
+    from services.relations import hypotheses
+    try:
+        return hypotheses.accept(db, case_id=case_id, run_id=run_id, number=number, entry_id=request.entry_id,
+                                 relationship=request.relationship, user=user)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except (hypotheses.HypothesisError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
