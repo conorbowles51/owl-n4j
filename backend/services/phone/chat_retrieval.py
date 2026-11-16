@@ -116,8 +116,10 @@ def _window(bounds, centre, limit=WINDOW_CHARS):
     return lo, hi
 
 
-def windows(conn, case_id, question, *, max_windows=MAX_WINDOWS) -> list:
-    """Chunks shaped as the vector search returns them (``id``, ``text``, ``metadata``, ``distance``), best first."""
+def windows(conn, case_id, question, *, max_windows=MAX_WINDOWS, total_out=None, extraction_ids=None) -> list:
+    """Chunks shaped as the vector search returns them (``id``, ``text``, ``metadata``, ``distance``), best first.
+    ``total_out`` (a list): receives the number of windows found in the best ``CANDIDATE_DOCS`` documents, not only
+    the ones returned (lx-agentquick E). ``extraction_ids``: only these phones' threads."""
     ts = terms(question)
     if not ts:
         return []
@@ -146,12 +148,21 @@ def windows(conn, case_id, question, *, max_windows=MAX_WINDOWS) -> list:
             found.append((len(matched), r, bounds, i, matched))
     found.sort(key=lambda x: (-x[0], x[1].original_filename, x[3]))
     out, taken = [], {}
+    if extraction_ids is not None:
+        wanted = {str(x) for x in extraction_ids}
+        found = [x for x in found if str((x[1].metadata or {}).get("phone_extraction_id")) in wanted]
+    counted = 0
     for n, r, bounds, i, matched in found:
         spans = taken.setdefault(r.id, [])
         if any(lo <= i <= hi for lo, hi in spans):
             continue
         lo, hi = _window(bounds, i)
         spans.append((lo, hi))
+        counted += 1
+        if total_out is None and len(out) >= max_windows:
+            break
+        if len(out) >= max_windows:
+            continue  # counted for the total, not built
         s, e = bounds[lo][0], bounds[hi][1]
         locs = [l for l in (r.source_locations or []) if l.get("kind") == "phone_record" and
                 l.get("field_path") == "Body" and s <= int(l.get("start_char", -1)) < e]
@@ -177,8 +188,8 @@ def windows(conn, case_id, question, *, max_windows=MAX_WINDOWS) -> list:
                          "url": "rec://%s" % hit_loc["record_uid"] if hit_loc.get("record_uid") else None,
                          "matched_terms": sorted(matched)},
         })
-        if len(out) >= max_windows:
-            break
+    if total_out is not None:
+        total_out.append(counted)
     return out
 
 

@@ -254,6 +254,54 @@ def _guard(tool, case_id, fn):
 
 # ---- search ---------------------------------------------------------------------------------------------------------
 
+def _message_windows(conn, case_id, query, extraction_ids, offset, limit):
+    """lx-agentquick E: the phone threads' messages holding all or most of the query's terms, the most terms first,
+    each as the whole message with its thread window (chat's retrieval), not a 60-character snippet. The plain
+    word search of search_case matches the whole query as one substring, so a question typed as a sentence found
+    nothing (109 of 312 recorded calls)."""
+    from services.phone import chat_retrieval as R
+    ts = R.terms(query)
+    if not ts:
+        return {"terms": [], "total": 0, "group": None}
+    total = []
+    try:
+        found = R.windows(conn, case_id, query, max_windows=int(offset) + int(limit), total_out=total,
+                          extraction_ids=extraction_ids)
+    except Exception:  # noqa: BLE001 - the plain word search still runs; this only adds to it
+        import logging
+        logging.getLogger(__name__).warning("Message windows could not be read", exc_info=True)
+        return {"terms": ts, "total": 0, "group": None}
+    page = found[int(offset):int(offset) + int(limit)]
+    items = []
+    for c in page:
+        meta = c["metadata"]
+        items.append({"kind": "message_window", "title": meta.get("doc_name"), "text": c["text"],
+                      "matched_terms": meta.get("matched_terms"), "terms_in_query": len(ts),
+                      "record_uid": meta.get("record_uid"), "phone_extraction_id": meta.get("extraction_id"),
+                      "first_record_uid": meta.get("first_record_uid"),
+                      "last_record_uid": meta.get("last_record_uid")})
+    n = total[0] if total else 0
+    nxt = int(offset) + len(page) if int(offset) + len(page) < n else None
+    return {"terms": ts, "total": n, "group": {
+        "group": "message_windows", "total": n, "items": items, "next_cursor": str(nxt) if nxt is not None else None,
+        "note": "Messages holding the query's terms (%s), most terms first, each with its thread window; read from "
+                "the best %d phone documents." % (", ".join(ts), R.CANDIDATE_DOCS)}}
+
+
+def _zero_reason(query, windowed, dated, grouped):
+    """Why a search found nothing and what to try (lx-agentquick E)."""
+    ts = (windowed or {}).get("terms") or []
+    parts = ["Nothing matched." + (" Searched for the terms: %s (and for the whole text as typed)." % ", ".join(ts)
+                                   if ts else " The query holds no searchable word or number.")]
+    if dated:
+        parts.append("The thread-window search was not run because a date range was given; search again without "
+                     "dates, then narrow.")
+    parts.append("Try single words, other spellings or forms of the word, a number written as printed, or read the "
+                 "messages directly with phone_messages for the person and the window. A zero here is not proof of "
+                 "absence.")
+    return " ".join(parts)
+
+
 def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), start=None, end=None, offset=0,
                 limit=DEFAULT_LIMIT) -> dict:
     """Loupe-wide Search (``/api/search``): without ``group``, every group's exact total and first hits; with a
@@ -265,8 +313,14 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
         return _not_in_case(tool, case_id, "There is no phone %s in this case." % ", ".join(unknown))
     a, b = _instant(start), _instant(end, end=True)
     a, b = (a.isoformat() if a else None), (b.isoformat() if b else None)
+    windowed = None
+    if group == "message_windows" or (not group and not a and not b):
+        windowed = _message_windows(conn, case_id, query, ext_ids or None, offset if group else 0,
+                                    _limit(limit) if group else 3)
     try:
-        if group:
+        if group == "message_windows":
+            groups, complete, limits, not_searched = [], True, [], []
+        elif group:
             lim = _limit(limit)
             g = S.group_page(conn, case_id, query, group, cursor=str(max(0, int(offset or 0))), limit=lim, exact=exact,
                              phones=ext_ids or None, start=a, end=b)
@@ -279,6 +333,8 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
             not_searched = res.get("not_searched") or []
     except S.SearchError as exc:
         raise ValueError(str(exc)) from None
+    if windowed and windowed["total"]:
+        groups = list(groups) + [windowed["group"]]
     out_groups, items = [], []
     for g in groups:
         hits = []
@@ -292,6 +348,7 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
     total = sum(g["total"] for g in out_groups)
     more = [g for g in out_groups if g["next_offset"] is not None]
     lim_words = [x.get("message") or x.get("words") or str(x) for x in limits]
+    zero = _zero_reason(query, windowed, bool(a or b), bool(group)) if not total else None
     return _base(tool, case_id, query=query, total_matching=total, returned=len(items), has_more=bool(more),
                  next_offset=more[0]["next_offset"] if len(more) == 1 else None, groups=out_groups, items=items,
                  coverage="Searched %s: %s." % ("the %s group" % group if group else "every group", ", ".join(
@@ -299,7 +356,7 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
                  limitation=" ".join(x for x in (
                      ("More hits than shown in %s; page a group with group=<name> and offset." % ", ".join(
                          g["group"] for g in more)) if more else None,
-                     "Not complete: %s" % " ".join(lim_words) if not complete else None,
+                     "Not complete: %s" % " ".join(lim_words) if not complete else None, zero,
                      " ".join(n.get("reason", "") for n in not_searched) or None) if x) or None)
 
 
@@ -2079,8 +2136,10 @@ class _Page(BaseModel):
 
 class SearchCaseArgs(_Page):
     query: str = Field(..., description="Words, a name, a number or an address, typed as a person types it.")
-    group: Literal["messages", "calls", "emails", "people", "records", "documents", "machine_text"] | None = Field(
-        None, description="Page one group; leave empty for every group's total and first hits.")
+    group: Literal["messages", "calls", "emails", "people", "records", "documents", "machine_text",
+                   "message_windows"] | None = Field(
+        None, description="Page one group; leave empty for every group's total and first hits. message_windows: "
+        "messages holding most of the query's words, best first, each with its thread around it.")
     exact: bool = False
     phones: list[str] = Field(default_factory=list)
     start: str | None = None
