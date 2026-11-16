@@ -50,6 +50,8 @@ import type { ReplyTarget, StreamRow, ThreadRow } from "@/features/phones/schema
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { fmt } from "@/features/phones/ui/count-sentence"
 import { ScopeBar, type Scope } from "@/features/phones/ui/ScopeBar"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
 import { SignificantNote } from "@/features/phones/ui/SignificantNote"
 import { EMPTY_SCOPE, scopeWords } from "@/features/phones/ui/scope"
 import { ScopeCrossings } from "@/features/phones/ui/ScopeCrossings"
@@ -512,6 +514,20 @@ export function ConversationsPage() {
       tab: s.people.length ? "people" : view.tab,
     })
   const { presets: scopePresets } = useScopePresets(caseId)
+  // Phone layers (behind the phone_layers setting): every phone listed with its messages and calls under the other
+  // filters, so a phone switched off still states its number. Counts are given only when the list is whole.
+  const layersOn = phoneLayersEnabled() && !fixedPhone
+  const layerCountsQ = useQuery({
+    ...phoneThreadsQuery({ ...listFilter, phones: undefined }, view.threadSort),
+    enabled: layersOn && !!caseId && settingsQ.isSuccess,
+  })
+  const layerCounts = useMemo(() => {
+    if (!layerCountsQ.data) return layerCountsQ.isError ? null : undefined
+    if (!layerCountsQ.data.complete) return null
+    const out: Record<string, number> = Object.fromEntries(phones.map((p) => [p.extraction_id, 0]))
+    for (const t of layerCountsQ.data.items) out[t.phone.extraction_id] = (out[t.phone.extraction_id] ?? 0) + t.event_count
+    return out
+  }, [layerCountsQ.data, layerCountsQ.isError, phones])
   // restored only on a plain arrival: a link that names a thread, record or filter is followed as it stands
   const scopeMemory = useScopeMemory(caseId, scope, onScope, !fixedPhone && !location.search)
 
@@ -670,6 +686,17 @@ export function ConversationsPage() {
           )}
         </nav>}
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col" ref={listRoot}>
+          {layersOn && (
+            <PhoneLayers phones={phones.filter((p) => p.standing !== "superseded").map((p) => ({ id: p.extraction_id, label: p.label, index: phones.findIndex((x) => x.extraction_id === p.extraction_id) }))}
+              chosen={view.phones} noun="messages and calls" counts={layerCounts}
+              onChange={(ids) => setView({ phones: ids })} />
+          )}
+          {phoneLayersEnabled() && fixedPhone && phones.length > 1 && (
+            <p className="border-b bg-card px-3 py-1 text-sm">
+              Showing this phone only.{" "}
+              <Link className="underline" to={`/cases/${encodeURIComponent(caseId)}/conversations?${viewToSearch({ ...view, phones: [fixedPhone] })}`}>Add other phones</Link>
+            </p>
+          )}
           <ScopeBar scope={scope} onChange={onScope} narrowed={narrowed} presets={scopePresets} recent={scopeMemory.recent} restored={scopeMemory.restored}
             count={stream.status === "ready" && stream.index && !threadUnsure ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
             {view.people.length > 0 && (

@@ -156,6 +156,28 @@ describe("Conversations", () => {
     expect(await screen.findByTestId("thread-count")).toHaveTextContent("0 of 2 threads have messages matching these filters")
   })
 
+  it("phone layers: lists every phone with its messages under the other filters, and switching one off puts only the others in the address", async () => {
+    localStorage.setItem("loupe.phone_layers", "on")
+    const on = (key: string, ext: string, label: string, n: number) => ({ ...thread(key, label), phone: { extraction_id: ext, label }, event_count: n })
+    api.getPhones.mockResolvedValue({ case_id: "case-1", phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }, { extraction_id: "e3", label: "C3" }] })
+    api.getThreads.mockImplementation((f: { phones?: string[] }) => {
+      const all = [on("t1", "e1", "A", 12), on("t2", "e2", "B", 5)]
+      const items = f.phones?.length ? all.filter((t) => f.phones!.includes(t.phone.extraction_id)) : all
+      return Promise.resolve({ case_id: "case-1", snapshot: "s", complete: true, limits: [], counts: { threads: items.length, threads_total: 2, reviewed: 0, not_reviewed: items.length }, items, sort: "recent" })
+    })
+    page("/cases/case-1/conversations?phones=e1,e2")
+    const group = await screen.findByRole("group", { name: "Phone layers" })
+    expect(await within(group).findByText("12 messages and calls")).toBeInTheDocument()
+    expect(within(group).getByText("5 messages and calls")).toBeInTheDocument()
+    expect(within(group).getByText("0 messages and calls")).toBeInTheDocument()
+    expect(within(group).getByLabelText("C3 on")).not.toBeChecked()
+    fireEvent.click(within(group).getByLabelText("C2 on"))
+    await waitFor(() => expect(seen.search).toContain("phones=e1"))
+    expect(seen.search).not.toContain("e2")
+    // the phone that is off still states its number
+    expect(await within(group).findByText("5 messages and calls")).toBeInTheDocument()
+  })
+
   it("moves off an open thread a phone scope leaves out, so the count is never 0 for a thread off the list (07 4.5)", async () => {
     page("/cases/case-1/conversations?thread=gone&phones=e1")
     await waitFor(() => expect(seen.search).toContain("thread=t1"))
