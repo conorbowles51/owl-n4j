@@ -14,7 +14,7 @@ graph (4 of them renamed by a person).
   The meaning-search gap backfill (``meaning_search.run_gap_backfill``) runs it for every case when the embedding
   service answers again, so an edit whose re-embed was refused (no credits, an outage) is retried then.
 
-Phone graph nodes are never embedded here (docs/cellebrite/02 section 9.8), as before.
+Phone graph nodes are embedded here like all others (docs/cellebrite/02 section 9.8, decision of 16 Nov 2026).
 """
 from __future__ import annotations
 
@@ -61,7 +61,9 @@ def _facts(value) -> list[str]:
 
 
 def is_phone(category: str | None) -> bool:
-    return str(category or "").startswith("Phone")
+    """Phone graph nodes are embedded like every other entity (Neil, 16 Nov 2026: "Embed everything in the system.";
+    the gate of docs/cellebrite/02 section 9.8 is gone). Kept as a function so callers read the same; always False."""
+    return False
 
 
 def embedding_text(category: str, props: dict[str, Any]) -> str:

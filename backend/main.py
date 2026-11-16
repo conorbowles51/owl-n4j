@@ -185,6 +185,10 @@ async def lifespan(app: FastAPI):
     from services.meaning_search import resume_backfill_forever
     backfill_resume_task = asyncio.create_task(resume_backfill_forever(), name="meaning-search-backfill-resume")
 
+    # Everything in a case is embedded for search by meaning and kept in step with its sources (services.embed_all).
+    from services.embed_all.runner import run_forever as embed_all_forever
+    embed_all_task = asyncio.create_task(embed_all_forever(), name="embed-all-sweep")
+
     # An agent run killed by a restart is marked interrupted, never left running (services.agent.run_settle).
     from services.agent.run_settle import settle_forever as settle_agent_runs_forever
     agent_run_settle_task = asyncio.create_task(settle_agent_runs_forever(), name="agent-run-settle")
@@ -219,7 +223,7 @@ async def lifespan(app: FastAPI):
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, address_lookup_task, phone_interpretation_task, financial_batches_task,
          view_warmup_task, view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task,
-         casebin_purge_task, malware_scan_task, case_exports_task, handover_task, agent_run_settle_task, backfill_resume_task],
+         casebin_purge_task, malware_scan_task, case_exports_task, handover_task, agent_run_settle_task, backfill_resume_task, embed_all_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 
