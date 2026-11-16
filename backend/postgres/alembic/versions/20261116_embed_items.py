@@ -5,14 +5,14 @@ text of their own elsewhere, the text (so words can be searched with it). Phone 
 ``evidence_document_texts``; their row holds the hash only.
 
 Revision ID: 20261116_embed_items
-Revises: 20261112_timeline_event_files
+Revises: 20261113_relation_queries
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "20261116_embed_items"
-down_revision = "20261112_timeline_event_files"
+down_revision = "20261113_relation_queries"
 branch_labels = None
 depends_on = None
 
