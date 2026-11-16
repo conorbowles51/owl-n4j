@@ -120,7 +120,6 @@ export function CaseLayout() {
                         <ErrorBoundary level="page">
                           <Outlet />
                         </ErrorBoundary>
-                        <RelationTray />
                       </div>
                     </div>
                   </div>
@@ -166,6 +165,9 @@ export function CaseLayout() {
               </ErrorBoundary>
             </div>
           )}
+
+          {/* The look in progress follows the investigator on every case screen (fixed position) */}
+          <RelationTray />
 
           {/* Collapsed rail for non-graph views */}
           {showCaseSidePanel && !narrowViewport && graphPanelCollapsed && (

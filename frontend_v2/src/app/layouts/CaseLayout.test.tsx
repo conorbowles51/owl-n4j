@@ -21,8 +21,9 @@ vi.mock("@/stores/ui.store", () => ({
 }))
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ id: "case" }),
-  useMatch: () => null,
+  useMatch: (pattern: string) => (pattern.endsWith(state.path.split("/").pop() ?? "~") && state.path.endsWith("graph") ? {} : null),
   useLocation: () => ({ pathname: state.path }),
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
   Outlet: () => {
     const [value, setValue] = useState("")
     return (
@@ -83,4 +84,16 @@ it("offers Report a problem on a phone screen and on no other page", async () =>
   state.path = "/cases/case/workspace"
   render(<CaseLayout />)
   expect(screen.queryByTestId("phone-problem-bar")).toBeNull()
+})
+
+it("shows the look in progress on every case screen, the graph included", () => {
+  localStorage.setItem("loupeRelationQuery:case", JSON.stringify({ id: "g1", count: 4 }))
+  for (const path of ["/cases/case/workspace", "/cases/case/graph", "/cases/case/financial"]) {
+    state.path = path
+    const view = render(<CaseLayout />)
+    expect(screen.getByText("Looking into how 4 items relate")).toBeTruthy()
+    view.unmount()
+  }
+  localStorage.clear()
+  state.path = "/cases/case/workspace"
 })
