@@ -282,6 +282,9 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
     def note(value):
         if on_progress:
             # "step N of up to <budget>": the budget this run stops at (lx-agentfit, tool steering F).
+            if isinstance(value, dict) and context.deep_plan is not None:
+                # The checklist's true counts ride on every progress line of a deep run.
+                value = {**value, "deep": D.progress(context.deep_plan)}
             on_progress({**value, "budget": total_budget} if isinstance(value, dict) else value)
 
     def save():

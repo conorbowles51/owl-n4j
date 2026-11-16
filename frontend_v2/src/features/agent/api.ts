@@ -26,6 +26,8 @@ export interface SendAgentMessageParams {
   workflowId?: string
   /** All-cases mode: off unless the person switches it on; off again for each new conversation. */
   allCases?: boolean
+  /** Deep investigation: a checklist-driven run that writes a full report. A request for a detailed report starts it too. */
+  deep?: boolean
 }
 
 export const agentAPI = {
@@ -77,6 +79,7 @@ export const agentAPI = {
         mandate_override: params.mandateOverride,
         ...(params.workflowId ? { workflow_id: params.workflowId } : {}),
         ...(params.allCases ? { all_cases: true } : {}),
+        ...(params.deep ? { deep: true } : {}),
       },
       timeout: 240000,
     }),
@@ -104,6 +107,7 @@ export const agentAPI = {
         mandate_override: params.mandateOverride,
         ...(params.workflowId ? { workflow_id: params.workflowId } : {}),
         ...(params.allCases ? { all_cases: true } : {}),
+        ...(params.deep ? { deep: true } : {}),
       }),
     })
 

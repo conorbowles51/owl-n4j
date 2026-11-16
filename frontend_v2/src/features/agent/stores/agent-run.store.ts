@@ -13,6 +13,8 @@ export interface AgentRunProgress {
   since?: string
   /** The number of steps this run stops at (the saved-work budget). */
   budget?: number
+  /** Deep investigation: the checklist with true counts (backend deep_investigation.progress). */
+  deep?: import("../deep-investigation").DeepProgress
 }
 
 export interface AgentRunNavigationState {

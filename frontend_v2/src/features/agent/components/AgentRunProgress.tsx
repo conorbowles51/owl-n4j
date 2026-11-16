@@ -3,6 +3,7 @@ import { Bot, Loader2, RotateCcw, Square, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { formatElapsed, progressLine, useElapsedSeconds } from "../agent-run-progress"
 import type { AgentRunNavigationState } from "../stores/agent-run.store"
+import { DeepChecklist } from "./DeepChecklist"
 
 export function AgentRunProgress({
   run,
@@ -65,6 +66,7 @@ export function AgentRunProgress({
             Long questions can take several minutes. It keeps running if you leave this page; come back here for the
             answer.
           </p>
+          {run.progress?.deep ? <DeepChecklist progress={run.progress.deep} /> : null}
         </div>
         {onStop && (
           <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onStop}>

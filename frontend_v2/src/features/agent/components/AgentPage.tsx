@@ -76,6 +76,8 @@ import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { AllCasesSwitch } from "./AllCasesSwitch"
+import { DeepSwitch } from "./DeepSwitch"
+import { DEEP_COST_NOTE, looksBroad } from "../deep-investigation"
 import { firstShownDetails, useFollowNewestStep } from "../investigation-trail-follow"
 import { AgentCapabilitiesHelp } from "./AgentCapabilitiesHelp"
 import { downloadProtectedFile } from "@/lib/protected-file"
@@ -562,6 +564,7 @@ export function AgentPage() {
   const [mandateOverride, setMandateOverride] = useState("")
   // All-cases mode (Neil 2026-11-01: an option, never the default): off for every new or reopened conversation.
   const [allCases, setAllCases] = useState(false)
+  const [deep, setDeep] = useState(false)
   useEffect(() => setAllCases(false), [caseId])
   const activeThreadIdRef = useRef<string | null>(null)
   const threadLoadSequence = useRef(0)
@@ -837,6 +840,7 @@ export function AgentPage() {
           mandateOverride: requestMandateOverride ? { perspective: requestMandateOverride } : undefined,
           workflowId: runWorkflowId,
           allCases: allCases && caseLayer !== "significant",
+          deep: deep && !(allCases && caseLayer !== "significant"),
           ...modelParams(modelChoices.find((choice) => choice.key === modelKey)),
         },
         (event) => {
@@ -1162,6 +1166,7 @@ export function AgentPage() {
                   </Badge>
                 ) : null}
                 <AgentCapabilitiesHelp onPick={setInput} />
+                <DeepSwitch checked={deep} disabled={isLoading || (allCases && caseLayer !== "significant")} onCheckedChange={setDeep} />
                 <AllCasesSwitch
                   checked={allCases && caseLayer !== "significant"}
                   disabled={caseLayer === "significant" || isLoading}
@@ -1339,6 +1344,17 @@ export function AgentPage() {
               )}
               {revisionNeeded && <p role="status" className="mx-auto mb-2 max-w-3xl rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">The draft is saved, but checks found issues that need revision. Review the response and artifact notes before using it.</p>}
               <AgentBriefAttachment key={activeThreadId ?? "new-thread"} brief={brief} onChange={setBrief} onBusyChange={setBriefLoading} disabled={isLoading} />
+              {deep && !isLoading ? (
+                <p className="mx-auto mb-1 max-w-3xl text-xs text-muted-foreground" data-testid="deep-cost-note">{DEEP_COST_NOTE}</p>
+              ) : null}
+              {!deep && !isLoading && looksBroad(input) ? (
+                <div className="mx-auto mb-1 flex max-w-3xl items-center gap-2 text-xs text-muted-foreground" data-testid="deep-offer">
+                  <span>This is a broad question. A deep investigation works through the whole case and writes a full report.</span>
+                  <Button type="button" size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setDeep(true)}>
+                    Use deep investigation
+                  </Button>
+                </div>
+              ) : null}
               <div className="mx-auto flex min-w-0 max-w-3xl flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-2 shadow-sm">
                 {messages.length > 0 && caseLayer !== "significant" && (
                   <Button
