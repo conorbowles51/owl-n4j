@@ -417,6 +417,7 @@ def _delete_case_at_once(db: Session, case_id: UUID, user: User) -> None:
             case_id_str = str(case_id)
             chunks_deleted = vector_db_service.delete_chunks_by_case(case_id_str)
             entities_deleted = vector_db_service.delete_entities_by_case(case_id_str)
+            vector_db_service.delete_case_items_by_case(case_id_str)
             details.update(vector_chunks_removed=chunks_deleted, vector_entities_removed=entities_deleted)
             print(f"[CaseService] Cleaned up ChromaDB for case {case_id_str}: "
                   f"{chunks_deleted} chunks, {entities_deleted} entities")
@@ -566,6 +567,7 @@ def purge_case(db: Session, case_id: UUID, *, reason: str = "retention") -> dict
             case_id_str = str(case_id)
             chunks_deleted = vector_db_service.delete_chunks_by_case(case_id_str)
             entities_deleted = vector_db_service.delete_entities_by_case(case_id_str)
+            vector_db_service.delete_case_items_by_case(case_id_str)
             details.update(vector_chunks_removed=chunks_deleted, vector_entities_removed=entities_deleted)
             print(f"[CaseService] Cleaned up ChromaDB for case {case_id_str}: "
                   f"{chunks_deleted} chunks, {entities_deleted} entities")

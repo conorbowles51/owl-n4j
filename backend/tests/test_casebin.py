@@ -142,6 +142,10 @@ class FakeVectorDB:
         self.calls.append(("delete_entities_by_case", case_id))
         return len(ids)
 
+    def delete_case_items_by_case(self, case_id):
+        self.calls.append(("delete_case_items_by_case", case_id))
+        return 0
+
     def delete_chunks_for_document(self, *, case_id, evidence_file_id, doc_key=None, file_name=None):
         from services.evidence_casebin import _document_chunk_ids
         ids = _document_chunk_ids(self, case_id=case_id, file_id=evidence_file_id, doc_key=doc_key,
@@ -323,7 +327,8 @@ def test_the_purge_waits_30_days_then_removes_exactly_what_the_old_delete_remove
             assert early["cases"] == [] and _core_counts(engine, case)["financial_transactions"] == 3
             done = casebin_purge.purge_due(factory, now=deleted_at + timedelta(days=30, minutes=1))
         assert [c["case_id"] for c in done["cases"]] == [str(case)]
-        assert fake.calls == [("delete_chunks_by_case", str(case)), ("delete_entities_by_case", str(case))]
+        assert fake.calls == [("delete_chunks_by_case", str(case)), ("delete_entities_by_case", str(case)),
+                              ("delete_case_items_by_case", str(case))]  # the item vectors go with the case
         # The old delete: the case row and its cascade. No row of any table pointing at the case is left.
         with engine.connect() as c:
             tables = [r[0] for r in c.execute(text(

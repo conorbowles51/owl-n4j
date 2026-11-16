@@ -467,6 +467,19 @@ class VectorDBService:
             print(f"[VectorDB] Delete chunks by case error: {e}")
             return 0
 
+    def delete_case_items_by_case(self, case_id: str) -> int:
+        """Delete the ledger, casework, timeline and other item vectors of a case (services.embed_all)."""
+        try:
+            coll = self.client.get_or_create_collection(name="case_items")
+            results = coll.get(where={"case_id": case_id})
+            if results and results["ids"]:
+                coll.delete(ids=results["ids"])
+                return len(results["ids"])
+            return 0
+        except Exception as e:
+            print(f"[VectorDB] Delete case items by case error: {e}")
+            return 0
+
     def delete_entities_by_case(self, case_id: str) -> int:
         """Delete all entity embeddings for a case. Returns count deleted."""
         try:
