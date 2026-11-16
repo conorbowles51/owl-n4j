@@ -1,9 +1,10 @@
-"""02-U14 (02 sections 9.8 and 9.9): the embedding gate, chat's lexical phone retrieval and phone citation anchors.
+"""02-U14 (02 sections 9.8 and 9.9): phone embedding, chat's lexical phone retrieval and phone citation anchors.
 
-With no per-case decision, no phone text reaches an embedding service: chat finds phone text by the folded search
-over thread documents and reads it in full, each line citing its record; two messages from one thread are two
-sources; another case's phone is never read; a Workspace theory citing a message stores a ``phone_record`` anchor
-whose link opens the record. Invented data only.
+There is no embedding gate any more (Neil, 16 Nov 2026: "Embed everything in the system."): phone conversation windows
+and phone graph nodes are embedded in every case. Chat also finds phone text by the folded search over thread
+documents and reads it in full, each line citing its record; two messages from one thread are two sources; another
+case's phone is never read; a Workspace theory citing a message stores a ``phone_record`` anchor whose link opens the
+record. Invented data only.
 """
 from __future__ import annotations
 
@@ -44,7 +45,7 @@ def _build(engine):
 
 @pytest.fixture
 def no_embedding(monkeypatch):
-    """Every embedding entry point records its payload; the test asserts none was called."""
+    """Every embedding entry point records its payload (the chat path itself embeds nothing; the sweep does)."""
     calls = []
     from services import embedding_service as es
     monkeypatch.setattr(es.EmbeddingService, "generate_embedding", lambda self, t, *a, **k: calls.append(t) or [0.0])
@@ -61,7 +62,7 @@ def test_terms_drop_common_words_and_keep_numbers_and_phrases():
 
 
 @needs_template
-def test_chat_reads_phone_text_lexically_in_full_with_record_links_and_embeds_nothing(no_embedding):
+def test_chat_reads_phone_text_lexically_in_full_with_record_links(no_embedding):
     with fresh_engine() as engine:
         case, ext = _build(engine)
         with engine.begin() as c:
@@ -82,7 +83,6 @@ def test_chat_reads_phone_text_lexically_in_full_with_record_links_and_embeds_no
         assert meta["extraction_id"] == str(ext) and meta["record_uid"] in uids
         assert {meta["first_record_uid"], meta["last_record_uid"]} <= uids
         assert len(w["text"]) <= chat_retrieval.WINDOW_CHARS + 60 * len(w["text"].splitlines())
-        assert no_embedding == []
 
         # two messages of one thread are two sources, each with its record and link (02 9.9)
         from routers.chat import ChatSource
@@ -124,16 +124,16 @@ def test_a_workspace_theory_citing_a_message_gets_a_phone_record_anchor_that_ope
             assert url == "/cases/%s/records/%s" % (case, uid)
 
 
-def test_phone_graph_nodes_are_never_embedded(no_embedding, monkeypatch):
+def test_phone_graph_nodes_are_embedded_like_every_other_entity(no_embedding, monkeypatch):
     from services.neo4j.entity_service import EntityService
     import services.vector_db_service as v
     monkeypatch.setattr(v, "get_vector_db_service", lambda: type("V", (), {"add_entity": lambda *a, **k: None})())
     EntityService._rebuild_entity_embedding({"key": "k", "type": "PhoneIdentity", "name": NAMES[0],
                                              "properties": {"name": NAMES[0]}}, "case")
-    assert no_embedding == []
+    assert no_embedding == ["PhoneIdentity: %s" % NAMES[0]]  # Neil, 16 Nov 2026: embed everything
     EntityService._rebuild_entity_embedding({"key": "k", "type": "Person", "name": "Someone",
                                              "properties": {"name": "Someone"}}, "case")
-    assert no_embedding == ["Person: Someone"]  # the guard is only for phone nodes
+    assert no_embedding[-1] == "Person: Someone"
 
 
 @needs_template
@@ -229,3 +229,90 @@ def test_xf7_search_hit_to_finding_to_export_and_theory_analysis_with_the_same_r
             cited = {u for s in sources for u in (s.get("source_anchor") or {}).get("record_uids") or []}
             assert set(uids) <= cited          # both linked messages share one window; each is cited by its record
             db.rollback()
+
+
+class FakeChroma:
+    def __init__(self):
+        self.rows = {}
+
+    def upsert(self, ids, embeddings, documents, metadatas):
+        for i, e, d, m in zip(ids, embeddings, documents, metadatas):
+            self.rows[i] = (e, d, m)
+
+    def delete(self, ids=None, where=None):
+        for i in ids or []:
+            self.rows.pop(i, None)
+
+
+@needs_template
+def test_phone_conversations_are_embedded_by_window_updated_on_change_and_removed_on_delete():
+    """lx-embedall B: fails on the old code, which embedded no phone text. Windows land in the chunk collection under the
+    engine's chunk keys, each line keeps its rec:// link, and a rewrite or delete leaves no old window behind."""
+    from services.embed_all import phone as P
+    sent = []
+
+    def embed(texts):
+        sent.extend(texts)
+        return [[0.5, 0.5] for _ in texts]
+    with fresh_engine() as engine:
+        case, ext = _build(engine)
+        chroma = FakeChroma()
+        res = P.sync(engine, str(case), chroma, embed)
+        assert res["files"] == 1 and res["windows"] >= 1 and res["stopped"] is None
+        assert any("cargo leaves the harbour" in t for t in sent)
+        assert all("[rec://" not in t for t in sent)  # a record id is no meaning
+        (cid, (_, doc, meta)), = list(chroma.rows.items())[:1]
+        assert cid.endswith(":chunk:0") and meta["source_kind"] == "phone_text" and meta["ingestion_state"] == "active"
+        assert meta["case_id"] == str(case) and meta["extraction_id"] == str(ext) and meta["url"].startswith("rec://")
+        assert doc.count("[rec://") == len(doc.splitlines()) and "Synthetic Anabel" in doc
+        sent.clear()
+        assert P.sync(engine, str(case), chroma, embed)["unchanged"] == 1 and sent == []  # nothing changed, nothing sent
+        # a change to the thread text replaces its windows
+        with engine.begin() as c:
+            c.execute(text("UPDATE evidence_document_texts SET content = replace(content, 'harbour', 'quay'), "
+                           "content_sha256 = 'changed' WHERE evidence_file_id IN (SELECT id FROM evidence_files "
+                           "WHERE case_id = :c AND source_type = 'phone_text')"), {"c": case})
+        again = P.sync(engine, str(case), chroma, embed)
+        assert again["files"] == 1
+        assert all("harbour" not in d for _, d, _ in chroma.rows.values()) and all(":changed:" in k for k in chroma.rows)
+        # deleting the extraction's thread files removes every window
+        with engine.begin() as c:
+            c.execute(text("DELETE FROM evidence_files WHERE case_id = :c AND source_type = 'phone_text'"), {"c": case})
+        gone = P.sync(engine, str(case), chroma, embed)
+        assert gone["removed_files"] == 1 and chroma.rows == {}
+
+
+@needs_template
+def test_the_sweep_updates_an_area_on_edit_and_removes_it_on_delete():
+    """lx-embedall C: casework entries go through the shared sweep: new -> embedded, edited -> the new text only,
+    deleted -> removed; an area whose signature is unchanged is not read again."""
+    from services.embed_all import runner
+    from services.embed_all.store import PgChromaStore
+    sent = []
+
+    def embed(texts):
+        sent.extend(texts)
+        return [[0.1, 0.9] for _ in texts]
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            c.execute(text("INSERT INTO workspace_entries (id, case_id, entry_type, title, body, tags, lifecycle_state, "
+                           "version, migration_metadata, needs_migration_review, created_at, updated_at) VALUES "
+                           "(gen_random_uuid(), :c, 'note', 'Guard payments', 'He paid the guard on Friday', '[]', NULL, "
+                           "1, '{}', false, now(), now())"), {"c": case})
+        chroma = FakeChroma()
+        chroma.get = lambda **k: {"ids": [], "metadatas": []}
+        store = PgChromaStore(engine, collection=chroma)
+        r = runner.sync_case(engine, str(case), store=store, chunks=chroma, embed=embed, areas=("casework",))
+        assert r[0]["embedded"] == 1 and any("paid the guard" in t for t in sent)
+        assert runner.sync_case(engine, str(case), store=store, chunks=chroma, embed=embed, areas=("casework",)) == []
+        with engine.begin() as c:
+            c.execute(text("UPDATE workspace_entries SET body = 'He paid the landlord on Friday', updated_at = now() + "
+                           "interval '1 second' WHERE case_id = :c"), {"c": case})
+        r = runner.sync_case(engine, str(case), store=store, chunks=chroma, embed=embed, areas=("casework",))
+        assert r[0]["updated"] == 1
+        assert [d for _, d, _ in chroma.rows.values()] == ["Note: Guard payments. He paid the landlord on Friday"]
+        with engine.begin() as c:
+            c.execute(text("UPDATE workspace_entries SET deleted_at = now() WHERE case_id = :c"), {"c": case})
+        r = runner.sync_case(engine, str(case), store=store, chunks=chroma, embed=embed, areas=("casework",))
+        assert r[0]["removed"] == 1 and chroma.rows == {}
