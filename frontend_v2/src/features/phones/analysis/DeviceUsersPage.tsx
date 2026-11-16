@@ -17,7 +17,7 @@ export default function DeviceUsersPage() {
   const { id: caseId = "" } = useParams()
   const client = useMemo(() => analysisAPI("device_users"), [])
   return (
-    <ApproachLayout caseId={caseId} title="Who used which phone" whatItDoes={WHAT_IT_DOES} client={client}
+    <ApproachLayout pairByDesign caseId={caseId} title="Who used which phone" whatItDoes={WHAT_IT_DOES} client={client}
       queryKey="phone-device-users" tabs={TABS} words={deviceWords} origin="phone-device-users" testId="device-user-result"
       collectLabel={(r) => deviceWords(r).title} emptyWords="Nothing of this kind for the phones in this case."
       runExtra={(run) => <p className="text-sm" data-testid="device-user-result-strengths">By strength: {strengthCounts(run, GRADED_TABS).join("; ")}.</p>} />

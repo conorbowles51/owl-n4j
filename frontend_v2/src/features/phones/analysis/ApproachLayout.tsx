@@ -12,6 +12,9 @@ import type { AnalysisClient, ApproachResult, KeptResult } from "./analysis-api"
 import { anchorWords } from "./anchor-words"
 import { recordsWords } from "./count-words"
 import { SourceExport } from "./SourceExport"
+import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
+import { useCasePhones } from "@/features/phones/ui/use-case-phones"
+import { phoneLayersEnabled, toChosen } from "@/features/phones/lib/phone-layers"
 
 /**
  * The shared results layout of every approach (05 section 3.9; 07 section 5; test AP-1), in this order: what it does,
@@ -46,6 +49,8 @@ export interface ApproachLayoutProps {
   /** Shown when a result is opened, above what supports it (for example its volume chart). */
   rowDetail?: (r: ApproachResult) => ReactNode
   /** Words for a result against one key date, where the approach's time means something narrower than a period. */
+  /** A screen that compares exactly two phones by design keeps its own pair picker and shows no phone layers. */
+  pairByDesign?: boolean
   anchorRelation?: (r: ApproachResult, anchorIso: string, anchorLabel: string) => string | null
 }
 
@@ -201,8 +206,12 @@ export function ApproachLayout(p: ApproachLayoutProps) {
   const [run, setRun] = useState<AnalysisRun | null>(null)
   const [kind, setKind] = useState<string>(p.tabs[0]?.kind ?? "")
   const [offset, setOffset] = useState(0)
-  const [search] = useSearchParams()
+  const [search, setSearch] = useSearchParams()
   const kept = search.get("kept")
+  // Phone layers: results that rest on any of the phones that are on (`phones` in the address); empty is every phone
+  const layers = phoneLayersEnabled() && !p.pairByDesign
+  const phoneList = useCasePhones(caseId)
+  const chosen = useMemo(() => (layers ? (search.get("phones") ?? "").split(",").filter(Boolean) : []), [layers, search])
   const runs = useQuery({ queryKey: [queryKey, "runs", caseId], queryFn: () => client.runs(caseId), enabled: !!caseId })
   const coverage = useQuery({ queryKey: [queryKey, "coverage", caseId], queryFn: () => client.coverage(caseId), enabled: !!caseId })
   const keyDates = useQuery({ queryKey: ["pattern-key-dates", caseId, "date"], queryFn: () => patternAPI.keyDates(caseId, "date"), enabled: !!caseId })
@@ -223,8 +232,8 @@ export function ApproachLayout(p: ApproachLayoutProps) {
   }, [active, run, caseId, qc, client, queryKey])
   const done = run?.status === "completed" ? run : null
   const results = useQuery({
-    queryKey: [queryKey, "results", caseId, done?.id, kind, offset],
-    queryFn: () => client.results(caseId, done!.id, { kind, offset }),
+    queryKey: [queryKey, "results", caseId, done?.id, kind, offset, chosen.join(",")],
+    queryFn: () => client.results(caseId, done!.id, { kind, offset, phones: chosen }),
     enabled: !!done,
   })
   const total = results.data?.total ?? 0
@@ -244,12 +253,17 @@ export function ApproachLayout(p: ApproachLayoutProps) {
       {p.extra}
       {done && p.runExtra ? p.runExtra(done) : null}
       {kept && <KeptPanel caseId={caseId} id={kept} />}
+      {layers && (
+        <PhoneLayers phones={phoneList} chosen={chosen} noun="results" counts={null}
+          onChange={(ids) => { setOffset(0); setSearch((prev) => { const next = new URLSearchParams(prev); const c = toChosen(phoneList.map((x) => x.id), ids); if (c.length) next.set("phones", c.join(",")); else next.delete("phones"); return next }, { replace: true }) }} />
+      )}
+      {layers && chosen.length > 0 && <p className="text-sm" role="note">Results that rest on at least one of the phones that are on. The tab numbers are for every phone and are not shown while phones are off.</p>}
       <section data-part="results" aria-label="Results" className="space-y-2">
         <div className="flex flex-wrap gap-2" role="tablist">
           {p.tabs.map((t) => (
             <Button key={t.kind} size="sm" role="tab" aria-selected={kind === t.kind} variant={kind === t.kind ? "primary" : "outline"}
               onClick={() => { setKind(t.kind); setOffset(0) }}>
-              {t.label}{done ? ` (${(byKind[t.kind] ?? 0).toLocaleString("en-US")})` : ""}
+              {t.label}{done && !chosen.length ? ` (${(byKind[t.kind] ?? 0).toLocaleString("en-US")})` : ""}
             </Button>
           ))}
         </div>

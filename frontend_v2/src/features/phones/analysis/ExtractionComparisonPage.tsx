@@ -12,7 +12,7 @@ export default function ExtractionComparisonPage() {
   const { id: caseId = "" } = useParams()
   const client = useMemo(() => analysisAPI("extraction_comparison"), [])
   return (
-    <ApproachLayout caseId={caseId} title="Two extractions of one phone" whatItDoes={WHAT_IT_DOES} client={client}
+    <ApproachLayout pairByDesign caseId={caseId} title="Two extractions of one phone" whatItDoes={WHAT_IT_DOES} client={client}
       queryKey="phone-extraction-comparison" tabs={TABS} words={compareWords} origin="phone-extraction-comparison" testId="compare-result"
       collectLabel={(r) => compareWords(r).title} emptyWords="Nothing of this kind: the case holds one extraction, or no pair is shown to be one device." />
   )
