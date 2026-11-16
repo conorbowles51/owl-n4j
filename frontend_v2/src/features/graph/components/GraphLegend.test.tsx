@@ -12,11 +12,25 @@ beforeEach(() => useGraphStore.setState({ subgraphNodeKeys: new Set(), selectedN
 it("a type's spotlight takes every node of that type in the case, including those a filter hides (BUG-015)", () => {
   render(<GraphLegend nodes={[all[0], all[3]]} allNodes={all} />)
   expect(screen.getByTestId("legend-count-Person").textContent).toBe("1 of 3")
-  fireEvent.click(screen.getByRole("button", { name: "Put all 3 Person in the spotlight" }))
+  fireEvent.click(screen.getByRole("button", { name: "Put all 3 people in the spotlight" }))
   expect(Array.from(useGraphStore.getState().subgraphNodeKeys).sort()).toEqual(["p1", "p2", "p3"])
 })
 
 it("unfiltered, the count is the plain total", () => {
   render(<GraphLegend nodes={all} />)
   expect(screen.getByTestId("legend-count-Person").textContent).toBe("3")
+})
+
+it("names types in readable words and says when a payment can show twice (lx-graphclarity C)", () => {
+  const money = [node("t1", "transaction"), node("f1", "financialtransaction"), node("i1", "phoneidentity")]
+  render(<GraphLegend nodes={money} />)
+  expect(screen.getByText("Financial transaction")).toBeInTheDocument()
+  expect(screen.getByText("Phone identity")).toBeInTheDocument()
+  expect(screen.queryByText(/Financialtransaction|Phoneidentity/)).toBeNull()
+  expect(screen.getByTestId("legend-money-note").textContent).toContain("can show twice")
+})
+
+it("leaves the money note out when only one kind of payment is drawn", () => {
+  render(<GraphLegend nodes={[node("f1", "financialtransaction")]} />)
+  expect(screen.queryByTestId("legend-money-note")).toBeNull()
 })

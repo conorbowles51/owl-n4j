@@ -1,5 +1,6 @@
 import { cn } from "@/lib/cn"
 import { getNodeColor } from "@/lib/theme"
+import { typeLabel } from "@/lib/type-label"
 
 interface NodeBadgeProps {
   type: string
@@ -27,7 +28,7 @@ export function NodeBadge({ type, className, children, color: chosen }: NodeBadg
         className="h-2 w-2 shrink-0 rounded-full"
         style={{ backgroundColor: color }}
       />
-      {children ?? type}
+      {children ?? typeLabel(type)}
     </span>
   )
 }

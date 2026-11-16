@@ -97,7 +97,7 @@ describe("GraphToolbar", () => {
   it("can deselect all graph entity types and then select one", () => {
     renderToolbar()
     fireEvent.click(screen.getByRole("button", { name: /^Types$/ }))
-    fireEvent.click(screen.getByRole("button", { name: "Deselect All" }))
+    fireEvent.click(screen.getByRole("button", { name: "Hide all" }))
 
     expect(useGraphStore.getState().selectedEntityTypes).toEqual(new Set())
 

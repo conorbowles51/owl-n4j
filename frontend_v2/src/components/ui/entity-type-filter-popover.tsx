@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { typeLabel } from "@/lib/type-label"
 import { Filter } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -37,7 +38,7 @@ export function EntityTypeFilterPopover({
 
   const types = Array.from(typeCounts.entries())
     .sort(([, a], [, b]) => b - a)
-    .filter(([type]) => type.toLowerCase().includes(search.trim().toLowerCase()))
+    .filter(([type]) => `${type} ${typeLabel(type)}`.toLowerCase().includes(search.trim().toLowerCase()))
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -55,7 +56,7 @@ export function EntityTypeFilterPopover({
       <PopoverContent align="start" className="w-64 p-0">
         <div className="border-b border-border p-2">
           <Input
-            placeholder="Filter types..."
+            placeholder="Find a type"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             className="h-7 text-xs"
@@ -69,7 +70,7 @@ export function EntityTypeFilterPopover({
             onClick={onSelectAll}
             disabled={typeCounts.size === 0}
           >
-            Select All
+            Show all
           </Button>
           <Button
             variant="ghost"
@@ -78,7 +79,7 @@ export function EntityTypeFilterPopover({
             onClick={onDeselectAll}
             disabled={typeCounts.size === 0}
           >
-            Deselect All
+            Hide all
           </Button>
         </div>
         <ScrollArea className="h-64">
@@ -93,7 +94,7 @@ export function EntityTypeFilterPopover({
                   <Checkbox
                     checked={checked}
                     onCheckedChange={() => onToggleType(type)}
-                    aria-label={`Toggle ${type}`}
+                    aria-label={`Show ${typeLabel(type)}`}
                   />
                   <button
                     type="button"
@@ -104,7 +105,7 @@ export function EntityTypeFilterPopover({
                       className="size-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: getNodeColor(type) }}
                     />
-                    <span className="flex-1 text-left capitalize">{type}</span>
+                    <span className="flex-1 text-left">{typeLabel(type)}</span>
                     <Badge variant="outline" className="h-4 px-1 text-[10px]">
                       {count}
                     </Badge>

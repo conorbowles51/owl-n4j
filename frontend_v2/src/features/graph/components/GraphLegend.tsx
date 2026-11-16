@@ -2,6 +2,7 @@ import { useState } from "react"
 import { ChevronDown, ChevronRight, Focus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getNodeColor } from "@/lib/theme"
+import { typeLabel, typeLabelPlural } from "@/lib/type-label"
 import { useGraphStore } from "@/stores/graph.store"
 import type { GraphNode } from "@/types/graph.types"
 
@@ -40,7 +41,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
   const types = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])
 
   const filteredTypes = filter
-    ? types.filter(([type]) => type.toLowerCase().includes(filter.toLowerCase()))
+    ? types.filter(([type]) => `${type} ${typeLabel(type)}`.toLowerCase().includes(filter.toLowerCase()))
     : types
 
   const selectAllOfType = (type: string) => {
@@ -84,7 +85,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
           <ChevronDown className="size-3" />
         )}
         <span className="font-medium">Legend</span>
-        <span className="ml-auto text-muted-foreground">{types.length} types</span>
+        <span className="ml-auto text-muted-foreground">{types.length} {types.length === 1 ? "type" : "types"}</span>
       </button>
 
       {!collapsed && (
@@ -96,7 +97,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                 type="text"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter types..."
+                placeholder="Find a type"
                 className="w-full rounded bg-muted border border-border px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-ring"
               />
             </div>
@@ -111,14 +112,14 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                   <button
                     className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 hover:bg-muted/50"
                     onClick={() => selectAllOfType(type)}
-                    title={total > count ? `Select the ${count} ${type} shown (${total - count} hidden by the filter)` : `Select all ${type}`}
+                    title={total > count ? `Select the ${count} ${typeLabelPlural(type)} shown (${total - count} hidden by the filter)` : `Select all ${count} ${typeLabelPlural(type)}`}
                   >
                     <span
                       className="inline-block size-2.5 rounded-full shrink-0"
                       style={{ backgroundColor: getNodeColor(type) }}
                     />
-                    <span className="flex-1 text-left capitalize text-popover-foreground">
-                      {type}
+                    <span className="flex-1 text-left text-popover-foreground">
+                      {typeLabel(type)}
                     </span>
                     <span className="text-muted-foreground" data-testid={`legend-count-${type}`}>
                       {total > count ? `${count} of ${total}` : count}
@@ -128,8 +129,8 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                     type="button"
                     className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-amber-600"
                     onClick={() => spotlightAllOfType(type)}
-                    aria-label={`Put all ${total} ${type} in the spotlight`}
-                    title={`Put all ${total} ${type} loaded for this case in the spotlight${total > count ? `, including ${total - count} hidden by the filter` : ""}`}
+                    aria-label={`Put all ${total} ${typeLabelPlural(type)} in the spotlight`}
+                    title={`Put all ${total} ${typeLabelPlural(type)} in this case in the spotlight${total > count ? `, including ${total - count} hidden by the filter` : ""}`}
                   >
                     <Focus className="size-3" />
                   </button>
@@ -137,6 +138,14 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
               )
             })}
           </div>
+
+          {typeCounts.transaction && typeCounts.financialtransaction ? (
+            // lx-graphclarity A: on the Ruiz demo 193 of 210 statement rows also have a payment read by the model
+            <p className="shrink-0 max-w-[16rem] border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground" data-testid="legend-money-note">
+              A payment on a bank statement can show twice: as a Financial transaction (the statement row) and as a
+              Transaction (read from the document by the model).
+            </p>
+          ) : null}
 
           {/* Fixed action buttons footer */}
           <div className="shrink-0 border-t border-border px-3 py-1.5 space-y-1">
@@ -147,7 +156,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                 className="h-5 px-1.5 text-[10px] text-muted-foreground"
                 onClick={selectAllVisible}
               >
-                Select All
+                Select all shown
               </Button>
               <Button
                 variant="ghost"
@@ -155,7 +164,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                 className="h-5 px-1.5 text-[10px] text-muted-foreground"
                 onClick={deselectAll}
               >
-                Deselect
+                Clear selection
               </Button>
             </div>
 
@@ -167,7 +176,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                   className="h-5 px-1.5 text-[10px] text-amber-600 dark:text-amber-400"
                   onClick={addSelectedToSpotlight}
                 >
-                  + Spotlight
+                  Add to spotlight
                 </Button>
                 {hasSelectedInSpotlight && (
                   <Button
@@ -176,7 +185,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                     className="h-5 px-1.5 text-[10px] text-red-600 dark:text-red-400"
                     onClick={removeSelectedFromSpotlight}
                   >
-                    - Spotlight
+                    Remove from spotlight
                   </Button>
                 )}
               </div>

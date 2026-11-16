@@ -189,7 +189,7 @@ describe("SimilarEntitiesView", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: /^Types$/ }))
-    fireEvent.click(screen.getByRole("button", { name: "Deselect All" }))
+    fireEvent.click(screen.getByRole("button", { name: "Hide all" }))
 
     expect(screen.getByRole("button", { name: /^Scan$/ })).toBeDisabled()
 
