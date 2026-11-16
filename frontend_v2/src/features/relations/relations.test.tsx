@@ -2,13 +2,13 @@ import { describe, expect, it, vi, beforeEach } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { currentQuery, relationAPI, setCurrentQuery, toMembers } from "./api"
+import { currentQuery, relationAPI, setCurrentQuery, toMembers, type RelationResult } from "./api"
 import { LookIntoButton } from "./LookIntoButton"
 import { RelationsPage } from "./RelationsPage"
 
 vi.mock("@/features/phones/collect-targets", () => ({ useCollectTargets: () => ({ targets: [{ kind: "theory", id: "t1", label: "Acme pays Ann" }], note: null, loading: false, error: null }) }))
 
-const result = {
+const result: RelationResult = {
   says: "These are records that occur together. They do not show why.",
   items: [{ ref: "a", type: "financial_transaction", id: "1", label: "Payment", at: "2026-03-01T00:00:00+00:00" }, { ref: "b", type: "evidence", id: "2", label: "Contract", at: null }],
   candidates: [{ kind: "shared_identifier", members: ["a", "b"], key: "name", strength: "strong", reasons: ["Both carry the same name."], chance: { words: "“Harbor” appears on 3 of 900 ledger rows in the case.", reading: "none", share_of_days: null } }],
