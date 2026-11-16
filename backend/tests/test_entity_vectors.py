@@ -61,8 +61,9 @@ def test_refresh_embeds_the_current_graph_text_with_case_metadata():
     out = ev.refresh_entities("case-a", ["k1", "p1", "gone"], vector_db=vectors,
                               embed=lambda t: calls.append(t) or [0.1],
                               read_nodes=lambda case_id, keys, **_: nodes)
-    assert out == {"requested": 3, "embedded": 1, "skipped": 2, "stopped": None}
-    assert calls == [ev.embedding_text("Person", nodes["k1"][1])]  # the phone node is never sent out
+    assert out == {"requested": 3, "embedded": 2, "skipped": 1, "stopped": None}
+    assert calls == [ev.embedding_text("Person", nodes["k1"][1]),
+                     ev.embedding_text("PhoneIdentity", nodes["p1"][1])]  # phone nodes too (16 Nov 2026)
     key, text, meta = vectors.upserts[0]
     assert key == "k1" and text.startswith("Person: Luis Ortega — ")
     assert meta == {"category": "Person", "specific_type": "Associate", "name": "Luis Ortega",
@@ -98,7 +99,7 @@ def test_stale_keys_compares_every_vector_of_the_case_with_the_graph():
         return {"same": ("Person", LOCO), "renamed": ("Person", dict(LOCO, name="New Name")),
                 "phone": ("PhoneIdentity", {"name": "Mother"})}
 
-    assert ev.stale_keys("c", vector_db=vectors, read_nodes=read) == ["renamed"]
+    assert ev.stale_keys("c", vector_db=vectors, read_nodes=read) == ["renamed", "phone"]  # a renamed phone node too
     assert seen == {"same": "Person", "renamed": "Person", "phone": "PhoneIdentity"}  # read through label index
 
 
@@ -289,12 +290,12 @@ class _RowsSession:
         return self.rows
 
 
-def test_engine_entity_labels_leave_out_phone_nodes_unless_asked():
+def test_engine_entity_labels_include_phone_nodes():
     rows = [{"key": "p", "labels": ["Person"], "category": None},
             {"key": "n", "labels": ["PhoneNumber"], "category": None},
             {"key": "d", "labels": ["Document"], "category": None}]
     session = _RowsSession(rows)
-    assert ev.engine_entity_labels("c", session_factory=lambda: session) == {"p": "Person", "d": "Document"}
+    assert ev.engine_entity_labels("c", session_factory=lambda: session) == {"p": "Person", "n": "PhoneNumber", "d": "Document"}
     assert "job_id IS NOT NULL" in session.queries[0][0] and session.queries[0][1]["case_id"] == "c"
     assert set(ev.engine_entity_labels(session_factory=lambda: session, include_phones=True)) == {"p", "n", "d"}
     assert "n.case_id" not in session.queries[1][0]
