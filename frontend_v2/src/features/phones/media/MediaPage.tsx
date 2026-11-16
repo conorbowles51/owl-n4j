@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Fragment, useEffect, useRef, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,8 @@ import { SignificantNote } from "../ui/SignificantNote"
 import { ScopeBar } from "../ui/ScopeBar"
 import { ScopeCrossings } from "../ui/ScopeCrossings"
 import { useUrlScope } from "../ui/use-phone-scope"
+import { PhoneLayers } from "../ui/PhoneLayers"
+import { usePhoneLayerParam } from "../ui/use-phone-layer-param"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -507,8 +509,12 @@ export default function MediaPage() {
   const carried = useUrlScope(caseId, { people: true, window: true, restore: false })
   const scopePerson = carried.scope.people[0]?.key ?? ""
   const scopePhone = carried.scope.phones.length === 1 ? carried.scope.phones[0].id : ""
+  // Phone layers: with the setting on, several phones in the address show together; this phone alone until others are added
+  const layers = usePhoneLayerParam(caseId)
+  const layerIds = layers.enabled ? layers.chosen : []
+  const phoneFiles = useQueries({ queries: (layers.enabled ? layers.phones : []).map((p) => ({ ...mediaPhoneIndexQuery(caseId, p.id), staleTime: 30_000 })) })
   const scopeNote = [...carried.notApplied,
-    ...(carried.scope.phones.length > 1 ? [`the ${n(carried.scope.phones.length)} phones chosen: this grid shows one phone or every phone`] : []),
+    ...(carried.scope.phones.length > 1 && !layers.enabled ? [`the ${n(carried.scope.phones.length)} phones chosen: this grid shows one phone or every phone`] : []),
     ...(carried.scope.people.length > 1 ? ["every person after the first"] : []),
     ...(carried.scope.people.length && carried.scope.mode !== "involving" ? ["the direction chosen"] : [])]
   const person = pickedPerson || scopePerson
@@ -517,7 +523,7 @@ export default function MediaPage() {
   const from = dayStart(fromDay)
   const to = dayStart(toDay, 1)
   // the phone in the address, every phone in the case, or another phone of the case
-  const onPhone = phone || scopePhone || extraction
+  const onPhone: string | string[] = phone || (layerIds.length > 1 ? layerIds : scopePhone || extraction)
   const filter: MediaFilter = mediaFilter(caseId, onPhone, thread, category, state, {
     ...(app ? { apps: [app] } : {}), ...(person ? { participants: [person] } : {}),
     ...(from ? { from_instant: from } : {}), ...(to ? { to_instant: to } : {}),
@@ -594,6 +600,11 @@ export default function MediaPage() {
           count={idx.data ? { shown: total, total, noun: total === 1 ? "file" : "files" } : null}>
           <ScopeCrossings caseId={caseId} scope={carried.scope} here="media" />
         </ScopeBar>
+        {layers.enabled && (
+          <PhoneLayers phones={layers.phones} chosen={layerIds.length ? layerIds : [extraction]} noun="files"
+            counts={Object.fromEntries(layers.phones.map((p, i) => [p.id, phoneFiles[i].data?.total]).filter(([, v]) => v !== undefined))}
+            onChange={(ids) => layers.set(ids.length ? ids : layers.phones.map((p) => p.id), true)} />
+        )}
         {thread && (
           <div role="group" aria-label="Scope" className="flex flex-wrap items-center gap-2 text-sm">
             <span className="rounded-full border px-2 py-0.5">

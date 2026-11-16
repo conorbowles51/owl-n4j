@@ -10,4 +10,9 @@ describe("mediaFilter", () => {
     expect(mediaFilter("c", EVERY_PHONE, null, NONE, "", { apps: ["WhatsApp"], to_instant: "2026-01-02T00:00:00Z" }))
       .toEqual({ case_id: "c", categories: [""], apps: ["WhatsApp"], to_instant: "2026-01-02T00:00:00Z" })
   })
+
+  it("takes several phones, and an empty list is every phone", () => {
+    expect(mediaFilter("c", ["e1", "e2"], null, "", "")).toEqual({ case_id: "c", phones: ["e1", "e2"] })
+    expect(mediaFilter("c", [], null, "", "")).toEqual({ case_id: "c" })
+  })
 })

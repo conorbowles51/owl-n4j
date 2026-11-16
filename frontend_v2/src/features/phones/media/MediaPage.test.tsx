@@ -322,6 +322,19 @@ describe("Media viewer tools (03 8.3)", () => {
     </QueryClientProvider>,
   )
 
+  it("phone layers: this phone alone until others are on, then the grid asks for the phones that are on", async () => {
+    localStorage.clear()
+    localStorage.setItem("loupe.phone_layers", "on")
+    page("/cases/c/phones/e1/records/media")
+    const group = await screen.findByRole("group", { name: "Phone layers" })
+    expect(within(group).getByLabelText("C1 on")).toBeChecked()
+    expect(within(group).getByLabelText("C2 on")).not.toBeChecked()
+    await waitFor(() => expect(api.getMediaIndex).toHaveBeenCalledWith(expect.objectContaining({ phones: ["e1"] })))
+    fireEvent.click(within(group).getByLabelText("C2 on"))
+    await waitFor(() => expect(api.getMediaIndex).toHaveBeenLastCalledWith(expect.objectContaining({ phones: ["e1", "e2"] })))
+    localStorage.clear()
+  })
+
   it("moves to the next and previous file with the buttons and the arrow keys", async () => {
     localStorage.clear()
     page("/cases/c/phones/e1/records/media?file=f1")
