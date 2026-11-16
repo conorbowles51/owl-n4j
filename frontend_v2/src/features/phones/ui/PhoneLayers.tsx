@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { layersOn, onlyLayer, toChosen, toggleLayer } from "../lib/phone-layers"
 import { PhoneShape } from "./PhoneChip"
@@ -23,11 +24,16 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
 }) {
   const all = phones.map((p) => p.id)
   const on = layersOn(all, chosen)
+  // on a narrow screen the list opens on request, so it does not push the screen's own content out of view
+  const [open, setOpen] = useState(() => typeof window.matchMedia !== "function" || window.matchMedia("(min-width: 768px)").matches)
   if (phones.length < 2) return null
   return (
     <section role="group" aria-label="Phone layers" className="flex flex-col gap-1 border-b bg-card px-3 py-2 text-sm" data-testid="phone-layers">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium">Phones</span>
+      <button type="button" className="flex items-center gap-2 text-left font-medium md:hidden" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        Phones: {on.length === all.length ? `all ${n(all.length)} on` : `${n(on.length)} of ${n(all.length)} on`} <span aria-hidden>{open ? "▾" : "▸"}</span>
+      </button>
+      <div className={`flex-wrap items-center gap-2 ${open ? "flex" : "hidden md:flex"}`}>
+        <span className="hidden font-medium md:inline">Phones</span>
         {phones.map((p) => {
           const isOn = on.includes(p.id)
           const count = counts === null ? null : counts?.[p.id]
@@ -43,7 +49,7 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
         })}
         <Button size="sm" variant="outline" disabled={on.length === all.length} onClick={() => onChange(toChosen(all, all))}>All</Button>
       </div>
-      <p role="status" className="text-xs text-muted-foreground">
+      <p role="status" className={`text-xs text-muted-foreground ${open ? "" : "hidden md:block"}`}>
         {on.length === all.length ? `All ${n(all.length)} phones are on.` : `${n(on.length)} of ${n(all.length)} phones are on. The ${n(all.length - on.length)} off ${all.length - on.length === 1 ? "is" : "are"} not drawn or counted.`}
       </p>
     </section>
