@@ -96,3 +96,33 @@ def accept_hypothesis(case_id: UUID, run_id: UUID, number: int, request: AcceptR
     except (hypotheses.HypothesisError, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+class ReportRequest(BaseModel):
+    privilege_marking: str = "unmarked"
+
+
+@router.post("/{case_id}/relation-runs/{run_id}/report", dependencies=[Depends(require_case_view)])
+def report(case_id: UUID, run_id: UUID, request: ReportRequest, db: Session = Depends(get_db),
+           user: User = Depends(get_current_db_user)):
+    from datetime import datetime
+    from urllib.parse import quote
+
+    from fastapi.responses import Response
+
+    from postgres.models.case import Case
+    from services.relations import report as R
+    try:
+        run = runs.view(db, case_id, str(run_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    group = case_selections.describe(db, case_id, run["selection_id"], member_limit=10**9)
+    case = db.query(Case).filter(Case.id == case_id).first()
+    try:
+        content = R.render_pdf(case_name=case.title if case else "", generated_by=user.name or user.email,
+                               group=group, run=run, privilege_marking=request.privilege_marking)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    name = f"link-analysis-{datetime.now().strftime('%Y%m%d')}.pdf"
+    return Response(content=content, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"; filename*=UTF-8\'\'{quote(name)}'})
