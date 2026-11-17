@@ -93,3 +93,11 @@ def test_phone_windows_keep_consecutive_lines_of_one_thread_each_with_its_record
     assert flat == ["uid%02d" % i for i in range(40)]  # consecutive, in order, none twice
     assert all(len(w["embed_text"]) <= 800 + 80 and "[rec://" not in w["embed_text"] for w in wins)
     assert wins[0]["first_record_uid"] == "uid00" and wins[-1]["last_record_uid"] == "uid39"
+
+
+def test_two_passages_of_one_document_page_are_one_hit():
+    chunks = Coll([("p1 part a", {"evidence_file_id": "d", "chunk_index": 0, "doc_name": "d.pdf", "page_start": 1}, 0.5),
+                   ("p1 part b", {"evidence_file_id": "d", "chunk_index": 1, "doc_name": "d.pdf", "page_start": 1}, 0.4),
+                   ("p2", {"evidence_file_id": "d", "chunk_index": 2, "doc_name": "d.pdf", "page_start": 2}, 0.6)])
+    hits = S.meaning_hits("c", [0.1], None, chunks, ["documents"])
+    assert [h["text"] for h in hits] == ["p1 part b", "p2"]

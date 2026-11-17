@@ -96,7 +96,15 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
     if person:
         who = person.casefold()
         hits = [h for h in hits if who in (h["person"] + " " + h["text"]).casefold()]
-    return [h for h in hits if h["distance"] is not None and h["distance"] <= MAX_DISTANCE]
+    kept, seen = [], set()
+    for h in sorted((h for h in hits if h["distance"] is not None and h["distance"] <= MAX_DISTANCE),
+                    key=lambda h: h["distance"]):
+        one = (h["area"], h["cite"] or h["key"], h["title"])  # two passages of one page are one hit: the nearer stays
+        if h["area"] in ("documents",) and one in seen:
+            continue
+        seen.add(one)
+        kept.append(h)
+    return kept
 
 
 def word_hits(conn, case_id, terms: list[str], areas, *, phone=None, person=None, date_from=None, date_to=None) -> list[dict]:
