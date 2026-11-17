@@ -55,6 +55,21 @@ def payment_facts(conn, case_id, txn_ids: Iterable[str]) -> dict[str, dict[str, 
     return out
 
 
+PASSAGE_CHARS = 1200
+
+
+def _short(body: str) -> str:
+    """The start of the unit the case search made (a payment's row, an entity's name, type and first links), at most
+    ``PASSAGE_CHARS``. Cut at a line or word end and said so: the whole unit (a month of rows, every link) is for the
+    page it opens, and in chat it would take the room of the document passages (measured 17 Nov: 18 -> 16 of 22
+    relevant records reached the model)."""
+    if len(body) <= PASSAGE_CHARS:
+        return body
+    cut = body[:PASSAGE_CHARS]
+    edge = max(cut.rfind("\n"), cut.rfind(". "), cut.rfind(" "))
+    return (cut[:edge] if edge > PASSAGE_CHARS // 2 else cut).rstrip() + " … (shortened; the cited record has the rest)"
+
+
 def entity_cite(key: str) -> str:
     """``entity://<key>``; a key with characters a link cannot hold is percent-encoded, and read back the same."""
     return "entity://" + quote(key, safe="-_.~:")
@@ -68,7 +83,7 @@ def passage(hit: dict[str, Any], cite: str, facts: dict[str, dict[str, Any]], ca
     meta: dict[str, Any] = {"case_id": str(case_id), "doc_name": hit.get("title") or "", "filename": hit.get("title") or "",
                             "case_search_grade": hit["grade"], "case_search_reason": hit.get("reason"), "cite": cite,
                             "source_kind": "payment" if cite.startswith("txn://") else "graph_entity"}
-    body = hit.get("text") or ""
+    body = _short(hit.get("text") or "")
     if cite.startswith("txn://"):
         known = facts.get(cite[6:].lower())
         if known is None:

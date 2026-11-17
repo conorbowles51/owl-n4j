@@ -141,3 +141,11 @@ def test_payments_and_entities_take_no_searched_passages_place_in_the_selection(
     kept = F.select(pinned, fused, 5, stats)
     assert [c["id"] for c in kept if not c.get("_case_search")] == ["c1", "c2", "c3", "c4", "c5"]
     assert sum(1 for c in kept if c.get("_case_search")) == 2
+
+
+def test_a_long_unit_is_shortened_and_says_so_so_documents_keep_their_room():
+    long = "line of the month\n" * 400
+    made = P.passage(_hit(1, "entity://k", text=long), "entity://k", {}, "case")
+    assert len(made["text"]) < P.PASSAGE_CHARS + 100 and "shortened" in made["text"]
+    short = P.passage(_hit(1, "entity://k", text="short"), "entity://k", {}, "case")
+    assert short["text"] == "short"
