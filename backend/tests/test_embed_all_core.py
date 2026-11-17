@@ -184,9 +184,34 @@ def test_the_sweep_goes_straight_on_while_a_pass_embeds_and_rests_when_it_has_no
         if len(waits) > 3:
             raise asyncio.CancelledError()
     monkeypatch.setattr(runner, "run_pass", lambda *a, **k: next(results))
+    monkeypatch.setattr(runner, "release_held", lambda: False)
+    monkeypatch.setattr(runner, "_take_host_lock", lambda: object())
     monkeypatch.setattr(runner.asyncio, "sleep", fake_sleep)
     try:
         asyncio.run(runner.run_forever())
     except asyncio.CancelledError:
         pass
     assert waits[1:4] == [runner.BUSY_INTERVAL_SECONDS, runner.INTERVAL_SECONDS, runner.INTERVAL_SECONDS]
+
+
+def test_the_sweep_writes_nothing_while_a_release_holds_work(tmp_path, monkeypatch):
+    """Live 17 Nov 05:58: the release's Chroma relink compares the chunk count before and after; the sweep's phone windows
+    changed it and the release failed. While the host's hold flag exists, no batch is embedded."""
+    from services.embed_all import runner
+    flag = tmp_path / "deploy-hold.flag"
+    hook = tmp_path / "release-work.sh"
+    hook.write_text("#!/bin/bash\n")
+
+    class FakeFile:
+        def read_text(self):
+            return str(hook) + "\n"
+    monkeypatch.setattr(runner.Path, "read_text", lambda self: str(hook) + "\n" if self.name == ".release-work-hook" else "")
+    assert runner.release_held() is False
+    flag.write_text("")
+    assert runner.release_held() is True
+    store, emb = FakeStore(), Embedder()
+    res = core.reconcile("c1", "ledger", [ledger_item("a", "one"), ledger_item("b", "two")], store, emb,
+                         should_stop=runner.release_held)
+    assert res["stopped"] == "paused for a release" and res["embedded"] == 0 and emb.seen == [] and not store.rows
+    flag.unlink()
+    assert core.reconcile("c1", "ledger", [ledger_item("a", "one")], store, emb, should_stop=runner.release_held)["embedded"] == 1

@@ -102,7 +102,7 @@ def plan(existing: dict[str, tuple[str, int]], items: Iterable[Item]):
 
 def reconcile(case_id: str, area: str, items: Iterable[Item], store: Store,
               embed: Callable[[list[str]], list[list[float]]], *, batch: int = BATCH,
-              allow_remove: bool = True) -> dict[str, Any]:
+              allow_remove: bool = True, should_stop: Callable[[], bool] | None = None) -> dict[str, Any]:
     """Bring the index of one area in step with ``items``. Returns counts. A refused embedding call stops the run
     (``stopped`` holds the reason); what was embedded before it is kept and the rest is retried by the next run."""
     existing = store.existing(case_id, area)
@@ -110,6 +110,10 @@ def reconcile(case_id: str, area: str, items: Iterable[Item], store: Store,
     out = {"area": area, "embedded": 0, "updated": 0, "removed": 0, "unchanged": unchanged, "stopped": None,
            "pending": 0, "chars": 0}
     for i in range(0, len(todo), batch):
+        if should_stop is not None and should_stop():
+            out["stopped"] = "paused for a release"
+            out["pending"] = len(todo) - i
+            break
         chunk = todo[i:i + batch]
         flat, spans = [], []
         for item in chunk:

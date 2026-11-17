@@ -128,7 +128,7 @@ def _signature(conn, case_id) -> str:
 
 
 def sync(engine, case_id: str, collection, embed: Callable[[list[str]], list[list[float]]], *,
-         max_files: int | None = None) -> dict[str, Any]:
+         max_files: int | None = None, should_stop: Callable[[], bool] | None = None) -> dict[str, Any]:
     """Bring the phone windows of one case in step with its thread documents: new or changed files are embedded, the
     windows of a file whose text changed or that is gone are removed. Returns counts."""
     from services.embed_all.core import normalize_key
@@ -145,6 +145,10 @@ def sync(engine, case_id: str, collection, embed: Callable[[list[str]], list[lis
     if max_files is not None:
         todo = todo[:max_files]
     for f in todo:
+        if should_stop is not None and should_stop():
+            out["stopped"] = "paused for a release"
+            out["pending"] = len(todo) - out["files"]
+            break
         with engine.connect() as c:
             row = c.execute(text("SELECT content, source_locations FROM evidence_document_texts WHERE evidence_file_id = :i"),
                             {"i": f.id}).one()

@@ -9,10 +9,13 @@ one pass. The backfill of existing cases is the same step: a case with no saved 
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import logging
 import os
+import tempfile
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from sqlalchemy import text
@@ -33,6 +36,32 @@ ENTITIES = "entities"  # graph entities (every kind, phone nodes included): the 
 AREAS_ALL = tuple(sources.AREAS) + (phone_area.AREA, ENTITIES)
 ENTITY_PERIOD_SECONDS = 3600  # the graph is read once an hour per case: it has no cheap change signature
 SWITCH = "LOUPE_EMBED_ALL"  # "0" turns the sweep off
+LOCK_PATH = os.path.join(tempfile.gettempdir(), "loupe-embed-all.lock")
+
+
+def release_held() -> bool:
+    """True while a release has paused work to replace services. The host's release script (named in
+    ``deploy/logs/.release-work-hook``) keeps ``deploy-hold.flag`` beside itself for that time. A release's Chroma step
+    compares the chunk count before and after it relinks records, so a write by the sweep at that moment fails the
+    release (live, 17 Nov 05:58 UTC); the sweep writes nothing while the flag exists."""
+    try:
+        hook = (Path(__file__).resolve().parents[3] / "deploy" / "logs" / ".release-work-hook").read_text().strip()
+        return (Path(hook).parent / "deploy-hold.flag").exists()
+    except OSError:
+        return False
+
+
+def _take_host_lock():
+    try:
+        handle = open(LOCK_PATH, "a")
+    except OSError:
+        return None
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
 
 
 def _invalid_input(exc: Exception) -> bool:
@@ -80,7 +109,7 @@ def _save(engine, case_id, area, sig, counts):
 
 
 def sync_case(engine, case_id: str, *, store=None, chunks=None, embed=None, areas=AREAS_ALL, force=False,
-              deadline: float | None = None) -> list[dict[str, Any]]:
+              deadline: float | None = None, should_stop: Callable[[], bool] | None = None) -> list[dict[str, Any]]:
     """Sync the given areas of one case. Returns one counts dict per area that was read."""
     from postgres.models.cost_record import CostJobType
     from services.ai_costs_service import ai_cost_context
@@ -115,12 +144,12 @@ def sync_case(engine, case_id: str, *, store=None, chunks=None, embed=None, area
                 if chunks is None:
                     from services.vector_db_service import get_vector_db_service
                     chunks = get_vector_db_service().chunk_collection
-                res = phone_area.sync(engine, case_id, chunks, embed, max_files=PHONE_FILES_PER_STEP)
+                res = phone_area.sync(engine, case_id, chunks, embed, max_files=PHONE_FILES_PER_STEP, should_stop=should_stop)
                 complete = res["stopped"] is None and res["pending"] == 0 and res["files"] < PHONE_FILES_PER_STEP
             else:
                 with engine.connect() as c:
                     items = list(sources.READERS[area](c, case_id))
-                res = reconcile(case_id, area, items, store, embed)
+                res = reconcile(case_id, area, items, store, embed, should_stop=should_stop)
                 complete = res["stopped"] is None
         results.append(res)
         if complete:
@@ -139,7 +168,8 @@ def case_order(engine) -> list[str]:
     return [r[0] for r in rows]
 
 
-def run_pass(engine=None, *, embed=None, budget_seconds: float = PASS_SECONDS) -> dict[str, Any]:
+def run_pass(engine=None, *, embed=None, budget_seconds: float = PASS_SECONDS,
+             should_stop: Callable[[], bool] | None = release_held) -> dict[str, Any]:
     if engine is None:
         from postgres.session import _get_engine
         engine = _get_engine()
@@ -149,7 +179,7 @@ def run_pass(engine=None, *, embed=None, budget_seconds: float = PASS_SECONDS) -
     for case_id in case_order(engine):
         if time.time() > deadline:
             break
-        for r in sync_case(engine, case_id, store=store, embed=embed, deadline=deadline):
+        for r in sync_case(engine, case_id, store=store, embed=embed, deadline=deadline, should_stop=should_stop):
             if r.get("skipped"):
                 continue
             summary["areas_read"] += 1
@@ -174,9 +204,15 @@ async def run_forever() -> None:
         except Exception:
             pass
         return run_pass()
+    lock = None
     while True:
         wait = INTERVAL_SECONDS
         try:
+            if lock is None:
+                lock = await asyncio.to_thread(_take_host_lock)  # one backend on the host sweeps, whatever overlap
+            if lock is None or await asyncio.to_thread(release_held):
+                await asyncio.sleep(wait)
+                continue
             res = await asyncio.to_thread(once)
             if res.get("embedded") or res.get("removed") or res.get("stopped"):
                 logger.info("embed_all pass: %s", res)
