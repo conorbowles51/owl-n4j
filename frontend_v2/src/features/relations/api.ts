@@ -1,5 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
 import type { GroupInput, ItemInput } from "@/features/theory/api"
+import type { Corroboration } from "@/features/corroborate/result-types"
 
 /**
  * Look into how these relate (lx-overlaps; backend routers/relation_queries.py): items from any screen are saved as one
@@ -53,6 +54,7 @@ export interface RelationResult {
   paging?: { candidates: { total: number; shown: number }; no_links: { total: number; shown: number }; page: number }
   counts: { items: number; pairs: number; candidates: number; no_links: number; by_strength: Record<Strength, number> }
   seconds: number
+  corroboration?: Corroboration
 }
 
 export interface Hypothesis {
