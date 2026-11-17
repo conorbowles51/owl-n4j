@@ -3,13 +3,14 @@ import { Button } from "@/components/ui/button"
 import { useSwitch } from "@/lib/ui-switches"
 type Member = { type: string; id: string; label?: string }
 import { QuestionMenu } from "./QuestionMenu"
+import type { Scope } from "./api"
 import { addPart } from "./selection-store"
 
 /**
  * "Corroborate these" for a list that can hold more rows than it shows (lx-corroselect C): ``read`` returns every row of
  * the selection, fetching what is not loaded, so the count is the whole set, never the rows on screen.
  */
-export function CorroborateRows({ caseId, screen, words, count, read, disabled }: {
+export function CorroborateRows({ caseId, screen, words, count, read, disabled, scope }: {
   caseId: string
   screen: string
   words: string
@@ -17,6 +18,8 @@ export function CorroborateRows({ caseId, screen, words, count, read, disabled }
   count: number
   read: () => Promise<Member[] | { members: Member[]; skipped: { type: string; count: number }[] }>
   disabled?: boolean
+  /** A window the question opens already limited to (the Timeline range). The person can change it. */
+  scope?: Scope
 }) {
   const on = useSwitch("corroborate-v2")
   const [busy, setBusy] = useState(false)
@@ -44,7 +47,7 @@ export function CorroborateRows({ caseId, screen, words, count, read, disabled }
         {busy ? "Reading every row…" : `Corroborate ${count.toLocaleString("en-US")}`}
       </Button>
       {error && <span role="alert" className="text-xs">{error}</span>}
-      {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
+      {menu && <QuestionMenu caseId={caseId} initialScope={scope} onClose={() => setMenu(false)} />}
     </>
   )
 }

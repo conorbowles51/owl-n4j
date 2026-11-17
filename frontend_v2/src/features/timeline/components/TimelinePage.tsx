@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useCallback, useRef, useState } from "react"
 import { TimelineWindowBar } from "@/features/pattern/components/WindowPanel"
 import { toWindowEvent } from "../lib/timeline-utils"
 import { useParams, useLocation, useNavigate } from "react-router-dom"
@@ -47,6 +47,9 @@ import { PeriodPhones } from "../lens/PeriodPhones"
 import { UndatedEvents } from "./UndatedEvents"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 import { AddToTheory } from "@/features/theory/AddToTheory"
+
+// Behind the switch corroborate-v2; lazy so it stays out of the main script budget.
+const TimelineCorroborate = lazy(() => import("@/features/corroborate/TimelineCorroborate").then((m) => ({ default: m.TimelineCorroborate })))
 import type { GroupMember } from "@/features/theory/api"
 import type { EventFile, TimelineEvent } from "../api"
 
@@ -478,7 +481,13 @@ export function TimelinePage() {
               const words = multiSelectedKeys.size > 0
                 ? `${chosen.length} events picked on the timeline`
                 : `the timeline${filters.length ? `, ${filters.join(", ")}` : ", everything shown"}`
+              // The dragged range on the overview bar when there is one, else the date range in view.
+              const corroRange = visibleWindow ? { from: visibleWindow.start, to: visibleWindow.end } : { from: dateRange.start ?? null, to: dateRange.end ?? null }
               return (
+                <>
+                <Suspense fallback={null}>
+                  <TimelineCorroborate caseId={caseId} range={corroRange} members={chosen.map(timelineMember)} />
+                </Suspense>
                 <AddToTheory
                   caseId={caseId}
                   surface="timeline"
@@ -497,6 +506,7 @@ export function TimelinePage() {
                     words,
                   }}
                 />
+                </>
               )
             })()}
           </>

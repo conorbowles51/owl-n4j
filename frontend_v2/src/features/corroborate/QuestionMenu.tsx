@@ -15,12 +15,12 @@ const CHIP_WORDS: Record<keyof QuestionChips, string> = { when: "When", nights: 
  * three to five questions each with its count, and shows the chosen question as editable chips. Loupe picks what to
  * compare with and shows it; the person can change it. Corroborate saves the whole selection as one group and runs it.
  */
-export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () => void }) {
+export function QuestionMenu({ caseId, onClose, initialScope }: { caseId: string; onClose: () => void; initialScope?: Scope }) {
   const parts = useSelection(caseId)
   const members = selectionMembers(parts)
   const key = members.map((m) => `${m.type}:${m.id}`).join("|")
   const navigate = useNavigate()
-  const [scope, setScope] = useState<Scope>({})
+  const [scope, setScope] = useState<Scope>(initialScope ?? {})
   const scopeKey = JSON.stringify(scope)
   const preview = useQuery({ queryKey: ["corroborate-preview", caseId, key, scopeKey], queryFn: () => corroborateAPI.preview(caseId, members, scopeIsEmpty(scope) ? undefined : scope), enabled: members.length > 0, staleTime: 30_000, placeholderData: (prev) => prev })
   const [picked, setPicked] = useState<SuggestedQuestion | null>(null)
