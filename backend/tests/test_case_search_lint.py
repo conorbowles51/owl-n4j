@@ -14,7 +14,7 @@ from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
 PATTERN = re.compile(r"""\bI?LIKE\s+[:'%(]|\bCONTAINS\b|\.ilike\(|\.like\(|\.contains\(|\.query\(\s*query_embeddings|"""
-                     r"""position\(\s*:""")
+                     r"""position\(\s*:|\s~\*?\s*:\w""")
 
 SEARCH = "a search module the case search calls"
 IDENT = "exact identifiers, file names, keys or fixed labels, not a person's free text"
@@ -36,7 +36,7 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/agent/proposals.py": (1, IDENT),
     "services/agent/render_checks.py": (1, IDENT),
     "services/agent/tool_errors.py": (1, IDENT),
-    "services/casebin_purge.py": (1, IDENT),
+    "services/casebin_purge.py": (2, IDENT),
     "services/evidence_db_storage.py": (5, IDENT),
     "services/evidence_file_check.py": (3, IDENT),
     "services/evidence_signature.py": (1, IDENT),
@@ -56,15 +56,20 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/phone/review_share.py": (2, IDENT),
     "services/phone_analysis/device_users.py": (2, IDENT),
     "services/phone_analysis/reparse_comparison.py": (1, IDENT),
-    "services/phone_analysis/vocabulary.py": (1, IDENT),
+    "services/phone_analysis/vocabulary.py": (2, IDENT),
     "services/relations/sources.py": (2, IDENT),
     "services/step_history.py": (1, IDENT),
     "services/summary_ledger_check.py": (1, IDENT),
     "services/triage/profiler_service.py": (1, IDENT),
     "services/triage/triage_service.py": (1, IDENT),
     "services/corroborate/pasted.py": (1, IDENT),
-    "services/corroborate/store.py": (1, "counts how often a phrase occurs in the case's messages, to weigh it; "
-                                         "returns no records"),
+    "services/corroborate/store.py": (4, "counts how often a phrase occurs in the case's messages, to weigh it; "
+                                         "and finds every document, name and payment naming the chosen people: "
+                                         "Corroborate counts all of their records in the windows, so a ranked page "
+                                         "would drop some"),
+    "services/agent/phone_cross_tools.py": (1, "a fixed one-time-code pattern, not a person's words"),
+    "services/pattern_of_life/places.py": (2, "a fixed camera-folder pattern on media paths"),
+    "services/phone/media_spread.py": (2, "a fixed camera-folder pattern on media paths"),
     # a tool's own narrower filter (its list, then the words); the agent's case-wide search is the case search
     "services/agent/case_material_tools.py": (6, FREE),
     "services/agent/casework_tools.py": (4, FREE),
@@ -122,3 +127,5 @@ def test_the_check_catches_a_new_search():
     assert matches("MATCH (n) WHERE toLower(n.name) CONTAINS $q RETURN n") == 1
     assert matches("q = q.filter(Note.body.ilike(term))") == 1
     assert matches("# a comment about LIKE :q") == 0
+    assert matches('rows = q("SELECT id FROM texts WHERE content ~* :rx", rx=names)') == 1
+    assert matches('rows = q("SELECT id FROM files WHERE name ~* \'\\\\.pdf$\'")') == 0
