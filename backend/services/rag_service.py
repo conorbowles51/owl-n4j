@@ -2757,13 +2757,27 @@ Only include candidates with score >= 5."""
             return None
         from concurrent.futures import ThreadPoolExecutor
 
-        def run():
+        def search(kinds, areas):
             from postgres.session import _get_engine
             from services import case_search
             with _get_engine().connect() as conn:
-                return case_search.search(conn, case_id, question, kinds=("phones", "documents", "ledger", "graph"),
-                                          areas=["phone_text", "documents", "statement_pages", "ledger", "graph"], limit=20,
+                return case_search.search(conn, case_id, question, kinds=kinds, areas=areas, limit=20,
                                           phrase=False, page_chars=24000)
+
+        def run():
+            # Phones and documents are searched on their own, exactly as before: one search over all four kinds
+            # changed how the documents were graded and pushed 2 of 22 relevant records out of chat's context
+            # (measured 17 Nov). Payments and graph entities are a second search of the same service, run beside it.
+            with ThreadPoolExecutor(max_workers=1) as side:
+                other = side.submit(search, ("ledger", "graph"), ["ledger", "graph"])
+                main = search(("phones", "documents"), ["phone_text", "documents", "statement_pages"])
+                try:
+                    extra = other.result(timeout=RAGService.CASE_SEARCH_WAIT_S)
+                except Exception as exc:  # the answer goes on with phones and documents, and the debug log says why
+                    main["other_error"] = str(exc)[:300] or type(exc).__name__
+                    return main
+            return {**main, "total": main["total"] + extra["total"], "hits": list(main["hits"]) + list(extra["hits"]),
+                    "other_total": extra["total"]}
         pool = ThreadPoolExecutor(max_workers=1)
         future = pool.submit(run)
         pool.shutdown(wait=False)
@@ -2852,6 +2866,8 @@ Only include candidates with score >= 5."""
         if debug_log is not None:
             debug_log["case_search"] = {"total": res["total"], "grades": res["grades"], "added": len(added),
                                         "already_found": merged, "reranked": res["reranked"]}
+            if res.get("other_error"):
+                debug_log["case_search"]["payments_and_entities_error"] = res["other_error"]
         return added
 
     def _phone_windows(self, question: str, case_id: str, debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:

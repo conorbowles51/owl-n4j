@@ -17,6 +17,16 @@ def _hit(n, cite, grade="strong", title=None, text="row text"):
             "title": title or "T%d" % n, "text": text, "grade": grade, "reason": "why", "unit": "statement row"}
 
 
+
+def _by_kinds(hits):
+    """What the case search returns for a call: payments and graph entities for the ledger/graph call, the rest else."""
+    def fake(*a, **k):
+        other = "ledger" in tuple(k.get("kinds") or ())
+        mine = [h for h in hits if h["cite"].startswith(("txn://", "entity://")) == other]
+        return {"total": len(mine), "grades": {}, "reranked": True, "hits": mine}
+    return fake
+
+
 def _install(monkeypatch, hits, facts):
     @contextmanager
     def conn():
@@ -27,20 +37,21 @@ def _install(monkeypatch, hits, facts):
             return conn()
     import postgres.session as PS
     monkeypatch.setattr(PS, "_get_engine", lambda: Engine())
-    monkeypatch.setattr(CS, "search", lambda *a, **k: {"total": len(hits), "grades": {}, "reranked": True, "hits": hits})
+    monkeypatch.setattr(CS, "search", _by_kinds(hits))
     monkeypatch.setattr(P, "payment_facts", lambda c, case, ids: {i: facts[i] for i in ids if i in facts})
 
 
-def test_chat_asks_the_case_search_for_payments_and_graph_entities(monkeypatch):
-    seen = {}
+def test_chat_asks_the_case_search_for_payments_and_graph_entities_apart_from_phones_and_documents(monkeypatch):
+    seen = []
 
     def fake(*a, **k):
-        seen.update(k)
+        seen.append((tuple(k["kinds"]), tuple(k["areas"])))
         return {"total": 0, "grades": {}, "reranked": False, "hits": []}
     _install(monkeypatch, [], {})
     monkeypatch.setattr(CS, "search", fake)
     RAGService._case_search_passages(RAGService.__new__(RAGService), "q", "case", [], {})
-    assert {"ledger", "graph"} <= set(seen["kinds"]) and {"ledger", "graph"} <= set(seen["areas"])
+    assert sorted(k for k, _ in seen) == [("ledger", "graph"), ("phones", "documents")]
+    assert all("ledger" not in k or "phones" not in k for k, _ in seen)  # never one search over all four
 
 
 def test_a_payment_and_an_entity_become_passages_with_citations_that_open_them(monkeypatch):

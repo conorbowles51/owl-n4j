@@ -29,7 +29,10 @@ def _install(monkeypatch, hits):
             return conn()
     import postgres.session as PS
     monkeypatch.setattr(PS, "_get_engine", lambda: Engine())
-    monkeypatch.setattr(CS, "search", lambda *a, **k: _res(hits))
+    def fake(*a, **k):
+        other = "ledger" in tuple(k.get("kinds") or ())
+        return _res([h for h in hits if h["cite"].startswith(("txn://", "entity://")) == other])
+    monkeypatch.setattr(CS, "search", fake)
 
 
 def test_strong_and_moderate_hits_join_and_a_hit_chat_already_found_is_not_sent_twice(monkeypatch):
