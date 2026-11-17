@@ -243,6 +243,10 @@ class FakeChroma:
         for i in ids or []:
             self.rows.pop(i, None)
 
+    def get(self, where=None, include=None, **_):
+        want = (where or {}).get("evidence_file_id")
+        return {"ids": [i for i, (_e, _d, m) in self.rows.items() if want is None or m.get("evidence_file_id") == want]}
+
 
 @needs_template
 def test_phone_conversations_are_embedded_by_window_updated_on_change_and_removed_on_delete():
@@ -275,6 +279,7 @@ def test_phone_conversations_are_embedded_by_window_updated_on_change_and_remove
         again = P.sync(engine, str(case), chroma, embed)
         assert again["files"] == 1
         assert all("harbour" not in d for _, d, _ in chroma.rows.values()) and all(":changed:" in k for k in chroma.rows)
+        assert len(chroma.rows) == again["windows"]  # the windows of the old text are gone
         # deleting the extraction's thread files removes every window
         with engine.begin() as c:
             c.execute(text("DELETE FROM evidence_files WHERE case_id = :c AND source_type = 'phone_text'"), {"c": case})

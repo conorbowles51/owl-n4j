@@ -91,7 +91,7 @@ def test_phone_windows_keep_consecutive_lines_of_one_thread_each_with_its_record
     assert sum(w["text"].count("[rec://") for w in wins) == 40
     flat = [u for w in wins for u in ("uid%02d" % i for i in range(40)) if "[rec://%s]" % u in w["text"]]
     assert flat == ["uid%02d" % i for i in range(40)]  # consecutive, in order, none twice
-    assert all(len(w["embed_text"]) <= 800 + 80 and "[rec://" not in w["embed_text"] for w in wins)
+    assert all(len(w["embed_text"]) <= 800 + 120 and "[rec://" not in w["embed_text"] for w in wins)
     assert wins[0]["first_record_uid"] == "uid00" and wins[-1]["last_record_uid"] == "uid39"
 
 
@@ -101,3 +101,13 @@ def test_two_passages_of_one_document_page_are_one_hit():
                    ("p2", {"evidence_file_id": "d", "chunk_index": 2, "doc_name": "d.pdf", "page_start": 2}, 0.6)])
     hits = S.meaning_hits("c", [0.1], None, chunks, ["documents"])
     assert [h["text"] for h in hits] == ["p1 part b", "p2"]
+
+
+def test_the_vector_text_of_a_thread_line_is_its_parties_and_words_not_the_repeated_lead():
+    line = "Mon, Jan 1, 2024, 1:40:00 PM UTC | Phone 2 | Message | Owner of Phone 2: Travis Kell -> Mateo garage (+1 443-555-0100) | do not call the other phone"
+    assert phone_area.compact(line) == "Travis Kell -> Mateo garage (+1 443-555-0100): do not call the other phone"
+    assert phone_area.compact("  Transcript (machine-generated, m 1): hello") == "Transcript (machine-generated, m 1): hello"
+    wins = phone_area.build_windows("Phone 2 · Messages · Mateo (part 1 of 1)", line, [{"kind": "phone_record", "start_char": 0, "end_char": len(line), "record_uid": "u1", "field_path": "Body"}])
+    assert "Phone 2 | Message" not in wins[0]["embed_text"] and "Mon, Jan 1, 2024, 1:40:00 PM UTC" in wins[0]["embed_text"].splitlines()[0]
+    assert "Phone 2 | Message" in wins[0]["text"] and wins[0]["text"].endswith("[rec://u1]")  # the passage keeps the line
+    assert len(phone_area.stamp("abc")) == 64 and phone_area.stamp("abc") != phone_area.stamp("abd")  # fits the column

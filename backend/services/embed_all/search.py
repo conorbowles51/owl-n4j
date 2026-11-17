@@ -23,7 +23,8 @@ from services.retrieval_fusion import K, similarity
 logger = logging.getLogger(__name__)
 
 ALL_AREAS = tuple(AREAS) + ("phone_text", "documents")
-MAX_DISTANCE = 1.6  # squared L2 of unit vectors: cosine 0.2 and above (estimate, set from the demo gate in F)
+MAX_DISTANCE = 1.44  # squared L2 of unit vectors: cosine 0.28 and above. Measured on the demo case, 17 Nov: relevant hits
+# score cosine 0.31 to 0.50, a query with no answer ("burner") scores 0.22 to 0.24 against the nearest unrelated text
 SNIPPET = 400
 FETCH = 60
 

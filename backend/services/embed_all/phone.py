@@ -21,6 +21,34 @@ logger = logging.getLogger(__name__)
 
 AREA = "phone_text"
 EMBED_BATCH = 64
+# The text the vector is made from changed from the whole thread line to its meaning (parties and body) on 17 Nov 2026:
+# measured on the demo case, the repeated "Phone 2 | Message | Owner of Phone 2" lead of every line drowned the words,
+# so "the other phone" matched every phone line. A new version stamp re-embeds the files made in the older form.
+FORMAT = "e2"
+_OWNER = re.compile(r"Owner of Phone \d+: ")
+
+
+def compact(line: str) -> str:
+    """A thread line as its meaning: ``Name -> Name: body``. The time, phone label and app lead is left out of the vector
+    text (the passage a person reads keeps the whole line). Lines of another shape are kept as they are."""
+    parts = line.split(" | ", 4)
+    if len(parts) == 5:
+        return "%s: %s" % (_OWNER.sub("", parts[3]), parts[4])
+    return line.strip()
+
+
+def stamp(sha: str) -> str:
+    """The hash kept in ``embed_items``: of the thread text and the format its vectors were made in."""
+    import hashlib
+    return hashlib.sha256(("%s|%s" % (sha, FORMAT)).encode()).hexdigest()
+
+
+def _drop_file(collection, file_id, keep=()):
+    """Remove the windows of one thread file whatever their text hash (the engine's ``evidence_file_id`` key)."""
+    old = collection.get(where={"evidence_file_id": str(file_id)}, include=[]).get("ids") or []
+    gone = [i for i in old if i not in set(keep)]
+    for i in range(0, len(gone), 500):
+        collection.delete(ids=gone[i:i + 500])
 _REC = re.compile(r" \[rec://[0-9a-fA-F-]{36}\]")
 
 
@@ -59,7 +87,10 @@ def build_windows(name: str, content: str, source_locations: list, limit: int = 
     for grp in out:
         uids = [g[3] for g in grp if g[3]]
         stored = "\n".join(("%s [rec://%s]" % (g[2], g[3])) if g[3] else g[2] for g in grp)
-        windows.append({"text": stored, "embed_text": "%s\n%s" % (name, "\n".join(g[2] for g in grp)),
+        when = grp[0][2].split(" | ", 1)[0] if " | " in grp[0][2] else ""
+        windows.append({"text": stored,
+                        "embed_text": "%s%s\n%s" % (name, (" (from %s)" % when) if when else "",
+                                                     "\n".join(compact(g[2]) for g in grp)),
                         "start_char": grp[0][0], "end_char": grp[-1][1],
                         "first_record_uid": uids[0] if uids else None, "last_record_uid": uids[-1] if uids else None})
     return windows
@@ -81,10 +112,6 @@ def signature(conn, case_id) -> str:
         "f.case_id = :c AND f.source_type = 'phone_text' AND f.deleted_at IS NULL"), {"c": str(case_id)}).scalar() or "")
 
 
-def _ids(file_id, sha, count):
-    return ["%s:%s:chunk:%d" % (file_id, sha, n) for n in range(count)]
-
-
 def sync(engine, case_id: str, collection, embed: Callable[[list[str]], list[list[float]]], *,
          max_files: int | None = None) -> dict[str, Any]:
     """Bring the phone windows of one case in step with its thread documents: new or changed files are embedded, the
@@ -97,7 +124,7 @@ def sync(engine, case_id: str, collection, embed: Callable[[list[str]], list[lis
             "SELECT item_key, text_hash, chunk_count FROM embed_items WHERE case_id = :c AND area = :a"),
             {"c": str(case_id), "a": AREA})}
     current = {str(f.id): f for f in files}
-    todo = [f for k, f in current.items() if k not in have or have[k][0] != f.content_sha256]
+    todo = [f for k, f in current.items() if k not in have or have[k][0] != stamp(f.content_sha256)]
     out["unchanged"] = len(current) - len(todo)
     gone = [k for k in have if k not in current]
     if max_files is not None:
@@ -134,22 +161,20 @@ def sync(engine, case_id: str, collection, embed: Callable[[list[str]], list[lis
             metas.append(meta)
         if ids:
             collection.upsert(ids=ids, embeddings=vectors, documents=[w["text"] for w in wins], metadatas=metas)
-        if f.id and str(f.id) in have and have[str(f.id)][0] != f.content_sha256:
-            collection.delete(ids=_ids(f.id, have[str(f.id)][0], have[str(f.id)][1]))
+        if str(f.id) in have:
+            _drop_file(collection, f.id, keep=ids)  # another text, or a shorter one: nothing of the old form stays
         with engine.begin() as c:
             c.execute(text(
                 "INSERT INTO embed_items (case_id, area, item_key, text_hash, chunk_count, title, cite, extraction_id, "
                 "embedded_at) VALUES (:c, :a, :k, :h, :n, :t, :ci, :x, now()) ON CONFLICT (case_id, area, item_key) DO "
                 "UPDATE SET text_hash = EXCLUDED.text_hash, chunk_count = EXCLUDED.chunk_count, title = EXCLUDED.title, "
                 "cite = EXCLUDED.cite, extraction_id = EXCLUDED.extraction_id, embedded_at = now()"),
-                {"c": str(case_id), "a": AREA, "k": str(f.id), "h": f.content_sha256, "n": len(ids),
+                {"c": str(case_id), "a": AREA, "k": str(f.id), "h": stamp(f.content_sha256), "n": len(ids),
                  "t": f.original_filename, "ci": "", "x": f.ext})
         out["files"] += 1
         out["windows"] += len(ids)
     for k in gone:
-        sha, count = have[k]
-        for i in range(0, count, 500):
-            collection.delete(ids=_ids(k, sha, count)[i:i + 500])
+        _drop_file(collection, k)
         with engine.begin() as c:
             c.execute(text("DELETE FROM embed_items WHERE case_id = :c AND area = :a AND item_key = :k"),
                       {"c": str(case_id), "a": AREA, "k": k})
