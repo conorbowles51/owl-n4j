@@ -13,7 +13,7 @@ export const THEORY_TOUR: Tour = {
     { title: "For and against", body: "Open this to see what supports the theory beside what contradicts it.", targets: ['[data-guide="theory-compare"]'] },
     // Only while some links were added without saying how they bear on it.
     { title: "Links to review", body: "These were added without saying how they bear on the theory. Choose Supports, Contradicts or Context for each.", targets: ['[data-guide="theory-review"]'] },
-    { title: "Read it as a whole", body: "Reading & analysis shows every addition with why it was chosen, other explanations and what breaks the theory.", targets: ['[data-guide="theory-reading"]'] },
+    { title: "Read it as a whole", body: "Reading & analysis shows every addition with why it was chosen, other explanations and what breaks the theory. Where a line offers Corroborate this claim, it checks that line against the phones.", targets: ['[data-guide="theory-reading"]'] },
     // Only for someone who can edit, and not once the theory has been converted.
     { title: "When it holds up", body: "Convert to finding turns the theory into a finding and carries its narratives with it.", targets: ['[data-guide="theory-convert"]'] },
   ],
