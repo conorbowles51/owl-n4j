@@ -44,3 +44,15 @@ def test_the_chat_prompt_makes_the_phone_contact_count_the_answer():
     assert 'CONTACT COUNT: a passage headed "Phone contact between X and Y"' in prompt
     assert 'open with "No"' in prompt
     assert "rec://" not in prompt
+
+
+def test_the_chat_prompt_tells_how_to_cite_a_payment_or_entity_passage():
+    """lx-chatcite: a real answer on the demo case cited statement pages for five payments and no txn:// link, though
+    the context held the payment passages with their own Cite."""
+    ctx = object.__new__(LLMExecutionContext)
+    ctx.system_context, ctx.analysis_guidance = "synthetic system", "synthetic guidance"
+    ctx.call = lambda prompt, temperature=0.0: "synthetic answer"
+    _, prompt = ctx.answer_question_with_prompt("synthetic question", "--- Passage 1: Payment: x ---\nCite: txn://t\nx")
+    assert "Cite is txn:// is one payment" in prompt and "entity:// is one graph entity" in prompt
+    assert "cite the payment passage" in prompt
+    assert "Never build a txn:// or entity:// link yourself" in prompt
