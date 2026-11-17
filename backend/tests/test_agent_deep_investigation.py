@@ -174,7 +174,7 @@ def test_method_names_only_tools_this_build_registers():
     from services.agent import workflows
     have = workflows.registered_tool_names()
     named = {w for text in D.METHOD.values() for w in re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", text)}
-    named -= {"has_more", "phone_messages_x"}
+    named -= {"has_more", "next_offset", "phone_messages_x"}
     assert named - have == set(), sorted(named - have)
 
 
@@ -219,3 +219,8 @@ def test_one_record_cannot_back_a_run_of_different_facts():
     assert got["added"] == D.MAX_NOTES_PER_RECORD and len(got["refused"]) == 2
     assert "cite the link of the record" in got["refused"][0]["why"]
     assert D.notebook_add(p, [{"fact": "doc fact", "cite": "doc://x/1"}] * 5)["added"] == 5
+
+
+def test_method_points_to_bulk_reading_for_phones_and_documents():
+    from services.agent import deep_investigation as D
+    assert "read_scope_with_model" in D.METHOD["phones"] and "read_scope_with_model" in D.METHOD["documents"]

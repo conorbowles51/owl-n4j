@@ -350,8 +350,11 @@ def not_done_block(plan: dict) -> str:
 
 METHOD = {
     "phones": ("How to read the phones: phone_coverage and get_person_phones for the inventory and owners; "
-               "phone_messages for each phone on its own (phones=[its label], no search words), paging (offset) until "
-               "has_more is false, noting what each page shows before the next; then each incident window again; "
+               "read_scope_with_model for each phone and each incident window (a model reads every message and call in "
+               "chunks and returns the relevant ones with cites; page on with next_offset, and treat its output as a "
+               "reading to check against phone_record before citing), or phone_messages for each phone on its own "
+               "(phones=[its label], no search words), paging (offset) until has_more is false, noting what each "
+               "page shows before the next; then each incident window again; "
                "get_day_activity, get_together_apart and phone_places for positions and gaps in each window; "
                "get_analysis_results for each stored analysis kind; get_money_signal_matches and "
                "get_payment_conversation for the ledger; search_documents and get_document_text for the incident "
@@ -363,7 +366,7 @@ METHOD = {
               "chains; get_statement_continuity for gaps; get_account_mentions and search_documents for who and "
               "why; phone_messages for what was said about a payment."),
     "documents": ("How to read the documents: get_evidence_files for the inventory and how far each was read; "
-                  "search_documents, search_exact_words and get_document_text to read each one; search_case for "
+                  "search_documents, search_exact_words and get_document_text (or read_scope_with_model with the file's id) to read each one; search_case for "
                   "names and numbers across all kinds; check_statements for what a document says against the rest."),
 }
 
