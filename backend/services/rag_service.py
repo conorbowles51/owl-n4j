@@ -2746,6 +2746,7 @@ Only include candidates with score >= 5."""
         return found
 
     CASE_SEARCH_PASSAGES = 10
+    CASE_SEARCH_OTHER_PASSAGES = 6  # payments and graph entities, counted apart from the phone and document ones
     CASE_SEARCH_WAIT_S = 120
 
     @staticmethod
@@ -2805,7 +2806,7 @@ Only include candidates with score >= 5."""
                 by_record.setdefault(str(m["record_uid"]), c)
             if m.get("evidence_file_id"):
                 by_page.setdefault((str(m["evidence_file_id"]), str(m.get("page_start") or "")), c)
-        added, merged, rank = [], 0, 0
+        added, merged, rank, other_rank = [], 0, 0, 0
         for h in res["hits"]:
             if h["grade"] not in ("strong", "moderate") or h.get("unit") == "excerpt":
                 continue
@@ -2827,11 +2828,13 @@ Only include candidates with score >= 5."""
                 made = chat_case_passages.passage(h, cite, txn_facts, case_id)
                 if made is None:
                     continue
-                rank += 1
-                made["_case_rank"] = rank
+                # their own list in the fusion: counted in the phone and document list they would push every
+                # later phone and document down it (measured 17 Nov: 18 -> 16 of 22 relevant in chat context)
+                if other_rank >= self.CASE_SEARCH_OTHER_PASSAGES:
+                    continue
+                other_rank += 1
+                made["_case_other_rank"] = other_rank
                 added.append(made)
-                if len(added) >= self.CASE_SEARCH_PASSAGES:
-                    break
                 continue
             else:
                 continue
@@ -2844,7 +2847,7 @@ Only include candidates with score >= 5."""
                 meta.pop("evidence_file_id", None)
             added.append({"id": "case:%s" % cite, "text": h.get("text") or "", "metadata": meta,
                           "_case_search": True, "_case_rank": rank})
-            if len(added) >= self.CASE_SEARCH_PASSAGES:
+            if sum(1 for x in added if x.get("_case_rank") is not None) >= self.CASE_SEARCH_PASSAGES:
                 break
         if debug_log is not None:
             debug_log["case_search"] = {"total": res["total"], "grades": res["grades"], "added": len(added),

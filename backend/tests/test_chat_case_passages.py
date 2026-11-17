@@ -53,7 +53,7 @@ def test_a_payment_and_an_entity_become_passages_with_citations_that_open_them(m
     by_id = {a["id"]: a for a in added}
     pay = by_id["case:txn://" + tid]
     assert pay["metadata"]["cite"] == "txn://" + tid and "page_start" not in pay["metadata"]
-    assert pay["text"].startswith("Payment · 2024-04-12 · USD 150.00 out") and pay["_case_rank"] == 1
+    assert pay["text"].startswith("Payment · 2024-04-12 · USD 150.00 out") and pay["_case_other_rank"] == 1 and "_case_rank" not in pay
     assert by_id["case:entity://harold-vint"]["metadata"]["cite"] == "entity://harold-vint"
     assert log["case_search"]["added"] == 2
 
@@ -110,3 +110,24 @@ def test_the_answer_says_how_many_citations_were_removed():
     rag = RAGService.__new__(RAGService)
     out, n = rag._pin_citations(None, "")
     assert (out, n) == ("", 0)
+
+
+def test_payments_and_entities_never_move_a_phone_or_document_in_the_fusion():
+    from services import retrieval_fusion as F
+    docs = [{"id": "case:doc://f%d/1" % i, "text": "d", "_case_search": True, "_case_rank": i} for i in (1, 2, 3)]
+    others = [{"id": "case:txn://t%d" % i, "text": "p", "_case_search": True, "_case_other_rank": i} for i in (1, 2)]
+    _, alone, _ = F.fuse([dict(d) for d in docs], [], [])
+    _, mixed, stats = F.fuse([dict(d) for d in docs] + [dict(o) for o in others], [], [])
+    assert {c["id"]: c["_rrf"] for c in alone} == {c["id"]: c["_rrf"] for c in mixed if c["id"] in {d["id"] for d in docs}}
+    assert stats["case_search_other"] == 2 and stats["case_search"] == 3
+
+
+def test_payments_do_not_use_up_the_phone_and_document_cap(monkeypatch):
+    tids = [str(uuid.uuid4()) for _ in range(12)]
+    facts = {t: {"line": "Payment", "page": 1} for t in tids}
+    hits = [_hit(i, "txn://" + t) for i, t in enumerate(tids, 1)] + [_hit(99, "doc://f9/1")]
+    hits[-1]["area"] = "documents"
+    _install(monkeypatch, hits, facts)
+    added = RAGService._case_search_passages(RAGService.__new__(RAGService), "q", "case", [], {})
+    assert [a["id"] for a in added if a.get("_case_rank")] == ["case:doc://f9/1"]
+    assert sum(1 for a in added if a.get("_case_other_rank")) == RAGService.CASE_SEARCH_OTHER_PASSAGES

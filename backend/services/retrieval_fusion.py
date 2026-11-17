@@ -80,6 +80,8 @@ def fuse(
     unscored = [c for c in rest if not _is_word(c) and c.get("distance") is None and not c.get("_case_search")]
     # the case search's ranked list (lx-casesearch): its own order, including the passages the other searches found
     case_ranked = sorted([c for c in rest if c.get("_case_rank") is not None], key=lambda c: c["_case_rank"])
+    # the case search's payments and graph entities: a list of their own, so they never move a phone or document
+    case_other = sorted([c for c in rest if c.get("_case_other_rank") is not None], key=lambda c: c["_case_other_rank"])
     words = [c for c in rest if _is_word(c)]
     words.sort(key=lambda c: c.get("distance") if c.get("distance") is not None else 0.0)  # stable for word hits
 
@@ -101,6 +103,8 @@ def fuse(
     for rank, c in enumerate(unscored, 1):
         credit(c, rank + len(vector))
     for rank, c in enumerate(case_ranked, 1):
+        credit(c, rank)
+    for rank, c in enumerate(case_other, 1):
         credit(c, rank)
 
     entity_rank = {e.get("key"): i for i, e in enumerate(entity_results, 1) if e.get("key")}
@@ -128,7 +132,7 @@ def fuse(
     fused = [items[k] for k in sorted(scores, key=lambda k: -scores[k]) if k not in pinned_keys]
     for c in fused:
         c["_rrf"] = round(scores[_key(c)], 6)
-    stats = {"method": "rrf", "k": K, "vector": len(vector), "words": len(words), "case_search": len(case_ranked),
+    stats = {"method": "rrf", "k": K, "vector": len(vector), "words": len(words), "case_search": len(case_ranked), "case_search_other": len(case_other),
              "graph_evidence": len(graph_evidence),
              "entities": len(entity_rank), "pinned": len(pinned)}
     return pinned, fused, stats
