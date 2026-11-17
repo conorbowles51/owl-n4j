@@ -3,7 +3,7 @@
   "case": "demo",
   "case_id": "b75f3f2c-ffa1-4260-8fe9-6f5db4e9d4df",
   "also_through": [
-    {"kind": "meaning", "tool": "search_by_meaning", "arg": "query", "extra": {"limit": 50}, "from_kinds": ["phones", "documents", "ledger", "graph", "casework"]}
+    {"kind": "meaning", "tool": "search_by_meaning", "arg": "query", "extra": {"limit": 50}, "from_kinds": ["phones", "documents", "ledger", "casework"]}
   ],
   "queries": [
     {"id": "ph-storage", "kind": "phones", "tool": "search_case", "args": {"query": "storage unit rental"}, "key": ["F19"],

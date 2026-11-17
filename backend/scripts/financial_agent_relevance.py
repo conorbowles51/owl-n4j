@@ -54,6 +54,10 @@ VERDICT_DIR = '/mnt/owl-data/fin-wt/headless/relevance-gate'
 BASE_TREE = '/mnt/owl-data/fin-wt/relevance-base'
 LIVE = '/home/conorbowles51/app-v3/owl-n4j'
 BRANCH = 'origin/integration/evidence-main-reunion'
+# A cached baseline is reused for this long. Live data moves under the searches (measured 17 Nov: the same tree found
+# 6 more judged records 20 minutes later while meaning vectors were being filled), so the baseline and the candidate
+# must read nearly the same data. Reverse: interleaved runs of both trees, or a frozen test database.
+BASE_MAX_AGE_S = 2 * 3600
 
 
 def _sha(path='.'):
@@ -110,44 +114,61 @@ def guard_process():
             raise SystemExit('refusing to run: sessions are not read-only')
 
 
-def run_sets(paths, kinds=None, repeat=1, only=None, log=lambda *a: print(*a, flush=True)):
-    """One file's worth of runs: per run the aggregate and per query its score (or error / missing tool)."""
+def run_sets(paths, kinds=None, repeat=None, only=None, dump=None, log=lambda *a: print(*a, flush=True)):
+    """Runs of every judged query: per run the aggregate and per query its score (or error / missing tool).
+
+    ``repeat`` None: each query runs as often as its kind asks (``repeat`` in the set's also_through entry or
+    ``kind_repeat``; 1 otherwise: measured 17 Nov, 0 of 99 queries ranked differently on a second run, so word and
+    meaning searches are deterministic); a query run fewer times than the most-repeated kind repeats its one result.
+    A number: every query runs that often."""
     guard_process()
     from services.agent.tools import AgentToolContext, _financial_session, make_agent_tools
-    import services.agent.tools as tools_mod
     sets = [json.load(open(p)) for p in paths]
-    tools_by_case = {}
-    runs = [dict(queries={}) for _ in range(repeat)]
+    plan = []
     for judged in sets:
+        reps = dict(judged.get('kind_repeat') or {})
+        reps.update({x['kind']: x['repeat'] for x in judged.get('also_through') or [] if x.get('repeat')})
+        for q in expand(judged):
+            if (kinds and q['kind'] not in kinds) or (only and q['id'] not in only):
+                continue
+            plan.append((judged, q, repeat or reps.get(q['kind'], 1)))
+    most = max([n for _, _, n in plan] or [1])
+    runs = [dict(queries={}) for _ in range(most)]
+    tools_by_case = {}
+    out = open(dump, 'w') if dump else None
+    for judged, q, n in plan:
         case_id = judged['case_id']
         if case_id not in tools_by_case:
             ctx = AgentToolContext(case_id=case_id, ledger_session_factory=_financial_session)
             tools_by_case[case_id] = {t.name: t for t in make_agent_tools(ctx)}
-        tools = tools_by_case[case_id]
-        for q in expand(judged):
-            if (kinds and q['kind'] not in kinds) or (only and q['id'] not in only):
+        qid = '%s:%s' % (judged['case'], q['id'])
+        tool = tools_by_case[case_id].get(q['tool'])
+        for i in range(most):
+            if i >= n:
+                runs[i]['queries'][qid] = runs[0]['queries'][qid]
                 continue
-            qid = '%s:%s' % (judged['case'], q['id'])
-            tool = tools.get(q['tool'])
-            for i in range(repeat):
-                row = dict(kind=q['kind'], tool=q['tool'], case=judged['case'])
-                if tool is None:
-                    row['missing'] = 'no tool %s in this tree' % q['tool']
-                else:
-                    t0 = time.time()
-                    try:
-                        units = R.result_units(tool.invoke(q['args']))
-                        row['score'] = R.score_query([R.unit_text(u) for u in units], q.get('relevant') or [],
-                                                     q.get('decoys') or [])
-                    except Exception as exc:  # noqa: BLE001 - a crash is a failed search, recorded
-                        row['error'] = '%s: %s' % (type(exc).__name__, str(exc)[:300])
-                    row['seconds'] = round(time.time() - t0, 2)
-                runs[i]['queries'][qid] = row
-                s = row.get('score')
-                log('%-34s %-10s %s' % (qid[:34], q['kind'], row.get('missing') or row.get('error') or
-                    'units %d first %s r@10 %s decoys %s %.0fs' % (s['units'], s['first_relevant'],
-                                                                   s['recall_at_10'], s['decoys_top10'],
-                                                                   row['seconds'])))
+            row = dict(kind=q['kind'], tool=q['tool'], case=judged['case'])
+            if tool is None:
+                row['missing'] = 'no tool %s in this tree' % q['tool']
+            else:
+                t0 = time.time()
+                try:
+                    texts = [R.unit_text(u) for u in R.result_units(tool.invoke(q['args']))]
+                    row['score'] = R.score_query(texts, q.get('relevant') or [], q.get('decoys') or [])
+                    if out and i == 0:
+                        out.write(json.dumps(dict(query=qid, args=q['args'], units=[t[:400] for t in texts[:50]]),
+                                             ensure_ascii=False) + '\n')
+                except Exception as exc:  # noqa: BLE001 - a crash is a failed search, recorded
+                    row['error'] = '%s: %s' % (type(exc).__name__, str(exc)[:300])
+                row['seconds'] = round(time.time() - t0, 2)
+            runs[i]['queries'][qid] = row
+            s = row.get('score')
+            log('%-34s %-10s %s' % (qid[:34], q['kind'], row.get('missing') or row.get('error') or
+                'units %d first %s r@10 %s decoys %s %.0fs' % (s['units'], s['first_relevant'],
+                                                               s['recall_at_10'], s['decoys_top10'],
+                                                               row['seconds'])))
+    if out:
+        out.close()
     for r in runs:
         r['aggregate'] = R.aggregate([dict(kind=v['kind'], **({'score': v['score']} if 'score' in v else
                                                               {'error': v.get('error')}))
@@ -171,7 +192,7 @@ def table(agg):
 
 def cmd_run(args):
     paths = existing_sets(args.set)
-    runs = run_sets(paths, kinds=args.kinds, repeat=args.repeat, only=args.only)
+    runs = run_sets(paths, kinds=args.kinds, repeat=args.repeat, only=args.only, dump=args.dump)
     write_runs(args.out, runs, paths)
     for line in table(runs[0]['aggregate']):
         print(line)
@@ -256,20 +277,22 @@ def baseline(paths, kinds, repeat, refresh=False, log=print):
     subprocess.run(['git', '-C', LIVE, 'fetch', '-q', 'origin', 'integration/evidence-main-reunion'],
                    capture_output=True, timeout=300)
     head = subprocess.run(['git', '-C', LIVE, 'rev-parse', BRANCH], capture_output=True, text=True).stdout.strip()
-    scorer = hashlib.sha256(open(R.__file__, 'rb').read()).hexdigest()[:8]
-    key = '%s-%s-%s-%s-r%d' % (head[:12], _set_hash(paths), scorer, '+'.join(kinds or ['all']), repeat)
+    scorer = hashlib.sha256(open(R.__file__, 'rb').read() + open(os.path.abspath(__file__), 'rb').read()).hexdigest()[:8]
+    key = '%s-%s-%s-%s-r%s' % (head[:12], _set_hash(paths), scorer, '+'.join(kinds or ['all']), repeat or 'k')
     os.makedirs(GATE_DIR, mode=0o700, exist_ok=True)
     path = os.path.join(GATE_DIR, 'base-%s.json' % key)
-    if os.path.exists(path) and not refresh:
-        log('baseline: cached run of origin %s (%s)' % (head[:12], path))
+    fresh = os.path.exists(path) and time.time() - os.path.getmtime(path) < BASE_MAX_AGE_S
+    if fresh and not refresh:
+        log('baseline: cached run of origin %s, %d min old (%s)' % (head[:12], (time.time() - os.path.getmtime(path))
+                                                                     // 60, path))
         return path, head
     with open(os.path.join(GATE_DIR, 'base.lock'), 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if os.path.exists(path) and not refresh:
+        if os.path.exists(path) and time.time() - os.path.getmtime(path) < BASE_MAX_AGE_S and not refresh:
             return path, head
         tree = _base_tree(head)
         log('baseline: running origin %s from %s (once per head; every job reuses it)' % (head[:12], tree))
-        cmd = [sys.executable, os.path.abspath(__file__), 'run', '--out', path, '--repeat', str(repeat)]
+        cmd = [sys.executable, os.path.abspath(__file__), 'run', '--out', path] + (['--repeat', str(repeat)] if repeat else [])
         for p in paths:
             cmd += ['--set', p]
         if kinds:
@@ -332,9 +355,10 @@ def main(argv=None):
     p = sub.add_parser('run')
     p.add_argument('--set', action='append')
     p.add_argument('--out', required=True)
-    p.add_argument('--repeat', type=int, default=1)
+    p.add_argument('--repeat', type=int, default=None, help='runs per query; default: as its kind asks')
     p.add_argument('--kinds', nargs='*')
     p.add_argument('--only', nargs='*', help='query ids')
+    p.add_argument('--dump', help='jsonl of each query\'s returned units (case material; under /mnt/owl-data/tmp)')
     p = sub.add_parser('compare')
     p.add_argument('--base', required=True)
     p.add_argument('--cand', required=True)
@@ -346,7 +370,8 @@ def main(argv=None):
     p.add_argument('--label', required=True, help='your job name')
     p.add_argument('--set', action='append')
     p.add_argument('--kinds', nargs='*')
-    p.add_argument('--repeat', type=int, default=1, help='runs per side; searches with a model step need 3')
+    p.add_argument('--repeat', type=int, default=None, help='runs per query; default: as its kind asks (a kind '
+                                                         'with a model step sets repeat 3 in the set)')
     p.add_argument('--reports', nargs='*', help='RID=base.md,...:cand.md,... report files to score (stand-in or '
                                                 'DeepSeek answers); the candidate side alone is scored if no ":"')
     p.add_argument('--reports-only', action='store_true')
