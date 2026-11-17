@@ -233,7 +233,8 @@ def run(rows, instances, people, recs, ctx, store) -> list[dict]:
     unknown = [k for k in people if not people[k].get("dossier_id") and people[k]["phones"]]
     dev_notes, dev_rows = [], []
     for u in unknown:
-        for r in [r for r in rows if r["link_kind"] == "together" and u in r["people"]]:
+        # a "together" row of one person (inside the area chosen) says where, not with whom
+        for r in [r for r in rows if r["link_kind"] == "together" and u in r["people"] and len(set(r["people"])) > 1]:
             share = L.share(r["ordinary"])
             if share is not None and r["ordinary"]["of"] >= L.MIN_ORDINARY and share >= SHARED_DEVICE_SHARE:
                 other = next(x for x in r["people"] if x != u)

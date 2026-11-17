@@ -277,3 +277,19 @@ def test_positions_alone_are_left_as_the_selection():
     pts = [{"ref": f"p{n}", "kind": "position", "at": at(FRIDAYS[n], 10), "place": {"lat": YARD[0], "lon": YARD[1],
                                                                                    "radius_m": 10}} for n in range(3)]
     assert engine.fold_positions(pts) == (pts, [])
+
+
+def test_an_unnamed_phone_inside_the_area_every_evening_is_a_place_row_not_a_second_phone_of_someone():
+    """lx-demo, 17 Nov: a Map area of 404 positions beside the mixed selection stopped the run (StopIteration in the
+    shared-device check): the row "the user of Phone C inside the area chosen" names one person, so there is no
+    other person whose second phone it could be."""
+    from datetime import timedelta
+    from tests.corroborate_world import YARD, build_records
+    recs = build_records()
+    days = [FRIDAYS[0] + timedelta(days=n) for n in range(70)]
+    recs += [{"ref": f"eve:{d}", "kind": "position", "at": at(d, 19), "phone": "phC", "owner": "pre",
+              "place": {"lat": YARD[0], "lon": YARD[1], "radius_m": 10}} for d in days]
+    res = _run(_seed() + [{"type": "record", "id": f"eve:{d}"} for d in days], {"kind": "every_time"}, recs=recs)
+    device = next(c for c in res["checks"] if c["check"] == "shared_device")
+    assert device["outcome"] == "checked", device
+    assert res["level"]["key"] in ("strong", "probable"), res["level"]
