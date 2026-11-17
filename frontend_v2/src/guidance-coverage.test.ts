@@ -2,7 +2,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { disabledGaps, guideTargets, headingSlugs, iconGaps, scanAll } from "../scripts/guidance-coverage.js"
+import { disabledGaps, guideTargets, headingSlugs, iconGaps, scanAll, toggleGaps } from "../scripts/guidance-coverage.js"
 import { TOURS, tourArea, type TourArea } from "@/features/guidance/tours"
 import { AREA_GUIDE, GUIDES } from "@/features/guidance/guides"
 import { termAnchor } from "@/components/ui/glossary"
@@ -14,6 +14,7 @@ import { termAnchor } from "@/components/ui/glossary"
  *   3. every control a tour points at (data-guide) exists in the code
  *   4. every glossary link lands on a heading, and every area's guide exists
  *   5. every disabled control whose reason is not evident (work running, a first or last page) says why
+ *   6. every checkbox and switch has a name a screen reader reads
  */
 const root = path.resolve(__dirname, "..")
 const src = path.join(root, "src")
@@ -37,6 +38,10 @@ describe("guidance coverage", () => {
     const gaps = iconGaps(scanned, ALLOW).map((c) => `${c.file}:${c.line} <${c.tag}> ${c.hasName ? "" : "no name; "}${c.hasTooltip ? "" : "no tooltip"}`)
     expect(gaps).toEqual([])
     for (const why of Object.values(ALLOW)) expect(why.length).toBeGreaterThan(20)
+  })
+
+  it("every checkbox and switch has a name", () => {
+    expect(toggleGaps(scanned).map((t) => `${t.file}:${t.line} <${t.tag}>`)).toEqual([])
   })
 
   it("every disabled control says why, unless the reason is evident", () => {

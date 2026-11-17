@@ -297,6 +297,7 @@ export function TableGrid({
                     data-guide="table-select"
                     checked={allChecked ? true : someChecked ? "indeterminate" : false}
                     onCheckedChange={onToggleAllChecked}
+                    aria-label="Select all rows"
                   />
                 </TableHead>
               ) : (
@@ -344,6 +345,7 @@ export function TableGrid({
                       <Checkbox
                         checked={isChecked}
                         onCheckedChange={() => onToggleChecked(node.key)}
+                        aria-label={`Select ${node.label}`}
                       />
                     </TableCell>
                   ) : (

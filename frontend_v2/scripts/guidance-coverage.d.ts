@@ -21,11 +21,13 @@ export interface ScannedFile {
   guides: string[]
   terms: { line: number; term: string }[]
   dialogs: { line: number; title: string }[]
+  toggles: { file: string; line: number; tag: string; spread: boolean; hasName: boolean }[]
 }
 export function screenFiles(srcDir: string): string[]
 export function scanFile(file: string, srcDir: string): ScannedFile
 export function scanAll(srcDir: string): ScannedFile[]
 export function iconGaps(results: ScannedFile[], allow?: Record<string, string>): ScannedControl[]
+export function toggleGaps(results: ScannedFile[]): ScannedFile["toggles"]
 export function guideTargets(results: ScannedFile[]): Set<string>
 export function headingSlugs(markdown: string): Set<string>
 export function disabledGaps(results: ScannedFile[], allow?: Record<string, string>): ScannedControl[]

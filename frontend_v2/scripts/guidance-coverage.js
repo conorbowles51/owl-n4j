@@ -155,7 +155,8 @@ export function scanFile(file, srcDir) {
   const guides = []
   const terms = []
   const dialogs = []
-  const visit = (node, inTrigger) => {
+  const toggles = []
+  const visit = (node, inTrigger, labelled = false) => {
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
       const opening = ts.isJsxElement(node) ? node.openingElement : node
       const name = tagName(opening)
@@ -166,6 +167,20 @@ export function scanFile(file, srcDir) {
         for (const term of literalsOf(opening, "term"))
           terms.push({ line: sf.getLineAndCharacterOfPosition(opening.getStart()).line + 1, term })
       const trigger = inTrigger || name === "TooltipTrigger"
+      // a checkbox or switch is named by its own label, an id a <label htmlFor> points at, or a row of words around it
+      const kids = ts.isJsxElement(node) ? node.children : []
+      const wordsAround =
+        name === "label" ||
+        ((name === "button" || name === "Button" || map.has("onClick") || map.has("role") || /Item$/.test(name)) &&
+          contentKind(kids, icons) === "text")
+      if (name === "Checkbox" || name === "Switch")
+        toggles.push({
+          file: rel,
+          line: sf.getLineAndCharacterOfPosition(opening.getStart()).line + 1,
+          tag: name,
+          spread,
+          hasName: labelled || map.has("aria-label") || map.has("aria-labelledby") || map.has("id"),
+        })
       if (/^(Dialog|Sheet|AlertDialog)Title$/.test(name) && ts.isJsxElement(node))
         dialogs.push({ line: sf.getLineAndCharacterOfPosition(opening.getStart()).line + 1, title: node.children.map((k) => k.getText()).join("").replace(/\s+/g, " ").trim().slice(0, 90) })
       const isControl = name === "button" || name === "Button" || map.get("role") === "button"
@@ -176,8 +191,14 @@ export function scanFile(file, srcDir) {
           const only = children.filter((k) => !(ts.isJsxText(k) && !k.text.trim()))
           if (only.length === 1 && ts.isJsxElement(only[0])) children = only[0].children
         }
-        const kind = contentKind(children, icons)
         const aria = map.get("aria-label")
+        // a name given only in one state (`collapsed ? "Search" : undefined`) marks a control whose words come and go
+        const ownIcon = children.some((k) => {
+          const el = ts.isJsxSelfClosingElement(k) ? k : ts.isJsxElement(k) ? k.openingElement : null
+          return !!el && (icons.has(tagName(el)) || /Icon$/.test(tagName(el)))
+        })
+        const sometimesIcon = ownIcon && typeof aria === "object" && /\?[\s\S]*:\s*undefined\s*$/.test(aria.expr)
+        const kind = sometimesIcon ? "icon-when-collapsed" : contentKind(children, icons)
         const line = sf.getLineAndCharacterOfPosition(opening.getStart()).line + 1
         const hasName = map.has("aria-label") || map.has("aria-labelledby") || kind === "hidden-name"
         const hasTooltip =
@@ -187,7 +208,7 @@ export function scanFile(file, srcDir) {
           line,
           tag: name,
           kind,
-          iconOnly: kind === "icon" || kind === "hidden-name" || kind === "empty",
+          iconOnly: kind === "icon" || kind === "hidden-name" || kind === "empty" || kind === "icon-when-collapsed",
           spread,
           name: textOf(aria) || textOf(map.get("title")) || "",
           hasName: hasName || map.has("title"),
@@ -200,13 +221,13 @@ export function scanFile(file, srcDir) {
           guide: typeof guide === "string" ? guide : "",
         })
       }
-      ts.forEachChild(node, (c) => visit(c, trigger))
+      ts.forEachChild(node, (c) => visit(c, trigger, labelled || wordsAround))
       return
     }
-    ts.forEachChild(node, (c) => visit(c, inTrigger))
+    ts.forEachChild(node, (c) => visit(c, inTrigger, labelled))
   }
   visit(sf, false)
-  return { file: rel, controls, guides, terms, dialogs }
+  return { file: rel, controls, guides, terms, dialogs, toggles }
 }
 
 export function scanAll(srcDir) {
@@ -250,6 +271,11 @@ export function disabledGaps(results, allow = {}) {
       gaps.push(c)
     }
   return gaps
+}
+
+/** Checkboxes and switches with no name a screen reader can read (no label, id or words around them). */
+export function toggleGaps(results) {
+  return results.flatMap((r) => r.toggles.filter((t) => !t.hasName && !t.spread))
 }
 
 /** Every data-guide target named in the source, by file. */

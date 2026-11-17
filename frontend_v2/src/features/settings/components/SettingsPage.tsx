@@ -157,7 +157,7 @@ export function SettingsPage() {
                   Notify when evidence processing finishes
                 </p>
               </div>
-              <Switch defaultChecked />
+              <Switch aria-label="Processing complete" defaultChecked />
             </div>
             <Separator />
             <div className="flex items-center justify-between">
@@ -167,7 +167,7 @@ export function SettingsPage() {
                   Sound notification for AI responses
                 </p>
               </div>
-              <Switch />
+              <Switch aria-label="Chat responses" />
             </div>
             <Separator />
             <div className="flex items-center justify-between">
@@ -177,7 +177,7 @@ export function SettingsPage() {
                   Notify on system errors
                 </p>
               </div>
-              <Switch defaultChecked />
+              <Switch aria-label="Error alerts" defaultChecked />
             </div>
           </CardContent>
         </Card>

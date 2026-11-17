@@ -370,24 +370,37 @@ export function AppSidebar() {
         </SidebarSection>
 
         {caseId && (
-          <button
-            type="button"
-            onClick={() => document.dispatchEvent(new CustomEvent("owl:toggle-command-palette"))}
-            data-guide="case-search"
-            aria-label={!sidebarExpanded ? "Search this case (Ctrl+K)" : undefined}
-            className={cn(
-              "mt-3 flex items-center rounded-lg border border-sidebar-border text-sm text-sidebar-muted outline-none hover:bg-slate-50 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/35 dark:hover:bg-white/[0.055]",
-              sidebarExpanded ? "h-9 w-full gap-3 px-3" : "mx-auto h-9 w-9 justify-center px-0",
-            )}
-          >
-            <SearchIcon className="h-4 w-4 shrink-0" aria-hidden />
-            {sidebarExpanded && (
-              <>
+          // the words show beside the icon while the side menu is open, so the tooltip stays shut then
+          <Tooltip open={sidebarExpanded ? false : undefined}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => document.dispatchEvent(new CustomEvent("owl:toggle-command-palette"))}
+                data-guide="case-search"
+                aria-label={!sidebarExpanded ? "Search this case (Ctrl+K)" : undefined}
+                className={cn(
+                  "mt-3 flex items-center rounded-lg border border-sidebar-border text-sm text-sidebar-muted outline-none hover:bg-slate-50 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/35 dark:hover:bg-white/[0.055]",
+                  sidebarExpanded ? "h-9 w-full gap-3 px-3" : "mx-auto h-9 w-9 justify-center px-0",
+                )}
+              >
+                <SearchIcon className="h-4 w-4 shrink-0" aria-hidden />
+                {sidebarExpanded && (
+                  <>
+                    <span>Search this case</span>
+                    <kbd className="ml-auto text-[10px]">Ctrl+K</kbd>
+                  </>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={10}>
+              <span className="flex items-center gap-2">
                 <span>Search this case</span>
-                <kbd className="ml-auto text-[10px]">Ctrl+K</kbd>
-              </>
-            )}
-          </button>
+                <kbd className="rounded bg-background/15 px-1.5 py-0.5 font-mono text-[10px] text-background/80">
+                  Ctrl+K
+                </kbd>
+              </span>
+            </TooltipContent>
+          </Tooltip>
         )}
 
         {caseId && (

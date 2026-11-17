@@ -85,6 +85,7 @@ export function ForceControlsPanel() {
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium">Name each line</span>
           <Switch
+            aria-label="Name each line"
             checked={showRelationshipLabels}
             onCheckedChange={setShowRelationshipLabels}
           />
