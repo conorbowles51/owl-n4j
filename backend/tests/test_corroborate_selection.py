@@ -70,6 +70,13 @@ class PreviewTests(DuplicateTestCase):
         self.assertEqual(qs[-1]["kind"], "who_else")
         self.assertTrue(all(q["count"] > 0 and q["chips"]["compare_with"] for q in qs))
 
+    def test_one_selected_item_is_counted_in_the_singular(self):
+        # 17 Nov: a one-photo selection read "1 items" in the question menu
+        taken = {"people": [], "times": {"from": None, "to": None, "dated": 0, "days": 0, "undated": 1},
+                 "places": [], "items": [{"type": "phone_record", "count": 1, "words": "1 phone record"}]}
+        self.assertEqual(preview.questions(taken, 1)[-1]["count_words"], "1 item")
+        self.assertEqual(preview.questions(taken, 2)[-1]["count_words"], "2 items")
+
     def test_a_selection_of_nothing_in_the_case_has_no_questions(self):
         out = self.run_preview([{"type": "graph_entity", "id": "bad:x"}], [])
         self.assertEqual((out["members"], out["left_out"]["count"], out["questions"]), (0, 1, []))

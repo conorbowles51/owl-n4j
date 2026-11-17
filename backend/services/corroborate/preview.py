@@ -175,7 +175,7 @@ def questions(taken: dict[str, Any], members: int) -> list[dict[str, Any]]:
     if docs:
         add("document_agrees", "Does this document agree with the phones?" if docs == 1 else "Do these documents agree with the phones?",
             docs, _words("evidence", docs), "times, places, people and amounts in the document", "phone and ledger records")
-    add("who_else", "Who else is connected to these?", members, f"{members:,} items", "numbers, accounts, names, places",
+    add("who_else", "Who else is connected to these?", members, f"{members:,} {'item' if members == 1 else 'items'}", "numbers, accounts, names, places",
         "everyone else in the case")
     # The first questions are the ones the mix points to; "who else" always closes the list when there is room.
     ranked = out[:MAX_QUESTIONS - 1] + [q for q in out if q["kind"] == "who_else"]
