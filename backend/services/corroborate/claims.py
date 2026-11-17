@@ -49,7 +49,7 @@ def parse(db, store, case_id, *, text: str, statement_date: str | None, speaker:
                            status="draft", created_by=getattr(user, "id", None), created_by_name=_name(user))
     db.add(row)
     db.commit()
-    return view(row)
+    return {**view(row), "zone": read.get("zone"), "people": [{"key": p["key"], "label": p["label"]} for p in store.people()]}
 
 
 def get(db, case_id, claim_id):

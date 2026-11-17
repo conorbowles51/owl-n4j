@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Trail } from "@/features/corroborate/Trail"
 import { ResultView } from "@/features/corroborate/ResultView"
+import { ClaimResult } from "@/features/corroborate/ClaimResult"
 import { corroborateAPI } from "@/features/corroborate/api"
 import { useSwitch } from "@/lib/ui-switches"
 import { useCollectTargets } from "@/features/phones/collect-targets"
@@ -179,7 +180,8 @@ export function RelationsPage() {
           <Button size="sm" variant="outline" onClick={() => void relationAPI.rerun(caseId, selectionId).then(() => qc.invalidateQueries({ queryKey: ["relation-query", caseId, selectionId] }))}>Run again</Button>
         </section>
       )}
-      {result && run && (
+      {result && run && corro?.claim && <ClaimResult c={corro} />}
+      {result && run && !corro?.claim && (
         <>
           {corro && <><Trail caseId={caseId} selectionId={selectionId} /><ResultView c={corro} onAsk={askAssistant} onFurther={further} caseId={caseId} runId={run.id} /></>}
           <Summary r={result} />

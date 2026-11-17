@@ -94,3 +94,36 @@ export const corroborateAPI = {
     fetchAPI<Combined>(`${base(caseId)}/subsets/combine`, { method: "POST", body: { first, second, op } }),
   matchList: (caseId: string, text: string) => fetchAPI<ListMatch>(`${base(caseId)}/match-list`, { method: "POST", body: { text } }),
 }
+
+/** A free-text claim read into chips (lx-corrostatement). Loupe's reading is "Read by Loupe · not confirmed" until a person confirms it. */
+export interface ClaimChip<V> {
+  status: "read" | "not_stated" | "not_located" | "unread"
+  value: V | null
+  words: string | null
+  confidence: string | null
+  source: string
+  read_by: string
+  note?: string
+}
+export interface ClaimWho { key: string; label: string; words?: string; how?: string }
+export interface ClaimWhen { start: string; end: string; zone: string; label: string }
+export interface ClaimWhere { name: string; lat?: number; lon?: number; radius_m?: number; located?: boolean; how?: string }
+export interface ClaimWhat { action: "presence" | "contact" | "with"; negated: boolean; with: string[]; mode?: string }
+export interface ParsedClaim {
+  id: string
+  status: "draft" | "confirmed"
+  sentence: string
+  zone: string
+  people: { key: string; label: string }[]
+  read_by: string
+  missing: string[]
+  chips: { who: ClaimChip<ClaimWho[]>; when: ClaimChip<ClaimWhen>; where: ClaimChip<ClaimWhere>; what: ClaimChip<ClaimWhat> }
+}
+export interface ConfirmedChips { who: ClaimWho[]; when: ClaimWhen | null; where: ClaimWhere | null; what: ClaimWhat | null; where_text?: string }
+
+export const claimAPI = {
+  parse: (caseId: string, body: { text: string; statement_date?: string; speaker?: string; source?: Record<string, unknown> }) =>
+    fetchAPI<{ claim: ParsedClaim }>(`${base(caseId)}/claims/parse`, { method: "POST", body }),
+  confirm: (caseId: string, claimId: string, chips: ConfirmedChips) =>
+    fetchAPI<{ claim: { id: string; status: string } }>(`${base(caseId)}/claims/${encodeURIComponent(claimId)}:confirm`, { method: "POST", body: { chips } }),
+}

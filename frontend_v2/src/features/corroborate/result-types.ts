@@ -55,4 +55,7 @@ export interface Corroboration {
   look_further: { text: string; count: number; question: { kind: string; chips: Record<string, unknown> } }[]
   searched?: { records_read: Record<string, number>; kinds_checked: string[]; kinds_with_nothing: string[] }
   seconds?: number
+  /** Set when the run weighed a confirmed free-text claim (lx-corrostatement). */
+  claim?: { id: string; sentence: string; confirmed_by: string | null; edited: string[] }
+  cited?: { ref: string; at: string; person?: string; kind?: string; inside?: boolean }[]
 }
