@@ -7,6 +7,7 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+import re
 from urllib.parse import quote
 
 from app.config import settings
@@ -49,9 +50,24 @@ def _page_for_fact(fact: dict[str, Any]) -> int | None:
         return None
 
 
-def _document_citation(source_file: str, page: int | None) -> str:
+_FILE_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _document_id(location: Any) -> str | None:
+    """The evidence file id a source location names, when it is one (an older location may hold the file name)."""
+    found = str((location or {}).get("source_document_id") or "").strip() if isinstance(location, dict) else ""
+    return found.lower() if _FILE_ID.match(found) else None
+
+
+def _document_citation(source_file: str, page: int | None, document_id: str | None = None) -> str:
+    """The link to a page of the file, by its evidence file id when the location carries it: a link by name opens
+    only when the case holds exactly one file of that name (17 Nov: 5,166 of 37,140 summary links named a file the
+    case holds more than once)."""
     if not source_file:
         return ""
+    if document_id:
+        return f"[{source_file}, p.{page}](doc://{document_id}/{page})" if page is not None else (
+            f"[{source_file}](doc://{document_id})")
     if page is None:
         return f"[{source_file}](evidence://{source_file})"
     return f"[{source_file}, p.{page}](doc://{quote(source_file, safe='')}/{page})"
@@ -81,7 +97,7 @@ def _select_verified_facts(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "evidence_quote": str(fact.get("quote") or "").strip(),
                 "source_file": source_file,
                 "page": page,
-                "citation": _document_citation(source_file, page),
+                "citation": _document_citation(source_file, page, _document_id(fact.get("source_location"))),
                 "importance": importance,
             }
         )
@@ -199,7 +215,7 @@ def _build_entity_context(
             "source_quotes": source_quotes,
             "source_files": rel.source_files,
             "confidence": rel.confidence,
-            "citation": _document_citation(source_file, page),
+            "citation": _document_citation(source_file, page, _document_id(locations[0]) if locations else None),
         })
 
     context: dict = {

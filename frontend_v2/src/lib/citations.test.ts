@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { citationHrefs, entityPath, parseCitation } from "./citations"
+import { citationHrefs, citationsAsWords, entityPath, parseCitation } from "./citations"
 
 const ID = "0b6c2a1e-7d4f-4c1a-9e2b-5f3a8c9d0e11"
 
@@ -36,5 +36,14 @@ describe("one citation parser", () => {
     expect(parseCitation("entity://")).toBeNull()
     expect(citationHrefs("[Vint](entity://harold-vint)")).toEqual(["entity://harold-vint"])
     expect(entityPath("c1", "Harold Vint")).toBe("/cases/c1/graph?entity=Harold+Vint")
+  })
+})
+
+describe("citations as words", () => {
+  it("shows a summary's citation links as their words in a one-line preview", () => {
+    const summary = "Night guard on duty ([marsh-police-interview-2024-06-12.pdf, p.1](doc://marsh-police-interview-2024-06-12.pdf/1))."
+    expect(citationsAsWords(summary)).toBe("Night guard on duty (marsh-police-interview-2024-06-12.pdf, p.1).")
+    expect(citationsAsWords("Paid [txn](txn://5c1a2b3c-0000-4000-8000-000000000001) and [site](https://x.org)"))
+      .toBe("Paid txn and [site](https://x.org)")
   })
 })

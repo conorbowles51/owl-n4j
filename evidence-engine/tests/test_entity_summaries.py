@@ -208,3 +208,19 @@ async def test_central_entity_summary_receives_complete_cited_case_dossier(
     assert "Natural paraphrase and synthesis are allowed" in prompt
     assert "Documented fact number 25" in result[0].summary
     assert "doc://record-0.pdf/1" in result[0].summary
+
+
+def test_a_fact_whose_location_names_its_file_id_is_cited_by_that_id() -> None:
+    """17 Nov: summaries cited doc://<file name>/<page>; 5,166 of 37,140 such links named a file the case holds more
+    than once, so they opened nothing. The location's source_document_id names the exact file."""
+    file_id = "e941f20d-3001-40f4-a7db-deb6c6ad4d51"
+    [fact] = summary_module._select_verified_facts([{
+        "text": "Lena Marsh received $500 via POCKETWIRE.", "quote": "POCKETWIRE TO LENA MARSH", "page": 1,
+        "source_doc": "kell-2024-03.pdf",
+        "source_location": {"source_document_id": file_id.upper(), "source_file": "kell-2024-03.pdf", "page_start": 1}}])
+    assert fact["citation"] == f"[kell-2024-03.pdf, p.1](doc://{file_id}/1)"
+    # an older location that holds the file name keeps the name link
+    [old] = summary_module._select_verified_facts([{
+        "text": "Older fact.", "page": 2, "source_doc": "a b.pdf",
+        "source_location": {"source_document_id": "a b.pdf", "source_file": "a b.pdf", "page_start": 2}}])
+    assert old["citation"] == "[a b.pdf, p.2](doc://a%20b.pdf/2)"

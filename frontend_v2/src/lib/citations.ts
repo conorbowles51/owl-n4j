@@ -110,6 +110,14 @@ export function citationHrefs(markdown: string | undefined | null): string[] {
   return [...out]
 }
 
+const INLINE_CITATION = /\[([^\]]+)\]\(\s*<?(?:doc|txn|rec|entity|evidence):\/\/[^)>]*>?\s*\)/g
+
+/** Text for a one-line preview: each citation link as its words ("[a.pdf, p.1](doc://…)" reads "a.pdf, p.1"). The
+ * Search box showed a graph summary's link markup as written (17 Nov, lx-demo Lena Marsh). */
+export function citationsAsWords(text: string | undefined | null): string {
+  return (text ?? "").replace(INLINE_CITATION, "$1")
+}
+
 /** The doc:// citation of a file at a page, or of the file alone when no page is known. */
 export function docHref(evidenceFileId: string, page?: number | null) {
   return page ? `doc://${evidenceFileId}/${page}` : `doc://${evidenceFileId}`

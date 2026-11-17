@@ -1,4 +1,5 @@
 import { CommandGroup, CommandItem } from "@/components/ui/command"
+import { citationsAsWords } from "@/lib/citations"
 import type { MeaningResult } from "../api"
 
 /** The areas of the search by meaning, in the words a person uses. */
@@ -43,7 +44,7 @@ export default function MeaningGroup({ meaning, error, onOpen }: { meaning: Mean
               {[h.grade && h.grade !== "ungraded" ? MEANING_GRADES[h.grade] : null, MEANING_AREAS[h.area] ?? h.area, MEANING_WHY[h.matched], h.as_read ? "read by a model, not confirmed" : null, h.title].filter(Boolean).join(" · ")}
             </span>
             {h.reason && <span className="truncate text-xs">{h.reason}</span>}
-            <span className="line-clamp-2 text-sm">{h.snippet.replace(/ \[rec:\/\/[0-9a-f-]{36}\]/g, "")}</span>
+            <span className="line-clamp-2 text-sm">{citationsAsWords(h.snippet.replace(/ \[rec:\/\/[0-9a-f-]{36}\]/g, ""))}</span>
           </span>
         </CommandItem>
       ))}
