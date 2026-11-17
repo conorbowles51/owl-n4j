@@ -152,6 +152,19 @@ describe("first-visit tours", () => {
     expect(panelAreas()).toEqual(["corroborate"])
   })
 
+  it("draws an open theory's tour inside the theory, where it can be seen, clicked and reached by Tab", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    server()
+    const screenEl = drawScreen(
+      '<div role="dialog" data-guide-panel data-guide="theory-panel"><button data-guide="theory-reading">Reading &amp; analysis</button></div>'
+    )
+    wrap(<TourHost caseId="c1" />, "/cases/c1/workspace")
+    await act(async () => void vi.advanceTimersByTime(2500))
+    const popup = await screen.findByTestId("tour-popup")
+    expect(popup).toHaveTextContent("Theory · 1 of")
+    expect(screenEl.querySelector('[role="dialog"][data-guide-panel]')).toContainElement(popup)
+  })
+
   it("does not open while none of its controls are drawn, and opens once they are", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     server()

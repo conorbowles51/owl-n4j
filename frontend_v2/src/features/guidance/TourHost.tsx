@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import { useLocation } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { useGuidance } from "./settings"
@@ -167,12 +168,17 @@ export function TourPopup({
     window.addEventListener("resize", update)
     return () => window.removeEventListener("resize", update)
   }, [step])
+  // A panel that is a modal dialog (an open theory) keeps clicks and keyboard focus inside itself and covers the rest
+  // of the page, so its tour is drawn inside it, where it can be seen, clicked and reached by Tab.
+  const [host] = useState<HTMLElement | null>(() =>
+    tour.panel ? (document.querySelector(tour.panel)?.closest<HTMLElement>("[role='dialog']") ?? null) : null
+  )
   const last = index >= steps.length - 1
   const move = (to: number) => {
     setIndex(to)
     onStep(Math.max(0, tour.steps.indexOf(steps[to])))
   }
-  return (
+  const drawn = (
     <>
       {where.ring && (
         <div
@@ -221,4 +227,5 @@ export function TourPopup({
       </section>
     </>
   )
+  return host ? createPortal(drawn, host) : drawn
 }
