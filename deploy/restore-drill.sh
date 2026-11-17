@@ -414,13 +414,18 @@ drill_chroma_reach() {  # <url of the restored server>
     t0="$(date -u +%s)"
     reach="${BACKUP_DIR}/.reach-$(stamp).json"
     # Every record, not a sample: an unreached passage is about 1 in 300, and a sample of 25 does not see it.
+    # At the app's own search depth, which the hourly sweep cannot afford (one search per record: 30 min for the
+    # entities at load 55, 17 Nov), so what this finds is queued for the next release's relink on live
+    # (deploy/chroma-settings.sh). 15 Nov: 4 entities missed at depth 50 here, 3 of them missed on live too, and the
+    # whole-case sweep reached them all, so nothing repaired them. relink reads each id from live; one gone is reported.
     if out="$(python3 -I "${HERE}/../backend/scripts/chroma_reach.py" check --url "$1" --out "${reach}" \
-              --known "${REACH_KNOWN:-/mnt/owl-data/backups/chroma-relink/known.ids}" 2>&1)"; then
+              --known "${REACH_KNOWN:-/mnt/owl-data/backups/chroma-relink/known.ids}" \
+              --queue "${REACH_QUEUE:-/mnt/owl-data/backups/chroma-relink}" 2>&1)"; then
         pass "chroma: every stored record found by its own vector in $(elapsed "${t0}") s: ${out//$'\n'/; }"
         rm -f -- "${reach}"
     elif grep -q 'searched records unreached' <<< "${out}"; then
         mv -f -- "${reach}" "${reach/.reach-/reach-}"
-        fail "chroma: stored records search cannot reach, listed in ${reach/.reach-/reach-}: ${out//$'\n'/; }"
+        fail "chroma: stored records search cannot reach, listed in ${reach/.reach-/reach-} and queued for the next release's relink: ${out//$'\n'/; }"
     else
         fail "chroma: the reach check did not finish: ${out:-no output}"
     fi

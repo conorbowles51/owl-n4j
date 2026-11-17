@@ -527,3 +527,18 @@ def test_a_clean_sweep_queues_nothing(chroma, tmp_path):
     store.add("c1", "a0", "case-a")
     assert run("sweep", "--url", url, "--queue", str(tmp_path)).returncode == 0
     assert not list(tmp_path.glob("*.ids"))
+
+
+def test_check_queues_what_its_search_depth_misses(chroma, tmp_path):
+    """15 Nov drill: 4 entities missed at the app's depth 50 and reached by the whole-case sweep, so none was queued.
+    The drill's `check --queue` lists them for the release's relink; a listed one is not queued again."""
+    store, url = chroma
+    for i in range(60):
+        store.add("e1", f"e{i}", "case-a")
+    store.thin.update({"e7", "e9"})
+    known = tmp_path / "known.ids"
+    known.write_text("e9\tlisted with why\n")
+    done = run("check", "--url", url, "--collection", "entities", "--known", str(known), "--queue", str(tmp_path))
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "2 searched records unreached (0 at any depth, 1 already listed)" in done.stdout
+    assert (tmp_path / "entities.ids").read_text() == "e7\n"

@@ -156,13 +156,14 @@ reach_drill() {  # <exit code> <line printed>
 import sys
 args = sys.argv
 if "--out" in args: open(args[args.index("--out") + 1], "w").write("[]")
+open("${test_root}/reach-args", "w").write(" ".join(args[1:]))
 print("$2")
 sys.exit($1)
 EOF
     env REPORT="${report}" DRILLS="${test_root}/drills" ROOT="${test_root}" bash -c '
         set -uo pipefail
         source "${ROOT}/fn"
-        report="${REPORT}"; failures=0; BACKUP_DIR="${DRILLS}"; HERE="${ROOT}/deploy"
+        report="${REPORT}"; failures=0; BACKUP_DIR="${DRILLS}"; HERE="${ROOT}/deploy"; REACH_QUEUE="${ROOT}/relink"
         note() { printf "%s\n" "$*" >> "${report}"; }
         pass() { note "PASS $*"; }
         fail() { note "FAIL $*"; failures=$(( failures + 1 )); }
@@ -177,6 +178,9 @@ grep -q 'PASS chroma: every stored record' "${report}" || fail "a clean reach di
 reach_drill 1 "chunks: 9 of 10 found at depth 250, 1 searched records unreached (1 at any depth)"
 grep -q 'FAIL chroma: stored records search cannot reach' "${report}" || fail "an unreached record did not fail"
 [[ -s "${test_root}/drills/reach-now.json" ]] || fail "the list of unreached records was not kept"
+# 15 Nov: the drill listed 4 entities its search missed and nothing repaired them; they go to the live relink list.
+grep -q -- "--queue ${test_root}/relink" "${test_root}/reach-args" || fail "the drill does not queue what it misses for the release's relink"
+grep -q "queued for the next release's relink" "${report}" || fail "the report does not say the misses are queued"
 rm -f "${test_root}/drills/"*
 reach_drill 2 "Traceback"
 grep -q 'FAIL chroma: the reach check did not finish' "${report}" || fail "a broken check did not fail"
