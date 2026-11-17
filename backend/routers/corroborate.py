@@ -17,7 +17,7 @@ from postgres.session import get_db
 from routers.case_access import require_case_edit, require_case_view
 from routers.users import get_current_db_user
 from services import case_selections
-from services.corroborate import area, facts, pasted, preview, questions, subsets
+from services.corroborate import area, claims as saved_claims, facts, pasted, preview, questions, subsets
 from services.corroborate import scope as scope_rules
 from services.relations import runs
 
@@ -105,6 +105,14 @@ class RunRequest(BaseModel):
 def run(case_id: UUID, request: RunRequest, db: Session = Depends(get_db),
         user: User = Depends(get_current_db_user)) -> dict[str, Any]:
     kind = request.question.kind
+    claim_ids = [m.id for m in request.members if m.type == "claim"]
+    if request.question.chips.get("claim_id"):
+        claim_ids.append(str(request.question.chips["claim_id"]))
+    for cid in dict.fromkeys(claim_ids):  # only a claim a person confirmed is weighed
+        try:
+            saved_claims.require_confirmed(db, case_id, cid)
+        except saved_claims.ClaimError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc))
     if kind is not None and questions.canonical(kind) is None:
         raise HTTPException(status_code=422, detail="That question is not one Corroborate asks.")
     try:
@@ -225,3 +233,50 @@ def combine_subsets(case_id: UUID, request: CombineRequest, db: Session = Depend
         return subsets.combine(db, case_id, str(request.first), str(request.second), request.op)
     except case_selections.SelectionError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+class ClaimParseRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    statement_date: str | None = Field(default=None, max_length=10)
+    speaker: str | None = Field(default=None, max_length=200)
+    source: dict[str, Any] | None = None
+    model: bool = False
+
+
+@router.post("/{case_id}/corroborate/claims/parse", dependencies=[Depends(require_case_edit)])
+def parse_claim(case_id: UUID, request: ClaimParseRequest, db: Session = Depends(get_db),
+                user: User = Depends(get_current_db_user)) -> dict[str, Any]:
+    """Read a sentence into who, when, where and what, as chips "Read by Loupe · not confirmed". Nothing is weighed."""
+    from services.corroborate.store import CaseStore
+    try:
+        return {"claim": saved_claims.parse(db, CaseStore(db, case_id), case_id, text=request.text,
+                                            statement_date=request.statement_date, speaker=request.speaker,
+                                            source=request.source, user=user, model=request.model)}
+    except saved_claims.ClaimError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+
+
+class ClaimConfirmRequest(BaseModel):
+    chips: dict[str, Any]
+
+
+@router.post("/{case_id}/corroborate/claims/{claim_id}:confirm", dependencies=[Depends(require_case_edit)])
+def confirm_claim(case_id: UUID, claim_id: UUID, request: ClaimConfirmRequest, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_db_user)) -> dict[str, Any]:
+    """The chips as the person confirmed or edited them, saved under their name beside Loupe's reading."""
+    try:
+        return {"claim": saved_claims.confirm(db, case_id, claim_id, request.chips, user)}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except saved_claims.ClaimError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+
+
+@router.get("/{case_id}/corroborate/claims/{claim_id}", dependencies=[Depends(require_case_view)])
+def read_claim(case_id: UUID, claim_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        return {"claim": saved_claims.view(saved_claims.get(db, case_id, claim_id))}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

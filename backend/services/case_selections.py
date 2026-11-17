@@ -45,7 +45,7 @@ GROUP_MEMBER_TYPES: dict[str, tuple[str, ...]] = {
     "map_selection": ("graph_entity", "phone_record"),
     "step_trail": ("history_step",),
     "relation_query": ("graph_entity", "financial_transaction", "financial_account", "financial_party", "evidence",
-                       "timeline_event", "phone_record", "entry", "place", "person", "phone", "document_row"),
+                       "timeline_event", "phone_record", "entry", "place", "person", "phone", "document_row", "claim"),
 }
 
 
@@ -248,6 +248,24 @@ def _document_rows(db, case_id, ids):
     return {i for i, f in files.items() if str(_uuid(f)) in found}
 
 
+def _claims(db, case_id, ids):
+    """A claim (lx-corrostatement) is in the case when its row is."""
+    from sqlalchemy import text as _t
+    wanted = [i for i in ids if _is_uuid(i)]
+    if not wanted:
+        return set()
+    return {str(r[0]) for r in db.execute(_t("SELECT id FROM corroborate_claims WHERE case_id = :c AND id = ANY(CAST(:i AS uuid[]))"),
+                                          {"c": str(case_id), "i": wanted})}
+
+
+def _is_uuid(v) -> bool:
+    try:
+        uuid.UUID(str(v))
+        return True
+    except ValueError:
+        return False
+
+
 MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "graph_entity": _graph,
     "financial_transaction": _transactions,
@@ -262,6 +280,7 @@ MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "person": _people,
     "phone": _phones,
     "document_row": _document_rows,
+    "claim": _claims,
 }
 
 

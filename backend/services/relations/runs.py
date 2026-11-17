@@ -54,7 +54,7 @@ def _question(raw: dict) -> dict:
     comparison set the engine knows)."""
     from services.corroborate import model as corroborate_model
     chips = raw.get("chips") if isinstance(raw.get("chips"), dict) else {}
-    out = {k: str(v)[:300] for k, v in chips.items() if k in ("when", "nights", "who", "what", "compare_with", "scope")}
+    out = {k: str(v)[:300] for k, v in chips.items() if k in ("when", "nights", "who", "what", "compare_with", "scope", "claim_id")}
     if isinstance(chips.get("people"), list):
         out["people"] = [str(k)[:200] for k in chips["people"][:50]]
     if isinstance(chips.get("against"), list):
@@ -211,6 +211,13 @@ def work(run_id: str, case_id: str, *, session_factory) -> None:
             row.result = {"corroboration": corroboration, "partial": True}
             row.progress = {**(row.progress or {}), "level": corroboration["level"]["name"]}
             session.commit()
+        if corroboration is not None and corroboration.get("claim"):
+            # a claim is weighed against the phones only; there are no records to pair
+            row.result = {"corroboration": corroboration, "claim_only": True, "counts": {"items": len(members), "candidates": 0, "no_links": 0}}
+            row.status, row.step, row.finished_at = "done", "Done", datetime.now(timezone.utc)
+            row.progress = {"items": len(members), "level": corroboration["level"]["name"]}
+            session.commit()
+            return
         link_members, folded = pair_units(session, case_id, members)
         result = engine.run(DbSources(session, case_id), link_members, progress)
         if folded:

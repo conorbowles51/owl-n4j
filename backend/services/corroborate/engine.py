@@ -122,6 +122,12 @@ def run(store, members: list[dict], question: dict | None = None,
     started = time.time()
     step = progress or (lambda *_: None)
     question = dict(question or {})
+    claim_members = [m for m in members if m.get("type") == "claim"]
+    if claim_members:  # a confirmed free-text claim is weighed on its own (lx-corrostatement)
+        from services.corroborate import claim_weigh, claims as saved_claims
+        step("Reading the claim", 1, 1)
+        claim = saved_claims.require_confirmed(store.db, store.case, claim_members[0]["id"])
+        return claim_weigh.run(store, claim, question, started)
     chips = dict(question.get("chips") or {})
     zone = store.zone()
     everyone = {p["key"]: p for p in store.people()}
