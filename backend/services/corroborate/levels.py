@@ -176,8 +176,10 @@ def sentence(level: dict, full_sep, present_rows, comparison, incidents, missing
     key = level["key"]
     n_inc = len(incidents)
     if key == "cant_tell":
-        what = "; ".join(m["missing"] for m in missing[:3]) or "the records that would show it"
-        return f"Can't tell: too little data. Missing: {what}."
+        if missing:
+            return f"Can't tell: too little data. Missing: {'; '.join(m['missing'] for m in missing[:3])}."
+        why = (level.get("reasons") or ["too little data"])[0].rstrip(".")
+        return f"Can't tell: {why[0].lower() + why[1:]} ({_n(n_inc)} {comparison['incident_noun']})."
     if key == "no_link_found":
         return (f"No link found: nothing links them on the {_n(n_inc)} {comparison['incident_noun']} checked. "
                 "This is what was searched, not proof that no link exists.")
@@ -205,6 +207,16 @@ def sentence(level: dict, full_sep, present_rows, comparison, incidents, missing
     if level["rule"] == "together_once_no_contact":
         return ("Coincidence likely: they were in the same place once, and nothing else links them: no contact, money "
                 f"or document {checked}.")
+    often = [r for r in present_rows if as_often_ordinary(r)]
+    low = [r for r in present_rows if r.get("weight") != "full"]
+    if often:
+        r = best(often)
+        return (f"Coincidence likely: {r['label']}, as often on {comparison['ordinary_noun']} "
+                f"({_counts_words(r, comparison)}).")
+    if low:
+        r = best(low)
+        why = (r.get("why_low") or "explained").rstrip(".")
+        return (f"Coincidence likely: {r['label']} ({_counts_words(r, comparison)}), weighed low: {why}.")
     tail = f" ({_counts_words(best(present_rows), comparison)})" if present_rows else ""
     return f"Coincidence likely: what they share happens as often on {comparison['ordinary_noun']}, or is explained{tail}."
 
