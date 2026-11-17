@@ -5,7 +5,9 @@
 #   2. Records nothing links to, when CHROMA_RELINK_LISTS holds a list (<collection>.ids, from `chroma_reach.py check`;
 #      known.ids beside them is the sweep's explained list and is never relinked):
 #      each is re-added from its stored copy, and the list is kept as <collection>.ids.done with the result beside it.
-#      A record still unreached is in the result and the printed line; it does not stop the release. A changed count does.
+#      A record still unreached is in the result and the printed line; it does not stop the release. A record deleted
+#      and not stored again does. A record the search reaches again is left alone; ids past CHROMA_RELINK_BUDGET_S
+#      stay listed for the next release.
 #   3. Collections made with too few links per record (chroma_reach.py MAX_NEIGHBORS) are built again from their
 #      stored records and swapped in (`rebuild`); the old one stays as <name>__before_rebuild. `chroma-settings.sh
 #      catch-up`, run by deploy.sh once the backend has restarted, carries over what the old backend wrote to the old
@@ -24,6 +26,8 @@ REACH_STATE="${REACH_STATE:-/mnt/owl-data/backups/chroma-reach.txt}"
 DOCKER="${DOCKER:-docker}"
 READY_TRIES="${READY_TRIES:-60}"
 CHROMA_REBUILD_STATE="${CHROMA_REBUILD_STATE:-/mnt/owl-data/backups/chroma-rebuild}"
+# Seconds a relink may hold the release's pause (17 Nov 2026: 1,104 chunks held it 44 minutes, 11:09-11:53).
+CHROMA_RELINK_BUDGET_S="${CHROMA_RELINK_BUDGET_S:-300}"
 mkdir -p "${CHROMA_REBUILD_STATE}"
 
 rebuild_step() {  # catch-up | clean-up | rebuild
@@ -71,9 +75,11 @@ for list in "${CHROMA_RELINK_LISTS}"/*.ids; do
     # list: read as one it named a collection "known" and stopped every release (8 Nov 12:46-14:12).
     [[ "${collection}" == known ]] && continue
     python3 -I "${TOOL}" relink --url "${CHROMA_URL}" --collection "${collection}" --ids "${list}" \
-        --keep "${list}.records.jsonl" --apply \
+        --keep "${list}.records.jsonl" --apply --budget "${CHROMA_RELINK_BUDGET_S}" --left "${list}.left" \
         > "${list}.result" || { echo "chroma: relink of ${collection} failed: $(cat "${list}.result")" >&2; exit 1; }
     mv -f -- "${list}" "${list}.done"
+    # Ids the time limit left are the next release's list; the hourly sweep adds to it what is still unreached.
+    if [[ -s "${list}.left" ]]; then mv -f -- "${list}.left" "${list}"; else rm -f -- "${list}.left"; fi
     echo "chroma: relink ${collection}: $(cat "${list}.result")"
     relinked=1
 done

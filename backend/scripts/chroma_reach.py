@@ -146,12 +146,16 @@ def sweep(chroma, name):
             by_case.setdefault((metadata or {}).get("case_id") or None, {})[rid] = metadata or {}
     unreached = []
     for case, records in by_case.items():
-        probe = chroma.call(f"collections/{cid}/get", {"ids": [next(iter(records))], "include": ["embeddings"]})
-        body = {"query_embeddings": probe["embeddings"], "n_results": len(records), "include": []}
-        if case is not None:
-            body["where"] = {"case_id": case}
-        found = set(chroma.call(f"collections/{cid}/query", body)["ids"][0])
-        for rid in records.keys() - found:
+        missed = records.keys() - whole_case(chroma, cid, case, next(iter(records)), len(records))
+        # Asked once more, from a missed record's own vector: a search beside a writer can miss a record it reaches
+        # a minute later (17 Nov 2026: 751 of 141,403 chunks listed at 13:06 during the embed-all backfill, all 751
+        # found at 13:25). What both searches miss is asked for by its own vector at the app's depth.
+        if missed:
+            missed &= records.keys() - whole_case(chroma, cid, case, next(iter(missed)), len(records))
+        if missed:
+            missed -= found_by_own_vector(chroma, cid, {rid: records[rid] for rid in missed},
+                                          DEPTHS.get(name, RELINK_DEPTH))
+        for rid in missed:
             metadata = records[rid]
             unreached.append({"id": rid, "case": case, "case_rows": len(records), "state": metadata.get("ingestion_state"),
                               "document": metadata.get("doc_name") or metadata.get("filename") or metadata.get("doc_id"),
@@ -160,67 +164,139 @@ def sweep(chroma, name):
             "largest_case": max((len(v) for v in by_case.values()), default=0), "unreached": unreached}
 
 
-def relink(chroma, name, ids, apply, attempts=RELINK_ATTEMPTS, keep=None):
+def whole_case(chroma, cid, case, probe_id, rows):
+    """The ids one search the size of the case returns: everything linked in it."""
+    probe = chroma.call(f"collections/{cid}/get", {"ids": [probe_id], "include": ["embeddings"]})
+    if not probe["ids"]:
+        return set()
+    body = {"query_embeddings": probe["embeddings"], "n_results": max(rows, 1), "include": []}
+    if case is not None:
+        body["where"] = {"case_id": case}
+    return set(chroma.call(f"collections/{cid}/query", body)["ids"][0])
+
+
+def found_by_own_vector(chroma, cid, metadata_by_id, depth):
+    """Ids a search with their own vector, in their own case, at `depth` returns: the test `check` makes."""
+    found, ids = set(), list(metadata_by_id)
+    for start in range(0, len(ids), QUERY_BATCH):
+        got = chroma.call(f"collections/{cid}/get", {"ids": ids[start:start + QUERY_BATCH], "include": ["embeddings"]})
+        for rid, vector in zip(got["ids"], got["embeddings"]):
+            body = {"query_embeddings": [vector], "n_results": depth, "include": []}
+            case = (metadata_by_id.get(rid) or {}).get("case_id")
+            if case:
+                body["where"] = {"case_id": case}
+            if rid in chroma.call(f"collections/{cid}/query", body)["ids"][0]:
+                found.add(rid)
+    return found
+
+
+def reached(chroma, cid, name, metadata_by_id):
+    """Which of these records the app's search reaches. A collection searched as deep as its largest case
+    (EF_SEARCH) is asked with one search per case; any other with each record's own vector at the app's depth.
+    One search per case replaced a search per record after a relink: 1,104 of those at ef_search 50,000 held a
+    release's pause for 37 minutes (17 Nov 2026, 11:16-11:53)."""
+    if not metadata_by_id:
+        return set()
+    if name not in EF_SEARCH:
+        return found_by_own_vector(chroma, cid, metadata_by_id, DEPTHS.get(name, RELINK_DEPTH))
+    rows = chroma.call(f"collections/{cid}/count")
+    by_case = {}
+    for rid, metadata in metadata_by_id.items():
+        by_case.setdefault((metadata or {}).get("case_id") or None, []).append(rid)
+    found = set()
+    for case, ids in by_case.items():
+        found |= set(ids) & whole_case(chroma, cid, case, ids[0], rows)
+    return found
+
+
+def relink(chroma, name, ids, apply, attempts=RELINK_ATTEMPTS, keep=None, deadline=None):
     """Delete and add each record from its stored copy, then ask for all of them. Every one must be stored again.
 
     Asked for after the whole list, not one by one: a record added later can take the only link of one added earlier
     (5 Nov 2026: 1 of 50 lost its link that way within the same run). A list may be old: an id no longer stored is
-    reported as gone. Each record is read just before it is replaced, and written to `keep` before it is deleted, so
-    a server that dies between the delete and the add loses nothing.
+    reported as gone, and one the search reaches again is left as it is (17 Nov 2026: all 751 listed during the
+    embed-all backfill were reached 20 minutes later). Each record is read just before it is replaced, and written to
+    `keep` before it is deleted, so a server that dies between the delete and the add loses nothing.
+    `deadline` (time.monotonic()) bounds the run inside a release's pause: ids it did not get to are in
+    report["left"], for the next release.
     """
     cid = chroma.collection(name)["id"]
     before = chroma.call(f"collections/{cid}/count")
-    report = {"before": before, "ids": len(ids), "applied": bool(apply), "found": 0, "not_found": [], "gone": []}
+    report = {"before": before, "ids": len(ids), "applied": bool(apply), "found": 0, "not_found": [], "gone": [],
+              "reached_before": 0, "left": []}
     include = ["embeddings", "metadatas", "documents"]
-    questions, pending = {}, list(ids)
+    stored = {}
+    for start in range(0, len(ids), PAGE):
+        got = chroma.call(f"collections/{cid}/get", {"ids": list(ids[start:start + PAGE]), "include": ["metadatas"]})
+        stored.update(zip(got["ids"], got["metadatas"]))
+    report["gone"] = [rid for rid in dict.fromkeys(ids) if rid not in stored]
+    already = reached(chroma, cid, name, stored)
+    report["reached_before"] = len(already)
+    pending = [rid for rid in dict.fromkeys(ids) if rid in stored and rid not in already]
+    questions = {}
     for _ in range(attempts if apply else 1):
-        for rid in list(pending):
+        if not apply:
+            break
+        todo = list(pending)
+        for n, rid in enumerate(todo):
+            if deadline is not None and time.monotonic() > deadline:
+                report["left"] = [r for r in todo[n:] if r not in questions]
+                pending = [r for r in pending if r not in set(report["left"])]
+                break
             got = chroma.call(f"collections/{cid}/get", {"ids": [rid], "include": include})
             if not got["ids"]:
                 report["gone"].append(rid)
                 pending.remove(rid)
                 continue
-            if not apply:
-                continue
-            vector, metadata = got["embeddings"][0], got["metadatas"][0]
-            questions[rid] = {"query_embeddings": [vector], "n_results": RELINK_DEPTH, "include": ["distances"]}
-            if metadata and metadata.get("case_id"):
-                questions[rid]["where"] = {"case_id": metadata["case_id"]}
-            record = {"ids": [rid], "embeddings": [vector], "metadatas": [metadata], "documents": got["documents"]}
+            questions[rid] = got["metadatas"][0]
+            record = {"ids": [rid], "embeddings": got["embeddings"], "metadatas": got["metadatas"],
+                      "documents": got["documents"]}
             if keep:
                 with open(keep, "a") as kept:
                     kept.write(json.dumps(record) + "\n")
             chroma.call(f"collections/{cid}/delete", {"ids": [rid]})
             chroma.call(f"collections/{cid}/add", record)
-        pending = [rid for rid, question in questions.items()
-                   if rid not in chroma.call(f"collections/{cid}/query", question)["ids"][0]]
-        if not pending:
+        now = reached(chroma, cid, name, {rid: questions[rid] for rid in pending if rid in questions})
+        pending = [rid for rid in pending if rid in questions and rid not in now]
+        if not pending or report["left"]:
             break
     report["found"], report["not_found"] = len(questions) - len(pending), pending
     # Only ids on the list are deleted, so a loss is one of them not stored again. The count is reported, not
     # compared: a writer the release does not pause (17 Nov: the embed-all backfill, 847 chunks added during one
     # relink) moves it, and a count that had to end where it began stopped every release.
-    stored = set(chroma.call(f"collections/{cid}/get", {"ids": list(questions), "include": []})["ids"]) if questions else set()
-    report["lost"] = sorted(set(questions) - stored)
+    kept_ids = set(chroma.call(f"collections/{cid}/get", {"ids": list(questions), "include": []})["ids"]) if questions else set()
+    report["lost"] = sorted(set(questions) - kept_ids)
     report["after"] = chroma.call(f"collections/{cid}/count")
     return report
 
 
-def follow(chroma, name, tried, report, keep):
-    """A record added can take the only link of a neighbour, so sweep after a repair and repair what that cost."""
-    tried = set(tried)
-    for _ in range(FOLLOW_PASSES):
-        fresh = [u["id"] for u in sweep(chroma, name)["unreached"] if u["searched"] and u["id"] not in tried]
-        if not fresh:
+def follow(chroma, name, tried, report, keep, deadline=None):
+    """A record added can take the only link of a neighbour, so sweep after a repair and repair what that cost.
+    Nothing re-added, nothing to follow. Past the deadline the sweeps are left to the hourly one (backup-check.sh),
+    which queues what they would have found for the next release."""
+    if not report["found"] and not report["not_found"]:
+        return
+    tried, last = set(tried), None
+    for _ in range(FOLLOW_PASSES + 1):
+        if deadline is not None and time.monotonic() > deadline:
+            report["unreached_after"] = "not swept in the release: time limit reached; the hourly sweep checks"
+            return
+        last = [u["id"] for u in sweep(chroma, name)["unreached"] if u["searched"]]
+        fresh = [rid for rid in last if rid not in tried]
+        if not fresh or report.get("follow_passes", 0) >= FOLLOW_PASSES:
             break
         tried.update(fresh)
-        more = relink(chroma, name, fresh, True, keep=keep)
+        more = relink(chroma, name, fresh, True, keep=keep, deadline=deadline)
         report["found"] += more["found"]
         report["not_found"] += more["not_found"]
+        report["left"] += more["left"]
         report["lost"] = sorted(set(report.get("lost", [])) | set(more.get("lost", [])))
         report["followed"] = report.get("followed", 0) + len(fresh)
+        report["follow_passes"] = report.get("follow_passes", 0) + 1
         report["after"] = more["after"]
-    report["unreached_after"] = [u["id"] for u in sweep(chroma, name)["unreached"] if u["searched"]]
+        last = None
+    if last is not None:
+        report["unreached_after"] = last
 
 
 def settings(chroma, apply):
@@ -459,7 +535,10 @@ def main(argv=None):
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--build-only", action="store_true", help="rebuild: make the copy, leave the swap to a release")
     parser.add_argument("--pause", type=float, default=0.0, help="seconds between calls, for a server people are using")
+    parser.add_argument("--budget", type=float, help="relink: seconds it may take; ids it did not get to are kept")
+    parser.add_argument("--left", help="relink: the ids it did not get to are written here (empty when none)")
     args = parser.parse_args(argv)
+    started = time.monotonic()
     chroma = Chroma(args.url, args.pause)
     if args.action == "settings":
         return 10 if settings(chroma, args.apply) else 0
@@ -474,9 +553,15 @@ def main(argv=None):
     if args.action == "relink":
         name = args.collection[0]
         ids = [line.strip() for line in open(args.ids) if line.strip()]
-        report = relink(chroma, name, ids, args.apply, keep=args.keep)
+        deadline = None if args.budget is None else time.monotonic() + args.budget
+        report = relink(chroma, name, ids, args.apply, keep=args.keep, deadline=deadline)
         if args.apply:
-            follow(chroma, name, ids, report, args.keep)
+            follow(chroma, name, ids, report, args.keep, deadline)
+        report.pop("follow_passes", None)
+        report["seconds"] = round(time.monotonic() - started, 1)
+        if args.left:
+            with open(args.left, "w") as out:
+                out.write("".join(f"{rid}\n" for rid in report["left"]))
         print(json.dumps(report))
         # A record left unreached is reported and stays where it was; only a record deleted and not stored again is lost.
         return 1 if report.get("lost") else 0

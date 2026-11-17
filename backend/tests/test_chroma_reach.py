@@ -31,6 +31,8 @@ class Store:
         self.steals = {}          # adding the key takes the only link of the value
         self.writer_adds = 0      # another writer adds this many records beside each add (a backfill the release runs)
         self.drop_adds = False    # the server answers an add and stores nothing
+        self.missed_once = set()  # the next query misses them, later ones find them (a search beside a writer)
+        self.queries = 0
 
     def add(self, cid, rid, case, state="active", vector=None):
         self.records[cid][rid] = {"vector": vector or [float(len(self.records[cid]) + 1), 0.0], "document": f"text {rid}",
@@ -100,10 +102,12 @@ def serve(store):
             if action == "query":
                 ids_out, dist_out = [], []
                 case = (body.get("where") or {}).get("case_id")
+                store.queries += 1
+                once, store.missed_once = store.missed_once, set()
                 for q in body["query_embeddings"]:
                     pool = [i for i in records if not case or records[i]["metadata"]["case_id"] == case]
                     lossy = cid in store.lossy
-                    pool = [i for i in pool if not (lossy and i in store.orphans)
+                    pool = [i for i in pool if i not in once and not (lossy and i in store.orphans)
                             and (not lossy or i not in store.thin or body["n_results"] >= len(pool))]
                     pool.sort(key=lambda i: abs(records[i]["vector"][0] - q[0]))
                     pool = pool[:body["n_results"]]
@@ -451,13 +455,13 @@ class CountsLie(dict):
         return dict.__len__(self) + 1
 
 
-def release_step(url, tmp_path):
+def release_step(url, tmp_path, **env):
     docker = tmp_path / "docker"
     docker.write_text(f'#!/bin/sh\necho "$@" >> {tmp_path}/docker.calls\n')
     docker.chmod(0o755)
     return subprocess.run(["bash", str(SETTINGS)], capture_output=True, text=True, timeout=60,
                           env={**os.environ, "CHROMA_URL": url, "DOCKER": str(docker), "READY_TRIES": "3",
-                               "CHROMA_RELINK_LISTS": str(tmp_path), "CHROMA_REBUILD_STATE": str(tmp_path / "rebuild")})
+                               "CHROMA_RELINK_LISTS": str(tmp_path), "CHROMA_REBUILD_STATE": str(tmp_path / "rebuild"), **env})
 
 
 def test_release_step_rebuilds_once_catches_up_after_the_restart_then_removes_the_old_one(chroma, tmp_path):
@@ -570,9 +574,65 @@ def test_relink_fails_when_a_record_it_deleted_is_not_stored_again(chroma, tmp_p
     store, url = chroma
     store.add("c1", "a0", "case-a")
     store.add("c1", "a1", "case-a")
+    store.orphans.add("a1")
     store.drop_adds = True
     ids = tmp_path / "ids"
     ids.write_text("a1\n")
     done = run("relink", "--url", url, "--collection", "chunks", "--ids", str(ids), "--apply")
     assert done.returncode == 1, done.stdout + done.stderr
     assert json.loads(done.stdout)["lost"] == ["a1"]
+
+
+def test_sweep_does_not_list_a_record_a_second_search_finds(chroma, tmp_path):
+    """17 Nov 13:06: the sweep listed 751 chunks unreached during the embed-all backfill; at 13:25 one search of the
+    whole case (141,403 rows) returned all 751. Listed, each was deleted and added again inside a release's pause."""
+    store, url = chroma
+    for i in range(4):
+        store.add("c1", f"a{i}", "case-a")
+    store.missed_once = {"a2", "a3"}
+    done = run("sweep", "--url", url, "--collection", "chunks", "--queue", str(tmp_path))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "4 of 4 found" in done.stdout and not (tmp_path / "chunks.ids").exists()
+
+
+def test_relink_leaves_a_listed_record_the_search_reaches(chroma, tmp_path):
+    store, url = chroma
+    store.add("c1", "a0", "case-a")
+    store.add("c1", "a1", "case-a")
+    ids = tmp_path / "ids"
+    ids.write_text("a1\n")
+    done = run("relink", "--url", url, "--collection", "chunks", "--ids", str(ids), "--apply")
+    assert done.returncode == 0, done.stdout + done.stderr
+    report = json.loads(done.stdout)
+    assert report["reached_before"] == 1 and report["found"] == 0 and store.writes == []
+
+
+def test_relink_asks_once_per_case_not_once_per_record(chroma, tmp_path):
+    """17 Nov 11:16-11:53: after re-adding 1,104 chunks the relink asked for each one at ef_search 50,000, and the
+    release's pause (uploads held, every job's commits waiting) lasted 37 minutes longer."""
+    store, url = chroma
+    for i in range(40):
+        store.add("c1", f"a{i}", "case-a")
+    listed = [f"a{i}" for i in range(0, 40, 2)]
+    store.orphans.update(listed)
+    ids = tmp_path / "ids"
+    ids.write_text("".join(f"{rid}\n" for rid in listed))
+    done = run("relink", "--url", url, "--collection", "chunks", "--ids", str(ids), "--apply")
+    report = json.loads(done.stdout)
+    assert report["found"] == 20 and report["unreached_after"] == [] and not store.orphans
+    assert store.queries <= 4, store.queries
+
+
+def test_release_step_keeps_what_its_time_limit_left_for_the_next_release(chroma, tmp_path):
+    store, url = chroma
+    store.add("c1", "a0", "case-a")
+    store.add("c1", "a1", "case-a")
+    store.orphans.update({"a0", "a1"})
+    (tmp_path / "chunks.ids").write_text("a0\na1\n")
+    done = release_step(url, tmp_path, CHROMA_RELINK_BUDGET_S="0")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (tmp_path / "chunks.ids").read_text() == "a0\na1\n" and "delete" not in store.writes
+    report = json.loads((tmp_path / "chunks.ids.result").read_text())
+    assert report["left"] == ["a0", "a1"] and report["found"] == 0
+    again = release_step(url, tmp_path)
+    assert again.returncode == 0 and not store.orphans and not (tmp_path / "chunks.ids").exists()
