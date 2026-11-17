@@ -2520,7 +2520,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 return context.result(
                     "get_timeline_events",
                     {"events": [], "count": 0, "total": 0, "next_cursor": None, "filters": filters,
-                     "investigator_additions": None},
+                     "investigator_additions": None,
+                     "why_empty": "No entity in this case matches %s, so no timeline events were read. Check the "
+                                  "spelling, or find the name with search_graph_entities."
+                                  % ", ".join("'%s'" % u for u in unmatched)},
                     summary="No entity in this case matches %s, so no timeline events were read. Check the spelling "
                             "or search_graph_entities for the name." % ", ".join("'%s'" % u for u in unmatched))
         if words:
@@ -2590,7 +2593,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 data = reader(db, case_id=uuid.UUID(context.case_id), **kwargs)
         except ValueError as exc:
             return context.result(tool_name, {"available": False, "reason": str(exc)},
-                                  summary="That could not be read. No partial result was returned.",
+                                  summary="That could not be read: %s No partial result was returned." % str(exc),
                                   status="error", error=str(exc))
         except Exception:
             logger.exception("Agent ledger reader %s failed for case %s", func_name, context.case_id)

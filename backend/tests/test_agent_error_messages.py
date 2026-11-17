@@ -69,3 +69,17 @@ def test_a_wrong_result_path_is_answered_with_the_paths_the_result_has_not_a_bar
     assert out["error"] != "'results'" and "no part at data/results" in out["error"]
     assert {"path": ["data", "items"], "items": 5} in out["data"]["paths"]
     assert "paths" in out["summary"]
+
+
+def test_a_refused_ledger_read_puts_the_reason_in_the_summary_line_the_model_reads_first():
+    from contextlib import contextmanager
+
+    @contextmanager
+    def no_db():
+        yield None
+
+    ctx = AgentToolContext(case_id="00000000-0000-0000-0000-0000000000d2", ledger_session_factory=no_db)
+    tool = {t.name: t for t in make_agent_tools(ctx)}["get_decisions"]
+    out = tool.invoke({"subject": "the garage payment"})
+    assert out["status"] == "error"
+    assert "you gave 'the garage payment'" in out["summary"] and "get_financial_transactions" in out["summary"]

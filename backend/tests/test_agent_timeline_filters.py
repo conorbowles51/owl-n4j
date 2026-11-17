@@ -43,3 +43,4 @@ def test_a_name_that_matches_no_entity_is_a_stated_zero_not_the_whole_timeline()
     page.assert_not_called()
     assert out["data"]["total"] == 0 and out["data"]["filters"]["people"]["unmatched"] == ["Nobody Here"]
     assert "No entity in this case matches 'Nobody Here'" in out["summary"]
+    assert "No entity in this case matches 'Nobody Here'" in out["data"]["result_shape"]["why_empty"]
