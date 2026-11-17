@@ -26,17 +26,20 @@ def read_document_text(db, case_id, evidence_file_id, *, page_offset=0, page_lim
     try:
         file_id, cid = UUID(str(evidence_file_id)), UUID(str(case_id))
     except (ValueError, TypeError):
-        raise ValueError("Use an Evidence file identifier from this case.") from None
+        raise ValueError("'%s' is not an evidence file id. Take the id from get_evidence_files or from a search result's "
+                         "doc:// cite (the id between doc:// and the next /)." % str(evidence_file_id)[:60]) from None
     if page_offset < 0 or not 1 <= page_limit <= 50:
         raise ValueError("Choose a nonnegative page offset and between 1 and 50 pages.")
     record = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == cid))
     if record is None:
-        raise ValueError("That evidence file is not in this case.")
+        raise ValueError("That evidence file is not in this case. Take the id from get_evidence_files or from a "
+                         "search result's doc:// cite (the id between doc:// and the next /).")
     row = db.execute(select(EvidenceDocumentText.content_sha256, EvidenceDocumentText.source_locations,
                             EvidenceDocumentText.character_count).where(EvidenceDocumentText.evidence_file_id == file_id)).one_or_none()
     revision = row.content_sha256 if row else None
     if page_offset and not expected_revision:
-        raise ValueError("Continue with the revision returned by the first text window.")
+        raise ValueError("Pass expected_revision, the revision returned by the first window (page_offset 0), and "
+                         "continue with next_offset.")
     if expected_revision is not None and revision != expected_revision:
         raise ValueError("The stored reading changed. Read the first window again before continuing.")
     out = document_pages(db, record, path=None, page_offset=page_offset, page_limit=page_limit)

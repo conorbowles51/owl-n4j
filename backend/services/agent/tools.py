@@ -2869,10 +2869,15 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 original_id = (view.get('data') or {}).get('page_of') if isinstance(view.get('data'), dict) else None
                 original_id = original_id if original_id in context.model_views else result_id
                 recovery = page_for_model(context.model_views[original_id], budget_chars=4_000, result_id=original_id)
-                return context.result("read_tool_result_page", {"error": str(exc) or "That path is not in the result.",
+                # lx-agenttools: the bare KeyError text ('items') said nothing; 49 recorded calls ended on it.
+                said = (f"The result has no part at {'/'.join(map(str, path))} (nothing named {exc})."
+                        if isinstance(exc, KeyError) else (str(exc) or "That path is not in the result."))
+                return context.result("read_tool_result_page", {"error": said,
+                    "wrong_path": path, "paths": [dict(path=p, items=n) for p, n in sequence_paths(view)[:20]],
                     "_paging": recovery.get('_paging') or [], "original_result_id": original_id},
-                    summary="That page could not be read. Use the unchanged result_id, path and offset in _paging; do not guess a new offset.",
-                    status="error", error=str(exc) or "Invalid path.")
+                    summary=said + " The parts that can be read by page are in paths; use one of them, or the "
+                    "unchanged result_id, path and offset in _paging. Do not guess a new offset.",
+                    status="error", error=said)
             # A wrong path is answered with the right one (lx-agentfit B: 4 demo page reads named a path the result
             # does not have). The path without its "data" or "artifact" root is read at that root; otherwise the
             # result's pageable parts are listed with their lengths.

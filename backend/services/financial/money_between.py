@@ -45,11 +45,18 @@ class NotInCase(LookupError):
     """A side that is not in this case. The same words whether or not it exists in another case."""
 
 
+_SIDE_HELP = ("Name each side as party:<id>, account:<id> or entity:<key>; you gave '%s'. Find ids with "
+              "get_identity_suggestions (parties), get_financial_coverage (accounts) or search_graph_entities "
+              "(entity keys); a printed name is not an identifier.")
+
+
 def _uuid(value):
     try:
         return value if isinstance(value, UUID) else UUID(str(value))
     except (TypeError, ValueError, AttributeError) as exc:
-        raise MoneyBetweenError("Use a valid party or account identifier.") from exc
+        raise MoneyBetweenError("'%s' is not a valid party or account id. Use party:<id> or account:<id> with the id "
+                                "get_identity_suggestions or get_financial_coverage printed, or entity:<key> from "
+                                "search_graph_entities." % str(value)[:60]) from exc
 
 
 def parse_side(value) -> dict:
@@ -59,9 +66,9 @@ def parse_side(value) -> dict:
     elif isinstance(value, str) and ":" in value:
         kind, ident = value.split(":", 1)
     else:
-        raise MoneyBetweenError("Name each side as party:<id>, account:<id> or entity:<key>.")
+        raise MoneyBetweenError(_SIDE_HELP % str(value)[:60])
     if kind not in KINDS or not ident:
-        raise MoneyBetweenError("Name each side as party:<id>, account:<id> or entity:<key>.")
+        raise MoneyBetweenError(_SIDE_HELP % str(value)[:60])
     return {"kind": kind, "id": str(ident) if kind == "entity" else str(_uuid(ident))}
 
 

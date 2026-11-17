@@ -25,7 +25,8 @@ def _uuid(value, what="identifier"):
     try:
         return value if isinstance(value, UUID) else UUID(str(value))
     except (TypeError, ValueError, AttributeError) as exc:
-        raise LedgerReadingError("Use a valid %s." % what) from exc
+        raise LedgerReadingError("'%s' is not a valid %s. Use the id exactly as the tool that listed it printed it "
+                                 "(a UUID such as 3f2a8c1e-0b7d-4c55-9a1e-6d2f4b8e7c10)." % (str(value)[:60], what)) from exc
 
 
 def _day(value):
@@ -198,10 +199,14 @@ def _subject(value):
     if value in (None, ""):
         return None, None
     if not isinstance(value, str) or ":" not in value:
-        raise LedgerReadingError("Name the subject as payment:<id>, statement:<id>, period:<id> or account:<id>.")
+        raise LedgerReadingError("Name the subject as payment:<id>, statement:<id>, period:<id> or account:<id>; "
+                                 "you gave '%s'. Ids come from get_financial_transactions (payments), "
+                                 "get_statement_continuity (periods) and get_financial_coverage (accounts)."
+                                 % str(value)[:60])
     kind, ident = value.split(":", 1)
     if kind not in SUBJECT_KINDS:
-        raise LedgerReadingError("Name the subject as payment:<id>, statement:<id>, period:<id> or account:<id>.")
+        raise LedgerReadingError("'%s' is not a kind of subject: use payment:<id>, statement:<id>, period:<id> or "
+                                 "account:<id>." % kind[:30])
     return kind, _uuid(ident)
 
 
