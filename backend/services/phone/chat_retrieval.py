@@ -27,9 +27,6 @@ them themselves then there these they this those through to too under until up v
 which while who whom why will with would you your yours yourself yourselves tell show find list give say said says
 message messages phone phones text texts sent send call calls called anyone someone something did does any ever
 please know about mention mentioned""".split())
-# Words a chat question wraps around its subject ("find the messages about..."), but that are the subject when
-# nothing else is asked: a search for "phone" or "messages" alone searches for them.
-SUBJECT_STOP = frozenset("message messages phone phones text texts call calls called sent send".split())
 WORD = re.compile(r"[^\W_]{3,}", re.UNICODE)
 PHRASE = re.compile(r'"([^"]{3,80})"')
 DIGITS = re.compile(r"\+?\d[\d\s().-]{5,}\d")
@@ -57,8 +54,9 @@ def terms(question: str) -> list:
     rest = DIGITS.sub(" ", rest)
     words = [F.fold(w) for w in WORD.findall(rest)]
     kept = [w for w in words if w and w not in STOP]
-    if not kept and not out:
-        kept = [w for w in words if w in SUBJECT_STOP]
+    if not kept and not out and 0 < len(words) <= 2:
+        # one or two words and every one a common word ("phone", "between"): the person is looking the word up
+        kept = [w for w in words if w]
     words = kept
     out.extend(sorted(set(words), key=lambda w: (-len(w), w)))
     seen, uniq = set(), []

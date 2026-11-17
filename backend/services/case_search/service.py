@@ -80,7 +80,9 @@ def dedupe(cands: list[dict], hashes: dict[str, str] | None = None) -> tuple[lis
         # a record's own citation (txn://, rec://, doc://, entity://) names it; a page link (every graph connection
         # cites the case's graph page, every bank account its financial page) does not, so area and key do
         ident = cite if "://" in cite else ("%s|%s" % (h.get("area"), h["key"]) if h.get("key") else "")
-        fp = _fingerprint(h) if (h.get("text") or "").strip() else None
+        # two notes with the same words are two records a person opened and can cite; only phone, ledger and page
+        # copies are one record seen twice
+        fp = _fingerprint(h) if (h.get("text") or "").strip() and h.get("area") != "casework" else None
         m = DOC_CITE.match(cite)
         page = (hashes[m.group(1)], m.group(2)) if m and m.group(1) in hashes else None
         first = by_cite.get(ident) if ident else None
