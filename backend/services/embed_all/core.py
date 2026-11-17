@@ -21,6 +21,19 @@ COLLECTION = "case_items"
 PIECE_CHARS = 6000   # the document chunk size of the engine (evidence-engine chunk_embed.CHUNK_SIZE)
 PIECE_OVERLAP = 800
 BATCH = 64
+MAX_TOKEN_WEIGHT = 8000  # the embedding model refuses an input of more than 8,192 tokens
+
+
+def clamp(text: str, limit: int = MAX_TOKEN_WEIGHT) -> str:
+    """The text cut so that it cannot pass the model's input limit. A character counts as one token, and as three when it
+    is not ASCII (emoji and scripts the tokenizer splits into bytes): a safe upper bound, not a count. Only the vector's
+    text is cut; the stored passage is whole."""
+    weight = 0
+    for i, ch in enumerate(text):
+        weight += 1 if ord(ch) < 128 else 3
+        if weight > limit:
+            return text[:i]
+    return text
 
 
 @dataclass
@@ -113,7 +126,12 @@ def reconcile(case_id: str, area: str, items: Iterable[Item], store: Store,
             logger.warning("embed_all %s %s stopped: %s", case_id, area, exc)
             break
         grouped = [vectors[a:a + n] for a, n in spans]
-        ok = [(it, v) for it, v in zip(chunk, grouped) if it.pieces]
+        # a text the service cannot take (None) fails that item only: it is counted, never stops the run
+        bad = [it for it, v in zip(chunk, grouped) if it.pieces and any(x is None for x in v)]
+        out["failed"] = out.get("failed", 0) + len(bad)
+        for it in bad:
+            logger.warning("embed_all %s %s item %s could not be embedded", case_id, area, it.key)
+        ok = [(it, v) for it, v in zip(chunk, grouped) if it.pieces and not any(x is None for x in v)]
         if ok:
             store.put(case_id, area, [x[0] for x in ok], [x[1] for x in ok])
         for it, _ in ok:

@@ -34,15 +34,33 @@ ENTITY_PERIOD_SECONDS = 3600  # the graph is read once an hour per case: it has 
 SWITCH = "LOUPE_EMBED_ALL"  # "0" turns the sweep off
 
 
-def default_embed() -> Callable[[list[str]], list[list[float]]]:
+def _invalid_input(exc: Exception) -> bool:
+    return getattr(exc, "status_code", None) == 400 or "maximum input length" in str(exc).lower() or \
+        "invalid 'input" in str(exc).lower()
+
+
+def default_embed() -> Callable[[list[str]], list[list[float] | None]]:
+    """Vectors for the texts, in order. A text the service refuses as invalid input comes back as ``None``; any other
+    failure (no credits, rate limit, outage) raises, so the run stops and tries again later."""
+    from services.embed_all.core import clamp
     from services.embedding_service import EmbeddingService
     svc = EmbeddingService()
 
-    def embed(texts: list[str]) -> list[list[float]]:
+    def embed(texts: list[str]) -> list[list[float] | None]:
+        texts = [clamp(t) for t in texts]
         out = svc.generate_embeddings_batch(texts, batch_size=64)
-        if len(out) != len(texts):
-            raise RuntimeError("the embedding service returned %d vectors for %d texts" % (len(out), len(texts)))
-        return out
+        if len(out) == len(texts):
+            return out
+        # the batch call hides which text failed: ask one by one, so one bad text does not hold up the rest
+        single: list[list[float] | None] = []
+        for t in texts:
+            try:
+                single.append(svc.generate_embedding(t))
+            except Exception as exc:
+                if not _invalid_input(exc):
+                    raise
+                single.append(None)
+        return single
     return embed
 
 

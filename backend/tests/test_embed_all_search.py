@@ -130,3 +130,11 @@ def test_the_best_hit_of_every_area_comes_before_the_second_hit_of_any():
     hits = S.meaning_hits("c", [0.1], items, None, ["transcripts", "ledger"])
     order = [h["key"] for h in S.fuse(hits, [], 10)]
     assert order[:2] == ["p1", "t"] and order[2:] == ["p2", "p3"]
+
+
+def test_one_line_longer_than_a_window_is_cut_into_windows_that_cite_the_same_record():
+    line = "Mon | Phone 1 | Message | A -> B | " + ("word " * 3000)
+    wins = phone_area.build_windows("T", line, [{"kind": "phone_record", "start_char": 0, "end_char": len(line),
+                                                 "record_uid": "u1", "field_path": "Body"}], limit=3500)
+    assert len(wins) >= 4 and all(len(w["text"]) <= 3500 + 60 for w in wins)
+    assert all("[rec://u1]" in w["text"] for w in wins)

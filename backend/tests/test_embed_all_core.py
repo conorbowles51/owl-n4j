@@ -104,3 +104,47 @@ def test_a_wrong_number_of_vectors_is_a_refusal_not_a_silent_drop():
     res = core.reconcile("c1", "ledger", [ledger_item("a", "one"), ledger_item("b", "two")], store,
                          lambda texts: [[0.0]])
     assert "returned 1 vectors for 2 texts" in res["stopped"] and not store.rows
+
+
+def test_a_text_the_service_cannot_take_fails_that_item_only_and_never_stops_the_run():
+    """Live 17 Nov: one thread line over the 8,192-token limit stopped the sweep at the same file in every pass and kept
+    every later case from being embedded."""
+    store = FakeStore()
+
+    def embed(texts):
+        return [None if "too long" in t else [1.0, 0.0] for t in texts]
+    res = core.reconcile("c1", "ledger", [ledger_item("a", "fine"), ledger_item("b", "too long"), ledger_item("c", "also fine")],
+                         store, embed)
+    assert res["stopped"] is None and res["embedded"] == 2 and res["failed"] == 1
+    assert sorted(k for (_, _, k) in store.rows) == ["a", "c"]
+
+
+def test_clamp_keeps_any_text_under_the_input_limit_of_the_embedding_model():
+    assert core.clamp("short text") == "short text"
+    assert len(core.clamp("x" * 20000)) == core.MAX_TOKEN_WEIGHT
+    assert len(core.clamp("\U0001F600" * 20000)) == core.MAX_TOKEN_WEIGHT // 3  # emoji count as three
+
+
+def test_the_default_embedder_asks_one_by_one_when_a_batch_loses_a_text_and_returns_none_for_invalid_input(monkeypatch):
+    from services import embedding_service
+    from services.embed_all import runner
+
+    class Bad(Exception):
+        status_code = 400
+
+    class Svc:
+        def generate_embeddings_batch(self, texts, batch_size=64):
+            return [[0.0]]  # the batch call hides which text failed and returns fewer vectors
+
+        def generate_embedding(self, text):
+            if text == "bad":
+                raise Bad("Invalid 'input[1]': maximum input length is 8192 tokens.")
+            if text == "down":
+                raise RuntimeError("Error code: 429 insufficient_quota")
+            return [1.0]
+    monkeypatch.setattr(embedding_service, "EmbeddingService", Svc)
+    embed = runner.default_embed()
+    assert embed(["ok", "bad"]) == [[1.0], None]
+    import pytest
+    with pytest.raises(RuntimeError):
+        embed(["ok", "down"])  # a refusal stops the run: it is not a bad text

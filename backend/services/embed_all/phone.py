@@ -72,7 +72,17 @@ def build_windows(name: str, content: str, source_locations: list, limit: int = 
                 uid = locs[k]["record_uid"]
                 break
             k += 1
-        lines.append((s, e, body, uid))
+        if len(body) <= limit:
+            lines.append((s, e, body, uid))
+            continue
+        at = 0
+        while at < len(body):  # a single line longer than a window is cut at spaces, each part citing the same record
+            end = min(at + limit, len(body))
+            if end < len(body):
+                cut = body.rfind(" ", at + limit // 2, end)
+                end = cut + 1 if cut > at else end
+            lines.append((s + at, s + end, body[at:end], uid))
+            at = end
     out, cur, size = [], [], 0
     for ln in lines:
         add = len(ln[2]) + 1
@@ -153,7 +163,12 @@ def sync(engine, case_id: str, collection, embed: Callable[[list[str]], list[lis
             break
         key = normalize_key(f.original_filename)
         ids, metas = [], []
+        kept = []
         for n, w in enumerate(wins):
+            if vectors[n] is None:  # a window the service refused as invalid input: the rest of the file still counts
+                out["failed_windows"] = out.get("failed_windows", 0) + 1
+                continue
+            kept.append(n)
             ids.append("%s:%s:chunk:%d" % (f.id, f.content_sha256, n))
             meta = {"case_id": str(case_id), "doc_id": str(f.id), "doc_name": f.original_filename, "doc_key": key,
                     "evidence_file_id": str(f.id), "revision_id": f.content_sha256, "ingestion_state": "active",
@@ -165,7 +180,8 @@ def sync(engine, case_id: str, collection, embed: Callable[[list[str]], list[lis
                             record_uid=w["first_record_uid"], url="rec://%s" % w["first_record_uid"])
             metas.append(meta)
         if ids:
-            collection.upsert(ids=ids, embeddings=vectors, documents=[w["text"] for w in wins], metadatas=metas)
+            collection.upsert(ids=ids, embeddings=[vectors[n] for n in kept], documents=[wins[n]["text"] for n in kept],
+                              metadatas=metas)
         if str(f.id) in have:
             _drop_file(collection, f.id, keep=ids)  # another text, or a shorter one: nothing of the old form stays
         with engine.begin() as c:
