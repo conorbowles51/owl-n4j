@@ -75,6 +75,11 @@ class Read(unittest.TestCase):
         with self.assertRaises(T.TogetherError):
             self.run_read([A, B], start="not a date")
 
+    def test_a_last_day_given_as_a_date_is_the_whole_day(self):
+        end = T._parse("2024-06-08", "to")
+        self.assertEqual((end.hour, end.minute), (23, 59))
+        self.assertEqual(T._parse("2024-06-08", "from").hour, 0)
+
     def test_route_is_registered(self):
         from routers import relation_queries
         self.assertIn("/api/cases/{case_id}/relation-overlaps", [r.path for r in relation_queries.router.routes])

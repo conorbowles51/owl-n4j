@@ -15,7 +15,9 @@ import { phoneSettingsQuery } from "@/features/phones/phone-queries"
 import { ScopeBar } from "@/features/phones/ui/ScopeBar"
 import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
 import { useCasePhones } from "@/features/phones/ui/use-case-phones"
-import { phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
+import { layersOn as phonesOn, phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
+import { phoneTogetherEnabled } from "@/features/phones/together/enabled"
+import { LazyTogetherBand, LazyTogetherPanel } from "@/features/phones/together/lazy"
 import { ScopeCrossings } from "@/features/phones/ui/ScopeCrossings"
 import { scopeToSearch } from "@/features/phones/ui/scope"
 import { useUrlScope } from "@/features/phones/ui/use-phone-scope"
@@ -255,6 +257,16 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
         <PhoneLayers phones={phoneList} chosen={carried.scope.phones.map((p) => p.id)} noun="entries" counts={layerCounts}
           onChange={(ids) => carried.apply({ ...carried.scope, phones: phoneList.filter((p) => ids.includes(p.id)) })} />
       )}
+      {layersOn && phoneTogetherEnabled() && (() => {
+        const ids = phonesOn(phoneList.map((p) => p.id), carried.scope.phones.map((p) => p.id))
+        const span = carried.scope.window
+        return (
+          <>
+            <LazyTogetherBand caseId={caseId} phoneIds={ids} from={span?.from} to={span?.to} />
+            <LazyTogetherPanel caseId={caseId} phoneIds={ids} from={span?.from} to={span?.to} parts={["places"]} />
+          </>
+        )
+      })()}
       <ScopeBar scope={carried.scope} onChange={carried.apply} presets={carried.presets} recent={carried.recent} restored={carried.restored} notApplied={carried.notApplied}
         count={idx ? { shown: idx.total ?? idx.counts.events ?? 0, total: idx.total ?? idx.counts.events ?? 0, noun: "phone entries" } : null}>
         <ScopeCrossings caseId={caseId} scope={carried.scope} here="timeline" />

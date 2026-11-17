@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
@@ -40,12 +40,15 @@ def _iso(value) -> str | None:
 
 
 def _parse(value: str | None, name: str) -> datetime | None:
+    """A date alone is the whole day: 'from' its start, 'to' its end (so a last day is not cut at midnight)."""
     if not value:
         return None
     try:
         out = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         raise TogetherError(f"'{name}' is not a date and time.")
+    if len(value.strip()) == 10 and name == "to":
+        out = out + timedelta(days=1) - timedelta(microseconds=1)
     return out if out.tzinfo else out.replace(tzinfo=timezone.utc)
 
 

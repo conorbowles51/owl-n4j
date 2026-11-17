@@ -6,7 +6,9 @@ import { RouteLayers } from "./RouteLayers"
 import { trajectory, type PlacePoint } from "../lib/places-geo"
 import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
 import { useCasePhones } from "@/features/phones/ui/use-case-phones"
-import { phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
+import { layersOn as phonesOn, phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
+import { phoneTogetherEnabled } from "@/features/phones/together/enabled"
+import { LazyMeetingLayer, LazyTogetherPanel } from "@/features/phones/together/lazy"
 import { phoneMark } from "@/features/phones/lib/phone-palette"
 import { NearMessageNote } from "./NearMessageNote"
 import { PhonesInArea } from "./PhonesInArea"
@@ -93,6 +95,11 @@ export function MapPage() {
   const layersOn = phoneLayersEnabled()
   const phoneList = useCasePhones(caseId ?? "")
   const [routes, setRoutes] = useState(false)
+  // Phones together (behind the phone_together setting): where the phones that are on were in the same place
+  const [together, setTogether] = useState(true)
+  const [pickedMeeting, setPickedMeeting] = useState<string | null>(null)
+  const togetherOn = layersOn && phoneTogetherEnabled()
+  const onIds = phonesOn(phoneList.map((p) => p.id), carried.scope.phones.map((p) => p.id))
   const routeScope = nearFilter ?? carriedFilter
   const routeQuery = useQuery({
     queryKey: ["phone-map-trajectory", caseId, routeScope ?? null],
@@ -221,6 +228,14 @@ export function MapPage() {
           )}
         </div>
       )}
+      {togetherOn && phones.on && (
+        <div className="border-b bg-card text-sm" data-testid="together-bar">
+          <label className="inline-flex items-center gap-1.5 px-3 py-1">
+            <input type="checkbox" checked={together} onChange={(e) => setTogether(e.target.checked)} /> Show where the phones were together
+          </label>
+          {together && <LazyTogetherPanel caseId={caseId!} phoneIds={onIds} from={carried.scope.window?.from} to={carried.scope.window?.to} parts={["places"]} onPick={(m) => setPickedMeeting(m.id)} />}
+        </div>
+      )}
       <MapToolbar
         caseId={caseId!}
         locations={safeLocations}
@@ -238,6 +253,7 @@ export function MapPage() {
           focusPoint={focusPoint}
           focusBox={nearFilter ? near.data?.bbox ?? null : null}
         >
+          {togetherOn && phones.on && together && <LazyMeetingLayer caseId={caseId!} phoneIds={onIds} from={carried.scope.window?.from} to={carried.scope.window?.to} picked={pickedMeeting} />}
           {layersOn && phones.on && routes && <RouteLayers route={route} colours={colours} labels={labels} zone={zoneName} />}
         </MapCanvas>
         {nearUid && !focusPoint && <NearMessageNote loading={near.isLoading} failed={near.isError} near={near.data} />}

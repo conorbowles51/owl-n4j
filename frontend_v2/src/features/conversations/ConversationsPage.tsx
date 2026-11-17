@@ -52,7 +52,9 @@ import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { fmt } from "@/features/phones/ui/count-sentence"
 import { ScopeBar, type Scope } from "@/features/phones/ui/ScopeBar"
 import { PhoneLayers } from "@/features/phones/ui/PhoneLayers"
-import { phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
+import { layersOn as phonesOn, phoneLayersEnabled } from "@/features/phones/lib/phone-layers"
+import { phoneTogetherEnabled } from "@/features/phones/together/enabled"
+import { LazyTogetherPanel } from "@/features/phones/together/lazy"
 import { SignificantNote } from "@/features/phones/ui/SignificantNote"
 import { EMPTY_SCOPE, scopeWords } from "@/features/phones/ui/scope"
 import { ScopeCrossings } from "@/features/phones/ui/ScopeCrossings"
@@ -691,6 +693,10 @@ export function ConversationsPage() {
             <PhoneLayers phones={phones.filter((p) => p.standing !== "superseded").map((p) => ({ id: p.extraction_id, label: p.label, index: phones.findIndex((x) => x.extraction_id === p.extraction_id) }))}
               chosen={view.phones} noun="records" counts={layerCounts}
               onChange={(ids) => setView({ phones: ids })} />
+          )}
+          {layersOn && phoneTogetherEnabled() && (
+            <LazyTogetherPanel caseId={caseId} parts={["contacts", "relay"]}
+              phoneIds={phonesOn(phones.filter((p) => p.standing !== "superseded").map((p) => p.extraction_id), view.phones)} />
           )}
           {phoneLayersEnabled() && fixedPhone && phones.length > 1 && (
             <p className="border-b bg-card px-3 py-1 text-sm">
