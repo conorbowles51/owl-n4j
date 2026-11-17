@@ -74,6 +74,20 @@ def _merge_meaning(hits: list[dict]) -> list[dict]:
     return sorted(hits, key=lambda h: (h.get("area_rank", 1), h["distance"]))
 
 
+def _take_turns(lists: list[list[dict]]) -> list[dict]:
+    """One list from several, each giving its next hit in turn; a hit already taken is not taken again."""
+    out: list[dict] = []
+    seen: set[tuple] = set()
+    for i in range(max((len(x) for x in lists), default=0)):
+        for lst in lists:
+            if i < len(lst):
+                k = (lst[i]["area"], lst[i]["key"])
+                if k not in seen:
+                    seen.add(k)
+                    out.append(lst[i])
+    return out
+
+
 def _merge_words(hits: list[dict]) -> list[dict]:
     return sorted(hits, key=lambda h: -h.get("words", 0))
 
@@ -175,8 +189,10 @@ def _graph(case_id, query, names, terms, *, embed_query) -> tuple[list[dict], li
         from services.vector_db_service import get_vector_db_service
         res = get_vector_db_service().search_entities(embed_query(query), top_k=20,
                                                       filter_metadata={"case_id": str(case_id)})
+        from services.embed_all.search import MAX_DISTANCE
         for r in res or []:
-            if not r.get("id"):
+            # the meaning search's own cutoff, as for every other area's hit
+            if not r.get("id") or r.get("distance") is None or r["distance"] > MAX_DISTANCE:
                 continue
             by_meaning.append({"area": "graph", "key": r["id"], "distance": r.get("distance") or 0.0,
                                "area_rank": len(by_meaning) + 1, "title": (r.get("metadata") or {}).get("name") or r["id"],
@@ -259,11 +275,16 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
             pm, _, pn = _embedded(conn, case_id, p, areas, embed_query=embed, collections=collections, words=False,
                                   phone=phone, person=person, tag=" (other phrasing)")
             lists.append(pm)
+        # every name tie (a person's numbers, accounts and other names) in one list, the ties taking turns: a list
+        # each gave every row of a tied account a credit per tie (demo case, 17 Nov: 40 of a question's first 50
+        # places were one account's ledger rows)
+        tied: list[list[dict]] = []
         for e in understood.get("expansions") or []:
             _, ew, _ = _embedded(conn, case_id, '"%s"' % e["term"] if " " in e["term"] else e["term"], areas,
                                  embed_query=embed, collections=None, meaning=False, phone=phone, person=person,
                                  tag=" (name tie: %s)" % e["term"])
-            lists.append(ew)
+            tied.append(ew)
+        lists.append(_take_turns(tied))
         searched += ["%s (%s)" % (k, "meaning and words" if meaning_ok else "words only") for k in kinds
                      if KIND_AREAS[k]]
     clock["embedded_areas"] = round(time.time() - t0, 2)
@@ -272,7 +293,13 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
     if "documents" in kinds and (not only or "documents" in only):
         try:
             dw, doc_words = _documents_by_words(conn, case_id, question)
-            lists.append(dw)
+            # in the shared word list, counted as the embedded word search counts (question terms the passage holds)
+            from services.phone import chat_retrieval
+            qterms = chat_retrieval.terms(question)
+            for h in dw:
+                body = (h.get("text") or "").casefold()
+                h["words"] = sum(1 for t in qterms if t in body) or 1
+            words_all += dw
             searched.append("documents by their words")
         except Exception as exc:  # noqa: BLE001
             not_searched.append("documents by their words (%s)" % str(exc)[:120])
