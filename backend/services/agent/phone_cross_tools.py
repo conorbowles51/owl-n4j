@@ -381,7 +381,10 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
     return out
 
 
-CASE_SEARCH_LIMIT = 8
+# Hits shown whole per call, as on origin: search_case's ranked list 10, search_by_meaning 15 by default (fewer lost
+# records the gate had found before, 17 Nov).
+CASE_SEARCH_LIMIT = 10
+MEANING_LIMIT = 15
 RANKED_KEYS = ("total", "shown", "offset", "next_offset", "grades", "grade_rule", "below_grade", "items", "searched",
                "not_searched", "why_empty", "notes", "meaning_search", "reranked", "understood", "available", "reason")
 _AREA_KIND = {"phone_text": "phones", "parties": "phones", "transcripts": "phones", "documents": "documents",
@@ -390,7 +393,7 @@ _AREA_KIND = {"phone_text": "phones", "parties": "phones", "transcripts": "phone
 
 
 def search_by_meaning(conn, case_id, query, *, areas=(), phones=(), person=None, start=None, end=None, offset=0,
-                      limit=CASE_SEARCH_LIMIT, min_grade=None) -> dict:
+                      limit=MEANING_LIMIT, min_grade=None) -> dict:
     """The case search (``services.case_search``): meaning and words together over every kind of case material
     (phone messages, ledger rows, accounts, judgement calls, money trails, statement pages, notes and findings, the
     timeline, parties, transcripts, documents, graph entities), each hit reranked against the question with a score,
@@ -2240,7 +2243,7 @@ class MeaningSearchArgs(BaseModel):
     start: str | None = Field(None, description="First day, YYYY-MM-DD (not applied to phone messages or documents).")
     end: str | None = None
     offset: int = Field(0, ge=0, description="Pass the result's next_offset for the next page.")
-    limit: int = Field(8, ge=1, le=50)
+    limit: int = Field(15, ge=1, le=50)
     min_grade: Literal["strong", "moderate"] | None = Field(
         None, description="Only results of this grade or better; the others are still counted.")
 
