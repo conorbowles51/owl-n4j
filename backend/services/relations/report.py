@@ -76,8 +76,6 @@ def _corroboration_html(c: dict, lanes: list[dict] | None) -> str:
                     more = f" (the first {len(refs):,} of {total:,})" if total > len(refs) else ""
                     cited.append(f"<span class='sub'>{_e(r['label'])}{more}: {_e(', '.join(refs))}</span>")
             out.append(f"<li><span class='who'>{keys[i['id']]} {_e(i['side'])}: {_e(i['label'])}</span>"
-                       + (f"<span class='sub'>{_e(i['start'][:16].replace('T', ' '))} to {_e(i['end'][:16].replace('T', ' '))}</span>"
-                          if i.get("start") and i.get("end") else "")
                        + ("".join(cited) or "<span class='sub'>No signal present.</span>") + "</li>")
         out.append("</ul>")
     else:
@@ -96,7 +94,7 @@ def _corroboration_html(c: dict, lanes: list[dict] | None) -> str:
                                           if c["gaps"] else "<p>No gap was found in the records for these instances.</p>"))
     if lanes is not None:
         out.append("<h3>Story lanes</h3><p class='muted'>For each instance, the records the grid cites, in time order, "
-                   "one lane per person.</p>")
+                   "one lane per person. Times are UTC, as on the screen.</p>")
         for lane_set in lanes:
             inst = lane_set["instance"]
             out.append(f"<h4>{keys.get(inst['id'], '')} {_e(inst['label'])}</h4>")
@@ -107,7 +105,7 @@ def _corroboration_html(c: dict, lanes: list[dict] | None) -> str:
                 out.append("<p class='muted'>No record is cited for this instance.</p>")
             for lane in lane_set["lanes"]:
                 out.append(f"<p class='who'>{_e(lane['label'])}</p><ol class='lane'>" + "".join(
-                    f"<li value='{e['n']}'>{_e(e['at'][:10] if e.get('day_only') else e['at'][:16].replace('T', ' '))} · "
+                    f"<li value='{e['n']}'>{_e(e['at'][:10] if e.get('day_only') else e['at'][:16].replace('T', ' ') + ' UTC')} · "
                     f"{_e(e['kind_words'])}" + (f" with {_e(', '.join(e['with']))}" if e.get("with") else "")
                     + f"<span class='sub'>{_e(e['text'])}</span></li>" for e in lane["events"]) + "</ol>")
             if lane_set.get("not_laid_out"):

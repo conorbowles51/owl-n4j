@@ -86,6 +86,9 @@ def test_report_prints_the_corroborate_result_the_screen_shows():
     assert cited and all(R._e(ref) in html for ref in cited)
     events = [e for s in lanes for lane in s["lanes"] for e in lane["events"]]
     assert "Story lanes" in html and events and all(R._e(e["text"]) in html for e in events)
+    timed = [e for e in events if not e["day_only"]]
+    # Lane times are UTC; the instance label is in the case's zone, so an unlabelled time read as local (17 Nov live).
+    assert timed and all(f"{e['at'][:16].replace('T', ' ')} UTC" in html for e in timed)
     assert R.render_pdf(case_name="C", generated_by="N", group={}, run=run, lanes=lanes)[:4] == b"%PDF"
 
 
