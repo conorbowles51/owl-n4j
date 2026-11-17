@@ -25,11 +25,18 @@ PICK_MINUTES = 45    # a contact "recurs" on another instance when it is within 
 MAX_ORDINARY = 400   # ordinary instances compared, nearest the incidents first; more are counted, never dropped silently
 
 
+WHERE_KINDS = ("position", "media_position", "place")
+
+
 def _people_of(points: list[dict]) -> list[str]:
-    """The people a selection names: the owners of its phone records when there are two or more of them (the people
-    they wrote to are then "who else"), else everyone its items name."""
-    owners = list(dict.fromkeys(p["people"][0] for p in points if p.get("type") == "phone_record" and p.get("people")))
-    named = list(dict.fromkeys(k for p in points if p.get("type") != "phone_record" for k in p.get("people") or []))
+    """The people a selection names: the owners of its messages and calls when there are two or more of them (the
+    people they wrote to are then "who else"), else everyone its items name. A position names only where its phone
+    was, so its owner is named but does not make a message's other side "who else" (70 days of one phone at a yard
+    beside two messages to two people keep both people asked about)."""
+    def says(p):
+        return p.get("type") == "phone_record" and p.get("kind") not in WHERE_KINDS
+    owners = list(dict.fromkeys(p["people"][0] for p in points if says(p) and p.get("people")))
+    named = list(dict.fromkeys(k for p in points if not says(p) for k in p.get("people") or []))
     if len(owners) >= 2:
         return list(dict.fromkeys(owners + named))
     return list(dict.fromkeys(k for p in points for k in p.get("people") or []))
@@ -57,7 +64,57 @@ def _expand_places(store, points: list[dict], people_keys: list[str], everyone: 
         notes.append(f"The area chosen holds {len(inside):,} positions of "
                      f"{'the people chosen' if phones else 'any phone'}; each is part of the selection.")
         out += inside
+    out, folded = fold_positions(out)
+    if folded:
+        kept = sum(1 for p in out if p.get("kind") == "position")
+        places += folded
+        notes.append(f"{sum(f['positions'] for f in folded):,} positions chosen fall outside the hours of the other "
+                     f"records chosen; they are read as the place asked about ({len(folded)} "
+                     f"place{'' if len(folded) == 1 else 's'}: who was inside on each instance), not as times to compare."
+                     + (f" {kept:,} within {int(M.PAD.total_seconds() // 3600)} hours of another record stay as records."
+                        if kept else ""))
     return out, places, notes
+
+
+FOLD_JOIN_M = 500.0   # a folded position within this distance of a place's first position joins that place
+
+
+def fold_positions(points: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Positions say where. When a selection also holds other timed records (messages, calls, badge rows), a position
+    more than ``M.PAD`` from every one of them (a Map area brings in every day someone was there) is read as part of
+    the place asked about, not as a time to compare; positions near another record stay as records. A selection of
+    positions only is left as it is. Returns the points kept and the places, each with its centre, its radius (the
+    furthest folded position from the centre) and how many positions it holds."""
+    anchors = sorted(p["at"] for p in points if p.get("at") and not p.get("day_only")
+                     and p.get("kind") not in ("position", "media_position", "place") and p.get("kind") not in M.MONEY_KINDS)
+    if not anchors:
+        return points, []
+    from bisect import bisect_left
+
+    def near(at):
+        i = bisect_left(anchors, at)
+        return any(0 <= j < len(anchors) and abs(anchors[j] - at) <= M.PAD for j in (i - 1, i))
+    kept, loose = [], []
+    for p in points:
+        if p.get("kind") == "position" and p.get("place") and p.get("at") and not near(p["at"]):
+            loose.append(p)
+        else:
+            kept.append(p)
+    groups: list[list[dict]] = []
+    for p in sorted(loose, key=lambda x: (x["place"]["lat"], x["place"]["lon"])):
+        home = next((g for g in groups if M.haversine_m(g[0]["place"]["lat"], g[0]["place"]["lon"], p["place"]["lat"],
+                                                         p["place"]["lon"]) <= FOLD_JOIN_M), None)
+        if home is None:
+            groups.append([p])
+        else:
+            home.append(p)
+    places = []
+    for g in groups:
+        lat = sum(x["place"]["lat"] for x in g) / len(g)
+        lon = sum(x["place"]["lon"] for x in g) / len(g)
+        radius = max([50.0] + [M.haversine_m(lat, lon, x["place"]["lat"], x["place"]["lon"]) for x in g])
+        places.append({"lat": lat, "lon": lon, "radius_m": round(radius, 1), "positions": len(g)})
+    return kept, places
 
 
 def run(store, members: list[dict], question: dict | None = None,

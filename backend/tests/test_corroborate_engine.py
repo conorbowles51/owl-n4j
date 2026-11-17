@@ -254,3 +254,26 @@ def test_coincidence_names_the_link_between_people_before_one_persons_own_record
     words = sentence({"key": "coincidence", "rule": "as_often_or_explained", "separating_kinds": []}, [],
                      [alone, pair], comp, inst * 5, [], [])
     assert words.startswith("Coincidence likely: Ann Arden and Bob Brook in contact on too few") and "1 of 5" in words
+
+
+def test_a_map_area_of_every_day_someone_was_there_is_the_place_asked_about_not_seventy_nights():
+    """A Map area brings in every position inside it (here Bob at the yard each day at 10:00). Beside the seed's
+    messages those positions say where, not when: the instances stay the pattern nights and the level holds."""
+    from datetime import timedelta
+    from tests.corroborate_world import YARD, build_records
+    recs = build_records()
+    days = [FRIDAYS[0] + timedelta(days=n) for n in range(70)]
+    recs += [{"ref": f"work:{d}", "kind": "position", "at": at(d, 10), "phone": "phB", "owner": "bob",
+              "place": {"lat": YARD[0], "lon": YARD[1], "radius_m": 10}} for d in days]
+    area = [{"type": "record", "id": f"work:{d}"} for d in days] + [{"type": "record", "id": f"pB:{INCIDENTS[0]}"}]
+    res = _run(_seed() + area, {"kind": "every_time"}, recs=recs)
+    assert res["level"]["key"] == "strong", res["level"]
+    assert {i["id"] for i in res["comparison"]["incident"]} == {d.isoformat() for d in INCIDENTS}
+    assert any("70 positions chosen fall outside the hours" in n and "1 within 2 hours" in n for n in res["notes"]), res["notes"]
+
+
+def test_positions_alone_are_left_as_the_selection():
+    from tests.corroborate_world import YARD
+    pts = [{"ref": f"p{n}", "kind": "position", "at": at(FRIDAYS[n], 10), "place": {"lat": YARD[0], "lon": YARD[1],
+                                                                                   "radius_m": 10}} for n in range(3)]
+    assert engine.fold_positions(pts) == (pts, [])
