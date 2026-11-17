@@ -24,3 +24,10 @@ test("dropped names and doubled sections are counted", () => {
   assert.equal(s.defects.dropped_names, 1)
   assert.equal(s.defects.duplicated_sections, 1)
 })
+
+test("F04 counts when the report states the third-night alibi at the emergency room, whether or not it names the hospital or writes the dates in full", () => {
+  const ids = (t) => scoreReport(t, rubric).facts.filter((f) => f.found).map((f) => f.id)
+  assert.ok(ids("**N3 (3–4 May):** at the ER with Lucía, discharged 4 May 03:38.").includes("F04"))
+  assert.ok(ids("Night N3, 3-4 May. Phone 1 sends 'vamos a Ferrowmere' and 'estamos en urgencias'.").includes("F04"))
+  assert.ok(!ids("Phone 1 was 8.2 km from Phone 3 on the N3 night.").includes("F04"))
+})

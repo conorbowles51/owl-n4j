@@ -13,20 +13,27 @@
         "12 April",
         "April 12",
         "13 April",
-        "April 13"
+        "April 13",
+        "12 Apr",
+        "13 Apr",
+        "Apr 12",
+        "Apr 13",
+        "12–13",
+        "12-13"
       ]
     },
     {
       "id": "F04",
       "all": [
-        "Ferrowmere"
+        "N3"
       ],
       "any": [
-        "3 May",
-        "May 3",
-        "4 May",
-        "May 4",
-        "emergency"
+        "Ferrowmere",
+        "emergency",
+        "ER with",
+        "at the ER",
+        "in the ER",
+        "urgencias"
       ]
     },
     {
