@@ -5,7 +5,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+import asyncio
+
+from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from fastapi import HTTPException
@@ -162,18 +165,24 @@ async def _send_files(
     if preparation_mode != "pdf_review":  # PDF preparation reads the text layer and calls no model
         await run_in_threadpool(ai_budget.check, db, case_id, "processing these files")
 
-    prepared = await run_in_threadpool(
-        _prepare_files,
-        db,
-        case_id=case_id,
-        file_ids=file_ids,
-        force_reprocess=force_reprocess,
-        preparation_mode=preparation_mode,
-        requested_by_user_id=requested_by_user_id,
-        ingestion_request_id=ingestion_request_id,
-        audio_mode=audio_mode, transcript_revisions=transcript_revisions,
-        execution_plan_id=execution_plan_id, processing_snapshots=processing_snapshots,
-    )
+    try:
+        prepared = await run_in_threadpool(
+            _prepare_files,
+            db,
+            case_id=case_id,
+            file_ids=file_ids,
+            force_reprocess=force_reprocess,
+            preparation_mode=preparation_mode,
+            requested_by_user_id=requested_by_user_id,
+            ingestion_request_id=ingestion_request_id,
+            audio_mode=audio_mode, transcript_revisions=transcript_revisions,
+            execution_plan_id=execution_plan_id, processing_snapshots=processing_snapshots,
+        )
+    except OperationalError as exc:
+        if getattr(getattr(exc, 'orig', None), 'sqlstate', None) != LOCK_NOT_AVAILABLE:
+            raise
+        await run_in_threadpool(db.rollback)
+        raise HTTPException(409, LOCKED_DETAIL) from exc
     if isinstance(prepared, dict):
         return prepared
     file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk, prior = prepared
@@ -181,44 +190,26 @@ async def _send_files(
     accepted_files: list[EvidenceFile] = []
     accepted_jobs: list[dict[str, Any]] = []
     refused: list[tuple[EvidenceFile, str]] = []
-    recovered = False
-    not_sent = 0
+    state = {"recovered": False, "not_sent": 0}
     chunks = _send_chunks(per_file_metadata, [_size_on_disk(path) for _, path, _ in file_tuples])
     # More than one request joins one open engine batch, closed once at the end, so the engine still reads and
     # deduplicates the whole press in one pass (engine upload.py; the trap of splitting a press).
     batch = {"id": str(uuid.uuid4()) if len(chunks) > 1 else None}
-    for position, chunk in enumerate(chunks):
-        if position and len(chunks) > 1:
-            await run_in_threadpool(_record_progress, db, execution_plan_id,
-                                    len(accepted_files) + len(refused), len(valid_files))
+    try:
+        await _send_chunks_to_engine(db, case_id, chunks, file_tuples, per_file_metadata, valid_files, valid_ids,
+                                     prior, batch, execution_plan_id, ingestion_request_id,
+                                     accepted_files, accepted_jobs, refused, state)
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+        # The send was stopped (a killed script, a cancelled request) after the files were marked processing: the
+        # files no answer came for go back to what they were, so none shows 'processing' with nothing running it.
+        settled = {id(ef) for ef in accepted_files} | {id(ef) for ef, _ in refused}
         try:
-            done, refused_here = await _upload_isolating(case_id, file_tuples, per_file_metadata, chunk, batch)
-        except Exception as exc:
-            # Not a refusal of particular files (the engine is unreachable, timed out or failed): the files of this
-            # request may still have been accepted, so look for their jobs before calling anything failed.
-            chunk_files = [valid_files[i] for i in chunk]
-            found = await _recover_accepted(case_id, ingestion_request_id, [valid_ids[i] for i in chunk])
-            if found is not None:
-                accepted_files.extend(chunk_files)
-                accepted_jobs.extend(found)
-                recovered = True
-                continue
-            # This request was tried and failed; a later one was never tried, so its files are not failed: they go
-            # back to what they were, with the reason they were not sent.
-            unsent = [valid_files[i] for later in chunks[position + 1:] for i in later]
-            await run_in_threadpool(_record_upload_failed, db, chunk_files, str(exc))
-            await run_in_threadpool(_record_not_sent, db, unsent, prior)
-            if not accepted_files and not refused:
-                raise  # nothing went: the caller reports the failure as before
-            refused.extend((ef, str(exc)) for ef in chunk_files)
-            not_sent = len(unsent)
-            break
-        for index, job in done:
-            accepted_files.append(valid_files[index])
-            accepted_jobs.append(job)
-        refused.extend((valid_files[index], reason) for index, reason in refused_here)
-        for index, reason in refused_here:
-            await run_in_threadpool(_record_upload_failed, db, [valid_files[index]], reason)
+            _record_not_sent(db, [ef for ef in valid_files if id(ef) not in settled], prior)
+        except Exception:
+            # The session may be mid-call in a worker thread; the in-flight sweep settles the rows within the hour.
+            logger.exception("Could not put back the files of a stopped send; the in-flight sweep settles them")
+        raise
+    recovered, not_sent = state["recovered"], state["not_sent"]
 
     if batch["id"] and accepted_files:
         try:
@@ -264,6 +255,44 @@ async def _send_files(
         **({"recovered_after_response_error": True} if recovered else {}),
         **({"live_tracking": False} if not live_tracking else {}),
     }
+
+
+async def _send_chunks_to_engine(db, case_id, chunks, file_tuples, per_file_metadata, valid_files, valid_ids, prior,
+                                 batch, execution_plan_id, ingestion_request_id, accepted_files, accepted_jobs,
+                                 refused, state) -> None:
+    """Send each chunk, recording accepted jobs, refusals and files never sent into the lists and ``state`` given."""
+    for position, chunk in enumerate(chunks):
+        if position and len(chunks) > 1:
+            await run_in_threadpool(_record_progress, db, execution_plan_id,
+                                    len(accepted_files) + len(refused), len(valid_files))
+        try:
+            done, refused_here = await _upload_isolating(case_id, file_tuples, per_file_metadata, chunk, batch)
+        except Exception as exc:
+            # Not a refusal of particular files (the engine is unreachable, timed out or failed): the files of this
+            # request may still have been accepted, so look for their jobs before calling anything failed.
+            chunk_files = [valid_files[i] for i in chunk]
+            found = await _recover_accepted(case_id, ingestion_request_id, [valid_ids[i] for i in chunk])
+            if found is not None:
+                accepted_files.extend(chunk_files)
+                accepted_jobs.extend(found)
+                state["recovered"] = True
+                continue
+            # This request was tried and failed; a later one was never tried, so its files are not failed: they go
+            # back to what they were, with the reason they were not sent.
+            unsent = [valid_files[i] for later in chunks[position + 1:] for i in later]
+            await run_in_threadpool(_record_upload_failed, db, chunk_files, str(exc))
+            await run_in_threadpool(_record_not_sent, db, unsent, prior)
+            if not accepted_files and not refused:
+                raise  # nothing went: the caller reports the failure as before
+            refused.extend((ef, str(exc)) for ef in chunk_files)
+            state["not_sent"] = len(unsent)
+            return
+        for index, job in done:
+            accepted_files.append(valid_files[index])
+            accepted_jobs.append(job)
+        refused.extend((valid_files[index], reason) for index, reason in refused_here)
+        for index, reason in refused_here:
+            await run_in_threadpool(_record_upload_failed, db, [valid_files[index]], reason)
 
 
 # One request to the engine carries at most this many files and this much processing metadata. The engine's form
@@ -413,6 +442,15 @@ def _partition_audio_files(db, *, case_id, file_ids, force_reprocess, audio_mode
     return full, preparations, deferred, recovered_job_ids
 
 
+# A send waits at most this long for the case's audit lock and the files' rows. Another task holding them for longer
+# (17 Nov: a transaction held a file's row for over an hour) made a resend wait silently until it was killed; now
+# it stops with the reason and changes nothing.
+SEND_LOCK_TIMEOUT = "60s"
+LOCK_NOT_AVAILABLE = "55P03"
+LOCKED_DETAIL = ("Nothing was sent: another task has been changing these files for over a minute. "
+                 "Try again in a few minutes.")
+
+
 def _prepare_files(
     db: Session,
     *,
@@ -432,6 +470,8 @@ def _prepare_files(
     prior mapping each file id to its (status, last_error) before it was marked processing."""
     if isinstance(db, Session):
         from services.financial.audit_chain import lock_case_audit_chain
+        if db.get_bind().dialect.name == 'postgresql':
+            db.execute(text(f"SET LOCAL lock_timeout = '{SEND_LOCK_TIMEOUT}'"))  # ends with this transaction
         lock_case_audit_chain(db, case_id)
     if preparation_mode == "pdf_review":
         files = _financial_processing_files(db, case_id, file_ids)

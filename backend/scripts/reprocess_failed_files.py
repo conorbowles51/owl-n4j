@@ -6,9 +6,15 @@ Dry run by default; --apply sends. The backend settles each status within 5 minu
 """
 import argparse
 import asyncio
+import signal
 import sys
 import uuid
 from collections import Counter
+
+
+def _stop(signum, frame):
+    # A kill (SIGTERM) unwinds the send like Ctrl-C, so files it marked processing go back to what they were.
+    raise SystemExit(128 + signum)
 
 
 def main(argv=None) -> int:
@@ -27,8 +33,14 @@ def main(argv=None) -> int:
             print(f"  {line}")
         if not args.apply or not found["total"]:
             return 0
-        result = asyncio.run(process_db_files(db, case_id=args.case,
-                                              file_ids=[uuid.UUID(i) for i in found["file_ids"]]))
+        signal.signal(signal.SIGTERM, _stop)
+        from fastapi import HTTPException
+        try:
+            result = asyncio.run(process_db_files(db, case_id=args.case,
+                                                  file_ids=[uuid.UUID(i) for i in found["file_ids"]]))
+        except HTTPException as exc:
+            print(f"not sent: {exc.detail}")
+            return 1
         print(result.get("message"))
         for item in result.get("refused") or []:
             print(f"  refused: {item['name']}: {item['reason']}")

@@ -32,6 +32,12 @@ _QUIET_SWEEP_SECONDS = 300
 # message to wait for: rows left 'processing' are asked about at the engine this often, as at startup. 11 Nov: 7 files
 # showed 'processing' 5 h after their jobs failed (sent by scripts/reprocess_failed_files.py).
 _IN_FLIGHT_SWEEP_SECONDS = 300
+# A file the send marked 'processing' and never handed to the engine (the send was stopped between the two, 17 Nov:
+# a resend killed while it waited on a lock) has no job to ask about, so it showed 'processing' with nothing running
+# it and left the failed list. After this long the engine is asked once for a job from that send; none means failed.
+_UNSENT_AFTER_SECONDS = 1800
+_UNSENT_REASON = ("Not sent: the send stopped before the processing service accepted this file, so it was never "
+                  "processed. Process the file again.")
 
 # The engine answers 404 for a job it no longer has. That is final: the job
 # will never report a terminal status, so the row is failed with a plain reason
@@ -251,6 +257,84 @@ class JobStatusSubscriber:
                     self._warn_unreachable(jid, error)
         except Exception as e:
             logger.warning("Failed to recover in-flight jobs: %s", e)
+        try:
+            # Its own step: a failure here never stops the rows above from being watched.
+            for jid, case_id, _ in await self._settle_unsent():
+                self._tracked[jid] = case_id
+                await self._pubsub.subscribe(f"job:{jid}:progress")
+        except Exception as e:
+            logger.warning("Failed to settle files marked processing and never sent: %s", e)
+
+    async def _settle_unsent(self):
+        """Rows the send marked 'processing' that never got an engine job: given the engine's job from that send when
+        it has one (the answer was lost), else failed with the reason. Returns (job id, case id, None) to watch."""
+        from services import evidence_engine_client
+
+        rows = await asyncio.to_thread(self._load_unsent)
+        answers = []
+        for case_id in sorted({row[1] for row in rows}):
+            try:
+                jobs = await evidence_engine_client.list_jobs(case_id)
+            except Exception as e:
+                self._warn_unreachable(f"case {case_id}", e)
+                continue  # unanswered: asked again on the next sweep
+            answers.extend((row, jobs) for row in rows if row[1] == case_id)
+        return await asyncio.to_thread(self._apply_unsent, answers) if answers else []
+
+    @staticmethod
+    def _load_unsent():
+        """(file id, case id, ingestion request id, updated_at) for each file left 'processing' by a send that never
+        reached the engine. A phone report is 'processing' with no job while its capture reads it, and has no
+        ingestion request id, so it is never picked."""
+        from datetime import datetime, timedelta, timezone
+        from postgres.session import get_background_session
+        from postgres.soft_delete import SHOW_DELETED
+        from sqlalchemy import select
+        from postgres.models.evidence import EvidenceFile
+
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=_UNSENT_AFTER_SECONDS)
+        with get_background_session() as db:
+            db.info[SHOW_DELETED] = True
+            found = []
+            for ef in db.scalars(select(EvidenceFile).where(
+                    EvidenceFile.status == "processing", EvidenceFile.engine_job_id.is_(None),
+                    EvidenceFile.updated_at < cutoff)).all():
+                request_id = (ef.last_processed_profile_snapshot or {}).get("ingestion_request_id")
+                if request_id and ef.source_type != "phone_extraction":
+                    found.append((ef.id, str(ef.case_id), str(request_id), ef.updated_at))
+        return found
+
+    @staticmethod
+    def _apply_unsent(answers):
+        from postgres.session import get_background_session
+        from postgres.soft_delete import SHOW_DELETED
+        from postgres.models.evidence import EvidenceFile
+        from services.evidence_db_storage import EvidenceDBStorage
+
+        to_subscribe = []
+        with get_background_session() as db:
+            db.info[SHOW_DELETED] = True
+            for (file_id, case_id, request_id, updated_at), jobs in answers:
+                row = db.get(EvidenceFile, file_id, with_for_update=dict(skip_locked=True), populate_existing=True)
+                if (row is None or row.status != "processing" or row.engine_job_id is not None
+                        or row.updated_at != updated_at):
+                    db.rollback()  # held or changed since it was read: its own path settles it
+                    continue
+                job = next((job for job in jobs
+                            if str(job.get("source_evidence_file_id") or "") == str(file_id)
+                            and (job.get("pipeline_state") or {}).get("ingestion_request_id") == request_id), None)
+                if job is not None and job.get("id"):
+                    row.engine_job_id = str(job["id"])
+                    to_subscribe.append((str(job["id"]), case_id, None))
+                    logger.info("File %s: found engine job %s of its send", file_id, job["id"])
+                else:
+                    EvidenceDBStorage.mark_processed(db, [row.id], error=_UNSENT_REASON)
+                    EvidenceDBStorage.add_log(db, case_id=row.case_id, evidence_file_id=row.id,
+                                              filename=row.original_filename, level="error",
+                                              message=f"Failed: {row.original_filename}: {_UNSENT_REASON}")
+                    logger.info("File %s was marked processing but never sent; marked failed", file_id)
+                db.commit()
+        return to_subscribe
 
     @staticmethod
     def _load_in_flight():
