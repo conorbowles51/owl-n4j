@@ -16,26 +16,38 @@ const MEANING_AREAS: Record<string, string> = {
   relationships: "Connections in the graph",
   entities: "People, companies and places in the graph",
   documents: "Documents",
+  graph: "Graph entities",
 }
+/** The case search's grades (services/case_search: Strong 7-10, Moderate 4-6, Weak 0-3 by the ranking model). */
+const MEANING_GRADES: Record<string, string> = { strong: "Strong match", moderate: "Moderate match", weak: "Weak match" }
 const MEANING_WHY: Record<string, string> = { meaning: "by meaning", words: "by words", both: "by meaning and words" }
 
-/** The hits found by meaning and words together, each saying which found it, and what was not searched. */
+/** "By meaning (12 of 80)": the hits shown and every hit found, so a page is never read as all of them. */
+function meaningHeading(meaning: MeaningResult) {
+  const shown = meaning.hits.length.toLocaleString("en-US")
+  const total = meaning.total ?? meaning.hits.length
+  return total > meaning.hits.length ? `By meaning (${shown} of ${total.toLocaleString("en-US")}, best first)` : `By meaning (${shown})`
+}
+
+/** The hits found by meaning and words together, each with its grade, why it was ranked there and which search found
+ * it, and what was not searched. */
 export default function MeaningGroup({ meaning, error, onOpen }: { meaning: MeaningResult | undefined; error: string | null; onOpen: (cite: string) => void }) {
   if (error) return <p role="alert" className="px-4 pt-3 text-xs">{error}</p>
   if (!meaning) return <p className="px-4 pt-3 text-xs text-muted-foreground">Searching by meaning</p>
   return (
-    <CommandGroup heading={`By meaning (${meaning.hits.length.toLocaleString("en-US")})`}>
+    <CommandGroup heading={meaningHeading(meaning)}>
       {meaning.hits.map((h) => (
         <CommandItem key={`meaning:${h.area}:${h.key}`} value={`meaning:${h.area}:${h.key}`} onSelect={() => onOpen(h.cite)}>
           <span className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate text-xs text-muted-foreground">
-              {[MEANING_AREAS[h.area] ?? h.area, MEANING_WHY[h.matched], h.as_read ? "read by a model, not confirmed" : null, h.title].filter(Boolean).join(" · ")}
+              {[h.grade && h.grade !== "ungraded" ? MEANING_GRADES[h.grade] : null, MEANING_AREAS[h.area] ?? h.area, MEANING_WHY[h.matched], h.as_read ? "read by a model, not confirmed" : null, h.title].filter(Boolean).join(" · ")}
             </span>
+            {h.reason && <span className="truncate text-xs">{h.reason}</span>}
             <span className="line-clamp-2 text-sm">{h.snippet.replace(/ \[rec:\/\/[0-9a-f-]{36}\]/g, "")}</span>
           </span>
         </CommandItem>
       ))}
-      {meaning.hits.length === 0 && <p className="px-2 pb-1 text-xs">Nothing found by meaning.</p>}
+      {meaning.hits.length === 0 && <p className="px-2 pb-1 text-xs">{meaning.why_empty ?? "Nothing found by meaning."}</p>}
       {meaning.notes.map((n) => (
         <p key={n} role="note" className="px-2 pb-1 text-xs">{n}</p>
       ))}

@@ -109,6 +109,35 @@ describe("Search dialog", () => {
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/cases/case-1/records/11111111-1111-1111-1111-111111111111"))
   })
 
+  it("shows each ranked hit's grade and reason, and the hits shown of all found (lx-casesearch)", async () => {
+    api.searchMeaning.mockImplementation(async (_c: string, q: string) => ({
+      query: q, meaning_search: true, areas_searched: ["ledger (meaning and words)"], not_searched: [], notes: [],
+      total: 40, next_offset: 12, why_empty: null,
+      hits: [
+        { area: "ledger", key: "txn://33333333-3333-3333-3333-333333333333", title: "15 April 2024", cite: "txn://33333333-3333-3333-3333-333333333333", snippet: "VINT H TOW INV 1187", matched: "both", grade: "strong", score: 9, reason: "The tow payment the question asks about" },
+        { area: "graph", key: "entity://e1", title: "Harold Vint (Person)", cite: "entity://e1", snippet: "Harold Vint", matched: "meaning", grade: "weak", score: 2, reason: "Same name, another matter" },
+      ],
+    }))
+    page()
+    await openAndType("jose")
+    expect(await screen.findByText(/By meaning \(2 of 40, best first\)/, undefined, { timeout: 10_000 })).toBeInTheDocument()
+    expect(screen.getByText(/Strong match · Payments · by meaning and words/)).toBeInTheDocument()
+    expect(screen.getByText("The tow payment the question asks about")).toBeInTheDocument()
+    expect(screen.getByText(/Weak match · Graph entities/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText("Harold Vint"))
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/cases/case-1/graph?select=e1"))
+  })
+
+  it("an empty case search says why", async () => {
+    api.searchMeaning.mockImplementation(async (_c: string, q: string) => ({
+      query: q, meaning_search: true, areas_searched: ["phones (meaning and words)"], not_searched: [], notes: [],
+      total: 0, next_offset: null, why_empty: "Nothing found. Searched phones (meaning and words) for the words jose.", hits: [],
+    }))
+    page()
+    await openAndType("jose")
+    expect(await screen.findByText(/Searched phones \(meaning and words\) for the words jose/, undefined, { timeout: 10_000 })).toBeInTheDocument()
+  })
+
   it("exact characters search words only: nothing is asked by meaning", async () => {
     page()
     await openAndType("jose")

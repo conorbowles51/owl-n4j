@@ -44,14 +44,15 @@ def search(case_id: UUID = Query(...), q: str = Query(..., max_length=500), exac
 def search_meaning(case_id: UUID = Query(...), q: str = Query(..., min_length=1, max_length=500),
                    areas: Optional[str] = None, phones: Optional[str] = None, person: Optional[str] = None,
                    start: Optional[str] = Query(None, alias="from"), end: Optional[str] = Query(None, alias="to"),
-                   limit: int = Query(20, ge=1, le=50), db: Session = Depends(get_db),
+                   offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=50), db: Session = Depends(get_db),
                    user: User = Depends(get_current_db_user)):
-    """Search by meaning and words together across every area of the case (lx-embedall D). Each hit says why it matched;
-    the answer lists what was not searched."""
+    """The case search (lx-casesearch; ``services.case_search``): meaning and words together across every kind of
+    case material, each hit scored against the question with a grade and a reason, best first, counted and paged.
+    The fields the Search dialog read before (``hits[].snippet``, ``matched``, ``areas_searched``) are kept."""
     authorize_case(db, case_id, user, ("case", "view"))
     from datetime import date
+    from services import case_search
     from services.agent.phone_tools import _phone_ids
-    from services.embed_all import search as ES
     try:
         a = date.fromisoformat(start) if start else None
         b = date.fromisoformat(end) if end else None
@@ -60,8 +61,29 @@ def search_meaning(case_id: UUID = Query(...), q: str = Query(..., min_length=1,
     ext_ids, unknown = _phone_ids(db.connection(), case_id, _phones(phones) or [])
     if unknown:
         raise HTTPException(status_code=422, detail="There is no phone %s in this case." % ", ".join(unknown))
-    return ES.search(None, case_id, q, conn=db.connection(), areas=[x for x in (areas or "").split(",") if x] or None,
-                     phone=(ext_ids[0] if ext_ids else None), person=person, date_from=a, date_to=b, limit=limit)
+    wanted = [x for x in (areas or "").split(",") if x]
+    from services.agent.phone_cross_tools import _AREA_KIND
+    kinds = tuple(dict.fromkeys(_AREA_KIND[x] for x in wanted if x in _AREA_KIND)) or None
+    # the dialog searches as a person types: the ranking model scores the hits, other phrasings are not asked for
+    res = case_search.search(db.connection(), case_id, q, kinds=kinds, areas=wanted or None,
+                             phone=(ext_ids[0] if ext_ids else None), person=person, date_from=a, date_to=b,
+                             offset=offset, limit=limit, phrase=False)
+    return search_page_result(res)
+
+
+def search_page_result(res: dict) -> dict:
+    """The case search result with the Search dialog's older fields beside the shared shape."""
+    hits = []
+    for h in res["hits"]:
+        how = {s.split(" (")[0] for s in h.get("matched") or []}
+        by_meaning = bool(how & {"meaning", "graph meaning"})
+        by_words = bool(how - {"meaning", "graph meaning"})
+        hits.append({**h, "key": "%s:%s" % (h["area"], h["n"]) if not h.get("cite") else h["cite"],
+                     "snippet": " ".join((h.get("text") or "").split())[:400],
+                     "matched": "both" if by_meaning and by_words else "meaning" if by_meaning else "words",
+                     "sources": h.get("matched") or [], "as_read": h.get("read_by_a_model", False)})
+    return {**{k: v for k, v in res.items() if k != "hits"}, "query": res.get("question", ""), "hits": hits,
+            "areas_searched": res.get("searched") or []}
 
 
 @router.get("/group")

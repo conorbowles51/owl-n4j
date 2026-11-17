@@ -214,3 +214,19 @@ def test_conform_fills_the_shape_from_a_tools_own_keys():
     d = shape.conform({"total_matching": 0, "returned": 0, "items": [], "limitation": "Nothing matched."},
                       searched="phone messages by words")
     assert shape.check(d) == [] and d["why_empty"] == "Nothing matched."
+
+
+# ---- the Search page's route ----------------------------------------------------------------------------------------
+
+def test_the_search_page_result_keeps_the_dialogs_fields_beside_the_grades():
+    from routers.search import search_page_result
+    res = {"question": "q", "total": 30, "shown": 1, "offset": 0, "next_offset": 1, "searched": ["ledger"],
+           "not_searched": [], "why_empty": None, "notes": [], "meaning_search": True, "grades": {"strong": 1},
+           "hits": [{"n": 1, "area": "ledger", "cite": "txn://t1", "text": "Payment on 15 Apr 2024:\n USD 185.00",
+                     "grade": "strong", "score": 9.0, "reason": "the tow payment", "matched": ["meaning", "words"],
+                     "read_by_a_model": False}]}
+    out = search_page_result(res)
+    h = out["hits"][0]
+    assert out["query"] == "q" and out["areas_searched"] == ["ledger"] and out["total"] == 30
+    assert h["matched"] == "both" and h["snippet"] == "Payment on 15 Apr 2024: USD 185.00" and h["key"] == "txn://t1"
+    assert h["grade"] == "strong" and h["reason"] == "the tow payment" and h["as_read"] is False

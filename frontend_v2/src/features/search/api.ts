@@ -83,7 +83,8 @@ export async function searchCase(caseId: string, q: string, exact = false, signa
   return SearchSchema.parse(await fetchAPI(`/api/search?${p}`, { signal }))
 }
 
-/** Search by meaning and words together across every area of the case (lx-embedall D). */
+/** The case search (lx-casesearch): meaning and words together across every kind of case material, each hit scored
+ * against the question with a grade and a reason, best first, counted and paged. */
 export const MeaningHitSchema = lazySchema(() => z.object({
   area: z.string(),
   key: z.string(),
@@ -92,6 +93,9 @@ export const MeaningHitSchema = lazySchema(() => z.object({
   snippet: z.string().default(""),
   matched: z.enum(["meaning", "words", "both"]),
   as_read: z.boolean().optional(),
+  grade: z.enum(["strong", "moderate", "weak", "ungraded"]).optional(),
+  score: z.number().nullable().optional(),
+  reason: z.string().nullable().optional(),
 }))
 export type MeaningHit = z.infer<typeof MeaningHitSchema>
 export const MeaningSchema = lazySchema(() => z.object({
@@ -101,6 +105,9 @@ export const MeaningSchema = lazySchema(() => z.object({
   not_searched: z.array(z.string()),
   notes: z.array(z.string()),
   meaning_search: z.boolean(),
+  total: z.number().optional(),
+  next_offset: z.number().nullable().optional(),
+  why_empty: z.string().nullable().optional(),
 }))
 export type MeaningResult = z.infer<typeof MeaningSchema>
 

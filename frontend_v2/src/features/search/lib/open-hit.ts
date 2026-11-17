@@ -47,6 +47,7 @@ export function meaningPath(caseId: string, cite: string): string {
     const [file, page] = cite.slice(6).split("/")
     return `${c}/evidence?file=${encodeURIComponent(file)}${page ? `&page=${encodeURIComponent(page)}` : ""}`
   }
+  if (cite.startsWith("entity://")) return `${c}/graph?select=${encodeURIComponent(cite.slice(9))}`
   return cite.startsWith("/cases/") ? cite : c
 }
 
