@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import json
 import re
 import uuid
@@ -29,6 +30,8 @@ from services.llm_service import LLMExecutionContext
 from services.mandate_context_service import mandate_context_service
 from services import phone_files
 from services.workspace_entry_service import add_entry_links
+
+logger = logging.getLogger(__name__)
 
 
 OUTPUT_TYPES = {"statement_summary", "statement_comparison", "theory_analysis", "statement_claims"}
@@ -502,6 +505,40 @@ def _candidate_document_ids(
     return out
 
 
+CANDIDATE_PLACES = 12
+
+
+def _ranked_candidate_ids(db: Session, *, case_id: uuid.UUID, theory: WorkspaceEntry) -> tuple[list[uuid.UUID], dict]:
+    """lx-casesearch B: the documents and phone threads most relevant to the theory, from the case search (meaning
+    and words, reranked against the theory, graded). Strong and Moderate first, then Weak, at most
+    ``CANDIDATE_PLACES``; a file the case's external-processing decision keeps out is passed over before the places
+    are filled. Both directions are tested on the same candidates: relevance is not a direction, and the old way
+    (any document holding a theory word or "support"/"contradict") picked files by those words, newest first."""
+    from services import case_search
+    question = ("%s\n%s" % (theory.title or "", theory.body or "")).strip()[:2000]
+    res = case_search.search(db.connection(), case_id, question, kinds=("documents", "phones"), limit=50)
+    out: list[uuid.UUID] = []
+    for hit in res["hits"]:
+        if hit["area"] == "phone_text":
+            raw = (hit.get("key") or "").split(":")[0] if hit.get("key") else ""
+        else:
+            raw = (hit.get("cite") or "")[len("doc://"):].split("/")[0] if (hit.get("cite") or "").startswith("doc://") else ""
+        try:
+            evidence_id = uuid.UUID(raw)
+        except ValueError:
+            continue
+        if evidence_id in out:
+            continue
+        item = db.get(EvidenceFile, evidence_id)
+        if item is None or item.case_id != case_id or not phone_files.external_processing_allowed(db, item):
+            continue
+        out.append(evidence_id)
+        if len(out) == CANDIDATE_PLACES:
+            break
+    return out, {"search": "case search", "total": res["total"], "grades": res["grades"],
+                 "reranked": res["reranked"], "notes": res["notes"]}
+
+
 def _theory_sources(
     db: Session,
     *,
@@ -535,8 +572,17 @@ def _theory_sources(
             link_roles[evidence_id].add(f"existing_{link.relationship_type}")
             phone_anchors[evidence_id].append({"kind": "phone_record", "record_uid": str(link.target_id)})
     terms = _theory_terms(theory)
-    support_ids = _candidate_document_ids(db, case_id=case_id, terms=terms, mode="supporting")
-    contradict_ids = _candidate_document_ids(db, case_id=case_id, terms=terms, mode="contradicting")
+    ranked_by: dict[str, Any] = {"search": "words"}
+    try:
+        if db.get_bind().dialect.name != "postgresql":
+            raise RuntimeError("the case search needs the case database")
+        support_ids, ranked_by = _ranked_candidate_ids(db, case_id=case_id, theory=theory)
+        contradict_ids = list(support_ids)
+    except Exception as exc:  # noqa: BLE001 - the theory is still tested, on the word match, and the record says so
+        logger.warning("Case search for the theory failed; using the word match", exc_info=True)
+        ranked_by = {"search": "words", "reason": str(exc)[:200]}
+        support_ids = _candidate_document_ids(db, case_id=case_id, terms=terms, mode="supporting")
+        contradict_ids = _candidate_document_ids(db, case_id=case_id, terms=terms, mode="contradicting")
     ordered_ids: list[uuid.UUID] = []
     for evidence_id in linked_ids + support_ids + contradict_ids:
         if evidence_id not in ordered_ids:
@@ -570,6 +616,7 @@ def _theory_sources(
         "supporting_candidate_ids": [str(item) for item in support_ids],
         "contradicting_candidate_ids": [str(item) for item in contradict_ids],
         "linked_evidence_ids": [str(item) for item in linked_ids],
+        "candidates_from": ranked_by,
     }
     return sources, retrieval
 
