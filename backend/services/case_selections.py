@@ -241,6 +241,19 @@ def _clean_members(group_type: str, members: Iterable[Mapping[str, Any]]) -> lis
     return out
 
 
+def split_by_case(db, case, named: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Members checked against the case by their own type: (in the case, not in the case). Nothing is dropped unseen."""
+    found: dict[str, set[str]] = {}
+    for kind in dict.fromkeys(m["type"] for m in named):
+        ids = [m["id"] for m in named if m["type"] == kind]
+        found[kind] = MEMBER_CHECKS[kind](db, case, ids)
+    return ([m for m in named if m["id"] in found[m["type"]]], [m for m in named if m["id"] not in found[m["type"]]])
+
+
+def clean_members(group_type: str, members: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return _clean_members(group_type, members)
+
+
 def freeze(db, *, case_id, group_type: str, members: Iterable[Mapping[str, Any]], how: Mapping[str, Any] | None,
            words: str, user=None, commit: bool = True) -> dict[str, Any]:
     """Store a group: every member of this case, in the order given. Returns its id, counts and what was left out."""
@@ -260,12 +273,7 @@ def freeze(db, *, case_id, group_type: str, members: Iterable[Mapping[str, Any]]
     if len(named) > MAX_MEMBERS:
         raise SelectionError(f"{len(named):,} items were chosen; a group holds at most {MAX_MEMBERS:,}. "
                              "Narrow the choice or add it in parts; nothing was added.")
-    found: dict[str, set[str]] = {}
-    for kind in dict.fromkeys(m["type"] for m in named):
-        ids = [m["id"] for m in named if m["type"] == kind]
-        found[kind] = MEMBER_CHECKS[kind](db, case, ids)
-    kept = [m for m in named if m["id"] in found[m["type"]]]
-    left = [m for m in named if m["id"] not in found[m["type"]]]
+    kept, left = split_by_case(db, case, named)
     if not kept:
         raise SelectionError("None of the chosen items is in this case, so nothing was added.")
     payments = [m["id"] for m in kept if m["type"] == "financial_transaction"]
