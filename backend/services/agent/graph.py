@@ -876,6 +876,11 @@ def _free_call_refusal(name: str | None, tool_context: AgentToolContext) -> dict
         # The checklist and notebook calls of a deep run are bookkeeping, not investigation: never a budget step.
         tool_context.free_calls += 1
         return None
+    if name in FREE_TOOLS and getattr(tool_context, "deep_plan", None) is not None:
+        # A deep run re-reads its own results and keeps notes without limit: depth is the point, and the notes and
+        # saved results are outside the model's context. Reverse: a measured deep run looping on re-reads.
+        tool_context.free_calls += 1
+        return None
     if name not in FREE_TOOLS or not fit.on("B"):
         return None
     if fit.on("N"):

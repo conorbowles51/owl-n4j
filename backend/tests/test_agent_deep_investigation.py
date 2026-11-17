@@ -232,3 +232,16 @@ def test_deep_run_gets_longer_work_time_and_the_review_its_own_time():
     deep_work, deep_review = X.time_limits(True)
     assert deep_work > normal_work >= 3600
     assert normal_review - normal_work >= 1800 and deep_review - deep_work >= 1800
+
+
+def test_deep_run_rereads_and_notes_are_free_without_a_cap(monkeypatch):
+    from services.agent import fit, graph as g
+    monkeypatch.setattr(fit, "on", lambda key: True)
+    from services.agent.tools import AgentToolContext
+    ctx = AgentToolContext(case_id="00000000-0000-0000-0000-000000000001")
+    ctx.deep_plan = plan()
+    for _ in range(g.FREE_CALL_CAP + g.REREAD_CAP + 20):
+        assert g._free_call_refusal("read_tool_result_page", ctx) is None
+    plain = AgentToolContext(case_id="00000000-0000-0000-0000-000000000001")
+    refused = [g._free_call_refusal("read_tool_result_page", plain) for _ in range(40)]
+    assert any(r is not None for r in refused)
