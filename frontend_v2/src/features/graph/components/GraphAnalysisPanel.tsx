@@ -92,7 +92,7 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
 
   return (
     <div className="space-y-3 p-4">
-      <h3 className="text-sm font-semibold">Graph Analysis</h3>
+      <h3 className="text-sm font-semibold">Find the most connected items and groups</h3>
       {scope === "significant" && (
         <p className="text-xs text-muted-foreground">
           Results use only Significant entities and relationships between them.
@@ -104,12 +104,13 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <Crown className="size-3.5 text-amber-500" />
-            <span className="text-xs font-medium">PageRank</span>
+            <span className="text-xs font-medium">Most connected items</span>
           </div>
           <Button variant="outline" size="sm" onClick={runPageRank} disabled={pageRank.isPending}>
             {pageRank.isPending ? <LoadingSpinner size="sm" /> : "Run"}
           </Button>
         </div>
+        <p className="mb-2 text-xs text-muted-foreground">Items with the most links, where a link from another well-linked item counts for more. The number ranks them: higher is more central. It is not a count of links.</p>
         {prResults.length > 0 && (
           <ScrollArea className="max-h-[150px]">
             <div className="space-y-0.5">
@@ -135,18 +136,19 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <Network className="size-3.5 text-blue-500" />
-            <span className="text-xs font-medium">Communities</span>
+            <span className="text-xs font-medium">Groups that link mostly among themselves</span>
           </div>
           <Button variant="outline" size="sm" onClick={runLouvain} disabled={louvain.isPending}>
             {louvain.isPending ? <LoadingSpinner size="sm" /> : "Run"}
           </Button>
         </div>
+        <p className="mb-2 text-xs text-muted-foreground">Sets of items with more links inside the set than to the rest of the graph. The number is how many items each group holds.</p>
         {communities.length > 0 && (
           <div className="space-y-1">
             {communities.map((c) => (
               <div key={c.community_id} className="flex items-center justify-between rounded px-1.5 py-0.5 hover:bg-muted/50">
-                <span className="text-xs">Community {c.community_id}</span>
-                <Badge variant="slate" className="text-[10px]">{c.size} nodes</Badge>
+                <span className="text-xs">Group {c.community_id}</span>
+                <Badge variant="slate" className="text-[10px]">{c.size} {c.size === 1 ? "item" : "items"}</Badge>
               </div>
             ))}
           </div>
@@ -160,12 +162,13 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <BarChart3 className="size-3.5 text-green-500" />
-            <span className="text-xs font-medium">Betweenness</span>
+            <span className="text-xs font-medium">Items that link otherwise separate groups</span>
           </div>
           <Button variant="outline" size="sm" onClick={runBetweenness} disabled={betweenness.isPending}>
             {betweenness.isPending ? <LoadingSpinner size="sm" /> : "Run"}
           </Button>
         </div>
+        <p className="mb-2 text-xs text-muted-foreground">Items that lie on the shortest routes between many other items. The number ranks them: higher means more of those routes pass through the item.</p>
         {btResults.length > 0 && (
           <ScrollArea className="max-h-[150px]">
             <div className="space-y-0.5">
@@ -191,7 +194,7 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <Route className="size-3.5 text-purple-500" />
-            <span className="text-xs font-medium">Shortest Paths</span>
+            <span className="text-xs font-medium">Shortest routes between selected items</span>
           </div>
           <Button
             variant="outline"
@@ -204,12 +207,12 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
         </div>
         {selectedNodeKeys.size < 2 && (
           <p className="text-[10px] text-muted-foreground">
-            Select 2+ nodes to find shortest paths
+            Select 2 or more items to find the shortest routes between them.
           </p>
         )}
         <p className="text-[10px] text-muted-foreground">
-          Up to {PATH_MAX_HOPS} hops between each pair of selected nodes. One shortest path per pair. Every link at each
-          hop is followed, with no limit per hop.
+          Up to {PATH_MAX_HOPS} links between each pair of selected items, one shortest route per pair. Every link
+          at each step is followed, with no limit per step.
         </p>
         {shortestPaths.data && (
           <p className="text-xs text-muted-foreground">
