@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any, Callable
 
@@ -52,7 +53,10 @@ Answer with JSON only: {{"phrasings": ["...", "..."]}}"""
 
 
 def default_model_call() -> Callable[[str], str] | None:
-    """The workload's model as ``prompt -> text`` (JSON mode), or ``None`` when no model is configured."""
+    """The workload's model as ``prompt -> text`` (JSON mode), or ``None`` when no model is configured.
+    ``LOUPE_CASE_SEARCH_MODEL=off`` (the test suite sets it): no model, so a test never pays for a call."""
+    if os.environ.get("LOUPE_CASE_SEARCH_MODEL", "").strip().lower() == "off":
+        return None
     try:
         from postgres.session import get_background_session
         from services.ai_model_policy import get_workload_model

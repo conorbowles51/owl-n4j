@@ -349,50 +349,75 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
     more = [g for g in out_groups if g["next_offset"] is not None]
     lim_words = [x.get("message") or x.get("words") or str(x) for x in limits]
     zero = _zero_reason(query, windowed, bool(a or b), bool(group)) if not total else None
-    meaning = None
+    ranked = None
     if not exact and not group:
-        # Search by meaning is the default beside the words (lx-embedall D); exact=true searches the words only.
+        # lx-casesearch: the case search (meaning and words over every kind of material, reranked and graded, whole
+        # units) is the default beside the word groups; exact=true searches the words only. ``offset`` pages it.
         try:
-            meaning = search_by_meaning(conn, case_id, query, phones=phones, start=start, end=end, limit=10)
+            ranked = search_by_meaning(conn, case_id, query, phones=phones, start=start, end=end, offset=offset,
+                                       limit=CASE_SEARCH_LIMIT)
         except Exception as exc:  # a failure here never hides the word results
-            meaning = {"available": False, "reason": "Search by meaning failed: %s" % str(exc)[:160]}
-    return _base(tool, case_id, query=query, total_matching=total, returned=len(items), has_more=bool(more),
-                 by_meaning=(None if meaning is None else {k: meaning.get(k) for k in (
-                     "items", "areas_searched", "not_searched", "notes", "meaning_search", "reason") if k in meaning}),
-                 next_offset=more[0]["next_offset"] if len(more) == 1 else None, groups=out_groups, items=items,
-                 coverage="Searched %s: %s." % ("the %s group" % group if group else "every group", ", ".join(
-                     "%s %d" % (g["group"], g["total"]) for g in out_groups)),
-                 limitation=" ".join(x for x in (
-                     ("More hits than shown in %s; page a group with group=<name> and offset." % ", ".join(
-                         g["group"] for g in more)) if more else None,
-                     "Not complete: %s" % " ".join(lim_words) if not complete else None, zero,
-                     " ".join(n.get("reason", "") for n in not_searched) or None) if x) or None)
+            ranked = {"available": False, "reason": "The ranked case search failed: %s" % str(exc)[:160]}
+    out = _base(tool, case_id, query=query, total_matching=total, returned=len(items), has_more=bool(more),
+                ranked=(None if ranked is None else {k: ranked.get(k) for k in RANKED_KEYS if k in ranked}),
+                next_offset=more[0]["next_offset"] if len(more) == 1 else None, groups=out_groups, items=items,
+                coverage="Searched %s: %s." % ("the %s group" % group if group else "every group", ", ".join(
+                    "%s %d" % (g["group"], g["total"]) for g in out_groups)),
+                limitation=" ".join(x for x in (
+                    ("More hits than shown in %s; page a group with group=<name> and offset." % ", ".join(
+                        g["group"] for g in more)) if more else None,
+                    "Not complete: %s" % " ".join(lim_words) if not complete else None, zero,
+                    " ".join(n.get("reason", "") for n in not_searched) or None) if x) or None)
+    from services.case_search import shape
+    if ranked and ranked.get("available", True) and "total" in ranked:
+        # the shared shape describes the ranked list when there is one: it is what the page holds first
+        out.update({k: ranked[k] for k in shape.RESULT_KEYS})
+        out["searched"] = list(ranked["searched"]) + ["word groups: %s" % ", ".join(g["group"] for g in out_groups)]
+        if out["total"] == 0 and total:
+            out["total"], out["why_empty"] = total, None
+    else:
+        shape.conform(out, searched="the %s group by words" % group if group else "every group by words",
+                      empty_reason=zero)
+    return out
 
 
-def search_by_meaning(conn, case_id, query, *, areas=(), phones=(), person=None, start=None, end=None,
-                      limit=15) -> dict:
-    """Search by meaning and words together across every area of the case (``services.embed_all.search``): phone
-    messages, ledger rows, accounts, judgement calls, statement pages, notes and findings, timeline, parties,
-    transcripts and documents. Each hit says why it matched and the result says what was not searched."""
-    from services.embed_all import search as ES
+CASE_SEARCH_LIMIT = 8
+RANKED_KEYS = ("total", "shown", "offset", "next_offset", "grades", "grade_rule", "below_grade", "items", "searched",
+               "not_searched", "why_empty", "notes", "meaning_search", "reranked", "understood", "available", "reason")
+_AREA_KIND = {"phone_text": "phones", "parties": "phones", "transcripts": "phones", "documents": "documents",
+              "statement_pages": "documents", "ledger": "ledger", "accounts": "ledger", "judgements": "ledger",
+              "trails": "ledger", "timeline": "timeline", "casework": "casework", "graph": "graph"}
+
+
+def search_by_meaning(conn, case_id, query, *, areas=(), phones=(), person=None, start=None, end=None, offset=0,
+                      limit=CASE_SEARCH_LIMIT, min_grade=None) -> dict:
+    """The case search (``services.case_search``): meaning and words together over every kind of case material
+    (phone messages, ledger rows, accounts, judgement calls, money trails, statement pages, notes and findings, the
+    timeline, parties, transcripts, documents, graph entities), each hit reranked against the question with a score,
+    a grade and a reason, as a whole unit, best first; every hit is counted and pageable."""
+    from services import case_search
     tool = "search_by_meaning"
     ext_ids, unknown = _phone_ids(conn, case_id, phones)
     if unknown:
         return _not_in_case(tool, case_id, "There is no phone %s in this case." % ", ".join(unknown))
     a, b = _instant(start), _instant(end, end=True)
-    res = ES.search(None, case_id, query, conn=conn, areas=list(areas) or None, phone=(ext_ids[0] if ext_ids else None),
-                    person=person, date_from=a, date_to=b, limit=_limit(limit))
-    items = []
-    for h in res["hits"]:
-        cite = h.get("cite") or ""
-        items.append({"area": h["area"], "title": h.get("title"), "matched": h["matched"], "snippet": h.get("snippet"),
-                      "cite": cite, "rec": cite if cite.startswith("rec://") else None,
-                      "read_by_a_model": bool(h.get("as_read"))})
-    return _base(tool, case_id, query=query, total_matching=len(items), returned=len(items), has_more=False, items=items,
-                 areas_searched=res["areas_searched"], not_searched=res["not_searched"], notes=res["notes"],
-                 meaning_search=res["meaning_search"], terms_searched=res["terms"],
-                 coverage="Searched %s by %s." % (", ".join(res["areas_searched"]) or "nothing",
-                                                  "meaning and words" if res["meaning_search"] else "words only"))
+    kinds = tuple(dict.fromkeys(_AREA_KIND[x] for x in areas if x in _AREA_KIND)) or None
+    res = case_search.search(conn, case_id, query, kinds=kinds, areas=list(areas) or None,
+                             phone=(ext_ids[0] if ext_ids else None), person=person, date_from=a, date_to=b,
+                             offset=offset, limit=_limit(limit), min_grade=min_grade, page_chars=AGENT_PAGE_CHARS)
+    items = res["hits"]
+    nxt = res["next_offset"]
+    return _base(tool, case_id, query=query, total_matching=res["total"], returned=res["shown"],
+                 has_more=nxt is not None, items=items, **{k: res[k] for k in (
+                     "total", "shown", "offset", "next_offset", "grades", "grade_rule", "below_grade", "searched",
+                     "not_searched", "why_empty", "notes", "meaning_search", "reranked", "understood")},
+                 coverage="Searched %s. %d found (%s), best first; %d shown%s." % (
+                     "; ".join(res["searched"]) or "nothing", res["total"], ", ".join(
+                         "%d %s" % (n, g) for g, n in res["grades"].items() if n) or "none", res["shown"],
+                     ("; next page offset=%d" % nxt) if nxt is not None else ""))
+
+
+AGENT_PAGE_CHARS = 20000
 
 
 # ---- people and their phones ----------------------------------------------------------------------------------------
@@ -2208,13 +2233,16 @@ class MeaningSearchArgs(BaseModel):
     query: str = Field(..., description="What you are looking for, as a sentence or a few words: meaning is matched, so "
                        "'paying the guard' finds a message that says 'sent the watchman cash'. Names and numbers also match as words.")
     areas: list[Literal["phone_text", "ledger", "accounts", "judgements", "trails", "statement_pages", "casework",
-                        "timeline", "parties", "transcripts", "relationships", "entities", "documents"]] = Field(
+                        "timeline", "parties", "transcripts", "relationships", "entities", "documents", "graph"]] = Field(
         default_factory=list, description="Limit to these areas; leave empty to search all of them.")
     phones: list[str] = Field(default_factory=list, description="Limit phone messages to these phones (label or id).")
     person: str | None = Field(None, description="Keep hits that name this person.")
     start: str | None = Field(None, description="First day, YYYY-MM-DD (not applied to phone messages or documents).")
     end: str | None = None
-    limit: int = Field(15, ge=1, le=50)
+    offset: int = Field(0, ge=0, description="Pass the result's next_offset for the next page.")
+    limit: int = Field(8, ge=1, le=50)
+    min_grade: Literal["strong", "moderate"] | None = Field(
+        None, description="Only results of this grade or better; the others are still counted.")
 
 
 class PersonArgs(BaseModel):
@@ -2367,14 +2395,20 @@ class PurposeArgs(BaseModel):
 
 TOOLS = [
     ("search_by_meaning", "search_by_meaning", MeaningSearchArgs,
-     "For: finding records by what they mean when you do not know the exact words (\"paying the guard\", \"the other "
-     "phone\", \"where the goods were kept\"), across phone messages, ledger rows, accounts, judgement calls, statement "
-     "pages, notes and findings, the timeline, parties, transcripts and documents. Meaning and words are searched "
-     "together; each hit says which matched and the result lists what was not searched. Cite phone hits by rec://, "
-     "payments by txn://. Not for: exact numbers or phrases (use search_case with exact)."),
+     "For: finding records about something when you do not know the exact words (\"paying the guard\", \"the other "
+     "phone\", \"where the goods were kept\"), across phone messages, ledger rows, accounts, judgement calls, money "
+     "trails, statement pages, notes and findings, the timeline, parties, transcripts, documents and graph entities. "
+     "Names in the question are also searched as the numbers, contact names and accounts the case ties to them; "
+     "dates in the question rank records in those days higher. Each hit is a whole unit (the message with its "
+     "thread around it, the passage, the statement row with its account's month, the entity with its links), "
+     "scored against the question with a grade (strong, moderate, weak) and a reason, best first. total counts every "
+     "hit; pass next_offset for more; weaker hits are counted, never dropped. Cite phone hits by rec://, payments by "
+     "txn://. Not for: exact numbers or phrases (use search_case with exact)."),
     ("search_case", "search_case", SearchCaseArgs,
-     "Search everything in this case as Search does: messages, calls, emails, people, other phone records, documents "
-     "and machine text. Without group: every group's exact total and first hits; with group: a page of it. Cite "
+     "Search everything in this case. Without group: ranked holds the best hits across every kind of material, as "
+     "search_by_meaning gives them (whole units, graded, with a reason; offset pages it), and groups gives the word "
+     "search's exact total per group (messages, calls, emails, people, other phone records, documents, machine text) "
+     "with its first hits. With group: a page of that word group. exact=true: the words only, no ranked list. Cite "
      "phone hits by rec://."),
     ("get_person_phones", "person_phones", PersonArgs,
      "A person's phone identities (numbers, addresses, app accounts) linked on People, each phone's names for them, "

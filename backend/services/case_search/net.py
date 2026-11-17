@@ -172,14 +172,18 @@ def _graph(case_id, query, names, terms, *, embed_query) -> tuple[list[dict], li
     return by_words, by_meaning, notes
 
 
-def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...], *, phone=None, person=None,
+def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...], *, areas=None, phone=None,
+           person=None,
            date_from=None, date_to=None, embed_query: Callable[[str], list[float]] | None = None,
            collections=None) -> dict[str, Any]:
     """Every candidate, fused, with ``searched``/``not_searched``/``notes`` for the result."""
     notes: list[str] = []
     searched: list[str] = []
     not_searched: list[str] = []
-    areas = [a for k in kinds for a in KIND_AREAS[k]]
+    only = set(areas or ())
+    if only:
+        kinds = tuple(k for k in kinds if k != "graph" or "graph" in only)
+    areas = [a for k in kinds for a in KIND_AREAS[k] if not only or a in only]
     if date_from is not None or date_to is not None:
         notes.append("Only records dated inside the dates asked for were searched; phone messages and document "
                      "passages carry no single date, so they were searched without the dates.")
@@ -237,7 +241,7 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
     clock["embedded_areas"] = round(time.time() - t0, 2)
     t0 = time.time()
     doc_words = None
-    if "documents" in kinds:
+    if "documents" in kinds and (not only or "documents" in only):
         try:
             dw, doc_words = _documents_by_words(conn, case_id, question)
             lists.append(dw)

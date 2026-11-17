@@ -82,3 +82,59 @@ def check(data: dict[str, Any]) -> list[str]:
     if nxt is not None and (not isinstance(nxt, int) or nxt <= 0):
         out.append("next_offset must be a positive whole number or None")
     return out
+
+
+# Every agent tool that searches case content: what it searches, and its own names for total, shown and items.
+SEARCH_TOOLS: dict[str, dict[str, str]] = {
+    "search_case": {"searched": "every kind of case material (ranked case search) and the word groups"},
+    "search_by_meaning": {"searched": "every kind of case material by meaning and words (ranked case search)"},
+    "search_documents": {"searched": "document passages by meaning, or by their words when meaning search is down",
+                         "items": "chunks"},
+    "search_exact_words": {"searched": "every document's stored text for the exact words",
+                           "total": "total_documents", "shown": "returned_documents", "items": "results"},
+    "search_graph_entities": {"searched": "graph entities by name, key, summary, notes and aliases",
+                              "total": "count", "items": "entities"},
+    "phone_find_people": {"searched": "phone identities and the names phones give them"},
+    "phone_messages": {"searched": "phone messages and calls"},
+    "get_financial_transactions": {"searched": "the ledger's statement rows"},
+    "find_connected_payments": {"searched": "the ledger's payments"},
+    "get_casework": {"searched": "notes, findings and other casework"},
+    "list_dossiers": {"searched": "people's dossiers"},
+    "get_evidence_files": {"searched": "evidence file names"},
+    "get_significant_layer": {"searched": "the items marked significant"},
+    "get_map_locations": {"searched": "places on the map", "total": "total"},
+    "get_account_mentions": {"searched": "account numbers named in payment descriptions", "total": "total"},
+}
+
+
+def _many(data: dict[str, Any], spec: dict[str, str]) -> None:
+    """A result of several searches in one call (``searches``): totals summed over them."""
+    subs = [s for s in data.get("searches") or [] if isinstance(s, dict)]
+    total = shown = 0
+    for s in subs:
+        items = s.get(spec.get("items", "items")) or s.get("items") or []
+        t = s.get(spec.get("total", "total_matching"), s.get("count"))
+        total += int(t if isinstance(t, int) else len(items))
+        shown += int(s.get(spec.get("shown", "returned")) or len(items))
+    data.setdefault("total", total)
+    data.setdefault("shown", min(shown, total) if total else shown)
+
+
+def apply(tool_name: str, data: Any) -> Any:
+    """The shared shape added to a search tool's result (in place), from the tool's own keys."""
+    spec = SEARCH_TOOLS.get(tool_name)
+    if spec is None or not isinstance(data, dict) or data.get("error"):
+        return data
+    if isinstance(data.get("searches"), list) and "total" not in data:
+        _many(data, spec)
+    empty = data.get("limitation") or data.get("reason") or data.get("note") or (
+        (data.get("search_coverage") or {}).get("note") if isinstance(data.get("search_coverage"), dict) else None)
+    if isinstance(empty, dict):
+        empty = None
+    conform(data, searched=spec["searched"], total_key=spec.get("total", "total_matching"),
+            shown_key=spec.get("shown", "returned"), items_key=spec.get("items", "items"), empty_reason=empty)
+    if not data.get("searched"):
+        data["searched"] = [spec["searched"]]
+    if isinstance(data.get("shown"), int) and isinstance(data.get("total"), int) and data["shown"] > data["total"]:
+        data["total"] = data["shown"]
+    return data

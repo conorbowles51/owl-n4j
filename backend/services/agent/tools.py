@@ -123,6 +123,11 @@ class AgentToolContext:
             # lx-agenttools D19: every read tool states total, shown, next, searched, not searched, why empty.
             data, summary = with_shape(tool_name, to_jsonable(data), summary)
         safe_data = to_jsonable(data)
+        if status == "success" and isinstance(safe_data, dict):
+            # lx-casesearch C: every search tool answers in one shape (total, shown, next_offset, searched,
+            # not_searched, why_empty), filled from the tool's own keys
+            from services.case_search import shape as search_shape
+            search_shape.apply(tool_name, safe_data)
         self.result_store[result_id] = safe_data
         payload = {
             "result_id": result_id,

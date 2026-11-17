@@ -87,16 +87,17 @@ def order(cands: list[dict]) -> list[dict]:
     return out + rest
 
 
-def _key(case_id, question, kinds, phone, person, date_from, date_to, rank, phrase) -> str:
-    return "|".join(str(x) for x in (case_id, question.strip(), ",".join(kinds), phone, person, date_from, date_to,
-                                     rank, phrase))
+def _key(case_id, question, kinds, areas, phone, person, date_from, date_to, rank, phrase) -> str:
+    return "|".join(str(x) for x in (case_id, question.strip(), ",".join(kinds), ",".join(areas or ()), phone, person,
+                                     date_from, date_to, rank, phrase))
 
 
-def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], phone=None, person=None, date_from=None,
+def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], areas=None, phone=None, person=None,
+           date_from=None,
            date_to=None, rank: bool = True, phrase: bool = True, model_call: Callable[[str], str] | None = None,
            embed_query=None, collections=None, use_cache: bool = True) -> dict[str, Any]:
     """The whole ranked list (no units yet), cached for paging."""
-    key = _key(case_id, question, kinds, phone, person, date_from, date_to, rank, phrase)
+    key = _key(case_id, question, kinds, areas, phone, person, date_from, date_to, rank, phrase)
     now = time.time()
     if use_cache:
         with _lock:
@@ -118,7 +119,7 @@ def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], phone=None, 
         if why:
             notes.append(why)
     t0 = time.time()
-    got = net.gather(conn, case_id, question, u, kinds, phone=phone, person=person, date_from=date_from,
+    got = net.gather(conn, case_id, question, u, kinds, areas=areas, phone=phone, person=person, date_from=date_from,
                      date_to=date_to, embed_query=embed_query, collections=collections)
     clock["gather"] = round(time.time() - t0, 2)
     clock.update(got.get("clock") or {})
@@ -162,14 +163,16 @@ def _public(h: dict, n: int) -> dict:
             **({"unit_note": h["unit_note"]} if h.get("unit_note") else {})}
 
 
-def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, phone: str | None = None,
+def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, areas: Iterable[str] | None = None,
+           phone: str | None = None,
            person: str | None = None, date_from=None, date_to=None, offset: int = 0, limit: int = DEFAULT_LIMIT,
            min_grade: str | None = None, rank: bool = True, phrase: bool = True,
            model_call: Callable[[str], str] | None = None, embed_query=None, collections=None,
-           use_cache: bool = True) -> dict[str, Any]:
+           use_cache: bool = True, page_chars: int = PAGE_CHARS) -> dict[str, Any]:
     """One page of the case search, in the shared result shape (``shape.RESULT_KEYS``).
 
-    ``kinds``: any of ``KINDS`` (default all). ``min_grade``: ``strong`` or ``moderate`` pages only those grades;
+    ``kinds``: any of ``KINDS`` (default all); ``areas``: only these embedded areas (and ``graph``) inside them.
+    ``min_grade``: ``strong`` or ``moderate`` pages only those grades;
     the others are still counted in ``grades`` and ``total``, and the result says how many are below the grade asked
     for. ``rank``/``phrase``: the model reranking and the other phrasings (both on by default)."""
     question = (question or "").strip()
@@ -182,7 +185,7 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
                "not_searched": list(wanted), "why_empty": "The search was empty: write words, a name, a number or a "
                "question.", "notes": [], "grades": {}, "grade_rule": GRADE_RULE}
         return {**{k: None for k in RESULT_KEYS}, **res}
-    r = ranked(conn, case_id, question, kinds=wanted, phone=phone, person=person, date_from=date_from,
+    r = ranked(conn, case_id, question, kinds=wanted, areas=tuple(areas) if areas else None, phone=phone, person=person, date_from=date_from,
                date_to=date_to, rank=rank, phrase=phrase, model_call=model_call, embed_query=embed_query,
                collections=collections, use_cache=use_cache)
     cands = r["candidates"]
@@ -198,7 +201,7 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
     t0 = time.time()
     for i, c in enumerate(pool[offset:offset + limit]):
         unit = units.build(conn, case_id, dict(c), page_terms)
-        if hits and used + len(unit["text"]) > PAGE_CHARS:
+        if hits and used + len(unit["text"]) > page_chars:
             break
         used += len(unit["text"])
         hits.append(_public(unit, offset + i + 1))
@@ -209,7 +212,7 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
         notes.append("Not searched, unknown kind: %s (kinds are %s)." % (", ".join(unknown), ", ".join(KINDS)))
     if len(hits) < min(limit, len(pool) - offset):
         notes.append("%d results shown, fewer than asked for, to keep the page to %d characters; pass offset=%s for "
-                     "the next." % (len(hits), PAGE_CHARS, nxt))
+                     "the next." % (len(hits), page_chars, nxt))
     if below:
         notes.append("%d weaker results are below the grade asked for; they are counted in grades and shown "
                      "without min_grade." % below)
