@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from services.retrieval_fusion import K
 
 logger = logging.getLogger(__name__)
+
+# meaning searches of one question run side by side (the question, its dated areas, three phrasings, the graph);
+# each sends its own Chroma queries side by side too (embed_all.search.QUERY_WORKERS), so this stays small
+POOL_WORKERS = 4
 
 # The kinds a caller asks for, and the embedded areas each covers.
 KIND_AREAS: dict[str, tuple[str, ...]] = {
@@ -103,29 +108,42 @@ def _merge_words(hits: list[dict]) -> list[dict]:
     return out
 
 
+def _meaning(case_id, query, areas, *, embed_query, collections, phone=None, person=None, date_from=None,
+             date_to=None, tag="") -> tuple[list[dict], list[str]]:
+    """One meaning search (embedding and vector store, no database connection), so several can run side by side."""
+    from services.embed_all import search as ES
+    try:
+        vec = embed_query(query)
+        m = ES.meaning_hits(case_id, vec, collections[0], collections[1], list(areas), phone=phone, person=person,
+                            date_from=date_from, date_to=date_to)
+        m.sort(key=lambda h: (h.get("area_rank", 1), h["distance"]))
+        for h in m:
+            h["sources"] = ["meaning" + tag]
+        return m, []
+    except Exception as exc:  # noqa: BLE001
+        try:
+            from services.meaning_search import describe_failure
+            reason = describe_failure(exc)[1]
+        except Exception:  # noqa: BLE001
+            reason = str(exc)[:160]
+        return [], ["Meaning search unavailable (%s); searched the words only." % reason]
+
+
 def _embedded(conn, case_id, query, areas, *, embed_query, collections, words=True, meaning=True, phone=None,
-              person=None, date_from=None, date_to=None, tag="") -> tuple[list[dict], list[dict], list[str]]:
+              person=None, date_from=None, date_to=None, tag="", ready=None) -> tuple[list[dict], list[dict], list[str]]:
+    """Meaning and words for one query; ``ready`` is the meaning search's future when it already runs elsewhere."""
     from services.embed_all import search as ES
     from services.phone import chat_retrieval
     notes: list[str] = []
     m: list[dict] = []
     w: list[dict] = []
-    if meaning and collections is not None:
-        try:
-            vec = embed_query(query)
-            m = ES.meaning_hits(case_id, vec, collections[0], collections[1], list(areas), phone=phone, person=person,
-                                date_from=date_from, date_to=date_to)
-            m.sort(key=lambda h: (h.get("area_rank", 1), h["distance"]))
-            for h in m:
-                h["sources"] = ["meaning" + tag]
-        except Exception as exc:  # noqa: BLE001
-            try:
-                from services.meaning_search import describe_failure
-                reason = describe_failure(exc)[1]
-            except Exception:  # noqa: BLE001
-                reason = str(exc)[:160]
-            notes.append("Meaning search unavailable (%s); searched the words only." % reason)
-            m = []
+    if ready is not None:
+        m, notes = ready.result()
+        notes = list(notes)
+    elif meaning and collections is not None:
+        m, notes = _meaning(case_id, query, areas, embed_query=embed_query, collections=collections, phone=phone,
+                            person=person, date_from=date_from, date_to=date_to, tag=tag)
+        notes = list(notes)
     if words:
         terms = chat_retrieval.terms(query)
         try:
@@ -258,23 +276,57 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
             notes.append("Meaning search unavailable (the vector store did not answer: %s); searched the words only."
                          % str(exc)[:120])
             collections = None
-    lists: list[list[dict]] = []
     # one meaning list and one word list over every area, graph entities included, each area taking its turn; a
     # source given a list of its own would rank its first hit beside the best of all the others (gate 17 Nov: graph
     # entities held 30 of a question's first 60 places)
-    meaning_all: list[dict] = []
-    words_all: list[dict] = []
     clock: dict[str, float] = {}
     meaning_ok = collections is not None
     dated = [a for a in areas if a in ("phone_text", "documents")]
     undated = [a for a in areas if a not in ("phone_text", "documents")]
     t0 = time.time()
+    # The meaning searches (the question, its dated areas, each phrasing) and the graph search need no database
+    # connection: they run side by side while the word searches use this one (live, 17 Nov, load 41: five meaning
+    # calls in a row took 17.5 s of a 70 s search). Their results are read in the order the calls were made.
+    pool = ThreadPoolExecutor(max_workers=POOL_WORKERS)
+    if meaning_ok and areas and base_embed is None:
+        try:
+            from services.embedding_service import EmbeddingService
+            base_embed = EmbeddingService().generate_embedding
+        except Exception:  # noqa: BLE001 - each meaning search then says why it failed
+            pass
+
+    def soon(q, ars, df=None, dt=None, tag=""):
+        if not meaning_ok or not ars:
+            return None
+        return pool.submit(_meaning, case_id, q, ars, embed_query=embed, collections=collections, phone=phone,
+                           person=person, date_from=df, date_to=dt, tag=tag)
+    f_undated = soon(question, undated, date_from, date_to)
+    f_dated = soon(question, dated)
+    f_phrasings = [soon(p, areas, tag=" (other phrasing)") for p in (understood.get("phrasings") or [])] if areas else []
+    f_graph = pool.submit(_graph, case_id, question, understood.get("names") or [], understood.get("terms") or [],
+                          embed_query=embed) if entities else None
+    try:
+        return _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated, undated, phone, person,
+                             date_from, date_to, embed, collections, meaning_ok, entities, notes, searched,
+                             not_searched, clock, t0, f_undated, f_dated, f_phrasings, f_graph)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated, undated, phone, person, date_from,
+                  date_to, embed, collections, meaning_ok, entities, notes, searched, not_searched, clock, t0,
+                  f_undated, f_dated, f_phrasings, f_graph) -> dict[str, Any]:
+    lists: list[list[dict]] = []
+    meaning_all: list[dict] = []
+    words_all: list[dict] = []
     if areas:
         # the question itself: meaning and words; dated records inside the dates asked for, messages and passages not
         m, w, n = _embedded(conn, case_id, question, undated, embed_query=embed, collections=collections, phone=phone,
-                            person=person, date_from=date_from, date_to=date_to)
+                            person=person, date_from=date_from, date_to=date_to, ready=f_undated,
+                            meaning=f_undated is not None)
         m2, w2, n2 = _embedded(conn, case_id, question, dated, embed_query=embed, collections=collections,
-                               phone=phone, person=person) if dated else ([], [], [])
+                               phone=phone, person=person, ready=f_dated,
+                               meaning=f_dated is not None) if dated else ([], [], [])
         meaning_all += m + m2
         words_all += w + w2
         for x in n + n2:
@@ -282,10 +334,10 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
                 notes.append(x)
         if any(x.startswith("Meaning search unavailable") for x in n + n2):
             meaning_ok = False
-        for p in understood.get("phrasings") or []:
-            pm, _, pn = _embedded(conn, case_id, p, areas, embed_query=embed, collections=collections, words=False,
-                                  phone=phone, person=person, tag=" (other phrasing)")
-            lists.append(pm)
+        for f in f_phrasings:
+            if f is not None:
+                pm, _ = f.result()
+                lists.append(pm)
         # every name tie (a person's numbers, accounts and other names) in one list, the ties taking turns: a list
         # each gave every row of a tied account a credit per tie (demo case, 17 Nov: 40 of a question's first 50
         # places were one account's ledger rows)
@@ -317,8 +369,7 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
     clock["document_words"] = round(time.time() - t0, 2)
     t0 = time.time()
     if entities:
-        gw, gm, gn = _graph(case_id, question, understood.get("names") or [], understood.get("terms") or [],
-                            embed_query=embed)
+        gw, gm, gn = f_graph.result()
         meaning_all += gm
         words_all += gw
         notes += gn

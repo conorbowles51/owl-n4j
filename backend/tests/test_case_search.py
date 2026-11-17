@@ -323,6 +323,30 @@ def test_phone_messages_take_turns_with_the_other_areas_and_never_all_rank_below
     assert keys.index("phone_text1") < 2 and keys.index("phone_text2") < 4
 
 
+def test_the_meaning_searches_of_one_question_run_side_by_side_and_keep_their_order(monkeypatch):
+    """Fails on the code before: the question, its dated areas and each phrasing were searched by meaning one after
+    another (live, 17 Nov, load 41: 5 calls, 17.5 s of a 70 s search; cold after a release, 145 s)."""
+    import time as _t
+    from services.case_search import net
+    from services.embed_all import search as ES
+
+    def meaning(case_id, vec, items, chunks, areas, **kw):
+        _t.sleep(0.4)
+        return [{"area": a, "key": "%s-%s" % (a, vec[0]), "text": "t", "distance": 0.1, "area_rank": 1} for a in areas]
+    monkeypatch.setattr(ES, "meaning_hits", meaning)
+    monkeypatch.setattr(ES, "word_hits", lambda *a, **k: [])
+    vecs = {"q": [1.0], "p1": [2.0], "p2": [3.0], "p3": [4.0]}
+    t0 = _t.time()
+    got = net.gather(object(), "c", "q", {"phrasings": ["p1", "p2", "p3"], "expansions": []}, ("phones", "ledger"),
+                     areas=["phone_text", "ledger"], embed_query=lambda q: vecs[q], collections=(object(), object()))
+    took = _t.time() - t0
+    assert took < 1.2, took
+    keys = [c["key"] for c in got["candidates"]]
+    # the order of the code before, which searched one call at a time
+    assert keys == ["ledger-1.0", "phone_text-2.0", "phone_text-3.0", "phone_text-4.0", "phone_text-1.0", "ledger-2.0",
+                    "ledger-3.0", "ledger-4.0"]
+
+
 def test_graph_entities_take_their_turn_in_the_shared_lists_not_lists_of_their_own(monkeypatch):
     """Fails on the code before: graph entities by name and by meaning were two more lists, so each one's first hit
     scored beside the best of every other area together (gate 17 Nov: 30 of a question's first 60 places)."""
