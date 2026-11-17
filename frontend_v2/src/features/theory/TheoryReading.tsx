@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { lazy, Suspense, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,8 @@ import { TrailSteps } from "@/features/guidance/history/TrailSteps"
 import { returnTo } from "@/features/guidance/history/recorder"
 import type { Step } from "@/features/guidance/api"
 import { SURFACE_WORDS, theoryAPI, theoryMembersAPI, type Addition, type LoupeView, type Member, type Surface } from "./api"
+// Behind the switch corroborate-v2; lazy so it stays out of the main script budget.
+const ClaimButton = lazy(() => import("@/features/corroborate/ClaimButton").then((m) => ({ default: m.ClaimButton })))
 
 /**
  * A theory read as a whole (lx-theorybuild C, G, H): its additions in the order added, grouped by where they came
@@ -94,7 +96,12 @@ export function TheoryReadingSection({ caseId, entryId, onBeforeNavigate }: { ca
                   <OpenSource caseId={caseId} entryId={entryId} a={a} onBeforeNavigate={onBeforeNavigate} />
                 </div>
               </div>
-              {a.why && <p className="text-sm">Why: {a.why}</p>}
+              {a.why && (
+                <p className="text-sm">
+                  Why: {a.why}{" "}
+                  <Suspense fallback={null}><ClaimButton caseId={caseId} sentence={a.why} source={{ type: "theory_line", id: a.link_id, label: a.label }} /></Suspense>
+                </p>
+              )}
               {!!a.left_out && <p className="text-xs">{a.left_out.toLocaleString("en-US")} chosen items were not in this case and were not kept.</p>}
               <p className={`text-xs ${a.origin === "agent" ? "text-status-review" : "text-muted-foreground"}`}>
                 {addedWords(a)}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import { SourceExport } from "@/features/phones/analysis/SourceExport"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
@@ -10,6 +10,8 @@ import { errorWords } from "../lanes-lib"
 import { ClaimFieldsEditor } from "./ClaimFieldsEditor"
 import { CollectBar } from "./CollectBar"
 import { DraftPanel } from "./DraftPanel"
+// Behind the switch corroborate-v2; lazy so it stays out of the main script budget.
+const ClaimButton = lazy(() => import("@/features/corroborate/ClaimButton").then((m) => ({ default: m.ClaimButton })))
 
 /**
  * Statement check (04 section 9; 07 J-9). Claims are typed here or drafted by the model ("Drafted by <model>, not
@@ -95,6 +97,11 @@ export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string
                   ? <Button size="sm" variant="outline" onClick={() => { choose(c.id); setEditing({ id: c.id, focus: c.missing_for_confirm[0] }) }}>Fill these in</Button>
                   : <button className="text-xs underline" onClick={() => { choose(c.id); setEditing({ id: c.id }) }}>Edit</button>}
               </div>
+              {(c.as_drafted?.quote || c.window_text) && (
+                <Suspense fallback={null}>
+                  <ClaimButton caseId={caseId} sentence={(c.as_drafted?.quote || c.window_text) as string} source={{ type: "statement_line", id: c.id, label: KIND_WORDS[c.kind] }} />
+                </Suspense>
+              )}
               <ClaimFacts claim={c} list={list.data} />
               {editing?.id === c.id && (
                 <ClaimEditor key={`${c.id}:${c.version}`} caseId={caseId} subject={subject} claim={c} focus={editing.focus} onClose={() => setEditing(null)}
