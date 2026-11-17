@@ -84,14 +84,53 @@ def _parse(raw: str) -> dict:
     return json.loads(m.group(0) if m else raw)
 
 
+EXCERPT_PLACES = 200
+
+
+def _forms(term: str) -> list[str]:
+    """A question word and its singular ("checks" also finds "CHECK 2202")."""
+    t = term.casefold()
+    return [t, t[:-1]] if len(t) > 4 and t.endswith("s") and not t.endswith("ss") else [t]
+
+
 def excerpt(body: str, terms: list[str], limit: int = CANDIDATE_CHARS) -> str:
+    """The part of ``body`` that holds the most different question words, the first such part when several tie."""
     body = body or ""
     if len(body) <= limit:
         return body
-    low = body.casefold()
-    at = next((low.find(t.casefold()) for t in terms if low.find(t.casefold()) >= 0), -1)
-    start = max(0, min(len(body) - limit, at - limit // 3)) if at >= 0 else 0
+    start = best_start(body, terms, limit)
     return ("…" if start else "") + body[start:start + limit] + ("…" if start + limit < len(body) else "")
+
+
+def best_start(body: str, terms: list[str], limit: int) -> int:
+    """Where a ``limit``-character cut of ``body`` holds the most different question words (0 when none is there)."""
+    low = body.casefold()
+    found: list[tuple[int, int]] = []  # (position, which term)
+    for i, t in enumerate(terms):
+        for f in _forms(t):
+            if not f:
+                continue
+            at, n = low.find(f), 0
+            while at >= 0 and n < EXCERPT_PLACES:  # a common word's first places are enough to find the best part
+                found.append((at, i))
+                at, n = low.find(f, at + 1), n + 1
+    found.sort()
+    best, start = 0, 0
+    counts: dict[int, int] = {}
+    lo = hi = 0
+    for at, _ in found:  # window starts only move forward, so one pass of two pointers counts every window
+        s0 = max(0, min(len(body) - limit, at - limit // 3))
+        while hi < len(found) and found[hi][0] < s0 + limit:
+            counts[found[hi][1]] = counts.get(found[hi][1], 0) + 1
+            hi += 1
+        while found[lo][0] < s0:
+            counts[found[lo][1]] -= 1
+            if not counts[found[lo][1]]:
+                del counts[found[lo][1]]
+            lo += 1
+        if len(counts) > best:
+            best, start = len(counts), s0
+    return start
 
 
 def rerank(question: str, candidates: list[dict[str, Any]], *, terms: list[str], windows: list[dict] | None = None,

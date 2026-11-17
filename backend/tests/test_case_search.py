@@ -129,6 +129,28 @@ def test_word_hits_with_the_same_count_take_turns_by_area():
     assert [h["key"] for h in out] == ["p", "r0", "l", "r1", "r2"]
 
 
+def test_an_excerpt_is_cut_where_the_question_words_are_a_plural_matching_its_singular():
+    # "refund checks paid by the practice": a statement page holds "CHECK 2202" and none of the words as written, so
+    # its excerpt was the page's header and the check row was in no excerpt (gate 17 Nov)
+    page = "BANK STATEMENT\nAccount Name: CORWEN STREET DENTAL PC\n" + "PATIENT CARD SETTLEMENT 9827.00\n" * 12 + \
+        "2024-02-07\nCHECK 2202\n2980.00\n" + "PATIENT CARD SETTLEMENT 9827.00\n" * 12
+    out = R.excerpt(page, ["practice", "checks", "refund", "paid"], 120)
+    assert "CHECK 2202" in out and len(out) <= 122
+
+
+def test_an_excerpt_is_cut_where_most_of_the_question_words_are():
+    body = "tow " + "x" * 300 + " tow paid Vint on 12 April " + "y" * 300
+    out = R.excerpt(body, ["tow", "paid", "vint"], 80)
+    assert "tow paid Vint" in out
+
+
+def test_a_long_whole_unit_is_cut_where_the_question_words_are():
+    body = "BANK STATEMENT header\n" + "PATIENT CARD SETTLEMENT 9827.00\n" * 200 + "CHECK 2202 2980.00\n" + \
+        "PATIENT CARD SETTLEMENT 9827.00\n" * 200
+    text_, left = units._cut(body, ["practice", "checks"], "statement_pages")
+    assert "CHECK 2202" in text_ and left > 0
+
+
 def test_grades_follow_the_stated_rule():
     assert [S.grade(s) for s in (10, 7, 6.5, 4, 3.9, 0, None)] == [
         "strong", "strong", "moderate", "moderate", "weak", "weak", "ungraded"]

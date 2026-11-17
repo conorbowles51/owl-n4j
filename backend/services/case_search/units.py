@@ -18,6 +18,8 @@ from typing import Any
 
 from sqlalchemy import text
 
+from services.case_search.rerank import best_start
+
 logger = logging.getLogger(__name__)
 
 UNIT_CHARS = 4000
@@ -31,9 +33,7 @@ def _cut(body: str, terms: list[str], area: str) -> tuple[str, int]:
     body = body or ""
     if len(body) <= UNIT_CHARS:
         return body, 0
-    low = body.casefold()
-    at = next((low.find(t.casefold()) for t in terms if low.find(t.casefold()) >= 0), 0)
-    start = max(0, min(len(body) - UNIT_CHARS, at - UNIT_CHARS // 3))
+    start = best_start(body, terms, UNIT_CHARS)
     left = len(body) - UNIT_CHARS
     how = READ_WHOLE.get(area)
     note = "[%d characters of this record are not shown%s.]" % (left, ("; read the whole with %s" % how) if how else "")
