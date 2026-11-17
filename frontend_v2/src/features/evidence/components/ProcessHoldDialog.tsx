@@ -182,6 +182,7 @@ function FinancialProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
                       className="mt-2.5"
                       data-testid={`send-to-ledger-${file.file_id}`}
                       disabled={busy || held.sent?.includes(file.file_id)}
+                      disabledReason={!busy && held.sent?.includes(file.file_id) ? "This file has already been sent to the ledger." : undefined}
                       onClick={() => setSending(file)}
                     >
                       Send to ledger

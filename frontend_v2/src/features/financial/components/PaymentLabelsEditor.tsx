@@ -352,6 +352,15 @@ export function PaymentLabelsEditor({
                 save.isPending ||
                 (!counterparty && (categories.isPending || categories.isError))
               }
+              disabledReason={
+                !query.data || query.isFetching || save.isPending
+                  ? undefined
+                  : !Object.keys(changes).length
+                    ? "Make a change to save."
+                    : !counterparty && categories.isError
+                      ? "The category library could not be loaded. Reload categories to save."
+                      : undefined
+              }
               onClick={() => save.mutate(changes)}
             >
               {save.isPending ? "Saving…" : "Save changes"}
@@ -364,6 +373,11 @@ export function PaymentLabelsEditor({
                     query.isFetching ||
                     categories.isPending ||
                     categories.isError
+                  }
+                  disabledReason={
+                    categories.isError && !save.isPending && !query.isFetching
+                      ? "The category library could not be loaded. Reload categories to confirm."
+                      : undefined
                   }
                   onClick={() => save.mutate(suggested)}
                 >

@@ -390,6 +390,19 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
                 reasonDraft.reviewedRevision !== ready.revision ||
                 Boolean(ready.unbound_statement_dates)
               }
+              disabledReason={
+                !documentary
+                  ? "Confirm these are documentary financial rows."
+                  : !coverage
+                    ? "Accept the incomplete document coverage."
+                    : !reason.trim()
+                      ? "Type a reason for finalization."
+                      : reasonDraft.reviewedRevision !== ready.revision
+                        ? "The rows changed. Check this preview, then use your explanation for it."
+                        : ready.unbound_statement_dates
+                          ? "Undated readings need matching printed statement end controls first."
+                          : undefined
+              }
               onClick={() => {
                 if (lock.current || blocked || finalize.isPending) return
                 lock.current = true

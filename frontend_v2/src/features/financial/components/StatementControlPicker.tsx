@@ -103,6 +103,7 @@ export function StatementControlPicker({
           disabled={
             !/^[1-9][0-9]*$/.test(entry) || !Number.isSafeInteger(Number(entry))
           }
+          disabledReason="Enter a page number of 1 or more."
           onClick={() => {
             setPage(Number(entry))
             setTable(0)
@@ -129,6 +130,7 @@ export function StatementControlPicker({
             </span>
             <Button
               disabled={table + 1 >= query.data.table_count}
+              disabledReason="This is the last table on this page."
               onClick={() => setTable((v) => v + 1)}
             >
               Next control table

@@ -198,6 +198,15 @@ export function BulkImportDialog({
             disabled={
               busy || transactions.length === 0 || transactions.length > 1000
             }
+            disabledReason={
+              busy
+                ? undefined
+                : transactions.length === 0
+                  ? "The current list has no records."
+                  : transactions.length > 1000
+                    ? "Filter the list to 1,000 records or fewer."
+                    : undefined
+            }
             onClick={downloadTemplate}
           >
             Download correction template

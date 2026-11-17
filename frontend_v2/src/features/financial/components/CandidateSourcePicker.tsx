@@ -141,6 +141,7 @@ export function CandidateSourcePicker({
             </Button>
             <Button
               disabled={!list.data.has_more}
+              disabledReason="This is the last page of sources."
               onClick={() => {
                 setSelected(null)
                 setOffset((n) => n + 25)
@@ -234,6 +235,7 @@ function SourcePage({
             </span>
             <Button
               disabled={table + 1 >= query.data.table_count}
+              disabledReason="This is the last table."
               onClick={() => setTable((n) => n + 1)}
             >
               Next table
@@ -652,6 +654,17 @@ function SourceSelection({
       </p>
       <Button
         disabled={!canEdit || disabled || !selected.length}
+        disabledReason={
+          !canEdit
+            ? "You can view this case but not change it."
+            : save.isPending
+              ? undefined
+              : blocked
+                ? "Reload source and selection before saving again."
+                : !selected.length
+                  ? "Select at least one row."
+                  : undefined
+        }
         onClick={() => {
           if (!canEdit || locked.current) return
           locked.current = true

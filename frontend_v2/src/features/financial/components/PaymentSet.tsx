@@ -66,6 +66,7 @@ export function PaymentSet({
             disabled={
               !rows.length || rows.every((row) => selectedSet.has(row.key))
             }
+            disabledReason={!rows.length ? "There are no payments to select." : "All payments are already selected."}
             onClick={() =>
               setSelected((current) => [
                 ...new Set([...current, ...rows.map((row) => row.key)]),

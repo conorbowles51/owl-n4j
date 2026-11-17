@@ -256,6 +256,7 @@ function ModelChainEditor({ label, description, chain, models, allModels, disabl
                   Up
                 </Button>
                 <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[10px]" disabled={disabled || chain.length === 1}
+                  disabledReason={disabled ? "An administrator can change model routing." : chain.length === 1 ? "Each list needs at least one model. Add another to remove this one." : undefined}
                   aria-label={`Remove model ${index + 1}`}
                   onClick={() => onChange(chain.filter((_, at) => at !== index))}>
                   Remove
@@ -402,7 +403,8 @@ export function AISettingsPage() {
               Connect providers once, then control the models Loupe uses for chat, agents, and evidence ingestion.
             </p>
           </div>
-          <Button onClick={savePolicy} disabled={!isDirty || saving || !settings?.permissions.can_edit_routing}>
+          <Button onClick={savePolicy} disabled={!isDirty || saving || !settings?.permissions.can_edit_routing}
+            disabledReason={saving ? undefined : settings && !settings.permissions.can_edit_routing ? "An administrator can change model routing." : !isDirty ? "Change a model to save." : undefined}>
             {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
             Save routing
           </Button>
@@ -429,7 +431,7 @@ export function AISettingsPage() {
                     <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Start with OpenAI for supporting services, or connect Anthropic, Gemini, or DeepSeek for generative analysis.</p>
                   </div>
                 </div>
-                <Button size="sm" onClick={() => setCredentialProvider(settings.providers[0])} disabled={!settings.permissions.can_manage_credentials}>Connect OpenAI</Button>
+                <Button size="sm" onClick={() => setCredentialProvider(settings.providers[0])} disabled={!settings.permissions.can_manage_credentials} disabledReason="An administrator can connect AI providers.">Connect OpenAI</Button>
               </div>
             ) : null}
 

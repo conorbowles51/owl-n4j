@@ -480,6 +480,11 @@ function SourceDetails({
                     variant="outline"
                     size="sm"
                     disabled={!data.text_excerpt.truncated || query.isFetching}
+                    disabledReason={
+                      query.isFetching
+                        ? undefined
+                        : "This is the end of the stored text."
+                    }
                     onClick={() => setOffset(offset + TEXT_SIZE)}
                   >
                     Next text

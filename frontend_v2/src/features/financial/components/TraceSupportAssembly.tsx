@@ -233,6 +233,11 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
           type="button"
           variant="outline"
           disabled={busy || (!scenarios.length && !ledger)}
+          disabledReason={
+            busy
+              ? undefined
+              : "Choose a saved ledger export or saved tracing scenarios first."
+          }
           onClick={assemble}
         >
           {busy ? "Preparing package…" : "Prepare and download review package"}

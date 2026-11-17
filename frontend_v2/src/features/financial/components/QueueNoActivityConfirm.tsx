@@ -136,6 +136,7 @@ export function QueueNoActivityConfirm({
           size="sm"
           variant="ghost"
           disabled={!!busy || !selected.length}
+          disabledReason={busy ? undefined : "No statements are selected."}
           onClick={() => {
             reset()
             onChoose(new Set())
@@ -161,7 +162,20 @@ export function QueueNoActivityConfirm({
         unreadable page is not a period without payments.
       </label>
       {!plan ? (
-        <Button size="sm" disabled={!checked || !selected.length || !!busy} onClick={() => void check()}>
+        <Button
+          size="sm"
+          disabled={!checked || !selected.length || !!busy}
+          disabledReason={
+            busy
+              ? undefined
+              : !selected.length
+                ? "Select at least one statement first."
+                : !checked
+                  ? "Tick the box above to confirm you checked every page."
+                  : undefined
+          }
+          onClick={() => void check()}
+        >
           Check which of the {selected.length} can be confirmed
         </Button>
       ) : (
@@ -186,7 +200,14 @@ export function QueueNoActivityConfirm({
             </Disclosure>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={!plan.confirmable || !!busy} onClick={() => void confirm()}>
+            <Button
+              size="sm"
+              disabled={!plan.confirmable || !!busy}
+              disabledReason={
+                busy ? undefined : "None of the selected statements can be confirmed. The message above says why."
+              }
+              onClick={() => void confirm()}
+            >
               Confirm no payments for {plan.confirmable}{" "}
               {plan.confirmable === 1 ? "statement" : "statements"}
             </Button>

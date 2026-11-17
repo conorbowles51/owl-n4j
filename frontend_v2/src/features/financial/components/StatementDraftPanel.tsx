@@ -87,6 +87,9 @@ export function StatementDraftPanel({
     draft.data &&
     JSON.stringify(draft.data.statement_scopes) ===
       JSON.stringify(scopes.map((s) => statementScope.parse(s)))
+  // the holder disables this panel while a statement is open in the editor or after finalizing, until the preview reloads
+  const lockedReason =
+    "Close the statement editor or reload the finalization preview first."
   return (
     <section
       aria-label="Saved statement controls"
@@ -123,6 +126,13 @@ export function StatementDraftPanel({
             <Button
               variant="outline"
               disabled={disabled || save.isPending || !draft.data.revision}
+              disabledReason={
+                save.isPending
+                  ? undefined
+                  : disabled
+                    ? lockedReason
+                    : "No statement controls are saved yet."
+              }
               onClick={() => {
                 onLoad(draft.data.statement_scopes)
                 setLoadedRevision(draft.data.revision)
@@ -140,6 +150,17 @@ export function StatementDraftPanel({
                 unchanged ||
                 (draft.data.revision !== null &&
                   loadedRevision !== draft.data.revision)
+              }
+              disabledReason={
+                !canEdit
+                  ? "Only case members who can edit can save statement controls."
+                  : disabled
+                    ? lockedReason
+                    : draft.isFetching || save.isPending
+                      ? undefined
+                      : unchanged
+                        ? "There are no unsaved changes."
+                        : "Load the saved statement controls before replacing them."
               }
               onClick={() => {
                 if (canEdit) save.mutate()

@@ -186,6 +186,7 @@ export function TransactionAccountFilters({
           !selection.accountHolders?.length &&
           !selectedAccountIds(selection).length
         }
+        disabledReason="No account filters are set."
         onClick={() =>
           onChange({
             ...selection,

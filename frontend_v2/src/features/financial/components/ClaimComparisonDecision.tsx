@@ -198,6 +198,21 @@ function ClaimComparisonDecisionForm({
               recalculated ||
               unavailableSelected
             }
+            disabledReason={
+              save.isPending
+                ? undefined
+                : !decision
+                  ? "Choose a response."
+                  : !reason.trim()
+                    ? "Type a reason for your response."
+                    : selected.length > 20
+                      ? "Select at most 20 payments for this review note."
+                      : recalculated
+                        ? "This comparison has been recalculated. Use the recalculated comparison first."
+                        : unavailableSelected
+                          ? "Some selected payments are no longer in this comparison. Remove unavailable selections first."
+                          : undefined
+            }
             onClick={submit}
           >
             {save.isPending ? "Saving…" : "Save claim review with sources"}

@@ -1208,6 +1208,7 @@ export function LedgerRowBrowser({
           variant="outline"
           size="sm"
           disabled={!total || (!firstData && rows.every((row) => selectedIds.has(row.key)))}
+          disabledReason={!total ? "No payments match." : "All matching payments are already selected."}
           onClick={() =>
             firstData
               ? needAll({ kind: "selectAll" })

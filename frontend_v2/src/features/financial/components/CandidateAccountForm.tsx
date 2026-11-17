@@ -154,6 +154,15 @@ function CandidateAccountFormForm({
               disabled={
                 !label.trim() || !reason.trim() || !/^[A-Z]{3}$/.test(currency)
               }
+              disabledReason={
+                !label.trim()
+                  ? "Type a provisional account label."
+                  : !reason.trim()
+                    ? "Type a reason for the provisional account."
+                    : !/^[A-Z]{3}$/.test(currency)
+                      ? "Enter a three-letter currency code for this reading, such as GBP."
+                      : undefined
+              }
               onClick={() => {
                 if (lock.current || disabled || blocked) return
                 lock.current = true

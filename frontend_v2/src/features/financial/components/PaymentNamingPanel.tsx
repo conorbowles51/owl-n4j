@@ -673,7 +673,7 @@ export function StatementView({ caseId, row }: { caseId: string; row: LedgerTran
             <Button size="sm" variant="outline" aria-label="Previous page" disabled={shown <= 1} onClick={() => goTo(shown - 1)}>
               ‹ Prev
             </Button>
-            <Button size="sm" variant="outline" aria-label="Next page" disabled={!!count && shown >= count} onClick={() => goTo(shown + 1)}>
+            <Button size="sm" variant="outline" aria-label="Next page" disabled={!!count && shown >= count} disabledReason="This is the last page." onClick={() => goTo(shown + 1)}>
               Next ›
             </Button>
             <Button size="sm" variant="outline" aria-label="Rotate statement left" onClick={() => turn(-90)}>

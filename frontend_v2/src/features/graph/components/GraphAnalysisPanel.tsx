@@ -201,6 +201,7 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
             size="sm"
             onClick={runShortestPaths}
             disabled={shortestPaths.isPending || selectedNodeKeys.size < 2}
+            disabledReason={!shortestPaths.isPending && selectedNodeKeys.size < 2 ? "Select 2 or more items to find the shortest routes between them." : undefined}
           >
             {shortestPaths.isPending ? <LoadingSpinner size="sm" /> : "Find"}
           </Button>

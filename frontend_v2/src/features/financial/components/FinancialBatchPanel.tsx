@@ -659,6 +659,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
               variant="outline"
               size="sm"
               disabled={!batches.data?.length}
+              disabledReason="There are no batches to select."
               onClick={() =>
                 setSelectedBatches(
                   listedBatches?.slice(0, visibleBatches).map((b) => b.id) ?? []
@@ -671,6 +672,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
               variant="ghost"
               size="sm"
               disabled={!selectedBatches.length}
+              disabledReason="No batches are selected."
               onClick={() => setSelectedBatches([])}
             >
               Clear batch selection
@@ -1244,6 +1246,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                     variant="outline"
                     size="sm"
                     disabled={file.review_file_id === null}
+                    disabledReason="This file has no review to open yet."
                     onClick={() => {
                       openStatementFiles(
                         file.recovery?.review_file_id ||
@@ -1259,6 +1262,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                       variant="outline"
                       size="sm"
                       disabled={!!retryingFile || paused}
+                      disabledReason={
+                        !retryingFile && paused
+                          ? "Resume batch preparation to retry files."
+                          : undefined
+                      }
                       onClick={() => void retryFile(file)}
                     >
                       {retryingFile === file.source_id
@@ -1277,6 +1285,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                         variant="outline"
                         size="sm"
                         disabled={!!retryingFile || paused}
+                        disabledReason={
+                          !retryingFile && paused
+                            ? "Resume batch preparation to retry files."
+                            : undefined
+                        }
                         onClick={() => void retryFile(file, true)}
                       >
                         Read this retained PDF afresh

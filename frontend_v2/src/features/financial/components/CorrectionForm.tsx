@@ -302,6 +302,15 @@ function CorrectionFormForm({
       {!finished && (
         <Button
           disabled={minor === null || balanceMinor === undefined || busy}
+          disabledReason={
+            busy
+              ? undefined
+              : minor === null
+                ? "Enter the corrected amount using a decimal point."
+                : balanceMinor === undefined
+                  ? "Enter the printed balance using a decimal point, or leave it empty."
+                  : undefined
+          }
           onClick={() => {
             if (lock.current || minor === null) return
             lock.current = true
@@ -468,6 +477,17 @@ function CorrectionFormForm({
               busy ||
               !reviewed?.verification.can_record ||
               !reviewed.verification.proposed_proof_class
+            }
+            disabledReason={
+              busy
+                ? undefined
+                : !reviewed
+                  ? "Preview the correction first."
+                  : !reviewed.verification.can_record
+                    ? (reviewed.verification.reason ?? undefined)
+                    : !reviewed.verification.proposed_proof_class
+                      ? "The document check is unavailable for this correction."
+                      : undefined
             }
             onClick={() => {
               if (lock.current || !reviewed?.verification.can_record) return

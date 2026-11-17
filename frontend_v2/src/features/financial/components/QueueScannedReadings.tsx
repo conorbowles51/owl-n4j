@@ -194,6 +194,11 @@ function QueueScannedReadingsContent({
         <Button
           type="button"
           disabled={!count || count > 1000}
+          disabledReason={
+            !count
+              ? "Select at least one page with possible rows first."
+              : "Choose at most 1,000 possible rows in one queue."
+          }
           onClick={() => void queue()}
         >
           Add selected scan proposals to review

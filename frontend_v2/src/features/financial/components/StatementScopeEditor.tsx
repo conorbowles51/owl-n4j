@@ -339,6 +339,7 @@ export function StatementScopeEditor({
       <div className="flex gap-2">
         <Button
           disabled={!draft.success}
+          disabledReason="Choose the account and rows, enter the printed dates with their sources, say what the balances represent and give a reason."
           onClick={() => {
             if (draft.success) onSave(draft.data)
           }}

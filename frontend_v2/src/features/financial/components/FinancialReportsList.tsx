@@ -69,6 +69,11 @@ export function FinancialReportsList({ caseId }: { caseId: string }) {
           <Button
             variant="outline"
             disabled={page === 0 || query.isPlaceholderData || query.isFetching}
+            disabledReason={
+              page === 0 && !query.isPlaceholderData && !query.isFetching
+                ? "This is the first page."
+                : undefined
+            }
             onClick={() => setPage((value) => value - 1)}
           >
             Previous financial reports
@@ -79,6 +84,11 @@ export function FinancialReportsList({ caseId }: { caseId: string }) {
               (page + 1) * 25 >= (query.data?.total ?? 0) ||
               query.isPlaceholderData ||
               query.isFetching
+            }
+            disabledReason={
+              query.isPlaceholderData || query.isFetching
+                ? undefined
+                : "This is the last page."
             }
             onClick={() => setPage((value) => value + 1)}
           >

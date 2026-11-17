@@ -311,7 +311,7 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
                     <label><input type="radio" name="scope" checked={scope === "same_format"} onChange={() => setScope("same_format")} /> {r.phone} and the other phones in this case from the same kind of report</label>
                   </div>
                   <div>
-                    <Button size="sm" onClick={() => void saveCorrection()} disabled={!reason.trim() || busy || !!emptying}>Save correction</Button>
+                    <Button size="sm" onClick={() => void saveCorrection()} disabled={!reason.trim() || busy || !!emptying} disabledReason={busy ? undefined : emptying ? "Choose Continue or Cancel below first." : !reason.trim() ? "Type your reason to save the correction." : undefined}>Save correction</Button>
                   </div>
                   {emptying && (
                     <div role="alertdialog" aria-label="This correction would leave records empty" className="flex flex-col gap-2 rounded border border-status-review bg-status-review-soft p-2">

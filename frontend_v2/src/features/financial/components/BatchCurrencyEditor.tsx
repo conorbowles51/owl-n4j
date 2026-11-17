@@ -247,6 +247,13 @@ export function BatchCurrencyEditor({
                 <Button
                   variant="outline"
                   disabled={save.isPending || !matching.length}
+                  disabledReason={
+                    save.isPending || matching.length
+                      ? undefined
+                      : search
+                        ? "No statements match the search."
+                        : "There are no statements to select."
+                  }
                   onClick={() =>
                     setSelected((current) => ({
                       ...current,

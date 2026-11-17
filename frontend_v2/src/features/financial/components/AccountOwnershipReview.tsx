@@ -730,6 +730,15 @@ function OwnershipEditor({
                       query.isFetching ||
                       save.isError
                     }
+                    disabledReason={
+                      save.isPending || query.isFetching
+                        ? undefined
+                        : save.isError
+                          ? "The last save did not finish. Reload account relationships to check it before retrying."
+                          : !valid
+                            ? "Account links changed. Go back to edit and review the draft."
+                            : undefined
+                    }
                     onClick={() => save.mutate()}
                   >
                     {save.isPending

@@ -457,6 +457,15 @@ export function PaymentEditsEditor({
                   busy ||
                   invalidMoney
                 }
+                disabledReason={
+                  !query.data || query.isFetching || busy
+                    ? undefined
+                    : !enabled.length
+                      ? "Tick at least one value to change first."
+                      : invalidMoney
+                        ? "Select rows in one currency to apply the same amount or balance."
+                        : undefined
+                }
                 onClick={() => review.mutate()}
               >
                 {review.isPending ? "Checking changes…" : "Review changes"}

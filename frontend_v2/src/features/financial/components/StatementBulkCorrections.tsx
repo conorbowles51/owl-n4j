@@ -199,6 +199,7 @@ export function StatementBulkCorrections({
                 size="sm"
                 variant="outline"
                 disabled={!selected.size}
+                disabledReason="Select the transactions to correct first."
                 onClick={() => {
                   try {
                     setPreview(

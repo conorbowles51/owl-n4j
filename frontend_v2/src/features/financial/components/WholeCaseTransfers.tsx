@@ -216,7 +216,17 @@ export function WholeCaseTransfers({
               }}
             />
           </label>
-          <Button disabled={!chosen.length || !basis.trim() || scenario.isPending} onClick={() => scenario.mutate()}>
+          <Button
+            disabled={!chosen.length || !basis.trim() || scenario.isPending}
+            disabledReason={
+              !chosen.length
+                ? "Select at least one transfer pair first."
+                : !basis.trim()
+                  ? "Say why you think these payments are transfers first."
+                  : undefined
+            }
+            onClick={() => scenario.mutate()}
+          >
             Compare totals using these transfers
           </Button>
         </fieldset>

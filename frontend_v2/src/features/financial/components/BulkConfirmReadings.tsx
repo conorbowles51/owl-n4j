@@ -77,7 +77,7 @@ export function BulkConfirmReadings({
   return (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Confirm the selected payments">
       {!asking ? (
-        <Button size="sm" variant="outline" disabled={!targets.length} onClick={() => setAsking(true)}>
+        <Button size="sm" variant="outline" disabled={!targets.length} disabledReason="No selected payment in this view has names left to confirm." onClick={() => setAsking(true)}>
           Confirm selected ({targets.length})
         </Button>
       ) : (

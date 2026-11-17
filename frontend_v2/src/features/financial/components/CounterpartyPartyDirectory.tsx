@@ -283,6 +283,11 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
               <Button
                 variant="outline"
                 disabled={!rows.length || save.isPending || query.isFetching}
+                disabledReason={
+                  !rows.length && !save.isPending && !query.isFetching
+                    ? "No payment records match the search."
+                    : undefined
+                }
                 onClick={() =>
                   updateReview((current) => ({
                     selected: [
@@ -393,6 +398,9 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                 </Button>
                 <Button
                   disabled={!selected.length || save.isPending}
+                  disabledReason={
+                    !selected.length ? "No payments are selected." : undefined
+                  }
                   onClick={() =>
                     setDraft((current) => ({ ...current, selected: [] }))
                   }
@@ -468,6 +476,21 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                         unavailableSelected.length > 0 ||
                         query.isFetching ||
                         save.isPending
+                      }
+                      disabledReason={
+                        query.isFetching || save.isPending
+                          ? undefined
+                          : !selected.length
+                            ? "Select at least one payment."
+                            : !reason.trim()
+                              ? "Type why these payments belong to this person or business."
+                              : party === "new" && !name.trim()
+                                ? "Type the name of the person or organisation."
+                                : changedSinceDraft
+                                  ? "Payment records changed. Use the latest payment records first."
+                                  : unavailableSelected.length > 0
+                                    ? "Some selected payments are no longer current. Remove them from this selection first."
+                                    : undefined
                       }
                     >
                       {save.isPending

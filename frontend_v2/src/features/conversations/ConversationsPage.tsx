@@ -766,7 +766,7 @@ export function ConversationsPage() {
                   Mark reviewed <kbd className="ml-1 text-xs text-muted-foreground">m</kbd>
                 </Button>
               )}
-              <Button size="sm" variant="outline" disabled={!focused?.time.instant} onClick={() => focused && setAround(focused)}>
+              <Button size="sm" variant="outline" disabled={!focused?.time.instant} disabledReason={!focused ? "Choose a message or call first." : !focused.time.instant ? "This message or call has no time, so nothing can be shown around it." : undefined} onClick={() => focused && setAround(focused)}>
                 Around this time <kbd className="ml-1 text-xs text-muted-foreground">a</kbd>
               </Button>
               {focused?.time.instant && (

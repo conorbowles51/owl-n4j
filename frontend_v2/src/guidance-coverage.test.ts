@@ -2,7 +2,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { guideTargets, headingSlugs, iconGaps, scanAll } from "../scripts/guidance-coverage.js"
+import { disabledGaps, guideTargets, headingSlugs, iconGaps, scanAll } from "../scripts/guidance-coverage.js"
 import { TOURS, tourArea, type TourArea } from "@/features/guidance/tours"
 import { AREA_GUIDE, GUIDES } from "@/features/guidance/guides"
 import { termAnchor } from "@/components/ui/glossary"
@@ -13,6 +13,7 @@ import { termAnchor } from "@/components/ui/glossary"
  *   2. every case address has a tour
  *   3. every control a tour points at (data-guide) exists in the code
  *   4. every glossary link lands on a heading, and every area's guide exists
+ *   5. every disabled control whose reason is not evident (work running, a first or last page) says why
  */
 const root = path.resolve(__dirname, "..")
 const src = path.join(root, "src")
@@ -20,12 +21,28 @@ const scanned = scanAll(src)
 
 /** Icon-only controls left without a tooltip on purpose, each with the reason. Keep this list short. */
 const ALLOW: Record<string, string> = {}
+/** Disabled controls whose condition reads as needing a reason but does not, each with why. */
+const DISABLED_ALLOW: Record<string, string> = {
+  "features/dossiers/components/DossierEvidencePicker.tsx {selectedIds.includes(item.target_id)}": "The button reads Added once the item is chosen, which is the reason.",
+  "features/evidence/components/JobCard.tsx {controlling || job.pause_requested}": "Disabled while a pause is being asked for; the button reads Pausing meanwhile.",
+  "features/evidence/components/PhoneReadinessCard.tsx {controlling || job.pause_requested}": "Disabled while a pause is being asked for; the button reads Pausing meanwhile.",
+  "features/financial/components/FinancialSourceAudit.tsx {finding !== null}": "Disabled while the finding it opens is being prepared; work in progress, shown beside it.",
+  "features/financial/components/TrendComparisonWorkspace.tsx {downloadWanted && !downloadFailed}": "The button reads Reading every payment for the download while it works.",
+  "features/phones/media/ImageSearch.tsx {results.isFetching || asked.limit >= 200}": "Beside it the screen says at most 200 are shown, which is why no more can be asked for.",
+  "features/phones/summary/SummaryExtras.tsx {!!id && (!s || s.state === \"queued\" || s.state === \"rendering\")}": "Disabled while the PDF is drawn; the status beside it says Drawing the PDF.",
+}
 
 describe("guidance coverage", () => {
   it("every icon-only control has a name and a tooltip", () => {
     const gaps = iconGaps(scanned, ALLOW).map((c) => `${c.file}:${c.line} <${c.tag}> ${c.hasName ? "" : "no name; "}${c.hasTooltip ? "" : "no tooltip"}`)
     expect(gaps).toEqual([])
     for (const why of Object.values(ALLOW)) expect(why.length).toBeGreaterThan(20)
+  })
+
+  it("every disabled control says why, unless the reason is evident", () => {
+    const gaps = disabledGaps(scanned, DISABLED_ALLOW).map((c) => `${c.file}:${c.line} disabled=${c.disabledExpr}`)
+    expect(gaps).toEqual([])
+    for (const why of Object.values(DISABLED_ALLOW)) expect(why.length).toBeGreaterThan(20)
   })
 
   it("every case address has a tour", () => {

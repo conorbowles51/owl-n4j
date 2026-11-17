@@ -268,6 +268,9 @@ function PdfModelNominationPanelContent({
           </p>
           <Button
             disabled={busy || attemptId !== null}
+            disabledReason={
+              busy ? undefined : "A model request is already open for this page. Check the saved model attempt instead."
+            }
             onClick={() => void request()}
           >
             Request AI proposals for this page
@@ -451,6 +454,7 @@ function PdfModelNominationPanelContent({
                       ))}
                     <Button
                       disabled={!selected.length}
+                      disabledReason="Select at least one model row first."
                       onClick={() => void save()}
                     >
                       Save selected model proposals for review
@@ -531,6 +535,7 @@ function PdfModelNominationPanelContent({
                 <Button
                   variant="outline"
                   disabled={!history.data?.has_more || busy}
+                  disabledReason={busy ? undefined : "These are the last attempts."}
                   onClick={() => setHistoryPage((p) => p + 1)}
                 >
                   Next attempts

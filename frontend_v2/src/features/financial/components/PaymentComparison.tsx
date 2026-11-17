@@ -235,6 +235,13 @@ export function PaymentComparison({
               {canEdit && (
                 <Button
                   disabled={!current || !rows.length}
+                  disabledReason={
+                    !query.data
+                      ? undefined
+                      : !rows.length
+                        ? "There are no payments to add."
+                        : "Some of these payments were replaced or are not included, so they cannot go in a finding."
+                  }
                   onClick={() => setFinding(true)}
                 >
                   Create finding from these payments

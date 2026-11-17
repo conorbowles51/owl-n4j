@@ -713,6 +713,13 @@ function NetworkForm({
             disabled={
               !chosen.length || !selectedMethods.length || calculate.isPending
             }
+            disabledReason={
+              calculate.isPending
+                ? undefined
+                : !chosen.length
+                  ? "Select at least one transfer pair first."
+                  : "Select at least one calculation method first."
+            }
           >
             {calculate.isPending
               ? "Calculating…"

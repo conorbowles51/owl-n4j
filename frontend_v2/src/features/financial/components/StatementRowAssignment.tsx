@@ -180,6 +180,15 @@ export function StatementRowAssignment({
           preview.isPending ||
           save.isPending
         }
+        disabledReason={
+          !target
+            ? "Choose a statement to move to first."
+            : !rowIds.length
+              ? "Select the payments to move first."
+              : !reason.trim()
+                ? "Type a reason for moving these payments first."
+                : undefined
+        }
         onClick={() => preview.mutate()}
       >
         {preview.isPending ? "Checking both statements…" : "Preview move"}

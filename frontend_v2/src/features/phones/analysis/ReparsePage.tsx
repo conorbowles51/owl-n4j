@@ -50,7 +50,7 @@ export function ReparseRuns({ caseId }: { caseId: string }) {
                   {TOOL[r.tool]} {r.tool_version}: {r.status === "completed" ? `finished in ${Math.round(r.seconds ?? 0).toLocaleString("en-US")} s, ${(r.tree?.placed ?? 0).toLocaleString("en-US")} verified files read, peak memory ${Math.round(r.peak_rss_mb ?? 0).toLocaleString("en-US")} MB` : r.status === "failed" ? `failed: ${r.error}` : r.status === "running" ? "running" : "waiting its turn (one phone at a time)"}
                 </p>
               ) : <p className="text-muted-foreground">Not read again yet.</p>}
-              <Button size="sm" variant="outline" disabled={!p.os_family || !!open || start.isPending} onClick={() => start.mutate(p.extraction_id)}>
+              <Button size="sm" variant="outline" disabled={!p.os_family || !!open || start.isPending} disabledReason={p.os_family && open ? "This phone is already being read again." : undefined} onClick={() => start.mutate(p.extraction_id)}>
                 {p.os_family ? `Read again with ${p.os_family === "iOS" ? "iLEAPP" : "ALEAPP"}` : "No tool for this operating system"}
               </Button>
             </li>

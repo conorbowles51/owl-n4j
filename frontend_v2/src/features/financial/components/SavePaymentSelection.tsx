@@ -115,6 +115,7 @@ function SavePaymentSelectionForm({
     <section className="space-y-3" aria-label="Save selected payments">
       <Button
         disabled={!ids.length}
+        disabledReason="Select payments first."
         onClick={() => {
           setOpen(true)
           save.reset()
@@ -183,6 +184,15 @@ function SavePaymentSelectionForm({
                   !draft.body.trim() ||
                   save.isPending ||
                   save.isError
+                }
+                disabledReason={
+                  !draft.title.trim()
+                    ? "Name this selection to save it."
+                    : !draft.body.trim()
+                      ? "Say what you noticed to save it."
+                      : save.isError
+                        ? "This save failed. Check Findings before trying again."
+                        : undefined
                 }
                 onClick={() => save.mutate()}
               >

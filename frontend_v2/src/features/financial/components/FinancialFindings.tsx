@@ -477,6 +477,11 @@ export function FinancialFindings({
         <div className="flex gap-2">
           <Button
             disabled={page === 0 || query.isPlaceholderData || query.isFetching}
+            disabledReason={
+              page === 0 && !query.isPlaceholderData && !query.isFetching
+                ? "This is the first page."
+                : undefined
+            }
             onClick={() => setPage(page - 1)}
           >
             Previous notes
@@ -486,6 +491,11 @@ export function FinancialFindings({
               query.isPlaceholderData ||
               query.isFetching ||
               (page + 1) * 25 >= (query.data?.total ?? 0)
+            }
+            disabledReason={
+              query.isPlaceholderData || query.isFetching
+                ? undefined
+                : "This is the last page."
             }
             onClick={() => setPage(page + 1)}
           >

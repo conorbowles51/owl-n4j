@@ -194,6 +194,15 @@ function PdfReviewIntakeForm({
       )}
       <Button
         disabled={(!file && !fileId) || busy || running || ready}
+        disabledReason={
+          busy || running
+            ? undefined
+            : !file && !fileId
+              ? "Select a PDF above to enable upload."
+              : ready
+                ? "This PDF is ready. Open its review below."
+                : undefined
+        }
         onClick={() => void prepare()}
       >
         {busy
@@ -226,6 +235,17 @@ function PdfReviewIntakeForm({
               running ||
               f.status === "processed" ||
               f.status === "processing"
+            }
+            disabledReason={
+              busy || running
+                ? undefined
+                : f.status === "processed"
+                  ? automaticReview
+                    ? "This PDF is already processed. Open it from Statement files."
+                    : "This PDF is already processed. Open it through Choose PDF rows."
+                  : f.status === "processing"
+                    ? "This PDF is still being processed. Its progress is shown in Evidence."
+                    : undefined
             }
             onClick={() => {
               setFile(null)

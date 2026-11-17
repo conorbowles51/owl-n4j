@@ -226,6 +226,7 @@ export function CaseBriefPanel({
             variant="ghost"
             size="sm"
             disabled={run.isPending || !!latest.data?.requested_at}
+            disabledReason={!run.isPending && latest.data?.requested_at ? "A check is already running for this case." : undefined}
             onClick={() => run.mutate()}
           >
             {run.isPending ? (

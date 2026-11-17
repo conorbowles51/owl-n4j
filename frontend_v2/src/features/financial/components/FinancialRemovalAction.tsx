@@ -198,6 +198,9 @@ export function FinancialRemovalAction({
         size="sm"
         aria-label={accessibleLabel}
         disabled={busy || (!batchIds.length && !fileIds.length)}
+        disabledReason={
+          busy ? undefined : "Select batches or statement files first."
+        }
         onClick={() => void load(true)}
       >
         {label}
@@ -290,6 +293,13 @@ export function FinancialRemovalAction({
               {!receipt && (
                 <Button
                   disabled={busy || !preview?.can_remove}
+                  disabledReason={
+                    busy
+                      ? undefined
+                      : !preview
+                        ? "The removal preview did not load. Use Refresh preview to try again."
+                        : preview.blocked_reason || "These imports cannot be removed now. Use Refresh preview to check again."
+                  }
                   onClick={() => void remove(false)}
                 >
                   Remove imports
@@ -298,6 +308,13 @@ export function FinancialRemovalAction({
               {canUpload && (
                 <Button
                   disabled={busy || !preview?.can_remove}
+                  disabledReason={
+                    busy
+                      ? undefined
+                      : !preview
+                        ? "The removal preview did not load. Use Refresh preview to try again."
+                        : preview.blocked_reason || "These imports cannot be removed now. Use Refresh preview to check again."
+                  }
                   onClick={() => void remove(true)}
                 >
                   {receipt

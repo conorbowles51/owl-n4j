@@ -491,6 +491,23 @@ export function PaymentDocumentReview({
                 save.isPending ||
                 saved
               }
+              disabledReason={
+                !canEdit
+                  ? "You can view this case but not change it."
+                  : !data.supported
+                    ? "This document cannot be reviewed here. The message above says why."
+                    : saved
+                      ? "This review is already saved in Findings."
+                      : !canMatch
+                        ? "Enter the amount, the three-letter currency and the date first."
+                        : !draft.title.trim()
+                          ? "Type a review title to save."
+                          : reasonsNeeded.length
+                            ? "Explain each correction or check listed above to save."
+                            : !!draft.transaction_id && !draft.link_reason.trim()
+                              ? "Say why this document supports the selected payment to save."
+                              : undefined
+              }
               onClick={() => {
                 if (!canEdit) return
                 setDraft(draft)

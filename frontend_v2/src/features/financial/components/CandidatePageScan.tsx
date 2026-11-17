@@ -180,7 +180,11 @@ export function CandidatePageScan({
                   className="block w-24 border bg-background p-2"
                 />
               </label>
-              <Button type="submit" disabled={!automatic && date === amount}>
+              <Button
+                type="submit"
+                disabled={!automatic && date === amount}
+                disabledReason="Choose different date and amount columns."
+              >
                 {scan.isPending
                   ? "Scanning pages…"
                   : "Scan selected page range"}

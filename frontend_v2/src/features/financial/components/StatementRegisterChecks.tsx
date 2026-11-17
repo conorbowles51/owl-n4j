@@ -278,6 +278,13 @@ export function StatementRegisterChecks({
             disabled={
               !query.data?.has_more || query.isFetching || query.isError
             }
+            disabledReason={
+              query.isFetching
+                ? undefined
+                : query.isError
+                  ? "The accounts could not be loaded."
+                  : "These are the last accounts."
+            }
             onClick={() => setOffset((value) => value + 25)}
           >
             Next accounts

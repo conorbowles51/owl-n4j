@@ -220,6 +220,11 @@ function PatternScope({
     <div className="space-y-4">
       <Button
         disabled={load.isPending || !/^\d+$/.test(days) || Number(days) > 30}
+        disabledReason={
+          load.isPending
+            ? undefined
+            : "Enter a whole number of days from 0 to 30 to find patterns."
+        }
         onClick={() => {
           setPage(0)
           load.reset()
@@ -466,6 +471,19 @@ export function PatternCard({
                 collecting ||
                 h.sources.some((s) => !s.source.evidence_file_id) ||
                 (payments > h.sources.length && !allSources)
+              }
+              disabledReason={
+                collecting
+                  ? undefined
+                  : !title.trim()
+                    ? "Type a title."
+                    : !reason.trim()
+                      ? "Type your reasoning and alternative explanations."
+                      : h.sources.some((s) => !s.source.evidence_file_id)
+                        ? "Some payments in this group have no source document, so it cannot be saved."
+                        : payments > h.sources.length && !allSources
+                          ? "Every payment of this group is needed to save it. Open it from the whole-case screen."
+                          : undefined
               }
               onClick={() => void submit()}
             >

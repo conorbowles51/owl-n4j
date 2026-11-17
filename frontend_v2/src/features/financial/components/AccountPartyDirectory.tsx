@@ -205,6 +205,11 @@ export function AccountPartyDirectory({
                   </span>
                   <Button
                     disabled={!ids.length || save.isPending}
+                    disabledReason={
+                      !ids.length
+                        ? `No accounts are linked to ${p.name}.`
+                        : undefined
+                    }
                     onClick={() => onChoose(ids, state)}
                   >
                     Use {p.name} in this perspective
@@ -247,6 +252,9 @@ export function AccountPartyDirectory({
             <Button
               variant="outline"
               disabled={!selected.length || save.isPending}
+              disabledReason={
+                !selected.length ? "No accounts are selected." : undefined
+              }
               onClick={() =>
                 setDraft((current) => ({ ...current, selected: [] }))
               }
@@ -308,6 +316,27 @@ export function AccountPartyDirectory({
               selected.length > 100 ||
               !reason.trim() ||
               (party === "new" && !name.trim())
+            }
+            disabledReason={
+              !canEdit
+                ? "You can view this case but not change it."
+                : save.isPending || query.isFetching
+                  ? undefined
+                  : save.isError
+                    ? "The last save did not finish. Reload account links to check it before retrying."
+                    : changedSinceDraft
+                      ? "Account links changed. Use the latest account records first."
+                      : unavailableSelected
+                        ? "Some selected accounts are no longer available. Clear the selection and choose the current accounts."
+                        : !selected.length
+                          ? "Select at least one account."
+                          : selected.length > 100
+                            ? "Select 100 accounts or fewer."
+                            : !reason.trim()
+                              ? "Type a reason and supporting evidence."
+                              : party === "new" && !name.trim()
+                                ? "Type the person or organisation name."
+                                : undefined
             }
             onClick={() => {
               if (canEdit) save.mutate()

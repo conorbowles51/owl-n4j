@@ -67,7 +67,7 @@ export function PhoneLayers({ phones, chosen, onChange: setChosen, counts, noun 
             className="rounded border bg-background px-2 py-0.5 text-sm" />
         )}
         {many ? null : phones.map(renderPhone)}
-        <Button size="sm" variant="outline" disabled={on.length === all.length} onClick={() => onChange(toChosen(all, all))}>All</Button>
+        <Button size="sm" variant="outline" disabled={on.length === all.length} disabledReason="Every phone is already on." onClick={() => onChange(toChosen(all, all))}>All</Button>
       </div>
       {many && open && (
         <div className="flex flex-col gap-1" data-testid="phone-layer-groups">

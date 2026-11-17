@@ -247,6 +247,17 @@ function Suggestions({
           amountColumn === "" ||
           !/^[A-Z]{3}$/.test(currency)
         }
+        disabledReason={
+          suggestion.isPending
+            ? undefined
+            : dateColumn === ""
+              ? "Choose a date column."
+              : amountColumn === ""
+                ? "Choose an amount column."
+                : !/^[A-Z]{3}$/.test(currency)
+                  ? "Enter a three-letter currency code, such as GBP."
+                  : undefined
+        }
         onClick={() => suggestion.mutate()}
       >
         Inspect row suggestions
@@ -291,6 +302,7 @@ function Suggestions({
           </Button>
           <Button
             disabled={!suggestion.data.suggested_rows}
+            disabledReason="No rows were suggested."
             onClick={() =>
               onSelect(
                 suggestion.data.rows

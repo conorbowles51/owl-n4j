@@ -36,3 +36,21 @@ describe("Button tooltips", () => {
     expect(hasWords(3)).toBe(true)
   })
 })
+
+describe("Button keeps one element across renders", () => {
+  it("a button given a reason is the same element when it turns enabled", async () => {
+    const { rerender } = render(<Button disabled disabledReason="Choose a file first.">Process</Button>)
+    const before = screen.getByRole("button", { name: "Process" })
+    expect(before).toBeDisabled()
+    rerender(<Button disabled={false} disabledReason={undefined}>Process</Button>)
+    expect(screen.getByRole("button", { name: "Process" })).toBe(before)
+    expect(before).toBeEnabled()
+  })
+
+  it("a named button whose words become a spinner stays the same element", () => {
+    const { rerender } = render(<Button aria-label="Save the note">Save</Button>)
+    const before = screen.getByRole("button", { name: "Save the note" })
+    rerender(<Button aria-label="Save the note"><X /></Button>)
+    expect(screen.getByRole("button", { name: "Save the note" })).toBe(before)
+  })
+})

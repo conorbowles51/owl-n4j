@@ -402,6 +402,7 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
                     size="sm"
                     className="h-7 text-xs"
                     disabled={drawingPoints.length > 0}
+                    disabledReason="Finish or cancel the area you are drawing first."
                     onClick={applyBoundingShapeFilter}
                   >
                     <Check className="size-3.5" />

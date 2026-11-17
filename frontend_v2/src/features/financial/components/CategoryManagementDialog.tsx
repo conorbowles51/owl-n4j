@@ -240,6 +240,17 @@ function CategoryManagementForm({
             disabled={
               !newName.trim() || duplicate || saving || loading || !!loadError
             }
+            disabledReason={
+              saving || loading
+                ? undefined
+                : loadError
+                  ? "Categories could not be loaded. Reload categories first."
+                  : !newName.trim()
+                    ? "Type a category name."
+                    : duplicate
+                      ? "This category already exists."
+                      : undefined
+            }
           >
             <Plus className="size-3.5" />
             {saving ? "Saving..." : "Add Category"}

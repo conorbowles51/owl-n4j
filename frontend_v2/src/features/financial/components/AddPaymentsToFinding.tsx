@@ -204,6 +204,13 @@ export function AddPaymentsToFinding({
               )}
               <Button
                 disabled={!chosen || !fresh.length || save.isPending}
+                disabledReason={
+                  !chosen
+                    ? "Choose a finding first."
+                    : !fresh.length
+                      ? "This finding already cites these payments."
+                      : undefined
+                }
                 onClick={() => save.mutate()}
               >
                 {save.isPending

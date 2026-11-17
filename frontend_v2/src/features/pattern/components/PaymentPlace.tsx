@@ -127,7 +127,8 @@ export function PaymentPlace({ caseId, transactionId }: { caseId?: string; trans
           )}
           {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
           <p className="flex gap-2">
-            <button type="submit" className="rounded border px-2 py-1" disabled={busy || !reason.trim() || (open === "attach" && !valid)}>
+            <button type="submit" className="rounded border px-2 py-1" disabled={busy || !reason.trim() || (open === "attach" && !valid)}
+              title={busy ? undefined : open === "attach" && !valid ? "Enter a valid latitude, longitude and radius first." : !reason.trim() ? (open === "attach" ? "Type why the payment was made here to save." : "Type why the place is removed.") : undefined}>
               {open === "attach" ? "Save the place" : "Remove"}
             </button>
             <button type="button" className="rounded border px-2 py-1" onClick={() => { setOpen(null); setError(null); setUsed(null) }}>Cancel</button>

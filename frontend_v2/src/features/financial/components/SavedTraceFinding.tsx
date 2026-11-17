@@ -83,6 +83,15 @@ function SaveTraceFindingForm({ trace }: { trace: VerifiedTrace }) {
               save.isPending ||
               save.isError
             }
+            disabledReason={
+              !draft.title.trim()
+                ? "Name this calculation to save it."
+                : !draft.body.trim()
+                  ? "Say what the calculation helps you examine to save it."
+                  : save.isError
+                    ? "This save failed. Check Findings before trying again."
+                    : undefined
+            }
             onClick={() => save.mutate()}
           >
             {save.isPending ? "Saving…" : "Save calculation and note"}

@@ -254,6 +254,7 @@ export function TrendComparisonWorkspace({
           size="sm"
           variant="ghost"
           disabled={!item.rows.length}
+          disabledReason="No payments support this result, so there is nothing to record."
           onClick={() => setFinding(item)}
         >
           Record observation

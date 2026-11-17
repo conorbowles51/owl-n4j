@@ -95,6 +95,7 @@ export function DeleteFolderDialog({
             size="sm"
             onClick={onConfirm}
             disabled={isPending || !summary.data}
+            disabledReason={!isPending && summary.isError ? "The files in this folder could not be counted, so it cannot be deleted now. Close this and try again." : undefined}
           >
             {isPending ? "Deleting..." : "Delete Folder"}
           </Button>

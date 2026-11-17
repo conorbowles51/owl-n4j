@@ -156,6 +156,17 @@ export function StatementEditorDraftPanel({
           save.isPending ||
           !!(draft.data.editor_draft && loaded !== draft.data.revision)
         }
+        disabledReason={
+          !canEdit
+            ? "Only case members who can edit can save the unfinished editor."
+            : !valid.success
+              ? "Some entered values are too long or not valid to save."
+              : draft.isError
+                ? "The saved editor draft could not be loaded."
+                : !draft.data || draft.isFetching || save.isPending
+                  ? undefined
+                  : "Load the unfinished statement editor before replacing it."
+        }
         onClick={() => {
           if (canEdit) save.mutate()
         }}

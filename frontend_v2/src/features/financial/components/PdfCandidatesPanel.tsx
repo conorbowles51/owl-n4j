@@ -126,6 +126,7 @@ function CandidateMappings({ caseId }: { caseId: string }) {
               size="sm"
               variant="outline"
               disabled={!list.data.has_more}
+              disabledReason="These are the last batches."
               onClick={() => {
                 setSelected(null)
                 setOffset((n) => n + 25)

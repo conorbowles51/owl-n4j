@@ -325,6 +325,9 @@ function DuplicateCandidatesCasePanel({
                                     variant="outline"
                                     size="sm"
                                     disabled={!!selection || isFetching}
+                                    disabledReason={
+                                      selection ? "Close the open decision first." : undefined
+                                    }
                                     onClick={(event) =>
                                       openDecision(
                                         {
@@ -386,6 +389,9 @@ function DuplicateCandidatesCasePanel({
                             variant="outline"
                             size="sm"
                             disabled={!!selection || isFetching}
+                            disabledReason={
+                              selection ? "Close the open decision first." : undefined
+                            }
                             onClick={(event) =>
                               openDecision(
                                 { caseId, document: row },

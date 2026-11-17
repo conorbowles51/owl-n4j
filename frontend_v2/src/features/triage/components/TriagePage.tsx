@@ -2083,7 +2083,7 @@ function IngestDialog({
             {previewMutation.isPending ? <LoadingSpinner size="sm" /> : <FileText className="size-4" />}
             Preview
           </Button>
-          <Button disabled={!preview || !preview.file_count || ingestMutation.isPending} onClick={() => ingestMutation.mutate()}>
+          <Button disabled={!preview || !preview.file_count || ingestMutation.isPending} disabledReason={ingestMutation.isPending ? undefined : !preview ? "Preview the files first." : !preview.file_count ? "The preview found no files to ingest." : undefined} onClick={() => ingestMutation.mutate()}>
             {ingestMutation.isPending ? <LoadingSpinner size="sm" /> : <Upload className="size-4" />}
             Ingest
           </Button>

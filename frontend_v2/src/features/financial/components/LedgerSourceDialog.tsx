@@ -437,6 +437,11 @@ export function LedgerSourceDialog({
                           data.ledger_status !== "admitted" ||
                           data.superseded_by_id !== null
                         }
+                        disabledReason={
+                          data.superseded_by_id !== null
+                            ? "A later row replaced this one, so only the later row can be corrected."
+                            : "Only included transactions can be corrected."
+                        }
                         onClick={() => setCorrecting(true)}
                       >
                         Correct a value

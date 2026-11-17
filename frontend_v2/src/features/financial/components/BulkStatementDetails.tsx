@@ -414,6 +414,7 @@ function Editor({
       <Button
         variant="outline"
         disabled={!batchId && !fileIds?.length}
+        disabledReason="Select statements first."
         onClick={() => {
           setReceipt(null)
           setDraft({
@@ -618,6 +619,13 @@ function Editor({
                       <Button
                         variant="outline"
                         disabled={busy || !matching.length}
+                        disabledReason={
+                          busy || matching.length
+                            ? undefined
+                            : search
+                              ? "No statements match the search."
+                              : "There are no statements to select."
+                        }
                         onClick={() =>
                           changeDraft({
                             selected: {
@@ -634,6 +642,11 @@ function Editor({
                       <Button
                         variant="ghost"
                         disabled={busy || !selected.length}
+                        disabledReason={
+                          !busy && !selected.length
+                            ? "No statements are selected."
+                            : undefined
+                        }
                         onClick={() => changeDraft({ selected: {} })}
                       >
                         Clear statement selection
@@ -960,6 +973,15 @@ function Editor({
               <>
                 <Button
                   disabled={busy || !preview.updated || unresolved}
+                  disabledReason={
+                    busy
+                      ? undefined
+                      : !preview.updated
+                        ? "None of the selected statements would change."
+                        : unresolved
+                          ? "Choose a value above to save."
+                          : undefined
+                  }
                   onClick={() => save.mutate()}
                 >
                   {save.isPending
@@ -983,6 +1005,15 @@ function Editor({
               <>
                 <Button
                   disabled={busy || !valid || !query.data}
+                  disabledReason={
+                    busy || !query.data || valid
+                      ? undefined
+                      : !selected.length
+                        ? "Select at least one statement."
+                        : draft.values.currency === ""
+                          ? "Choose a currency."
+                          : "Tick at least one field to change."
+                  }
                   onClick={() => review.mutate()}
                 >
                   {review.isPending

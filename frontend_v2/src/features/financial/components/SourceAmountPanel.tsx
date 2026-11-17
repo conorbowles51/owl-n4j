@@ -163,6 +163,11 @@ export function SourceAmountPanel({
             <Button
               variant="outline"
               disabled={!source.data.has_more || review.isPending}
+              disabledReason={
+                !source.data.has_more
+                  ? "This is the last section of the source text."
+                  : undefined
+              }
               onClick={() => move(source.data.end_char)}
             >
               Next section
@@ -189,6 +194,13 @@ export function SourceAmountPanel({
           <Button
             disabled={
               !selected || !/^[A-Z]{3}$/.test(currency) || review.isPending
+            }
+            disabledReason={
+              !selected
+                ? "Select the amount in the source text first."
+                : !/^[A-Z]{3}$/.test(currency)
+                  ? "Enter a three-letter currency code, such as USD."
+                  : undefined
             }
             onClick={() => {
               if (!selected || !source.data || review.isPending) return

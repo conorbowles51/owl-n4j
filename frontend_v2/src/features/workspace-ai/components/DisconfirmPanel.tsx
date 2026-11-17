@@ -322,7 +322,7 @@ export function DisconfirmPanel({ caseId, theoryId, canEdit }: { caseId: string;
       )}
       {canEdit && ready && <Plan sweep={sweep} busy={start.isPending} onStart={(limit) => start.mutate(limit)} />}
       {canEdit && active && (
-        <Button size="sm" variant="ghost" disabled={stop.isPending || sweep?.cancel_requested} onClick={() => stop.mutate()}>
+        <Button size="sm" variant="ghost" disabled={stop.isPending || sweep?.cancel_requested} disabledReason={!stop.isPending && sweep?.cancel_requested ? "The sweep is already stopping." : undefined} onClick={() => stop.mutate()}>
           Stop
         </Button>
       )}

@@ -537,6 +537,17 @@ function ReviewFields({
             assessment.isPending ||
             !/^[A-Z]{3}$/.test(assessmentCurrency)
           }
+          disabledReason={
+            !canEdit
+              ? "You can view this case but not change it."
+              : record.isPending || accountBusy || assessment.isPending
+                ? undefined
+                : blocked
+                  ? "Reload to see the current state of this review first."
+                  : !/^[A-Z]{3}$/.test(assessmentCurrency)
+                    ? "Enter a three-letter currency code, such as GBP."
+                    : undefined
+          }
           onClick={() => assessment.mutate(assessmentCurrency)}
         >
           Assess original amounts
@@ -611,6 +622,19 @@ function ReviewFields({
                   disabled ||
                   !reason.trim() ||
                   review.status === "rejected"
+                }
+                disabledReason={
+                  !canEdit
+                    ? "You can view this case but not change it."
+                    : record.isPending || accountBusy
+                      ? undefined
+                      : blocked
+                        ? "Reload to see the current state of this review first."
+                        : !reason.trim()
+                          ? "Type a reason for the decision."
+                          : review.status === "rejected"
+                            ? "This reading is already rejected."
+                            : undefined
                 }
                 onClick={() => send("rejected")}
               >

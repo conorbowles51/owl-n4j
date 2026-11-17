@@ -44,22 +44,17 @@ const buttonVariants = cva(
  * or title, as a tooltip that opens on hover and on keyboard focus (lx-guidecover C). A disabled button given a
  * `disabledReason` says why it is disabled and what enables it, in the same tooltip, reachable by keyboard.
  */
-function Button({
-  className,
-  variant = "primary",
-  size = "default",
-  asChild = false,
-  tooltip,
-  disabledReason,
-  ...props
-}: React.ComponentProps<"button"> &
+type ButtonProps = React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
     /** Tooltip words; an icon-only button without it uses its aria-label or title. */
     tooltip?: string
     /** Shown while the button is disabled: why, and what enables it. */
     disabledReason?: string
-  }) {
+  }
+
+function Button(all: ButtonProps) {
+  const { className, variant = "primary", size = "default", asChild = false, tooltip, disabledReason, ...props } = all
   const Comp = asChild ? Slot.Root : "button"
   // already the trigger of a Tooltip the caller drew: never a second one
   const own = (props as Record<string, unknown>)["data-slot"] !== "tooltip-trigger"
@@ -67,6 +62,10 @@ function Button({
   const label = props["aria-label"] ?? (typeof props.title === "string" ? props.title : undefined)
   const off = !!props.disabled && !!disabledReason
   const tip = off ? disabledReason : (tooltip ?? (iconOnly ? label : undefined))
+  // The tree keeps one shape across renders (a button that turns enabled, or whose words become a spinner, stays the
+  // same element): it is decided by which props are given, never by their values of the moment.
+  const holds = "disabledReason" in all
+  const wraps = own && (holds || tooltip !== undefined || label !== undefined)
   const drawn = (
     <Comp
       data-slot="button"
@@ -75,25 +74,36 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
       // the tooltip replaces the browser's hover-only title; the name stays for screen readers
-      {...(own && tip && props.title ? { title: undefined, "aria-label": props["aria-label"] ?? props.title } : null)}
+      {...(wraps && tip && props.title ? { title: undefined, "aria-label": props["aria-label"] ?? props.title } : null)}
     />
   )
-  if (!own || !tip) return drawn
+  if (!wraps) return drawn
   return (
-    <Tooltip>
+    <Tooltip open={tip ? undefined : false}>
       <TooltipTrigger asChild>
-        {off ? (
-          // a disabled button takes no hover or focus, so its holder carries the tooltip
-          <span tabIndex={0} className="inline-flex" aria-label={disabledReason} data-slot="disabled-reason">
+        {holds ? (
+          // a disabled button takes no hover or focus, so its holder carries the tooltip; the holder keeps the
+          // button's own place in the layout (full width, pushed right, growing)
+          <span
+            tabIndex={off ? 0 : undefined}
+            className={cn("inline-flex", holderLayout(className))}
+            aria-label={off ? disabledReason : undefined}
+            data-slot="disabled-reason"
+          >
             {drawn}
           </span>
         ) : (
           drawn
         )}
       </TooltipTrigger>
-      <TooltipContent className="max-w-xs">{tip}</TooltipContent>
+      {tip && <TooltipContent className="max-w-xs">{tip}</TooltipContent>}
     </Tooltip>
   )
+}
+
+/** The layout classes of a button that its holder must carry, so wrapping it moves nothing. */
+function holderLayout(className: string | undefined): string {
+  return (className ?? "").split(/\s+/).filter((c) => /^(?:[a-z]+:)*(?:w-full|flex-1|grow|shrink-0|ml-auto|mr-auto|mx-auto|self-\S+|justify-self-\S+|col-span-\S+|order-\S+|mt-\S+|mb-\S+|ml-\S+|mr-\S+)$/.test(c)).join(" ")
 }
 
 export { Button }

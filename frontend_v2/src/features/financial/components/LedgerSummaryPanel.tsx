@@ -235,6 +235,7 @@ export function LedgerSummaryPanel({
                     key={direction}
                     type="button"
                     disabled={!query.data.contributions}
+                    title={!query.data.contributions ? "The payments behind this total are not available." : undefined}
                     onClick={() =>
                       setSelection({
                         currency: group.currency,
@@ -382,6 +383,7 @@ export function LedgerSummaryPanel({
                       type="button"
                       className="text-left font-medium tabular-nums enabled:underline enabled:underline-offset-4"
                       disabled={!query.data.contributions}
+                      title={!query.data.contributions ? "The payments behind this total are not available." : undefined}
                       aria-label={`Credits: ${correctionMoney(group.credits_minor, group.currency)}; show contributing readings`}
                       onClick={() =>
                         setSelection({
@@ -399,6 +401,7 @@ export function LedgerSummaryPanel({
                       type="button"
                       className="text-left font-medium tabular-nums enabled:underline enabled:underline-offset-4"
                       disabled={!query.data.contributions}
+                      title={!query.data.contributions ? "The payments behind this total are not available." : undefined}
                       aria-label={`Debits: ${correctionMoney(group.debits_minor, group.currency)}; show contributing readings`}
                       onClick={() =>
                         setSelection({
@@ -416,6 +419,7 @@ export function LedgerSummaryPanel({
                       type="button"
                       className="text-left font-medium tabular-nums enabled:underline enabled:underline-offset-4"
                       disabled={!query.data.contributions}
+                      title={!query.data.contributions ? "The payments behind this total are not available." : undefined}
                       aria-label={`Net postings: ${correctionMoney(group.net_minor, group.currency)}; show contributing readings`}
                       onClick={() =>
                         setSelection({

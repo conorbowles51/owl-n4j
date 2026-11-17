@@ -798,7 +798,6 @@ export function ReadingJudgements({
           : "Values the reader chose that the page does not print outright. Check any of them on the page before " +
             "you save; nothing is held for them. Once saved, each can be marked Looks right or corrected."}
         <LearnMore term="Judgement calls" />
-        <LearnMore term="Looks right" label="About Looks right" />
       </p>
       <div className="mt-2">
         <TieredList

@@ -297,6 +297,7 @@ export function UserManagementPage() {
               size="sm"
               onClick={() => createMutation.mutate(newUser)}
               disabled={!newUser.email || !newUser.name || !newUser.password || createMutation.isPending}
+              disabledReason={!newUser.email || !newUser.name || !newUser.password ? "Enter a name, email and password to create the user." : undefined}
             >
               Create
             </Button>

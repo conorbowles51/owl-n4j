@@ -229,6 +229,29 @@ export function iconGaps(results, allow = {}) {
   return gaps
 }
 
+const BUSY = /pending|isPending|saving|busy|loading|isLoading|submitting|running|working|isFetching|deleting|uploading|exporting|creating|importing|applying|sending|controlling|pausing|preparing|rejecting|testing|starting|rendering|progress|actionKey|mutation\.|\.isPending/i
+const SELF_EVIDENT = /^!\w+(?:\.\w+)*\.length$|trim\(\)|\.length === 0|length < |page|offset|zoom|index|step|current|cursor|=== 0|<= ?0|<= ?1|>= ?total|>= ?pages|>= ?max|^!\w+$|!?\w+\.trim|isSuccess|===\s*""|^\w+$/i
+
+/**
+ * Disabled controls that do not say why (lx-guidecover C). Left out: a control disabled only while work runs (it
+ * shows its own progress), or only at an evident bound (first page, largest zoom, an empty field). The rest need a
+ * `disabledReason`, a tooltip or a title.
+ */
+export function disabledGaps(results, allow = {}) {
+  const gaps = []
+  for (const r of results)
+    for (const c of r.controls) {
+      // allowed by file and condition, so an edit elsewhere in the file does not break the entry
+      if (!c.disabled || c.disabledWhy || c.spread || allow[`${c.file} ${c.disabledExpr}`]) continue
+      const e = c.disabledExpr.replace(/^\{|\}$/g, "")
+      const parts = e.split(/\s*\|\|\s*/)
+      const busyOnly = BUSY.test(e) && !/&&|\|\||!/.test(e.replace(/^!/, ""))
+      if (busyOnly || parts.every((p) => BUSY.test(p) || SELF_EVIDENT.test(p))) continue
+      gaps.push(c)
+    }
+  return gaps
+}
+
 /** Every data-guide target named in the source, by file. */
 export function guideTargets(results) {
   const set = new Set()
@@ -310,6 +333,7 @@ async function inventory(srcDir, outFile) {
   lines.push(`- Icon-only with an accessible name: ${named.length} of ${iconOwn.length}`)
   lines.push(`- Icon-only with a name and a tooltip that keyboard focus opens: ${tipped.length} of ${iconOwn.length}`)
   lines.push(`- Disabled-capable controls: ${disabled.length}; saying why (tooltip or title): ${disabled.filter((c) => c.disabledWhy).length}`)
+  lines.push(`- Disabled controls whose reason is not evident and is not stated: ${disabledGaps(results).length}`)
   lines.push(`- Controls with any tooltip: ${all.filter((c) => c.hasTooltip).length} of ${all.length}`)
   lines.push(`- data-guide anchors: ${guideTargets(results).size}`)
   lines.push("")

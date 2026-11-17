@@ -74,6 +74,7 @@ function PairRow({ caseId, a, b, aName, bName, picked, onPick, missing }: {
       <td className="hidden py-0.5 pr-2 whitespace-nowrap sm:table-cell" role={q.isError ? "alert" : undefined}>{words}</td>
       <td className="py-0.5 text-right">
         <Button size="sm" variant="outline" className="h-auto min-h-5 whitespace-normal px-2 text-xs" disabled={q.isError}
+          disabledReason="Their messages could not be counted just now. Reload the page to try again."
           aria-label={`Show the messages between ${A} and ${B}`}
           onClick={() => navigate(pairConversationsHref(caseId, a, b, win))}>
           Show their messages

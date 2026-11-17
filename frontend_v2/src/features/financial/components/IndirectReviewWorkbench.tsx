@@ -671,6 +671,17 @@ export function IndirectReviewWorkbench({
                 save.isError ||
                 !!save.data
               }
+              disabledReason={
+                !canEdit
+                  ? "You can view this case but not change it."
+                  : !report.value.sources.length
+                    ? "Choose a source for at least one amount first."
+                    : save.data
+                      ? "This workpaper is already saved in Findings."
+                      : save.isError
+                        ? "Saving failed. Check Findings before trying again."
+                        : undefined
+              }
               onClick={() => {
                 if (canEdit) saveNote()
               }}

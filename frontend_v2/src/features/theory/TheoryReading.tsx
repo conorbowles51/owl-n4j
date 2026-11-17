@@ -71,7 +71,7 @@ export function TheoryReadingSection({ caseId, entryId, onBeforeNavigate }: { ca
           />
           <div className="flex flex-wrap gap-1" role="group" aria-label="View the theory as">
             {(["timeline", "graph", "map"] as const).map((v) => (
-              <Button key={v} size="sm" variant={whole === v ? "secondary" : "outline"} aria-pressed={whole === v} onClick={() => setWhole(whole === v ? null : v)} disabled={!data.additions.length}>
+              <Button key={v} size="sm" variant={whole === v ? "secondary" : "outline"} aria-pressed={whole === v} onClick={() => setWhole(whole === v ? null : v)} disabled={!data.additions.length} disabledReason="Add items to the theory first.">
                 As a {v}
               </Button>
             ))}

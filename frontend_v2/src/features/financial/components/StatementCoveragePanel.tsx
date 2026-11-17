@@ -212,6 +212,11 @@ export function StatementCoveragePanel({
                 </Button>
                 <Button
                   disabled={!query.data.has_more || query.isFetching}
+                  disabledReason={
+                    !query.data.has_more
+                      ? "These are the last coverage accounts."
+                      : undefined
+                  }
                   onClick={() => setOffset((v) => v + 25)}
                 >
                   Next coverage accounts

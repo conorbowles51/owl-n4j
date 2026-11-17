@@ -94,6 +94,7 @@ export function AddDossierEvidenceDialog({
           <Button
             variant="primary"
             disabled={!selected.length || add.isPending}
+            disabledReason={!selected.length ? "Add at least one file below first." : undefined}
             onClick={() => void save()}
           >
             {add.isPending

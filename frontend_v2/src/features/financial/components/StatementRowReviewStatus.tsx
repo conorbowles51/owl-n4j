@@ -151,6 +151,13 @@ export function StatementRowReviewStatus({
             size="sm"
             variant="outline"
             disabled={pending || !!error || !assessed || saving}
+            disabledReason={
+              pending || saving
+                ? undefined
+                : error
+                  ? "Current checks could not finish. Retry statement checks first."
+                  : "Current row assessment is unavailable."
+            }
             onClick={onMarkChecked}
           >
             Mark checked against original

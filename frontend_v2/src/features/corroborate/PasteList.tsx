@@ -55,7 +55,7 @@ export function PasteList({ caseId, onClose, onDone }: { caseId: string; onClose
           </div>
         )}
         <DialogFooter className="gap-2">
-          {result ? <Button disabled={!result.members.length} onClick={use}>Add {result.members.length.toLocaleString("en-US")} items to the selection</Button>
+          {result ? <Button disabled={!result.members.length} disabledReason="Nothing in the list matched the case. Change the list and match it again." onClick={use}>Add {result.members.length.toLocaleString("en-US")} items to the selection</Button>
             : <Button disabled={busy || !text.trim()} onClick={() => void match()}>{busy ? "Matching…" : "Match to the case"}</Button>}
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
         </DialogFooter>

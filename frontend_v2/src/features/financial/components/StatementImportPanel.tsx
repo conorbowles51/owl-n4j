@@ -1063,6 +1063,15 @@ function RefreshStoredReading({
           !ready ||
           (comparisonRequired && !compared)
         }
+        disabledReason={
+          update.isPending || checking
+            ? undefined
+            : !ready
+              ? !admission
+                ? "Refresh the replacement checks before saving payments."
+                : "Resolve the replacement checks before saving to Transactions."
+              : "Compare the previous saved review, then tick I have compared the previous saved review."
+        }
         onClick={() => update.mutate()}
       >
         {update.isPending
@@ -2235,6 +2244,52 @@ function EditableStatement({
     (!included.length &&
       !hasStatementBalance &&
       !data.can_record_account_closure)
+  // why the import button is off, in the order importDisabled checks; nothing while work runs
+  const importDisabledReason = !canEdit
+    ? "You need editing access to this case to confirm an import."
+    : !holder.trim()
+      ? "Enter the account holder shown on the statement."
+      : !account.trim()
+        ? "Enter the account number shown on the statement."
+        : serverChecks.pending
+          ? undefined
+          : serverChecks.error
+            ? "The statement checks could not finish. Retry statement checks first."
+            : !serverChecks.admission?.can_import
+              ? "Resolve the items in the statement checks before importing."
+              : data.current_import?.refresh_currency_conflict
+                ? data.current_import.refresh_currency_conflict.message
+                : duplicateIgnored
+                  ? "This statement is set aside as a duplicate, so it is not imported."
+                  : duplicateCheck.isPending ||
+                      duplicateActionBusy
+                    ? undefined
+                    : duplicateBlocked
+                      ? "A matching statement needs a duplicate decision before import."
+                      : confirm.isPending ||
+                          saveBatchReview.isPending ||
+                          assignmentSaving
+                        ? undefined
+                        : data.review_recovery?.required && !recoveryCompared
+                          ? "Compare the earlier saved reviews for this file before importing."
+                          : savedReadingChanged && !previousReviewChecked
+                            ? "Compare your previous saved values, then tick I have compared the previous saved review."
+                            : savedReadingChanged && data.saved_review
+                              ? "Use Save progress to keep your compared values before importing."
+                              : data.current_import && !replacePrevious
+                                ? data.current_import.evidence_file_id === fileId
+                                  ? "This reading is already imported."
+                                  : "Choose whether this reading should replace the previous import."
+                                : replacePrevious && !detailsReason.trim()
+                                  ? "Explain why this reading should replace the previous import."
+                                  : data.reading_failure
+                                    ? "The statements need to be separated before import."
+                                    : "Enter a printed opening or closing balance to save a statement without transactions."
+  // Save progress is off only while work runs or until the changed reading is compared
+  const saveProgressReason =
+    assignmentSaving || saveBatchReview.isPending || confirm.isPending
+      ? undefined
+      : "Compare your previous saved values, then tick I have compared the previous saved review."
   const submitImport = () => {
     if (
       batchReview &&
@@ -2320,6 +2375,7 @@ function EditableStatement({
     <>
       <Button
         disabled={!!importDisabled}
+        disabledReason={importDisabledReason}
         aria-describedby={
           place === "confirmation" &&
           (blockedRows.length || detailProblems.length)
@@ -2919,6 +2975,7 @@ function EditableStatement({
               saveBatchReview.isPending ||
               confirm.isPending ||
               (savedReadingChanged && !previousReviewChecked),
+            disabledReason: saveProgressReason,
             error: saveBatchReview.isError
               ? saveBatchReview.error.message
               : undefined,
@@ -3141,6 +3198,7 @@ function EditableStatement({
                 confirm.isPending ||
                 (savedReadingChanged && !previousReviewChecked)
               }
+              disabledReason={saveProgressReason}
               onClick={() => saveBatchReview.mutate("progress")}
             >
               {saveBatchReview.isPending
@@ -3494,6 +3552,7 @@ function EditableStatement({
                 confirm.isPending ||
                 (savedReadingChanged && !previousReviewChecked)
               }
+              disabledReason={saveProgressReason}
               onClick={() => saveBatchReview.mutate("progress")}
             >
               {saveBatchReview.isPending ? "Saving progress…" : "Save progress"}
@@ -3662,6 +3721,13 @@ function EditableStatement({
                     saveBatchReview.isPending ||
                     serverChecks.pending ||
                     !!data.reading_failure
+                  }
+                  disabledReason={
+                    confirm.isPending ||
+                    saveBatchReview.isPending ||
+                    serverChecks.pending
+                      ? undefined
+                      : "The statements need to be separated before import."
                   }
                   onClick={() => {
                     setPressedImportPlace("summary")
@@ -3957,6 +4023,7 @@ function EditableStatement({
             variant="outline"
             size="sm"
             disabled={activeTransaction >= included.length - 1}
+            disabledReason="This is the last transaction."
             onClick={() => showTransaction(activeTransaction + 1)}
           >
             {activeTransaction < 0 ? "First transaction" : "Next transaction"}

@@ -73,7 +73,7 @@ function ZoneSetting({ caseId, data, onSaved }: { caseId: string; data: PhoneSet
         <select aria-label="Case time zone" className={selectClass} value={zone} onChange={(e) => setZone(e.target.value)}>
           {[...new Set([data.effective.name, ...ZONES()])].map((z) => <option key={z} value={z}>{z}</option>)}
         </select>
-        <Button size="sm" variant="outline" disabled={zone === data.effective.name || save.isPending} onClick={() => save.mutate()}>Save time zone</Button>
+        <Button size="sm" variant="outline" disabled={zone === data.effective.name || save.isPending} disabledReason={zone === data.effective.name ? "Choose a different time zone to save." : undefined} onClick={() => save.mutate()}>Save time zone</Button>
       </span>
       {save.isError && <p role="alert" className="text-xs">{setupError(save.error, "This could not be saved. Nothing changed.")}</p>}
     </section>

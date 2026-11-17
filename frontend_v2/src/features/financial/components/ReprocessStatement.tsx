@@ -169,6 +169,11 @@ function ReprocessStatementForm({
         disabled={
           start.isPending || (!!receipt && job.data?.status !== "failed")
         }
+        disabledReason={
+          start.isPending
+            ? undefined
+            : "A new reading has already started. You can start another only if it fails."
+        }
         onClick={() => start.mutate()}
       >
         {start.isPending ? "Starting new reading…" : "Reprocess statement"}

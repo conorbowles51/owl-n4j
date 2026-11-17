@@ -58,6 +58,11 @@ export function AccountMultiSelect({
               size="sm"
               variant="outline"
               disabled={!visible.length}
+              disabledReason={
+                search
+                  ? "Nothing matches the search. Change the search to select more."
+                  : "There is nothing to select."
+              }
               onClick={() =>
                 onChange([
                   ...new Set([

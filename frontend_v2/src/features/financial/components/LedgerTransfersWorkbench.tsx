@@ -254,6 +254,9 @@ function TransferScope({
     <div className="space-y-3">
       <Button
         disabled={busy || Boolean(start && end && start > end)}
+        disabledReason={
+          busy ? undefined : "The From date is after the To date. Change one of them to find possible transfers."
+        }
         onClick={() => {
           load.reset()
           scenario.reset()
@@ -476,6 +479,11 @@ function TransferScope({
               </label>
               <Button
                 disabled={!selected.length || !basis.trim()}
+                disabledReason={
+                  !selected.length
+                    ? "Select at least one transfer pair first."
+                    : "Explain why these payments are transfers first."
+                }
                 onClick={() => scenario.mutate()}
               >
                 Compare totals using these transfers

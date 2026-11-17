@@ -504,6 +504,7 @@ function RecoveryForm({
             <Button
               variant="outline"
               disabled={draft.sections.length >= 100}
+              disabledReason="A statement can have at most 100 printed sections."
               onClick={() =>
                 change({
                   ...draft,
@@ -559,6 +560,7 @@ function RecoveryForm({
             </label>
             <Button
               disabled={!selected.length}
+              disabledReason="Select saved payments to assign first."
               onClick={() => {
                 change({
                   ...draft,

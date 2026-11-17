@@ -148,7 +148,8 @@ export function ExportDialog(props: {
               Save the {noun}
             </Button>
           ) : (
-            <Button onClick={() => start.mutate()} disabled={!f || start.isPending || !!running || (format === "pdf" && !exportId && !!f.machine_text?.unconfirmed && !machineSettled)}>
+            <Button onClick={() => start.mutate()} disabled={!f || start.isPending || !!running || (format === "pdf" && !exportId && !!f.machine_text?.unconfirmed && !machineSettled)}
+              disabledReason={f && !start.isPending && !running && format === "pdf" && !exportId && !!f.machine_text?.unconfirmed && !machineSettled ? "Confirm or keep marked each machine-generated text above first." : undefined}>
               {job.data?.state === "failed" ? "Try again" : format === "pdf" ? "Export PDF" : "Export RSMF"}
             </Button>
           )}

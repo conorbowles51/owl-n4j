@@ -358,6 +358,15 @@ export function AccountConsolidation({ caseId }: { caseId: string }) {
                     !draft.ids.includes(draft.retained) ||
                     !draft.reason.trim()
                   }
+                  disabledReason={
+                    draft.ids.length < 2
+                      ? "Select at least two accounts to compare."
+                      : !draft.ids.includes(draft.retained)
+                        ? "Choose the account to retain for display."
+                        : !draft.reason.trim()
+                          ? "Type a reason for merging or undoing."
+                          : undefined
+                  }
                   onClick={() => review.mutate()}
                 >
                   Compare selected accounts

@@ -33,7 +33,7 @@ function SpeakerEntityPicker({ caseId, speaker, name, entityId, entityLabel, onC
     {search && <div className="mt-1 max-h-32 overflow-y-auto" aria-label={`Case entities for ${speaker}`}>
       {results.isFetching ? 'Searching…' : results.error ? 'Could not load people. Try again.' :
         results.data?.nodes.filter(node => node.type === 'Person').map(node =>
-          <button key={node.id || node.key} disabled={!node.id} className="block w-full rounded p-2 text-left hover:bg-muted disabled:opacity-50" onClick={() => { onChange(node.id, node.name); setQuery('') }}>
+          <button key={node.id || node.key} disabled={!node.id} title={!node.id ? "This person cannot be linked. Choose another match." : undefined} className="block w-full rounded p-2 text-left hover:bg-muted disabled:opacity-50" onClick={() => { onChange(node.id, node.name); setQuery('') }}>
             {node.name} <span className="text-muted-foreground">{node.key}</span>
             {(node.summary || node.notes) && <span className="mt-1 block line-clamp-2 text-muted-foreground">{node.summary || node.notes}</span>}
           </button>)}

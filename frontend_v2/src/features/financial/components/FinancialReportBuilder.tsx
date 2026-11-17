@@ -121,6 +121,7 @@ function FinancialReportBuilderForm({
     <div className="space-y-2">
       <Button
         disabled={!draft.selected.length}
+        disabledReason="Select findings to build a report."
         onClick={() => {
           setOpen(true)
           save.reset()
@@ -285,6 +286,13 @@ function FinancialReportBuilderForm({
                 </p>
                 <Button
                   disabled={!draft.title.trim() || !draft.selected.length}
+                  disabledReason={
+                    !draft.title.trim()
+                      ? "Type a report title."
+                      : !draft.selected.length
+                        ? "Select at least one finding."
+                        : undefined
+                  }
                   onClick={() => preview.mutate()}
                 >
                   {preview.isPending ? "Preparing preview…" : "Preview report"}
@@ -316,6 +324,11 @@ function FinancialReportBuilderForm({
                   saveAction={
                     <Button
                       disabled={busy || save.isError}
+                      disabledReason={
+                        !busy && save.isError
+                          ? "The last save could not be confirmed. Check Reports, then build the report again."
+                          : undefined
+                      }
                       onClick={() => save.mutate()}
                     >
                       {save.isPending

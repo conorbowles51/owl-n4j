@@ -259,6 +259,11 @@ export function TraceAssetFields({
         type="button"
         variant="outline"
         disabled={value.length >= 50 || !withdrawals.length}
+        disabledReason={
+          value.length >= 50
+            ? "You can add up to 50 asset interpretations."
+            : "There are no withdrawals to interpret."
+        }
         onClick={() =>
           onChange((current) => [
             ...current,

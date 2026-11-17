@@ -754,6 +754,11 @@ function TrailEditor({
             <Button
               variant="outline"
               disabled={!transactionIds.every((key) => named.some((p) => p.key === key))}
+              disabledReason={
+                ledger.isFetching
+                  ? undefined
+                  : "Some selected transactions cannot be used here. Only bank-account payments can be linked."
+              }
               onClick={() => {
                 const selected = rows.filter((p) =>
                     transactionIds.includes(p.key)
@@ -1092,6 +1097,9 @@ function TrailEditor({
               ))}
               <Button
                 disabled={busy || save.isError}
+                disabledReason={
+                  busy ? undefined : "Saving failed. Reload to check whether the save completed before retrying."
+                }
                 onClick={() => save.mutate()}
               >
                 {save.isPending ? "Saving…" : "Save reviewed link"}

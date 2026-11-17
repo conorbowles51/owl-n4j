@@ -222,7 +222,8 @@ function TextPlaceRow({ caseId, item, suggestionsOn }: { caseId: string; item: T
           </label>
           {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
           <p className="flex gap-2">
-            <button type="submit" className="rounded border px-2 py-1" disabled={busy || !reason.trim() || (open === "place" && !valid)}>
+            <button type="submit" className="rounded border px-2 py-1" disabled={busy || !reason.trim() || (open === "place" && !valid)}
+              title={busy ? undefined : open === "place" && !valid ? "Enter a valid latitude, longitude and radius first." : !reason.trim() ? (open === "place" ? "Type why the place is here to save." : "Type why the place is removed.") : undefined}>
               {open === "place" ? "Save the place" : "Remove"}
             </button>
             <button type="button" className="rounded border px-2 py-1" onClick={() => { setOpen(null); setError(null) }}>Cancel</button>

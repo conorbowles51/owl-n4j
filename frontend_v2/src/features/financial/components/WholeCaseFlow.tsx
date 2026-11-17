@@ -101,6 +101,7 @@ export function WholeCaseFlow({
       </ul>
       <Button
         disabled={!chosen.length}
+        disabledReason="Choose at least one account to look from."
         onClick={() =>
           setRequest({
             expected_snapshot_sha256: snapshot,

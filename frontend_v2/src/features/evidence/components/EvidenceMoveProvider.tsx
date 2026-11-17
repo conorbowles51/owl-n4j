@@ -235,6 +235,17 @@ export function EvidenceMoveProvider({
                   invalidReason(request, destination)
                 )
               }
+              disabledReason={
+                !canUploadEvidence
+                  ? "Your access does not allow evidence to be moved."
+                  : !canMove || !request
+                    ? undefined
+                    : destination === undefined
+                      ? "Choose a folder to move to."
+                      : invalidReason(request, destination)
+                        ? `${invalidReason(request, destination)}. Choose another folder.`
+                        : undefined
+              }
               onClick={() => {
                 if (request && destination !== undefined)
                   move(request, destination)

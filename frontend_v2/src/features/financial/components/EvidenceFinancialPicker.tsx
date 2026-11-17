@@ -423,6 +423,9 @@ function EvidenceBrowser({
             </span>
             <Button
               disabled={busy || (!files.length && !folders.length)}
+              disabledReason={
+                busy ? undefined : "Select at least one file or folder."
+              }
               onClick={() => void inspect()}
             >
               {busy ? "Checking selection…" : "Review selected files"}
@@ -521,6 +524,17 @@ function EvidenceBrowser({
               <Button
                 disabled={
                   !canEdit || !canUpload || busy || !review.files.length
+                }
+                disabledReason={
+                  !canEdit
+                    ? "You can view this case but not change it."
+                    : !canUpload
+                      ? "Your access does not allow new files to be uploaded."
+                      : busy
+                        ? undefined
+                        : !review.files.length
+                          ? "No files are left to add. Use Change selection to choose files."
+                          : undefined
                 }
                 onClick={() => void send()}
               >

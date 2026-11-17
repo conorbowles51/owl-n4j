@@ -782,6 +782,13 @@ export function StatementFilesPanel({
                   <Button
                     className="h-auto max-w-full whitespace-normal py-2 text-left"
                     disabled={preparing || !readyCount || imports.data.truncated}
+                    disabledReason={
+                      preparing
+                        ? undefined
+                        : !readyCount
+                          ? "No statements are ready to save yet."
+                          : "This case has more records than this summary can show. Use the file search to review the remaining files."
+                    }
                     onClick={() =>
                       void prepareSelected(
                         readyFiles.map((file) => file.evidence_file_id)
@@ -976,6 +983,7 @@ export function StatementFilesPanel({
             <Button
               variant="ghost"
               disabled={preparing || !selectedIds.length}
+              disabledReason={preparing ? undefined : "No files are selected."}
               onClick={() => selectFiles([])}
             >
               Clear selection
@@ -987,6 +995,15 @@ export function StatementFilesPanel({
                   preparing ||
                   !selectedIds.length ||
                   files.isError
+                }
+                disabledReason={
+                  !canUpload
+                    ? "You need permission to upload files to this case."
+                    : preparing
+                      ? undefined
+                      : !selectedIds.length
+                        ? "Select statement files first."
+                        : "Statement files could not be loaded. Refresh files to try again."
                 }
                 onClick={() => void reviewSelected()}
               >
@@ -1144,6 +1161,15 @@ export function StatementFilesPanel({
                   : undefined
               }
               disabled={removalMode || removed || file.status !== "processed"}
+              title={
+                removalMode
+                  ? undefined
+                  : removed
+                    ? "Restore this file to review it here again."
+                    : file.status !== "processed"
+                      ? "You can review this statement once it has been read."
+                      : undefined
+              }
               className={
                 register
                   ? `grid w-full gap-2 rounded p-2 text-left text-sm md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)] ${removalMode ? "" : "hover:bg-accent disabled:opacity-60"}`
@@ -1315,6 +1341,7 @@ export function StatementFilesPanel({
                             size="sm"
                             variant="outline"
                             disabled={file.status !== "processed"}
+                            disabledReason="You can review this decision once the statement has been read."
                             onClick={() =>
                               openStatement(file.id, statement_id || "")
                             }
@@ -1420,6 +1447,13 @@ export function StatementFilesPanel({
                     (file.status === "unprocessed" &&
                       queuedReadings.has(file.id))
                   }
+                  disabledReason={
+                    reading[file.id]
+                      ? undefined
+                      : queue?.running
+                        ? "Wait until the files being uploaded and read have finished."
+                        : "This statement is already queued for reading."
+                  }
                   aria-label={`${file.status === "failed" ? "Retry reading" : "Read statement"}: ${file.original_filename}`}
                   onClick={() => void readStatement(file.id)}
                 >
@@ -1446,6 +1480,11 @@ export function StatementFilesPanel({
                         disabled={
                           version.status !== "processed" ||
                           version.financial_removed
+                        }
+                        disabledReason={
+                          version.status !== "processed"
+                            ? "Only finished readings can be opened."
+                            : "This reading was removed from Financial."
                         }
                         onClick={() => {
                           useStatementWorkspace

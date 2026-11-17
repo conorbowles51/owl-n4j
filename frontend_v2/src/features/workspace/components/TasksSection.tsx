@@ -516,6 +516,7 @@ function WorkItemDialog({
                   !title.trim() ||
                   (selection.type === "deadline" && !dueDate)
                 }
+                disabledReason={busy ? undefined : !title.trim() ? (selection.type === "task" ? "Type a task title." : "Type a deadline name.") : selection.type === "deadline" && !dueDate ? "Choose a due date." : undefined}
               >
                 {busy
                   ? "Saving…"

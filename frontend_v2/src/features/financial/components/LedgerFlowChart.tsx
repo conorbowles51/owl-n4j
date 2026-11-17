@@ -162,6 +162,7 @@ function Chart({
         <Button
           variant="outline"
           disabled={!selected.length}
+          disabledReason="Select at least one group first."
           onClick={() => {
             setInspectTotals(true)
             setInspecting(null)

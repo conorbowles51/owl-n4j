@@ -34,6 +34,8 @@ export function StatementRowEditor({
     save: () => void
     pending: boolean
     disabled: boolean
+    /** Shown while disabled: why, and what enables it. */
+    disabledReason?: string
     error?: string
   }
   problems: string[]
@@ -76,6 +78,7 @@ export function StatementRowEditor({
             size="sm"
             variant="outline"
             disabled={saveProgress.disabled}
+            disabledReason={saveProgress.disabledReason}
             onClick={saveProgress.save}
           >
             {saveProgress.pending

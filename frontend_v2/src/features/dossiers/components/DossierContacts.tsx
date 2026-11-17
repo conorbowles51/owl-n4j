@@ -172,6 +172,7 @@ function ContactsEditor({
             size="sm"
             variant="outline"
             disabled={contacts.length >= 100 || update.isPending}
+            disabledReason={contacts.length >= 100 ? "A dossier holds at most 100 contacts. Remove one to add another." : undefined}
             onClick={() =>
               setContacts((items) => [...items, { kind: "phone", value: "" }])
             }

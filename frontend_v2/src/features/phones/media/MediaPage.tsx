@@ -296,7 +296,7 @@ function UseInAssessment({ caseId, x, filename, onSaved }: { caseId: string; x: 
       <p className="text-muted-foreground">Stored as AI-assisted, with the model that read it and your name.</p>
       {done ? <p role="status">Added to the dossier: {done}</p> : (
         <div className="flex gap-1">
-          <Button size="sm" disabled={busy || !dossier || !category.trim() || (needsAnswer && !settled)} onClick={save}>Add to the assessment</Button>
+          <Button size="sm" disabled={busy || !dossier || !category.trim() || (needsAnswer && !settled)} disabledReason={busy ? undefined : !dossier ? "Choose a dossier first." : !category.trim() ? "Type an assessment category." : needsAnswer && !settled ? "Confirm the machine-generated text above, or keep it marked." : undefined} onClick={save}>Add to the assessment</Button>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
         </div>
       )}
@@ -698,7 +698,7 @@ export default function MediaPage() {
         <div className="flex flex-wrap items-center gap-2 text-xs" aria-label="Files to copy or download">
           <span>{selected.size ? `${n(selected.size)} chosen.` : "Choose files with their boxes, or act on every file the filter shows."}</span>
           {selected.size > 0 && <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear the choice</Button>}
-          <Button size="sm" variant="outline" onClick={copyList} disabled={!items.length}>Copy file list</Button>
+          <Button size="sm" variant="outline" onClick={copyList} disabled={!items.length} disabledReason="No files match the filter.">Copy file list</Button>
           <Button size="sm" variant="outline" onClick={() => void askDownload()} disabled={!total || downloading}>Download originals</Button>
           {chosen.length > 0 && (
             <CollectBar caseId={caseId} noun={chosen.length === 1 ? "file" : "files"} origin="phone-media"

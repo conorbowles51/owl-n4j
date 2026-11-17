@@ -548,6 +548,7 @@ export function WorkspaceAIPanel({
               size="sm"
               variant="outline"
               disabled={selectedInterviews.length < 1 || startingType !== null}
+              disabledReason={startingType === null && selectedInterviews.length < 1 ? "Choose at least one interview." : undefined}
               onClick={() => void startOutput("statement_summary")}
             >
               {startingType === "statement_summary" ? (
@@ -561,6 +562,7 @@ export function WorkspaceAIPanel({
               size="sm"
               variant="outline"
               disabled={selectedInterviews.length < 2 || startingType !== null}
+              disabledReason={startingType === null && selectedInterviews.length < 2 ? "Choose at least two interviews to compare." : undefined}
               onClick={() => void startOutput("statement_comparison")}
             >
               {startingType === "statement_comparison" ? (

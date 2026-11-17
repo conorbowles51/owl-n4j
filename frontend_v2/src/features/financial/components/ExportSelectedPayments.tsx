@@ -103,6 +103,9 @@ export function ExportSelectedPayments({
       <Button
         variant="outline"
         disabled={!ids.length || download.isPending}
+        disabledReason={
+          !ids.length ? "Select payments to export first." : undefined
+        }
         onClick={() => download.mutate()}
       >
         {download.isPending

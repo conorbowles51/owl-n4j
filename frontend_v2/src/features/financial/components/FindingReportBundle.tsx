@@ -33,6 +33,9 @@ export function FindingReportBundle({
       <Button
         variant="outline"
         disabled={busy || !files.length}
+        disabledReason={
+          busy ? undefined : "This note has no linked source PDFs."
+        }
         onClick={async () => {
           if (request.current) return
           const controller = new AbortController()

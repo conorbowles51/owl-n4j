@@ -341,6 +341,7 @@ export function OverviewStatementCoverage({
               <Button
                 variant="outline"
                 disabled={!query.data.has_more}
+                disabledReason="These are the last accounts."
                 onClick={() => setOffset(offset + query.data.items.length)}
               >
                 More accounts

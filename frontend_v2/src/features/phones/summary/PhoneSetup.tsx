@@ -206,7 +206,8 @@ function Choice({ title, anchor, canEdit, statement, decision, undo, options, pl
             <textarea className="rounded border bg-background px-2 py-1" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
           </label>
           <span className="flex items-center gap-2">
-            <Button type="submit" size="sm" variant="outline" disabled={!value || !reason.trim() || !preview.data || save.isPending}>
+            <Button type="submit" size="sm" variant="outline" disabled={!value || !reason.trim() || !preview.data || save.isPending}
+              disabledReason={save.isPending ? undefined : !value ? `${placeholder} first.` : preview.isError ? "What this would change could not be counted, so it cannot be saved." : !reason.trim() ? "Type a reason to save." : undefined}>
               Save and read again
             </Button>
             {save.isPending && <span role="status">Saving</span>}
@@ -312,7 +313,8 @@ function ClockOffset({ caseId, extraction, setup, canEdit, onSaved }: { caseId: 
             <textarea className="rounded border bg-background px-2 py-1" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
           </label>
           <span className="flex items-center gap-2">
-            <Button type="submit" size="sm" variant="outline" disabled={!request || !reason.trim() || !preview.data || save.isPending}>
+            <Button type="submit" size="sm" variant="outline" disabled={!request || !reason.trim() || !preview.data || save.isPending}
+              disabledReason={save.isPending ? undefined : !request ? "Enter how many minutes or seconds the clock was off." : preview.isError ? "What this would change could not be counted, so it cannot be saved." : !reason.trim() ? "Type a reason to save." : undefined}>
               Save and read again
             </Button>
             {save.isPending && <span role="status">Saving</span>}

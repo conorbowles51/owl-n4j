@@ -504,6 +504,11 @@ export function StatementChecksPanel({
               </Button>
               <Button
                 disabled={!query.data.has_more || query.isFetching}
+                disabledReason={
+                  !query.data.has_more
+                    ? "These are the last statement checks."
+                    : undefined
+                }
                 onClick={() => setOffset((n) => n + 25)}
               >
                 Next statement checks

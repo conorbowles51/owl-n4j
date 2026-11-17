@@ -876,6 +876,25 @@ export function CaseworkDetailSheet({
                                 !isPhoneLinkType(link.target_type) &&
                                 !isFinancialLinkType(link.target_type)
                               }
+                              title={
+                                !(
+                                  [
+                                    "evidence",
+                                    "evidence_passage",
+                                    "graph_entity",
+                                    "entry",
+                                    "dossier",
+                                    "task",
+                                    "deadline",
+                                    "timeline_event",
+                                    "agent_answer",
+                                  ] as string[]
+                                ).includes(link.target_type) &&
+                                !isPhoneLinkType(link.target_type) &&
+                                !isFinancialLinkType(link.target_type)
+                                  ? "This kind of link cannot be opened from here."
+                                  : undefined
+                              }
                               className="flex min-h-10 w-full min-w-0 items-center gap-2 py-2 text-left transition-colors enabled:hover:bg-muted/35 disabled:cursor-default"
                               onClick={() =>
                                 openLink(link.target_type, link.target_id)
@@ -1261,6 +1280,7 @@ export function CaseworkDetailSheet({
                 nextLifecycle === entry?.lifecycle_state ||
                 dialogSaving
               }
+              disabledReason={dialogSaving ? undefined : "Choose a different status to save."}
             >
               {dialogSaving && <Loader2 className="size-3.5 animate-spin" />}{" "}
               Save lifecycle

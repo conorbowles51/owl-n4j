@@ -298,6 +298,7 @@ export function DossierInterviewDialog({
                 type="submit"
                 variant="primary"
                 disabled={mutation.isPending || !sources.length}
+                disabledReason={!sources.length && !mutation.isPending ? "Add at least one source first." : undefined}
               >
                 {mutation.isPending
                   ? "Saving…"

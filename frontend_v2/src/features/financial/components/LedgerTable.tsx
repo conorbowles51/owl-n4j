@@ -620,6 +620,11 @@ function LedgerRow({
                 transaction.ledger_status
               ) || transaction.superseded_by_id !== null
             }
+            disabledReason={
+              transaction.superseded_by_id !== null
+                ? "A later row replaced this one, so only the later row can be corrected."
+                : "Only included or quarantined transactions can be corrected."
+            }
             onClick={() => onCorrect(transaction)}
           >
             Correct transaction

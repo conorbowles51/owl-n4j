@@ -116,6 +116,7 @@ export function TraceAttributionFields({
         type="button"
         variant="outline"
         disabled={value.length >= 50}
+        disabledReason="You can add up to 50 deposit attributions."
         onClick={() =>
           onChange((current) => [
             ...current,

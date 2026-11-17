@@ -225,6 +225,7 @@ export function AddToTimelineDialog({
                   disabled={
                     pending || (sourceKind === "workspace_entry" && !eventDate)
                   }
+                  disabledReason={!pending && sourceKind === "workspace_entry" && !eventDate ? "Choose the event date first." : undefined}
                   onClick={() => review.mutate()}
                 >
                   {review.isPending

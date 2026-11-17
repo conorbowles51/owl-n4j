@@ -278,6 +278,7 @@ function CaseMetadataForm({
             <Button
               type="submit"
               disabled={!isDirty || !!titleError || isSaving}
+              disabledReason={isSaving ? undefined : !isDirty ? "Change a setting to save." : titleError ?? undefined}
             >
               {isSaving ? (
                 <LoaderCircle className="animate-spin" />

@@ -69,7 +69,7 @@ export function ConfirmKindPanel({ caseId, phone, rows, note, onClose, onDone }:
       {error && <p role="alert">{error}</p>}
       {failed > 0 && <p role="status">{fmt(failed)} of these rows could not show their examples, so they cannot be confirmed here. Open them one at a time.</p>}
       <div className="flex gap-2">
-        <Button size="sm" disabled={busy || ready < listed.length || !atEnd} onClick={() => void confirm()}>Looks right for all {fmt(listed.length)} rows</Button>
+        <Button size="sm" disabled={busy || ready < listed.length || !atEnd} disabledReason={busy ? undefined : failed > 0 ? "Some rows could not show their examples. Open them one at a time." : ready < listed.length ? "Wait until every row shows its examples." : !atEnd ? "Read to the end of the list to confirm." : undefined} onClick={() => void confirm()}>Looks right for all {fmt(listed.length)} rows</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
         {ready < listed.length && !failed && <span role="status">Examples shown for {fmt(ready)} of {fmt(listed.length)} rows.</span>}
         {ready === listed.length && !atEnd && <span role="status">Read to the end of the list to confirm.</span>}

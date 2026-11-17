@@ -141,7 +141,15 @@ export function WholeCaseSources({
           onChange={(e) => setSteps(Number(e.target.value))}
         />
       </label>
-      <Button disabled={!chosen.length || (pairs.length > 0 && !pairBasis.trim())} onClick={() => submit(steps)}>
+      <Button
+        disabled={!chosen.length || (pairs.length > 0 && !pairBasis.trim())}
+        disabledReason={
+          !chosen.length
+            ? "Choose at least one account first."
+            : "Record why the selected payments are transfers (step 2 above) first."
+        }
+        onClick={() => submit(steps)}
+      >
         Walk back {steps} {steps === 1 ? "step" : "steps"}
       </Button>
       {pairs.length > 0 && !pairBasis.trim() && (

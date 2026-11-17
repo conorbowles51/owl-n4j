@@ -580,6 +580,15 @@ function IdentityEditor({ caseId }: { caseId: string }) {
         </label>
         <Button
           disabled={!draft.account || !draft.reason.trim() || stale}
+          disabledReason={
+            !draft.account
+              ? "Choose an account to identify."
+              : !draft.reason.trim()
+                ? "Type a reason for the identity decision."
+                : stale
+                  ? "Account identities changed. Review your draft against the latest accounts first."
+                  : undefined
+          }
           onClick={() => setPreview(true)}
         >
           Preview identity changes

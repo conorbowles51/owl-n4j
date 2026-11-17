@@ -223,6 +223,7 @@ function ScopedTracing({
         disabled={
           busy || !params.accountId || !params.startDate || !params.endDate
         }
+        disabledReason={busy ? undefined : "Choose one account and a start and end date first."}
         onClick={() => void load()}
       >
         {busy ? "Loading…" : "Load tracing inputs"}
@@ -554,7 +555,11 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
               </span>
             </label>
           ))}
-          <Button type="submit" disabled={!selected.length || busy}>
+          <Button
+            type="submit"
+            disabled={!selected.length || busy}
+            disabledReason={busy ? undefined : "Choose at least one calculation to compare."}
+          >
             {busy ? "Calculating…" : "Calculate conditional scenario"}
           </Button>
         </fieldset>

@@ -365,7 +365,8 @@ export function SaveKeywordList({ caseId, q, exact, onOpenLists }: { caseId: str
           {exact && <p>The terms match exact characters, as this search does.</p>}
           {save.isError && <p role="alert">{failureText(save.error, "The keyword list could not be saved.")}</p>}
           <div className="flex gap-2">
-            <button type="submit" className="rounded border px-2 py-1" disabled={save.isPending || !name.trim() || !splitTerms(terms).length}>
+            <button type="submit" className="rounded border px-2 py-1" disabled={save.isPending || !name.trim() || !splitTerms(terms).length}
+              title={save.isPending ? undefined : !name.trim() ? "Name the list to save it." : !splitTerms(terms).length ? "Add at least one term to save the list." : undefined}>
               {save.isPending ? "Saving" : "Save list"}
             </button>
             <button type="button" className="px-2 py-1" onClick={() => setOpen(false)}>

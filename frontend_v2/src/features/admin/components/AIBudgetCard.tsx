@@ -102,6 +102,7 @@ export function AIBudgetCard() {
           <Button
             size="sm"
             disabled={save.isPending || caseLimit === undefined || monthLimit === undefined}
+            disabledReason={caseLimit === undefined || monthLimit === undefined ? "Enter each limit as a number of dollars, or leave it empty for no limit." : undefined}
             onClick={() =>
               save.mutate({ case_limit_usd: caseLimit ?? null, month_limit_usd: monthLimit ?? null })
             }
@@ -161,6 +162,7 @@ export function AIBudgetCard() {
             <Button
               size="sm"
               disabled={saveCase.isPending || !pickedCase || !pickedText.trim() || limitOf(pickedText) === undefined}
+              disabledReason={saveCase.isPending ? undefined : !pickedCase ? "Choose a case first." : !pickedText.trim() ? "Enter the case's own limit in dollars." : limitOf(pickedText) === undefined ? "Enter the limit as a number of dollars." : undefined}
               onClick={() => saveCase.mutate({ caseId: pickedCase, limit: limitOf(pickedText) ?? null })}
             >
               Set case limit
@@ -169,6 +171,7 @@ export function AIBudgetCard() {
               size="sm"
               variant="outline"
               disabled={saveCase.isPending || !pickedCase || budget.case_limits?.[pickedCase.toLowerCase()] === undefined}
+              disabledReason={saveCase.isPending ? undefined : !pickedCase ? "Choose a case first." : budget.case_limits?.[pickedCase.toLowerCase()] === undefined ? "This case has no limit of its own to clear." : undefined}
               onClick={() => saveCase.mutate({ caseId: pickedCase, limit: null })}
             >
               Clear case limit
