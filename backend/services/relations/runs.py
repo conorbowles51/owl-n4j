@@ -31,7 +31,10 @@ PAGE = 100
 
 def normalise(db, case_id, members: list[dict]) -> list[dict]:
     """A marked passage becomes its document with the quote, as written from the stored text now (a passage that cannot
-    be read is refused with the reason, never dropped)."""
+    be read is refused with the reason, never dropped). A photo becomes the phone records it belongs to
+    (``services.corroborate.photos``)."""
+    from services.corroborate import photos
+    members = photos.expand(db, case_id, members)
     out = []
     for m in members:
         if m.get("type") != "evidence_passage":

@@ -41,6 +41,7 @@ def read_preview(case_id: UUID, request: PreviewRequest, db: Session = Depends(g
     from services.corroborate.store import CaseStore
     members = [m.model_dump(exclude_none=True) for m in request.members]
     try:
+        members = runs.normalise(db, case_id, members)  # a photo or passage as the records it stands for
         composed = preview.preview(db, case_id, members, scope=request.scope)
     except (case_selections.SelectionError, scope_rules.ScopeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -76,7 +77,7 @@ def group_selection(case_id: UUID, request: GroupRequest, db: Session = Depends(
     store = CaseStore(db, case_id)
     members = [m.model_dump(exclude_none=True) for m in request.members]
     try:
-        points, unread = store.selection_points(members)
+        points, unread = store.selection_points(runs.normalise(db, case_id, members))
         names = {p["key"]: p["label"] for p in store.people()}
         out = grouping.group_points(points, request.by, store.zone(), names)
     except (case_selections.SelectionError, grouping.GroupError) as exc:
@@ -252,7 +253,8 @@ def list_subsets(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]
 @router.post("/{case_id}/corroborate/subsets", dependencies=[Depends(require_case_edit)])
 def save_subset(case_id: UUID, request: SubsetRequest, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)) -> dict[str, Any]:
     try:
-        return subsets.save(db, case_id=case_id, name=request.name, members=[m.model_dump(exclude_none=True) for m in request.members], user=user)
+        members = runs.normalise(db, case_id, [m.model_dump(exclude_none=True) for m in request.members])
+        return subsets.save(db, case_id=case_id, name=request.name, members=members, user=user)
     except case_selections.SelectionError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc))

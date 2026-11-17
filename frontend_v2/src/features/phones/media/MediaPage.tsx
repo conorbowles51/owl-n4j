@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { CollectBar } from "@/features/pattern/components/CollectBar"
+import { corroAttrs } from "@/features/corroborate/item-target"
 import { recordPath } from "@/lib/record-links"
 import { useCollectTargets } from "../collect-targets"
 import { translationKey } from "../lib/translation-key"
@@ -730,7 +731,7 @@ export default function MediaPage() {
         <ImageSearch caseId={caseId} blur={blur.on} onOpen={setOpen} />
         <ul aria-label="Files" className={`grid ${THUMB_SIZES[size].grid} gap-2`}>
           {items.map((it) => (
-            <li key={it.file_uid} className="relative">
+            <li key={it.file_uid} className="relative" {...corroAttrs("media_file", it.file_uid, it.filename)}>
               <input type="checkbox" aria-label={`Choose ${it.filename}`} checked={selected.has(it.file_uid)} onChange={() => toggle(it.file_uid)}
                 className="absolute left-2 top-2 z-10" />
               <button type="button" onClick={() => setOpen(it.file_uid)} className="flex w-full flex-col gap-1 rounded border p-1 text-left text-[11px] hover:bg-muted/40">

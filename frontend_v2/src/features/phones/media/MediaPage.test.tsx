@@ -33,6 +33,7 @@ vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: ({ links }: { links: { target_type: string; target_id: string }[] }) => <div data-testid="add-to">{links.map((l) => `${l.target_type}:${l.target_id}`).join(",")}</div> }))
 vi.mock("../collect-targets", () => ({ useCollectTargets: () => ({ targets: [{ kind: "dossier", id: "p1", label: "Synthetic Person" }, { kind: "note", id: "n1", label: "A note" }], note: null, loading: false, error: null }) }))
 import MediaPage, { DerivedTexts } from "./MediaPage"
+import { memberFromElement } from "@/features/corroborate/item-target"
 
 describe("Media (03 section 8)", () => {
   it("states the total, shows a missing file as the sentence, and opens a file with the messages that carried it (M-1, M-2, M-4)", async () => {
@@ -53,6 +54,18 @@ describe("Media (03 section 8)", () => {
     expect(await within(panel).findByText("Carried by 1 message")).toBeInTheDocument()
     expect(within(panel).getByText(/found by the attachment's extracted path/)).toBeInTheDocument()
     expect(within(panel).getByRole("link", { name: /The message at/ })).toHaveAttribute("href", "/cases/c/records/m1")
+  })
+
+  it("each tile names its file for Corroborate, so right-click or C on a photo starts one (lx-corrorest D)", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/cases/c/phones/e1/records/media"]}>
+          <Routes><Route path="/cases/:id/phones/:extraction/records/media" element={<MediaPage />} /></Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    const grid = await screen.findByRole("list", { name: "Files" })
+    expect(memberFromElement(await within(grid).findByText("synthetic-a.jpg"))).toEqual({ type: "media_file", id: "f1", label: "synthetic-a.jpg" })
   })
 
   it("scoped to a thread from its Attachments (N): the scope is shown, Previous and Next step the files, Back to the stream returns (MD-1)", async () => {
