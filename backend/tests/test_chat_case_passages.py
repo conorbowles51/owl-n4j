@@ -131,3 +131,13 @@ def test_payments_do_not_use_up_the_phone_and_document_cap(monkeypatch):
     added = RAGService._case_search_passages(RAGService.__new__(RAGService), "q", "case", [], {})
     assert [a["id"] for a in added if a.get("_case_rank")] == ["case:doc://f9/1"]
     assert sum(1 for a in added if a.get("_case_other_rank")) == RAGService.CASE_SEARCH_OTHER_PASSAGES
+
+
+def test_payments_and_entities_take_no_searched_passages_place_in_the_selection():
+    from services import retrieval_fusion as F
+    docs = [{"id": "c%d" % i, "text": "d", "distance": 0.1 * i} for i in range(1, 6)]
+    others = [{"id": "case:txn://t%d" % i, "text": "p", "_case_search": True, "_case_other_rank": i} for i in (1, 2)]
+    pinned, fused, stats = F.fuse(docs + others, [], [])
+    kept = F.select(pinned, fused, 5, stats)
+    assert [c["id"] for c in kept if not c.get("_case_search")] == ["c1", "c2", "c3", "c4", "c5"]
+    assert sum(1 for c in kept if c.get("_case_search")) == 2

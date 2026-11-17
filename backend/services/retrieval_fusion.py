@@ -140,17 +140,22 @@ def fuse(
 
 def select(pinned: List[Dict[str, Any]], fused: List[Dict[str, Any]], top_searched: int,
            stats: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """Pinned passages, then the fused order with at most ``top_searched`` searched passages. A graph passage takes
-    no searched passage's place; when its chunk is kept it is named on that chunk ("source of") instead."""
+    """Pinned passages, then the fused order with at most ``top_searched`` searched passages. A graph passage and a
+    case-search payment or entity take no searched passage's place; when its chunk is kept it is named on that chunk ("source of") instead."""
     kept_searched = set()
     for c in fused:
-        if not c.get("_graph_evidence") and len(kept_searched) < top_searched:
+        if not c.get("_graph_evidence") and c.get("_case_other_rank") is None and len(kept_searched) < top_searched:
             kept_searched.add(_key(c))
     kept = {_key(c): c for c in pinned}
     kept.update({_key(c): c for c in fused if _key(c) in kept_searched})
     out = list(pinned)
     folded = 0
     for c in fused:
+        if c.get("_case_other_rank") is not None:
+            # a payment or graph entity from the case search: capped where it is made, and it takes no searched
+            # passage's place (measured 17 Nov: counted, they pushed 2 of 22 relevant documents out of chat context)
+            out.append(c)
+            continue
         if not c.get("_graph_evidence"):
             if _key(c) in kept_searched:
                 out.append(c)
