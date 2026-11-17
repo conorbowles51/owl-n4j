@@ -134,3 +134,25 @@ def test_two_positions_of_one_phone_are_a_stay_not_an_overlap():
     b = item("b", T0 + timedelta(hours=5), type="phone_record", place=pl, phone="A")
     c, s = rules.place_overlap([a, b], lambda *x: {})
     assert not c and "same phone" in s[0]["searched"]
+
+
+def test_shared_silence_scales_to_a_thousand_silences_per_phone():
+    import time
+    from datetime import datetime
+    def gaps(offset):
+        return [(T0 + timedelta(days=d, hours=offset), T0 + timedelta(days=d, hours=offset + 9)) for d in range(1100)]
+    t = time.time()
+    c, n = rules.shared_silence(None, gaps={"A": gaps(0), "B": gaps(1)})
+    assert time.time() - t < 20  # the first version rescanned every silence per overlap and did not finish on 1,000
+    assert n["silences"] == {"A": 1100, "B": 1100} and c
+
+
+def test_a_silence_outside_both_phones_usual_hours_is_its_own_candidate():
+    night = lambda d: (T0 + timedelta(days=d, hours=10), T0 + timedelta(days=d, hours=20))  # 22:00 to 08:00 UTC next day
+    usual = {p: [night(d) for d in range(30)] for p in "AB"}
+    odd = (T0 + timedelta(days=40, hours=-6), T0 + timedelta(days=40, hours=0))  # a morning silence, 06:00 to 12:00
+    usual["A"].append(odd)
+    usual["B"].append(odd)
+    c, _ = rules.shared_silence(None, gaps=usual)
+    kinds = sorted(x["strength"] for x in c)
+    assert "faint" in kinds and any(k in ("weak", "moderate") for k in kinds)

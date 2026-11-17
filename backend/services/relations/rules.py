@@ -486,37 +486,67 @@ def _overlap(a, b):
     return (start, end) if end > start else None
 
 
+def _hours_of(start: datetime, end: datetime) -> set[int]:
+    """The hours of the day (0-23) a stretch covers; a stretch of a day or more covers all of them."""
+    if end - start >= timedelta(hours=24):
+        return set(range(24))
+    out, t = set(), start.replace(minute=0, second=0, microsecond=0)
+    while t < end:
+        out.add(t.hour)
+        t += timedelta(hours=1)
+    return out
+
+
+def quiet_hours(gaps: list[tuple[datetime, datetime]]) -> list[int]:
+    """For each hour of the day, in how many of a phone's silences it falls. Computed once per phone."""
+    hist = [0] * 24
+    for start, end in gaps:
+        for h in _hours_of(start, end):
+            hist[h] += 1
+    return hist
+
+
+def _usual(hist: list[int], total: int, hours: set[int]) -> bool:
+    """A stretch is at a phone's usual quiet hours when most of its hours are quiet in at least a quarter of that phone's
+    silences (a night is the usual silence of a phone that is used by day)."""
+    return bool(hours) and total > 0 and sum(1 for h in hours if hist[h] * 4 >= total) * 2 >= len(hours)
+
+
 def shared_silence(streams: dict[str, list[datetime]] | None, minimum: timedelta = SILENCE_MIN,
                    gaps: dict[str, list[tuple[datetime, datetime]]] | None = None) -> tuple[list[dict], dict]:
-    """Two phones both silent for at least ``minimum`` over the same stretch. Beside it: how many of each phone's
-    silences of this length there are in the period, and how many fall at the same hours (a night is ordinary
-    silence). The shared silences at both phones' usual hours are one candidate per pair of phones, with every stretch
-    listed in its detail; each shared silence outside their usual hours is a candidate of its own."""
+    """Two phones both silent for at least ``minimum`` over the same stretch. Beside it: how many silences of this length
+    each phone has in the period, and whether the stretch falls at both phones' usual quiet hours. The shared silences at
+    both phones' usual hours are one candidate per pair of phones, with every stretch listed in its detail; each shared
+    silence outside their usual hours is a candidate of its own."""
     gaps = gaps if gaps is not None else {p: silences(ts, minimum) for p, ts in (streams or {}).items()}
+    hist = {p: quiet_hours(g) for p, g in gaps.items()}
     out = []
     for pa, pb in combinations(sorted(gaps), 2):
         usual, unusual = [], []
+        ordered_b = sorted(gaps[pb])
         for ga in gaps[pa]:
-            for gb in gaps[pb]:
+            for gb in ordered_b:
+                if gb[1] <= ga[0]:
+                    continue
+                if gb[0] >= ga[1]:
+                    break
                 both = _overlap(ga, gb)
                 if not both or both[1] - both[0] < minimum:
                     continue
-                hours = (both[1] - both[0]).total_seconds() / 3600
-                usual_a = sum(1 for g in gaps[pa] if _hour_overlap(g, both))
-                usual_b = sum(1 for g in gaps[pb] if _hour_overlap(g, both))
-                ordinary = usual_a * 2 >= max(len(gaps[pa]), 1) and usual_b * 2 >= max(len(gaps[pb]), 1)
-                row = {"start": both[0].isoformat(), "end": both[1].isoformat(), "hours": round(hours, 1),
-                       "usual_a": usual_a, "usual_b": usual_b}
-                (usual if ordinary else unusual).append(row)
+                hours = _hours_of(*both)
+                ok_a = _usual(hist[pa], len(gaps[pa]), hours)
+                ok_b = _usual(hist[pb], len(gaps[pb]), hours)
+                row = {"start": both[0].isoformat(), "end": both[1].isoformat(),
+                       "hours": round((both[1] - both[0]).total_seconds() / 3600, 1), "usual_a": ok_a, "usual_b": ok_b}
+                (usual if ok_a and ok_b else unusual).append(row)
         words = (f"Phone {pa[:8]} has {_n(len(gaps[pa]))} silences of {minimum.total_seconds() / 3600:.0f} hours or more "
                  f"in the period; phone {pb[:8]} has {_n(len(gaps[pb]))}.")
         for row in unusual:
+            who = "either phone's" if not (row["usual_a"] or row["usual_b"]) else "one phone's"
             out.append(candidate("shared_silence", [pa, pb], "time", "moderate" if row["hours"] >= 24 else "weak",
                                  [f"Both phones were silent for {row['hours']} hours from {row['start'][:16].replace('T', ' ')} "
-                                  f"to {row['end'][11:16]}, outside their usual quiet hours."],
-                                 chance={"words": words + f" {_n(row['usual_a'])} of the first and {_n(row['usual_b'])} of the "
-                                                  "second fall at these hours.", "reading": "uncommon", "share_of_days": None},
-                                 extra=row))
+                                  f"to {row['end'][11:16]}, outside {who} usual quiet hours."],
+                                 chance={"words": words, "reading": "uncommon", "share_of_days": None}, extra=row))
         if usual:
             longest = max(usual, key=lambda r: r["hours"])
             out.append(candidate("shared_silence", [pa, pb], "time", "faint",
@@ -526,12 +556,6 @@ def shared_silence(streams: dict[str, list[datetime]] | None, minimum: timedelta
                                          "reading": "ordinary", "share_of_days": None},
                                  extra={"stretches": usual, "count": len(usual)}))
     return out, {"silences": {p: len(g) for p, g in gaps.items()}}
-
-
-def _hour_overlap(gap, other) -> bool:
-    ha = {(gap[0] + timedelta(hours=h)).hour for h in range(int((gap[1] - gap[0]).total_seconds() // 3600) + 1)}
-    hb = {(other[0] + timedelta(hours=h)).hour for h in range(int((other[1] - other[0]).total_seconds() // 3600) + 1)}
-    return len(ha & hb) >= max(1, len(hb) // 2)
 
 
 def money_amounts(items: list[dict]) -> list[dict]:
