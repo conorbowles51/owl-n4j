@@ -228,7 +228,7 @@ export function GraphToolbar({
             <TooltipContent>Filter hides what does not match. Combine words with AND, OR and NOT; -word leaves a word out; quotes keep a phrase; * and ? stand for any letters.</TooltipContent>
           </Tooltip>
         )}
-        <span className="whitespace-nowrap text-[10px] text-muted-foreground" aria-live="polite">
+        <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground" aria-live="polite">
           {filteredNodes.toLocaleString("en-US")} of {totalNodes.toLocaleString("en-US")} shown
         </span>
       </div>

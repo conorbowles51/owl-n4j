@@ -61,14 +61,16 @@ function PairRow({ caseId, a, b, aName, bName, picked, onPick, missing }: {
         <input type="checkbox" checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label={`Choose ${A} and ${B}`} />
       </td>
       <td className="py-0.5 pr-2">
-        <span className="font-medium">{A}</span> and <span className="font-medium">{B}</span>
+        <span className="whitespace-nowrap font-medium">{A}</span> and <span className="whitespace-nowrap font-medium">{B}</span>
+        {/* narrow screens: the count sits under the names instead of in its own column */}
+        <span className="block sm:hidden">{words}</span>
         {missing.length > 0 && (
           <span className="block text-muted-foreground">
             {missing.length === 2 ? "Neither is drawn on the graph now." : `${missing[0]} is not drawn on the graph now.`}
           </span>
         )}
       </td>
-      <td className="py-0.5 pr-2 whitespace-nowrap" role={q.isError ? "alert" : undefined}>{words}</td>
+      <td className="hidden py-0.5 pr-2 whitespace-nowrap sm:table-cell" role={q.isError ? "alert" : undefined}>{words}</td>
       <td className="py-0.5 text-right">
         <Button size="sm" variant="outline" className="h-5 px-2 text-xs" disabled={q.isError}
           aria-label={`Show the messages between ${A} and ${B}`}
@@ -237,7 +239,7 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
           )}
           <div className="flex flex-wrap items-center gap-x-4">
             <DateRange />
-            <Button size="sm" variant="outline" className="mt-1.5 h-6 px-2 text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
+            <Button size="sm" variant="outline" className="mt-1.5 h-auto min-h-6 whitespace-normal px-2 text-left text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
               {flow ? "Show the list of pairs" : "Show one person's contacts, each direction apart"}
             </Button>
           </div>
@@ -245,12 +247,14 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
             <PhoneFlowView caseId={caseId} pairs={pairs.map(asPair)} />
           ) : (
             <>
+              {/* what to do with the chosen pairs sits above the list, in sight of the boxes */}
+              <GraphEdgeCollect caseId={caseId} pairs={chosen} />
               <table className="mt-1.5 w-full max-w-4xl border-collapse">
                 <thead>
                   <tr className="text-left text-muted-foreground">
                     <th scope="col" className="pr-2 font-normal">Choose</th>
                     <th scope="col" className="pr-2 font-normal">People</th>
-                    <th scope="col" className="pr-2 font-normal">Contact</th>
+                    <th scope="col" className="hidden pr-2 font-normal sm:table-cell">Contact</th>
                     <th scope="col" className="font-normal"><span className="sr-only">Messages</span></th>
                   </tr>
                 </thead>
@@ -269,7 +273,6 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
                   {all ? `Show the ${SHOWN} busiest` : `Show all ${fmt(pairs.length)} pairs`}
                 </Button>
               )}
-              <GraphEdgeCollect caseId={caseId} pairs={chosen} />
             </>
           )}
         </div>
