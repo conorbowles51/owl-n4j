@@ -80,5 +80,7 @@ def passages(conn, case_id, question) -> list:
                          "doc_name": "Phone contact between %s and %s" % (na, nb),
                          "filename": "Phone contact between %s and %s" % (na, nb),
                          "ingestion_state": "active", "source_kind": "phone_contact_count",
-                         "no_cite": True}})  # a count has no file: no doc:// link to nothing
+                         # a count has no file: it cites the Conversations page on the two people, never a doc://
+                         # link to a file that does not exist (3 of 145 chat citations did not open, 17 Nov)
+                         **({"cite": r["conversations_link"]} if r.get("conversations_link") else {"no_cite": True})}})
     return out

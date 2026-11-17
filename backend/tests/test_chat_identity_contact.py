@@ -29,7 +29,36 @@ class ChatContact(unittest.TestCase):
         self.assertIn("2 calls, 6 messages", out[0]["text"])
         self.assertIn("no person has linked", out[0]["text"])
         self.assertIn("Mateo Ruiz", out[0]["metadata"]["filename"])
-        self.assertTrue(out[0]["metadata"]["no_cite"], "a count has no file to cite; a doc:// link would open nothing")
+        self.assertTrue(out[0]["metadata"]["no_cite"], "no identity to open: no Cite, never a doc:// link to nothing")
+
+    def test_the_count_cites_the_conversations_page_on_the_two_people(self):
+        link = "/cases/c/conversations?tab=people&people=p%3A1%2Cp%3A2&mode=between"
+
+        def between(conn, case, **k):
+            return {"label_line": "0 calls", "conversations_link": link,
+                    "communication_through_suggested": {"calls": 0, "messages": 0, "emails": 0, "basis": "s"}}
+        with patch.object(PC, "contact_and_money_between", between):
+            out = chat_identity.passages(Conn(), "c", "Did Mateo Ruiz ever call or message Desmond Okafor?")
+        self.assertEqual(out[0]["metadata"]["cite"], link)
+        self.assertNotIn("no_cite", out[0]["metadata"])
+
+    def test_conversations_link_between_one_identity_each_else_every_record_of_either(self):
+        self.assertEqual(PC.conversations_between("c", ["phone:+1"], ["phone:+2"]),
+                         "/cases/c/conversations?tab=people&people=phone%3A%2B1%2Cphone%3A%2B2&mode=between")
+        self.assertEqual(PC.conversations_between("c", ["k1", "k3"], ["k2"]),
+                         "/cases/c/conversations?tab=people&people=k1%2Ck3%2Ck2")
+        self.assertIsNone(PC.conversations_between("c", [], ["k2"]))
+
+    def test_a_passage_cite_in_its_metadata_is_the_cite_line(self):
+        from services.rag_service import RAGService
+        rag = RAGService.__new__(RAGService)
+        chunk = {"id": "phone-contact:m1:d1", "text": "0 calls", "distance": 0.0,
+                 "metadata": {"doc_name": "Phone contact between A and B", "filename": "Phone contact between A and B",
+                              "cite": "/cases/c/conversations?tab=people&people=k1%2Ck2&mode=between"}}
+        self.assertEqual(rag._build_sources([chunk])[0]["cite"], chunk["metadata"]["cite"])
+        context = rag._build_hybrid_context([chunk], [], {}, question="q")
+        self.assertIn("Cite: " + chunk["metadata"]["cite"], context)
+        self.assertNotIn("doc://Phone", context)
 
     def test_zero_between_their_numbers_says_no_and_a_similar_name_elsewhere_is_not_them(self):
         def between(conn, case, **k):

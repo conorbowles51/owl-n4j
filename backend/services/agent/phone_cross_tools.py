@@ -887,6 +887,20 @@ def _named_money(named: dict) -> str:
             % (named["total"], "" if named["total"] == 1 else "s", "s" if named["total"] == 1 else ""))
 
 
+def conversations_between(case_id, keys_a, keys_b) -> str | None:
+    """The Conversations page on two people's records: their calls and messages with each other when each has one
+    identity (the page's 'between' takes exactly two), else every record of either, so a count of 0 can be seen.
+    None when a side has no identity: there is nothing of theirs to open."""
+    from urllib.parse import urlencode
+    a, b = sorted(set(keys_a or [])), sorted(set(keys_b or []))
+    if not a or not b:
+        return None
+    q = {"tab": "people", "people": ",".join(a + [k for k in b if k not in a])}
+    if len(a) == 1 and len(b) == 1 and a != b:
+        q["mode"] = "between"
+    return "/cases/%s/conversations?%s" % (case_id, urlencode(q))
+
+
 def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, person_b=None, identity_b=None,
                               start=None, end=None, with_records=False, offset=0, limit=DEFAULT_LIMIT,
                               suggestions=None) -> dict:
@@ -905,12 +919,15 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
         # (lx-agentfit D: the demo's "did Mateo ever contact Okafor" was answered from a count over no identity).
         from services.agent import fit
         suggested, unlinked = {}, []
+        side_keys = {"a": [sa["identity_key"]] if sa.get("identity_key") else [],
+                     "b": [sb["identity_key"]] if sb.get("identity_key") else []}
         for tag, subject in (("a", sa), ("b", sb)):
             if subject.get("dossier_id"):
                 try:
                     side = link_edges.resolve_side(conn, case_id, subject)
                 except link_edges.NotInCase as exc:
                     raise _Missing(str(exc)) from None
+                side_keys[tag] = list(side["keys"])
                 if not side["keys"]:
                     # The count over no identity is never given as no contact (always on); counting through the
                     # suggested identities is item D's.
@@ -960,6 +977,10 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
                               "message, call or email of theirs can be counted here; find their numbers with "
                               "phone_find_people and read phone_messages." % side["label"])
         extra = {"sides": sides} if fit.on("D") else {}
+        link = conversations_between(case_id, *(
+            side_keys[t] or [x["identity_key"] for x in (suggested.get(t) or {}).get("identities", [])] for t in "ab"))
+        if link:
+            extra["conversations_link"] = link
         label = edge["label"]
         if suggested:
             pairs = _between_suggested(conn, case_id, sa, sb, suggested, a, b, with_records)
