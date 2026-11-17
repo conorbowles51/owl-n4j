@@ -9,6 +9,16 @@ import type {
 } from "./types"
 import type { CaseLayer } from "@/features/significant/types"
 
+export type AnswerRatingKind = "missed_something" | "not_relevant" | "too_thin"
+export interface AnswerRating {
+  id: string
+  message_id: string
+  kind: AnswerRatingKind
+  label: string
+  note: string
+  record_ref: string | null
+}
+
 export type AgentArtifactExportFormat = "csv" | "pdf" | "docx" | "html" | "xlsx" | "pptx" | "svg" | "png"
 
 export interface SendAgentMessageParams {
@@ -192,6 +202,26 @@ export const agentAPI = {
       method: "POST",
       body: { case_id: caseId, dossier_id: dossierId, category },
     }),
+
+  /** lx-agenttools D20: a person rates an answer (or withdraws the rating); the active ratings come back. */
+  rateAnswer: (
+    caseId: string,
+    messageId: string,
+    rating: { kind: AnswerRatingKind; note?: string; recordRef?: string; withdraw?: boolean },
+  ) =>
+    fetchAPI<{ ratings: AnswerRating[] }>(`/api/agent/messages/${encodeURIComponent(messageId)}/rating`, {
+      method: "PUT",
+      body: {
+        case_id: caseId,
+        kind: rating.kind,
+        note: rating.note ?? "",
+        record_ref: rating.recordRef?.trim() || null,
+        withdraw: rating.withdraw ?? false,
+      },
+    }),
+
+  getAnswerRatings: (messageId: string) =>
+    fetchAPI<{ ratings: AnswerRating[] }>(`/api/agent/messages/${encodeURIComponent(messageId)}/ratings`),
 
   getRunRecord: (runId: string) =>
     fetchAPI<import("./types").AgentRunRecord>(`/api/agent/runs/${encodeURIComponent(runId)}/record`),

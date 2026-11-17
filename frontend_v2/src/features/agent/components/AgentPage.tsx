@@ -71,6 +71,7 @@ import { AgentBriefAttachment, type AgentBrief } from "./AgentBriefAttachment"
 import { ArtifactRevisionControls } from "./ArtifactRevisionControls"
 import { artifactIdentity, artifactRevision, latestArtifactVersion } from "../artifact-data"
 import { AcceptAnswerIntoAssessment } from "./AcceptAnswerIntoAssessment"
+import { AnswerRating } from "./AnswerRating"
 import { AgentRunRecordPanel } from "./AgentRunRecordPanel"
 import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -1514,6 +1515,9 @@ function MessageBubble({
           {formatTime(message.createdAt)}
           {message.writtenBy ? ` · ${message.writtenBy}` : ""}
         </div>
+        {caseId && !message.pending && !showClarificationPanel && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
+          <AnswerRating caseId={caseId} messageId={message.id} />
+        ) : null}
         {caseId && !message.pending && !showClarificationPanel && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
           <AcceptAnswerIntoAssessment caseId={caseId} messageId={message.id} />
         ) : null}

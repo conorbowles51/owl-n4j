@@ -434,6 +434,55 @@ def accept_answer_into_assessment(message_id: UUID, body: AcceptAnswerBody, db: 
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class AnswerRatingBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    kind: Literal["missed_something", "not_relevant", "too_thin"]
+    note: str = Field("", max_length=2000)
+    record_ref: str | None = Field(None, max_length=400)
+    withdraw: bool = False
+
+
+@router.put("/messages/{message_id}/rating")
+def rate_answer(message_id: UUID, body: AnswerRatingBody, db: Session = Depends(get_db),
+                user: User = Depends(get_current_db_user)):
+    """lx-agenttools D20: a person rates an agent answer (missed something, not relevant, too thin) or withdraws the
+    rating. Stored with the answer's run and sent through the manual-change feed."""
+    from routers.case_access import authorize_case
+    from services.agent import answer_ratings
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        out = answer_ratings.rate_answer(db, case_id=body.case_id, message_id=message_id, user=user, kind=body.kind,
+                                         note=body.note, record_ref=body.record_ref, withdraw=body.withdraw)
+        db.commit()
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+    out["ratings"] = answer_ratings.active_for_message(db, message_id=message_id, user=user)
+    return out
+
+
+@router.get("/messages/{message_id}/ratings")
+def message_ratings(message_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The active ratings the person has given one answer (never another person's)."""
+    from services.agent import answer_ratings
+    return {"ratings": answer_ratings.active_for_message(db, message_id=message_id, user=user)}
+
+
+@router.get("/threads/{thread_id}/ratings")
+def thread_ratings(thread_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The ratings the person has given in one of their threads, by answer id."""
+    from services.agent import answer_ratings
+    from postgres.models.agent import AgentThread
+    thread = db.get(AgentThread, thread_id)
+    if thread is None or str(thread.owner_user_id) != str(user.id):
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return {"ratings": answer_ratings.active_for_thread(db, thread_id=thread_id, user=user)}
+
+
 class ArtifactRevisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)

@@ -275,3 +275,30 @@ class AgentRunItem(Base):
     opened_by_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     in_artifact: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class AgentAnswerRating(Base):
+    """A person's rating of an agent answer: missed something, not relevant, too thin (lx-agenttools D20).
+
+    Append-only: giving a rating and withdrawing it are each a row, so the original stays visible and the active
+    ratings are the latest row per (message, person, kind) whose action is ``rate``.
+    """
+    __tablename__ = "agent_answer_ratings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"),
+                                               nullable=False, index=True)
+    thread_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agent_threads.id", ondelete="CASCADE"),
+                                                 nullable=False, index=True)
+    message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agent_messages.id", ondelete="CASCADE"),
+                                                  nullable=False, index=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
+                                               nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    action: Mapped[str] = mapped_column(String(12), nullable=False, default="rate")
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # "This should have been found": a record link (rec://, txn://, doc://) the person picked.
+    record_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -40,6 +40,7 @@ from postgres.models.processing_profile import ProcessingProfile, CaseProcessing
 from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
 from postgres.models.agent import (
+    AgentAnswerRating,
     AgentArtifactRecord,
     AgentMessage,
     AgentRun,
@@ -120,7 +121,7 @@ __all__ = [
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
-    "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall", "AgentPromptVersion", "AgentRunItem",
+    "AgentAnswerRating", "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall", "AgentPromptVersion", "AgentRunItem",
     "EvidenceClaim", "EvidenceDocumentText", "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "SignificantEntity",
     "SignificantRelationship",
