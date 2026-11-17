@@ -234,3 +234,12 @@ def test_confirm_keeps_loupes_reading_saves_the_edit_under_the_person_and_lists_
         saved.confirm(db, CASE, out["id"], {**chips, "who": []}, _user())
     with pytest.raises(LookupError):
         saved.get(db, "6f1ddc0e-2f6d-4c3b-9d54-0a1b2c3d4e5f", out["id"])
+
+
+def test_a_claim_run_result_can_be_read_back_like_any_run_result():
+    """Found live: the run view paged result['candidates'] and a claim's result had none (500)."""
+    from services.relations import runs
+    out = runs._first_page(runs.claim_only_result({"claim": {"id": "c"}, "level": {"name": "Fits"}}, 1))
+    assert out["candidates"] == [] and out["no_links"] == [] and out["paging"]["candidates"]["total"] == 0
+    assert out["corroboration"]["claim"] == {"id": "c"}
+    json.dumps(out)

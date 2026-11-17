@@ -213,7 +213,7 @@ def work(run_id: str, case_id: str, *, session_factory) -> None:
             session.commit()
         if corroboration is not None and corroboration.get("claim"):
             # a claim is weighed against the phones only; there are no records to pair
-            row.result = {"corroboration": corroboration, "claim_only": True, "counts": {"items": len(members), "candidates": 0, "no_links": 0}}
+            row.result = claim_only_result(corroboration, len(members))
             row.status, row.step, row.finished_at = "done", "Done", datetime.now(timezone.utc)
             row.progress = {"items": len(members), "level": corroboration["level"]["name"]}
             session.commit()
@@ -261,6 +261,12 @@ def view(db, case_id, run_id, *, with_result: bool = True) -> dict[str, Any]:
     if with_result:
         out["result"] = _first_page(row.result)
     return out
+
+
+def claim_only_result(corroboration: dict, n_members: int) -> dict:
+    """A claim's run has no link analysis; its result carries the keys every reader of a run result expects, empty."""
+    return {"corroboration": corroboration, "claim_only": True, "items": [], "candidates": [], "no_links": [],
+            "analyses": [], "out_of_reach": [], "counts": {"items": n_members, "candidates": 0, "no_links": 0}}
 
 
 def _first_page(result: dict | None) -> dict | None:
