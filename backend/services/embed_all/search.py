@@ -30,7 +30,7 @@ DERIVED_AREAS = frozenset({"relationships"})  # graph text the engine wrote from
 ENTITY_WEIGHT = 0.6  # a graph entity (a bare name) scores below a source record with the same evidence; measured 17 Nov
 ALSO_SHOWN = 5  # connections folded into one hit: their titles and openings stay on the hit
 ALSO_CHARS = 240
-DERIVED_OFFSET = 3  # a derived hit ranks as if this many places further down its own area's list
+DERIVED_OFFSET = 0  # measured 17 Nov: an offset moved a statement-page record out of the first ten; collapse alone keeps the order
 FETCH = 60
 
 
