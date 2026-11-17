@@ -140,10 +140,11 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
           </div>
 
           {typeCounts.transaction && typeCounts.financialtransaction ? (
-            // lx-graphclarity A: on the Ruiz demo 193 of 210 statement rows also have a payment read by the model
+            // lx-graphclarity A: the two money types are two sources, not two names for one thing. The Graph leaves out
+            // a model reading the ledger already has (followups f982c4ff5), so the Transactions left have no statement row to match.
             <p className="shrink-0 max-w-[16rem] border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground" data-testid="legend-money-note">
-              A payment on a bank statement can show twice: as a Financial transaction (the statement row) and as a
-              Transaction (read from the document by the model).
+              Financial transactions are rows of bank statements. Transactions are payments the model read from
+              documents.
             </p>
           ) : null}
 

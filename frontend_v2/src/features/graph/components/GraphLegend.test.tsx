@@ -21,13 +21,13 @@ it("unfiltered, the count is the plain total", () => {
   expect(screen.getByTestId("legend-count-Person").textContent).toBe("3")
 })
 
-it("names types in readable words and says when a payment can show twice (lx-graphclarity C)", () => {
+it("names types in readable words and says where each kind of payment comes from (lx-graphclarity C)", () => {
   const money = [node("t1", "transaction"), node("f1", "financialtransaction"), node("i1", "phoneidentity")]
   render(<GraphLegend nodes={money} />)
   expect(screen.getByText("Financial transaction")).toBeInTheDocument()
   expect(screen.getByText("Phone identity")).toBeInTheDocument()
   expect(screen.queryByText(/Financialtransaction|Phoneidentity/)).toBeNull()
-  expect(screen.getByTestId("legend-money-note").textContent).toContain("can show twice")
+  expect(screen.getByTestId("legend-money-note").textContent).toContain("rows of bank statements")
 })
 
 it("leaves the money note out when only one kind of payment is drawn", () => {
