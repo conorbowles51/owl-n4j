@@ -9,6 +9,7 @@ if the page is closed.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -44,15 +45,38 @@ def normalise(db, case_id, members: list[dict]) -> list[dict]:
 
 
 def _question(raw: dict) -> dict:
-    """The question as the person left it: its kind and the chips (when, nights, who, what, compare with), as text."""
+    """The question as the person left it: its kind and the chips (when, nights, who, what, compare with), as text,
+    and the chips Corroborate's engine reads, each checked for its form: ``people`` and ``against`` (person keys: the group asked about and the group compared with), ``person`` (the
+    one asked about), ``hours`` (start "HH:MM" and length in hours), ``after`` (a date) and ``compare_with`` (a
+    comparison set the engine knows)."""
+    from services.corroborate import model as corroborate_model
     chips = raw.get("chips") if isinstance(raw.get("chips"), dict) else {}
-    return {"kind": str(raw.get("kind") or "")[:40], "text": str(raw.get("text") or "")[:500],
-            "chips": {k: str(v)[:300] for k, v in chips.items() if k in ("when", "nights", "who", "what", "compare_with", "scope")}}
+    out = {k: str(v)[:300] for k, v in chips.items() if k in ("when", "nights", "who", "what", "compare_with", "scope")}
+    if isinstance(chips.get("people"), list):
+        out["people"] = [str(k)[:200] for k in chips["people"][:50]]
+    if isinstance(chips.get("against"), list):
+        out["against"] = [str(k)[:200] for k in chips["against"][:50]]
+    if isinstance(chips.get("person"), str):
+        out["person"] = chips["person"][:200]
+    hours = chips.get("hours")
+    if isinstance(hours, dict) and re.fullmatch(r"\d{2}:\d{2}", str(hours.get("start") or "")):
+        try:
+            length = float(hours.get("length_h"))
+        except (TypeError, ValueError):
+            length = 0
+        if 0 < length <= 48:
+            out["hours"] = {"start": hours["start"], "length_h": length}
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(chips.get("after") or "")):
+        out["after"] = chips["after"]
+    if "compare_with" in out and out["compare_with"] not in corroborate_model.COMPARISON_KINDS:
+        out["compare_words"] = out.pop("compare_with")  # the words a person reads; the engine picks the set
+    return {"kind": str(raw.get("kind") or "")[:40], "text": str(raw.get("text") or "")[:500], "chips": out}
 
 
 def save_group(db, *, case_id, members: list[dict], user=None, extends: str | None = None, surface: str = "relation",
                question: dict | None = None) -> dict:
-    """Save the group. ``extends`` is a group of this case whose members are kept and added to."""
+    """Save the group. ``extends`` is a group of this case whose members are kept and added to. ``question`` (a
+    Corroborate question: kind and chips) is kept with how the group was chosen, so every run of it asks it."""
     held: list[dict] = []
     if extends:
         base = case_selections.describe(db, case_id, extends, member_limit=10**9)
@@ -100,10 +124,22 @@ def work(run_id: str, case_id: str, *, session_factory) -> None:
         def progress(step, done, total):
             row.step = f"{step} ({done:,} of {total:,})"
             session.commit()
+        corroboration = None
+        if "question" in (sel.get("how") or {}):
+            # Corroborate first: its level is what the page shows, so it lands before the slower link analysis
+            from services.corroborate import engine as corroborate
+            from services.corroborate.store import CaseStore
+            corroboration = corroborate.run(CaseStore(session, case_id), members, sel["how"]["question"], progress)
+            row.result = {"corroboration": corroboration, "partial": True}
+            row.progress = {**(row.progress or {}), "level": corroboration["level"]["name"]}
+            session.commit()
         result = engine.run(DbSources(session, case_id), members, progress)
+        if corroboration is not None:
+            result["corroboration"] = corroboration
         row.result, row.status, row.step = result, "done", "Done"
         row.progress = {"items": result["counts"]["items"], "candidates": result["counts"]["candidates"],
-                        "no_links": result["counts"]["no_links"]}
+                        "no_links": result["counts"]["no_links"],
+                        **({"level": corroboration["level"]["name"]} if corroboration is not None else {})}
         row.finished_at = datetime.now(timezone.utc)
         session.commit()
     except Exception as exc:  # noqa: BLE001 - the run fails visibly, with the reason

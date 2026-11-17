@@ -21,6 +21,17 @@ KINDS = {
     "behaviour_change": "Did this person's behaviour change after a date?",
     "document": "Does this document agree with the phones?",
 }
+# The names the question composer (lx-corroselect, services/corroborate/preview.py) gives the same kinds.
+ALIASES = {"payment_connected": "payment", "repeats": "every_time", "connected_at_all": "connected",
+           "changed_after": "behaviour_change", "document_agrees": "document"}
+
+
+def canonical(kind) -> str | None:
+    """The engine's name for a question kind, or None when Corroborate does not ask it."""
+    kind = ALIASES.get(kind, kind)
+    return kind if kind in KINDS else None
+
+
 # What each kind reads (link kinds of ``levels.LINK_KINDS``) and how it compares.
 CHECKS = {
     "in_contact": ["contact", "shared_content", "absence"],
@@ -117,7 +128,8 @@ def preview(store, members: list[dict]) -> dict:
     zone = store.zone()
     everyone = {p["key"]: p for p in store.people()}
     points, unread = store.selection_points(members)
-    keys = list(dict.fromkeys(k for p in points for k in p.get("people") or []))
+    from services.corroborate.engine import _people_of
+    keys = _people_of(points)  # the people the run asks about, so the counts here are the run's
     places = [p for p in points if p.get("kind") == "place"]
     timed = [p for p in points if p.get("at")]
     incidents, hours = M.incidents_from_selection(timed, zone)
@@ -136,7 +148,7 @@ def preview(store, members: list[dict]) -> dict:
             "count_words": (f"{len(incidents)} instance(s) asked about, compared with {comp['count']} ordinary ones"
                             if incidents else "no dated records in the selection"),
             "checks": [{"signal": s, "words": CHECK_WORDS[s], "count": None} for s in CHECKS[k]],
-            "chips": {"who": keys, "when": [i["label"] for i in incidents][:12], "compare_with": default_comparison(k),
+            "chips": {"people": keys, "when": [i["label"] for i in incidents][:12], "compare_with": default_comparison(k),
                       "hours": hours}})
     by_type = Counter(p.get("type") for p in points)
     return {
@@ -156,8 +168,28 @@ def preview(store, members: list[dict]) -> dict:
         "left_out": dict(Counter(u["ref"].split(":")[0] for u in unread)),
         "unread": unread,
         "questions": questions,
+        "comparisons": comp_counts,
         "seconds": round(time.time() - started, 2),
     }
+
+
+def enrich(store, members: list[dict], composed: dict) -> dict:
+    """Add to the composer's preview (``services.corroborate.preview``) what each question would check, the
+    comparison it would use with its count, and the people Loupe joins the selection to with their numbers and
+    whether a link is only suggested. The composer's own counts and words are kept as they are."""
+    mine = preview(store, members)
+    for q in composed.get("questions") or []:
+        k = canonical(q.get("kind"))
+        if not k:
+            continue
+        comp = mine["comparisons"].get(default_comparison(k)) or {"count": 0, "words": ""}
+        q["checks"] = [{"signal": s, "words": CHECK_WORDS[s], "count": None} for s in CHECKS[k]]
+        q["comparison"] = {"kind": default_comparison(k), "words": comp["words"], "count": comp["count"]}
+        q.setdefault("chips", {})["people"] = [p["key"] for p in mine["taken"]["people"]]
+    composed["joined"] = {"people": mine["taken"]["people"], "zone": mine["taken"]["times"]["zone"],
+                          "instances": mine["taken"]["times"]["instances"], "unread": mine["unread"],
+                          "seconds": mine["seconds"]}
+    return composed
 
 
 def parse_day(value) -> date | None:

@@ -178,6 +178,9 @@ def incidents_from_selection(points: list[dict], zone_name: str) -> tuple[list[d
             {"start": start.strftime("%H:%M"), "length_h": round(length.total_seconds() / 3600, 1)})
 
 
+COMPARISON_KINDS = ("same_weekday_hours", "same_people_ordinary", "before_after", "group_vs_group")
+
+
 def comparison_set(kind: str, incidents: list[dict], period: tuple[date, date] | None, zone_name: str,
                    hours: dict, *, after: date | None = None) -> tuple[list[dict], dict]:
     """Ordinary instances built from the incidents (Q), and the words that state the comparison.
@@ -190,6 +193,10 @@ def comparison_set(kind: str, incidents: list[dict], period: tuple[date, date] |
         return [], {"kind": kind, "words": "No period with records to compare with.", "incident_noun": "instances",
                     "ordinary_noun": "ordinary instances"}
     lo, hi = period
+    if kind == "group_vs_group":
+        # the other group is compared on the same instances: no ordinary instances (the engine fills the counts)
+        return [], {"kind": kind, "words": "", "incident_noun": "instances asked about" if len(incidents) > 1 else
+                    "instance asked about", "ordinary_noun": "pair-instances in the other group"}
     h, m = (int(x) for x in hours["start"].split(":"))
     length = timedelta(hours=hours["length_h"])
     taken = {i["day"] for i in incidents}
@@ -209,7 +216,7 @@ def comparison_set(kind: str, incidents: list[dict], period: tuple[date, date] |
         inc_noun, ord_noun = "days on or after", "days before"
         words = f"The days on and after {after:%d %b %Y} compared with the days before it, from {lo:%d %b %Y} to {hi:%d %b %Y}."
     else:
-        kind = "same_people_ordinary" if kind != "group_vs_group" else kind
+        kind = "same_people_ordinary"
         inc_noun = "instances asked about" if len(incidents) > 1 else "instance asked about"
         ord_noun = "ordinary days"
         words = (f"Compared with the same people in the same hours ({hours['start']}, {hours['length_h']:g} h, "

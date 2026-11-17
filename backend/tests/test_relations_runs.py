@@ -65,6 +65,27 @@ class RunTests(DuplicateTestCase):
         with self.assertRaises(LookupError):
             runs.view(self.db, self.other_case.id, view["id"])
 
+    def test_a_group_with_a_question_carries_the_corroborate_result_and_its_level(self):
+        from services.corroborate import engine as corroborate
+        q = {"kind": "every_time", "text": "Does this happen every time?", "chips": {"hours": {"start": "22:00", "length_h": 6}}}
+        group = runs.save_group(self.db, case_id=self.case.id, members=[{"type": "place", "id": "51.5,-0.1,50"}],
+                                question=q)
+        self.assertEqual(case_selections.describe(self.db, self.case.id, group["id"])["how"]["question"],
+                         {**q, "chips": {"hours": {"start": "22:00", "length_h": 6.0}}})
+        seen = []
+        level = {"key": "cant_tell", "name": "Can't tell", "sentence": "Can't tell: no dated records."}
+        with mock.patch.object(runs, "DbSources", Fake), \
+                mock.patch("services.corroborate.store.CaseStore", lambda db, case: None), \
+                mock.patch.object(corroborate, "run", side_effect=lambda store, members, question, progress:
+                                  seen.append(question) or {"schema": "loupe.corroborate/1", "level": level}):
+            view = runs.start(self.db, case_id=self.case.id, selection_id=group["id"], inline=True,
+                              session_factory=lambda: self.db)
+        self.assertEqual(seen, [q])
+        self.assertEqual(view["status"], "done")
+        self.assertEqual(view["result"]["corroboration"]["level"], level)
+        self.assertEqual(view["progress"]["level"], "Can't tell")
+        self.assertEqual(view["result"]["counts"]["items"], 1)
+
     def test_a_failed_run_says_why(self):
         group = runs.save_group(self.db, case_id=self.case.id, members=[{"type": "place", "id": "51.5,-0.1,50"}])
         with mock.patch.object(engine, "run", side_effect=RuntimeError("the phone tables are not reachable")):

@@ -69,11 +69,14 @@ def run(store, members: list[dict], question: dict | None = None,
     zone = store.zone()
     everyone = {p["key"]: p for p in store.people()}
     points, unread = store.selection_points(members)
-    keys = [k for k in chips.get("who") or [] if k in everyone] or _people_of(points)
+    asked = chips.get("people") if isinstance(chips.get("people"), list) else []
+    keys = [k for k in asked if k in everyone] or _people_of(points)
     points, places, notes = _expand_places(store, points, keys, everyone)
-    if not chips.get("who"):
+    if not any(k in everyone for k in asked):
         keys = _people_of(points) or keys
-    kind = question.get("kind") or Q.default_kind(points, keys)
+    kind = Q.canonical(question.get("kind")) or Q.default_kind(points, keys)
+    if question.get("kind") and not Q.canonical(question.get("kind")):
+        notes.append(f"The question asked is not one Corroborate weighs, so it asks “{Q.KINDS[kind]}” instead.")
     step("Reading the selection", len(points), len(members))
 
     if kind == "who_used":
@@ -114,8 +117,17 @@ def run(store, members: list[dict], question: dict | None = None,
         if not incidents:
             return _cant(question, kind, zone, people, unread, notes, started, "a date or time in the selection")
         period = store.period(list(people.values()))
-        comp_kind = chips.get("compare_with") or Q.default_comparison(kind)
+        comp_kind = chips.get("compare_with") if chips.get("compare_with") in M.COMPARISON_KINDS else \
+            Q.default_comparison(kind)
         ordinary, comparison = M.comparison_set(comp_kind, incidents, period, zone, hours)
+        if comparison["kind"] == "group_vs_group":
+            other = _other_group(chips, people, everyone)
+            if not other:
+                return _cant(question, kind, zone, people, unread, notes, started, "another group to compare with")
+            comparison["words"] = (f"Compared with the same kinds of link between {_names(other)} on the same "
+                                   f"{len(incidents)} instance{'' if len(incidents) == 1 else 's'} ({zone}).")
+            group_a = set(people)
+            people = {**people, **other}
         if len(ordinary) > MAX_ORDINARY:
             mid = min(date.fromisoformat(i["day"]) for i in incidents)
             ordinary.sort(key=lambda o: abs((date.fromisoformat(o["day"]) - mid).days))
@@ -133,7 +145,8 @@ def run(store, members: list[dict], question: dict | None = None,
     cov = store.coverage(list(people.values()), doc_ids)
     step("Reading the records", len(raw), len(raw))
 
-    rows = _rows(people, recs, instances, cov, activity, store, kind)
+    group_vs = comparison["kind"] == "group_vs_group"
+    rows = _rows(people, recs, instances, cov, activity, store, kind, keep_absent=group_vs)
     if kind in ("statement", "document"):
         docs = [p for p in points if p.get("kind") == "doc_row"]
         rows += [r for r in S.statement_rows(people, recs, activity, instances, docs, zone)
@@ -175,6 +188,9 @@ def run(store, members: list[dict], question: dict | None = None,
             if len(r["people"]) == 1:
                 r["context"] = True
                 r["why_context"] = "one person's record on one instance links no one to anyone"
+    if group_vs:
+        _group_counts(rows, group_a)
+        rows = _present(rows)
     seq = S.sequence_row(rows, instances)
     if seq:
         rows.append(seq)
@@ -210,7 +226,7 @@ def run(store, members: list[dict], question: dict | None = None,
     result = {
         "schema": SCHEMA,
         "question": {"kind": kind, "text": Q.words(kind, people, instances, comparison, focus and everyone[focus]),
-                     "chips": {**chips, "who": list(people), "compare_with": comparison["kind"],
+                     "chips": {**chips, "people": list(people), "compare_with": comparison["kind"],
                                "when": [i["label"] for i in instances if i["side"] == "incident"][:12]}},
         "level": level,
         "comparison": {"kind": comparison["kind"], "words": comparison["words"], "zone": zone,
@@ -233,7 +249,7 @@ def run(store, members: list[dict], question: dict | None = None,
 
 # ---- rows --------------------------------------------------------------------------------------------------------
 
-def _rows(people, recs, instances, cov, activity, store, kind) -> list[dict]:
+def _rows(people, recs, instances, cov, activity, store, kind, *, keep_absent=False) -> list[dict]:
     rows = []
     rows += S.contact_rows(people, recs, instances, cov)
     rows += S.together_rows(people, recs, instances, cov)
@@ -256,9 +272,12 @@ def _rows(people, recs, instances, cov, activity, store, kind) -> list[dict]:
     if kind in ("burst", "every_time", "together") or len(people) >= 3:
         act = S.activity_row(people, activity, instances)
         if act:
-            pass
             rows.append(act)
-    # rows that are never present anywhere are summarised in "searched", not drawn
+    # rows that are never present anywhere are summarised in "searched", not drawn (group vs group counts them first)
+    return rows if keep_absent else _present(rows)
+
+
+def _present(rows):
     return [r for r in rows if any(v == "present" for v in r["cells"].values())]
 
 
@@ -319,7 +338,7 @@ def _grid(rows, instances) -> list[dict]:
                     "incident": r["incident"], "ordinary": r["ordinary"], "weight": r.get("weight", "full"),
                     **({"why_low": r["why_low"]} if r.get("why_low") else {}),
                     **({"picked_by": True} if r.get("picked_by") else {}),
-                    **({"context": True} if r.get("context") else {}),
+                    **({"context": True, "why_context": r.get("why_context", "")} if r.get("context") else {}),
                     "separates": L.separates(r), "records": r["records"],
                     "record_counts": r.get("record_counts", {}),
                     **({"precision_m": r["precision_m"]} if r.get("precision_m") is not None else {}),
@@ -456,11 +475,43 @@ def _further(store, people, everyone, rows, instances) -> list[dict]:
         n = store.contact_ever(people[a], people[b])
         if n:
             out.append({"text": f"All contact between {people[a]['label']} and {people[b]['label']} in the case",
-                        "count": n, "question": {"kind": "in_contact", "chips": {"who": [a, b]}}})
+                        "count": n, "question": {"kind": "in_contact", "chips": {"people": [a, b]}}})
     if len([i for i in instances if i["side"] == "incident"]) > 1:
         out.append({"text": "Who else was there on these instances", "count": len(everyone) - len(people),
-                    "question": {"kind": "who_else", "chips": {"who": list(people)}}})
+                    "question": {"kind": "who_else", "chips": {"people": list(people)}}})
     return out
+
+
+def _other_group(chips, people, everyone) -> dict:
+    """Group B: the people named in the ``against`` chip, else everyone else in the case with a phone."""
+    named = [k for k in chips.get("against") or [] if k in everyone and k not in people]
+    keys = named or [k for k, p in everyone.items() if k not in people and p["phones"]]
+    return {k: everyone[k] for k in keys}
+
+
+def _names(group: dict) -> str:
+    labels = [p["label"] for p in group.values()]
+    return labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " and " + labels[-1]
+
+
+def _group_counts(rows, group_a: set) -> None:
+    """Group vs group: each row inside group A is set against the rows of the same kind inside group B on the same
+    instances (their incident counts summed: one pair on one instance is one count). Group B's rows, and rows
+    between the groups, are shown and never weighed."""
+    family = {}
+    for r in rows:
+        if r["link_kind"] not in ("sequence", "activity") and not set(r["people"]) & group_a:
+            family.setdefault(r["id"].split(":")[0], []).append(r)
+    for r in rows:
+        if r["link_kind"] in ("sequence", "activity"):
+            continue
+        if set(r["people"]) <= group_a:
+            others = family.get(r["id"].split(":")[0], [])
+            r["ordinary"] = {k: sum(o["incident"][k] for o in others) for k in ("present", "absent", "no_data", "of")}
+        else:
+            r["context"] = True
+            r["why_context"] = ("the other group, the comparison" if not set(r["people"]) & group_a else
+                                "between the two groups: not part of the comparison")
 
 
 def _who_used(store, points, everyone, zone, unread, notes, started, question) -> dict:

@@ -189,17 +189,24 @@ def sentence(level: dict, full_sep, present_rows, comparison, incidents, missing
         if key == "probable" and open_checks:
             tail = tail[:-1] + f"; not yet ruled out: {open_checks[0]['label'].lower()}."
         return lead + tail
+    def best(rows):
+        return max(rows, key=lambda r: (r["incident"]["present"], -r["ordinary"]["present"]))
+
+    checked = f"on the {_n(n_inc)} {comparison['incident_noun']}"
     if key == "possible":
         if full_sep:
-            return f"Possible link: one kind of signal ({_join(kinds)}) and nothing else agrees yet."
-        return "Possible link: several weak signals; innocent explanations remain."
+            return (f"Possible link: one kind of signal ({_join(kinds)}) and nothing else agrees yet "
+                    f"({_counts_words(best(full_sep), comparison)}).")
+        tail = f" ({_counts_words(best(present_rows), comparison)})" if present_rows else ""
+        return f"Possible link: several weak signals; innocent explanations remain{tail}."
     if level["rule"] == "overlap_only":
         return ("Coincidence likely: the records overlap in time, and nothing links the people: no contact, place, "
-                "money or document between them then.")
+                f"money or document between them {checked}.")
     if level["rule"] == "together_once_no_contact":
         return ("Coincidence likely: they were in the same place once, and nothing else links them: no contact, money "
-                "or document in the records read.")
-    return f"Coincidence likely: what they share happens as often on {comparison['ordinary_noun']}, or is explained."
+                f"or document {checked}.")
+    tail = f" ({_counts_words(best(present_rows), comparison)})" if present_rows else ""
+    return f"Coincidence likely: what they share happens as often on {comparison['ordinary_noun']}, or is explained{tail}."
 
 
 def _join(words: list[str]) -> str:

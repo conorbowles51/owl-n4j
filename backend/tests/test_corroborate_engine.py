@@ -162,3 +162,63 @@ def test_document_rows_are_tested_against_the_phones_at_the_times_they_give():
     # the document puts Ann at the gate at 23:00 while her phone is silent: no agreement is claimed
     assert row is None or row["incident"]["present"] == 0
     assert res["level"]["key"] != "strong"
+
+
+def test_group_vs_group_sets_one_groups_links_against_the_others_on_the_same_nights():
+    members = [{"type": "record", "id": f"m2:{d}"} for d in INCIDENTS]
+    res = _run(members, {"kind": "in_contact", "chips": {"people": ["bob", "pre"], "against": ["ann", "dan"],
+                                                         "compare_with": "group_vs_group"}})
+    assert res["comparison"]["kind"] == "group_vs_group" and res["comparison"]["ordinary"] == []
+    assert "Ann Arden and Dan Dale" in res["comparison"]["words"]
+    row = next(g for g in res["grid"] if g["signal"] == "contact:bob:pre")
+    # Bob and the prepaid phone on 3 of 3 nights; Ann and Dan never, on the same 3 nights
+    assert row["incident"]["present"] == 3 and row["ordinary"] == {"present": 0, "absent": 3, "no_data": 0, "of": 3}
+    # a pair never in contact is counted, then left out of the grid; a pair across the groups is shown, not weighed
+    assert not any(g["signal"] == "contact:ann:dan" for g in res["grid"])
+    across = next(g for g in res["grid"] if g["signal"] == "contact:ann:pre")
+    assert across["context"]
+    # only contact can be compared (Ann has no positions, so "together" has no data on the other side): one kind
+    assert res["level"]["key"] == "possible", res["level"]
+    assert "none of the 3 pair-instances in the other group" in res["level"]["sentence"]
+
+
+def test_group_vs_group_with_no_other_group_is_cant_tell():
+    store = FakeStore()
+    store.people = lambda: [p for p in __import__("tests.corroborate_world", fromlist=["PEOPLE"]).PEOPLE
+                            if p["key"] in ("bob", "pre")]
+    res = engine.run(store, [{"type": "record", "id": f"m2:{INCIDENTS[0]}"}],
+                     {"kind": "in_contact", "chips": {"compare_with": "group_vs_group"}})
+    assert res["level"]["key"] == "cant_tell" and "another group" in res["level"]["sentence"]
+
+
+def test_the_composers_kind_names_reach_the_same_rules_and_an_unknown_kind_is_said():
+    assert questions.canonical("repeats") == "every_time" and questions.canonical("document_agrees") == "document"
+    assert questions.canonical("guess") is None
+    res = _run(_seed(), {"kind": "repeats"})
+    assert res["question"]["kind"] == "every_time" and res["level"]["key"] == "strong"
+    res = _run(_seed(), {"kind": "guess"})
+    assert any("not one Corroborate weighs" in n for n in res["notes"])
+
+
+def test_a_saved_question_keeps_the_text_chips_and_the_engine_chips_in_their_form():
+    from services.relations.runs import _question
+    q = _question({"kind": "repeats", "text": "Does this happen every time?",
+                   "chips": {"who": "Ann and Bob", "compare_with": "ordinary days of the period", "people": ["ann", "bob"],
+                             "against": ["dan"], "hours": {"start": "22:00", "length_h": 6}, "after": "2025-02-01",
+                             "nonsense": "x"}})
+    c = q["chips"]
+    assert c["who"] == "Ann and Bob" and c["people"] == ["ann", "bob"] and c["against"] == ["dan"]
+    assert c["hours"] == {"start": "22:00", "length_h": 6.0} and c["after"] == "2025-02-01" and "nonsense" not in c
+    # the composer's words are kept to read; only a set the engine knows chooses the comparison
+    assert "compare_with" not in c and c["compare_words"] == "ordinary days of the period"
+    assert _question({"chips": {"compare_with": "group_vs_group"}})["chips"]["compare_with"] == "group_vs_group"
+    assert "hours" not in _question({"chips": {"hours": {"start": "late", "length_h": 6}}})["chips"]
+
+
+def test_every_level_sentence_states_its_counts():
+    """Every level states its comparison and the counts on both sides (Can't tell states what is missing)."""
+    d = INCIDENTS[0]
+    for members, q in ((_seed(), {"kind": "every_time"}), ([{"type": "record", "id": f"r:{d}"}], {"kind": "in_contact"}),
+                       ([{"type": "record", "id": "shopB"}, {"type": "record", "id": "shopD"}], {"kind": "together"})):
+        lvl = _run(members, q)["level"]
+        assert re.search(r"\d+ of \d+|none of the \d+|on the \d+ ", lvl["sentence"]), lvl
