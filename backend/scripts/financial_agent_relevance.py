@@ -92,6 +92,9 @@ def expand(judged: dict) -> list[dict]:
 def guard_process():
     """Read-only Postgres and no chat model, as the replay scripts do (financial_agent_fit_replay.guard_process)."""
     os.environ.setdefault('LOUPE_FIT_ALLOW_EMBEDDINGS', '1')
+    # The case search's ranking and rephrasing steps call the chat model (DeepSeek), which this process refuses
+    # below; its own switch skips them cleanly instead of failing one call per batch. The gate says so.
+    os.environ['LOUPE_CASE_SEARCH_MODEL'] = 'off'
     fr = _load('fit_replay', os.path.join(_HERE, 'financial_agent_fit_replay.py'))
     fr.guard_process()
     import socket
@@ -350,7 +353,7 @@ class Worker:
             self.proc.kill()
 
 
-def interleaved(paths, kinds, repeat, base_backend, cand_backend, log_path, log=print):
+def interleaved(paths, kinds, repeat, base_backend, cand_backend, log_path, log=lambda *a: print(*a, flush=True)):
     """Baseline and candidate runs with each query asked of both trees back to back, so both read the same live
     data. Measured 17 Nov: one tree run twice 35 minutes apart moved a record out of the top 10 and changed recall
     at 10 by 0.008 while live vectors were being written; seconds apart, 0 of 99 queries changed."""
@@ -365,6 +368,9 @@ def interleaved(paths, kinds, repeat, base_backend, cand_backend, log_path, log=
             for j in range(most):
                 for side, w in (('base', base), ('cand', cand)) if j % 2 == 0 else (('cand', cand), ('base', base)):
                     sides[side][j]['queries'][qid] = (w.ask(i) if j < n else sides[side][0]['queries'][qid])
+            if (i + 1) % 20 == 0 or i + 1 == len(plan):
+                log('asked %d of %d queries of both trees, %s UTC' % (i + 1, len(plan), time.strftime('%H:%M:%S',
+                                                                                                    time.gmtime())))
     finally:
         base.close()
         cand.close()
@@ -392,6 +398,8 @@ def cmd_gate(args):
         cmp = R.compare(base, cand)
         lines.append('baseline: origin %s; candidate: %s; each query asked of both, back to back' % (bsha[:12],
                                                                                                     csha[:12]))
+        lines.append('no chat model: the case search ranks in search order (its model ranking and rephrasing are '
+                     'off); meaning search embeds the question as the agent does')
         lines += R.verdict_lines(cmp, base[0]['aggregate'], cand[0]['aggregate'])
         if cand[0]['missing']:
             lines.append('tools not in the candidate (not scored): %s' % ', '.join(cand[0]['missing']))
