@@ -97,6 +97,7 @@ export function ChatPage() {
                 <ChatMessageList
                   messages={chat.messages}
                   isStreaming={chat.isLoading}
+                  caseId={caseId}
                 />
               )}
             </div>

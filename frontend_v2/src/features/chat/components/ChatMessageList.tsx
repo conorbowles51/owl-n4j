@@ -9,11 +9,13 @@ import type { ChatMessageData } from "../types"
 interface ChatMessageListProps {
   messages: ChatMessageData[]
   isStreaming: boolean
+  caseId?: string
 }
 
 export function ChatMessageList({
   messages,
   isStreaming,
+  caseId,
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -26,7 +28,7 @@ export function ChatMessageList({
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-3xl space-y-4 p-4">
         {messages.map((msg, i) => (
-          <ChatMessage key={i} message={msg} />
+          <ChatMessage key={i} message={msg} caseId={caseId} />
         ))}
         {isStreaming && (
           <div className="space-y-2 rounded-lg bg-muted/30 p-4">

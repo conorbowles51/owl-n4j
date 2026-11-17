@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { agentAPI, type AnswerRating as Rating, type AnswerRatingKind } from "../api"
+import { agentAPI, type AnswerRating as Rating, type AnswerRatingKind, type AnswerSource } from "../api"
 
 const KINDS: { kind: AnswerRatingKind; label: string; hint: string }[] = [
   { kind: "missed_something", label: "Missed something", hint: "The answer left out something the case holds." },
@@ -10,7 +10,15 @@ const KINDS: { kind: AnswerRatingKind; label: string; hint: string }[] = [
 
 /** lx-agenttools D20: a person tells the system an answer missed something, was not relevant, or was too thin.
  * Each rating is stored with the answer's run and becomes a test of the agent's relevance. */
-export function AnswerRating({ caseId, messageId }: { caseId: string; messageId: string }) {
+export function AnswerRating({
+  caseId,
+  messageId,
+  source = "agent",
+}: {
+  caseId: string
+  messageId: string
+  source?: AnswerSource
+}) {
   const [active, setActive] = useState<Rating[]>([])
   const [open, setOpen] = useState<AnswerRatingKind | null>(null)
   const [note, setNote] = useState("")
@@ -21,13 +29,13 @@ export function AnswerRating({ caseId, messageId }: { caseId: string; messageId:
   useEffect(() => {
     let live = true
     agentAPI
-      .getAnswerRatings(messageId)
+      .getAnswerRatings(messageId, source)
       .then((r) => live && setActive(r.ratings))
       .catch(() => undefined)
     return () => {
       live = false
     }
-  }, [messageId])
+  }, [messageId, source])
 
   const send = async (kind: AnswerRatingKind, withdraw: boolean) => {
     setBusy(true)
@@ -38,6 +46,7 @@ export function AnswerRating({ caseId, messageId }: { caseId: string; messageId:
         note: withdraw ? "" : note,
         recordRef: withdraw || kind !== "missed_something" ? undefined : record,
         withdraw,
+        source,
       })
       setActive(r.ratings)
       setOpen(null)

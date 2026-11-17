@@ -288,10 +288,11 @@ class AgentAnswerRating(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"),
                                                nullable=False, index=True)
-    thread_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agent_threads.id", ondelete="CASCADE"),
-                                                 nullable=False, index=True)
-    message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agent_messages.id", ondelete="CASCADE"),
-                                                  nullable=False, index=True)
+    # The conversation and answer it rates: an agent thread and message, or a chat conversation and message (``source``).
+    # No foreign key: the two kinds sit in different tables; the rating row outlives its conversation's deletion.
+    source: Mapped[str] = mapped_column(String(8), nullable=False, default="agent")
+    thread_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
                                                nullable=False)

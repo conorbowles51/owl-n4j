@@ -17,7 +17,7 @@ from services import manual_changes
 from services.agent import answer_ratings as AR
 
 TABLES = ("users", "cases", "agent_threads", "agent_runs", "agent_messages", "agent_answer_ratings",
-          "manual_changes")
+          "manual_changes", "chat_conversations", "chat_messages")
 
 
 @pytest.fixture
@@ -114,6 +114,38 @@ def test_an_active_rating_becomes_a_relevance_test_item_with_its_picked_record(w
     assert item["question"] == "Who paid the garage?"
     assert item["relevant"] == [{"id": "picked", "any": ["doc://stowell-rental-agreement/2"]}]
     assert item["answer_message_id"] == str(world["answer"].id)
+
+
+def test_a_chat_answer_is_rated_through_the_same_path_with_its_source(world):
+    from postgres.models.chat import ChatConversation, ChatMessage
+    db = world["db"]
+    conversation = ChatConversation(case_id=world["case"].id, owner_user_id=world["user"].id, title="c")
+    db.add(conversation)
+    db.flush()
+    asked = ChatMessage(conversation_id=conversation.id, sequence_number=1, role="user", content="Who owns the unit?")
+    answered = ChatMessage(conversation_id=conversation.id, sequence_number=2, role="assistant", content="Unknown.",
+                           model_id="synthetic-chat")
+    db.add_all([asked, answered])
+    db.commit()
+    out = AR.rate_answer(db, case_id=world["case"].id, message_id=answered.id, user=world["user"],
+                         kind="missed_something", record_ref="doc://lease/1", source="chat")
+    db.commit()
+    assert out["source"] == "chat"
+    row = db.scalars(select(AgentAnswerRating)).one()
+    assert (row.source, row.thread_id, row.run_id, row.question) == ("chat", conversation.id, None, "Who owns the unit?")
+    # the agent answer with that id would not be found, and the chat one is not an agent rating
+    assert AR.active_for_message(db, message_id=answered.id, user=world["user"]) == []
+    assert [r["kind"] for r in AR.active_for_message(db, message_id=answered.id, user=world["user"], source="chat")] \
+        == ["missed_something"]
+    line = json.loads(world["inbox"].read_text().splitlines()[-1])
+    assert "chat_message" in json.dumps(line) and "Who owns the unit?" not in json.dumps(line)
+    with pytest.raises(LookupError):
+        AR.rate_answer(db, case_id=world["case"].id, message_id=answered.id, user=world["other"], kind="too_thin",
+                       source="chat")
+    with pytest.raises(AR.RatingError):
+        AR.rate_answer(db, case_id=world["case"].id, message_id=asked.id, user=world["user"], kind="too_thin",
+                       source="chat")
+    assert AR.relevance_case(AR.active_rows(db, case_id=world["case"].id)[0])["source"] == "chat"
 
 
 def test_export_document_holds_each_active_rating_and_not_a_withdrawn_one(world):

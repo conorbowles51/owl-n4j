@@ -16,10 +16,15 @@ import { cn } from "@/lib/cn"
 import { Markdown } from "@/components/ui/markdown"
 import { CitationLink, CitationScope } from "@/components/citations/citations"
 import { docHrefByName, parseCitation } from "@/lib/citations"
+import { AnswerRating } from "@/features/agent/components/AnswerRating"
 import type { ChatMessageData } from "../types"
+
+const SAVED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 interface ChatMessageProps {
   message: ChatMessageData
+  /** The case, so a saved answer can be rated. */
+  caseId?: string
 }
 
 /** A source's citation: by evidence file id when the answer gave one, else by name (a shared name offers a choice). */
@@ -27,7 +32,7 @@ function sourceHref(source: { filename: string; page?: number; cite?: string }) 
   return source.cite && parseCitation(source.cite) ? source.cite : docHrefByName(source.filename, source.page)
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, caseId }: ChatMessageProps) {
   const [copied, setCopied] = useState(false)
   const [showSources, setShowSources] = useState(false)
   const isUser = message.role === "user"
@@ -135,6 +140,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Rating: missed something, not relevant, too thin (lx-agenttools D20) */}
+          {!isUser && caseId && message.id && SAVED_ID.test(message.id) && message.content.trim() && (
+            <AnswerRating caseId={caseId} messageId={message.id} source="chat" />
           )}
 
           {/* Copy button */}

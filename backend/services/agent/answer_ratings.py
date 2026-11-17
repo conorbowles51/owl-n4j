@@ -26,8 +26,27 @@ class RatingError(ValueError):
     pass
 
 
-def _answer(db, *, case_id, message_id, user):
-    """The answer, its thread and the question before it; an answer is its owner's, as everywhere in the agent."""
+SOURCES = ("agent", "chat")
+
+
+def _answer(db, *, case_id, message_id, user, source="agent"):
+    """The answer, its conversation id, its run id and the question before it; an answer is its owner's, as
+    everywhere in the agent and in chat. Returns (answer, conversation_id, run_id, model_id, question)."""
+    if source == "chat":
+        from postgres.models.chat import ChatConversation, ChatMessage
+        row = db.execute(select(ChatMessage, ChatConversation.case_id, ChatConversation.owner_user_id)
+                         .join(ChatConversation, ChatConversation.id == ChatMessage.conversation_id)
+                         .where(ChatMessage.id == message_id)).first()
+        if row is None or str(row[1]) != str(case_id) or str(row[2]) != str(getattr(user, "id", None)):
+            raise LookupError("This answer is not in this case.")
+        message = row[0]
+        if message.role != "assistant":
+            raise RatingError("Only an answer can be rated.")
+        question = db.scalar(select(ChatMessage.content)
+                             .where(ChatMessage.conversation_id == message.conversation_id,
+                                    ChatMessage.role == "user", ChatMessage.sequence_number < message.sequence_number)
+                             .order_by(ChatMessage.sequence_number.desc()).limit(1)) or ""
+        return message, message.conversation_id, None, message.model_id, question
     from postgres.models.agent import AgentMessage, AgentThread
     row = db.execute(select(AgentMessage, AgentThread.case_id, AgentThread.owner_user_id)
                      .join(AgentThread, AgentThread.id == AgentMessage.thread_id)
@@ -41,10 +60,11 @@ def _answer(db, *, case_id, message_id, user):
                          .where(AgentMessage.thread_id == message.thread_id, AgentMessage.role == "user",
                                 AgentMessage.sequence_number < message.sequence_number)
                          .order_by(AgentMessage.sequence_number.desc()).limit(1)) or ""
-    return message, question
+    return message, message.thread_id, message.run_id, message.model_id, question
 
 
-def rate_answer(db, *, case_id, message_id, user, kind, note="", record_ref=None, withdraw=False) -> dict:
+def rate_answer(db, *, case_id, message_id, user, kind, note="", record_ref=None, withdraw=False,
+                source="agent") -> dict:
     """Record a rating (or its withdrawal). The caller commits."""
     from postgres.models.agent import AgentAnswerRating
     from services.manual_changes import record_change
@@ -59,11 +79,15 @@ def rate_answer(db, *, case_id, message_id, user, kind, note="", record_ref=None
             raise RatingError("Only 'Missed something' names a record that should have been found.")
         if not RECORD_LINK.match(record_ref):
             raise RatingError("A record is a rec://, txn:// or doc:// link.")
-    message, question = _answer(db, case_id=case_id, message_id=message_id, user=user)
-    if withdraw and not any(r["kind"] == kind for r in active_for_message(db, message_id=message.id, user=user)):
+    if source not in SOURCES:
+        raise RatingError("The answer is an agent or a chat answer.")
+    message, conversation_id, run_id, model_id, question = _answer(db, case_id=case_id, message_id=message_id,
+                                                                    user=user, source=source)
+    if withdraw and not any(r["kind"] == kind for r in active_for_message(db, message_id=message.id, user=user,
+                                                                         source=source)):
         raise RatingError("There is no active '%s' rating on this answer to withdraw." % KINDS[kind])
-    row = AgentAnswerRating(id=uuid.uuid4(), case_id=case_id, thread_id=message.thread_id, message_id=message.id,
-                            run_id=message.run_id, user_id=user.id, kind=kind,
+    row = AgentAnswerRating(id=uuid.uuid4(), case_id=case_id, source=source, thread_id=conversation_id,
+                            message_id=message.id, run_id=run_id, user_id=user.id, kind=kind,
                             action="withdraw" if withdraw else "rate", note=note, record_ref=record_ref,
                             question=question, created_at=datetime.now(timezone.utc))
     db.add(row)
@@ -71,16 +95,18 @@ def rate_answer(db, *, case_id, message_id, user, kind, note="", record_ref=None
     # The feed carries ids, the kind and the link; the question and the note stay in this table.
     # The feed line names this row (rating_id), so the two are joined without a second write to the row.
     record_change(
-        db, CHANGE_KIND, case_id, ("agent_message", str(message.id)), None,
-        {"rating": kind, "action": row.action, "run_id": str(message.run_id) if message.run_id else None,
+        db, CHANGE_KIND, case_id, ("%s_message" % source, str(message.id)), None,
+        {"rating": kind, "action": row.action, "source": source, "run_id": str(run_id) if run_id else None,
          "record_ref": record_ref, "rating_id": str(row.id)},
-        user, reason=note[:200], link="/cases/%s/agent?thread=%s" % (case_id, message.thread_id),
-        change_type="set_aside", field=kind, producer=str(message.model_id or ""))
+        user, reason=note[:200],
+        link=("/cases/%s/agent?thread=%s" if source == "agent" else "/cases/%s/chat?conversation=%s")
+        % (case_id, conversation_id),
+        change_type="set_aside", field=kind, producer=str(model_id or ""))
     return view(row)
 
 
 def view(row) -> dict:
-    return {"id": str(row.id), "message_id": str(row.message_id), "kind": row.kind, "label": KINDS.get(row.kind, row.kind),
+    return {"id": str(row.id), "source": row.source, "message_id": str(row.message_id), "kind": row.kind, "label": KINDS.get(row.kind, row.kind),
             "action": row.action, "note": row.note, "record_ref": row.record_ref,
             "created_at": row.created_at.isoformat() if row.created_at else None}
 
@@ -93,16 +119,16 @@ def _latest(rows) -> list:
     return list(latest.values())
 
 
-def active_for_message(db, *, message_id, user) -> list[dict]:
+def active_for_message(db, *, message_id, user, source="agent") -> list[dict]:
     from postgres.models.agent import AgentAnswerRating as R
-    rows = db.scalars(select(R).where(R.message_id == message_id, R.user_id == user.id)).all()
+    rows = db.scalars(select(R).where(R.message_id == message_id, R.user_id == user.id, R.source == source)).all()
     return [view(r) for r in _latest(rows) if r.action == "rate"]
 
 
-def active_for_thread(db, *, thread_id, user) -> dict[str, list[dict]]:
-    """Active ratings the person gave in a thread, by answer id."""
+def active_for_thread(db, *, thread_id, user, source="agent") -> dict[str, list[dict]]:
+    """Active ratings the person gave in a thread or conversation, by answer id."""
     from postgres.models.agent import AgentAnswerRating as R
-    rows = db.scalars(select(R).where(R.thread_id == thread_id, R.user_id == user.id)).all()
+    rows = db.scalars(select(R).where(R.thread_id == thread_id, R.user_id == user.id, R.source == source)).all()
     out: dict[str, list[dict]] = {}
     for r in _latest(rows):
         if r.action == "rate":
@@ -114,7 +140,8 @@ def relevance_case(row) -> dict:
     """One active rating as a relevance test item, in lx-relevancetest's query shape: the question as asked, the
     complaint, and, when the person picked a record, the record the answer must reach. A complaint with no record
     is a case to read (``relevant`` empty): it is kept so the question is run and the answer judged."""
-    item = {"id": "rating-%s" % str(row.id)[:8], "kind": "rating", "complaint": row.kind, "question": row.question,
+    item = {"id": "rating-%s" % str(row.id)[:8], "kind": "rating", "source": row.source, "complaint": row.kind,
+            "question": row.question,
             "case_id": str(row.case_id), "answer_message_id": str(row.message_id),
             "run_id": str(row.run_id) if row.run_id else None, "relevant": [], "decoys": []}
     if row.record_ref:

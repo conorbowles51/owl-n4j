@@ -441,6 +441,7 @@ class AnswerRatingBody(BaseModel):
     note: str = Field("", max_length=2000)
     record_ref: str | None = Field(None, max_length=400)
     withdraw: bool = False
+    source: Literal["agent", "chat"] = "agent"
 
 
 @router.put("/messages/{message_id}/rating")
@@ -453,7 +454,8 @@ def rate_answer(message_id: UUID, body: AnswerRatingBody, db: Session = Depends(
     authorize_case(db, body.case_id, user, ("case", "view"))
     try:
         out = answer_ratings.rate_answer(db, case_id=body.case_id, message_id=message_id, user=user, kind=body.kind,
-                                         note=body.note, record_ref=body.record_ref, withdraw=body.withdraw)
+                                         note=body.note, record_ref=body.record_ref, withdraw=body.withdraw,
+                                         source=body.source)
         db.commit()
     except LookupError as exc:
         db.rollback()
@@ -461,15 +463,16 @@ def rate_answer(message_id: UUID, body: AnswerRatingBody, db: Session = Depends(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc))
-    out["ratings"] = answer_ratings.active_for_message(db, message_id=message_id, user=user)
+    out["ratings"] = answer_ratings.active_for_message(db, message_id=message_id, user=user, source=body.source)
     return out
 
 
 @router.get("/messages/{message_id}/ratings")
-def message_ratings(message_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+def message_ratings(message_id: UUID, source: Literal["agent", "chat"] = Query("agent"),
+                    db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """The active ratings the person has given one answer (never another person's)."""
     from services.agent import answer_ratings
-    return {"ratings": answer_ratings.active_for_message(db, message_id=message_id, user=user)}
+    return {"ratings": answer_ratings.active_for_message(db, message_id=message_id, user=user, source=source)}
 
 
 @router.get("/threads/{thread_id}/ratings")

@@ -25,7 +25,7 @@ describe("AnswerRating", () => {
     fireEvent.change(screen.getByLabelText(/A record that should have been found/), { target: { value: "doc://lease/2" } })
     fireEvent.click(screen.getByRole("button", { name: "Send rating" }))
     await waitFor(() => expect(rateAnswer).toHaveBeenCalledWith("c1", "m1", {
-      kind: "missed_something", note: "The lease was in the files.", recordRef: "doc://lease/2", withdraw: false,
+      kind: "missed_something", note: "The lease was in the files.", recordRef: "doc://lease/2", withdraw: false, source: "agent",
     }))
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Rated: Missed something"))
   })
@@ -38,6 +38,18 @@ describe("AnswerRating", () => {
     fireEvent.click(screen.getByRole("button", { name: "Too thin" }))
     await waitFor(() => expect(rateAnswer).toHaveBeenCalledWith("c1", "m1", expect.objectContaining({ kind: "too_thin", withdraw: true })))
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull())
+  })
+
+  it("rates a chat answer through the same call with its source", async () => {
+    getAnswerRatings.mockResolvedValue({ ratings: [] })
+    rateAnswer.mockResolvedValue({ ratings: [made("not_relevant", "Not relevant")] })
+    render(<AnswerRating caseId="c1" messageId="m1" source="chat" />)
+    await waitFor(() => expect(getAnswerRatings).toHaveBeenCalledWith("m1", "chat"))
+    fireEvent.click(screen.getByRole("button", { name: "Not relevant" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send rating" }))
+    await waitFor(() =>
+      expect(rateAnswer).toHaveBeenCalledWith("c1", "m1", expect.objectContaining({ kind: "not_relevant", source: "chat" })),
+    )
   })
 
   it("says so when the rating could not be saved", async () => {
