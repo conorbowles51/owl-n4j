@@ -3,7 +3,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { LookIntoButton } from "@/features/relations/LookIntoButton"
-import { relationAPI } from "@/features/relations/api"
 import { setSwitch } from "@/lib/ui-switches"
 import { corroborateAPI, type Preview } from "./api"
 import { CorroborateTray } from "./CorroborateTray"
@@ -33,7 +32,7 @@ beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); setSwitch("corrob
 describe("Corroborate from a selection", () => {
   it("adds the choice to the selection, shows the whole count, drafts the question and hands off the whole set", async () => {
     vi.spyOn(corroborateAPI, "preview").mockResolvedValue(preview)
-    const create = vi.spyOn(relationAPI, "create").mockResolvedValue({ group: { id: "g9", member_count: 3, left_out: 0 }, run: null })
+    const create = vi.spyOn(corroborateAPI, "run").mockResolvedValue({ group: { id: "g9", member_count: 3, left_out: 0 } })
     wrap(<LookIntoButton caseId="c1" surface="financial" group={{ group_type: "financial_selection", how: {}, words: "Marsh's Pocketwire payments", members: [1, 2, 3].map((n) => ({ type: "financial_transaction" as const, id: `p${n}` })) }} />)
     fireEvent.click(screen.getByRole("button", { name: "Corroborate" }))
     expect(getSelection("c1")).toHaveLength(1)

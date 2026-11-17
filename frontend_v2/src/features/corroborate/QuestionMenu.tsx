@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { relationAPI, setCurrentQuery } from "@/features/relations/api"
+import { setCurrentQuery } from "@/features/relations/api"
 import { corroborateAPI, scopeIsEmpty, type QuestionChips, type Scope, type SuggestedQuestion } from "./api"
 import { ScopeBar } from "./ScopeBar"
 import { selectionMembers, useSelection } from "./selection-store"
@@ -27,16 +27,16 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
   const [chips, setChips] = useState<QuestionChips | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    if (preview.data && !picked && preview.data.questions.length) {
-      setPicked(preview.data.questions[0])
-      setChips(preview.data.questions[0].chips)
-    }
-  }, [preview.data, picked])
+
   const choose = (q: SuggestedQuestion) => {
     setPicked(q)
-    setChips(q.chips)
+    setChips(q.comparison?.words ? { ...q.chips, compare_with: q.comparison.words } : q.chips)
   }
+  useEffect(() => {
+    if (preview.data && !picked && preview.data.questions.length) {
+      choose(preview.data.questions[0])
+    }
+  }, [preview.data, picked])
   const run = async () => {
     if (!picked || !chips) return
     setBusy(true)
@@ -46,7 +46,7 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
       const kept = preview.data?.scope.kept
       const keep = kept ? new Set(kept.map((k) => `${k.type}:${k.id}`)) : null
       const asked = keep ? members.filter((m) => keep.has(`${m.type}:${m.id}`)) : members
-      const made = await relationAPI.create(caseId, { members: asked, surface: "corroborate", question: { kind: picked.kind, text: picked.text, chips: { ...chips, ...(preview.data?.scope.words.length ? { scope: preview.data.scope.words.join("; ") } : {}) } } })
+      const made = await corroborateAPI.run(caseId, { members: asked, surface: "corroborate", question: { kind: picked.kind, text: picked.text, chips: { ...chips, ...(preview.data?.scope.words.length ? { scope: preview.data.scope.words.join("; ") } : {}) } } })
       setCurrentQuery(caseId, { id: made.group.id, count: made.group.member_count })
       onClose()
       navigate(`/cases/${caseId}/relations/${made.group.id}`)
@@ -99,7 +99,8 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
                     </label>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">Loupe chose what to compare with; change it if you know better.</p>
+                {picked.checks && picked.checks.length > 0 && <p className="text-xs text-muted-foreground">Loupe will check: {picked.checks.map((c) => c.words).join(", ")}.</p>}
+                <p className="text-xs text-muted-foreground">Loupe chose what to compare with{picked.comparison ? ` (${picked.comparison.count.toLocaleString("en-US")} ordinary instances)` : ""}; change it if you know better.</p>
               </div>
             )}
           </div>

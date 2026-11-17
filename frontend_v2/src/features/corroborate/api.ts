@@ -16,6 +16,9 @@ export interface SuggestedQuestion {
   count: number
   count_words: string
   chips: QuestionChips
+  /** From the engine (lx-corroengine): what the question checks and the comparison Loupe chose, with its count. */
+  checks?: { signal: string; words: string }[]
+  comparison?: { kind: string; words: string; count: number }
 }
 
 export interface Scope {
@@ -81,6 +84,8 @@ const base = (caseId: string) => `/api/cases/${encodeURIComponent(caseId)}/corro
 export const corroborateAPI = {
   preview: (caseId: string, members: RelationMember[], scope?: Scope) =>
     fetchAPI<Preview>(`${base(caseId)}/preview`, { method: "POST", body: { members, ...(scope ? { scope } : {}) } }),
+  run: (caseId: string, body: { members: RelationMember[]; question: Record<string, unknown>; surface: string }) =>
+    fetchAPI<{ group: { id: string; member_count: number; left_out: number } }>(`${base(caseId)}/run`, { method: "POST", body }),
   area: (caseId: string, areas: number[][][]) => fetchAPI<AreaSelection>(`${base(caseId)}/area`, { method: "POST", body: { areas } }),
   subsets: (caseId: string) => fetchAPI<{ subsets: Subset[] }>(`${base(caseId)}/subsets`),
   saveSubset: (caseId: string, name: string, members: RelationMember[]) =>
