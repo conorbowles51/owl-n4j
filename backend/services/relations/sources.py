@@ -233,21 +233,46 @@ class DbSources:
         return {"days_together": int(row[0] or 0), "days_both_active": int(row[1] or 0)}
 
     # -- phone streams -----------------------------------------------------------------------------------------
-    def events(self, extractions: list[str]) -> list[dict]:
-        if not extractions:
-            return []
-        out = []
-        q = text("SELECT extraction_id, instant_utc, counterpart_identity_id FROM pol_activity_event WHERE case_id = :c "
-                 "AND extraction_id = ANY(CAST(:e AS uuid[])) AND instant_utc IS NOT NULL AND activity_class = 'interaction'")
-        for ext, at, cp in self.db.execute(q, {"c": self.case, "e": extractions}):
-            out.append({"phone": str(ext), "at": at.isoformat(), "counterpart": str(cp) if cp else None})
-        return out
+    def relay(self, phones: list[str]) -> tuple[list[dict], int]:
+        """Relay chains found in SQL: a phone's contact with a counterpart, then another phone's contact with the same
+        counterpart within ten minutes. One chain per pair of phones, counterpart and day. Returns (pairs, events read)."""
+        if len(phones) < 2:
+            return [], 0
+        read = self.db.execute(text(
+            "SELECT count(*) FROM pol_activity_event WHERE case_id = :c AND extraction_id = ANY(CAST(:e AS uuid[])) "
+            "AND instant_utc IS NOT NULL AND activity_class = 'interaction' AND counterpart_identity_id IS NOT NULL"),
+            {"c": self.case, "e": phones}).scalar() or 0
+        rows = self.db.execute(text("""
+            SELECT DISTINCT ON (a.extraction_id, b.extraction_id, a.counterpart_identity_id, a.instant_utc::date)
+                   a.extraction_id, b.extraction_id, a.counterpart_identity_id, a.instant_utc, b.instant_utc
+            FROM pol_activity_event a JOIN pol_activity_event b
+              ON b.case_id = a.case_id AND b.counterpart_identity_id = a.counterpart_identity_id
+             AND b.extraction_id <> a.extraction_id AND b.instant_utc > a.instant_utc
+             AND b.instant_utc <= a.instant_utc + interval '10 minutes'
+            WHERE a.case_id = :c AND a.extraction_id = ANY(CAST(:e AS uuid[])) AND b.extraction_id = ANY(CAST(:e AS uuid[]))
+              AND a.activity_class = 'interaction' AND b.activity_class = 'interaction'
+              AND a.counterpart_identity_id IS NOT NULL
+            ORDER BY a.extraction_id, b.extraction_id, a.counterpart_identity_id, a.instant_utc::date, (b.instant_utc - a.instant_utc)"""),
+            {"c": self.case, "e": phones}).fetchall()
+        return [{"first": str(r[0]), "second": str(r[1]), "via": str(r[2]), "first_at": r[3].isoformat(),
+                 "second_at": r[4].isoformat()} for r in rows], int(read)
 
-    def streams(self, extractions: list[str]) -> dict[str, list[datetime]]:
-        out: dict[str, list[datetime]] = {str(e): [] for e in extractions}
-        for ev in self.events(extractions):
-            out[ev["phone"]].append(rules.parse_when(ev["at"]))
-        return out
+    def silences(self, phones: list[str], minimum_hours: int = 6) -> tuple[dict[str, list[tuple[datetime, datetime]]], int]:
+        """Each phone's silences of at least ``minimum_hours`` between two interaction times, found in SQL."""
+        gaps: dict[str, list] = {p: [] for p in phones}
+        read = 0
+        for ext in phones:
+            read += self.db.execute(text(
+                "SELECT count(DISTINCT instant_utc) FROM pol_activity_event WHERE case_id = :c AND extraction_id = CAST(:e AS uuid) "
+                "AND instant_utc IS NOT NULL AND activity_class = 'interaction'"), {"c": self.case, "e": ext}).scalar() or 0
+            for t, n in self.db.execute(text("""
+                SELECT t, n FROM (SELECT instant_utc AS t, lead(instant_utc) OVER (ORDER BY instant_utc) AS n
+                                  FROM (SELECT DISTINCT instant_utc FROM pol_activity_event
+                                        WHERE case_id = :c AND extraction_id = CAST(:e AS uuid) AND instant_utc IS NOT NULL
+                                          AND activity_class = 'interaction') x) y
+                WHERE n - t >= make_interval(hours => :h) ORDER BY t"""), {"c": self.case, "e": ext, "h": minimum_hours}):
+                gaps[ext].append((t, n))
+        return gaps, int(read)
 
     def together_apart(self, ea: str, eb: str) -> dict:
         """The existing who-used-which-phone measure over the days both phones hold owner interaction."""

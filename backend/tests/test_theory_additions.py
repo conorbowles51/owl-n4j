@@ -32,7 +32,9 @@ from services.workspace_entry_service import (
 )
 from tests.test_financial_duplicates import DuplicateTestCase
 
-EXTRA = [CaseProfile.__table__, CaseDeadline.__table__, CaseTask.__table__, WorkspaceEntry.__table__,
+from postgres.models.relation_run import RelationRun
+
+EXTRA = [RelationRun.__table__, CaseProfile.__table__, CaseDeadline.__table__, CaseTask.__table__, WorkspaceEntry.__table__,
          WorkspaceEntryRevision.__table__, WorkspaceEntryLink.__table__, WorkspaceEntryEvent.__table__,
          WorkspaceLegacyMapping.__table__, CaseSelection.__table__, CollectionMembership.__table__,
          TheoryNarrative.__table__]
@@ -458,3 +460,32 @@ class TheoryConversionCarriesItsRecordTests(TheoryAdditionTests):
         with self.assertRaises(case_selections.SelectionError):
             case_selections.freeze(self.db, case_id=self.case.id, group_type="graph_selection", words="x", how={},
                                    members=[{"type": "place", "id": "51.5,-0.12,80"}])
+
+    def test_accepting_an_explanation_adds_the_look_as_supports_with_the_model_named_as_its_author(self):
+        """lx-overlaps E: a model reading becomes part of a theory only when a person accepts it, and says so."""
+        from services.relations import hypotheses as H
+        group = case_selections.freeze(self.db, case_id=self.case.id, group_type="relation_query", words="Look into how these relate",
+                                       how={}, members=[{"type": "financial_transaction", "id": str(self.rows[0].id)},
+                                                        {"type": "graph_entity", "id": "person:ann"}])
+        run = RelationRun(case_id=self.case.id, selection_id=uuid.UUID(group["id"]), status="done", result={"candidates": []},
+                          hypotheses={"model": "stub-model-1", "items": [
+                              {"id": 0, "kind": "routine", "statement": "Routine payments.", "accepted": None},
+                              {"id": 1, "kind": "planned_meeting", "statement": "Arranged in advance.", "accepted": None}]})
+        self.db.add(run)
+        self.db.commit()
+        out = H.accept(self.db, case_id=self.case.id, run_id=run.id, number=1, entry_id=self.theory["id"],
+                       relationship="supports", user=self.user)
+        link = self.db.get(WorkspaceEntryLink, uuid.UUID(out["added_link_ids"][0]))
+        self.assertEqual((link.target_type, link.relationship), ("relation_query", "supports"))
+        addition = link.link_metadata["addition"]
+        self.assertEqual((addition["origin"], addition["model"], addition["accepted_by_name"]),
+                         ("agent", "stub-model-1", self.user.name))
+        self.db.refresh(run)
+        self.assertEqual(run.hypotheses["items"][1]["accepted"]["relationship"], "supports")
+        self.assertIsNone(run.hypotheses["items"][0]["accepted"])
+        with self.assertRaises(H.HypothesisError):
+            H.accept(self.db, case_id=self.case.id, run_id=run.id, number=0, entry_id=self.theory["id"],
+                     relationship="proves", user=self.user)
+        with self.assertRaises(LookupError):
+            H.accept(self.db, case_id=self.other_case.id, run_id=run.id, number=0, entry_id=self.theory["id"],
+                     relationship="supports", user=self.user)

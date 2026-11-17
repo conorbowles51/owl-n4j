@@ -121,3 +121,16 @@ def test_two_phone_positions_are_compared_by_place_never_by_time_taken():
     b = item("b", T0 + timedelta(minutes=15), type="phone_record", time_kind="phone_location", phone="B")
     c, s = rules.time_proximity([a, b], BASE)
     assert not c and "compared by place" in s[0]["searched"]
+
+
+def test_a_whatsapp_address_is_a_number_not_an_email():
+    found = rules.extract_identifiers("from 14105550121@s.whatsapp.net and ann@example.org")
+    assert {(f["kind"], f["value"]) for f in found} == {("number", "14105550121"), ("email", "ann@example.org")}
+
+
+def test_two_positions_of_one_phone_are_a_stay_not_an_overlap():
+    pl = {"lat": 39.3, "lon": -76.7, "radius_m": 10, "source": "device_location"}
+    a = item("a", T0, type="phone_record", place=pl, phone="A")
+    b = item("b", T0 + timedelta(hours=5), type="phone_record", place=pl, phone="A")
+    c, s = rules.place_overlap([a, b], lambda *x: {})
+    assert not c and "same phone" in s[0]["searched"]

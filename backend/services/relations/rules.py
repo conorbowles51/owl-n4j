@@ -231,6 +231,10 @@ def extract_identifiers(text: str) -> list[dict]:
     """Emails, numbers of seven digits or more, and company names found in free text."""
     found: list[dict] = []
     for m in _EMAIL.findall(text or ""):
+        local, _, domain = m.partition("@")
+        if domain.lower().endswith("whatsapp.net") and norm_number(local):
+            found.append({"kind": "number", "value": norm_number(local), "display": m})  # a WhatsApp address is a number
+            continue
         found.append({"kind": "email", "value": m.lower(), "display": m})
     scrub = _EMAIL.sub(" ", text or "")
     for m in _DIGITS.findall(scrub):
@@ -347,6 +351,10 @@ def place_overlap(items: list[dict], place_stats, offsets: dict | None = None, p
     offsets = offsets or {}
     placed = [i for i in items if i.get("place") and parse_when(i.get("at"))]
     for a, b in combinations(placed, 2):
+        if a.get("phone") and a.get("phone") == b.get("phone"):
+            searched.append({"analysis": "place_overlap", "members": [a["ref"], b["ref"]],
+                             "searched": "both are on the same phone: two positions of one phone are a stay, not two things at one place"})
+            continue
         pa, pb = a["place"], b["place"]
         ta, tb = parse_when(a["at"]), parse_when(b["at"])
         gap = abs(ta - tb)
@@ -419,16 +427,15 @@ def place_overlap(items: list[dict], place_stats, offsets: dict | None = None, p
 
 # --- relay chains: A contacts C, then C contacts B within minutes (C) ---------------------------------------------
 
-def relay_chains(events: list[dict], subjects: list[str], window: timedelta = RELAY_WINDOW) -> tuple[list[dict], dict]:
-    """``events``: {phone, at, counterpart, direction}. A chain is one subject phone's contact with a counterpart,
-    then a different subject phone's contact with the same counterpart within ``window``. Returns (candidates, count of
-    events read)."""
+def relay_pairs(events: list[dict], subjects: list[str], window: timedelta = RELAY_WINDOW) -> list[dict]:
+    """The chains in a list of events: {phone, at, counterpart}. One subject phone's contact with a counterpart, then a
+    different subject phone's contact with the same counterpart within ``window``; one chain per pair of phones,
+    counterpart and day. The database finds the same chains in SQL (``DbSources.relay``) for a phone with many events."""
     by_cp: dict[str, list[dict]] = {}
     for ev in events:
         if ev.get("phone") in subjects and ev.get("counterpart"):
             by_cp.setdefault(ev["counterpart"], []).append({**ev, "_t": parse_when(ev["at"])})
-    out = []
-    seen: set[tuple] = set()
+    out, seen = [], set()
     for cp, evs in by_cp.items():
         evs = sorted((e for e in evs if e["_t"]), key=lambda e: e["_t"])
         for i, first in enumerate(evs):
@@ -441,16 +448,30 @@ def relay_chains(events: list[dict], subjects: list[str], window: timedelta = RE
                 if key in seen:
                     continue
                 seen.add(key)
-                gap = second["_t"] - first["_t"]
-                level = "strong" if gap <= timedelta(minutes=2) else "moderate" if gap <= timedelta(minutes=5) else "weak"
-                out.append(candidate("relay_chain", [first["phone"], second["phone"]], "contact", level,
-                                     [f"Phone {first['label'] if first.get('label') else first['phone'][:8]} was in contact with "
-                                      f"{cp} at {first['_t']:%Y-%m-%d %H:%M}; phone "
-                                      f"{second['label'] if second.get('label') else second['phone'][:8]} was in contact with "
-                                      f"{cp} {gap_words(gap)} later."],
-                                     extra={"via": cp, "first_at": first["at"], "second_at": second["at"],
-                                            "gap_seconds": int(gap.total_seconds())}))
-    return out, {"events_read": sum(len(v) for v in by_cp.values())}
+                out.append({"first": first["phone"], "second": second["phone"], "via": cp, "first_at": first["at"],
+                            "second_at": second["at"], "label_first": first.get("label"), "label_second": second.get("label")})
+    return out
+
+
+def relay_candidates(pairs: list[dict]) -> list[dict]:
+    out = []
+    for p in pairs:
+        gap = parse_when(p["second_at"]) - parse_when(p["first_at"])
+        level = "strong" if gap <= timedelta(minutes=2) else "moderate" if gap <= timedelta(minutes=5) else "weak"
+        a = p.get("label_first") or p["first"][:8]
+        b = p.get("label_second") or p["second"][:8]
+        out.append(candidate("relay_chain", [p["first"], p["second"]], "contact", level,
+                             [f"Phone {a} was in contact with {p['via']} at {parse_when(p['first_at']):%Y-%m-%d %H:%M}; "
+                              f"phone {b} was in contact with {p['via']} {gap_words(gap)} later."],
+                             extra={"via": p["via"], "first_at": p["first_at"], "second_at": p["second_at"],
+                                    "gap_seconds": int(gap.total_seconds())}))
+    return out
+
+
+def relay_chains(events: list[dict], subjects: list[str], window: timedelta = RELAY_WINDOW) -> tuple[list[dict], dict]:
+    """Chains from a list of events, as candidates, with the count of events read."""
+    read = sum(1 for e in events if e.get("phone") in subjects and e.get("counterpart"))
+    return relay_candidates(relay_pairs(events, subjects, window)), {"events_read": read}
 
 
 # --- shared silence: both quiet while otherwise active (C) -------------------------------------------------------
@@ -465,12 +486,13 @@ def _overlap(a, b):
     return (start, end) if end > start else None
 
 
-def shared_silence(streams: dict[str, list[datetime]], minimum: timedelta = SILENCE_MIN) -> tuple[list[dict], dict]:
+def shared_silence(streams: dict[str, list[datetime]] | None, minimum: timedelta = SILENCE_MIN,
+                   gaps: dict[str, list[tuple[datetime, datetime]]] | None = None) -> tuple[list[dict], dict]:
     """Two phones both silent for at least ``minimum`` over the same stretch. Beside it: how many of each phone's
     silences of this length there are in the period, and how many fall at the same hours (a night is ordinary
     silence). The shared silences at both phones' usual hours are one candidate per pair of phones, with every stretch
     listed in its detail; each shared silence outside their usual hours is a candidate of its own."""
-    gaps = {p: silences(ts, minimum) for p, ts in streams.items()}
+    gaps = gaps if gaps is not None else {p: silences(ts, minimum) for p, ts in (streams or {}).items()}
     out = []
     for pa, pb in combinations(sorted(gaps), 2):
         usual, unusual = [], []

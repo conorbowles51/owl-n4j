@@ -98,18 +98,17 @@ def run(sources, members: list[dict], progress: Callable[[str, int, int], None] 
     phones = sorted({i["phone"] for i in items if i.get("phone")})
     if len(phones) >= 2:
         try:
-            events = sources.events(phones)
             labels = {p: next((i["label"] for i in items if i.get("phone") == p), p[:8]) for p in phones}
-            for e in events:
-                e["label"] = labels[e["phone"]]
-            c, n = rules.relay_chains(events, phones)
+            pairs, read = sources.relay(phones)
+            for p in pairs:
+                p["label_first"], p["label_second"] = labels[p["first"]], labels[p["second"]]
+            c = rules.relay_candidates(pairs)
             candidates += c
-            record("relay_chain", len(phones) * (len(phones) - 1) // 2, len(c), f"{n['events_read']:,} contacts read")
-            streams = sources.streams(phones)
-            c, n = rules.shared_silence(streams)
+            record("relay_chain", len(phones) * (len(phones) - 1) // 2, len(c), f"{read:,} contacts read")
+            gaps, read = sources.silences(phones)
+            c, n = rules.shared_silence(None, gaps=gaps)
             candidates += c
-            record("shared_silence", len(phones) * (len(phones) - 1) // 2, len(c),
-                   f"{sum(len(v) for v in streams.values()):,} activity times read")
+            record("shared_silence", len(phones) * (len(phones) - 1) // 2, len(c), f"{read:,} activity times read")
         except Exception as exc:  # noqa: BLE001
             out_of_reach.append({"analysis": "relay_chain, shared_silence", "reason": f"Phone activity could not be read: {exc}"})
         found = 0

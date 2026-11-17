@@ -21,11 +21,13 @@ class Fake:
     def place_stats(self, lat, lon, r):
         return {"phones_near": 1, "phones_total": 5, "days_at_place": {}, "days_active": {}}
 
-    def events(self, phones):
-        return []
+    chains = ()
 
-    def streams(self, phones):
-        return {p: [] for p in phones}
+    def relay(self, phones):
+        return [dict(c) for c in self.chains], 40
+
+    def silences(self, phones):
+        return {p: [] for p in phones}, 0
 
     def together_apart(self, a, b):
         return {"days": 0}
@@ -83,3 +85,15 @@ def test_matrix_has_every_pair():
     empty = {frozenset(c) for c in matrix.empty_cells()}
     assert frozenset(("place", "financial_account")) in empty
     assert frozenset(("phone_record", "financial_transaction")) not in empty
+
+
+def test_relay_chains_and_silences_come_from_the_source_not_from_every_event():
+    items = dict([it("a", "phone_record", T0, label="Call A", phone="A"), it("b", "phone_record", T0 + timedelta(days=60), label="Call B", phone="B")])
+    src = Fake(items)
+    src.chains = [{"first": "A", "second": "B", "via": "C", "first_at": T0.isoformat(), "second_at": (T0 + timedelta(minutes=3)).isoformat()}]
+    res = engine.run(src, members(items))
+    relay = [c for c in res["candidates"] if c["kind"] == "relay_chain"]
+    assert len(relay) == 1 and "Call A" in relay[0]["reasons"][0]
+    assert any(a["id"] == "relay_chain" and a["note"] == "40 contacts read" for a in res["analyses"])
+    # the pair is linked through its phones, so it is not reported as no link
+    assert not [n for n in res["no_links"] if set(n["members"]) == {"phone_record:a", "phone_record:b"}]
