@@ -92,6 +92,30 @@ def read_run(case_id: UUID, run_id: UUID, db: Session = Depends(get_db)) -> dict
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.get("/{case_id}/relation-queries/{selection_id}/trail", dependencies=[Depends(require_case_view)])
+def read_trail(case_id: UUID, selection_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
+    from services.relations import trail
+    out = trail.build(db, case_id, str(selection_id))
+    if not out["steps"]:
+        raise HTTPException(status_code=404, detail="That query is not in this case.")
+    return out
+
+
+@router.get("/{case_id}/relation-runs/{run_id}/lanes", dependencies=[Depends(require_case_view)])
+def read_lanes(case_id: UUID, run_id: UUID, instance: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Story lanes for one instance of a Corroborate result: the records the grid cites for it, one lane per person."""
+    from services.corroborate.store import CaseStore
+    from services.relations import lanes
+    result = runs.full_result(db, case_id, str(run_id))
+    corroboration = (result or {}).get("corroboration")
+    if not corroboration:
+        raise HTTPException(status_code=404, detail="That run has no Corroborate result.")
+    try:
+        return lanes.build(CaseStore(db, case_id), corroboration, instance)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 class AcceptRequest(BaseModel):
     entry_id: UUID
     relationship: str = Field(pattern="^(supports|contradicts)$")
