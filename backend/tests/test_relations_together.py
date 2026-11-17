@@ -51,9 +51,10 @@ class Read(unittest.TestCase):
         with mock.patch("services.phone_analysis.fields.active_phones", return_value={A: "Phone 1", B: "Phone 2"}), \
              mock.patch.object(T, "cells", return_value=(list(raw), {"positions": 10, "with_time": 8})), \
              mock.patch.object(T, "_merge", return_value=list(meetings)), \
-             mock.patch.object(T, "shared_contacts", return_value=([], {"records": 5})), \
-             mock.patch.object(T, "relay_chains", return_value=([], {"events": 7})), \
+             mock.patch.object(T, "shared_contacts", return_value=([], {"records": 5})) as sc, \
+             mock.patch.object(T, "relay_chains", return_value=([], {"events": 7})) as rc, \
              mock.patch.object(T, "pair_days", return_value={"days_together": 0, "days_both_active": 3}):
+            self.calls = (sc, rc)
             return T.read(FakeDb(), "c", phones, **kw)
 
     def test_no_meeting_is_a_sentence_with_what_was_searched(self):
@@ -74,6 +75,14 @@ class Read(unittest.TestCase):
             self.run_read([A, B], start="2024-02-01", end="2024-01-01")
         with self.assertRaises(T.TogetherError):
             self.run_read([A, B], start="not a date")
+
+    def test_a_part_not_asked_for_is_not_read_and_not_reported_as_none(self):
+        out = self.run_read([A, B], parts=["places"])
+        self.assertEqual([c.call_count for c in self.calls], [0, 0])
+        self.assertIsNone(out["contacts_message"])
+        self.assertEqual(out["parts"], ["places"])
+        with self.assertRaises(T.TogetherError):
+            self.run_read([A, B], parts=["places", "nonsense"])
 
     def test_a_last_day_given_as_a_date_is_the_whole_day(self):
         end = T._parse("2024-06-08", "to")

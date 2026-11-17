@@ -2,9 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import type { ItemInput } from "@/features/theory/api"
 import { LookInto } from "@/features/relations/LookInto"
 import { phoneLinkHref } from "../phone-links"
-import { MAX_TOGETHER_PHONES, meetingWhen, overlapsQuery, type Meeting, type Overlaps } from "./phone-together"
-
-type Part = "places" | "contacts" | "relay"
+import { MAX_TOGETHER_PHONES, meetingWhen, overlapsQuery, type Meeting, type Overlaps, type Part } from "./phone-together"
 
 function RecordLinks({ caseId, ids, total }: { caseId: string; ids: string[]; total: number }) {
   return (
@@ -58,7 +56,7 @@ export function TogetherPanel({ caseId, phoneIds, from, to, parts, onPick, data 
   /** Already read by the screen (it draws the same result). */
   data?: Overlaps
 }) {
-  const q = useQuery({ ...overlapsQuery(caseId, phoneIds, from, to), enabled: !data && phoneIds.length >= 2 && phoneIds.length <= MAX_TOGETHER_PHONES })
+  const q = useQuery({ ...overlapsQuery(caseId, phoneIds, from, to, parts), enabled: !data && phoneIds.length >= 2 && phoneIds.length <= MAX_TOGETHER_PHONES })
   const out = data ?? q.data
   if (phoneIds.length < 2) return <p role="status" className="px-3 py-2 text-sm" data-testid="together-panel">Switch on at least two phones to see where they were together.</p>
   if (phoneIds.length > MAX_TOGETHER_PHONES) return <p role="status" className="px-3 py-2 text-sm" data-testid="together-panel">{phoneIds.length} phones are on. Switch off down to {MAX_TOGETHER_PHONES} or fewer to see where they were together.</p>
@@ -66,7 +64,7 @@ export function TogetherPanel({ caseId, phoneIds, from, to, parts, onPick, data 
   if (!out) return <p role="alert" className="px-3 py-2 text-sm" data-testid="together-panel">Where the phones were together could not be read. Try again.</p>
   const labels = Object.fromEntries(out.phones.map((p) => [p.id, p.label]))
   return (
-    <section className="max-h-72 space-y-2 overflow-auto border-b bg-card px-3 py-2 text-sm" data-testid="together-panel" aria-label="Phones together">
+    <section className="max-h-48 space-y-2 overflow-auto border-b bg-card px-3 py-2 text-sm" data-testid="together-panel" aria-label="Phones together">
       {parts.includes("places") && (
         <div>
           <h3 className="font-semibold">Together in the same place: {out.together.length.toLocaleString("en-US")} {out.together.length === 1 ? "meeting" : "meetings"}</h3>

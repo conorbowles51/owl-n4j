@@ -274,7 +274,13 @@ def _side_by_side(db, conn, jobs):
         return list(pool.map(run, jobs))
 
 
-def read(db, case_id, phones: list[str], start: str | None = None, end: str | None = None) -> dict[str, Any]:
+PARTS = ("places", "contacts", "relay")
+
+
+def read(db, case_id, phones: list[str], start: str | None = None, end: str | None = None,
+         parts: list[str] | None = None) -> dict[str, Any]:
+    """``parts`` limits the read to what a screen shows (places, contacts, relay); a part not asked for is absent from
+    the answer, never an empty list read as "none found"."""
     from services.phone_analysis import fields as FV
     conn = db.connection()
     case = str(case_id)
@@ -287,6 +293,9 @@ def read(db, case_id, phones: list[str], start: str | None = None, end: str | No
     unknown = [p for p in phones if p not in labels]
     if unknown:
         raise TogetherError("These phones are not in this case: " + ", ".join(u[:8] for u in unknown))
+    want = list(dict.fromkeys(parts or PARTS))
+    if [x for x in want if x not in PARTS]:
+        raise TogetherError("'parts' can be: " + ", ".join(PARTS) + ".")
     a, b = _parse(start, "from"), _parse(end, "to")
     if a and b and a > b:
         raise TogetherError("'from' is after 'to'.")
@@ -303,12 +312,16 @@ def read(db, case_id, phones: list[str], start: str | None = None, end: str | No
     def days_part(c):
         return {pr: (pair_days(c, case, *pr) if not (a or b) else None) for pr in pair_list}
 
-    # the four reads are independent and read-only: each on its own connection, side by side
-    (raw, positions, meetings), (contacts, c_read), (relays, r_read), days_by = _side_by_side(db, conn, [
-        place_part,
-        lambda c: shared_contacts(c, case, phones, a, b),
-        lambda c: relay_chains(c, case, phones, a, b),
-        days_part])
+    # the reads are independent and read-only: each on its own connection, side by side; a screen asks only for its parts
+    jobs = {"places": place_part, "days": days_part,
+            "contacts": lambda c: shared_contacts(c, case, phones, a, b),
+            "relay": lambda c: relay_chains(c, case, phones, a, b)}
+    names = [k for k in ("places", "days", "contacts", "relay") if k in want or (k == "days" and "places" in want)]
+    got = dict(zip(names, _side_by_side(db, conn, [jobs[k] for k in names])))
+    raw, positions, meetings = got.get("places", ([], {"positions": 0, "with_time": 0}, []))
+    contacts, c_read = got.get("contacts", ([], {"records": 0}))
+    relays, r_read = got.get("relay", ([], {"events": 0}))
+    days_by = got.get("days", {pr: None for pr in pair_list})
     pairs = []
     for x, y in pair_list:
         days = days_by[(x, y)]
@@ -316,28 +329,34 @@ def read(db, case_id, phones: list[str], start: str | None = None, end: str | No
                       "days_together": days["days_together"] if days else None,
                       "days_both_active": days["days_both_active"] if days else None})
     span = _span(a, b)
-    searched = [
-        f"Positions of {len(phones)} phones with a time: {positions['with_time']:,} of {positions['positions']:,} "
-        f"positions in {span}; paired by {PLACE_WORDS}. Two positions either side of a slot or square edge are not paired.",
-        f"Messages, calls and emails of the chosen phones: {c_read['records']:,}, grouped by person (a confirmed person, else one identity); copies count once.",
-        f"Contacts by the chosen phones: {r_read['events']:,}, a second phone reaching the same counterpart within 10 minutes.",
-    ]
-    out_of_reach = []
-    if not any(c["phones"] for c in contacts) and c_read["records"] == 0:
-        out_of_reach.append("None of the chosen phones holds a message, call or email, so no shared contact could be read.")
-    if positions["positions"] > positions["with_time"]:
-        out_of_reach.append(f"{positions['positions'] - positions['with_time']:,} positions have no time and cannot be placed with the other phone.")
-    if positions["positions"] == 0:
-        out_of_reach.append("None of the chosen phones holds a position, so no place could be compared.")
-    if not meetings:
-        message = (f"No meeting found in {positions['with_time']:,} timed positions of these phones ({PLACE_WORDS}, {span}).")
-    else:
-        message = f"{len(meetings)} meetings found, {sum(m['cells'] for m in meetings)} cells ({PLACE_WORDS})."
-    return {
+    searched, out_of_reach = [], []
+    if "places" in want:
+        searched.append(f"Positions of {len(phones)} phones with a time: {positions['with_time']:,} of {positions['positions']:,} "
+                        f"positions in {span}; paired by {PLACE_WORDS}. Two positions either side of a slot or square edge are not paired.")
+        if positions["positions"] > positions["with_time"]:
+            out_of_reach.append(f"{positions['positions'] - positions['with_time']:,} positions have no time and cannot be placed with the other phone.")
+        if positions["positions"] == 0:
+            out_of_reach.append("None of the chosen phones holds a position, so no place could be compared.")
+    if "contacts" in want:
+        searched.append(f"Messages, calls and emails of the chosen phones: {c_read['records']:,}, grouped by person (a confirmed person, else one identity); copies count once.")
+        if c_read["records"] == 0:
+            out_of_reach.append("None of the chosen phones holds a message, call or email, so no shared contact could be read.")
+    if "relay" in want:
+        searched.append(f"Contacts by the chosen phones: {r_read['events']:,}, a second phone reaching the same counterpart within 10 minutes.")
+    out: dict[str, Any] = {
         "case_id": case, "phones": [{"id": p, "label": labels[p]} for p in phones], "from": _iso(a), "to": _iso(b),
-        "together": meetings, "cells": len(raw), "shared_contacts": contacts, "relay_chains": relays, "pairs": pairs,
-        "message": message,
-        "contacts_message": (None if contacts else f"No person has records on two or more of these phones in {span}."),
-        "relay_message": (None if relays else f"No relay chain found in {r_read['events']:,} contacts of these phones in {span}."),
-        "searched": searched, "out_of_reach": out_of_reach,
+        "parts": want, "pairs": pairs, "searched": searched, "out_of_reach": out_of_reach,
+        "together": [], "cells": 0, "shared_contacts": [], "relay_chains": [],
+        "message": None, "contacts_message": None, "relay_message": None,
     }
+    if "places" in want:
+        out["together"], out["cells"] = meetings, len(raw)
+        out["message"] = (f"No meeting found in {positions['with_time']:,} timed positions of these phones ({PLACE_WORDS}, {span})."
+                          if not meetings else f"{len(meetings)} meetings found, {sum(m['cells'] for m in meetings)} cells ({PLACE_WORDS}).")
+    if "contacts" in want:
+        out["shared_contacts"] = contacts
+        out["contacts_message"] = None if contacts else f"No person has records on two or more of these phones in {span}."
+    if "relay" in want:
+        out["relay_chains"] = relays
+        out["relay_message"] = None if relays else f"No relay chain found in {r_read['events']:,} contacts of these phones in {span}."
+    return out

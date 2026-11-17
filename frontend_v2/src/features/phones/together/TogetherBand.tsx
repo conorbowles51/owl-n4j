@@ -3,7 +3,7 @@ import { MAX_TOGETHER_PHONES, meetingWhen, overlapsQuery } from "./phone-togethe
 
 /** Timeline: one band of shared moments over the lens's span, a block for each time the chosen phones were together. */
 export function TogetherBand({ caseId, phoneIds, from, to }: { caseId: string; phoneIds: string[]; from?: string | null; to?: string | null }) {
-  const q = useQuery({ ...overlapsQuery(caseId, phoneIds, from, to), enabled: phoneIds.length >= 2 && phoneIds.length <= MAX_TOGETHER_PHONES })
+  const q = useQuery({ ...overlapsQuery(caseId, phoneIds, from, to, ["places"]), enabled: phoneIds.length >= 2 && phoneIds.length <= MAX_TOGETHER_PHONES })
   const ms = q.data?.together ?? []
   if (!q.data) return <p role="status" className="px-3 py-1 text-sm" data-testid="together-band">{q.isError ? "Shared moments could not be read. Try again." : phoneIds.length < 2 ? "Switch on at least two phones to see shared moments." : "Reading shared moments"}</p>
   if (!ms.length) return <p role="status" className="px-3 py-1 text-sm" data-testid="together-band">Shared moments: {q.data.message}</p>

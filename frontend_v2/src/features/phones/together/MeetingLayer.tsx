@@ -5,7 +5,7 @@ import { MAX_TOGETHER_PHONES, overlapsQuery } from "./phone-together"
 
 /** Meeting points of the chosen phones on the Map: a ring per meeting, in the "together" accent. Child of a react-map-gl Map. */
 export function MeetingLayer({ caseId, phoneIds, from, to, picked }: { caseId: string; phoneIds: string[]; from?: string | null; to?: string | null; picked?: string | null }) {
-  const q = useQuery({ ...overlapsQuery(caseId, phoneIds, from, to), enabled: phoneIds.length >= 2 && phoneIds.length <= MAX_TOGETHER_PHONES })
+  const q = useQuery({ ...overlapsQuery(caseId, phoneIds, from, to, ["places"]), enabled: phoneIds.length >= 2 && phoneIds.length <= MAX_TOGETHER_PHONES })
   const data: FeatureCollection<Point> = {
     type: "FeatureCollection",
     features: (q.data?.together ?? []).map((m) => ({ type: "Feature", properties: { id: m.id, picked: m.id === picked ? 1 : 0 }, geometry: { type: "Point", coordinates: [m.place.lon, m.place.lat] } })),

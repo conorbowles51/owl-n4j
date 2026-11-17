@@ -27,18 +27,21 @@ export const OverlapsSchema = z.object({
   case_id: z.string(), phones: z.array(z.object({ id: z.string(), label: z.string() })),
   together: z.array(Meeting), cells: z.number(), shared_contacts: z.array(Contact), relay_chains: z.array(Relay),
   pairs: z.array(z.object({ phones: z.array(z.string()), meetings: z.number(), days_together: z.number().nullable(), days_both_active: z.number().nullable() })),
-  message: z.string(), contacts_message: z.string().nullable(), relay_message: z.string().nullable(),
+  parts: z.array(z.string()).optional(), message: z.string().nullable(), contacts_message: z.string().nullable(), relay_message: z.string().nullable(),
   searched: z.array(z.string()), out_of_reach: z.array(z.string()),
 })
 export type Overlaps = z.infer<typeof OverlapsSchema>
 export type Meeting = z.infer<typeof Meeting>
 
-export function overlapsQuery(caseId: string, phones: string[], from?: string | null, to?: string | null) {
-  const q = new URLSearchParams({ phones: phones.join(",") })
+export type Part = "places" | "contacts" | "relay"
+
+/** `parts` is what the screen shows; the server reads only those (the places take about a third of the time of the contacts). */
+export function overlapsQuery(caseId: string, phones: string[], from?: string | null, to?: string | null, parts: Part[] = ["places", "contacts", "relay"]) {
+  const q = new URLSearchParams({ phones: phones.join(","), parts: parts.join(",") })
   if (from) q.set("from", from)
   if (to) q.set("to", to)
   return queryOptions({
-    queryKey: ["relation-overlaps", caseId, phones.join(","), from ?? null, to ?? null],
+    queryKey: ["relation-overlaps", caseId, phones.join(","), from ?? null, to ?? null, parts.join(",")],
     queryFn: async ({ signal }) => OverlapsSchema.parse(await fetchAPI(`/api/cases/${encodeURIComponent(caseId)}/relation-overlaps?${q}`, { read: true, signal })),
     enabled: !!caseId && phones.length >= 2 && phones.length <= MAX_TOGETHER_PHONES,
     staleTime: 60_000,

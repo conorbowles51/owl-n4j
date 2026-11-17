@@ -51,10 +51,12 @@ def create_query(case_id: UUID, request: QueryRequest, db: Session = Depends(get
 
 @router.get("/{case_id}/relation-overlaps", dependencies=[Depends(require_case_view)])
 def read_overlaps(case_id: UUID, phones: str = Query(..., max_length=2000), from_: str | None = Query(None, alias="from"),
-                  to: str | None = Query(None), db: Session = Depends(get_db)) -> dict[str, Any]:
+                  to: str | None = Query(None), parts: str | None = Query(None, max_length=100),
+                  db: Session = Depends(get_db)) -> dict[str, Any]:
     """Where two or more phones were together, the people they share and relay chains (lx-phonetogether B)."""
     try:
-        return together.read(db, case_id, [p.strip() for p in phones.split(",")], from_, to)
+        return together.read(db, case_id, [p.strip() for p in phones.split(",")], from_, to,
+                             [x.strip() for x in parts.split(",") if x.strip()] if parts else None)
     except together.TogetherError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
