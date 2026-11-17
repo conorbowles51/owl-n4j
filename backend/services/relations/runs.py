@@ -151,7 +151,8 @@ def work(run_id: str, case_id: str, *, session_factory) -> None:
             row.finished_at = datetime.now(timezone.utc)
             session.commit()
     finally:
-        if own and getattr(session, "bind", None) is not None and session_factory.__name__ != "<lambda>":
+        # a sessionmaker has no __name__: reading it raised here, after the run was saved, and the session stayed open
+        if own and getattr(session, "bind", None) is not None and getattr(session_factory, "__name__", "") != "<lambda>":
             session.close()
 
 

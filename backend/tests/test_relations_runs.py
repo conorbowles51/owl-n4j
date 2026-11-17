@@ -86,6 +86,26 @@ class RunTests(DuplicateTestCase):
         self.assertEqual(view["progress"]["level"], "Can't tell")
         self.assertEqual(view["result"]["counts"]["items"], 1)
 
+    def test_a_run_from_a_sessionmaker_closes_its_session(self):
+        """The background runner gets a sessionmaker (no __name__): the session is closed once the run is saved."""
+        group = runs.save_group(self.db, case_id=self.case.id, members=[{"type": "place", "id": "51.5,-0.1,50"}])
+        view = runs.start(self.db, case_id=self.case.id, selection_id=group["id"], inline=True,
+                          session_factory=lambda: self.db)
+        closed = []
+
+        class Maker:  # a sessionmaker-like factory: callable, no __name__
+            def __call__(self_inner):
+                s = mock.Mock(wraps=self.db)
+                s.bind = self.db.bind
+                s.get, s.commit, s.rollback = self.db.get, self.db.commit, self.db.rollback
+                s.execute, s.scalars, s.query = self.db.execute, self.db.scalars, self.db.query
+                s.close = lambda: closed.append(True)
+                return s
+
+        with mock.patch.object(runs, "DbSources", Fake):
+            runs.work(view["id"], str(self.case.id), session_factory=Maker())
+        self.assertEqual(closed, [True])
+
     def test_a_failed_run_says_why(self):
         group = runs.save_group(self.db, case_id=self.case.id, members=[{"type": "place", "id": "51.5,-0.1,50"}])
         with mock.patch.object(engine, "run", side_effect=RuntimeError("the phone tables are not reachable")):
