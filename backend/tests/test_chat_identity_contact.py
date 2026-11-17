@@ -30,6 +30,18 @@ class ChatContact(unittest.TestCase):
         self.assertIn("no person has linked", out[0]["text"])
         self.assertIn("Mateo Ruiz", out[0]["metadata"]["filename"])
 
+    def test_zero_between_their_numbers_says_no_and_a_similar_name_elsewhere_is_not_them(self):
+        def between(conn, case, **k):
+            return {"label_line": "No calls, messages, emails or payments in this period",
+                    "communication_through_suggested": {"calls": 0, "messages": 0, "emails": 0, "basis": "suggestion"},
+                    "suggested_pairs": [{"a": "+1 410-555-0141", "b": "+1 443-555-0112"}]}
+        with patch.object(PC, "contact_and_money_between", between):
+            out = chat_identity.passages(Conn(), "c", "Did Mateo Ruiz ever call or message Desmond Okafor?")
+        t = out[0]["text"]
+        self.assertIn("the answer is no", t)
+        self.assertIn("+1 443-555-0112", t)
+        self.assertIn("similar name or nickname", t)
+
     def test_one_name_or_none_gives_no_passage(self):
         self.assertEqual(chat_identity.passages(Conn(), "c", "What did Mateo Ruiz say about the trailer?"), [])
         self.assertEqual(chat_identity.passages(Conn(), "c", "Who owns the trailer?"), [])

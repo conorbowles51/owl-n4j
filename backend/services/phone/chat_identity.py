@@ -51,16 +51,29 @@ def passages(conn, case_id, question) -> list:
             continue
         if not isinstance(r, dict) or r.get("error"):
             continue
+        from services.phone import link_edges
         c = r.get("communication") or {}
         via = r.get("communication_through_suggested")
+        pairs = r.get("suggested_pairs") or []
         if via:
-            counted = _line("", via["calls"], via["messages"], via["emails"])
-            body = ("%s and %s: %s between them, counted through identities that no person has linked to them "
-                    "(%s). Say so with the count; do not answer from the absence of a person's link." % (
-                        na, nb, counted, via["basis"]))
-            body += "\n" + str(r.get("label_line") or "")
+            n = {k: int(via.get(k) or 0) for k in ("calls", "messages", "emails")}
         else:
-            body = "%s and %s: %s" % (na, nb, r.get("label_line") or str(c))
+            n = {k: link_edges.comm_total(c, k) if c else 0 for k in ("calls", "messages", "emails")}
+        counted = _line("", n["calls"], n["messages"], n["emails"])
+        basis = (" counted through identities that no person has linked to them (%s)" % via["basis"]) if via else ""
+        body = "%s and %s: %s between them%s." % (na, nb, counted, basis)
+        if not sum(n.values()):
+            nums_a = sorted({str(p["a"]) for p in pairs})
+            nums_b = sorted({str(p["b"]) for p in pairs})
+            body += (" So the answer is no: no call, message or email is recorded between %s%s and %s%s. A contact saved "
+                     "on one phone under a similar name or nickname, at any other number, is not %s or %s unless an "
+                     "identity suggestion or a person's link ties that number to them; if you mention such a contact, "
+                     "say it is at a different number and not established to be them." % (
+                         na, " (%s)" % ", ".join(nums_a) if nums_a else "", nb,
+                         " (%s)" % ", ".join(nums_b) if nums_b else "", na, nb))
+        elif via:
+            body += " Say so with the count; do not answer from the absence of a person's link."
+        body += "\n" + str(r.get("label_line") or "")
         out.append({
             "id": "phone-contact:%s:%s" % (ida, idb), "text": body, "distance": 0.0,
             "metadata": {"case_id": str(case_id), "doc_id": "phone-contact:%s:%s" % (ida, idb),
