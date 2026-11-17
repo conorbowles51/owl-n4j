@@ -10,6 +10,7 @@ Handles:
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -2197,6 +2198,8 @@ Only include candidates with score >= 5."""
         # ── Stage 1: Retrieve chunks (or documents) ─────────────────────
         print("[RAG] Starting Stage 1: Chunk retrieval..."); sys.stdout.flush()
         t1 = time.time()
+        case_search_pending = (self._case_search_start(question, case_id)
+                               if case_id and not strict_entity_scope and question_type != "structural" else None)
         chunk_results = []
         if question_type != "structural" or not cypher_context:
             chunk_results = self._retrieve_chunks(
@@ -2210,6 +2213,9 @@ Only include candidates with score >= 5."""
             # Phone text is not embedded (02 section 9.8): it is found by the folded search, read in full.
             phone_windows = self._phone_windows(question, case_id, debug_log)
             chunk_results = list(chunk_results) + phone_windows
+            # the case search's ranked phone and document hits, one more list for the fusion (lx-casesearch)
+            chunk_results = chunk_results + self._case_search_passages(question, case_id, chunk_results, debug_log,
+                                                                       pending=case_search_pending)
             # Who contacted whom: the calls and messages between the people the question names, counted through the
             # identities Loupe suggests when no person has linked them (lx-agentquick D10, chat).
             chunk_results = self._phone_contact_passages(question, case_id, debug_log) + list(chunk_results)
@@ -2729,6 +2735,88 @@ Only include candidates with score >= 5."""
         if debug_log is not None:
             debug_log["phone_contact"] = {"pairs": len(found)}
         return found
+
+    CASE_SEARCH_PASSAGES = 10
+    CASE_SEARCH_WAIT_S = 120
+
+    @staticmethod
+    def _case_search_start(question: str, case_id: str):
+        """The case search started beside chat's own retrieval (a future), or None when switched off. Measured on the
+        demo case under load (17 Nov): run after the other searches it added up to 40 s a question."""
+        if os.environ.get("LOUPE_CHAT_CASE_SEARCH", "on").strip().lower() == "off":
+            return None
+        from concurrent.futures import ThreadPoolExecutor
+
+        def run():
+            from postgres.session import _get_engine
+            from services import case_search
+            with _get_engine().connect() as conn:
+                return case_search.search(conn, case_id, question, kinds=("phones", "documents"),
+                                          areas=["phone_text", "documents", "statement_pages"], limit=20,
+                                          phrase=False, page_chars=24000)
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(run)
+        pool.shutdown(wait=False)
+        return future
+
+    def _case_search_passages(self, question: str, case_id: str, found: List[Dict[str, Any]],
+                              debug_log: Optional[Dict] = None, pending=None) -> List[Dict[str, Any]]:
+        """lx-casesearch: the case search's phone and document hits (meaning and words, names tied to their numbers,
+        reranked against the question), Strong and Moderate only, as one more ranked list for the fusion. Chat cites
+        phone records (rec://) and document pages (doc://); ledger rows, graph entities and notes are not taken
+        here, since chat has no citation for them. A hit chat already found is marked on that passage
+        (``_case_rank``) instead of being sent twice; the others are added. Returns the added passages."""
+        if pending is None:
+            pending = self._case_search_start(question, case_id)
+        if pending is None:
+            return []
+        try:
+            res = pending.result(timeout=self.CASE_SEARCH_WAIT_S)
+        except Exception as exc:  # the answer goes on with chat's own retrieval, and the debug log says why
+            if debug_log is not None:
+                debug_log["case_search"] = {"error": str(exc)[:300] or type(exc).__name__}
+            return []
+        by_record, by_page = {}, {}
+        for c in found:
+            m = c.get("metadata") or {}
+            if m.get("record_uid"):
+                by_record.setdefault(str(m["record_uid"]), c)
+            if m.get("evidence_file_id"):
+                by_page.setdefault((str(m["evidence_file_id"]), str(m.get("page_start") or "")), c)
+        added, merged, rank = [], 0, 0
+        for h in res["hits"]:
+            if h["grade"] not in ("strong", "moderate") or h.get("unit") == "excerpt":
+                continue
+            cite = h.get("cite") or ""
+            meta: Dict[str, Any] = {"case_id": str(case_id), "doc_name": h.get("title") or "",
+                                    "filename": h.get("title") or "", "case_search_grade": h["grade"],
+                                    "case_search_reason": h.get("reason")}
+            if cite.startswith("rec://"):
+                uid = cite[6:]
+                meta.update({"record_uid": uid, "url": cite, "source_kind": "phone_text",
+                             "evidence_file_id": (h.get("key") or "").split(":")[0] or None})
+                twin = by_record.get(uid)
+            elif cite.startswith("doc://"):
+                file_id, _, page = cite[6:].partition("/")
+                meta.update({"evidence_file_id": file_id, "page_start": page or None})
+                twin = by_page.get((file_id, page or ""))
+            else:
+                continue
+            rank += 1
+            if twin is not None:
+                twin.setdefault("_case_rank", rank)
+                merged += 1
+                continue
+            if not meta.get("evidence_file_id"):
+                meta.pop("evidence_file_id", None)
+            added.append({"id": "case:%s" % cite, "text": h.get("text") or "", "metadata": meta,
+                          "_case_search": True, "_case_rank": rank})
+            if len(added) >= self.CASE_SEARCH_PASSAGES:
+                break
+        if debug_log is not None:
+            debug_log["case_search"] = {"total": res["total"], "grades": res["grades"], "added": len(added),
+                                        "already_found": merged, "reranked": res["reranked"]}
+        return added
 
     def _phone_windows(self, question: str, case_id: str, debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """Up to 8 phone message windows found lexically for the question's terms (02 section 9.8)."""

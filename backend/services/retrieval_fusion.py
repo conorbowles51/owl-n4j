@@ -77,7 +77,9 @@ def fuse(
     rest = [c for c in chunk_results if not _pinned(c)]
     vector = sorted([c for c in rest if not _is_word(c) and c.get("distance") is not None],
                     key=lambda c: c["distance"])
-    unscored = [c for c in rest if not _is_word(c) and c.get("distance") is None]
+    unscored = [c for c in rest if not _is_word(c) and c.get("distance") is None and not c.get("_case_search")]
+    # the case search's ranked list (lx-casesearch): its own order, including the passages the other searches found
+    case_ranked = sorted([c for c in rest if c.get("_case_rank") is not None], key=lambda c: c["_case_rank"])
     words = [c for c in rest if _is_word(c)]
     words.sort(key=lambda c: c.get("distance") if c.get("distance") is not None else 0.0)  # stable for word hits
 
@@ -98,6 +100,8 @@ def fuse(
         credit(c, rank)
     for rank, c in enumerate(unscored, 1):
         credit(c, rank + len(vector))
+    for rank, c in enumerate(case_ranked, 1):
+        credit(c, rank)
 
     entity_rank = {e.get("key"): i for i, e in enumerate(entity_results, 1) if e.get("key")}
     # A graph passage is ranked by the graph's order and by the entity search's order. One whose chunk the searches
@@ -124,7 +128,8 @@ def fuse(
     fused = [items[k] for k in sorted(scores, key=lambda k: -scores[k]) if k not in pinned_keys]
     for c in fused:
         c["_rrf"] = round(scores[_key(c)], 6)
-    stats = {"method": "rrf", "k": K, "vector": len(vector), "words": len(words), "graph_evidence": len(graph_evidence),
+    stats = {"method": "rrf", "k": K, "vector": len(vector), "words": len(words), "case_search": len(case_ranked),
+             "graph_evidence": len(graph_evidence),
              "entities": len(entity_rank), "pinned": len(pinned)}
     return pinned, fused, stats
 
