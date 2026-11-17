@@ -190,6 +190,21 @@ class OtherCaseAndHostTests(LedgerToolFixture):
         self.assertIn("[web](https://example.com/x)", out)
         self.assertEqual(C.app_path("https://example.com/about"), None)
 
+    def test_a_loupe_page_written_behind_a_citation_scheme_becomes_the_in_app_path(self):
+        self.file = EvidenceFile(id=uuid.uuid4(), case_id=self.case.id, original_filename="own.pdf",
+                                 stored_path=f"/evidence/{uuid.uuid4()}", sha256="9" * 64)
+        self.db.add(self.file)
+        self.db.commit()
+        page = f"cases/{self.case.id}/conversations?tab=people&people=phone%3A%2B1%2Cphone%3A%2B2"
+        text = f"[Phone contact between A and B](doc://{page}) and [again](<doc:///{page}>) and [file](doc://{self.file.id}/2)"
+        out = C.canonicalize(self.db, self.case.id, text)
+        self.assertIn(f"[Phone contact between A and B](/{page})", out)
+        self.assertIn(f"[again](</{page}>)", out)
+        self.assertIn(f"(doc://{self.file.id}/2)", out)
+        self.assertEqual(C.check_text(self.db, self.case.id, out)["not_in_case"], 0)
+        self.assertEqual(C.app_path(f"doc://{page}"), "/" + page)
+        self.assertIsNone(C.app_path(f"doc://{self.file.id}/2"))
+
 
 class ChatSourceListTests(unittest.TestCase):
     def test_a_passage_without_a_page_is_not_listed_as_page_one(self):

@@ -28,8 +28,10 @@ _UUID = re.compile(rf"^{UUID_TEXT}$")
 # A Markdown link target: ](target) or ](<target>); the target may carry an optional "title".
 _LINK = re.compile(r"\]\(\s*<?((?:doc|txn|rec|evidence)://[^)>\s]*|(?:https?://[^)\s>]*?)?/?cases/[^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\)")
 # a Loupe page written with a host: https://<any host>/cases/<id>/... or https://cases/<id>/... (the host dropped)
-_APP_URL = re.compile(rf"^https?://(?:[^/\s]+/)*?(cases/{UUID_TEXT}(?:[/?#]\S*)?)$")
-_HOSTED_LINK = re.compile(r"(\]\(\s*<?)(https?://[^)\s>]+)")
+# or with a citation scheme put in front of it (doc://cases/<id>/conversations?..., 17 Nov: the chat's contact passage
+# cites the Conversations page and a model wrote doc:// before it, so the link opened nothing)
+_APP_URL = re.compile(rf"^(?:https?://(?:[^/\s]+/)*?|(?:doc|evidence|rec|txn)://+)(cases/{UUID_TEXT}(?:[/?#]\S*)?)$")
+_HOSTED_LINK = re.compile(r"(\]\(\s*<?)((?:https?|doc|evidence|rec|txn)://[^)\s>]+)")
 _FINANCIAL_PATH = re.compile(rf"^(?:https?://[^/]+)?/cases/({UUID_TEXT})/financial\?(\S*)$")
 _PAYMENT_PARAM = re.compile(rf"(?:^|&)payment=({UUID_TEXT})(?:&|$)")
 
