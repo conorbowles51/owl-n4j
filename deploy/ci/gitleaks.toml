@@ -12,3 +12,13 @@ description = "graph record ids written as entity_key UUIDs"
 targetRules = ["generic-api-key"]
 regexTarget = "match"
 regexes = ['''^entity_key"\s*:\s*"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"$''']
+
+# Document keys in test fixtures ("doc_key": "<file name slug>", e.g. bay4-lease-2023-10-01pdf) match
+# generic-api-key; they are file names with the dot dropped, not secrets (17 Nov, 2 alerts in
+# backend/tests/test_agent_document_search_path.py and test_rag_document_scope.py). Only that shape is allowed:
+# lower-case words and digits joined by dashes, ending in a document extension.
+[[allowlists]]
+description = "document keys written as doc_key file-name slugs"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''^doc_key"\s*:\s*"[a-z0-9]+(-[a-z0-9]+)*(pdf|docx?|txt|xlsx?|csv|eml|msg)"$''']

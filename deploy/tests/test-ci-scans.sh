@@ -25,7 +25,9 @@ git -C "${planted_repo}" init -q
 # and is deliberately not found).
 planted="ghp_$(head -c 200 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 36)"
 printf 'token = %s\n' "${planted}" > "${planted_repo}/settings.ini"
-git -C "${planted_repo}" -c user.name=t -c user.email=t@t add settings.ini
+# A document key in a test fixture (a file name slug) is allowed by gitleaks.toml and must not be reported.
+printf '{"doc_key": "bay4-lease-2023-10-01pdf"}\n' > "${planted_repo}/fixture.json"
+git -C "${planted_repo}" -c user.name=t -c user.email=t@t add settings.ini fixture.json
 git -C "${planted_repo}" -c user.name=t -c user.email=t@t commit -qm "add settings"
 # The leak is then "deleted" — history still holds it, and that is what the scan reads.
 git -C "${planted_repo}" -c user.name=t -c user.email=t@t rm -q settings.ini
@@ -41,6 +43,11 @@ import json, sys
 f = json.load(open('${out}/gitleaks.json'))
 sys.exit(0 if len(f) >= 1 else 1)
 " || fail "planted secret not in the report"
+python3 -c "
+import json, sys
+f = json.load(open('${out}/gitleaks.json'))
+sys.exit(0 if not [x for x in f if x.get('File') == 'fixture.json'] else 1)
+" || fail "a doc_key file-name slug is reported as a secret"
 # The secret's value must appear nowhere in the output directory.
 if grep -rq "${planted}" "${out}"; then
     fail "the planted secret's value is printed in the report"
