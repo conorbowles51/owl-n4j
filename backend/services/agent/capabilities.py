@@ -107,7 +107,8 @@ DATA_TYPES: list[dict[str, Any]] = [
             "Find the exact words of this reference.",
             "What does this statement say the closing balance was?",
         ],
-        "tools": ["search_documents", "search_exact_words", "search_case", "check_statements", "get_document_text"],
+        "tools": ["search_documents", "search_exact_words", "search_case", "search_by_meaning", "check_statements",
+                  "get_document_text"],
     },
     {
         "id": "interviews",
