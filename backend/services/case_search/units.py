@@ -29,11 +29,11 @@ READ_WHOLE = {"phone_text": "phone_messages for the thread and window", "documen
               "statement_pages": "get_document_text", "transcripts": "get_transcript"}
 
 
-def _cut(body: str, terms: list[str], area: str) -> tuple[str, int]:
+def _cut(body: str, terms: list[str], area: str, title: str | None = None) -> tuple[str, int]:
     body = body or ""
     if len(body) <= UNIT_CHARS:
         return body, 0
-    start = best_start(body, terms, UNIT_CHARS)
+    start = best_start(body, terms, UNIT_CHARS, title)
     left = len(body) - UNIT_CHARS
     how = READ_WHOLE.get(area)
     note = "[%d characters of this record are not shown%s.]" % (left, ("; read the whole with %s" % how) if how else "")
@@ -111,6 +111,6 @@ def build(conn, case_id, hit: dict[str, Any], terms: list[str]) -> dict[str, Any
     except Exception:  # noqa: BLE001 - the hit stays as found, said so
         logger.warning("Unit could not be widened for %s %s", area, hit.get("key"), exc_info=True)
         hit["unit_note"] = "Shown as found; its wider context could not be read."
-    hit["text"], hit["chars_not_shown"] = _cut(body, terms, area)
+    hit["text"], hit["chars_not_shown"] = _cut(body, terms, area, hit.get("title"))
     hit["unit"] = unit
     return hit

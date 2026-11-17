@@ -245,7 +245,7 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
                 continue
         # past the page's budget: the hit is listed with its grade, reason and an excerpt; offset=<its n - 1> reads it
         # whole (the best hits come whole, the rest are counted and listed, never left out)
-        brief = dict(c, text=R.excerpt(c.get("text") or "", page_terms, EXCERPT_CHARS), unit="excerpt",
+        brief = dict(c, text=R.excerpt(c.get("text") or "", page_terms, EXCERPT_CHARS, c.get("title")), unit="excerpt",
                      chars_not_shown=max(0, len(c.get("text") or "") - EXCERPT_CHARS))
         hits.append(_public(brief, offset + i + 1))
     nxt = offset + len(hits) if offset + len(hits) < len(pool) else None

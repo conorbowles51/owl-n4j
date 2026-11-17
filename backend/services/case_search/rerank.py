@@ -93,18 +93,23 @@ def _forms(term: str) -> list[str]:
     return [t, t[:-1]] if len(t) > 4 and t.endswith("s") and not t.endswith("ss") else [t]
 
 
-def excerpt(body: str, terms: list[str], limit: int = CANDIDATE_CHARS) -> str:
+def excerpt(body: str, terms: list[str], limit: int = CANDIDATE_CHARS, title: str | None = None) -> str:
     """The part of ``body`` that holds the most different question words, the first such part when several tie."""
     body = body or ""
     if len(body) <= limit:
         return body
-    start = best_start(body, terms, limit)
+    start = best_start(body, terms, limit, title)
     return ("…" if start else "") + body[start:start + limit] + ("…" if start + limit < len(body) else "")
 
 
-def best_start(body: str, terms: list[str], limit: int) -> int:
-    """Where a ``limit``-character cut of ``body`` holds the most different question words (0 when none is there)."""
+def best_start(body: str, terms: list[str], limit: int, title: str | None = None) -> int:
+    """Where a ``limit``-character cut of ``body`` holds the most different question words (0 when none is there).
+    A first line that repeats the hit's ``title`` is not read: the title is shown beside the cut, and a question word
+    in a file name ("practice-2024-02.pdf") put every cut of a statement page at its header."""
     low = body.casefold()
+    first = low.split("\n", 1)[0]
+    head = (title or "").casefold().split()[0] if (title or "").strip() else ""
+    skip = len(first) if len(head) >= 4 and head.rstrip(",") in first else 0
     found: list[tuple[int, int]] = []  # (position, which term)
     for i, t in enumerate(terms):
         for f in _forms(t):
@@ -112,7 +117,8 @@ def best_start(body: str, terms: list[str], limit: int) -> int:
                 continue
             at, n = low.find(f), 0
             while at >= 0 and n < EXCERPT_PLACES:  # a common word's first places are enough to find the best part
-                found.append((at, i))
+                if at >= skip:
+                    found.append((at, i))
                 at, n = low.find(f, at + 1), n + 1
     found.sort()
     best, start = 0, 0
@@ -158,7 +164,7 @@ def rerank(question: str, candidates: list[dict[str, Any]], *, terms: list[str],
         for n, c in enumerate(part, 1):
             meta = " | ".join(x for x in (c.get("kind_label") or c.get("kind"), c.get("date") or "", c.get("title") or "")
                               if x)
-            lines.append("[%d] (%s)\n%s" % (n, meta, excerpt(c.get("text") or "", terms)))
+            lines.append("[%d] (%s)\n%s" % (n, meta, excerpt(c.get("text") or "", terms, title=c.get("title"))))
         prompt = RANK_PROMPT.format(question=question.strip(), when=when, items="\n\n".join(lines))
         return _parse(call(prompt)).get("scores") or []
 

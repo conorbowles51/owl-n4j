@@ -151,6 +151,15 @@ def test_a_long_whole_unit_is_cut_where_the_question_words_are():
     assert "CHECK 2202" in text_ and left > 0
 
 
+def test_a_word_in_the_title_line_does_not_place_the_cut():
+    body = "practice-2024-02.pdf, page 1, as read from the statement:\nBANK STATEMENT\n" + \
+        "PATIENT CARD SETTLEMENT 9827.00\n" * 12 + "CHECK 2202 2980.00\n" + "PATIENT CARD SETTLEMENT 9827.00\n" * 12
+    out = R.excerpt(body, ["practice", "checks", "refund", "paid"], 120, title="practice-2024-02.pdf page 1")
+    assert "CHECK 2202" in out
+    # with no title given, the first line is read as any other
+    assert R.best_start("practice x\n" + "y" * 300 + " checks", ["practice", "checks"], 50) == 0
+
+
 def test_grades_follow_the_stated_rule():
     assert [S.grade(s) for s in (10, 7, 6.5, 4, 3.9, 0, None)] == [
         "strong", "strong", "moderate", "moderate", "weak", "weak", "ungraded"]
