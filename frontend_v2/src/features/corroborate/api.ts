@@ -27,6 +27,10 @@ export interface Scope {
   people?: string[]
 }
 
+export function scopeIsEmpty(s: Scope): boolean {
+  return !s.from && !s.to && !s.recurring && !(s.kinds?.length) && !(s.people?.length)
+}
+
 export interface Preview {
   members: number
   selected: number

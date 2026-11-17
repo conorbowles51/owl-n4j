@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { relationAPI, setCurrentQuery } from "@/features/relations/api"
-import { corroborateAPI, type QuestionChips, type Scope, type SuggestedQuestion } from "./api"
-import { ScopeBar, scopeIsEmpty } from "./ScopeBar"
+import { corroborateAPI, scopeIsEmpty, type QuestionChips, type Scope, type SuggestedQuestion } from "./api"
+import { ScopeBar } from "./ScopeBar"
 import { selectionMembers, useSelection } from "./selection-store"
 
 const CHIP_WORDS: Record<keyof QuestionChips, string> = { when: "When", nights: "Nights", who: "Who", what: "What", compare_with: "Compare with" }

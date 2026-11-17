@@ -1,13 +1,9 @@
-import type { Preview, Scope } from "./api"
+import { scopeIsEmpty, type Preview, type Scope } from "./api"
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 const KIND_WORDS: Record<string, string> = {
   phone_record: "phone records", financial_transaction: "payments", evidence: "documents", graph_entity: "graph items",
   timeline_event: "timeline events", financial_account: "accounts", financial_party: "parties", place: "areas", entry: "notes",
-}
-
-export function scopeIsEmpty(s: Scope): boolean {
-  return !s.from && !s.to && !s.recurring && !(s.kinds?.length) && !(s.people?.length)
 }
 
 /**
