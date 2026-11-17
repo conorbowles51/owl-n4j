@@ -39,3 +39,22 @@ export function toggleLayer(all: string[], chosen: string[], id: string): string
 }
 
 export const onlyLayer = (all: string[], id: string): string[] => toChosen(all, [id])
+
+/** Above this many phones the control adds a search box and groups the phones by owner. */
+export const MANY_PHONES = 6
+
+export interface OwnerGroup<T> { owner: string | null; phones: T[] }
+
+/** Phones matching `query` (label or owner, any case) grouped by owner name: owners in name order, phones with no
+ * owner named last, phones in the case's order inside each group. */
+export function groupByOwner<T extends { label: string; owner?: string | null }>(phones: T[], query = ""): OwnerGroup<T>[] {
+  const q = query.trim().toLowerCase()
+  const kept = q ? phones.filter((p) => p.label.toLowerCase().includes(q) || (p.owner ?? "").toLowerCase().includes(q)) : phones
+  const groups = new Map<string, OwnerGroup<T>>()
+  for (const p of kept) {
+    const key = p.owner?.trim() || ""
+    if (!groups.has(key)) groups.set(key, { owner: key || null, phones: [] })
+    groups.get(key)!.phones.push(p)
+  }
+  return [...groups.values()].sort((a, b) => (a.owner === null ? 1 : b.owner === null ? -1 : a.owner.localeCompare(b.owner)))
+}

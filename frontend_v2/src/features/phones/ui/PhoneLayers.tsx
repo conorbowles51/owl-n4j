@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { layersOn, onlyLayer, toChosen, toggleLayer } from "../lib/phone-layers"
+import { groupByOwner, layersOn, MANY_PHONES, onlyLayer, toChosen, toggleLayer } from "../lib/phone-layers"
 import { PhoneShape } from "./PhoneChip"
 
 import type { LayerPhone } from "./use-case-phones"
@@ -26,6 +26,22 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
   const on = layersOn(all, chosen)
   // on a narrow screen the list opens on request, so it does not push the screen's own content out of view
   const [open, setOpen] = useState(() => typeof window.matchMedia !== "function" || window.matchMedia("(min-width: 768px)").matches)
+  const many = phones.length > MANY_PHONES
+  const [query, setQuery] = useState("")
+  const renderPhone = (p: LayerPhone) => {
+    const isOn = on.includes(p.id)
+    const count = counts === null ? null : counts?.[p.id]
+    return (
+      <span key={p.id} className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 ${isOn ? "" : "opacity-60"}`} data-phone-layer={p.id} data-on={isOn}>
+        <input type="checkbox" id={`pl-${p.id}`} checked={isOn} onChange={() => onChange(toggleLayer(all, chosen, p.id))} aria-label={`${p.label} on`} />
+        <PhoneShape index={p.index} />
+        <label htmlFor={`pl-${p.id}`} className={isOn ? "" : "line-through"}>{p.label}</label>
+        {p.owner && !many && <span className="text-muted-foreground">({p.owner})</span>}
+        {count !== null && <span className="text-muted-foreground">{count === undefined ? "counting" : `${n(count)} ${count === 1 ? noun.replace(/s$/, "") : noun}`}</span>}
+        <button type="button" className="text-xs underline" onClick={() => onChange(onlyLayer(all, p.id))}>Only this</button>
+      </span>
+    )
+  }
   if (phones.length < 2) return null
   return (
     <section role="group" aria-label="Phone layers" className="flex flex-col gap-1 border-b bg-card px-3 py-2 text-sm" data-testid="phone-layers">
@@ -34,21 +50,24 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
       </button>
       <div className={`flex-wrap items-center gap-2 ${open ? "flex" : "hidden md:flex"}`}>
         <span className="hidden font-medium md:inline">Phones</span>
-        {phones.map((p) => {
-          const isOn = on.includes(p.id)
-          const count = counts === null ? null : counts?.[p.id]
-          return (
-            <span key={p.id} className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 ${isOn ? "" : "opacity-60"}`} data-phone-layer={p.id} data-on={isOn}>
-              <input type="checkbox" id={`pl-${p.id}`} checked={isOn} onChange={() => onChange(toggleLayer(all, chosen, p.id))} aria-label={`${p.label} on`} />
-              <PhoneShape index={p.index} />
-              <label htmlFor={`pl-${p.id}`} className={isOn ? "" : "line-through"}>{p.label}</label>
-              {count !== null && <span className="text-muted-foreground">{count === undefined ? "counting" : `${n(count)} ${count === 1 ? noun.replace(/s$/, "") : noun}`}</span>}
-              <button type="button" className="text-xs underline" onClick={() => onChange(onlyLayer(all, p.id))}>Only this</button>
-            </span>
-          )
-        })}
+        {many && (
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a phone or owner" aria-label="Find a phone or owner"
+            className="rounded border bg-background px-2 py-0.5 text-sm" />
+        )}
+        {many ? null : phones.map(renderPhone)}
         <Button size="sm" variant="outline" disabled={on.length === all.length} onClick={() => onChange(toChosen(all, all))}>All</Button>
       </div>
+      {many && open && (
+        <div className="flex flex-col gap-1" data-testid="phone-layer-groups">
+          {groupByOwner(phones, query).map((g) => (
+            <div key={g.owner ?? "none"} className="flex flex-wrap items-center gap-2" role="group" aria-label={g.owner ?? "No owner named"}>
+              <span className="w-40 shrink-0 text-xs font-medium text-muted-foreground">{g.owner ?? "No owner named"}</span>
+              {g.phones.map(renderPhone)}
+            </div>
+          ))}
+          {query.trim() && groupByOwner(phones, query).length === 0 && <p className="text-xs text-muted-foreground">No phone or owner matches "{query.trim()}".</p>}
+        </div>
+      )}
       <p role="status" className={`text-xs text-muted-foreground ${open ? "" : "hidden md:block"}`}>
         {on.length === all.length ? `All ${n(all.length)} phones are on.` : `${n(on.length)} of ${n(all.length)} phones are on. The ${n(all.length - on.length)} off ${all.length - on.length === 1 ? "is" : "are"} not drawn or counted.`}
       </p>
