@@ -149,8 +149,17 @@ async function makeFilm(browser, state, name) {
       mouse = { x, y }
     },
     async point(locator, { ms = 550, dx = 0.5, dy = 0.5 } = {}) {
-      await locator.waitFor({ state: "visible", timeout: 60_000 })
-      await locator.scrollIntoViewIfNeeded()
+      // A list that refreshes (an agent run elsewhere in the case) can redraw the element mid-step: find it again once.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await locator.waitFor({ state: "visible", timeout: 60_000 })
+          await locator.scrollIntoViewIfNeeded()
+          break
+        } catch (e) {
+          if (attempt > 0 || !/not attached/.test(String(e?.message))) throw e
+          await page.waitForTimeout(500)
+        }
+      }
       const b = await locator.boundingBox()
       if (!b) throw new Error("no box to point at")
       await f.moveTo(b.x + b.width * dx, b.y + b.height * dy, ms)
@@ -230,7 +239,7 @@ async function makeFilm(browser, state, name) {
 
 /** No progress text left on the page ("7 of 8 parts loaded", "Loading the review queue"). */
 const settled = (page) => page.waitForFunction(
-  () => !/\d+ of \d+ parts loaded|Loading the |Loading transaction|Loading [^\n]*(…|\.\.\.)|Reading the theory…|Drawing the page|Working out /.test(document.body.innerText),
+  () => !/\d+ of \d+ parts loaded|Loading the |Loading casework|Loading page \d|Loading transaction|Loading [^\n]*(…|\.\.\.)|Reading the theory…|Drawing the page|Working out /.test(document.body.innerText),
   null, { timeout: 90_000, polling: 250 }).catch(() => {})
 
 const visible = (page, text, opts = {}) => page.getByText(text, opts).first().waitFor({ state: "visible", timeout: 90_000 })
@@ -535,6 +544,84 @@ const FILMS = {
     await f.pause(1300)
     await f.point(ne, { ms: 600 })
     await f.pause(2200)
+  },
+
+  // Section 9 (lx-sitecopy): the defence theory's linked material, each item marked Supports, Context or Contradicts,
+  // then the for-and-against comparison. Points only: a mark is never clicked (a click there would change it).
+  async "theory-marks"(f) {
+    const { page } = f
+    await f.goto("workspace?view=casework", () => visible(page, "T2 Defence theory"))
+    await f.pause(600)
+    await f.click(page.getByText("T2 Defence theory").first(), { dx: 0.3 })
+    // The sheet opens on "Loading casework": the film cuts at the click and resumes on the loaded sheet.
+    f.hide()
+    await visible(page, "Linked material")
+    await settled(page)
+    await page.waitForTimeout(400)
+    f.show()
+    await f.pause(800)
+    const sheet = page.getByRole("dialog").first()
+    await f.point(sheet.getByText("Unit 212 paid by Kell's card").first(), { dx: 0.3, ms: 600 })
+    await f.pause(400)
+    await f.point(sheet.getByText("Supports", { exact: true }).nth(3), { ms: 550 })
+    await f.pause(900)
+    await f.point(sheet.getByText("Context", { exact: true }).first(), { ms: 600 })
+    await f.pause(700)
+    const against = sheet.getByText("Kell says the phone was Mateo's").first()
+    await f.point(against, { dx: 0.3, ms: 550 })
+    await f.pause(500)
+    await f.point(sheet.getByText("Contradicts", { exact: true }).first(), { ms: 550 })
+    f.markPoster()
+    await f.pause(1000)
+    const cmp = sheet.getByText(/^Compare what supports and contradicts it/).first()
+    await f.moveTo(980, 600, 400)
+    await f.wheelTo(cmp, { top: 200, bottom: 420 })
+    await f.click(cmp, { dx: 0.3 })
+    await f.until(() => sheet.locator('[data-testid="compare-contradicts"]').first().waitFor({ state: "visible", timeout: 30_000 }))
+    await f.wheelTo(sheet.locator('[data-testid="compare-contradicts"]').first(), { top: 200, bottom: 820 })
+    await f.point(sheet.locator('[data-testid="compare-supports"]').first(), { dx: 0.3, dy: 0.4, ms: 600 })
+    await f.pause(1200)
+    await f.point(sheet.locator('[data-testid="compare-contradicts"]').first(), { dx: 0.3, dy: 0.3, ms: 600 })
+    await f.pause(1500)
+  },
+
+  // Section 10 (lx-sitecopy): the storage-unit answer, the source check that closes it, and a citation it checked.
+  async "assistant-check"(f) {
+    const { page } = f
+    await f.goto(`agent?thread=${T.unit212}`, () => visible(page, "Storage unit 212 at Stowell Self Storage was rented"))
+    await f.pause(1400)
+    await f.point(page.getByText(/^Storage unit 212 at Stowell Self Storage was rented/).first(), { dx: 0.3, ms: 600 })
+    await f.pause(1000)
+    const check = page.getByText(/^Source check: \d+ of \d+ citations support their sentence/).first()
+    await f.moveTo(800, 560, 400)
+    await f.wheelTo(check, { top: 380, bottom: 700 })
+    await f.point(check, { dx: 0.2, ms: 650 })
+    f.markPoster()
+    await f.pause(2600)
+    const line = page.getByText(/debit card ending 4471, cardholder TRAVIS KELL/).first()
+    await f.wheelTo(line, { top: 260, bottom: 560 })
+    await f.point(line, { dx: 0.3, ms: 600 })
+    await f.pause(900)
+    await f.click(line.locator('button[data-citation-scheme="doc"]').first())
+    const dialog = page.getByRole("dialog").first()
+    // The viewer opens on "Loading page 1...": the film cuts at the click and resumes on the drawn page.
+    f.hide()
+    await (async () => {
+      await dialog.getByText("stowell-rental-agreement-unit-212.pdf").first().waitFor({ timeout: 60_000 })
+      await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] img, [role="dialog"] canvas')]
+        .some((e) => (e.tagName === "IMG" ? e.complete && e.naturalWidth > 200 : e.width > 200)), null, { timeout: 60_000 })
+    })()
+    // The viewer draws the page, then draws it again once its page count arrives ("Page 1 of 1"): wait out both.
+    await settled(page)
+    await page.waitForTimeout(1500)
+    await settled(page)
+    await page.waitForTimeout(400)
+    f.show()
+    await f.pause(500)
+    const img = dialog.locator("img, canvas").first()
+    const b = await img.boundingBox()
+    if (b) await f.moveTo(b.x + b.width * 0.37, b.y + b.width * 0.207, 700) // "debit card ending 4471, cardholder TRAVIS KELL"
+    await f.pause(2400)
   },
 
   // Section 11: Travis Kell in the graph, a fact drawn from the lease, and the lease page it came from.
