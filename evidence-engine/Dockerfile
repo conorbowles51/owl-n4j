@@ -1,6 +1,8 @@
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Debian security updates the base image does not carry yet (17 Nov: zlib1g 1.3.1-1+b1 in all five images, fixed
+# in +deb13u1). The other image findings have no Debian fix; the ci-scan lists them per live head.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     build-essential \
     ffmpeg \
     tesseract-ocr \
