@@ -2559,7 +2559,8 @@ Only include candidates with score >= 5."""
             lambda m: f'[{m.group(1)}, p.{m.group(2)}](doc://{quote(m.group(1).strip(), safe="")}/{m.group(2)})',
             answer
         )
-        answer = self._pin_citations(case_id, answer)
+        answer, citations_dropped = self._pin_citations(case_id, answer)
+        debug_log["citations_dropped"] = citations_dropped
 
         debug_log["final_prompt"] = final_prompt
         _add_stage(
@@ -2658,6 +2659,10 @@ Only include candidates with score >= 5."""
         if search_notes and answer:
             # Which search ran is part of the answer, not only the debug log (lx-docsearch C).
             answer = answer.rstrip() + "\n\n" + "\n".join("_%s_" % n for n in search_notes)
+        if citations_dropped and answer:
+            answer = answer.rstrip() + "\n\n_%s_" % (
+                "1 citation was removed because it names nothing in this case." if citations_dropped == 1 else
+                "%d citations were removed because they name nothing in this case." % citations_dropped)
 
         return {
             "answer": answer,
@@ -2670,6 +2675,7 @@ Only include candidates with score >= 5."""
             "result_graph": result_graph,
             "document_summary": doc_summary_text or None,
             "sources": sources,
+            "citations_dropped": citations_dropped,
         }
         
         
@@ -2683,22 +2689,25 @@ Only include candidates with score >= 5."""
     # Source helpers
     # =====================
 
-    def _pin_citations(self, case_id, answer: str) -> str:
+    def _pin_citations(self, case_id, answer: str) -> "tuple[str, int]":
         """A document the answer names once in the case is cited by its evidence file id (services.case_citations),
-        so a later upload with the same name cannot change what the citation opens. Left as written on failure."""
+        so a later upload with the same name cannot change what the citation opens. A citation that names nothing in the
+        case loses its link and is counted: ``(answer, dropped)``. Left as written on failure."""
         if not case_id or not answer:
-            return answer
+            return answer, 0
         try:
             from sqlalchemy.orm import Session
 
             from postgres.session import _get_engine
-            from services.case_citations import canonicalize
+            from services.case_citations import canonicalize, drop_unresolved
             with Session(_get_engine()) as session:
-                return canonicalize(session, case_id, answer)
+                pinned = canonicalize(session, case_id, answer)
+                kept, dropped = drop_unresolved(session, case_id, pinned)
+            return kept, dropped
         except Exception:  # noqa: BLE001 - the renderer still resolves names, and offers a choice when shared
             import logging
             logging.getLogger(__name__).exception("Chat citations could not be pinned for case %s", case_id)
-            return answer
+            return answer, 0
 
     def _selected_phone_records(self, case_id: str, phone_context: Dict[str, Any],
                                 debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
@@ -2751,8 +2760,8 @@ Only include candidates with score >= 5."""
             from postgres.session import _get_engine
             from services import case_search
             with _get_engine().connect() as conn:
-                return case_search.search(conn, case_id, question, kinds=("phones", "documents"),
-                                          areas=["phone_text", "documents", "statement_pages"], limit=20,
+                return case_search.search(conn, case_id, question, kinds=("phones", "documents", "ledger", "graph"),
+                                          areas=["phone_text", "documents", "statement_pages", "ledger", "graph"], limit=20,
                                           phrase=False, page_chars=24000)
         pool = ThreadPoolExecutor(max_workers=1)
         future = pool.submit(run)
@@ -2761,10 +2770,11 @@ Only include candidates with score >= 5."""
 
     def _case_search_passages(self, question: str, case_id: str, found: List[Dict[str, Any]],
                               debug_log: Optional[Dict] = None, pending=None) -> List[Dict[str, Any]]:
-        """lx-casesearch: the case search's phone and document hits (meaning and words, names tied to their numbers,
-        reranked against the question), Strong and Moderate only, as one more ranked list for the fusion. Chat cites
-        phone records (rec://) and document pages (doc://); ledger rows, graph entities and notes are not taken
-        here, since chat has no citation for them. A hit chat already found is marked on that passage
+        """lx-casesearch: the case search's phone, document, payment and graph-entity hits (meaning and words, names
+        tied to their numbers, reranked against the question), Strong and Moderate only, as one more ranked list for
+        the fusion. Chat cites phone records (rec://), document pages (doc://), payments (txn://) and graph entities
+        (entity://); notes and graph connections are not taken here, since none has a citation that opens it
+        (lx-chatcite). A hit chat already found is marked on that passage
         (``_case_rank``) instead of being sent twice; the others are added. Returns the added passages."""
         if pending is None:
             pending = self._case_search_start(question, case_id)
@@ -2776,6 +2786,18 @@ Only include candidates with score >= 5."""
             if debug_log is not None:
                 debug_log["case_search"] = {"error": str(exc)[:300] or type(exc).__name__}
             return []
+        txn_facts: Dict[str, Dict[str, Any]] = {}
+        wanted = [(h.get("cite") or "")[6:] for h in res["hits"] if (h.get("cite") or "").startswith("txn://")
+                  and h["grade"] in ("strong", "moderate") and h.get("unit") != "excerpt"]
+        if wanted:
+            try:
+                from postgres.session import _get_engine
+                from services import chat_case_passages
+                with _get_engine().connect() as conn:
+                    txn_facts = chat_case_passages.payment_facts(conn, case_id, wanted)
+            except Exception as exc:  # payments are left out, and the debug log says why
+                if debug_log is not None:
+                    debug_log["case_search_payments"] = {"error": str(exc)[:300]}
         by_record, by_page = {}, {}
         for c in found:
             m = c.get("metadata") or {}
@@ -2800,6 +2822,17 @@ Only include candidates with score >= 5."""
                 file_id, _, page = cite[6:].partition("/")
                 meta.update({"evidence_file_id": file_id, "page_start": page or None})
                 twin = by_page.get((file_id, page or ""))
+            elif cite.startswith(("txn://", "entity://")):
+                from services import chat_case_passages
+                made = chat_case_passages.passage(h, cite, txn_facts, case_id)
+                if made is None:
+                    continue
+                rank += 1
+                made["_case_rank"] = rank
+                added.append(made)
+                if len(added) >= self.CASE_SEARCH_PASSAGES:
+                    break
+                continue
             else:
                 continue
             rank += 1
