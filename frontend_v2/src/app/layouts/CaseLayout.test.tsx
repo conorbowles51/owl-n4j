@@ -86,12 +86,12 @@ it("offers Report a problem on a phone screen and on no other page", async () =>
   expect(screen.queryByTestId("phone-problem-bar")).toBeNull()
 })
 
-it("shows the look in progress on every case screen, the graph included", () => {
+it("shows the look in progress on every case screen, the graph included", async () => {
   localStorage.setItem("loupeRelationQuery:case", JSON.stringify({ id: "g1", count: 4 }))
   for (const path of ["/cases/case/workspace", "/cases/case/graph", "/cases/case/financial"]) {
     state.path = path
     const view = render(<CaseLayout />)
-    expect(screen.getByText("Looking into how 4 items relate")).toBeTruthy()
+    expect(await screen.findByText("Looking into how 4 items relate")).toBeTruthy()
     view.unmount()
   }
   localStorage.clear()

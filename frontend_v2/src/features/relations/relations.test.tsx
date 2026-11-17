@@ -112,10 +112,11 @@ describe("beside Add to… on the phone, passage and search screens", () => {
   const links = [{ target_type: "phone_record" as const, target_id: "r1", label: "Call", source_anchor: {} },
     { target_type: "evidence_passage" as const, target_id: "f:h:1:9", source_anchor: {} }]
   const menu = <AddToMenu caseId="c1" links={links} noun="records" targets={[]} client={{} as never} origin="Added from Conversations" keys={false} />
-  it("offers the look in a router, and none where it could not open", () => {
+  it("offers the look in a router, and none where it could not open", async () => {
     wrap(menu)
-    expect(screen.getByRole("button", { name: "Look into how these relate" })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "Look into how these relate" })).toBeTruthy()
     plainRender(menu)
+    await new Promise((r) => setTimeout(r, 50))
     expect(screen.getAllByRole("button", { name: "Look into how these relate" }).length).toBe(1)
   })
   it("is not offered when nothing is selected", () => {

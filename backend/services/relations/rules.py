@@ -206,6 +206,8 @@ def sequences(items: list[dict], base: dict, *, link_gap: timedelta = timedelta(
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _DIGITS = re.compile(r"(?<![\d])(?:\+?\d[\d\s().-]{5,}\d)(?![\d])")
+_DATES = re.compile(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?"
+                    r"|\d{1,2}[/.]\d{1,2}[/.]\d{2,4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?|\b\d{1,2}:\d{2}(?::\d{2})?\b")
 _SUFFIX = {"ltd", "llc", "inc", "corp", "corporation", "limited", "gmbh", "sa", "plc", "co", "company", "lp", "llp", "bv"}
 _STOP = {"the", "and", "of", "for", "to", "a", "an", "in", "at", "by", "payment", "transfer", "from", "ref", "account"}
 _COMPANY = re.compile(r"((?:[A-Z][\w&'-]+\s+){1,4}(?:Ltd|LLC|Inc|Corp|Corporation|Limited|GmbH|SA|PLC|LP|LLP|BV)\b\.?)")
@@ -236,7 +238,7 @@ def extract_identifiers(text: str) -> list[dict]:
             found.append({"kind": "number", "value": norm_number(local), "display": m})  # a WhatsApp address is a number
             continue
         found.append({"kind": "email", "value": m.lower(), "display": m})
-    scrub = _EMAIL.sub(" ", text or "")
+    scrub = _DATES.sub(" ", _EMAIL.sub(" ", text or ""))  # a date or time of day is never a number to match
     for m in _DIGITS.findall(scrub):
         num = norm_number(m)
         if num:

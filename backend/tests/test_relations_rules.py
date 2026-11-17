@@ -164,3 +164,11 @@ def test_a_silence_of_a_day_or_more_is_longer_than_a_night_never_the_usual_quiet
     c, _ = rules.shared_silence(None, gaps={"A": [long] + nights, "B": [long] + nights})
     big = [x for x in c if x["detail"].get("hours", 0) >= 24]
     assert big and "longer than a night" in big[0]["reasons"][0] and big[0]["strength"] == "moderate"
+
+
+def test_a_date_or_time_in_free_text_is_never_read_as_a_phone_number():
+    for text in ("Badge B-11032 opened dock 3 at 2024-05-03 23:14", "Badge B-20417 in 2024-05-17 22:58:31", "paid on 03/05/2024 11:20",
+                 "call at 2024-05-03T23:14:05+00:00"):
+        assert [f for f in rules.extract_identifiers(text) if f["kind"] == "number"] == [], text
+    found = rules.extract_identifiers("Call +1 443 555 0131 at 2024-05-03 23:14")
+    assert [(f["kind"], f["value"]) for f in found] == [("number", "14435550131")]

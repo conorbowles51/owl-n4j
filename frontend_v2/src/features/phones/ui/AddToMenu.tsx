@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { trackUx } from "@/lib/ux-events"
-import { LookIntoButton } from "@/features/relations/LookIntoButton"
+import { LookInto } from "@/features/relations/LookInto"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProgressPanel } from "@/components/ui/progress-panel"
@@ -154,7 +154,7 @@ export function AddToMenu({
           Add to…
         </Button>
         {!disabledReason && count > 0 && (
-          <LookIntoButton caseId={caseId} surface="phone"
+          <LookInto caseId={caseId} surface="phone"
             items={links.map((l) => ({ target_type: l.target_type, target_id: l.target_id, target_label: l.label }))} />
         )}
         {disabledReason && <span className="text-sm text-muted-foreground">{disabledReason}</span>}

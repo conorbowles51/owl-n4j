@@ -1,4 +1,4 @@
-import { RelationTray } from "@/features/relations/RelationTray"
+import { Tray as RelationTray } from "@/features/relations/Tray"
 import { useSwitch } from "@/lib/ui-switches"
 import { CorroborateTray } from "./CorroborateTray"
 import { ItemKeys } from "./ItemKeys"

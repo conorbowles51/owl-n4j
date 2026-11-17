@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useCollectTargets } from "@/features/phones/collect-targets"
 import { theoryHref } from "./source-links"
 import { announce } from "@/features/guidance/announce"
-import { LookIntoButton } from "@/features/relations/LookIntoButton"
+import { LookInto } from "@/features/relations/LookInto"
 import { theoryAPI, choiceWords, type AdditionInput, type AdditionResult, type GroupInput, type ItemInput, type Surface } from "./api"
 
 /** How an addition bears on the theory. Context is the default, so one click adds it. */
@@ -54,7 +54,7 @@ export function AddToTheory({ caseId, surface, items, group, label = "Add to the
       >
         {label}
       </Button>
-      {surface !== "history" && <LookIntoButton caseId={caseId} surface={surface} items={items} group={group} size={size} label={lookLabel ?? (label.length <= 10 ? "Relate…" : undefined)} />}
+      {surface !== "history" && <LookInto caseId={caseId} surface={surface} items={items} group={group} size={size} label={lookLabel ?? (label.length <= 10 ? "Relate…" : undefined)} />}
       {open && <AddToTheoryDialog caseId={caseId} surface={surface} items={items} group={group} onClose={() => setOpen(false)} />}
     </span>
   )
