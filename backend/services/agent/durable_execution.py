@@ -16,6 +16,15 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 VERSION = 1
 DEFAULT_WINDOWS = 8
 MAX_SECONDS = 3600
+DEEP_MAX_SECONDS = 3 * 3600
+REVIEW_SECONDS = 1800
+
+
+def time_limits(deep: bool) -> tuple[int, int]:
+    """(work limit, limit including the source review) in seconds. The review of a finished report gets its own
+    time after the work: a long deep run used to spend the whole hour reading and then fail in the review."""
+    work = DEEP_MAX_SECONDS if deep else MAX_SECONDS
+    return work, work + REVIEW_SECONDS
 MUTATING_PREFIXES = ("propose_", "draft_", "plan_theory_", "save_", "update_", "delete_", "accept_")
 
 
@@ -271,6 +280,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
         automatic_windows = max(automatic_windows, D.DEEP_WINDOWS)
     total_budget = checkpoint.get("budget_base", 0) + max(1, max_tool_calls) * max(1, min(automatic_windows, 32))
     elapsed_before = checkpoint.get("elapsed_seconds", 0)
+    work_seconds, review_seconds = time_limits(bool(context.deep_plan))
     started = time.monotonic()
     run_budget = g.run_budget_chars(g.context_window_for(getattr(runner, "model_id", None)))
 
@@ -391,7 +401,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 if call_id in completed:
                     continue
                 ensure_access()
-                if used >= total_budget or elapsed_before + time.monotonic() - started >= MAX_SECONDS:
+                if used >= total_budget or elapsed_before + time.monotonic() - started >= work_seconds:
                     clarification = g._budget_continuation_clarification(total_budget)
                     clarification["question"] = ("The job reached its work budget. Completed work is saved; "
                                                    "resume it to extend the budget, or keep this partial result.")
@@ -505,7 +515,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                     review_position.update(current=current, total=total)
                 def invoke_review(request_messages):
                     ensure_access()
-                    if elapsed_before + time.monotonic() - started >= MAX_SECONDS:
+                    if elapsed_before + time.monotonic() - started >= review_seconds:
                         raise ValueError('The source review reached the job time budget. Saved review work can be resumed.')
                     position = f"{review_position['current']} of {review_position['total']}"
                     note({**live_runs.progress_thinking(step=used), 'title': f'Checking report sources: {position}',

@@ -224,3 +224,11 @@ def test_one_record_cannot_back_a_run_of_different_facts():
 def test_method_points_to_bulk_reading_for_phones_and_documents():
     from services.agent import deep_investigation as D
     assert "read_scope_with_model" in D.METHOD["phones"] and "read_scope_with_model" in D.METHOD["documents"]
+
+
+def test_deep_run_gets_longer_work_time_and_the_review_its_own_time():
+    from services.agent import durable_execution as X
+    normal_work, normal_review = X.time_limits(False)
+    deep_work, deep_review = X.time_limits(True)
+    assert deep_work > normal_work >= 3600
+    assert normal_review - normal_work >= 1800 and deep_review - deep_work >= 1800
