@@ -5,10 +5,11 @@ Subcommands (from backend/, through live-run.sh so the tools read the live datab
 
   run      run every judged query of the sets through the real agent tools of THIS tree; write the scores
   compare  compare two run files, noise-aware; print the verdict; exit 0 PASS, 1 FAIL
-  gate     the one command every agent job runs before release: runs this tree (the candidate), takes the baseline
-           of origin's head (cached per head, shared by every job; run from a detached worktree when missing),
-           compares, scores any report files given, prints a plain verdict and writes it to
-           /mnt/owl-data/fin-wt/headless/relevance-gate/<label>-<sha>.txt
+  gate     the one command every agent job runs before release: asks every judged query of origin's head (the
+           baseline, a shared detached worktree per head) and of this tree (the candidate) back to back, so both
+           read the same live data; compares, scores any report files given, prints a plain verdict and writes it
+           to /mnt/owl-data/fin-wt/headless/relevance-gate/<label>-<sha>.txt
+  worker   one tree's side of the gate (started by gate)
   report   score report texts (an agent answer, a stand-in's report) against a rubric
 
   bash /mnt/owl-data/fin-wt/live-run.sh <worktree> financial_agent_relevance gate --label <job>
@@ -51,13 +52,9 @@ SETS = [os.path.join(_REPO, 'evidence-engine', 'tests', 'relevance', n)
 RUBRICS = os.path.join(_REPO, 'evidence-engine', 'tests', 'relevance', 'report-rubrics.json')
 GATE_DIR = '/mnt/owl-data/tmp/relevance-gate'
 VERDICT_DIR = '/mnt/owl-data/fin-wt/headless/relevance-gate'
-BASE_TREE = '/mnt/owl-data/fin-wt/relevance-base'
+BASE_TREE = '/mnt/owl-data/fin-wt/relevance-base'  # one detached worktree per origin head under it
 LIVE = '/home/conorbowles51/app-v3/owl-n4j'
 BRANCH = 'origin/integration/evidence-main-reunion'
-# A cached baseline is reused for this long. Live data moves under the searches (measured 17 Nov: the same tree found
-# 6 more judged records 20 minutes later while meaning vectors were being filled), so the baseline and the candidate
-# must read nearly the same data. Reverse: interleaved runs of both trees, or a frozen test database.
-BASE_MAX_AGE_S = 2 * 3600
 
 
 def _sha(path='.'):
@@ -114,18 +111,15 @@ def guard_process():
             raise SystemExit('refusing to run: sessions are not read-only')
 
 
-def run_sets(paths, kinds=None, repeat=None, only=None, dump=None, log=lambda *a: print(*a, flush=True)):
-    """Runs of every judged query: per run the aggregate and per query its score (or error / missing tool).
+def plan_queries(paths, kinds=None, repeat=None, only=None, log=lambda *a: print(*a, flush=True)):
+    """The judged queries to run, in order: (set index, judged set, query, times). No backend import: the gate plans
+    in its own process and hands the same plan to both trees' workers.
 
     ``repeat`` None: each query runs as often as its kind asks (``repeat`` in the set's also_through entry or
-    ``kind_repeat``; 1 otherwise: measured 17 Nov, 0 of 99 queries ranked differently on a second run, so word and
-    meaning searches are deterministic); a query run fewer times than the most-repeated kind repeats its one result.
+    ``kind_repeat``; 1 otherwise: measured 17 Nov, 0 of 99 queries ranked differently on a second run seconds later).
     A number: every query runs that often."""
-    guard_process()
-    from services.agent.tools import AgentToolContext, _financial_session, make_agent_tools
-    sets = [json.load(open(p)) for p in paths]
     plan = []
-    for judged in sets:
+    for si, judged in enumerate(json.load(open(p)) for p in paths):
         if not judged.get('case_id'):
             log('%s: not loaded yet (no case_id in its set); not scored' % judged['case'])
             continue
@@ -134,50 +128,94 @@ def run_sets(paths, kinds=None, repeat=None, only=None, dump=None, log=lambda *a
         for q in expand(judged):
             if (kinds and q['kind'] not in kinds) or (only and q['id'] not in only):
                 continue
-            plan.append((judged, q, repeat or reps.get(q['kind'], 1)))
-    most = max([n for _, _, n in plan] or [1])
-    runs = [dict(queries={}) for _ in range(most)]
-    tools_by_case = {}
-    out = open(dump, 'w') if dump else None
-    for judged, q, n in plan:
+            plan.append((si, judged, q, repeat or reps.get(q['kind'], 1)))
+    return plan
+
+
+class Runner:
+    """Runs one judged query through this tree's agent tools (built once per case)."""
+
+    def __init__(self):
+        guard_process()
+        from services.agent.tools import AgentToolContext, _financial_session, make_agent_tools
+        self._ctx, self._session, self._make = AgentToolContext, _financial_session, make_agent_tools
+        self.tools_by_case = {}
+
+    def run(self, judged, q, dump=None):
         case_id = judged['case_id']
-        if case_id not in tools_by_case:
-            ctx = AgentToolContext(case_id=case_id, ledger_session_factory=_financial_session)
-            tools_by_case[case_id] = {t.name: t for t in make_agent_tools(ctx)}
-        qid = '%s:%s' % (judged['case'], q['id'])
-        tool = tools_by_case[case_id].get(q['tool'])
-        for i in range(most):
-            if i >= n:
-                runs[i]['queries'][qid] = runs[0]['queries'][qid]
-                continue
-            row = dict(kind=q['kind'], tool=q['tool'], case=judged['case'])
-            if tool is None:
-                row['missing'] = 'no tool %s in this tree' % q['tool']
-            else:
-                t0 = time.time()
-                try:
-                    texts = [R.unit_text(u) for u in R.result_units(tool.invoke(q['args']))]
-                    row['score'] = R.score_query(texts, q.get('relevant') or [], q.get('decoys') or [])
-                    if out and i == 0:
-                        out.write(json.dumps(dict(query=qid, args=q['args'], units=[t[:400] for t in texts[:50]]),
-                                             ensure_ascii=False) + '\n')
-                except Exception as exc:  # noqa: BLE001 - a crash is a failed search, recorded
-                    row['error'] = '%s: %s' % (type(exc).__name__, str(exc)[:300])
-                row['seconds'] = round(time.time() - t0, 2)
-            runs[i]['queries'][qid] = row
-            s = row.get('score')
-            log('%-34s %-10s %s' % (qid[:34], q['kind'], row.get('missing') or row.get('error') or
-                'units %d first %s r@10 %s decoys %s %.0fs' % (s['units'], s['first_relevant'],
-                                                               s['recall_at_10'], s['decoys_top10'],
-                                                               row['seconds'])))
-    if out:
-        out.close()
+        if case_id not in self.tools_by_case:
+            ctx = self._ctx(case_id=case_id, ledger_session_factory=self._session)
+            self.tools_by_case[case_id] = {t.name: t for t in self._make(ctx)}
+        tool = self.tools_by_case[case_id].get(q['tool'])
+        row = dict(kind=q['kind'], tool=q['tool'], case=judged['case'])
+        if tool is None:
+            row['missing'] = 'no tool %s in this tree' % q['tool']
+            return row
+        t0 = time.time()
+        try:
+            texts = [R.unit_text(u) for u in R.result_units(tool.invoke(q['args']))]
+            row['score'] = R.score_query(texts, q.get('relevant') or [], q.get('decoys') or [])
+            if dump:
+                dump.write(json.dumps(dict(query='%s:%s' % (judged['case'], q['id']), args=q['args'],
+                                           units=[t[:400] for t in texts[:50]]), ensure_ascii=False) + '\n')
+        except Exception as exc:  # noqa: BLE001 - a crash is a failed search, recorded
+            row['error'] = '%s: %s' % (type(exc).__name__, str(exc)[:300])
+        row['seconds'] = round(time.time() - t0, 2)
+        return row
+
+
+def _row_line(qid, row):
+    s = row.get('score')
+    return '%-34s %-10s %s' % (qid[:34], row['kind'], row.get('missing') or row.get('error') or
+                               'units %d first %s r@10 %s decoys %s %.0fs' % (
+                                   s['units'], s['first_relevant'], s['recall_at_10'], s['decoys_top10'],
+                                   row['seconds']))
+
+
+def finish_runs(runs):
     for r in runs:
         r['aggregate'] = R.aggregate([dict(kind=v['kind'], **({'score': v['score']} if 'score' in v else
                                                               {'error': v.get('error')}))
                                       for v in r['queries'].values() if 'missing' not in v])
         r['missing'] = sorted({v['tool'] for v in r['queries'].values() if 'missing' in v})
     return runs
+
+
+def run_sets(paths, kinds=None, repeat=None, only=None, dump=None, log=lambda *a: print(*a, flush=True)):
+    """Runs of every judged query in this tree: per run the aggregate and per query its score (or error / missing
+    tool). A query run fewer times than the most-repeated kind repeats its one result in the later runs."""
+    plan = plan_queries(paths, kinds, repeat, only, log)
+    runner = Runner()
+    most = max([n for *_, n in plan] or [1])
+    runs = [dict(queries={}) for _ in range(most)]
+    out = open(dump, 'w') if dump else None
+    for _, judged, q, n in plan:
+        qid = '%s:%s' % (judged['case'], q['id'])
+        for i in range(most):
+            if i >= n:
+                runs[i]['queries'][qid] = runs[0]['queries'][qid]
+                continue
+            runs[i]['queries'][qid] = row = runner.run(judged, q, out if i == 0 else None)
+            log(_row_line(qid, row))
+    if out:
+        out.close()
+    return finish_runs(runs)
+
+
+def cmd_worker(args):
+    """One tree's side of an interleaved gate: reads plan indexes on stdin, answers each with its row on stdout."""
+    plan = plan_queries(args.set, args.kinds, args.repeat, None, log=lambda *a: None)
+    runner = Runner()
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr  # the tools' own prints must not reach the protocol stream
+    real_stdout.write(json.dumps(dict(ready=True, sha=_sha('.'), n=len(plan))) + '\n')
+    real_stdout.flush()
+    for line in sys.stdin:
+        i = int(json.loads(line)['i'])
+        _, judged, q, _n = plan[i]
+        real_stdout.write(json.dumps(runner.run(judged, q), default=str) + '\n')
+        real_stdout.flush()
+    return 0
 
 
 def write_runs(path, runs, paths, tree='.'):
@@ -265,46 +303,72 @@ def cmd_report(args):
 # ---- the gate ----------------------------------------------------------------------------------------------------
 
 def _base_tree(sha):
-    """A detached worktree of the live repo at ``sha`` (shared by every job's gate; one checkout at a time)."""
-    if not os.path.isdir(BASE_TREE):
-        subprocess.run(['git', '-C', LIVE, 'worktree', 'add', '--detach', BASE_TREE, sha], check=True,
-                       capture_output=True)
-    else:
-        subprocess.run(['git', '-C', BASE_TREE, 'checkout', '-q', '--detach', sha], check=True, capture_output=True)
-    return BASE_TREE
-
-
-def baseline(paths, kinds, repeat, refresh=False, log=print):
-    """Runs of origin's head for these sets, cached under GATE_DIR per (head, sets, scorer). Run from the shared
-    base worktree with this tree's runner and scorer when missing."""
-    subprocess.run(['git', '-C', LIVE, 'fetch', '-q', 'origin', 'integration/evidence-main-reunion'],
-                   capture_output=True, timeout=300)
-    head = subprocess.run(['git', '-C', LIVE, 'rev-parse', BRANCH], capture_output=True, text=True).stdout.strip()
-    scorer = hashlib.sha256(open(R.__file__, 'rb').read() + open(os.path.abspath(__file__), 'rb').read()).hexdigest()[:8]
-    key = '%s-%s-%s-%s-r%s' % (head[:12], _set_hash(paths), scorer, '+'.join(kinds or ['all']), repeat or 'k')
-    os.makedirs(GATE_DIR, mode=0o700, exist_ok=True)
-    path = os.path.join(GATE_DIR, 'base-%s.json' % key)
-    fresh = os.path.exists(path) and time.time() - os.path.getmtime(path) < BASE_MAX_AGE_S
-    if fresh and not refresh:
-        log('baseline: cached run of origin %s, %d min old (%s)' % (head[:12], (time.time() - os.path.getmtime(path))
-                                                                     // 60, path))
-        return path, head
-    with open(os.path.join(GATE_DIR, 'base.lock'), 'w') as lock:
+    """A detached worktree of the live repo at ``sha``, one per origin head, shared by every job's gate and never
+    moved while a gate reads it (a worker imports lazily, so a checkout under it would mix two trees)."""
+    os.makedirs(BASE_TREE, exist_ok=True)
+    tree = os.path.join(BASE_TREE, sha[:12])
+    with open(os.path.join(BASE_TREE, '.lock'), 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if os.path.exists(path) and time.time() - os.path.getmtime(path) < BASE_MAX_AGE_S and not refresh:
-            return path, head
-        tree = _base_tree(head)
-        log('baseline: running origin %s from %s (once per head; every job reuses it)' % (head[:12], tree))
-        cmd = [sys.executable, os.path.abspath(__file__), 'run', '--out', path] + (['--repeat', str(repeat)] if repeat else [])
+        if not os.path.isdir(os.path.join(tree, 'backend')):
+            subprocess.run(['git', '-C', LIVE, 'worktree', 'add', '--detach', tree, sha], check=True,
+                           capture_output=True, timeout=900)
+    return tree
+
+
+class Worker:
+    """One tree's worker process (``worker`` subcommand, run from that tree's backend with this file's runner)."""
+
+    def __init__(self, tree_backend, paths, kinds, repeat, log_path):
+        cmd = [sys.executable, os.path.abspath(__file__), 'worker']
         for p in paths:
             cmd += ['--set', p]
         if kinds:
             cmd += ['--kinds'] + list(kinds)
-        res = subprocess.run(cmd, cwd=os.path.join(tree, 'backend'), env=dict(os.environ, PYTHONPATH='.'),
-                             capture_output=True, text=True)
-        if res.returncode != 0:
-            raise SystemExit('baseline run failed:\n' + res.stderr[-3000:])
-    return path, head
+        if repeat:
+            cmd += ['--repeat', str(repeat)]
+        self.err = open(log_path, 'a')
+        self.proc = subprocess.Popen(cmd, cwd=tree_backend, env=dict(os.environ, PYTHONPATH='.'), text=True,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err)
+        hello = self.proc.stdout.readline()
+        if not hello:
+            raise SystemExit('the worker in %s did not start (see %s)' % (tree_backend, log_path))
+        self.sha = json.loads(hello)['sha']
+
+    def ask(self, i):
+        self.proc.stdin.write(json.dumps(dict(i=i)) + '\n')
+        self.proc.stdin.flush()
+        line = self.proc.stdout.readline()
+        if not line:
+            raise SystemExit('a worker stopped mid-run (see %s)' % self.err.name)
+        return json.loads(line)
+
+    def close(self):
+        try:
+            self.proc.stdin.close()
+            self.proc.wait(timeout=60)
+        except Exception:  # noqa: BLE001
+            self.proc.kill()
+
+
+def interleaved(paths, kinds, repeat, base_backend, cand_backend, log_path, log=print):
+    """Baseline and candidate runs with each query asked of both trees back to back, so both read the same live
+    data. Measured 17 Nov: one tree run twice 35 minutes apart moved a record out of the top 10 and changed recall
+    at 10 by 0.008 while live vectors were being written; seconds apart, 0 of 99 queries changed."""
+    plan = plan_queries(paths, kinds, repeat, None, log=log)
+    base = Worker(base_backend, paths, kinds, repeat, log_path)
+    cand = Worker(cand_backend, paths, kinds, repeat, log_path)
+    most = max([n for *_, n in plan] or [1])
+    sides = {'base': [dict(queries={}) for _ in range(most)], 'cand': [dict(queries={}) for _ in range(most)]}
+    try:
+        for i, (_, judged, q, n) in enumerate(plan):
+            qid = '%s:%s' % (judged['case'], q['id'])
+            for j in range(most):
+                for side, w in (('base', base), ('cand', cand)) if j % 2 == 0 else (('cand', cand), ('base', base)):
+                    sides[side][j]['queries'][qid] = (w.ask(i) if j < n else sides[side][0]['queries'][qid])
+    finally:
+        base.close()
+        cand.close()
+    return finish_runs(sides['base']), finish_runs(sides['cand']), base.sha, cand.sha
 
 
 def cmd_gate(args):
@@ -314,16 +378,23 @@ def cmd_gate(args):
                                                                                           time.gmtime()))]
     verdicts = []
     if not args.reports_only:
-        base_path, head = baseline(paths, args.kinds, args.repeat, refresh=args.refresh_baseline)
-        cand_path = os.path.join(GATE_DIR, 'cand-%s-%s.json' % (args.label, sha[:12]))
-        runs = run_sets(paths, kinds=args.kinds, repeat=args.repeat, log=lambda *_: None)
-        write_runs(cand_path, runs, paths)
-        base = json.load(open(base_path))
-        cmp = R.compare(base['runs'], runs)
-        lines.append('baseline: origin %s; candidate: %s' % (head[:12], sha[:12]))
-        lines += R.verdict_lines(cmp, base['runs'][0]['aggregate'], runs[0]['aggregate'])
-        if runs[0]['missing']:
-            lines.append('tools not in this tree (not scored): %s' % ', '.join(runs[0]['missing']))
+        subprocess.run(['git', '-C', LIVE, 'fetch', '-q', 'origin', 'integration/evidence-main-reunion'],
+                       capture_output=True, timeout=300)
+        head = args.base or subprocess.run(['git', '-C', LIVE, 'rev-parse', BRANCH], capture_output=True,
+                                           text=True).stdout.strip()
+        tree = _base_tree(head)
+        os.makedirs(GATE_DIR, mode=0o700, exist_ok=True)
+        stem = os.path.join(GATE_DIR, '%s-%s-vs-%s' % (args.label, sha[:12], head[:12]))
+        base, cand, bsha, csha = interleaved(paths, args.kinds, args.repeat, os.path.join(tree, 'backend'),
+                                             os.path.abspath('.'), stem + '.workers.log')
+        write_runs(stem + '.base.json', base, paths, tree)
+        write_runs(stem + '.cand.json', cand, paths)
+        cmp = R.compare(base, cand)
+        lines.append('baseline: origin %s; candidate: %s; each query asked of both, back to back' % (bsha[:12],
+                                                                                                    csha[:12]))
+        lines += R.verdict_lines(cmp, base[0]['aggregate'], cand[0]['aggregate'])
+        if cand[0]['missing']:
+            lines.append('tools not in the candidate (not scored): %s' % ', '.join(cand[0]['missing']))
         verdicts.append(cmp['verdict'])
     for spec in args.reports or []:
         # R1=base1.md,base2.md:cand1.md,cand2.md  (baseline files : candidate files), or R1=cand1.md,cand2.md
@@ -378,9 +449,14 @@ def main(argv=None):
     p.add_argument('--reports', nargs='*', help='RID=base.md,...:cand.md,... report files to score (stand-in or '
                                                 'DeepSeek answers); the candidate side alone is scored if no ":"')
     p.add_argument('--reports-only', action='store_true')
-    p.add_argument('--refresh-baseline', action='store_true')
+    p.add_argument('--base', help='baseline commit (default: origin head)')
+    p = sub.add_parser('worker')
+    p.add_argument('--set', action='append', required=True)
+    p.add_argument('--kinds', nargs='*')
+    p.add_argument('--repeat', type=int, default=None)
     args = ap.parse_args(argv)
-    return {'run': cmd_run, 'compare': cmd_compare, 'report': cmd_report, 'gate': cmd_gate}[args.cmd](args) or 0
+    return {'run': cmd_run, 'compare': cmd_compare, 'report': cmd_report, 'gate': cmd_gate,
+            'worker': cmd_worker}[args.cmd](args) or 0
 
 
 if __name__ == '__main__':

@@ -242,3 +242,14 @@ def test_report_scorer_agrees_with_the_walk_scorer_on_words_and_dates():
         pytest.skip('no expect_hit cases in demo-key-score-cases.json')
     for row in rows:
         assert R.expect_hit(row['term'], row['text']) == row['hit'], row
+
+
+def test_a_fuller_report_that_cites_a_smaller_share_is_not_a_loss():
+    """Measured 17 Nov: the gate compared the sample report (35% of findings cited) with thin DeepSeek reports
+    (44-50%) and failed it on the share; a share is a floor, not a comparison."""
+    rb = G.rubric('R1')
+    full = R.score_report(open(SAMPLE).read(), rb)
+    thin = dict(R.score_report(THIN, rb), cited_share=0.5, why_share=0.2)
+    assert R.compare_reports([thin, thin], [full])['verdict'] == 'PASS'
+    bare = R.score_report(re.sub(R.CITATION, '', open(SAMPLE).read()), rb)
+    assert R.compare_reports([full], [bare])['verdict'] == 'FAIL'

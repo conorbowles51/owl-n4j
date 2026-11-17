@@ -328,20 +328,23 @@ def score_report(text: str, rubric: dict) -> dict:
 def compare_reports(base: list[dict], cand: list[dict], must_state: Iterable[str] = ()) -> dict:
     """Noise-aware comparison of repeated report scores (score_report outputs). Facts found is a loss when the
     candidate's mean is below the baseline's by more than the larger spread; a fact the baseline stated in every run
-    and the candidate in none is lost; a decoy the candidate links in every run and the baseline in none is new."""
+    and the candidate in none is lost; a decoy the candidate links in every run and the baseline in none is new.
+    The cited and say-why shares are pass-mark floors only, never compared: measured 17 Nov, the sample report (the
+    standard) cites 35% of its findings and the thin DeepSeek reports 44-50%, so a fuller report can cite a smaller
+    share."""
     if not base or not cand:
         return dict(verdict="NO DATA", losses=[], lost_facts=[], new_decoys=[])
     losses = []
-    for metric in ("facts_found", "cited_share", "why_share"):
-        b, c = [s[metric] for s in base], [s[metric] for s in cand]
-        band = max(_spread(b), _spread(c))
-        if statistics.mean(b) - statistics.mean(c) > band + EPS:
-            losses.append(dict(metric=metric, base=round(statistics.mean(b), 3), cand=round(statistics.mean(c), 3),
-                               noise=round(band, 3)))
+    b, c = [s["facts_found"] for s in base], [s["facts_found"] for s in cand]
+    band = max(_spread(b), _spread(c))
+    if statistics.mean(b) - statistics.mean(c) > band + EPS:
+        losses.append(dict(metric="facts_found", base=round(statistics.mean(b), 3), cand=round(statistics.mean(c), 3),
+                           noise=round(band, 3)))
     fids = set().union(*[set(s["found"]) | set(s["missed"]) for s in base])
     lost = sorted(f for f in fids if all(f in s["found"] for s in base) and not any(f in s["found"] for s in cand))
     new_decoys = sorted({d for s in cand for d in s["decoys_wrong"]} - {d for s in base for d in s["decoys_wrong"]})
     new_decoys = [d for d in new_decoys if all(d in s["decoys_wrong"] for s in cand)]
-    verdict = "FAIL" if losses or lost or new_decoys else "PASS"
+    below = [s for s in cand if any("cited" in r or "say why" in r for r in s.get("fails_because") or [])]
+    verdict = "FAIL" if losses or lost or new_decoys or below else "PASS"
     return dict(verdict=verdict, losses=losses, lost_facts=lost, new_decoys=new_decoys,
-                base_facts=[s["facts_found"] for s in base], cand_facts=[s["facts_found"] for s in cand])
+                below_floor=len(below), base_facts=b, cand_facts=c)
