@@ -23,7 +23,7 @@ from services.relations import engine
 from services.relations.sources import DbSources
 
 log = logging.getLogger(__name__)
-WORDS = "Look into how these relate"
+WORDS = "Corroborate"
 # A look compares every pair, so its work and its result grow with the square of the items: 400 items are 79,800 pairs.
 MAX_ITEMS = 400
 PAGE = 100

@@ -8,7 +8,7 @@ CITE = {"financial_transaction": "txn://{id}", "phone_record": "rec://{id}"}
 
 
 class RelationArgs(BaseModel):
-    selection_id: str = Field(..., description="The id of the group the person marked with 'Look into how these relate'.")
+    selection_id: str = Field(..., description="The id of the group the person marked with 'Corroborate'.")
     section: str = Field("overview", description=(
         "overview (one compact read of everything: start here), or candidates, no_links, analyses, items to page through "
         "the full rows"))
@@ -82,7 +82,7 @@ def make_relation_tools(context):
 
     return [StructuredTool.from_function(
         func=get_relation_results, name="get_relation_results", args_schema=RelationArgs,
-        description=("Read the link analysis of a group the person marked with 'Look into how these relate': candidate links "
+        description=("Read the link analysis of a group the person marked with 'Corroborate': candidate links "
                      "(kind, members, strength by stated rule, the chance beside each), the pairs where nothing was found with "
                      "what was searched, each analysis run, and the items with their citations. Pages through "
                      "candidates, no_links, analyses and items. State counts before conclusions."))]

@@ -58,7 +58,7 @@ describe("the look in progress", () => {
     const create = vi.spyOn(relationAPI, "create").mockResolvedValue({ group: { id: "g2", member_count: 4, left_out: 0 }, run: null })
     wrap(<Routes><Route path="/" element={<LookIntoButton caseId="c1" surface="financial" items={[{ target_type: "financial_transaction", target_id: "p1" }]} />} />
       <Route path="/cases/c1/relations/g2" element={<p>result page</p>} /></Routes>)
-    fireEvent.click(screen.getByRole("button", { name: "Look into how these relate" }))
+    fireEvent.click(screen.getByRole("button", { name: "Corroborate" }))
     fireEvent.click(screen.getByRole("button", { name: /Add to the look in progress \(3 items\)/ }))
     await waitFor(() => expect(create).toHaveBeenCalledWith("c1", expect.objectContaining({ extends: "g1", members: [{ type: "financial_transaction", id: "p1" }] })))
     await screen.findByText("result page")
@@ -114,13 +114,13 @@ describe("beside Add to… on the phone, passage and search screens", () => {
   const menu = <AddToMenu caseId="c1" links={links} noun="records" targets={[]} client={{} as never} origin="Added from Conversations" keys={false} />
   it("offers the look in a router, and none where it could not open", async () => {
     wrap(menu)
-    expect(await screen.findByRole("button", { name: "Look into how these relate" })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "Corroborate" })).toBeTruthy()
     plainRender(menu)
     await new Promise((r) => setTimeout(r, 50))
-    expect(screen.getAllByRole("button", { name: "Look into how these relate" }).length).toBe(1)
+    expect(screen.getAllByRole("button", { name: "Corroborate" }).length).toBe(1)
   })
   it("is not offered when nothing is selected", () => {
     wrap(<AddToMenu caseId="c1" links={[]} noun="records" targets={[]} client={{} as never} origin="x" keys={false} />)
-    expect(screen.queryByRole("button", { name: "Look into how these relate" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Corroborate" })).toBeNull()
   })
 })

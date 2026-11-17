@@ -3,7 +3,7 @@ import type { GroupInput, ItemInput } from "@/features/theory/api"
 import type { Corroboration } from "@/features/corroborate/result-types"
 
 /**
- * Look into how these relate (lx-overlaps; backend routers/relation_queries.py): items from any screen are saved as one
+ * Corroborate (lx-overlaps; backend routers/relation_queries.py): items from any screen are saved as one
  * group and the link analysis runs on it. The records show what occurs together, never why.
  */
 export type Strength = "strong" | "moderate" | "weak" | "faint"
@@ -80,6 +80,42 @@ export interface RelationRun {
   hypotheses: { model: string; status: string; no_links: string; items: Hypothesis[] } | null
 }
 
+export interface LaneEvent {
+  n: number
+  ref: string
+  kind: string
+  kind_words: string
+  at: string
+  day_only: boolean
+  text: string
+  with: string[]
+}
+
+export interface StoryLanes {
+  instance: { id: string; label: string }
+  lanes: { person: string; label: string; events: LaneEvent[] }[]
+  events: number
+  cited: number
+  not_laid_out: { ref: string; why: string }[]
+}
+
+export interface TrailStep {
+  n: number
+  selection_id: string
+  created_at: string | null
+  members: number
+  added: { type: string; id: string; label?: string }[]
+  added_count: number
+  level: { run_id: string; key: string | null; name: string | null; sentence?: string } | null
+  level_moved: "raised" | "lowered" | "unchanged" | null
+  adds_nothing: boolean
+}
+
+export interface TrailResult {
+  steps: TrailStep[]
+  current: string
+}
+
 export interface RelationQuery {
   group: { id: string; member_count: number; left_out: number; members: RelationMember[]; created_at: string }
   run: RelationRun | null
@@ -99,6 +135,10 @@ export const relationAPI = {
   rows: <T,>(caseId: string, runId: string, section: "candidates" | "no_links", offset: number) =>
     fetchAPI<{ total: number; returned: number; next_offset: number | null; rows: T[] }>(
       `${base(caseId)}/relation-runs/${encodeURIComponent(runId)}/rows?section=${section}&offset=${offset}`),
+  lanes: (caseId: string, runId: string, instance: string) =>
+    fetchAPI<StoryLanes>(`${base(caseId)}/relation-runs/${encodeURIComponent(runId)}/lanes?instance=${encodeURIComponent(instance)}`),
+  trail: (caseId: string, selectionId: string) =>
+    fetchAPI<TrailResult>(`${base(caseId)}/relation-queries/${encodeURIComponent(selectionId)}/trail`),
   accept: (caseId: string, runId: string, n: number, entryId: string, relationship: "supports" | "contradicts") =>
     fetchAPI<{ added_link_ids: string[] }>(`${base(caseId)}/relation-runs/${encodeURIComponent(runId)}/hypotheses/${n}:accept`, {
       method: "POST",

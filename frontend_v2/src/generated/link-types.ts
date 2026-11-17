@@ -148,7 +148,7 @@ export const LINK_TYPE_WORDS: Record<string, string> = {
   evidence_selection: "Evidence selection",
   map_selection: "Map area",
   step_trail: "Step trail",
-  relation_query: "Look into how these relate",
+  relation_query: "Corroborate",
   agent_answer: "Agent answer",
   interview: "Interview",
   entity: "Graph item",

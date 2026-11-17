@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
+import { Trail } from "@/features/corroborate/Trail"
 import { ResultView } from "@/features/corroborate/ResultView"
 import { corroborateAPI } from "@/features/corroborate/api"
 import { useSwitch } from "@/lib/ui-switches"
@@ -159,7 +160,7 @@ export function RelationsPage() {
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-4">
       <header>
-        <h1 className="text-xl font-semibold">{v2 ? "Corroborate" : "How these items could be linked"}</h1>
+        <h1 className="text-xl font-semibold">Corroborate</h1>
         <p className="text-sm text-muted-foreground">
           {query.data.group.member_count.toLocaleString("en-US")} items marked as possibly related
           {query.data.group.left_out > 0 && `, ${query.data.group.left_out} left out because they are not in this case`}. The records show what occurs together, never why.
@@ -180,7 +181,7 @@ export function RelationsPage() {
       )}
       {result && run && (
         <>
-          {corro && <ResultView c={corro} onAsk={askAssistant} onFurther={further} />}
+          {corro && <><Trail caseId={caseId} selectionId={selectionId} /><ResultView c={corro} onAsk={askAssistant} onFurther={further} caseId={caseId} runId={run.id} /></>}
           <Summary r={result} />
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={askAssistant}>Ask how they could be linked</Button>

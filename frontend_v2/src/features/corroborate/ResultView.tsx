@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { StoryLanes } from "./StoryLanes"
 import { Button } from "@/components/ui/button"
 import type { CellState, Check, Corroboration, GridRow } from "./result-types"
 
@@ -29,7 +30,7 @@ function Records({ refs, label }: { refs: string[]; label: string }) {
   )
 }
 
-function Grid({ c }: { c: Corroboration }) {
+function Grid({ c, onOpen }: { c: Corroboration; onOpen?: (id: string) => void }) {
   const instances = [...c.comparison.incident.map((i) => ({ ...i, side: "Incident" })), ...c.comparison.ordinary.map((i) => ({ ...i, side: "Ordinary" }))]
   if (!c.grid.length) return <p className="text-sm">No signal was present on any instance.</p>
   return (
@@ -39,7 +40,9 @@ function Grid({ c }: { c: Corroboration }) {
         <thead>
           <tr>
             <th className="text-left">Signal</th>
-            {instances.map((i) => <th key={i.id} scope="col" className="px-1 text-left font-normal" title={`${i.side}: ${i.label}`}>{i.side[0]} {i.label}</th>)}
+            {instances.map((i) => <th key={i.id} scope="col" className="px-1 text-left font-normal" title={`${i.side}: ${i.label}`}>
+              {onOpen ? <button type="button" className="underline" aria-label={`Open the story of ${i.side.toLowerCase()} ${i.label}`} onClick={() => onOpen(i.id)}>{i.side[0]} {i.label}</button> : <>{i.side[0]} {i.label}</>}
+            </th>)}
             <th className="px-1 text-left">Incident</th>
             <th className="px-1 text-left">Ordinary</th>
           </tr>
@@ -68,17 +71,20 @@ function Grid({ c }: { c: Corroboration }) {
   )
 }
 
-export function ResultView({ c, onAsk, onFurther }: { c: Corroboration; onAsk?: () => void; onFurther?: (q: Corroboration["look_further"][number]) => void }) {
+export function ResultView({ c, onAsk, onFurther, caseId, runId }: { c: Corroboration; onAsk?: () => void; onFurther?: (q: Corroboration["look_further"][number]) => void; caseId?: string; runId?: string }) {
   const lowers = c.checks
+  const [lane, setLane] = useState<string | null>(null)
   return (
     <div className="space-y-4" data-testid="corroborate-result">
       <section aria-label="Level" className={`rounded border-l-4 p-3 ${LEVEL_CLASS[c.level.key] ?? ""}`}>
-        <p className="text-xs uppercase text-muted-foreground">{c.question.text}</p>
+        <p className="text-sm text-muted-foreground">{c.question.text}</p>
         <h2 className="text-lg font-semibold">{c.level.name}</h2>
         <p>{c.level.sentence}</p>
         <p className="text-xs text-muted-foreground">Set by a stated rule from the signals below, not by a model.</p>
       </section>
-      <section aria-label="Comparison grid"><h2 className="font-semibold">What was present, and on which instances</h2><Grid c={c} /></section>
+      <section aria-label="Comparison grid"><h2 className="font-semibold">What was present, and on which instances</h2><Grid c={c} onOpen={caseId && runId ? setLane : undefined} />
+        {lane && caseId && runId && <StoryLanes caseId={caseId} runId={runId} instance={lane} onClose={() => setLane(null)} />}
+      </section>
       <section aria-label="What raises and lowers the level">
         <h2 className="font-semibold">What raises it, and what lowers it</h2>
         <ul className="list-disc pl-5 text-sm">{c.level.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>

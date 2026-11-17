@@ -25,7 +25,7 @@ export interface LookIntoProps {
 }
 
 /**
- * "Look into how these relate" (lx-overlaps D): next to Add to theory on every surface. It saves what is chosen as one
+ * "Corroborate" (lx-overlaps D): next to Add to theory on every surface. It saves what is chosen as one
  * group, starts the analysis, and opens the result. A look already in progress can be added to, so a payment, a
  * passage, a phone meeting and a graph entity from different screens form one group. Items the analysis cannot read are
  * named, never dropped without a word.
@@ -64,7 +64,7 @@ function CorroborateButton({ caseId, surface, items, group, size = "sm" }: LookI
   )
 }
 
-function LookIntoClassic({ caseId, surface, items, group, size = "sm", label = "Look into how these relate" }: LookIntoProps) {
+function LookIntoClassic({ caseId, surface, items, group, size = "sm", label = "Corroborate" }: LookIntoProps) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -96,7 +96,7 @@ function LookIntoClassic({ caseId, surface, items, group, size = "sm", label = "
         <Dialog open onOpenChange={(o) => !o && !busy && setOpen(false)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Look into how these relate</DialogTitle>
+              <DialogTitle>Corroborate</DialogTitle>
               <DialogDescription>
                 Loupe runs every analysis that applies to the items and lists how they could be linked and where nothing links them.
                 The records show what occurs together, not why.

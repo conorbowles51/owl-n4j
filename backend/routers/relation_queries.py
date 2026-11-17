@@ -1,4 +1,4 @@
-"""Look into how these relate: save a group of items from any screen, run the link analysis on it, read the result
+"""Corroborate: save a group of items from any screen, run the link analysis on it, read the result
 (lx-overlaps). Writes need case edit; reads need case view. Every group and run is checked against the case in the path.
 """
 from __future__ import annotations

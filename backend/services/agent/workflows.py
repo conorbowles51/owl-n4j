@@ -497,7 +497,7 @@ WORKFLOWS = WORKFLOWS + (
         requirement_met_by=("plan_theory_sweep", "propose_counter_arguments"),
     ),
     Workflow(
-        id="link-group", number=19, title="How could these be linked", extra=True,
+        id="link-group", number=19, title="Corroborate", extra=True,
         question="How could the items a person marked as possibly related be linked, and where is there clearly no link?",
         starting_question=("The group {group} was marked as possibly related. State what the link analysis found, name the "
                            "competing explanations, and say where no link was found and what was searched."),

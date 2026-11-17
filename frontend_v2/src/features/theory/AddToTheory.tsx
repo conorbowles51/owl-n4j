@@ -33,7 +33,7 @@ export interface AddToTheoryProps {
   group?: GroupInput
   /** Button words; defaults to "Add to theory…". */
   label?: string
-  /** Words on the "Look into how these relate" button beside it; compact places pass a short form. */
+  /** Words on the "Corroborate" button beside it; compact places pass a short form. */
   lookLabel?: string
   size?: "sm" | "default"
   disabledReason?: string
