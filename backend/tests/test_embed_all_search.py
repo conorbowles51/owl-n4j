@@ -138,3 +138,15 @@ def test_one_line_longer_than_a_window_is_cut_into_windows_that_cite_the_same_re
                                                  "record_uid": "u1", "field_path": "Body"}], limit=3500)
     assert len(wins) >= 4 and all(len(w["text"]) <= 3500 + 60 for w in wins)
     assert all("[rec://u1]" in w["text"] for w in wins)
+
+
+class EntColl:
+    def query(self, query_embeddings, n_results, where, include):
+        assert where == {"case_id": "c"}
+        return {"ids": [["k1"]], "documents": [["Person: Travis Kell \u2014 inside man"]], "metadatas": [[{"name": "Travis Kell"}]],
+                "distances": [[0.9]]}
+
+
+def test_graph_entities_are_searched_by_meaning_in_the_case_only():
+    hits = S.meaning_hits("c", [0.1], None, None, ["entities"], entities_collection=EntColl())
+    assert [(h["area"], h["title"], h["cite"]) for h in hits] == [("entities", "Travis Kell", "/cases/c/graph")]

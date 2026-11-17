@@ -22,7 +22,7 @@ from services.retrieval_fusion import K, similarity
 
 logger = logging.getLogger(__name__)
 
-ALL_AREAS = tuple(AREAS) + ("phone_text", "documents")
+ALL_AREAS = tuple(AREAS) + ("phone_text", "documents", "entities")
 MAX_DISTANCE = 1.44  # squared L2 of unit vectors: cosine 0.28 and above. Measured on the demo case, 17 Nov: relevant hits
 # score cosine 0.31 to 0.50, a query with no answer ("burner") scores 0.22 to 0.24 against the nearest unrelated text
 SNIPPET = 400
@@ -63,8 +63,16 @@ def _where(case_id, areas, date_from, date_to):
 
 
 def meaning_hits(case_id, query_vector, items_collection, chunks_collection, areas, *, phone=None, person=None,
-                 date_from=None, date_to=None) -> list[dict]:
+                 date_from=None, date_to=None, entities_collection=None) -> list[dict]:
     hits: list[dict] = []
+    if "entities" in areas and entities_collection is not None and date_from is None and date_to is None:
+        res = entities_collection.query(query_embeddings=[query_vector], n_results=FETCH // 2,
+                                        where={"case_id": str(case_id)}, include=["documents", "metadatas", "distances"])
+        for eid, doc, meta, dist in zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]):
+            hits.append({"area": "entities", "key": eid, "title": meta.get("name") or eid,
+                         "cite": "/cases/%s/graph" % case_id, "text": doc, "distance": dist, "person": meta.get("name") or "",
+                         "as_read": False})
+    areas = [a for a in areas if a != "entities"]
     item_areas = [a for a in areas if a not in ("phone_text", "documents")]
     over = FETCH * 3 if person else FETCH
     if item_areas and items_collection is not None:
@@ -209,13 +217,16 @@ def search(engine, case_id, query: str, *, conn=None, areas: Iterable[str] | Non
             from services.embedding_service import EmbeddingService
             embed_query = EmbeddingService().generate_embedding
         vector = embed_query(query)
+        entities_collection = None
         if items_collection is None or chunks_collection is None:
             from services.vector_db_service import get_vector_db_service
             svc = get_vector_db_service()
             items_collection = items_collection or svc.client.get_or_create_collection(name=COLLECTION)
             chunks_collection = chunks_collection or svc.chunk_collection
+            entities_collection = svc.entity_collection
         meaning = meaning_hits(case_id, vector, items_collection, chunks_collection, wanted, phone=phone,
-                               person=person, date_from=date_from, date_to=date_to)
+                               person=person, date_from=date_from, date_to=date_to,
+                               entities_collection=entities_collection)
     except Exception as exc:  # the service refused or is unreachable: words only, said so
         meaning_ok = False
         try:

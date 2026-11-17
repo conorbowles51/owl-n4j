@@ -2187,7 +2187,7 @@ class MeaningSearchArgs(BaseModel):
     query: str = Field(..., description="What you are looking for, as a sentence or a few words: meaning is matched, so "
                        "'paying the guard' finds a message that says 'sent the watchman cash'. Names and numbers also match as words.")
     areas: list[Literal["phone_text", "ledger", "accounts", "judgements", "trails", "statement_pages", "casework",
-                        "timeline", "parties", "transcripts", "relationships", "documents"]] = Field(
+                        "timeline", "parties", "transcripts", "relationships", "entities", "documents"]] = Field(
         default_factory=list, description="Limit to these areas; leave empty to search all of them.")
     phones: list[str] = Field(default_factory=list, description="Limit phone messages to these phones (label or id).")
     person: str | None = Field(None, description="Keep hits that name this person.")
