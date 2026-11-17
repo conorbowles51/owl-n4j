@@ -10,6 +10,8 @@ import json
 from datetime import date, datetime, timezone
 from typing import Callable, Iterator
 
+from urllib.parse import quote
+
 from sqlalchemy import text
 
 from services.embed_all.core import Item
@@ -86,18 +88,19 @@ def accounts(conn, case_id) -> Iterator[Item]:
             r.identifier_as_printed or "", r.institution_name or "", r.account_type or "account", r.currency or "",
             (" IBAN " + r.iban) if r.iban else "", r.holder_name or "not recorded")
         yield Item("accounts", str(r.id), body, title=_join(r.institution_name, r.identifier_as_printed),
-                   cite="/cases/%s/financial?account=%s" % (case_id, r.id), person=r.holder_name or "")
+                   cite="/cases/%s/financial" % case_id, person=r.holder_name or "")
 
 
 def judgements(conn, case_id) -> Iterator[Item]:
     for r in conn.execute(text(
-            "SELECT id, subject_type, rule_id, reading, origin, strength, summary, status, resolution_reason, "
+            "SELECT id, subject_type, subject_id, rule_id, reading, origin, strength, summary, status, resolution_reason, "
             "resolved_by, created_at FROM financial_judgements WHERE case_id = :c ORDER BY id"), {"c": str(case_id)}):
         body = _join("Judgement call (%s, %s):" % (r.rule_id or r.subject_type, r.status or "open"),
                      r.summary, ("Reading: %s." % r.reading) if r.reading else "",
                      ("Reason: %s." % r.resolution_reason) if r.resolution_reason else "")
         yield Item("judgements", str(r.id), body, title=(r.summary or "")[:120],
-                   cite="/cases/%s/financial?judgement=%s" % (case_id, r.id), date=_as_dt(r.created_at),
+                   cite=("txn://%s" % r.subject_id) if (r.subject_type or "").startswith("transaction") and r.subject_id
+                   else "/cases/%s/financial" % case_id, date=_as_dt(r.created_at),
                    as_read=(r.origin or "") != "person")
 
 
@@ -110,7 +113,7 @@ def trails(conn, case_id) -> Iterator[Item]:
         if isinstance(r.details, dict):
             title = str(r.details.get("name") or r.details.get("title") or "")
         yield Item("trails", str(r.id), "Saved %s: %s" % (r.kind, details[:20000]), title=title or r.kind,
-                   cite="/cases/%s/financial?trail=%s" % (case_id, r.id), date=_as_dt(r.updated_at))
+                   cite="/cases/%s/financial" % case_id, date=_as_dt(r.updated_at))
 
 
 def statement_pages(conn, case_id) -> Iterator[Item]:
@@ -144,7 +147,7 @@ def casework(conn, case_id) -> Iterator[Item]:
         tags = ", ".join(r.tags) if isinstance(r.tags, list) else ""
         body = _join("%s: %s." % ((r.entry_type or "entry").capitalize(), r.title or ""), r.body,
                      ("Tags: %s." % tags) if tags else "")
-        yield Item("casework", str(r.id), body, title=r.title or "", cite="/cases/%s/workspace?entry=%s" % (case_id, r.id),
+        yield Item("casework", str(r.id), body, title=r.title or "", cite="/cases/%s/workspace?view=casework&entry=%s" % (case_id, r.id),
                    date=_as_dt(r.updated_at), person=r.author_name or "")
 
 
@@ -165,7 +168,7 @@ def timeline(conn, case_id) -> Iterator[Item]:
 
 def parties(conn, case_id) -> Iterator[Item]:
     for r in conn.execute(text(
-            "SELECT i.id, i.kind, i.value_display, i.first_instant, "
+            "SELECT i.id, i.identity_key, i.kind, i.value_display, i.first_instant, "
             "(SELECT string_agg(DISTINCT n.name, '; ') FROM phone_identity_names n WHERE n.identity_id = i.id) AS names, "
             "(SELECT min(n.first_record_uid::text) FROM phone_identity_names n WHERE n.identity_id = i.id) AS rec "
             "FROM phone_identities i WHERE i.case_id = :c ORDER BY i.id"), {"c": str(case_id)}):
@@ -173,7 +176,7 @@ def parties(conn, case_id) -> Iterator[Item]:
             continue
         yield Item("parties", str(r.id), "Party on the phones (%s): %s. Names recorded: %s." % (
             r.kind or "contact", r.value_display or "", r.names or "none"), title=r.names or r.value_display or "",
-            cite=("rec://%s" % r.rec) if r.rec else "/cases/%s/phones?identity=%s" % (case_id, r.id),
+            cite=("rec://%s" % r.rec) if r.rec else "/cases/%s/conversations?tab=people&people=%s" % (case_id, quote(r.identity_key or "")),
             person=_join(r.names, r.value_display))
 
 
@@ -186,7 +189,8 @@ def transcripts(conn, case_id) -> Iterator[Item]:
             continue
         label = "Voice note transcript" if r.kind == "transcript" else "Text read from an image"
         yield Item("transcripts", str(r.id), "%s: %s" % (label, r.body), title=label,
-                   cite="/cases/%s/phones?file=%s" % (case_id, r.file_uid), date=_as_dt(r.created_at),
+                   cite="/cases/%s/phones/%s/records/media?file=%s" % (case_id, r.extraction_id, r.file_uid),
+                   date=_as_dt(r.created_at),
                    extraction_id=str(r.extraction_id or ""), as_read=not (r.confirmed_at or r.corrected))
 
 
