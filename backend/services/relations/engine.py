@@ -155,7 +155,7 @@ def run(sources, members: list[dict], progress: Callable[[str, int, int], None] 
         notes = [n for n in searched if {a["ref"], b["ref"]} <= set(n["members"])]
         if not ids:
             no_links.append({"members": [a["ref"], b["ref"]], "analyses": [], "searched": [],
-                             "says": f"No analysis links a {matrix.TYPES[a['type']]} to a {matrix.TYPES[b['type']]}.",
+                             "says": f"No analysis links a {matrix.words(a['type'])} to a {matrix.words(b['type'])}.",
                              "out_of_reach": []})
             continue
         reach = [n["searched"] for n in notes if n.get("out_of_reach")]

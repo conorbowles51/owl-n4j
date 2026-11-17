@@ -13,6 +13,14 @@ TYPES = {
     "financial_party": "party", "evidence": "document or passage", "graph_entity": "graph entity",
     "timeline_event": "timeline event", "place": "place", "entry": "dossier or note",
 }
+# Member types Corroborate weighs (services/corroborate) that no link analysis here applies to: named in words only.
+OTHER_WORDS = {"person": "person", "phone": "phone", "document_row": "row of a document"}
+
+
+def words(type_: str) -> str:
+    return TYPES.get(type_) or OTHER_WORDS.get(type_) or type_.replace("_", " ")
+
+
 DATED = ("phone_record", "financial_transaction", "graph_entity", "timeline_event")
 EVERYTHING = tuple(TYPES)
 PLACED = ("phone_record", "place", "financial_transaction")

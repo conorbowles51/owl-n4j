@@ -68,6 +68,16 @@ def test_types_no_analysis_reaches_say_so():
     assert res["no_links"][0]["says"].startswith("No analysis links")
 
 
+def test_corroborate_member_types_are_named_and_never_fail_the_run():
+    """A group holding a person, a phone or a document row (types Corroborate weighs) runs the link analysis to the
+    end: the pairs no analysis reaches say so in words."""
+    items = dict([it("p1", "person", label="A person"), it("ph", "phone", label="A phone"),
+                  it("r1", "document_row", label="A badge row"), it("acct", "financial_account", label="Account")])
+    res = engine.run(Fake(items), members(items))
+    says = {n["says"] for n in res["no_links"]}
+    assert "No analysis links a person to a phone." in says and any("row of a document" in x for x in says)
+
+
 def test_matrix_has_every_pair():
     assert len(matrix.table()) == 45
     empty = {frozenset(c) for c in matrix.empty_cells()}
