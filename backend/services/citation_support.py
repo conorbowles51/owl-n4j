@@ -367,6 +367,20 @@ def _rec_text(session, case_id, record_uid: str) -> Source:
     return Source(text=json.dumps(detail, ensure_ascii=False, default=str)[:MAX_SOURCE_CHARS], label="phone record")
 
 
+def _entity_text(case_id, key: str) -> Source:
+    """A graph entity as the cited source: its name, type, summary and links, read from the graph."""
+    from services.neo4j.graph_service import graph_service
+    detail = graph_service.get_node_details(key, case_id=str(case_id))
+    if not detail:
+        return Source(reason=C.NOT_IN_CASE)
+    props = detail.get("properties") or {}
+    fields = {"name": detail.get("name"), "type": detail.get("type"), "summary": detail.get("summary"),
+              "aliases": props.get("aliases") or props.get("alias"),
+              "links": [{"how": c.get("relationship") or c.get("type"), "to": c.get("name") or c.get("key")}
+                        for c in (detail.get("connections") or [])[:20]]}
+    return Source(text=json.dumps(fields, ensure_ascii=False, default=str)[:MAX_SOURCE_CHARS], label="graph entity")
+
+
 def read_sources(session, case_id, hrefs: Iterable[str]) -> dict[str, Source]:
     """The text each citation names, read once per citation. A target not in the case, or one that cannot be read,
     carries the reason instead of text."""
@@ -388,8 +402,12 @@ def read_sources(session, case_id, hrefs: Iterable[str]) -> dict[str, Source]:
                     out[href] = _doc_text(session, case_id, r)
                 elif r.scheme == "txn":
                     out[href] = _txn_text(session, case_id, r.transaction_id)
-                else:
+                elif r.scheme == "entity":
+                    out[href] = _entity_text(case_id, r.entity_key)
+                elif r.scheme == "rec":
                     out[href] = _rec_text(session, case_id, r.record_uid)
+                else:  # a scheme this check does not read is never sent to a reader built for another one
+                    out[href] = Source(reason="Not a citation Loupe can read.")
         except Exception:  # noqa: BLE001
             logger.warning("Cited source %s could not be read for the citation check", href, exc_info=True)
             out[href] = Source(reason="The cited source could not be read.")

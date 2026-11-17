@@ -140,7 +140,7 @@ def _link_words(link: dict[str, Any]) -> str:
 # An older payment link names the Financial page row (``/cases/<case>/financial?...&payment=<id>``): read as txn://.
 _BODY_LINK = re.compile(r"\[([^\]]*)\]\(\s*<?((?:doc|txn|rec)://[^)>\s]*|(?:https?://[^)\s>]*?)?/?cases/[^)\s>]*)>?"
                         r"(?:\s+\"[^\"]*\")?\s*\)")
-_SCHEME_WORDS = {"doc": "document", "txn": "payment", "rec": "phone record"}
+_SCHEME_WORDS = {"doc": "document", "txn": "payment", "rec": "phone record", "entity": "graph entity"}
 
 
 def _body_html(body: Any, cited: dict[str, str]) -> str:

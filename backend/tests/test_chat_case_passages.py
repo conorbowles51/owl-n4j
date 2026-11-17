@@ -160,3 +160,28 @@ def test_a_long_unit_is_shortened_and_says_so_so_documents_keep_their_room():
     assert len(made["text"]) < P.PASSAGE_CHARS + 100 and "shortened" in made["text"]
     short = P.passage(_hit(1, "entity://k", text="short"), "entity://k", {}, "case")
     assert short["text"] == "short"
+
+
+def test_the_citation_check_reads_an_entity_citation_and_never_sends_it_to_the_phone_record_reader(monkeypatch):
+    """Live 17 Nov: a chat answer with an entity:// link made the source check call the phone record reader with the
+    record id None; the failed query aborted the transaction and POST /api/chat answered 500."""
+    from contextlib import nullcontext
+
+    from services import citation_support as CSUP
+
+    class Session:
+        def begin_nested(self):
+            return nullcontext()
+    monkeypatch.setattr(C, "_entities", lambda c, keys: {k: "Harold Vint" for k in keys})
+    monkeypatch.setattr(C, "_with_production_numbers", lambda s, c, r: r)
+
+    def never(*a, **k):
+        raise AssertionError("the phone record reader was called for an entity citation")
+    monkeypatch.setattr(CSUP, "_rec_text", never)
+    from services.neo4j.graph_service import graph_service
+    monkeypatch.setattr(graph_service, "get_node_details", lambda key, case_id=None: {
+        "name": "Harold Vint", "type": "Person", "summary": "Tow operator", "connections": [
+            {"relationship": "PAID_BY", "name": "Travis Kell", "key": "travis-kell"}]})
+    out = CSUP.read_sources(Session(), str(uuid.uuid4()), ["entity://harold-vint"])
+    src = out["entity://harold-vint"]
+    assert src.text and "Harold Vint" in src.text and "Tow operator" in src.text and "Travis Kell" in src.text
