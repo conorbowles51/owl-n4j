@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import type { RelationMember } from "@/features/relations/api"
-import { isTyping, memberFromElement } from "./item-target"
+import { isTyping, membersFromElement } from "./item-target"
 import { QuestionMenu } from "./QuestionMenu"
 import { addPart } from "./selection-store"
 
@@ -12,32 +12,32 @@ import { addPart } from "./selection-store"
  */
 export function ItemKeys() {
   const { id: caseId } = useParams()
-  const [menu, setMenu] = useState<{ x: number; y: number; member: RelationMember } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; members: RelationMember[] } | null>(null)
   const [open, setOpen] = useState(false)
   useEffect(() => {
     if (!caseId) return
     let hover: Element | null = null
-    const start = (member: RelationMember) => {
-      addPart(caseId, { screen: "an item", label: member.label ?? "1 item", members: [member], skipped: [] })
+    const start = (members: RelationMember[]) => {
+      addPart(caseId, { screen: "an item", label: members.length > 1 ? `${members[0].label ?? "1 item"} and ${members.length - 1} more` : (members[0].label ?? "1 item"), members, skipped: [] })
       setMenu(null)
       setOpen(true)
     }
     const move = (e: MouseEvent) => { hover = e.target as Element }
     const context = (e: MouseEvent) => {
       if (e.shiftKey) return
-      const member = memberFromElement(e.target as Element)
-      if (!member) return setMenu(null)
+      const members = membersFromElement(e.target as Element)
+      if (!members.length) return setMenu(null)
       e.preventDefault()
-      setMenu({ x: e.clientX, y: e.clientY, member })
+      setMenu({ x: e.clientX, y: e.clientY, members })
     }
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") return setMenu(null)
       if ((e.key !== "c" && e.key !== "C") || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return
-      const member = memberFromElement(document.activeElement && document.activeElement !== document.body ? document.activeElement : hover)
-        ?? memberFromElement(hover)
-      if (member) {
+      const members = membersFromElement(document.activeElement && document.activeElement !== document.body ? document.activeElement : hover)
+      const chosen = members.length ? members : membersFromElement(hover)
+      if (chosen.length) {
         e.preventDefault()
-        start(member)
+        start(chosen)
       }
     }
     const away = () => setMenu(null)
@@ -59,7 +59,7 @@ export function ItemKeys() {
         <div role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - 60) }}
           className="fixed z-50 rounded-md border bg-background py-1 text-sm shadow-md">
           <button role="menuitem" type="button" className="block w-52 px-3 py-1.5 text-left hover:bg-muted"
-            onClick={() => { addPart(caseId, { screen: "an item", label: menu.member.label ?? "1 item", members: [menu.member], skipped: [] }); setMenu(null); setOpen(true) }}>
+            onClick={() => { addPart(caseId, { screen: "an item", label: menu.members.length > 1 ? `${menu.members[0].label ?? "1 item"} and ${menu.members.length - 1} more` : (menu.members[0].label ?? "1 item"), members: menu.members, skipped: [] }); setMenu(null); setOpen(true) }}>
             Corroborate this <span className="text-muted-foreground">(C)</span>
           </button>
         </div>

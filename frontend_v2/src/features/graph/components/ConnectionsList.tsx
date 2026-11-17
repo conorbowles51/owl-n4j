@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn"
 import type { ConnectionGroup } from "@/types/graph.types"
 import { SignificantRelationshipButton } from "@/features/significant/components/SignificantRelationshipButton"
 import { entityPanelColour } from "../lib/entity-panel-colours"
+import { corroAttrs } from "@/features/corroborate/item-target"
 
 interface ConnectionsListProps {
   connections: ConnectionGroup[]
@@ -77,7 +78,8 @@ export function ConnectionsList({
                   const outgoing = node.direction !== "incoming"
                   const words = type.replace(/_/g, " ").toLowerCase()
                   return (
-                  <div key={`${node.key}-${node.direction ?? ""}`} className="flex items-center gap-1">
+                  <div key={`${node.key}-${node.direction ?? ""}`} className="flex items-center gap-1"
+                    {...corroAttrs("graph_entity", node.key, `${words}: ${node.label}`, entity ? { also: [{ type: "graph_entity", id: entity.key }] } : undefined)}>
                     <button
                       className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50"
                       onClick={() => onNodeClick?.(node.key)}

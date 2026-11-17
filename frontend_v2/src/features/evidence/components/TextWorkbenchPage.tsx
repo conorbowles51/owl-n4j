@@ -9,6 +9,7 @@ import { ProgressPanel } from "@/components/ui/progress-panel"
 import { useProgressClock } from "@/components/ui/use-progress-clock"
 import { useProtectedObjectUrl } from "@/lib/protected-file"
 import { cn } from "@/lib/cn"
+import { corroAttrs } from "@/features/corroborate/item-target"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { liveCollectClient, undoCollect, type CollectResult, type CollectTarget } from "@/features/phones/collect.api"
 import { useCollectTargets } from "@/features/phones/collect-targets"
@@ -130,9 +131,9 @@ function PageText({ page, marks, onSelect, textRef }: {
   )
 }
 
-function KeptPassage({ passage }: { passage: PassageLocation }) {
+function KeptPassage({ passage, fileId }: { passage: PassageLocation; fileId: string }) {
   return (
-    <div className="border-b border-border bg-muted/20 px-3 py-2 text-xs" data-testid="kept-passage">
+    <div className="border-b border-border bg-muted/20 px-3 py-2 text-xs" data-testid="kept-passage" {...corroAttrs("evidence", fileId, passage.words ?? "A kept passage", { quote: passage.quote })}>
       {passage.words && <p role="status" className="mb-1 font-medium">{passage.words}</p>}
       {passage.state !== "unchanged" && (
         <>
@@ -353,7 +354,7 @@ export function TextWorkbenchPage() {
               {current?.reader && <ReaderLine reader={current.reader} readAt={data.read_at} />}
               {!data.pages_in_step && <p className="text-xs text-muted-foreground">The stored text of this file is not divided by page, so the two sides do not keep step.</p>}
             </div>
-            {passageData && <KeptPassage passage={passageData} />}
+            {passageData && <KeptPassage passage={passageData} fileId={fileId} />}
             {passage.isError && <p role="alert" className="border-b border-border px-3 py-2 text-xs text-destructive">That quote could not be found in this case.</p>}
             <div className="min-h-0 flex-1 overflow-auto">
               {data.text_absent && <p role="status" className="m-3 rounded border border-border bg-muted/30 p-3 text-sm" data-testid="text-absent">{data.text_absent}</p>}

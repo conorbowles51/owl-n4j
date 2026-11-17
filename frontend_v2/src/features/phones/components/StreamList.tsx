@@ -17,6 +17,7 @@ import { ParticipantMenu } from "./ParticipantMenu"
 import { rowBadges } from "../lib/badges"
 import { StateBadges } from "./StateBadges"
 import { TimeCell } from "./TimeCell"
+import { corroAttrs } from "@/features/corroborate/item-target"
 
 /**
  * The one virtual list for phone rows (03 sections 3.1, 3.7, 3.9, 5.1), used by Conversations, the Timeline lens
@@ -450,6 +451,7 @@ export function StreamList({
                 ref={virtualizer.measureElement}
                 data-index={v.index}
                 data-event={row.event_uid}
+                {...corroAttrs("phone_record", row.record_uid, row.body ? row.body.slice(0, 120) : undefined)}
                 style={style}
                 data-density={density}
                 className={cn("flex border-b px-3 select-text", density === "compact" ? "gap-2 py-0.5 text-xs" : "gap-3 py-2 text-sm", focusIndex === v.index && "outline outline-2 outline-ring", isSel && "bg-accent/40")}
