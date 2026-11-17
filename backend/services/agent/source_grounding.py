@@ -11,7 +11,8 @@ import re
 
 
 _DOC = re.compile(r'doc://([0-9a-fA-F-]{36})(?:/(\d+))?')
-_URL = re.compile(r'(?:https?://|doc://)[^\s<>\)\]]+')
+_URL = re.compile(r'(?:https?://|doc://|rec://|txn://)[^\s<>\)\]]+')
+_RECORD_LINK = re.compile(r'(?:rec|txn)://')
 _DATE = re.compile(r'(?<!\w)\d{4}-\d{2}-\d{2}(?!\w)')
 _TIME = re.compile(r'(?<![\w:])(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?![\w:])')
 _IDENTIFIER = re.compile(r'(?<![\w-])(?=[A-Za-z\d-]*[A-Za-z])(?=[A-Za-z\d-]*\d)[A-Za-z\d]+(?:-[A-Za-z\d]+)+(?![\w-])')
@@ -75,7 +76,13 @@ def inspect_source_grounding(data, result_store, *, checked_bindings=()):
                     and binding.get('location', {}).get('section_id') == section.get('id')):
                 visible = visible.replace(binding['binding']['claim_text'], '')
         unsupported = {}
+        # A section that also cites messages or payments takes its dates and times from those records, which
+        # are not document text: only its identifiers are checked against the document (record links are
+        # stripped above), so a record time is never reported as absent from a document.
+        mixed = bool(_RECORD_LINK.search(prose))
         for label, pattern in (('dates', _DATE), ('times', _TIME), ('identifiers', _IDENTIFIER)):
+            if mixed and label != 'identifiers':
+                continue
             normalize = (lambda value: ':'.join(str(int(p)) for p in value.split(':'))) if label == 'times' else str.casefold
             supported = {normalize(value) for value in pattern.findall(source)}
             absent = sorted({value for value in pattern.findall(visible) if normalize(value) not in supported})

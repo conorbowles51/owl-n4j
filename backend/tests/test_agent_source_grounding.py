@@ -70,3 +70,18 @@ def test_escaped_paragraphs_and_broken_tables_need_repair_but_code_samples_do_no
     assert validate_artifact('report', report(table))['issues']
     assert validate_artifact('report', report(table.replace('|\n', '|\n| --- | --- |\n', 1)))['issues'] == []
     assert validate_artifact('report', report('```text\n' + table + '\n```'))['issues'] == []
+
+
+def test_record_links_and_record_times_are_not_checked_against_document_text():
+    # A section that cites a document and also a message or payment record: the record link ids and the
+    # times read from the record are not in the document's text, and must not be reported as absent from it.
+    rec = 'rec://071ab799-fadd-5cc6-b501-806f5e6de86a'
+    txn = 'txn://413bc9be-7b66-5ae5-8ec2-2b3c207de713'
+    prose = f'Kell wrote at 22:45 ([message]({rec})) and paid ([payment]({txn})). Record AB12-CD01 ({CITE}).'
+    result = inspect_source_grounding(report(prose), sources())
+    assert result['issues'] == []
+
+
+def test_a_document_only_section_still_fails_on_a_time_absent_from_the_page():
+    result = inspect_source_grounding(report(f'At 22:45 the record was made. {CITE}'), sources())
+    assert result['sections'][0]['unsupported_details'] == {'times': ['22:45']}
