@@ -23,6 +23,7 @@ embedding call. relink deletes and adds the same id, vector, text and metadata, 
 """
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import sys
@@ -54,6 +55,9 @@ FOLLOW_PASSES = 2
 MAX_NEIGHBORS = {"chunks": 32, "entities": 32}
 BUILD = "__rebuild"          # the copy being built; a leftover from a stopped run is removed first
 OLD = "__before_rebuild"     # the old collection after the swap, until `catch-up` has run and `clean-up` removes it
+
+
+NOT_CHECKED = 3  # the vector store did not answer: nothing was checked, nothing is listed
 
 
 class Chroma:
@@ -566,10 +570,16 @@ def main(argv=None):
         # A record left unreached is reported and stays where it was; only a record deleted and not stored again is lost.
         return 1 if report.get("lost") else 0
     names = args.collection or list(DEPTHS)
-    if args.action == "sweep":
-        reports = [sweep(chroma, name) for name in names]
-    else:
-        reports = [check(chroma, name, DEPTHS[name]) for name in names]
+    try:
+        if args.action == "sweep":
+            reports = [sweep(chroma, name) for name in names]
+        else:
+            reports = [check(chroma, name, DEPTHS[name]) for name in names]
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        # 17 Nov 14:03: the hourly sweep ran while a release restarted the vector store and stopped on a traceback,
+        # read as "records unreachable". Not being able to ask is a different finding: said as such, nothing listed.
+        print(f"not checked: the vector store did not answer ({type(exc).__name__}: {exc})")
+        return NOT_CHECKED
     if args.out:
         with open(args.out, "w") as out:
             json.dump(reports, out)

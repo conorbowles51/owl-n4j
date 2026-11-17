@@ -49,9 +49,21 @@ chroma_reach() {
         [[ "$(head -c 6 "${REACH_STATE}")" != ALERT: ]]
         return
     fi
-    local out
-    if out="$("${PY}" -I "${REACH_TOOL}" sweep --url "${CHROMA_LIVE_URL}" \
-              --known "${REACH_KNOWN}" --queue "${REACH_QUEUE}" --out "${REACH_STATE}.json" 2>&1)"; then
+    local out rc=0
+    out="$("${PY}" -I "${REACH_TOOL}" sweep --url "${CHROMA_LIVE_URL}" \
+              --known "${REACH_KNOWN}" --queue "${REACH_QUEUE}" --out "${REACH_STATE}.json" 2>&1)" || rc=$?
+    if (( rc == 3 )); then
+        # The vector store did not answer (a release restarts it): said on the board, the last result kept, and the
+        # sweep asked again next hour because the state file stays as old as it was.
+        if [[ -f "${REACH_STATE}" ]] && (( $(now) - $(stat -c %Y "${REACH_STATE}") >= 2 * age )); then
+            alert "stored records search not checked for $(( 2 * REACH_EVERY_HOURS )) h: ${out//$'\n'/; }"
+            printf 'ALERT: stored records search not checked for %s h: %s\n' "$(( 2 * REACH_EVERY_HOURS ))" "${out//$'\n'/; }"
+            return 1
+        fi
+        printf '%s\n' "${out//$'\n'/; }; asked again next hour"
+        return 0
+    fi
+    if (( rc == 0 )); then
         printf '%s\n' "${out//$'\n'/; }" > "${REACH_STATE}"
     else
         printf 'ALERT: stored records search cannot reach, listed in %s.json: %s\n' "${REACH_STATE}" \

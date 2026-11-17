@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -636,3 +637,48 @@ def test_release_step_keeps_what_its_time_limit_left_for_the_next_release(chroma
     assert report["left"] == ["a0", "a1"] and report["found"] == 0
     again = release_step(url, tmp_path)
     assert again.returncode == 0 and not store.orphans and not (tmp_path / "chunks.ids").exists()
+
+
+def test_a_sweep_the_vector_store_does_not_answer_says_not_checked_and_lists_nothing(tmp_path):
+    """17 Nov 14:03: the hourly sweep ran while a release restarted the vector store and ended in a traceback."""
+    done = run("sweep", "--url", "http://127.0.0.1:9", "--queue", str(tmp_path / "queue"), "--out", str(tmp_path / "o.json"))
+    assert done.returncode == 3, done.stderr
+    assert done.stdout.startswith("not checked: the vector store did not answer") and "Traceback" not in done.stderr
+    assert not (tmp_path / "queue").exists() and not (tmp_path / "o.json").exists()
+
+
+BACKUP_CHECK = Path(__file__).resolve().parents[2] / "deploy" / "backup-check.sh"
+
+
+def _hourly_reach(tmp_path, tool_exit, tool_says, state_age_h):
+    """The backup check's chroma_reach step alone, with the sweep replaced by a stub answering as given."""
+    body = BACKUP_CHECK.read_text()
+    step = body[body.index("chroma_reach() {"):body.index("\n}\n", body.index("chroma_reach() {")) + 3]
+    stub = tmp_path / "tool.py"
+    stub.write_text(f"import sys\nprint({tool_says!r})\nsys.exit({tool_exit})\n")
+    state = tmp_path / "reach.txt"
+    state.write_text("chunks: 10 of 10 found\n")
+    os.utime(state, (time.time() - state_age_h * 3600,) * 2)
+    script = (f"now() {{ date +%s; }}\nalert() {{ echo \"alerted: $*\" >> {tmp_path}/alerts; }}\n"
+              f"PY={sys.executable} REACH_TOOL={stub} REACH_STATE={state} REACH_KNOWN=k REACH_QUEUE=q "
+              f"CHROMA_LIVE_URL=u REACH_EVERY_HOURS=24\n{step}\nchroma_reach\n")
+    done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60)
+    alerts = (tmp_path / "alerts").read_text() if (tmp_path / "alerts").exists() else ""
+    return done, state.read_text(), alerts
+
+
+def test_the_hourly_check_shows_not_checked_keeps_the_last_result_and_raises_no_alert(tmp_path):
+    done, state, alerts = _hourly_reach(tmp_path, 3, "not checked: the vector store did not answer (x)", 25)
+    assert done.returncode == 0 and "not checked" in done.stdout and "asked again next hour" in done.stdout
+    assert state == "chunks: 10 of 10 found\n" and alerts == ""
+
+
+def test_the_hourly_check_alerts_when_nothing_was_checked_for_two_days(tmp_path):
+    done, _, alerts = _hourly_reach(tmp_path, 3, "not checked: the vector store did not answer (x)", 49)
+    assert done.returncode == 1 and done.stdout.startswith("ALERT: stored records search not checked for 48 h")
+    assert "not checked for 48 h" in alerts
+
+
+def test_the_hourly_check_still_alerts_on_unreached_records(tmp_path):
+    done, state, alerts = _hourly_reach(tmp_path, 1, "chunks: 9 of 10 found, 1 searched records unreached", 25)
+    assert done.returncode == 1 and state.startswith("ALERT: stored records search cannot reach") and alerts
