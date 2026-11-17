@@ -51,9 +51,10 @@ class DemoRelevanceSet(unittest.TestCase):
     def test_every_judged_record_and_decoy_is_in_the_bytes(self):
         missing = []
         for q in self.set["queries"]:
-            if q["kind"] not in BYTES_KINDS:
-                continue
-            for item in (q.get("relevant") or []) + (q.get("decoys") or []):
+            items = list(q.get("cross_area") or [])  # carriers, so always in the bytes
+            if q["kind"] in BYTES_KINDS:
+                items += (q.get("relevant") or []) + (q.get("decoys") or [])
+            for item in items:
                 if not self.carried(item):
                     missing.append((q["id"], item["id"]))
         self.assertEqual(missing, [])
@@ -71,6 +72,39 @@ class DemoRelevanceSet(unittest.TestCase):
         verbatim = [q["id"] for q in word if any(norm(a) in norm(json.dumps(q["args"])) for item in q["relevant"]
                                                  for a in item.get("any") or [])]
         self.assertLessEqual(len(verbatim), len(word) // 4, verbatim)
+
+
+
+class EveryFactCarrierIsJudged(unittest.TestCase):
+    """A tool that searches every area (search_case, and the meaning pass over the listed kinds) is judged on every
+    carrier of the facts a query asks about, wherever it sits: found 17 Nov, 39 of the demo's 87 fact carriers (15 of
+    the second case's 38) were unjudged for those tools, so a ledger row found for a phone question scored as noise.
+    Decoy entries (X*, and F entries a query lists as decoys) stay decoys."""
+
+    def check(self, set_name, truths_path, fact_prefix):
+        judged = json.loads((HERE / set_name).read_text())
+        truths = {e["id"]: e for e in json.loads(truths_path.read_text())["entries"]}
+        cross_kinds = {k for x in judged.get("also_through") or [] for k in x["from_kinds"]}
+        unjudged = []
+        for q in judged["queries"]:
+            if q["tool"] != "search_case" and q["kind"] not in cross_kinds:
+                continue
+            pats = [norm(p) for r in (q.get("relevant") or []) + (q.get("cross_area") or [])
+                    for p in (r.get("any") or []) + (r.get("all") or [])]
+            for k in q.get("key") or []:
+                if not k.startswith(fact_prefix):
+                    continue
+                for c in truths[k]["carriers"]:
+                    stem = norm(c["file"].split("/")[-1].rsplit(".", 1)[0])
+                    if not any(p in norm(c["text"]) or p in stem for p in pats):
+                        unjudged.append((q["id"], k, c["file"]))
+        self.assertEqual(unjudged, [])
+
+    def test_demo(self):
+        self.check("demo-relevance-set.json", HERE.parent / "phone" / "planted-truths.json", "F")
+
+    def test_second_case(self):
+        self.check("second-relevance-set.json", HERE / "second-truths.json", "S")
 
 
 if __name__ == "__main__":

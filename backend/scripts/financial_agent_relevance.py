@@ -89,6 +89,19 @@ def expand(judged: dict) -> list[dict]:
     return out
 
 
+# Tools that search every area of a case (phones, documents, ledger, notes, timeline, graph): for them a query's
+# ``cross_area`` records (its facts' carriers in other areas: a ledger row for a phone question) are relevant too.
+# A one-area tool (search_documents, get_financial_transactions) cannot return them and is not judged on them.
+CROSS_AREA_TOOLS = ('search_case', 'search_by_meaning')
+
+
+def judged_relevant(q):
+    rel = list(q.get('relevant') or [])
+    if q.get('tool') in CROSS_AREA_TOOLS:
+        rel += [r for r in q.get('cross_area') or [] if r['id'] not in {x['id'] for x in rel}]
+    return rel
+
+
 def rating_sets(export_path, out_dir, log=lambda *a: print(*a, flush=True)):
     """Judged sets from people's answer ratings (lx-agenttools: scripts/export_answer_rating_cases.py), one per case,
     written to ``out_dir`` (private; real questions never enter the repo). A rated question with picked records is
@@ -185,7 +198,7 @@ class Runner:
         t0 = time.time()
         try:
             texts = [R.unit_text(u) for u in R.result_units(tool.invoke(q['args']))]
-            row['score'] = R.score_query(texts, q.get('relevant') or [], q.get('decoys') or [])
+            row['score'] = R.score_query(texts, judged_relevant(q), q.get('decoys') or [])
             if dump:
                 dump.write(json.dumps(dict(query='%s:%s' % (judged['case'], q['id']), args=q['args'],
                                            units=[t[:400] for t in texts[:50]]), ensure_ascii=False) + '\n')

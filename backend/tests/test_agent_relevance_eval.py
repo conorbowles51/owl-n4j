@@ -276,3 +276,14 @@ def test_answer_ratings_become_judged_sets_per_case(tmp_path):
     assert '2 rated questions' in said[0] and '1 with none picked' in said[0]
     plan = G.plan_queries(paths, log=lambda *a: None)
     assert [p[2]['id'] for p in plan] == ['rating-1', 'rating-3']
+
+
+def test_cross_area_records_count_only_for_tools_that_search_every_area():
+    q = dict(id='q', kind='documents', tool='search_documents', args=dict(query='x'),
+             relevant=[dict(id='doc', any=['the-doc'])], cross_area=[dict(id='row', any=['LAKE ORRIN CABINS'])])
+    assert [r['id'] for r in G.judged_relevant(q)] == ['doc']
+    meaning = [x for x in G.expand(dict(case='t', case_id='c', queries=[q], also_through=[dict(
+        kind='meaning', tool='search_by_meaning', arg='query', extra={}, from_kinds=['documents'])]))
+        if x['kind'] == 'meaning'][0]
+    assert [r['id'] for r in G.judged_relevant(meaning)] == ['doc', 'row']
+    assert [r['id'] for r in G.judged_relevant(dict(q, tool='search_case'))] == ['doc', 'row']
