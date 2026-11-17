@@ -256,3 +256,14 @@ def test_report_with_an_emoji_from_a_quoted_message_still_exports_to_pdf():
     from types import SimpleNamespace
     obj = SimpleNamespace(type="report", title=art["title"], payload=art["data"], extra_metadata={})
     assert render_artifact_export(obj, "pdf").content[:4] == b"%PDF"
+
+
+def test_a_file_name_held_twice_is_one_unit_and_the_item_can_close():
+    docs = ["kell-2024-04.pdf", "kell-2024-04.pdf", "Kell-2024-04.PDF", "", "tow-invoice.pdf"]
+    p = D.build_plan("phones", question="q", phone_labels=LABELS, document_labels=docs)
+    item = D.item_by_id(p, "documents")
+    assert item["target"] == ["kell-2024-04.pdf", "tow-invoice.pdf"]
+    D.notebook_add(p, [{"item": "documents", "fact": "kell-2024-04.pdf: a statement", "cite": "doc://a"},
+                       {"item": "documents", "fact": "tow-invoice.pdf: an invoice", "cite": "doc://b"}])
+    out = D.mark(p, [{"item": "documents", "status": "done", "units": ["kell-2024-04.pdf", "tow-invoice.pdf"]}])
+    assert out["refused"] == [] and D.is_closed(item)

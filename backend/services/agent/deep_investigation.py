@@ -159,13 +159,25 @@ def _documents_items(docs: list[str]) -> list[dict]:
     ]
 
 
+def unique_units(values: Iterable[Any]) -> list[str]:
+    """Unit names in order, each once (case-insensitive) and none empty. Two files of one name (the same statement in
+    two folders) are one unit: a note names the unit, and a target that holds a name twice can never be covered."""
+    seen, out = set(), []
+    for v in values:
+        name = str(v or "").strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            out.append(name)
+    return out
+
+
 def build_plan(domain: str, *, question: str, counts: dict[str, Any] | None = None,
                phone_labels: Iterable[str] = (), document_labels: Iterable[str] = ()) -> dict[str, Any]:
     """The run's checklist. Built from code, so a run cannot skip an item by not writing it down. ``document_labels``:
     the case's documents; each is a unit of the documents item when there are at most MAX_DOC_UNITS of them (a
     larger case is triaged, and the item says so)."""
-    labels = [str(x) for x in phone_labels]
-    docs = [str(x) for x in document_labels]
+    labels = unique_units(phone_labels)
+    docs = unique_units(document_labels)
     docs = docs if len(docs) <= MAX_DOC_UNITS else []
     if domain == "phones":
         items = _phones_items(labels, docs)
@@ -188,7 +200,7 @@ def is_closed(item: dict) -> bool:
         return bool(item.get("reason"))
     if item["status"] != "done":
         return False
-    return not item["target"] or len(set(item["covered"])) >= len(item["target"])
+    return not item["target"] or len(set(item["covered"])) >= len(set(item["target"]))
 
 
 def open_items(plan: dict) -> list[dict]:
