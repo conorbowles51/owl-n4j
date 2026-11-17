@@ -26,7 +26,8 @@ try {
   }
   // Add other phones on a per-phone page
   await page.goto(`${login.url}/cases/${C}/phones/${phones[0]}?phone_layers=on`, { waitUntil: "domcontentloaded" })
-  const add = await page.getByTestId("add-other-phones").waitFor({ timeout: 60000 }).then(() => true).catch(() => false)
+  await page.getByRole("heading", { name: /Phone summary/ }).waitFor({ timeout: 120000 }).catch(() => {})
+  const add = await page.getByTestId("add-other-phones").waitFor({ timeout: 30000 }).then(() => true).catch(() => false)
   console.log("phone summary add other phones", add)
   console.log("page errors", errors.length, JSON.stringify(errors.slice(0, 3)))
 } finally { await browser.close() }
