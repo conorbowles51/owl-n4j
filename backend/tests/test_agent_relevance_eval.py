@@ -149,14 +149,16 @@ def test_judged_sets_are_well_formed():
     for s in sets:
         ids = [q['id'] for q in s['queries']]
         assert len(ids) == len(set(ids))
-        assert re.fullmatch(r'[0-9a-f-]{36}', s['case_id'])
+        assert s['case_id'] is None or re.fullmatch(r'[0-9a-f-]{36}', s['case_id'])
         for q in G.expand(s):
             assert q['kind'] in KINDS and q['tool'] and isinstance(q['args'], dict)
             for item in (q.get('relevant') or []) + (q.get('decoys') or []):
                 assert item['id'] and (item.get('any') or item.get('all'))
         kinds = {q['kind'] for q in s['queries']}
-        assert {'phones', 'documents', 'ledger', 'graph', 'timeline', 'casework'} <= kinds
+        assert {'phones', 'documents', 'ledger', 'graph', 'timeline'} <= kinds
         assert any(q.get('decoys') for q in s['queries']), 'a set needs hard negatives'
+    assert len(sets) >= 2, 'the demo case and a second invented case'
+    assert {'casework'} <= {q['kind'] for s in sets for q in s['queries']}
 
 
 def test_every_search_kind_is_also_run_through_meaning_search():

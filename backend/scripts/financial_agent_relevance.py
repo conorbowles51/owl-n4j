@@ -126,6 +126,9 @@ def run_sets(paths, kinds=None, repeat=None, only=None, dump=None, log=lambda *a
     sets = [json.load(open(p)) for p in paths]
     plan = []
     for judged in sets:
+        if not judged.get('case_id'):
+            log('%s: not loaded yet (no case_id in its set); not scored' % judged['case'])
+            continue
         reps = dict(judged.get('kind_repeat') or {})
         reps.update({x['kind']: x['repeat'] for x in judged.get('also_through') or [] if x.get('repeat')})
         for q in expand(judged):

@@ -397,6 +397,196 @@
     "why_min": 0.1
    },
    "pass_basis": "Provisional: 11 of 14 by analogy with R1 (15 of 20). Reverse: as R2."
+  },
+  {
+   "question_id": "R4",
+   "case": "second",
+   "question": "Give me a detailed report on this case: where the refund money went, who could have taken it, and what clears or implicates the defendant.",
+   "facts": [
+    {
+     "id": "S01",
+     "all": [
+      "7302"
+     ]
+    },
+    {
+     "id": "S02",
+     "all": [
+      "MGR-01"
+     ]
+    },
+    {
+     "id": "S03",
+     "all": [
+      "leave"
+     ],
+     "any": [
+      "11 March",
+      "March 11",
+      "22 March",
+      "March 22"
+     ]
+    },
+    {
+     "id": "S04",
+     "all": [
+      "Lake Orrin"
+     ]
+    },
+    {
+     "id": "S05",
+     "all": [
+      "login"
+     ],
+     "any": [
+      "sticky",
+      "8 March",
+      "March 8",
+      "top drawer"
+     ]
+    },
+    {
+     "id": "S06",
+     "all": [
+      "Marisol"
+     ],
+     "any": [
+      "refunds cleared",
+      "services account"
+     ]
+    },
+    {
+     "id": "S07",
+     "all": [
+      "Teague Practice Services"
+     ],
+     "any": [
+      "transfer",
+      "transferred",
+      "moved"
+     ]
+    },
+    {
+     "id": "S08",
+     "all": [
+      "Quarrow"
+     ],
+     "any": [
+      "Birchmoor",
+      "Teague",
+      "trading name",
+      "trades as",
+      "shell"
+     ]
+    },
+    {
+     "id": "S09",
+     "all": [
+      "delete"
+     ],
+     "any": [
+      "Quarrow emails",
+      "deleted message",
+      "recovered"
+     ]
+    },
+    {
+     "id": "S10",
+     "all": [
+      "roster"
+     ]
+    },
+    {
+     "id": "S11",
+     "all": [
+      "Priya"
+     ],
+     "any": [
+      "no deposit",
+      "no refund",
+      "only payroll",
+      "payroll and ordinary",
+      "nothing from the refunds",
+      "no transfer"
+     ]
+    },
+    {
+     "id": "S12",
+     "all": [
+      "Pell"
+     ],
+     "any": [
+      "never touch",
+      "contradict",
+      "contradicts",
+      "contradicted",
+      "denied"
+     ]
+    },
+    {
+     "id": "S13",
+     "any": [
+      "18,640",
+      "$18,640"
+     ]
+    }
+   ],
+   "decoys": [
+    {
+     "id": "X1",
+     "wrong": [
+      "paul halloran[^.]{0,160}(priya|related|husband|brother|father|family|same person|alias)"
+     ],
+     "explained": [
+      "unrelated",
+      "not related",
+      "different",
+      "legitimate",
+      "genuine",
+      "no link",
+      "not priya"
+     ]
+    },
+    {
+     "id": "X2",
+     "wrong": [
+      "pell hardware[^.]{0,160}(dorian|his business|owned by|belongs|front|shell)"
+     ],
+     "explained": [
+      "unrelated",
+      "not his",
+      "not dorian",
+      "ordinary",
+      "legitimate",
+      "no link"
+     ]
+    },
+    {
+     "id": "X3",
+     "wrong": [
+      "fennick[^.]{0,200}(met|meeting|together|rendezvous)"
+     ],
+     "explained": [
+      "coincid",
+      "chance",
+      "busy",
+      "weak",
+      "public"
+     ]
+    }
+   ],
+   "pass": {
+    "facts_min": 10,
+    "must_state": [
+     "S02",
+     "S03",
+     "S11"
+    ],
+    "decoys_max": 0,
+    "cited_min": 0.3,
+    "why_min": 0.1
+   },
+   "pass_basis": "Provisional: 10 of 13 by analogy with R1 (15 of 20); must state the defence's points (the manager's workstation, the leave, nothing in her account). Reverse: a stand-in report written blind to the key scores lower and is judged complete by a person."
   }
  ]
 }
