@@ -2,7 +2,7 @@
 
 This guide explains how to work with phone reports in Loupe: adding a phone, reading what it holds, deciding who is who, checking the system's readings, and putting what you find into dossiers, findings and the Timeline.
 
-**Updated: 5 November 2026.** Each task below ends with an **Available** line. It says whether the task can be done in this build of Loupe, in the preview only, or not yet. Use the **Team checklist** for a short first test, and the **Glossary** for the meaning of every mark you see on a phone screen.
+**Updated: 17 November 2026.** Each task below ends with an **Available** line. It says whether the task can be done in this build of Loupe, in the preview only, or not yet. Use the **Team checklist** for a short first test, and the **Glossary** for the meaning of every mark you see on a phone screen.
 
 Screenshots and examples use invented phones and invented people only.
 
@@ -185,13 +185,13 @@ A **reading** is how Loupe interprets a record, for example which field is the s
 
 Enter each claim beside the statement's own words. Loupe checks each claim against the phones and groups what it finds as supports, undercuts and context, with exact counts, and lists searches not yet run. A claim drafted by a model is marked as drafted and is not used until each field is confirmed by a person.
 
-**Available:** not yet.
+**Available:** yes, on **Patterns** under **Check a statement**.
 
 ## Where was the phone, and were two people together
 
 Located records are drawn with their **uncertainty radius**. A point with no radius is dashed and labelled **Accuracy not recorded**. **Together** answers compatible, separated or undetermined for each episode, with the radius it assumed. A broad overlap is never called together.
 
-**Available:** not yet.
+**Available:** yes for positions: **Places** lists each one with its accuracy, or **Accuracy not recorded**. Whether phones were together appears only where it has been turned on for you; see **See where phones were together**.
 
 ## Find deleted or concealed material
 

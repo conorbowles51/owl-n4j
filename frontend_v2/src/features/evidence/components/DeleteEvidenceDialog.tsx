@@ -17,7 +17,7 @@ interface DeleteEvidenceDialogProps {
   fileCount: number
   onConfirm: (deleteExclusiveEntities: boolean) => void
   isPending?: boolean
-  /** Deleted items switched on (server setting, off by default): the files are kept 30 days and can be restored. */
+  /** Deleted items switched on (server setting DELETED_ITEMS_ENABLED, on by default): the files are kept 30 days and can be restored. */
   deletedItems?: boolean
 }
 

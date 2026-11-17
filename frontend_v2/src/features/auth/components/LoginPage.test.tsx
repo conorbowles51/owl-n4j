@@ -131,3 +131,20 @@ it("sets a new password from a reset code and returns to sign-in", async () => {
   expect((await screen.findByRole("status")).textContent).toContain("Password set")
   expect(resetWithCode).toHaveBeenCalledWith("reader@example.test", "AAAA-BBBB", "one long password")
 })
+
+it("lets a keyboard user reach the show-password button and its tooltip", () => {
+  render(
+    <MemoryRouter initialEntries={["/login"]}>
+      <LoginPage />
+    </MemoryRouter>
+  )
+  const toggle = screen.getByRole("button", { name: "Show password" })
+  // tabIndex -1 kept it out of the tab order: its name and tooltip were for mouse users only
+  expect(toggle).not.toHaveAttribute("tabindex", "-1")
+  toggle.focus()
+  expect(toggle).toHaveFocus()
+  fireEvent.keyDown(toggle, { key: "Enter" })
+  fireEvent.click(toggle)
+  expect(screen.getByPlaceholderText("Enter your password")).toHaveAttribute("type", "text")
+  expect(screen.getByRole("button", { name: "Hide password" })).toBeInTheDocument()
+})

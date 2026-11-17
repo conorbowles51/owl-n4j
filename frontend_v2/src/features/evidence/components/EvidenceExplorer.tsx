@@ -121,7 +121,7 @@ export function EvidenceExplorer() {
     window.addEventListener(OPEN_DELETED_ITEMS, show)
     return () => window.removeEventListener(OPEN_DELETED_ITEMS, show)
   }, [])
-  // Deleted items switched on (server setting, off by default); off, deletes are immediate as before.
+  // Deleted items switched on (server setting DELETED_ITEMS_ENABLED, on by default); off, deletes are immediate as before.
   const deletedItems = useDeletedItemsEnabled()
   const [deleteEvidenceTarget, setDeleteEvidenceTarget] = useState<EvidenceFile | null>(null)
 

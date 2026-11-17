@@ -5,7 +5,7 @@ const n = (value: number) => value.toLocaleString("en-US")
 const files = (count: number) => `${n(count)} file${count === 1 ? "" : "s"}`
 
 /** What the delete removes, in words: every file in the folder and its subfolders, as the server counts them. With
- * Deleted items switched on (server setting, off by default) the files are kept 30 days and can be restored. */
+ * Deleted items switched on (server setting DELETED_ITEMS_ENABLED, on by default) the files are kept 30 days and can be restored. */
 export function describeFolderDelete(summary: FolderDeleteSummary, deletedItems = false) {
   const where =
     summary.subfolder_count > 0

@@ -182,8 +182,7 @@ export function LoginPage() {
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      tabIndex={-1}
-                      className="absolute right-3 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="absolute right-3 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => setShowPassword((visible) => !visible)}
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >

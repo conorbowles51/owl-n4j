@@ -115,8 +115,12 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
     <div className="flex h-full flex-col p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Recycle Bin</h3>
-        <Badge variant="slate">{entities.length} items</Badge>
+        <Badge variant="slate">{entities.length} {entities.length === 1 ? "item" : "items"}</Badge>
       </div>
+      {/* Graph entities are never purged on a timer (services/deleted_items.py: purge=False), unlike evidence's 30 days. */}
+      <p className="mb-3 text-xs text-muted-foreground">
+        Deleted entities stay here until someone restores them or deletes them permanently.
+      </p>
 
       {entities.length > 0 && (
         <div className="relative mb-3">

@@ -2308,7 +2308,7 @@ async def delete_evidence_file(
     5. Clean up related embeddings from ChromaDB
     6. Exclusive entities are soft-deleted to the recycling bin
 
-    With Deleted items switched on (config.DELETED_ITEMS_ENABLED, off by default) the file goes into Deleted items
+    With Deleted items switched on (config.DELETED_ITEMS_ENABLED, on by default) the file goes into Deleted items
     for 30 days instead (_move_evidence_file_to_deleted_items); off, everything below runs as before.
     """
     from postgres.soft_delete import enabled

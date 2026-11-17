@@ -22,7 +22,7 @@ interface DeleteFolderDialogProps {
   isPending?: boolean
   /** Why the last delete was refused (shown in the dialog; the folder is kept). */
   error?: string | null
-  /** Deleted items switched on (server setting, off by default): the files are kept 30 days and can be restored. */
+  /** Deleted items switched on (server setting DELETED_ITEMS_ENABLED, on by default): the files are kept 30 days and can be restored. */
   deletedItems?: boolean
 }
 
