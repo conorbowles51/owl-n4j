@@ -148,3 +148,14 @@ def test_the_default_embedder_asks_one_by_one_when_a_batch_loses_a_text_and_retu
     import pytest
     with pytest.raises(RuntimeError):
         embed(["ok", "down"])  # a refusal stops the run: it is not a bad text
+
+
+def test_a_new_reader_version_changes_every_area_signature(monkeypatch):
+    from services.embed_all import sources
+
+    class Conn:
+        def execute(self, *a, **k):
+            return type("R", (), {"scalar": lambda self: "3|2026-11-01"})()
+    before = sources.signature(Conn(), "c", "casework")
+    monkeypatch.setattr(sources, "SOURCES_VERSION", "s3")
+    assert sources.signature(Conn(), "c", "casework") != before

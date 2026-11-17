@@ -218,5 +218,10 @@ SIGNATURES = {
 }
 
 
+# Bump when a reader changes what it makes of the same rows (the text or the citation): every area is read again, and
+# only the items whose text or citation changed are embedded again (17 Nov 2026: s2 = hits open their own record).
+SOURCES_VERSION = "s2"
+
+
 def signature(conn, case_id, area) -> str:
-    return str(conn.execute(text(SIGNATURES[area]), {"c": str(case_id)}).scalar() or "")
+    return "%s|%s" % (SOURCES_VERSION, conn.execute(text(SIGNATURES[area]), {"c": str(case_id)}).scalar() or "")
