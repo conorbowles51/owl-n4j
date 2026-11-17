@@ -72,13 +72,15 @@ interface GraphCanvasProps {
    * panel. Without it the canvas says it on its own ("Arranging N nodes… step k of 50").
    */
   onLayoutProgress?: (progress: { step: string; done: number; total: number } | null) => void
+  /** Set to a reader of the nodes and links as drawn now, with the positions the engine gives them (Corroborate's lasso). */
+  drawnRef?: React.MutableRefObject<(() => { nodes: unknown[]; links: unknown[] }) | null>
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgress }: GraphCanvasProps) {
+export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgress, drawnRef }: GraphCanvasProps) {
   const { relationshipKeySet: significantLinks } = useSignificantManifest(caseId)
   const [edgeMenu, setEdgeMenu] = useState<EdgeMenuState | null>(null)
   const closeEdgeMenu = useCallback(() => setEdgeMenu(null), [])
@@ -259,6 +261,7 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
   }, [fgData, isLargeGraph])
   const currentLayout = isLargeGraph && workerLayout?.data === fgData ? workerLayout : null
   const shownData = isLargeGraph ? (currentLayout?.shown ?? EMPTY_GRAPH) : fgData
+  if (drawnRef) drawnRef.current = () => shownData
   const shownWarmupTicks = isLargeGraph && currentLayout?.phase !== "onPage" ? 0 : simWarmupTicks
   const layingOut = isLargeGraph && (!currentLayout || currentLayout.phase === "arranging")
   const arranging = currentLayout?.phase === "arranging"

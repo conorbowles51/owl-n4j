@@ -13,7 +13,7 @@ import { addPart } from "./selection-store"
  * node is tested on its own screen position; the links between the chosen nodes are counted and named. The chosen
  * nodes also become the graph's own selection, so the two agree. A graph that shows only part of the case says so.
  */
-export function GraphLasso({ caseId, data, graphRef }: { caseId: string; data: GraphData; graphRef: React.MutableRefObject<ForceGraphMethods | undefined> }) {
+export function GraphLasso({ caseId, data, graphRef, drawnRef }: { caseId: string; data: GraphData; graphRef: React.MutableRefObject<ForceGraphMethods | undefined>; drawnRef: React.MutableRefObject<(() => { nodes: unknown[]; links: unknown[] }) | null> }) {
   const on = useSwitch("corroborate-v2")
   const [active, setActive] = useState(false)
   const [poly, setPoly] = useState<Pt[]>([])
@@ -33,7 +33,8 @@ export function GraphLasso({ caseId, data, graphRef }: { caseId: string; data: G
     const fg = graphRef.current
     if (!fg || shape.length < 3) return setNote("Draw a closed shape round the items to corroborate.")
     // Positions live in the drawing engine's own nodes, not in the case data.
-    const drawn = (fg as unknown as { graphData: () => { nodes: DrawnNode[]; links: DrawnLink[] } }).graphData()
+    const drawn = drawnRef.current?.() as { nodes: DrawnNode[]; links: DrawnLink[] } | undefined
+    if (!drawn) return setNote("The graph is still being drawn. Try again in a moment.")
     const { hits, unplaced, links } = lassoGraph(drawn.nodes, drawn.links, (x, y) => fg.graph2ScreenCoords(x, y), shape)
     if (!hits.length) return setNote(`Nothing is inside the shape${unplaced.length ? `; ${unplaced.length} items have no position yet` : ""}.`)
     selectNodes(hits.map((n) => n.key))

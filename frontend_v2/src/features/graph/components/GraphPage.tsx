@@ -59,6 +59,7 @@ export function GraphPage() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const graphRef = useRef<ForceGraphMethods | undefined>(undefined)
+  const drawnRef = useRef<(() => { nodes: unknown[]; links: unknown[] }) | null>(null)
   const graph3dRef = useRef<ForceGraph3DMethods | undefined>(undefined)
   const caseLayer = useCaseLayer(caseId)
 
@@ -417,10 +418,11 @@ export function GraphPage() {
                   data={displayData}
                   caseId={caseId!}
                   graphRef={graphRef}
+                  drawnRef={drawnRef}
                   onLayoutProgress={setLayoutWork}
                 />
               )}
-              {graphDimension !== "3d" && caseId && <GraphLasso caseId={caseId} data={displayData} graphRef={graphRef} />}
+              {graphDimension !== "3d" && caseId && <GraphLasso caseId={caseId} data={displayData} graphRef={graphRef} drawnRef={drawnRef} />}
               {graphDimension !== "3d" && (
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center">
                   <div className="pointer-events-auto w-full max-w-2xl bg-background/90">
