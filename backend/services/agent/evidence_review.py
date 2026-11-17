@@ -129,7 +129,7 @@ def packets(artifact, result_store, *, max_chars=160_000):
              'too_large': size(value) > max_chars} for value in output]
 
 
-def read_response(response, packet):
+def read_response(response, packet, *, final=False):
     content = response.content
     if isinstance(content, list):
         content = ''.join(part.get('text', '') for part in content if isinstance(part, dict))
@@ -140,7 +140,7 @@ def read_response(response, packet):
     if not isinstance(value, dict) or not isinstance(value.get('issues'), list):
         raise ValueError('The source review did not return an issues list.')
     sections = {s['id']: s for s in packet['sections']}
-    issues = []
+    issues, discarded = [], 0
     for issue in value['issues']:
         if not isinstance(issue, dict):
             raise ValueError('A source review issue must identify the draft claim and source.')
@@ -157,9 +157,15 @@ def read_response(response, packet):
         if (not section or not source or not isinstance(quote, str) or not quote or quote not in section['content']
                 or not isinstance(source_quote, str) or (source_quote and source_quote not in source['text'])
                 or not isinstance(issue.get('reason'), str) or not issue['reason'].strip()):
+            if final:
+                discarded += 1
+                continue
             raise ValueError('A diagnosis did not quote the supplied draft and source exactly. Copy one short contiguous span, without ellipses; discard an invented quote or an issue that proves correct when rechecked.')
         issues.append({k: issue[k] for k in ('error_type', 'section_id', 'claim_text', 'reason', 'cite', 'source_quote')})
-    return {'status': 'issues_found' if issues else 'no_issues_identified', 'issues': issues, 'scope': SCOPE}
+    out = {'status': 'issues_found' if issues else 'no_issues_identified', 'issues': issues, 'scope': SCOPE}
+    if discarded:
+        out['discarded_unquoted'] = discarded
+    return out
 
 
 def review(artifacts, result_store, receipts, *, invoke, checkpoint, max_chars=160_000, on_progress=None):
@@ -188,7 +194,7 @@ def review(artifacts, result_store, receipts, *, invoke, checkpoint, max_chars=1
                     for attempt in range(2):
                         response = invoke(messages)
                         try:
-                            receipt = read_response(response, packet)
+                            receipt = read_response(response, packet, final=attempt == 1)
                             break
                         except (ValueError, TypeError, KeyError) as exc:
                             receipt = {'status': 'review_incomplete', 'issues': [], 'error': str(exc), 'scope': SCOPE}

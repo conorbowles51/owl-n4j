@@ -187,3 +187,16 @@ def test_semantic_contradiction_enters_durable_repair_and_accounts_for_review_us
     assert final['repair_attempts'] == 1 and final['completion_issues'] == []
     assert len(saved[-1]['evidence_review_receipts']) == 2
     assert sum((m.usage_metadata or {}).get('total_tokens', 0) for m in final['messages']) == 30
+
+
+def test_second_review_attempt_discards_an_unquoted_diagnosis_instead_of_blocking_the_report():
+    artifact, results, issue = fixture()
+    bad = {**issue, 'claim_text': 'A sentence absent from the draft.'}
+    calls = []
+    def invoke(messages):
+        calls.append(1)
+        return AIMessage(content=json.dumps({'issues': [bad]}))
+    receipts = {}
+    assert review([artifact], results, receipts, invoke=invoke, checkpoint=lambda: None) == []
+    assert len(calls) == 2
+    assert next(iter(receipts.values()))['discarded_unquoted'] == 1
