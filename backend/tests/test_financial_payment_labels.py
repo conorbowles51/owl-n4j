@@ -51,6 +51,26 @@ class PaymentLabelsTests(unittest.TestCase):
         self.assertEqual(edge['category'], 'Travel')
         self.assertTrue(any(n['label'] == ('Investigator sender' if row.direction == 'credit' else 'Investigator recipient') for n in graph['nodes']))
 
+    def test_holder_named_on_a_bank_interest_credit_shows_the_bank_the_statement_names(self):
+        # Monex "Depósito de intereses por saldo" (Arrendo, MONEX JULIO.pdf p.2): the bank pays interest on the
+        # balance; a person named the account's own holder. Her name stays; the card says the statement names Monex.
+        from services.financial.payment_labels import payment_label_view
+        row = next(r for r in self.rows if r.direction == 'credit')
+        row.description = ('Depósito de intereses por saldo Periodo del 01-JUN-2018 al 30-JUN-2018, saldo promedio '
+                           '$29,528.59, tasa aplicada .8000% Intereses $19.69 Impuesto Sobre La Renta $11.16')
+        row.counterparty_raw = None
+        row.account.institution_name, row.account.holder_name = 'Monex', 'ARRENDO SERV SA DE CV'
+        self.f.db.flush()
+        self.save([row], from_name='Arrendo Serv, S.A. de C.V.')
+        source = payment_label_view(row, row.account)['label_sources']['from_name']
+        self.assertEqual(source['source'], 'investigator')
+        self.assertEqual(source['statement_shows'], dict(value='Monex', rule='bank-interest'))
+        self.assertIn('interest between the account and Monex', source['explanation'])
+        self.assertEqual(payment_label_view(row, row.account)['from_name'], 'Arrendo Serv, S.A. de C.V.')
+        # Any other name a person gives is their reading of the page: no note.
+        self.save([row], from_name='Monex Casa de Bolsa')
+        self.assertNotIn('statement_shows', payment_label_view(row, row.account)['label_sources']['from_name'])
+
     def test_bulk_assignment_and_clear_retain_individual_names_and_audit(self):
         self.save(self.rows, category='Case-specific review')
         self.assertTrue(all(to_view(r).category == 'Case-specific review' for r in self.rows))

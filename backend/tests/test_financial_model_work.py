@@ -197,6 +197,30 @@ class ModelLabelTests(unittest.TestCase):
         self.assertFalse(any('not yet confirmed by a person' in v for v in document['limitations']))
         self.assertEqual(build_expert_support(document, snapshot_sha256='x')['model_work']['confirmed_names'], 1)
 
+    def test_a_decided_correction_replaces_a_persons_name_and_keeps_it_visible(self):
+        # Arrendo, Monex 2836625, 2 Jul 2018: a person named the holder as payer of a bank interest credit; Neil
+        # decided the page (bank interest, no other payer) gives Monex. The reading corrects her exact name.
+        self.save([self.row], self.f.actor, counterparty_name='Person Name')
+        self.row = self.f.db.get(FinancialTransaction, self.row.id)
+        for wrong in (dict(corrects='Another Name', directed_by='Neil Byrne'), dict(corrects='Person Name')):
+            with self.assertRaises(PaymentLabelsError):
+                self.save([self.row], claude(), counterparty_name='Monex', **wrong)
+        with self.assertRaises(PaymentLabelsError):  # a person never sends a correction as a model's
+            self.save([self.row], self.f.actor, counterparty_name='Monex', corrects='Person Name',
+                      directed_by='Neil Byrne')
+        self.save([self.row], claude(), counterparty_name='Monex', corrects='Person Name',
+                  directed_by='Neil Byrne (inbox m110821351020223)')
+        row, view = self.source(self.row)
+        source = view['label_sources'][self.side]
+        self.assertEqual((view[self.side], source['source'], source['label']),
+                         ('Monex', 'model_reading', 'Read by Claude · not confirmed'))
+        self.assertIn(f'It corrects the name {self.f.actor.name} saved, "Person Name"', source['explanation'])
+        self.assertIn('Neil Byrne (inbox m110821351020223) decided the correction', source['explanation'])
+        self.assertEqual(source['corrects']['value'], 'Person Name')
+        history = row.metadata_['investigation_label_history']
+        self.assertEqual([e['actor_name'] for e in history], [self.f.actor.name, 'Claude (for Neil Byrne)'])
+        self.assertEqual(history[-1]['before'][self.side], 'Person Name')
+
     def test_pending_reads_load_as_model_readings_and_refused_lines_stay(self):
         import json
         from services.financial.model_reads import load_model_reads as load

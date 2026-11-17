@@ -4,9 +4,12 @@ reading with its citation, shown as "Read by Claude · not confirmed" until a pe
 A line: {"case": <uuid>, "payment_id": <uuid>, "value": <name>, "page": <n>, "file": <name>, "why": <text>,
 "model": "Claude", "model_id": "...", "for": <person's name>, "for_email": <address>, "for_user_id": <uuid>}.
 ``case``, ``payment_id``, ``value`` and ``for`` are required; the rest is the citation and who did it.
+A reading that corrects a person's name on a person's decision also carries ``"corrects": <the person's name as
+stored>`` and ``"directed_by": <who decided, with the message or ticket>``; the person's name stays visible beside it.
 
 Each line goes through the payment label path (services.financial.payment_labels.update_payment_labels) with a
-model actor, so a person's name or link is never replaced (the line is refused and reported), and the label
+model actor, so a person's name or link is never replaced without a decided correction (the line is refused and
+reported), and the label
 history keeps the reading. Lines that were saved, or name a payment that already carries that name (reported
 as unchanged), are removed from the file; refused or broken lines stay in it
 with nothing changed, and the report says why.
@@ -50,7 +53,9 @@ def load_model_reads(session, lines, *, apply=False):
                                 how=item.get('why') or '')
             version = (row.metadata_ or {}).get('investigation_labels', {}).get('version', 0)
             request = PaymentLabelsRequest(transactions=[dict(id=payment_id, version=version)],
-                                           counterparty_name=str(item['value']))
+                                           counterparty_name=str(item['value']),
+                                           corrects=item.get('corrects') or None,
+                                           directed_by=item.get('directed_by') or None)
             if apply:
                 outcome = update_payment_labels(session, case_id=case_id, request=request, actor=actor,
                                                 reason=item.get('why') or None)

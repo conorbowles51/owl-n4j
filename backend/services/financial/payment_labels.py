@@ -1,4 +1,5 @@
 """Investigator categories and names, kept separately from statement readings."""
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Literal
@@ -39,6 +40,11 @@ class PaymentLabelsRequest(BaseModel):
     # A person's note on this change (the payment card's edit mode): kept in the label history, shown with the label
     # ("Saved by <person> on <date>. Note: ..."), and recorded as the manual change's reason.
     reason: str | None = Field(default=None, max_length=4000)
+    # A model reading that corrects a person's name, on a person's decision: ``corrects`` is the person's name as
+    # stored now (the save is refused if it differs), ``directed_by`` who decided. The person's name stays in the
+    # label history and is shown beside the reading; nothing else lets a model reading replace a person's name.
+    corrects: str | None = Field(default=None, max_length=512)
+    directed_by: str | None = Field(default=None, max_length=512)
 
     @field_validator('category', 'from_name', 'to_name', 'counterparty_name')
     @classmethod
@@ -55,7 +61,8 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
     """``reason``: why the value was set (where it was read), kept in the label history and shown with the label.
     ``proposed_by``: {origin, judgement_id} when a person accepted a case agent's proposal (services.agent.proposals);
     kept in the label history so the record shows a model proposed what the person accepted."""
-    changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library', 'named_from', 'same_as', 'reason'})
+    changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library', 'named_from', 'same_as', 'reason',
+                                                                      'corrects', 'directed_by'})
     if request.named_from == 'statement':
         reason = reason or 'Named from the statement.'
         if request.same_as is not None:
@@ -70,6 +77,9 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
                   or any(not value for value in changes.values())):
         # A model reads names off the page; choosing categories, linking parties and clearing names stay a person's.
         raise PaymentLabelsError(f'{actor.name} can only record a name it read; a person sets categories and links.', 422)
+    corrects = (request.corrects or '').strip()
+    if corrects and not (model and (request.directed_by or '').strip()):
+        raise PaymentLabelsError("Only a model reading corrects a person's name, and only with who decided it.", 422)
     try:
         rows = []
         # Bound each SQL query, not the user's selection. All chunks share one
@@ -107,12 +117,18 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
                 continue
             changed += 1
             effective = payment_label_view(row, row.account)
+            corrected = None
             if model:
-                # A person's entry or confirmation outranks a model reading: never replace it, or a link, with one.
+                # A person's entry or confirmation outranks a model reading: never replace it, or a link, with one,
+                # unless a person decided the correction of that exact name (``corrects``).
                 for key in row_changes:
-                    if effective['label_sources'].get(key, {}).get('source') == 'investigator':
+                    if effective['label_sources'].get(key, {}).get('source') != 'investigator':
+                        continue
+                    if not corrects or effective.get('counterparty_link') or effective.get(key) != corrects:
                         raise PaymentLabelsError(f"A person named this payment. A reading by {actor.origin['model']} "
                                                  'does not replace it.')
+                    corrected = dict(field=key, value=corrects, by=_saved_by_name(row, key),
+                                     directed_by=request.directed_by.strip())
             if 'counterparty_link' in row_changes:
                 # Direction determines the linked side; remove earlier explicit
                 # labels on that side so they cannot silently hide the link.
@@ -140,6 +156,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
                 **({'same_as': str(request.same_as)} if request.same_as is not None else {}),
                 **({'origin': dict(actor.origin)} if model else {}),
                 **({'proposed_by': dict(proposed_by)} if proposed_by else {}),
+                **({'corrects': corrected} if corrected else {}),
                 previous_label_sources={key: effective['label_sources'].get(key, {}) for key in row_changes})]
             row.metadata_ = metadata
         if commit:
@@ -340,6 +357,8 @@ def payment_label_view(row, account=None, stored=_LOOKUP, matched=None):
         if field in labels:
             values[field] = labels[field]
             sources[field] = _label_source(row, field)
+            if field == ('from_name' if row.direction == 'credit' else 'to_name'):
+                _check_bank_line(sources, field, values[field], own, inferred.get('counterparty'))
     link = display_link(row)
     if link:
         side = 'from_name' if row.direction == 'credit' else 'to_name'
@@ -372,9 +391,50 @@ def _label_source(row, field):
             return dict(restored)
     if entry is not None and field in (entry.get('after') or {}) and origin_of(entry):
         origin = origin_of(entry)
-        return dict(source='model_reading', origin=origin, label=describe(origin),
-                    explanation=explanation(origin, reason=str(entry.get('reason') or '')))
+        text = explanation(origin, reason=str(entry.get('reason') or ''))
+        fixed = entry.get('corrects') or {}
+        if fixed.get('field') == field:
+            # The person's name stays visible beside the reading that corrects it.
+            text += (f" It corrects the name {fixed.get('by') or 'a person'} saved, \"{fixed.get('value')}\"; "
+                     f"{fixed.get('directed_by') or 'a person'} decided the correction.")
+        return dict(source='model_reading', origin=origin, label=describe(origin), explanation=text,
+                    **({'corrects': dict(fixed)} if fixed.get('field') == field else {}))
     return dict(source='investigator', explanation=_saved_by(row, field))
+
+
+# Lines the description identifies as the statement bank's own: its interest, charges, fees and withheld tax.
+# A currency exchange or investment moves the holder's own money inside the bank, so the holder fits there too.
+BANK_LINE_RULES = {'bank-interest': 'interest', 'bank-charge': 'a charge', 'bank-fee': 'a fee',
+                   'bank-fee-wording': 'a fee', 'bank-tax-withheld': 'tax the bank withheld'}
+
+
+def _same_name(a, b):
+    def key(value):
+        return re.sub(r'[^0-9a-z]+', '', str(value or '').casefold())
+    return bool(key(a)) and key(a) == key(b)
+
+
+def _check_bank_line(sources, field, value, holder, suggested):
+    """A person named the account's own holder as the other side of a line the statement shows is the bank's own
+    (Arrendo, Monex 2836625, 2 Jul 2018: "Depósito de intereses por saldo" named ARRENDO SERV SA DE CV; the bank paid
+    the interest, so the holder sat on both sides). The name stays as saved; the card says what the statement shows."""
+    source = sources[field]
+    what = BANK_LINE_RULES.get((suggested or {}).get('rule'))
+    bank = (suggested or {}).get('value')
+    if source.get('source') != 'investigator' or not what or not bank or not _same_name(value, holder) \
+            or _same_name(value, bank) or source.get('identity_kind'):
+        return
+    note = (f' The statement shows this line as {what} between the account and {bank}, so {bank} is the other side; '
+            'the name saved is the account’s own holder.')
+    sources[field] = dict(source, explanation=str(source.get('explanation') or '') + note,
+                          statement_shows=dict(value=bank, rule=suggested.get('rule')))
+
+
+def _saved_by_name(row, field):
+    """The name of whoever saved the current label of ``field``, from the label history."""
+    history = (row.metadata_ or {}).get('investigation_label_history', [])
+    entry = _label_entry(history, field)
+    return (entry or {}).get('actor_name') or None
 
 
 def _saved_by(row, field):
