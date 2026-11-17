@@ -164,6 +164,9 @@ READS: dict[str, dict[str, str]] = {
                                  "The case holds no description or mandate."),
     "get_document_text": _r("One evidence file's stored text, in pages.", "Other files; the image of the page.",
                             "That file has no stored text: it may not have been read yet."),
+    "read_scope_with_model": _r("Every record of one phone window or one document, read by a model in chunks.",
+                                "Other scopes; records beyond the stated limit.",
+                                "No record in the scope bears on the question."),
     "read_conversation_history": _r("Earlier turns of this conversation.", "Other conversations.",
                                     "No earlier turn at that offset."),
     "read_prior_result": _r("One stored result of an earlier turn.", "Results never stored.", "No stored result has that id."),
@@ -194,7 +197,7 @@ def covered(name: str) -> bool:
 # Tools whose result is one record, not a list: total and shown are 1 unless the result counts something itself.
 SINGLE = frozenset({
     "get_case_overview", "inspect_graph_schema", "get_entity_details", "get_entity_neighborhood",
-    "get_case_configuration", "get_document_text", "identifier_in_other_cases", "read_prior_result", "read_artifact",
+    "get_case_configuration", "get_document_text", "read_scope_with_model", "identifier_in_other_cases", "read_prior_result", "read_artifact",
     "get_transcript", "get_theory", "get_dossier", "phone_record", "deep_checklist",
 })
 TOTAL_KEYS = ("total", "total_matching", "total_count")

@@ -124,6 +124,7 @@ _TOOL_LINES: dict[str, tuple[str, str]] = {
     "get_interviews": ("Reading the interviews with {s}", "Reading the interviews"),
     "get_transcript": ("Reading a transcript", "Reading a transcript"),
     "get_document_text": ("Reading the complete source text", "Reading the complete source text"),
+    "read_scope_with_model": ("Reading a whole scope in chunks", "Reading a whole scope in chunks"),
     "create_artifact": ("Saving {s}", "Saving the requested output"),
     "revise_artifact": ("Revising {s}", "Saving a revised output"),
     "edit_report_sections": ("Revising report sections", "Revising report sections"),

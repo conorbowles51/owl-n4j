@@ -38,7 +38,7 @@ GROUPS: tuple[dict[str, Any], ...] = (
     {"id": "documents", "name": "Documents", "about": "Search and read documents, interviews and transcripts",
      "words": r"documents?|files?|proffers?|interviews?|transcripts?|reports?|letters?|emails?|pages?|"
               r"statements?|says?|said|claims?|wrote|written|contract|agreement|testimony|affidavit",
-     "tools": ("search_documents", "search_exact_words", "get_document_text", "get_evidence_files", "get_interviews",
+     "tools": ("search_documents", "search_exact_words", "get_document_text", "read_scope_with_model", "get_evidence_files", "get_interviews",
                "get_transcript", "search_case", "search_by_meaning", "check_statements")},
     {"id": "people", "name": "People and identities", "about": "Who a name, number or account belongs to",
      "words": r"who|whom|whose|person|people|names?|identit\w*|owners?|belongs?|numbers?|same person|"
