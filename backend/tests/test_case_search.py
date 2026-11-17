@@ -242,3 +242,72 @@ def test_hits_past_the_page_budget_are_listed_as_excerpts_never_left_out(fake_ga
     assert [h["unit"] for h in r["hits"]] == ["record", "record", "excerpt", "excerpt", "excerpt", "excerpt"]
     assert all("vint" in h["text"] and len(h["text"]) <= S.EXCERPT_CHARS + 2 for h in r["hits"][2:])
     assert any("Pass offset=2 to read them whole" in n for n in r["notes"])
+
+
+def test_phone_messages_take_turns_with_the_other_areas_and_never_all_rank_below_them(monkeypatch):
+    """Fails on the code before: the dated areas' list (phone messages, documents) was joined after the other areas'
+    list, so with no model ranking a phone question's best message sat below every statement row (gate 17 Nov: phone
+    MRR 0.64 -> 0.50, a message found before lost)."""
+    from services.case_search import net
+    from services.embed_all import search as ES
+
+    def meaning(case_id, vec, items, chunks, areas, **kw):
+        out = []
+        for a in areas:
+            for i in range(1, 9):
+                out.append({"area": a, "key": "%s%d" % (a, i), "text": "t", "distance": 0.1 * i + (0.3 if a == "phone_text" else 0),
+                            "area_rank": i})
+        return out
+    monkeypatch.setattr(ES, "meaning_hits", meaning)
+    monkeypatch.setattr(ES, "word_hits", lambda *a, **k: [])
+    got = net.gather(object(), "c", "q", {"phrasings": [], "expansions": []}, ("phones", "ledger"),
+                     areas=["phone_text", "ledger"], embed_query=lambda q: [0.0], collections=(object(), object()))
+    keys = [c["key"] for c in got["candidates"]]
+    assert keys.index("phone_text1") < 2 and keys.index("phone_text2") < 4
+
+
+def test_graph_entities_take_their_turn_in_the_shared_lists_not_lists_of_their_own(monkeypatch):
+    """Fails on the code before: graph entities by name and by meaning were two more lists, so each one's first hit
+    scored beside the best of every other area together (gate 17 Nov: 30 of a question's first 60 places)."""
+    from services.case_search import net
+    from services.embed_all import search as ES
+    import importlib
+    G = importlib.import_module("services.neo4j.graph_service")
+    from services import vector_db_service as V
+
+    def meaning(case_id, vec, items, chunks, areas, **kw):
+        return [{"area": a, "key": "%s%d" % (a, i), "text": "t", "distance": 0.1 * i, "area_rank": i}
+                for a in areas for i in range(1, 6)]
+
+    class Vec:
+        def search_entities(self, *a, **k):
+            return [{"id": "e%d" % i, "text": "e", "distance": 0.1 * i, "metadata": {}} for i in range(1, 6)]
+
+    monkeypatch.setattr(ES, "meaning_hits", meaning)
+    monkeypatch.setattr(ES, "word_hits", lambda *a, **k: [])
+    monkeypatch.setattr(G.graph_service, "search_nodes",
+                        lambda p, **k: [{"key": "n%d" % i, "name": "N%d" % i} for i in range(1, 6)])
+    monkeypatch.setattr(V, "get_vector_db_service", lambda: Vec())
+    got = net.gather(object(), "c", "q", {"phrasings": [], "expansions": [], "names": ["Ann"], "terms": []},
+                     ("ledger", "casework", "graph"), embed_query=lambda q: [0.0], collections=(object(), object()))
+    keys = [c["key"] for c in got["candidates"]]
+    # the nearest entity takes its turn after each other area's best, as a ledger row or a note does
+    assert keys.index("e1") > keys.index("casework1"), keys[:14]
+
+
+def test_graph_names_are_looked_up_for_names_and_identifiers_not_ordinary_words(monkeypatch):
+    """Fails on the code before: every question word was looked up as a graph name, so "patients" brought every
+    entity holding the word (18 of a question's first 64 places on the second demo case, 17 Nov)."""
+    import importlib
+    from services.case_search import net
+    G = importlib.import_module("services.neo4j.graph_service")
+    from services import vector_db_service as V
+    asked = []
+    monkeypatch.setattr(G.graph_service, "search_nodes", lambda p, **k: asked.append(p) or [])
+
+    class Vec:
+        def search_entities(self, *a, **k):
+            return []
+    monkeypatch.setattr(V, "get_vector_db_service", lambda: Vec())
+    net._graph("c", "q", ["Ann Ross"], ["patients", "refund", "2204"], embed_query=lambda q: [0.0])
+    assert asked == ["Ann Ross", "2204"]

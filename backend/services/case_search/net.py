@@ -7,7 +7,7 @@ Lists gathered, each in its own order:
   expansion (words only);
 - documents by their words (``meaning_search.word_search_documents``), which the embedded-area word search does not
   cover;
-- graph entities by name, key, summary and alias (``graph_service.search_nodes``, once per name or term) and by
+- graph entities by name, key, summary and alias (``graph_service.search_nodes``, once per name or identifier) and by
   meaning (the entity vectors).
 
 The lists are fused by reciprocal rank fusion (``retrieval_fusion.K``). Each candidate keeps the text the source
@@ -66,6 +66,17 @@ def _rrf(lists: list[list[dict]]) -> list[dict]:
     return out
 
 
+def _merge_meaning(hits: list[dict]) -> list[dict]:
+    """One meaning list over every area: areas take turns (each area's best, then each area's second), nearest first
+    within a turn, as the embedded-records search fuses. Two lists joined end to end put every phone message and
+    document passage below every other area's hit."""
+    return sorted(hits, key=lambda h: (h.get("area_rank", 1), h["distance"]))
+
+
+def _merge_words(hits: list[dict]) -> list[dict]:
+    return sorted(hits, key=lambda h: -h.get("words", 0))
+
+
 def _embedded(conn, case_id, query, areas, *, embed_query, collections, words=True, meaning=True, phone=None,
               person=None, date_from=None, date_to=None, tag="") -> tuple[list[dict], list[dict], list[str]]:
     from services.embed_all import search as ES
@@ -78,7 +89,7 @@ def _embedded(conn, case_id, query, areas, *, embed_query, collections, words=Tr
             vec = embed_query(query)
             m = ES.meaning_hits(case_id, vec, collections[0], collections[1], list(areas), phone=phone, person=person,
                                 date_from=date_from, date_to=date_to)
-            m.sort(key=lambda h: h["distance"])
+            m.sort(key=lambda h: (h.get("area_rank", 1), h["distance"]))
             for h in m:
                 h["sources"] = ["meaning" + tag]
         except Exception as exc:  # noqa: BLE001
@@ -138,7 +149,9 @@ def _graph(case_id, query, names, terms, *, embed_query) -> tuple[list[dict], li
     seen: dict[str, dict] = {}
     try:
         from services.neo4j.graph_service import graph_service
-        probes = list(dict.fromkeys(list(names) + list(terms)))[:GRAPH_TERMS]
+        # names and identifiers only (a plate, a check number): an ordinary word such as "patients" names every
+        # entity holding it (demo second case, 17 Nov: 18 of a question's first 64 places), and meaning covers it
+        probes = list(dict.fromkeys(list(names) + [t for t in terms if any(ch.isdigit() for ch in t)]))[:GRAPH_TERMS]
         for p in probes:
             for n in graph_service.search_nodes(p, limit=10, case_id=str(case_id)):
                 key = n.get("key")
@@ -164,7 +177,8 @@ def _graph(case_id, query, names, terms, *, embed_query) -> tuple[list[dict], li
         for r in res or []:
             if not r.get("id"):
                 continue
-            by_meaning.append({"area": "graph", "key": r["id"], "title": (r.get("metadata") or {}).get("name") or r["id"],
+            by_meaning.append({"area": "graph", "key": r["id"], "distance": r.get("distance") or 0.0,
+                               "area_rank": len(by_meaning) + 1, "title": (r.get("metadata") or {}).get("name") or r["id"],
                                "cite": "entity://%s" % r["id"], "person": "", "as_read": True,
                                "text": r.get("text") or "", "sources": ["graph meaning"]})
     except Exception as exc:  # noqa: BLE001
@@ -210,6 +224,11 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
                          % str(exc)[:120])
             collections = None
     lists: list[list[dict]] = []
+    # one meaning list and one word list over every area, graph entities included, each area taking its turn; a
+    # source given a list of its own would rank its first hit beside the best of all the others (gate 17 Nov: graph
+    # entities held 30 of a question's first 60 places)
+    meaning_all: list[dict] = []
+    words_all: list[dict] = []
     clock: dict[str, float] = {}
     meaning_ok = collections is not None
     dated = [a for a in areas if a in ("phone_text", "documents")]
@@ -221,7 +240,8 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
                             person=person, date_from=date_from, date_to=date_to)
         m2, w2, n2 = _embedded(conn, case_id, question, dated, embed_query=embed, collections=collections,
                                phone=phone, person=person) if dated else ([], [], [])
-        lists += [m + m2, w + w2]
+        meaning_all += m + m2
+        words_all += w + w2
         for x in n + n2:
             if x not in notes:
                 notes.append(x)
@@ -253,12 +273,14 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
     if "graph" in kinds:
         gw, gm, gn = _graph(case_id, question, understood.get("names") or [], understood.get("terms") or [],
                             embed_query=embed)
-        lists += [gw, gm]
+        meaning_all += gm
+        words_all += gw
         notes += gn
         searched.append("graph entities by name, alias and meaning")
     clock["graph"] = round(time.time() - t0, 2)
     for k in KINDS:
         if k not in kinds:
             not_searched.append("%s (not asked for)" % k)
+    lists = [_merge_meaning(meaning_all), _merge_words(words_all)] + lists
     return {"candidates": _rrf([l for l in lists if l]), "searched": searched, "not_searched": not_searched,
             "notes": notes, "meaning_search": meaning_ok, "documents_by_words": doc_words, "clock": clock}
