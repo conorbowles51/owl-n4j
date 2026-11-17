@@ -210,3 +210,63 @@ def test_the_record_view_opens_a_nested_record_with_its_parent_and_the_file_wher
     f = next(x for x in d["files"] if x["file_uid"] == LINKED)
     assert f["original_path"] == "/sdcard/WhatsApp/synthetic-a.jpg" and f["path"] == "chats/synthetic-a.jpg"
     assert set(f["hashes"]) == {"stated_md5", "stated_sha256", "computed_md5", "computed_sha256"}
+
+
+CHAT_FILE = "00000000-0000-4000-8000-00000000a010"
+
+
+@pytest.fixture
+def chat_world(hooks):
+    """A chat-style phone: Chat > InstantMessage (timed) > Attachment, the file linked from the Attachment."""
+    from datetime import datetime, timezone
+    from tests.test_phone_identities import _stamp
+    write(str(hooks), CALL)
+    import json, os
+    from services.phone.mappings import loader
+    for name in ("InstantMessage", "Chat"):  # the shipped mappings: a Chat is a thread, not a message
+        with open(os.path.join(loader.DATA_DIR, "type", name + ".json")) as fh:
+            write(str(hooks), json.load(fh))
+    identities.install()
+    readings.install()
+    sent = datetime(2024, 3, 16, 14, 50, tzinfo=timezone.utc)
+    recs = [(10, None, 10, model("Chat", [fld("Source", ("String", "WhatsApp"))])),
+            (11, 10, 10, model("InstantMessage", [fld("TimeStamp", ("TimeStamp", sent.isoformat())),
+                                                  fld("Body", ("String", "synthetic photo"))])),
+            (12, 11, 10, model("Attachment", [fld("Filename", ("String", "synthetic-chat.jpg"))]))]
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = _phone(c, case, [(recs, [_stamp(11, "InstantMessage", "TimeStamp", sent)])], metadata={"MSISDN": OWNER})
+        assert sweep.interpret_one(engine, ext)["status"] == "done"
+        with engine.begin() as c:
+            c.execute(text(
+                "INSERT INTO phone_files (extraction_id, document_index, ordinal, file_uid, local_path, outcome, "
+                "body) VALUES (:e, 0, 9010, :f, 'chats/synthetic-chat.jpg', 'match', CAST('[]' AS jsonb))"),
+                {"e": ext, "f": CHAT_FILE})
+            c.execute(text(
+                "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, mechanism, "
+                "reference_text, file_document_index, file_ordinal, resolution, ambiguous) VALUES (:e, 0, 12, 'f', "
+                "'extracted_path_value', 'chats/synthetic-chat.jpg', 0, 9010, 'container_entry', false)"), {"e": ext})
+        yield engine, case, ext, sent
+
+
+def test_a_file_sent_in_a_chat_message_shows_the_message_and_its_time(chat_world):
+    # 17 Nov: the Media page read the Chat (the root, which has no time) instead of the InstantMessage that carried
+    # the file, so 1,567 of 2,991 carried files of one phone showed no time.
+    from services.phone import ids, media, media_spread
+    engine, case, ext, sent = chat_world
+    message = str(ids.record_uid(ext, 0, 11))
+    with engine.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM pv_comm_event WHERE record_uid = :r"), {"r": message}).scalar() == 1
+        d = media.detail(c, case, CHAT_FILE)
+        w = media.window(c, case, {"phones": [ext]})
+        spread = media_spread._messages(c, case, [CHAT_FILE])
+        thread = c.execute(text("SELECT thread_key FROM pv_comm_event WHERE record_uid = :r"), {"r": message}).scalar()
+        refs = media.thread_attachments(c, case, thread)
+    assert d["message_count"] == 1 and d["messages"][0]["message_record_uid"] == message
+    assert d["messages"][0]["instant"] is not None and d["messages"][0]["kind"] is not None
+    item = next(i for i in w["items"] if i["file_uid"] == CHAT_FILE)
+    assert item["taken_or_sent"]["basis"] == "message_time"
+    assert [(m["message_record_uid"], m["instant"] is not None) for m in spread[CHAT_FILE]] == [(message, True)]
+    assert refs["files"] == 1

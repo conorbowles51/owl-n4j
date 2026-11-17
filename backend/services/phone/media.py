@@ -28,14 +28,27 @@ MECHANISM_WORDS = {"jump_target": "jump target", "attachment_field": "attachment
                    "tagged_file": "tagged file", "attachment_extracted_path": "the attachment's extracted path"}
 
 # the time of the first message that carried each file (via every reference to it)
+def carrier_join(alias: str = "ev", inner: bool = False) -> str:
+    """The comm event of the message that carried a linked file, as ``alias``: the nearest of the linking record, its
+    parent and its root with an event at the record's reading. On chat-style phones the root is the Chat, which has no
+    event, and the parent is the InstantMessage that carried the file (17 Nov: Media showed no time for 1,567 of 2,991
+    carried files of 574a9752 because it read the root). Needs ``l`` (pv_attachment_link) and ``s``
+    (phone_record_summaries of l.record_uid)."""
+    return (f"{'JOIN' if inner else 'LEFT JOIN'} LATERAL (SELECT e.* FROM (VALUES (0, l.record_uid), "
+            f"(1, s.parent_record_uid), (2, s.root_record_uid)) AS c(n, uid) JOIN phone_comm_events e "
+            f"ON e.record_uid = c.uid AND e.generation = s.generation ORDER BY c.n LIMIT 1) {alias} ON true")
+
+
+# The carrying message's record (its Chat or the link record when no message has an event).
+CARRIER_UID = "coalesce(ev.record_uid, s.root_record_uid, l.record_uid)"
+
 _CARRIED = """
-SELECT l.file_uid, min(ev.sort_instant) AS first_at, count(DISTINCT coalesce(s.root_record_uid, l.record_uid)) AS messages
+SELECT l.file_uid, min(ev.sort_instant) AS first_at, count(DISTINCT %s) AS messages
   FROM pv_attachment_link l
   JOIN phone_record_summaries s ON s.record_uid = l.record_uid
-  LEFT JOIN phone_comm_events ev ON ev.record_uid = coalesce(s.root_record_uid, l.record_uid)
-       AND ev.generation = s.generation
+  %s
  WHERE l.case_id = :c AND l.file_uid IS NOT NULL AND l.resolved AND NOT coalesce(l.ambiguous, false)
- GROUP BY l.file_uid"""
+ GROUP BY l.file_uid""" % (CARRIER_UID, carrier_join())
 
 
 # every file reference made by a thread's messages and their child records, at the current reading
@@ -44,8 +57,9 @@ SELECT l.record_uid, l.file_uid, l.resolution, l.resolved, l.reference_text, coa
   FROM pv_attachment_link l
   JOIN phone_record_summaries s ON s.record_uid = l.record_uid
   JOIN phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation
-  JOIN pv_comm_event ev ON ev.record_uid = coalesce(s.root_record_uid, l.record_uid) AND ev.case_id = l.case_id
- WHERE l.case_id = :c AND ev.thread_key = :tk"""
+  %s
+  JOIN pv_comm_event ev ON ev.record_uid = m.record_uid AND ev.case_id = l.case_id
+ WHERE l.case_id = :c AND ev.thread_key = :tk""" % carrier_join("m", inner=True)
 
 
 def thread_attachments(conn, case_id, thread_key) -> dict:
@@ -258,10 +272,9 @@ def detail(conn, case_id, file_uid) -> dict | None:
         return None
     links = []
     for l in conn.execute(text(
-            "SELECT l.record_uid, coalesce(s.root_record_uid, l.record_uid) AS message_uid, l.mechanism, "
+            f"SELECT l.record_uid, {CARRIER_UID} AS message_uid, l.mechanism, "
             "l.extracted_path, l.body_path, ev.sort_instant, ev.kind FROM pv_attachment_link l JOIN "
-            "phone_record_summaries s ON s.record_uid = l.record_uid LEFT JOIN phone_comm_events ev ON "
-            "ev.record_uid = coalesce(s.root_record_uid, l.record_uid) AND ev.generation = s.generation WHERE "
+            f"phone_record_summaries s ON s.record_uid = l.record_uid {carrier_join()} WHERE "
             "l.case_id = :c AND l.file_uid::text = :u AND l.resolved AND NOT coalesce(l.ambiguous, false) "
             "ORDER BY ev.sort_instant NULLS LAST, l.record_uid"), {"c": str(case_id), "u": str(file_uid)}):
         mech = "attachment_extracted_path" if l.extracted_path else l.mechanism

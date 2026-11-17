@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from services.phone import corrections, identifiers, numbers, time_display as T
+from services.phone import corrections, identifiers, media, numbers, time_display as T
 from services.phone.mappings import apply
 
 BARE = "region_basis IS NOT NULL AND region_basis <> 'explicit_plus'"
@@ -281,8 +281,7 @@ def zone_decided_files(conn, case_id, file_uids) -> set:
         return set()
     return {str(r[0]) for r in conn.execute(text(
         "SELECT DISTINCT l.file_uid FROM pv_attachment_link l JOIN phone_record_summaries s ON s.record_uid = l.record_uid "
-        "JOIN phone_comm_events ev ON ev.record_uid = coalesce(s.root_record_uid, l.record_uid) AND ev.generation = "
-        "s.generation JOIN phone_time_values t ON t.record_uid = ev.record_uid AND t.generation = ev.generation AND "
+        f"{media.carrier_join(inner=True)} JOIN phone_time_values t ON t.record_uid = ev.record_uid AND t.generation = ev.generation AND "
         "t.field_name = ev.time_field WHERE l.case_id = :c AND l.file_uid = ANY(CAST(:u AS uuid[])) AND t.instant_basis "
         "= ANY(CAST(:b AS text[]))"), {"c": case_id, "u": uids, "b": list(T.ZONE_BASES)})}
 

@@ -47,6 +47,7 @@ from sqlalchemy import text
 
 from services.phone import labels as L
 from services.phone import time_display as T
+from services.phone import media
 from services.phone.media import OUTCOME_WORDS
 from services.phone.streams import case_zone
 
@@ -275,14 +276,13 @@ def _messages(conn, case_id, uids) -> dict:
         return out
     seen = set()
     for r in conn.execute(text(
-            "SELECT l.file_uid, l.extraction_id, coalesce(s.root_record_uid, l.record_uid) AS message_uid, ev.kind, "
+            f"SELECT l.file_uid, l.extraction_id, {media.CARRIER_UID} AS message_uid, ev.kind, "
             "ev.direction, ev.sort_instant, ev.time_field, ev.app, ev.deleted_state AS ev_deleted, "
             "s.deleted_state AS rec_deleted "
             "FROM pv_attachment_link l "
             "JOIN phone_record_summaries s ON s.record_uid = l.record_uid "
             "JOIN phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation "
-            "LEFT JOIN phone_comm_events ev ON ev.record_uid = coalesce(s.root_record_uid, l.record_uid) "
-            "     AND ev.generation = s.generation "
+            f"{media.carrier_join()} "
             "WHERE l.case_id = :c AND l.file_uid = ANY(CAST(:u AS uuid[])) AND l.resolved "
             "  AND NOT coalesce(l.ambiguous, false) "
             "ORDER BY ev.sort_instant NULLS LAST, 3"), {"c": str(case_id), "u": [str(u) for u in uids]}):
