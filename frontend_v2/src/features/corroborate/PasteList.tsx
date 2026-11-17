@@ -34,7 +34,7 @@ export function PasteList({ caseId, onClose, onDone }: { caseId: string; onClose
   }
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Paste a list</DialogTitle>
           <DialogDescription>Phone numbers, account numbers or plates, one per line or separated by commas. Loupe matches each to the case.</DialogDescription>

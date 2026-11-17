@@ -36,7 +36,7 @@ export function SavedSubsets({ caseId, onClose }: { caseId: string; onClose: () 
   }
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Saved subsets</DialogTitle>
           <DialogDescription>Keep what you have selected under a name, bring it back later, or combine two.</DialogDescription>

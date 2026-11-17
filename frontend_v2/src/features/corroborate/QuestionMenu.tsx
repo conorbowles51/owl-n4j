@@ -59,7 +59,7 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
   const d = preview.data
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Corroborate</DialogTitle>
           <DialogDescription>Pick the question. Loupe checks every kind of record that applies. The records show what occurs together, not why.</DialogDescription>
