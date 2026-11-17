@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { useSwitch } from "@/lib/ui-switches"
 import { useGraphStore } from "@/stores/graph.store"
 import type { GraphData } from "@/types/graph.types"
-import { hitTest, linksBetween, type Pt } from "./lasso"
+import { lassoGraph, type DrawnLink, type DrawnNode, type Pt } from "./lasso"
 import { QuestionMenu } from "./QuestionMenu"
 import { addPart } from "./selection-store"
 
@@ -32,16 +32,16 @@ export function GraphLasso({ caseId, data, graphRef }: { caseId: string; data: G
     setActive(false)
     const fg = graphRef.current
     if (!fg || shape.length < 3) return setNote("Draw a closed shape round the items to corroborate.")
-    const { hits, unplaced } = hitTest(data.nodes, (n) => (n.x == null || n.y == null ? null : fg.graph2ScreenCoords(n.x, n.y)), shape)
+    // Positions live in the drawing engine's own nodes, not in the case data.
+    const drawn = fg.graphData() as unknown as { nodes: DrawnNode[]; links: DrawnLink[] }
+    const { hits, unplaced, links } = lassoGraph(drawn.nodes, drawn.links, (x, y) => fg.graph2ScreenCoords(x, y), shape)
     if (!hits.length) return setNote(`Nothing is inside the shape${unplaced.length ? `; ${unplaced.length} items have no position yet` : ""}.`)
-    const inside = new Set(hits.map((n) => n.key))
-    const links = linksBetween(data.edges, (e) => [String(typeof e.source === "object" ? (e.source as { key: string }).key : e.source), String(typeof e.target === "object" ? (e.target as { key: string }).key : e.target)], inside)
     selectNodes(hits.map((n) => n.key))
     const capped = data.total_node_count != null && data.total_node_count > data.nodes.length
     addPart(caseId, {
       screen: "the graph",
       label: `Lasso: ${hits.length.toLocaleString("en-US")} items, ${links.length.toLocaleString("en-US")} links between them`,
-      members: hits.map((n) => ({ type: "graph_entity", id: n.key, label: n.label })),
+      members: hits.map((n) => ({ type: "graph_entity", id: n.key, ...(n.label ? { label: n.label } : {}) })),
       skipped: [],
     })
     setNote(capped ? `The graph shows ${data.nodes.length.toLocaleString("en-US")} of ${data.total_node_count?.toLocaleString("en-US")} items; the lasso covers the items shown.` : null)

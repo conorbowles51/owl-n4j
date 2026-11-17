@@ -43,3 +43,26 @@ export function linksBetween<L>(links: L[], ends: (l: L) => [string, string], in
     return inside.has(a) && inside.has(b)
   })
 }
+
+export interface DrawnNode {
+  key: string
+  label?: string
+  x?: number
+  y?: number
+}
+export interface DrawnLink {
+  source: string | { key: string }
+  target: string | { key: string }
+}
+
+const endKey = (e: string | { key: string }) => (typeof e === "object" ? e.key : e)
+
+/**
+ * The nodes the drawing engine is drawing (they carry the positions; the case data does not), the ones inside the lasso,
+ * and the links between them. ``project`` turns a graph position into a screen position.
+ */
+export function lassoGraph(nodes: DrawnNode[], links: DrawnLink[], project: (x: number, y: number) => Pt, poly: Pt[]) {
+  const { hits, unplaced } = hitTest(nodes, (n) => (n.x == null || n.y == null ? null : project(n.x, n.y)), poly)
+  const inside = new Set(hits.map((n) => n.key))
+  return { hits, unplaced, links: linksBetween(links, (l) => [endKey(l.source), endKey(l.target)], inside) }
+}

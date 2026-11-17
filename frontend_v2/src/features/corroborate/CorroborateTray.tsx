@@ -21,7 +21,7 @@ export function CorroborateTray() {
   if (!parts.length)
     return (
       <>
-        <div className="fixed bottom-3 right-3 z-40">
+        <div className="fixed bottom-12 right-3 z-40">
           <Button size="sm" variant="outline" onClick={() => setPaste(true)} title="Paste numbers, accounts or plates to corroborate">Paste a list…</Button>
           <Button size="sm" variant="outline" className="ml-1" onClick={() => setSaved(true)}>Saved subsets…</Button>
         </div>
@@ -32,7 +32,7 @@ export function CorroborateTray() {
     )
   return (
     <>
-      <div role="region" aria-label="Corroborate selection" className="fixed bottom-3 right-3 z-40 flex max-h-[50vh] max-w-[calc(100vw-1.5rem)] flex-col gap-2 overflow-auto rounded-md border bg-background px-3 py-2 text-sm shadow-md sm:max-w-md">
+      <div role="region" aria-label="Corroborate selection" className="fixed bottom-12 right-3 z-40 flex max-h-[50vh] max-w-[calc(100vw-1.5rem)] flex-col gap-2 overflow-auto rounded-md border bg-background px-3 py-2 text-sm shadow-md sm:max-w-md">
         <div className="flex flex-wrap items-center gap-2">
           <strong>{total.toLocaleString("en-US")} {total === 1 ? "item" : "items"} selected</strong>
           <Button size="sm" onClick={() => setMenu(true)}>Corroborate</Button>

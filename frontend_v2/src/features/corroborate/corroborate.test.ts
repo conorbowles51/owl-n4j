@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { addPart, clearSelection, getSelection, removePart, selectionCount, selectionMembers } from "./selection-store"
-import { hitTest, linksBetween, pointInBox, pointInPolygon } from "./lasso"
+import { hitTest, lassoGraph, linksBetween, pointInBox, pointInPolygon } from "./lasso"
 
 beforeEach(() => localStorage.clear())
 
@@ -65,5 +65,16 @@ describe("lasso hit-testing", () => {
   })
   it("tests a box in either drag direction", () => {
     expect(pointInBox({ x: 5, y: 5 }, { x: 10, y: 10 }, { x: 0, y: 0 })).toBe(true)
+  })
+})
+
+describe("graph lasso over the drawing engine's nodes", () => {
+  it("takes the engine's positioned nodes, with links whose ends are objects, and lists the unplaced", () => {
+    const nodes = [{ key: "kell", x: 2, y: 2 }, { key: "okafor", x: 8, y: 8 }, { key: "far", x: 50, y: 50 }, { key: "new" }]
+    const links = [{ source: { key: "kell" }, target: { key: "okafor" } }, { source: "kell", target: "far" }]
+    const out = lassoGraph(nodes, links, (x, y) => ({ x: x * 10, y: y * 10 }), [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }])
+    expect(out.hits.map((n) => n.key)).toEqual(["kell", "okafor"])
+    expect(out.links).toHaveLength(1)
+    expect(out.unplaced.map((n) => n.key)).toEqual(["new"])
   })
 })
