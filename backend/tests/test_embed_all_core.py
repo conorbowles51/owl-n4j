@@ -172,3 +172,21 @@ def test_a_graph_connection_with_a_detail_becomes_an_item_that_cites_its_stateme
     assert "ELKMERE HOME LENDING MORTGAGE" in item.text and item.key == "5:abc:1"
     assert sources.relationship_item("c1", dict(row, detail=" "), {}) is None  # no detail, nothing to search by
     assert sources.relationship_item("c1", dict(row, locations="[]"), {}).cite == "/cases/c1/graph"
+
+
+def test_the_sweep_goes_straight_on_while_a_pass_embeds_and_rests_when_it_has_nothing_to_do(monkeypatch):
+    import asyncio
+    from services.embed_all import runner
+    waits, results = [], iter([{"embedded": 5}, {"embedded": 2, "stopped": "429"}, {"embedded": 0}])
+
+    async def fake_sleep(n):
+        waits.append(n)
+        if len(waits) > 3:
+            raise asyncio.CancelledError()
+    monkeypatch.setattr(runner, "run_pass", lambda *a, **k: next(results))
+    monkeypatch.setattr(runner.asyncio, "sleep", fake_sleep)
+    try:
+        asyncio.run(runner.run_forever())
+    except asyncio.CancelledError:
+        pass
+    assert waits[1:4] == [runner.BUSY_INTERVAL_SECONDS, runner.INTERVAL_SECONDS, runner.INTERVAL_SECONDS]

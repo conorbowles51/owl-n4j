@@ -25,6 +25,7 @@ from services.embed_all.store import PgChromaStore
 logger = logging.getLogger(__name__)
 
 INTERVAL_SECONDS = 120
+BUSY_INTERVAL_SECONDS = 10  # a pass that embedded something is followed at once by the next: the backfill of a big case
 FIRST_DELAY_SECONDS = 90
 PASS_SECONDS = 900          # one pass stops starting new work after this long; the next pass carries on
 PHONE_FILES_PER_STEP = 200
@@ -174,12 +175,15 @@ async def run_forever() -> None:
             pass
         return run_pass()
     while True:
+        wait = INTERVAL_SECONDS
         try:
             res = await asyncio.to_thread(once)
             if res.get("embedded") or res.get("removed") or res.get("stopped"):
                 logger.info("embed_all pass: %s", res)
+            if res.get("embedded") and not res.get("stopped"):
+                wait = BUSY_INTERVAL_SECONDS
         except asyncio.CancelledError:
             raise
         except Exception as err:
             logger.warning("embed_all pass failed: %s", err)
-        await asyncio.sleep(INTERVAL_SECONDS)
+        await asyncio.sleep(wait)
