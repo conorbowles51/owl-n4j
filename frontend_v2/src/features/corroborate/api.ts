@@ -109,22 +109,6 @@ export interface Combined {
   words: string
 }
 
-/** lx-corrostatement's claim call: a sentence read into chips that nothing runs on until a person confirms them. */
-export interface ClaimChip {
-  value: string | null
-  words: string | null
-  confidence: number | string | null
-  read_by: string
-}
-export type ClaimField = "who" | "when" | "where" | "what"
-export interface Claim {
-  id: string
-  status: "draft" | "confirmed"
-  sentence: string
-  chips: Record<ClaimField, ClaimChip>
-  missing: ClaimField[]
-}
-
 const base = (caseId: string) => `/api/cases/${encodeURIComponent(caseId)}/corroborate`
 
 export const corroborateAPI = {
@@ -143,10 +127,6 @@ export const corroborateAPI = {
     fetchAPI<{ id: string; member_count: number }>(`${base(caseId)}/subsets`, { method: "POST", body: { name, members } }),
   combine: (caseId: string, first: string, second: string, op: string) =>
     fetchAPI<Combined>(`${base(caseId)}/subsets/combine`, { method: "POST", body: { first, second, op } }),
-  parseClaim: (caseId: string, body: { text: string; statement_date?: string; source?: { type: string; id: string; label?: string } }) =>
-    fetchAPI<{ claim: Claim }>(`${base(caseId)}/claims/parse`, { method: "POST", body }),
-  confirmClaim: (caseId: string, id: string, chips: Record<ClaimField, ClaimChip>) =>
-    fetchAPI<{ claim: Claim }>(`${base(caseId)}/claims/${encodeURIComponent(id)}:confirm`, { method: "POST", body: { chips } }),
   matchList: (caseId: string, text: string) => fetchAPI<ListMatch>(`${base(caseId)}/match-list`, { method: "POST", body: { text } }),
 }
 
