@@ -118,6 +118,17 @@ def test_hits_that_share_a_page_link_are_different_records_and_all_kept():
     assert r1["sources"] == ["meaning", "words"] and "also_at" not in r1
 
 
+def test_word_hits_with_the_same_count_take_turns_by_area():
+    # one word of the question in 30 graph connections filled a block of the word list ahead of every other area's
+    # one-word hit (gate 17 Nov, "tools seized in the search of the garage"); within one count, areas take turns
+    from services.case_search import net
+    rel = [{"area": "relationships", "key": "r%d" % i, "words": 1} for i in range(3)]
+    led = {"area": "ledger", "key": "l", "words": 1}
+    page = {"area": "statement_pages", "key": "p", "words": 2}
+    out = net._merge_words(rel + [led, page])
+    assert [h["key"] for h in out] == ["p", "r0", "l", "r1", "r2"]
+
+
 def test_grades_follow_the_stated_rule():
     assert [S.grade(s) for s in (10, 7, 6.5, 4, 3.9, 0, None)] == [
         "strong", "strong", "moderate", "moderate", "weak", "weak", "ungraded"]

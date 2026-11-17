@@ -89,7 +89,18 @@ def _take_turns(lists: list[list[dict]]) -> list[dict]:
 
 
 def _merge_words(hits: list[dict]) -> list[dict]:
-    return sorted(hits, key=lambda h: -h.get("words", 0))
+    """More question words first; within one count, areas take turns (each area's first, then each area's second), as
+    in the meaning list. One list by count alone let 30 graph connections holding one word of the question fill a
+    block ahead of every other area's one-word hit."""
+    by_count: dict[int, dict[str, list[dict]]] = {}
+    for h in hits:
+        by_count.setdefault(h.get("words", 0), {}).setdefault(h.get("area") or "", []).append(h)
+    out: list[dict] = []
+    for n in sorted(by_count, reverse=True):
+        areas = list(by_count[n].values())
+        for i in range(max(len(a) for a in areas)):
+            out += [a[i] for a in areas if i < len(a)]
+    return out
 
 
 def _embedded(conn, case_id, query, areas, *, embed_query, collections, words=True, meaning=True, phone=None,
