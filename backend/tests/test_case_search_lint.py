@@ -48,7 +48,8 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/guidance.py": (1, IDENT),
     "services/manual_changes.py": (2, IDENT),
     "services/neo4j/document_service.py": (2, IDENT),
-    "services/neo4j/timeline_service.py": (2, IDENT),
+    "services/neo4j/timeline_service.py": (3, "two date-format checks; one is the timeline tool's own word filter "
+                                              "(lx-deepinvest D9), a narrower list"),
     "services/phone/filters.py": (1, IDENT),
     "services/phone/graph_projection.py": (1, IDENT),
     "services/phone/phone_setup.py": (2, IDENT),
@@ -61,6 +62,9 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/summary_ledger_check.py": (1, IDENT),
     "services/triage/profiler_service.py": (1, IDENT),
     "services/triage/triage_service.py": (1, IDENT),
+    "services/corroborate/pasted.py": (1, IDENT),
+    "services/corroborate/store.py": (1, "counts how often a phrase occurs in the case's messages, to weigh it; "
+                                         "returns no records"),
     # a tool's own narrower filter (its list, then the words); the agent's case-wide search is the case search
     "services/agent/case_material_tools.py": (6, FREE),
     "services/agent/casework_tools.py": (4, FREE),

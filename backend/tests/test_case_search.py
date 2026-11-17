@@ -230,3 +230,15 @@ def test_the_search_page_result_keeps_the_dialogs_fields_beside_the_grades():
     assert out["query"] == "q" and out["areas_searched"] == ["ledger"] and out["total"] == 30
     assert h["matched"] == "both" and h["snippet"] == "Payment on 15 Apr 2024: USD 185.00" and h["key"] == "txn://t1"
     assert h["grade"] == "strong" and h["reason"] == "the tow payment" and h["as_read"] is False
+
+
+def test_hits_past_the_page_budget_are_listed_as_excerpts_never_left_out(fake_gather, monkeypatch):
+    long = [dict(c, text="row %d " % i + "x" * 900 + " vint " + "y" * 900) for i, c in enumerate(_cands(6))]
+    fake_gather(long)
+    monkeypatch.setattr(S.units, "build", lambda conn, case, h, terms: dict(h, unit="record", chars_not_shown=0))
+    r = S.search(None, "case", "q", limit=6, phrase=False, model_call=_scoring([9, 8, 7, 6, 5, 4]), use_cache=False,
+                 page_chars=4000)
+    assert r["shown"] == 6 and r["next_offset"] is None
+    assert [h["unit"] for h in r["hits"]] == ["record", "record", "excerpt", "excerpt", "excerpt", "excerpt"]
+    assert all("vint" in h["text"] and len(h["text"]) <= S.EXCERPT_CHARS + 2 for h in r["hits"][2:])
+    assert any("Pass offset=2 to read them whole" in n for n in r["notes"])

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from services.agent import result_shape
 from services.agent.tools import AgentToolContext, make_agent_tools
 from services.case_search import shape
 
@@ -40,7 +41,8 @@ def test_every_tool_that_takes_free_text_is_a_listed_search_or_says_why_not():
     unlisted = []
     for name, tool in _tools().items():
         props = set((tool.args_schema.model_json_schema() if tool.args_schema else {}).get("properties", {}))
-        if props & TEXT_ARGS and name not in shape.SEARCH_TOOLS and name not in NOT_SEARCHES:
+        if props & TEXT_ARGS and name not in shape.SEARCH_TOOLS and name not in NOT_SEARCHES \
+                and name not in result_shape.READS and name not in result_shape.ACTIONS:
             unlisted.append("%s (%s)" % (name, ", ".join(sorted(props & TEXT_ARGS))))
     assert unlisted == [], "search tools without the shared result shape: %s" % unlisted
 
@@ -48,6 +50,11 @@ def test_every_tool_that_takes_free_text_is_a_listed_search_or_says_why_not():
 def test_every_listed_search_tool_exists():
     names = set(_tools())
     assert sorted(set(shape.SEARCH_TOOLS) - names) == []
+
+
+def test_the_search_tools_are_the_ones_lx_agenttools_leaves_to_the_case_search_and_no_tool_is_shaped_twice():
+    assert set(shape.SEARCH_TOOLS) == set(result_shape.SEARCH_OWNED)
+    assert not set(shape.SEARCH_TOOLS) & set(result_shape.READS)
 
 
 # Each tool's result as its code builds it (its own key names), empty and with hits.
@@ -72,17 +79,6 @@ SAMPLES = {
                        {"total_matching": 1, "returned": 1, "items": [{}]}),
     "get_financial_transactions": ({"total_matching": 0, "returned": 0, "items": []},
                                    {"searches": [{"total_matching": 2, "returned": 2, "items": [{}, {}]}]}),
-    "find_connected_payments": ({"total_matching": 0, "returned": 0, "items": []},
-                                {"total_matching": 2, "returned": 2, "items": [{}, {}]}),
-    "get_casework": ({"total_matching": 0, "returned": 0, "items": []}, {"total_matching": 1, "returned": 1, "items": [{}]}),
-    "list_dossiers": ({"total_matching": 0, "returned": 0, "items": []}, {"total_matching": 1, "returned": 1, "items": [{}]}),
-    "get_evidence_files": ({"total_matching": 0, "returned": 0, "items": []},
-                           {"total_matching": 1, "returned": 1, "items": [{}]}),
-    "get_significant_layer": ({"total_matching": 0, "returned": 0, "items": []},
-                              {"total_matching": 1, "returned": 1, "items": [{}]}),
-    "get_map_locations": ({"total": 0, "returned": 0, "locations": []}, {"total": 7, "returned": 5, "next_offset": 5}),
-    "get_account_mentions": ({"total": 0, "returned": 0, "items": []},
-                             {"total": 30, "returned": 25, "items": [{}] * 25, "next_offset": 25}),
 }
 
 
@@ -97,6 +93,10 @@ def test_every_search_tool_result_has_the_shared_shape(tool):
     for data in (empty, found):
         out = ctx.result(tool, data, summary="s")["data"]
         assert shape.check(out) == [], (tool, out)
+        # one shape: the same numbers under result_shape, as every other read tool gives them
+        rs = out[result_shape.SHAPE_KEY]
+        assert (rs["total"], rs["shown"], rs["next"], rs["why_empty"]) == (
+            out["total"], out["shown"], out["next_offset"], out["why_empty"])
     e = ctx.result(tool, dict(SAMPLES[tool][0]), summary="s")["data"]
     assert e["total"] == 0 and e["why_empty"]
     f = ctx.result(tool, dict(SAMPLES[tool][1]), summary="s")["data"]

@@ -59,9 +59,12 @@ def test_a_single_record_is_one_of_one_and_a_tool_own_reason_wins():
     assert own["data"][RS.SHAPE_KEY]["why_empty"] == "No phone is loaded here."
 
 
-def test_errors_actions_and_search_tools_are_left_as_they_are():
+def test_errors_and_actions_are_left_as_they_are_and_search_tools_take_the_case_searchs_shape():
     ctx = AgentToolContext(case_id=CASE)
     err = ctx.result("get_dossier", {"available": False, "reason": "x"}, summary="x", status="error", error="x")
     assert RS.SHAPE_KEY not in err["data"]
     assert RS.SHAPE_KEY not in ctx.result("propose_entity", {"proposal": {}}, summary="x")["data"]
-    assert RS.SHAPE_KEY not in ctx.result("search_case", {"items": [], "total_matching": 0}, summary="x")["data"]
+    # a search tool is shaped once, by the case search (services/case_search/shape.py), under the same key
+    searched = ctx.result("search_case", {"items": [], "total_matching": 0}, summary="x")["data"]
+    assert searched[RS.SHAPE_KEY]["total"] == 0 and searched[RS.SHAPE_KEY]["why_empty"]
+    assert searched[RS.SHAPE_KEY]["next"] is None and searched["total"] == 0

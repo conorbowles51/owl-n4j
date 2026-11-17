@@ -84,7 +84,9 @@ def check(data: dict[str, Any]) -> list[str]:
     return out
 
 
-# Every agent tool that searches case content: what it searches, and its own names for total, shown and items.
+# The agent's search tools (lx-agenttools' result_shape.SEARCH_OWNED): what each searches, and its own names for total,
+# shown and items. Every other read tool gets its shape from services/agent/result_shape.READS; each tool is shaped
+# once, and every tool carries ``result_shape`` (``next`` there is ``next_offset`` here).
 SEARCH_TOOLS: dict[str, dict[str, str]] = {
     "search_case": {"searched": "every kind of case material (ranked case search) and the word groups"},
     "search_by_meaning": {"searched": "every kind of case material by meaning and words (ranked case search)"},
@@ -97,13 +99,6 @@ SEARCH_TOOLS: dict[str, dict[str, str]] = {
     "phone_find_people": {"searched": "phone identities and the names phones give them"},
     "phone_messages": {"searched": "phone messages and calls"},
     "get_financial_transactions": {"searched": "the ledger's statement rows"},
-    "find_connected_payments": {"searched": "the ledger's payments"},
-    "get_casework": {"searched": "notes, findings and other casework"},
-    "list_dossiers": {"searched": "people's dossiers"},
-    "get_evidence_files": {"searched": "evidence file names"},
-    "get_significant_layer": {"searched": "the items marked significant"},
-    "get_map_locations": {"searched": "places on the map", "total": "total"},
-    "get_account_mentions": {"searched": "account numbers named in payment descriptions", "total": "total"},
 }
 
 
@@ -137,4 +132,8 @@ def apply(tool_name: str, data: Any) -> Any:
         data["searched"] = [spec["searched"]]
     if isinstance(data.get("shown"), int) and isinstance(data.get("total"), int) and data["shown"] > data["total"]:
         data["total"] = data["shown"]
+    from services.agent.result_shape import SHAPE_KEY
+    data[SHAPE_KEY] = {"total": data["total"], "shown": data["shown"], "next": data.get("next_offset"),
+                       "searched": data["searched"], "not_searched": data["not_searched"],
+                       "why_empty": data["why_empty"]}
     return data

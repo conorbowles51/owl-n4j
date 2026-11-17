@@ -25,6 +25,7 @@ GRADE_RULE = ("Strong: the ranking model scored 7-10 (states or rests the answer
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 50
 PAGE_CHARS = 40000
+EXCERPT_CHARS = 300
 CACHE_S = 600
 _cache: dict[str, tuple[float, dict]] = {}
 _lock = threading.Lock()
@@ -197,22 +198,33 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
         pool = [c for c in cands if c["grade"] in keep]
         below = len(cands) - len(pool)
     page_terms = r["understood"]["terms"] + [e["term"] for e in r["understood"]["expansions"]]
-    hits, used = [], 0
+    hits, used, whole = [], 0, True
     t0 = time.time()
     for i, c in enumerate(pool[offset:offset + limit]):
-        unit = units.build(conn, case_id, dict(c), page_terms)
-        if hits and used + len(unit["text"]) > page_chars:
-            break
-        used += len(unit["text"])
-        hits.append(_public(unit, offset + i + 1))
+        if whole:
+            unit = units.build(conn, case_id, dict(c), page_terms)
+            if hits and used + len(unit["text"]) > page_chars:
+                whole = False
+            else:
+                used += len(unit["text"])
+                hits.append(_public(unit, offset + i + 1))
+                continue
+        # past the page's budget: the hit is listed with its grade, reason and an excerpt; offset=<its n - 1> reads it
+        # whole (the best hits come whole, the rest are counted and listed, never left out)
+        brief = dict(c, text=R.excerpt(c.get("text") or "", page_terms, EXCERPT_CHARS), unit="excerpt",
+                     chars_not_shown=max(0, len(c.get("text") or "") - EXCERPT_CHARS))
+        hits.append(_public(brief, offset + i + 1))
     nxt = offset + len(hits) if offset + len(hits) < len(pool) else None
+    excerpts = sum(1 for h in hits if h["unit"] == "excerpt")
     seconds = dict(r.get("seconds") or {}, units=round(time.time() - t0, 2))
     notes = list(r["notes"])
     if unknown:
         notes.append("Not searched, unknown kind: %s (kinds are %s)." % (", ".join(unknown), ", ".join(KINDS)))
-    if len(hits) < min(limit, len(pool) - offset):
-        notes.append("%d results shown, fewer than asked for, to keep the page to %d characters; pass offset=%s for "
-                     "the next." % (len(hits), page_chars, nxt))
+    if excerpts:
+        first = next(h["n"] for h in hits if h["unit"] == "excerpt")
+        notes.append("The first %d results are whole; the next %d are excerpts, to keep the page to about %d "
+                     "characters. Pass offset=%d to read them whole." % (len(hits) - excerpts, excerpts, page_chars,
+                                                                         first - 1))
     if below:
         notes.append("%d weaker results are below the grade asked for; they are counted in grades and shown "
                      "without min_grade." % below)
