@@ -1,0 +1,359 @@
+"""Measure the agent's search relevance and report quality on the judged test cases, and gate a change on it
+(lx-relevancetest A-C; plan D21 / R5).
+
+Subcommands (from backend/, through live-run.sh so the tools read the live database read-only):
+
+  run      run every judged query of the sets through the real agent tools of THIS tree; write the scores
+  compare  compare two run files, noise-aware; print the verdict; exit 0 PASS, 1 FAIL
+  gate     the one command every agent job runs before release: runs this tree (the candidate), takes the baseline
+           of origin's head (cached per head, shared by every job; run from a detached worktree when missing),
+           compares, scores any report files given, prints a plain verdict and writes it to
+           /mnt/owl-data/fin-wt/headless/relevance-gate/<label>-<sha>.txt
+  report   score report texts (an agent answer, a stand-in's report) against a rubric
+
+  bash /mnt/owl-data/fin-wt/live-run.sh <worktree> financial_agent_relevance gate --label <job>
+  bash /mnt/owl-data/fin-wt/live-run.sh <worktree> financial_agent_relevance report --rubric R1 answer1.md ...
+
+The judged sets and rubrics are scoring aids under evidence-engine/tests/relevance and evidence-engine/tests/phone;
+they never reach a prompt or a tool. Every Postgres session of this process is read-only (checked before anything
+runs); no model is called except the query embedding of meaning search (OpenAI, as the agent's own searches do).
+Outputs hold case material from invented test cases; they go under /mnt/owl-data/tmp.
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import hashlib
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import time
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_BACKEND = os.path.dirname(_HERE)
+_REPO = os.path.dirname(_BACKEND)
+
+
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# Loaded by path from this script's own tree, so a baseline run from an older tree (cwd) scores the same way.
+R = _load('relevance_eval', os.path.join(_BACKEND, 'services', 'agent', 'relevance_eval.py'))
+
+SETS = [os.path.join(_REPO, 'evidence-engine', 'tests', 'relevance', n)
+        for n in ('demo-relevance-set.json', 'second-relevance-set.json')]
+RUBRICS = os.path.join(_REPO, 'evidence-engine', 'tests', 'relevance', 'report-rubrics.json')
+GATE_DIR = '/mnt/owl-data/tmp/relevance-gate'
+VERDICT_DIR = '/mnt/owl-data/fin-wt/headless/relevance-gate'
+BASE_TREE = '/mnt/owl-data/fin-wt/relevance-base'
+LIVE = '/home/conorbowles51/app-v3/owl-n4j'
+BRANCH = 'origin/integration/evidence-main-reunion'
+
+
+def _sha(path='.'):
+    return subprocess.run(['git', '-C', path, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+
+
+def _set_hash(paths):
+    h = hashlib.sha256()
+    for p in paths:
+        h.update(open(p, 'rb').read())
+    return h.hexdigest()[:12]
+
+
+def existing_sets(paths=None):
+    return [p for p in (paths or SETS) if os.path.exists(p)]
+
+
+def expand(judged: dict) -> list[dict]:
+    """The set's queries plus each query of a listed kind run again through another search tool (``also_through``:
+    meaning search, the case search service), as the same question in that tool's words."""
+    out = [dict(q) for q in judged['queries']]
+    for extra in judged.get('also_through') or []:
+        for q in judged['queries']:
+            if q['kind'] not in extra['from_kinds']:
+                continue
+            text = next((v for v in q['args'].values() if isinstance(v, str)), None)
+            if not text:
+                continue
+            args = dict(extra.get('extra') or {})
+            args[extra.get('arg', 'query')] = text
+            out.append(dict(q, id='%s~%s' % (extra['kind'], q['id']), kind=extra['kind'], tool=extra['tool'], args=args))
+    return out
+
+
+def guard_process():
+    """Read-only Postgres and no chat model, as the replay scripts do (financial_agent_fit_replay.guard_process)."""
+    os.environ.setdefault('LOUPE_FIT_ALLOW_EMBEDDINGS', '1')
+    fr = _load('fit_replay', os.path.join(_HERE, 'financial_agent_fit_replay.py'))
+    fr.guard_process()
+    import socket
+    inner = socket.getaddrinfo
+    if not getattr(inner, '_relevance_guard', False):
+        def _no_chat(host, *a, **k):
+            if host and 'deepseek.com' in str(host):
+                raise OSError('relevance run: no chat model may be called')
+            return inner(host, *a, **k)
+        _no_chat._relevance_guard = _no_chat._replay_guard = True
+        socket.getaddrinfo = _no_chat
+    sys.path.insert(0, '.')
+    from sqlalchemy import text
+    from postgres.session import _get_engine
+    with _get_engine().connect() as c:
+        if c.execute(text('SHOW default_transaction_read_only')).scalar() != 'on':
+            raise SystemExit('refusing to run: sessions are not read-only')
+
+
+def run_sets(paths, kinds=None, repeat=1, only=None, log=lambda *a: print(*a, flush=True)):
+    """One file's worth of runs: per run the aggregate and per query its score (or error / missing tool)."""
+    guard_process()
+    from services.agent.tools import AgentToolContext, _financial_session, make_agent_tools
+    import services.agent.tools as tools_mod
+    sets = [json.load(open(p)) for p in paths]
+    tools_by_case = {}
+    runs = [dict(queries={}) for _ in range(repeat)]
+    for judged in sets:
+        case_id = judged['case_id']
+        if case_id not in tools_by_case:
+            ctx = AgentToolContext(case_id=case_id, ledger_session_factory=_financial_session)
+            tools_by_case[case_id] = {t.name: t for t in make_agent_tools(ctx)}
+        tools = tools_by_case[case_id]
+        for q in expand(judged):
+            if (kinds and q['kind'] not in kinds) or (only and q['id'] not in only):
+                continue
+            qid = '%s:%s' % (judged['case'], q['id'])
+            tool = tools.get(q['tool'])
+            for i in range(repeat):
+                row = dict(kind=q['kind'], tool=q['tool'], case=judged['case'])
+                if tool is None:
+                    row['missing'] = 'no tool %s in this tree' % q['tool']
+                else:
+                    t0 = time.time()
+                    try:
+                        units = R.result_units(tool.invoke(q['args']))
+                        row['score'] = R.score_query([R.unit_text(u) for u in units], q.get('relevant') or [],
+                                                     q.get('decoys') or [])
+                    except Exception as exc:  # noqa: BLE001 - a crash is a failed search, recorded
+                        row['error'] = '%s: %s' % (type(exc).__name__, str(exc)[:300])
+                    row['seconds'] = round(time.time() - t0, 2)
+                runs[i]['queries'][qid] = row
+                s = row.get('score')
+                log('%-34s %-10s %s' % (qid[:34], q['kind'], row.get('missing') or row.get('error') or
+                    'units %d first %s r@10 %s decoys %s %.0fs' % (s['units'], s['first_relevant'],
+                                                                   s['recall_at_10'], s['decoys_top10'],
+                                                                   row['seconds'])))
+    for r in runs:
+        r['aggregate'] = R.aggregate([dict(kind=v['kind'], **({'score': v['score']} if 'score' in v else
+                                                              {'error': v.get('error')}))
+                                      for v in r['queries'].values() if 'missing' not in v])
+        r['missing'] = sorted({v['tool'] for v in r['queries'].values() if 'missing' in v})
+    return runs
+
+
+def write_runs(path, runs, paths, tree='.'):
+    meta = dict(sha=_sha(tree), tree=os.path.abspath(tree), at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                sets=[os.path.basename(p) for p in paths], set_hash=_set_hash(paths), scorer=R.__file__)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, 'w') as f:
+        json.dump(dict(meta=meta, runs=runs), f, indent=1, default=str)
+
+
+def table(agg):
+    return R.verdict_lines(dict(verdict='-', base_runs=0, cand_runs=1, losses=[], lost_records=[],
+                                moved_out_of_top10=[], gains=[], newly_found=[]), agg, agg)[1:]
+
+
+def cmd_run(args):
+    paths = existing_sets(args.set)
+    runs = run_sets(paths, kinds=args.kinds, repeat=args.repeat, only=args.only)
+    write_runs(args.out, runs, paths)
+    for line in table(runs[0]['aggregate']):
+        print(line)
+    if runs[0]['missing']:
+        print('tools not in this tree (not scored): %s' % ', '.join(runs[0]['missing']))
+
+
+def cmd_compare(args):
+    base, cand = json.load(open(args.base)), json.load(open(args.cand))
+    cmp = R.compare(base['runs'], cand['runs'])
+    for line in R.verdict_lines(cmp, base['runs'][0]['aggregate'], cand['runs'][0]['aggregate']):
+        print(line)
+    return 0 if cmp['verdict'] == 'PASS' else 1
+
+
+# ---- reports -----------------------------------------------------------------------------------------------------
+
+def rubric(rid, path=RUBRICS):
+    """A report rubric by id: R1 is lx-deepinvest's phone rubric (evidence-engine/tests/phone), the rest are in
+    report-rubrics.json."""
+    found = {}
+    if os.path.exists(path):
+        for r in json.load(open(path))['rubrics']:
+            found[r['question_id']] = r
+    phone = os.path.join(_REPO, 'evidence-engine', 'tests', 'phone', 'planted-report-rubric.json')
+    if os.path.exists(phone):
+        r1 = json.load(open(phone))
+        r1 = dict(r1, **{k: v for k, v in found.get('R1', {}).items() if k in ('pass', 'case')})
+        found['R1'] = r1
+    if rid not in found:
+        raise SystemExit('no rubric %s (have %s)' % (rid, ', '.join(sorted(found))))
+    return found[rid]
+
+
+def _answer_text(path):
+    raw = open(path).read()
+    if path.endswith('.json'):
+        d = json.loads(raw)
+        return d.get('answer') or d.get('final_answer') or ''
+    return raw
+
+
+def score_files(rid, paths):
+    rb = rubric(rid)
+    return [dict(R.score_report(_answer_text(p), rb), file=p) for p in paths]
+
+
+def report_lines(rid, scores):
+    out = []
+    for s in scores:
+        out.append('%s %s: %s facts %d/%d, decoys linked %s, claims %d (cited %.0f%%, say why %.0f%%), %d words%s' % (
+            rid, os.path.basename(s['file']), 'PASS' if s['passed'] else 'FAIL', s['facts_found'], s['facts_of'],
+            ','.join(s['decoys_wrong']) or 'none', s['claims'], 100 * s['cited_share'], 100 * s['why_share'],
+            s['words'], '' if s['passed'] else ' (' + '; '.join(s['fails_because']) + ')'))
+    return out
+
+
+def cmd_report(args):
+    scores = score_files(args.rubric, args.files)
+    for line in report_lines(args.rubric, scores):
+        print(line)
+    if args.json:
+        json.dump(scores, open(args.json, 'w'), indent=1)
+    return 0 if all(s['passed'] for s in scores) else 1
+
+
+# ---- the gate ----------------------------------------------------------------------------------------------------
+
+def _base_tree(sha):
+    """A detached worktree of the live repo at ``sha`` (shared by every job's gate; one checkout at a time)."""
+    if not os.path.isdir(BASE_TREE):
+        subprocess.run(['git', '-C', LIVE, 'worktree', 'add', '--detach', BASE_TREE, sha], check=True,
+                       capture_output=True)
+    else:
+        subprocess.run(['git', '-C', BASE_TREE, 'checkout', '-q', '--detach', sha], check=True, capture_output=True)
+    return BASE_TREE
+
+
+def baseline(paths, kinds, repeat, refresh=False, log=print):
+    """Runs of origin's head for these sets, cached under GATE_DIR per (head, sets, scorer). Run from the shared
+    base worktree with this tree's runner and scorer when missing."""
+    subprocess.run(['git', '-C', LIVE, 'fetch', '-q', 'origin', 'integration/evidence-main-reunion'],
+                   capture_output=True, timeout=300)
+    head = subprocess.run(['git', '-C', LIVE, 'rev-parse', BRANCH], capture_output=True, text=True).stdout.strip()
+    scorer = hashlib.sha256(open(R.__file__, 'rb').read()).hexdigest()[:8]
+    key = '%s-%s-%s-%s-r%d' % (head[:12], _set_hash(paths), scorer, '+'.join(kinds or ['all']), repeat)
+    os.makedirs(GATE_DIR, mode=0o700, exist_ok=True)
+    path = os.path.join(GATE_DIR, 'base-%s.json' % key)
+    if os.path.exists(path) and not refresh:
+        log('baseline: cached run of origin %s (%s)' % (head[:12], path))
+        return path, head
+    with open(os.path.join(GATE_DIR, 'base.lock'), 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if os.path.exists(path) and not refresh:
+            return path, head
+        tree = _base_tree(head)
+        log('baseline: running origin %s from %s (once per head; every job reuses it)' % (head[:12], tree))
+        cmd = [sys.executable, os.path.abspath(__file__), 'run', '--out', path, '--repeat', str(repeat)]
+        for p in paths:
+            cmd += ['--set', p]
+        if kinds:
+            cmd += ['--kinds'] + list(kinds)
+        res = subprocess.run(cmd, cwd=os.path.join(tree, 'backend'), env=dict(os.environ, PYTHONPATH='.'),
+                             capture_output=True, text=True)
+        if res.returncode != 0:
+            raise SystemExit('baseline run failed:\n' + res.stderr[-3000:])
+    return path, head
+
+
+def cmd_gate(args):
+    paths = existing_sets(args.set)
+    sha = _sha('.')
+    lines = ['relevance gate for %s at %s, %s UTC' % (args.label, sha[:12], time.strftime('%Y-%m-%d %H:%M',
+                                                                                          time.gmtime()))]
+    verdicts = []
+    if not args.reports_only:
+        base_path, head = baseline(paths, args.kinds, args.repeat, refresh=args.refresh_baseline)
+        cand_path = os.path.join(GATE_DIR, 'cand-%s-%s.json' % (args.label, sha[:12]))
+        runs = run_sets(paths, kinds=args.kinds, repeat=args.repeat, log=lambda *_: None)
+        write_runs(cand_path, runs, paths)
+        base = json.load(open(base_path))
+        cmp = R.compare(base['runs'], runs)
+        lines.append('baseline: origin %s; candidate: %s' % (head[:12], sha[:12]))
+        lines += R.verdict_lines(cmp, base['runs'][0]['aggregate'], runs[0]['aggregate'])
+        if runs[0]['missing']:
+            lines.append('tools not in this tree (not scored): %s' % ', '.join(runs[0]['missing']))
+        verdicts.append(cmp['verdict'])
+    for spec in args.reports or []:
+        # R1=base1.md,base2.md:cand1.md,cand2.md  (baseline files : candidate files), or R1=cand1.md,cand2.md
+        rid, files = spec.split('=', 1)
+        base_files, cand_files = files.split(':', 1) if ':' in files else ('', files)
+        cand = score_files(rid, [f for f in cand_files.split(',') if f])
+        lines += report_lines(rid, cand)
+        if base_files:
+            base = score_files(rid, [f for f in base_files.split(',') if f])
+            rc = R.compare_reports(base, cand)
+            lines.append('%s report gate: %s (facts base %s, candidate %s%s%s%s)' % (
+                rid, rc['verdict'], rc.get('base_facts'), rc.get('cand_facts'),
+                '; lost ' + ','.join(rc['lost_facts']) if rc['lost_facts'] else '',
+                '; new decoys ' + ','.join(rc['new_decoys']) if rc['new_decoys'] else '',
+                ''.join('; %s %s->%s (noise %s)' % (x['metric'], x['base'], x['cand'], x['noise'])
+                        for x in rc['losses'])))
+            verdicts.append(rc['verdict'])
+    final = 'FAIL' if 'FAIL' in verdicts else ('PASS' if verdicts else 'NO DATA')
+    lines.insert(1, 'VERDICT: %s' % final)
+    os.makedirs(VERDICT_DIR, exist_ok=True)
+    out = os.path.join(VERDICT_DIR, '%s-%s.txt' % (args.label, sha[:12]))
+    with open(out, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    print('\n'.join(lines))
+    print('written to %s' % out)
+    return 0 if final == 'PASS' else 1
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    p = sub.add_parser('run')
+    p.add_argument('--set', action='append')
+    p.add_argument('--out', required=True)
+    p.add_argument('--repeat', type=int, default=1)
+    p.add_argument('--kinds', nargs='*')
+    p.add_argument('--only', nargs='*', help='query ids')
+    p = sub.add_parser('compare')
+    p.add_argument('--base', required=True)
+    p.add_argument('--cand', required=True)
+    p = sub.add_parser('report')
+    p.add_argument('--rubric', required=True)
+    p.add_argument('--json')
+    p.add_argument('files', nargs='+')
+    p = sub.add_parser('gate')
+    p.add_argument('--label', required=True, help='your job name')
+    p.add_argument('--set', action='append')
+    p.add_argument('--kinds', nargs='*')
+    p.add_argument('--repeat', type=int, default=1, help='runs per side; searches with a model step need 3')
+    p.add_argument('--reports', nargs='*', help='RID=base.md,...:cand.md,... report files to score (stand-in or '
+                                                'DeepSeek answers); the candidate side alone is scored if no ":"')
+    p.add_argument('--reports-only', action='store_true')
+    p.add_argument('--refresh-baseline', action='store_true')
+    args = ap.parse_args(argv)
+    return {'run': cmd_run, 'compare': cmd_compare, 'report': cmd_report, 'gate': cmd_gate}[args.cmd](args) or 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

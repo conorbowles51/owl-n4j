@@ -1,0 +1,402 @@
+{
+ "about": "Report rubrics for the agent's report-level questions (lx-relevancetest B), scored by backend/services/agent/relevance_eval.score_report. A fact counts when every term of `all` is in the report and, when `any` is given, at least one of its terms is (whole words; a number never counts as part of a date). A decoy is wrong when a `wrong` pattern matches a sentence with no `explained` pattern in it. `pass` is the pass mark: facts_min facts, every must_state fact, at most decoys_max decoys, and the shares of claims that are cited and say why they matter. R1 (phones) is lx-deepinvest's rubric in evidence-engine/tests/phone/planted-report-rubric.json; its pass mark is set here. Derived from planted-truths.json. Scoring aid only: never given to the agent, never read by product code.",
+ "rubrics": [
+  {
+   "question_id": "R1",
+   "case": "demo",
+   "pass": {
+    "facts_min": 15,
+    "must_state": [
+     "F03",
+     "F04",
+     "F05"
+    ],
+    "decoys_max": 0,
+    "cited_min": 0.3,
+    "why_min": 0.1
+   },
+   "pass_basis": "Facts: the plan target (>=15 incl. the client's alibis F03-F05, 0 decoys). Shares: floors at the standard's own level. Measured 17 Nov on the sample report (the standard): 15/20 facts, 197 findings, 35% cited, 13% say why; the recorded DeepSeek reports: 1/20 facts, 44-50% cited, 12-22% say why. So the shares do not separate a thin report from a full one: facts do. The shares catch a bare report (no citations, no reasons) and are gated against loss."
+  },
+  {
+   "question_id": "R2",
+   "case": "demo",
+   "question": "Give me a detailed report on the money in this case: who paid whom and when, what each payment means for the defence, and anything suspicious.",
+   "facts": [
+    {
+     "id": "F01",
+     "all": [
+      "650"
+     ],
+     "any": [
+      "October 2023",
+      "Oct 2023",
+      "since October",
+      "1 October"
+     ]
+    },
+    {
+     "id": "F02",
+     "all": [
+      "rent"
+     ],
+     "any": [
+      "same money",
+      "same payment",
+      "both accounts",
+      "matching debit",
+      "matches the debit",
+      "not payments",
+      "is rent",
+      "was rent"
+     ]
+    },
+    {
+     "id": "F03",
+     "all": [
+      "Vint"
+     ],
+     "any": [
+      "1187",
+      "tow"
+     ]
+    },
+    {
+     "id": "F04",
+     "all": [
+      "Ferrowmere"
+     ]
+    },
+    {
+     "id": "F15",
+     "all": [
+      "cash"
+     ],
+     "any": [
+      "$10,000",
+      "10,000",
+      "just under",
+      "under $10,000",
+      "below $10,000"
+     ]
+    },
+    {
+     "id": "F16",
+     "all": [
+      "Marsh"
+     ],
+     "any": [
+      "$500",
+      "500"
+     ]
+    },
+    {
+     "id": "F17",
+     "all": [
+      "Okafor"
+     ],
+     "any": [
+      "$1,200",
+      "1,200"
+     ]
+    },
+    {
+     "id": "F18",
+     "all": [
+      "Penn"
+     ],
+     "any": [
+      "1043",
+      "1051",
+      "1066",
+      "1072",
+      "1080",
+      "five checks",
+      "5 checks"
+     ]
+    },
+    {
+     "id": "F19",
+     "all": [
+      "Stowell"
+     ],
+     "any": [
+      "4471",
+      "Kell's card",
+      "Kell's debit",
+      "Brianna",
+      "Cole"
+     ]
+    },
+    {
+     "id": "F34",
+     "all": [
+      "Penn"
+     ],
+     "any": [
+      "$240",
+      "240",
+      "22 May",
+      "May 22"
+     ]
+    },
+    {
+     "id": "F36",
+     "all": [
+      "April"
+     ],
+     "any": [
+      "Exhibit 14",
+      "duplicate",
+      "twice",
+      "counted once"
+     ]
+    },
+    {
+     "id": "F37",
+     "all": [
+      "May"
+     ],
+     "any": [
+      "Page 1 of 2",
+      "missing page",
+      "page 2",
+      "incomplete"
+     ]
+    },
+    {
+     "id": "F38",
+     "all": [
+      "9,800"
+     ],
+     "any": [
+      "800.00",
+      "two pieces",
+      "split",
+      "misread"
+     ]
+    }
+   ],
+   "decoys": [
+    {
+     "id": "F28",
+     "wrong": [
+      "carla ruiz[^.]{0,160}(related|linked|connected|wife|sister|family|mateo)"
+     ],
+     "explained": [
+      "unrelated",
+      "not related",
+      "no relation",
+      "coincid",
+      "no link",
+      "not linked"
+     ]
+    },
+    {
+     "id": "F06",
+     "wrong": [
+      "quillan[^.]{0,200}(met|meeting|together|rendezvous)"
+     ],
+     "explained": [
+      "coincid",
+      "chance",
+      "busy",
+      "weak",
+      "public"
+     ]
+    }
+   ],
+   "pass": {
+    "facts_min": 10,
+    "must_state": [
+     "F01",
+     "F02"
+    ],
+    "decoys_max": 0,
+    "cited_min": 0.3,
+    "why_min": 0.1
+   },
+   "pass_basis": "Provisional: 10 of 13 by analogy with R1 (15 of 20). Reverse: a stand-in money report written blind to the key scores lower and is judged complete by a person."
+  },
+  {
+   "question_id": "R3",
+   "case": "demo",
+   "question": "Give me a detailed report on the documents in this case: what each important document shows, which help or hurt the defence, and what is missing.",
+   "facts": [
+    {
+     "id": "F01",
+     "all": [
+      "lease"
+     ],
+     "any": [
+      "$650",
+      "650"
+     ]
+    },
+    {
+     "id": "F03",
+     "all": [
+      "1187"
+     ],
+     "any": [
+      "01:15",
+      "1:15"
+     ]
+    },
+    {
+     "id": "F04",
+     "all": [
+      "discharge"
+     ],
+     "any": [
+      "03:38",
+      "3:38",
+      "03:40",
+      "3:40"
+     ]
+    },
+    {
+     "id": "F07",
+     "all": [
+      "1242"
+     ]
+    },
+    {
+     "id": "F19",
+     "all": [
+      "Stowell"
+     ],
+     "any": [
+      "4471",
+      "Kell"
+     ]
+    },
+    {
+     "id": "F22",
+     "all": [
+      "B-11032"
+     ],
+     "any": [
+      "deactivat",
+      "deactivate",
+      "fired",
+      "termination",
+      "terminated"
+     ]
+    },
+    {
+     "id": "F23",
+     "all": [
+      "B-20417"
+     ]
+    },
+    {
+     "id": "F30",
+     "all": [
+      "Marsh"
+     ],
+     "any": [
+      "no vehicles",
+      "changed",
+      "added",
+      "later"
+     ]
+    },
+    {
+     "id": "F31",
+     "all": [
+      "proffer"
+     ],
+     "any": [
+      "contradict",
+      "contradicts",
+      "contradicted",
+      "never rented",
+      "storage"
+     ]
+    },
+    {
+     "id": "F32",
+     "all": [
+      "apartment"
+     ],
+     "any": [
+      "4471-2",
+      "same sector",
+      "cell sector",
+      "sector"
+     ]
+    },
+    {
+     "id": "F33",
+     "all": [
+      "E-7"
+     ]
+    },
+    {
+     "id": "F34",
+     "all": [
+      "serial"
+     ],
+     "any": [
+      "not on",
+      "no loss list",
+      "none of",
+      "not stolen",
+      "22 May",
+      "receipt"
+     ]
+    },
+    {
+     "id": "F35",
+     "all": [
+      "serial"
+     ],
+     "any": [
+      "ten serials",
+      "10 serials",
+      "listings",
+      "Benchyard"
+     ]
+    },
+    {
+     "id": "F41",
+     "any": [
+      "five theft nights",
+      "five nights",
+      "5 theft nights",
+      "15 March",
+      "March 15"
+     ]
+    }
+   ],
+   "decoys": [
+    {
+     "id": "F28",
+     "wrong": [
+      "carla ruiz[^.]{0,160}(related|linked|connected|wife|sister|family|mateo)"
+     ],
+     "explained": [
+      "unrelated",
+      "not related",
+      "no relation",
+      "coincid",
+      "no link",
+      "not linked"
+     ]
+    }
+   ],
+   "pass": {
+    "facts_min": 11,
+    "must_state": [
+     "F03",
+     "F04",
+     "F33"
+    ],
+    "decoys_max": 0,
+    "cited_min": 0.3,
+    "why_min": 0.1
+   },
+   "pass_basis": "Provisional: 11 of 14 by analogy with R1 (15 of 20). Reverse: as R2."
+  }
+ ]
+}
