@@ -225,11 +225,11 @@ export function GraphToolbar({
                 <HelpCircle className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Use AND, OR, NOT, -term, quotes, * and ?</TooltipContent>
+            <TooltipContent>Filter hides what does not match. Combine words with AND, OR and NOT; -word leaves a word out; quotes keep a phrase; * and ? stand for any letters.</TooltipContent>
           </Tooltip>
         )}
         <span className="whitespace-nowrap text-[10px] text-muted-foreground" aria-live="polite">
-          {filteredNodes.toLocaleString()} / {totalNodes.toLocaleString()}
+          {filteredNodes.toLocaleString("en-US")} of {totalNodes.toLocaleString("en-US")} shown
         </span>
       </div>
 
@@ -251,7 +251,7 @@ export function GraphToolbar({
               <ZoomIn className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Zoom In</TooltipContent>
+          <TooltipContent>Zoom in</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -259,7 +259,7 @@ export function GraphToolbar({
               <ZoomOut className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Zoom Out</TooltipContent>
+          <TooltipContent>Zoom out</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -267,7 +267,7 @@ export function GraphToolbar({
               <Maximize2 className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Fit to View</TooltipContent>
+          <TooltipContent>Fit the whole graph on screen</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -299,7 +299,7 @@ export function GraphToolbar({
               <MousePointer className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Click Select</TooltipContent>
+          <TooltipContent>Select by clicking</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -313,7 +313,7 @@ export function GraphToolbar({
               <BoxSelect className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Drag Select</TooltipContent>
+          <TooltipContent>Select by dragging a box</TooltipContent>
         </Tooltip>
       </div>
 
@@ -322,12 +322,12 @@ export function GraphToolbar({
         {scope === "all" && (
           <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenAddNode}>
             <Plus className="size-3.5" />
-            Add Node
+            Add an item
           </Button>
         )}
         <Button variant="ghost" size="sm" className="text-xs" onClick={onOpenCreateRelationship}>
           <GitBranch className="size-3.5" />
-          Relationship
+          Link two items
         </Button>
       </div>
 
@@ -348,7 +348,7 @@ export function GraphToolbar({
               <Settings2 className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Force Controls</TooltipContent>
+          <TooltipContent>Spacing of the picture</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -356,7 +356,7 @@ export function GraphToolbar({
               <BarChart3 className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Graph Analysis</TooltipContent>
+          <TooltipContent>Find the most connected items and groups</TooltipContent>
         </Tooltip>
         {scope === "all" && (
           <>
@@ -366,7 +366,7 @@ export function GraphToolbar({
                   <Users className="size-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Find Similar Entities</TooltipContent>
+              <TooltipContent>Find items that may be the same</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -374,7 +374,7 @@ export function GraphToolbar({
                   <Terminal className="size-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Cypher Query</TooltipContent>
+              <TooltipContent>Query the graph database (Cypher)</TooltipContent>
             </Tooltip>
           </>
         )}
@@ -398,7 +398,7 @@ export function GraphToolbar({
               )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Spotlight Graph</TooltipContent>
+          <TooltipContent>Open the spotlight: a second graph of chosen items</TooltipContent>
         </Tooltip>
         {scope === "all" && (
           <Tooltip>
@@ -407,7 +407,7 @@ export function GraphToolbar({
                 <Trash2 className="size-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Recycle Bin</TooltipContent>
+            <TooltipContent>Deleted items</TooltipContent>
           </Tooltip>
         )}
         {hiddenNodeKeys.size > 0 && (
@@ -418,7 +418,7 @@ export function GraphToolbar({
                 {hiddenNodeKeys.size} hidden
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Unhide all nodes</TooltipContent>
+            <TooltipContent>Show every hidden item again</TooltipContent>
           </Tooltip>
         )}
       </div>

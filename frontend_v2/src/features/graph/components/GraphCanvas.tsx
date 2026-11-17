@@ -269,7 +269,7 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
     if (!onLayoutProgress) return
     onLayoutProgress(
       layingOut
-        ? { step: `Arranging ${arrangedNodes.toLocaleString("en-US")} nodes`, done: arrangedSteps, total: simWarmupTicks }
+        ? { step: `Arranging ${arrangedNodes.toLocaleString("en-US")} items`, done: arrangedSteps, total: simWarmupTicks }
         : null
     )
   }, [onLayoutProgress, layingOut, arrangedSteps, arrangedNodes, simWarmupTicks])
@@ -793,7 +793,7 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
 
       {layingOut && !onLayoutProgress && (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-slate-100/90 dark:bg-slate-900/80 px-2 py-1 text-xs text-slate-500 dark:text-slate-400">
-          Arranging {fgData.nodes.length} nodes…
+          Arranging {fgData.nodes.length.toLocaleString("en-US")} items…
           {arranging && ` step ${currentLayout.step} of ${simWarmupTicks}`}
         </div>
       )}
@@ -815,7 +815,7 @@ export function GraphCanvas({ data, caseId, graphRef: externalRef, onLayoutProgr
 
       {/* Stats overlay */}
       <div className="absolute bottom-3 left-3 rounded-md bg-slate-100/90 dark:bg-slate-900/80 px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400">
-        {fgData.nodes.length} nodes · {fgData.links.length} edges
+        {fgData.nodes.length.toLocaleString("en-US")} items · {fgData.links.length.toLocaleString("en-US")} links
         {hiddenNodeKeys.size > 0 && ` · ${hiddenNodeKeys.size} hidden`}
       </div>
     </div>

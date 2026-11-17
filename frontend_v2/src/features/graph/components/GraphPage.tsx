@@ -316,7 +316,7 @@ export function GraphPage() {
       {graphData?.total_node_count != null && graphData.total_node_count > graphData.nodes.length && (
         <p role="status" className="border-b border-border bg-status-review-soft px-4 py-1.5 text-xs">
           Showing the {graphData.nodes.length.toLocaleString("en-US")} most connected of {graphData.total_node_count.toLocaleString("en-US")} items in this case.
-          Search or open a node's neighbours to reach the rest; the Table lists every item.
+          Search, or open an item's neighbours, to reach the rest; the Table lists every item.
         </p>
       )}
       {!!graphData?.ledger_repeats_hidden && (
@@ -352,7 +352,7 @@ export function GraphPage() {
         const capped = graphData.total_node_count != null && graphData.total_node_count > graphData.nodes.length
         return (
           <div className="flex items-center gap-2 border-b border-border px-4 py-1 text-xs">
-            <span className="text-muted-foreground">This filtered view: {nodes.length.toLocaleString("en-US")} entities</span>
+            <span className="text-muted-foreground">This filtered view: {nodes.length.toLocaleString("en-US")} items</span>
             <AddToTheory
               caseId={caseId}
               surface="graph"

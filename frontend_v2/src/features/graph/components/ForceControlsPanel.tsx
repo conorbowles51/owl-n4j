@@ -31,7 +31,7 @@ export function ForceControlsPanel() {
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Force Controls</h3>
+        <h3 className="text-sm font-semibold">Spacing of the picture</h3>
         <Button variant="ghost" size="icon-sm" onClick={resetDefaults} title="Reset">
           <RotateCcw className="size-3.5" />
         </Button>
@@ -40,7 +40,7 @@ export function ForceControlsPanel() {
       <div className="space-y-3">
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-xs font-medium">Link Distance</span>
+            <span className="text-xs font-medium">Line length</span>
             <span className="text-xs text-muted-foreground">{linkDistance}</span>
           </div>
           <Slider
@@ -54,7 +54,7 @@ export function ForceControlsPanel() {
 
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-xs font-medium">Repulsion</span>
+            <span className="text-xs font-medium">Push apart</span>
             <span className="text-xs text-muted-foreground">{chargeStrength}</span>
           </div>
           <Slider
@@ -68,7 +68,7 @@ export function ForceControlsPanel() {
 
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-xs font-medium">Center Pull</span>
+            <span className="text-xs font-medium">Pull to the centre</span>
             <span className="text-xs text-muted-foreground">
               {centerStrength.toFixed(2)}
             </span>
@@ -83,7 +83,7 @@ export function ForceControlsPanel() {
         </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium">Show Relationship Labels</span>
+          <span className="text-xs font-medium">Name each line</span>
           <Switch
             checked={showRelationshipLabels}
             onCheckedChange={setShowRelationshipLabels}

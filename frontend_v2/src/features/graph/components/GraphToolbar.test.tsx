@@ -40,7 +40,7 @@ describe("GraphToolbar", () => {
     expect(useGraphStore.getState().appliedSearchQuery).toBe("")
     act(() => vi.advanceTimersByTime(300))
     expect(useGraphStore.getState().appliedSearchQuery).toBe("Alice")
-    expect(screen.getByText("3 / 10")).toBeInTheDocument()
+    expect(screen.getByText("3 of 10 shown")).toBeInTheDocument()
   })
 
   it("only submits fuzzy Search on Enter or button click", () => {

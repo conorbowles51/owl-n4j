@@ -259,9 +259,9 @@ describe("GraphCanvas layout", () => {
     const final = warmupLayout(nodes, links, params, (step, read) => {
       if (step === 0 || step === 20) steps.push(read())
     })
-    expect(reports.at(-1)).toEqual({ step: "Arranging 600 nodes", done: 0, total: 50 })
+    expect(reports.at(-1)).toEqual({ step: "Arranging 600 items", done: 0, total: 50 })
     worker.send({ positions: steps[1], step: 20, done: false })
-    expect(reports.at(-1)).toEqual({ step: "Arranging 600 nodes", done: 20, total: 50 })
+    expect(reports.at(-1)).toEqual({ step: "Arranging 600 items", done: 20, total: 50 })
     expect(view.container.textContent).not.toMatch(/Arranging/)
     worker.send({ positions: final.slice(), step: 50, done: true })
     expect(reports.at(-1)).toBeNull()
