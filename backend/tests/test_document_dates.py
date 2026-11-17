@@ -53,6 +53,40 @@ class Rules(unittest.TestCase):
         self.assertEqual(read_dates(text, locs)[0]["page"], 2)
 
 
+class PoliceAndLabForms(unittest.TestCase):
+    """17 Nov, CM1 Thomas Keyes: the rules read a date from 18 of its 440 files; 407 are photos, videos or hold no
+    date, and the lab and fire forms wrote their dates in ways the rules skipped."""
+
+    def test_date_of_report_is_the_written_date(self):
+        head = "Montgomery County Police Department Crime Laboratory Firearms Examination Unit " * 4
+        r = read_dates(head + "FEU Examination Report (2127) Revision: 3 (11/22/2025) CR#: 250057502 "
+                       "Date of Report: 3/16/2026")
+        self.assertEqual([(x["kind"], x["date_from"], x["rule"]) for x in r],
+                         [("written", date(2026, 3, 16), "cue-written+2")])
+
+    def test_the_second_pass_never_changes_a_first_pass_reading(self):
+        # measured 17 Nov over 35,984 live texts: letting the new cues compete changed 171 readings to other dates
+        r = kinds("Invoice date: 01/15/2024 ... Date of Report: 3/16/2026")
+        self.assertEqual((r["written"]["date_from"], r["written"]["rule"]), (date(2024, 1, 15), "cue-written"))
+
+    def test_a_cue_with_an_equals_sign_reads_its_date(self):
+        self.assertEqual(kinds("TO: Det. Elias Samghani, ID# 2211 DATE: = 2/15/2026")["written"]["date_from"],
+                         date(2026, 2, 15))
+
+    def test_a_two_digit_year_is_read_after_a_cue_and_never_alone(self):
+        self.assertEqual(kinds("Examiner: Stephanie Luehr Date: 3/14/26 Item 1")["written"]["date_from"],
+                         date(2026, 3, 14))
+        self.assertEqual(kinds("Lot 3/14/26 shelf 12"), {})
+
+    def test_a_declaration_is_signed_on_the_date_after_its_true_and_correct_clause(self):
+        r = kinds("I declare under penalty of perjury that the foregoing is true and correct. March 9, 2026 "
+                  "for dates of service after 2/21/2024")
+        self.assertEqual(r["signed"]["date_from"], date(2026, 3, 9))
+
+    def test_dates_of_birth_and_offence_dates_stay_unread(self):
+        self.assertEqual(kinds("Thomas Lee Keyes, having the date of birth of 10/31/1964"), {})
+
+
 class Store(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
@@ -159,3 +193,28 @@ class Used(Store):
         self.assertIn("not confirmed", rec["body"])
         far = (datetime(2026, 9, 1, tzinfo=timezone.utc), datetime(2026, 9, 2, tzinfo=timezone.utc))
         self.assertEqual(Store.dated_documents(stub, people, [far]), [])
+
+
+class Reread(Store):
+    """scripts/document_dates_backfill.py --reread: a file read before gains only what the rules now read."""
+
+    def _run(self, *args):
+        from unittest.mock import patch
+        from scripts import document_dates_backfill
+        maker = sessionmaker(bind=self.engine, future=True)
+        with patch("postgres.session._get_session_local", return_value=maker):
+            document_dates_backfill.main(["--reread", *args])
+        self.db.expire_all()
+        return sorted((r.kind, r.date_from, r.rule) for r in self.db.query(DocumentDateReading))
+
+    def test_a_reread_adds_the_second_pass_reading_once_and_keeps_the_first(self):
+        S.store_for_file(self.db, self.file)
+        self.db.commit()
+        row = self.db.get(EvidenceDocumentText, self.file)
+        row.content = "Invoice date: 5 August 2026 total 10. Sworn under penalty: the foregoing is true and correct. March 9, 2026"
+        self.db.commit()
+        self.assertEqual(len(self._run()), 1)  # a dry run writes nothing
+        first = self._run("--apply")
+        self.assertEqual(first, [("signed", date(2026, 3, 9), "docdates-rules-1:cue-signed+2"),
+                                 ("written", date(2026, 8, 5), "docdates-rules-1:cue-written")])
+        self.assertEqual(self._run("--apply"), first)

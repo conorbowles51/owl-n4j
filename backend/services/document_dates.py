@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
-RULE_SET = "docdates-rules-1"
+RULE_SET = "docdates-rules-1"  # the second pass's readings carry "+2" on their rule; the first pass's are unchanged
 MIN_YEAR, MAX_YEAR = 1950, 2030
 
 _MONTHS = {
@@ -26,7 +26,9 @@ _ISO = r"(?P<iy>\d{4})-(?P<im>\d{2})-(?P<id>\d{2})"
 _DMY_WORD = rf"(?P<dd>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:de\s+)?(?P<dm>{_MON})\.?,?\s+(?:de\s+)?(?P<dy>\d{{4}})"
 _MDY_WORD = rf"(?P<mm>{_MON})\.?\s+(?P<md>\d{{1,2}})(?:st|nd|rd|th)?,?\s+(?P<my>\d{{4}})"
 _NUM = r"(?P<na>\d{1,2})[/.](?P<nb>\d{1,2})[/.](?P<ny>\d{4})"
+_NUM2 = r"(?P<na>\d{1,2})[/.](?P<nb>\d{1,2})[/.](?P<ny>\d{4}|\d{2})"  # second pass: a two-digit year after a cue only
 _DATE = re.compile(rf"\b(?:{_ISO}|{_DMY_WORD}|{_MDY_WORD}|{_NUM})\b", re.I)
+_DATE2 = re.compile(rf"\b(?:{_ISO}|{_DMY_WORD}|{_MDY_WORD}|{_NUM2})\b", re.I)
 
 # cue words read in the 70 characters before a date (or the two dates of a period)
 _CUES = [
@@ -36,6 +38,18 @@ _CUES = [
     ("written", re.compile(
         r"(dated?|invoice date|date of issue|issued|fecha de (?:corte|expedici[oó]n|emisi[oó]n|elaboraci[oó]n)|"
         r"fecha|sent|date|emitido|statement date)\s*(?:on|:|-)?\s*$", re.I)),
+]
+# The second pass (17 Nov, CM1's lab, fire and custodian forms) reads only a kind the first pass found nothing for, so
+# no reading the first pass makes ever changes: measured over 35,984 live texts, letting these cues compete changed 171
+# readings to other dates.
+_CUES2 = [
+    _CUES[0], _CUES[1],
+    ("signed", re.compile(r"((signed|sworn|firmad[oa]|executed|subscribed|notar\w*)\b[^.\n]{0,40}|"
+                          r"(?:foregoing|above) is true and correct\.?\s*)$", re.I)),
+    ("written", re.compile(
+        r"(dated?|invoice date|date of issue|issued|fecha de (?:corte|expedici[oó]n|emisi[oó]n|elaboraci[oó]n)|"
+        r"fecha|sent|date|emitido|statement date|date of (?:report|letter)|report date)\s*(?:on|[:=-])?\s*=?\s*$",
+        re.I)),
 ]
 _PERIOD_TO = re.compile(r"^\s*(?:al|to|through|thru|-|–|a|hasta)\s+$", re.I)
 _EMAIL_STAMP = re.compile(r"^\s*(?:at\s+)?\d{1,2}:\d{2}\s*[AP]M", re.I)
@@ -56,6 +70,8 @@ def _to_date(m: re.Match, day_first: bool | None = None) -> date | None:
             d = date(int(g["my"]), _MONTHS[g["mm"].lower()], int(g["md"]))
         else:
             a, b, y = int(g["na"]), int(g["nb"]), int(g["ny"])
+            if len(g["ny"]) == 2:
+                y += 2000 if y < 50 else 1900
             if day_first is not None and a <= 12 and b <= 12:
                 d = date(y, b, a) if day_first else date(y, a, b)
             elif a > 12 and b <= 12:
@@ -116,9 +132,18 @@ def _pair_dates(m1: re.Match, m2: re.Match) -> tuple[date, date] | None:
 
 def read_dates(text: str, source_locations: list | None = None, limit: int = 6) -> list[dict]:
     """Readings from ``text``: dicts with kind, date_from, date_to, rule, words, page. At most one per kind
-    (the first in the document), at most ``limit`` in all."""
+    (the first in the document), at most ``limit`` in all. A kind the first pass finds nothing for is then read by the
+    second pass's cues (rule ending "+2"), never replacing a first-pass reading."""
+    found = _read(text, source_locations, _DATE, _CUES, second=False)
+    for kind, reading in _read(text, source_locations, _DATE2, _CUES2, second=True).items():
+        if kind not in found:
+            found[kind] = {**reading, "rule": reading["rule"] + "+2"}
+    return list(found.values())[:limit]
+
+
+def _read(text: str, source_locations, date_rx, cues, *, second: bool) -> dict:
     found: dict[str, dict] = {}
-    hits = list(_DATE.finditer(text or ""))
+    hits = list(date_rx.finditer(text or ""))
     i = 0
     while i < len(hits):
         m = hits[i]
@@ -127,7 +152,7 @@ def read_dates(text: str, source_locations: list | None = None, limit: int = 6) 
         if i + 1 < len(hits) and _PERIOD_TO.match(text[m.end():hits[i + 1].start()]):
             pair = _pair_dates(m, hits[i + 1])
         if pair and pair[1] > pair[0]:
-            if "period" not in found and re.search(r"period|periodo|per.odo|statement|estado de cuenta|del\s*$|from\s*$", before, re.I):
+            if not second and "period" not in found and re.search(r"period|periodo|per.odo|statement|estado de cuenta|del\s*$|from\s*$", before, re.I):
                 found["period"] = {"kind": "period", "date_from": pair[0], "date_to": pair[1], "rule": "period-range",
                                    "words": _words(text, m.start(), hits[i + 1].end()),
                                    "page": _page(source_locations, m.start())}
@@ -137,17 +162,22 @@ def read_dates(text: str, source_locations: list | None = None, limit: int = 6) 
         i += 1
         if not d:
             continue
-        kind = next((k for k, rx in _CUES if rx.search(before)), None)
+        kind = next((k for k, rx in cues if rx.search(before)), None)
+        if kind is None and len(m.group("ny") or "") == 2:
+            continue  # "3/14/26" alone could be anything; after "Date:" it is a date
         rule = f"cue-{kind}" if kind else ""
         if kind == "written":
-            cue = _CUES[3][1].search(before)
+            cue = cues[3][1].search(before)
             if cue and _OTHER_DATE.search(before[:cue.start()]):
                 continue
-        if kind is None and m.start() < _HEAD and _EMAIL_STAMP.match(text[m.end():m.end() + 14]):
+        if second:
+            if kind is None or kind == "period":
+                continue  # the second pass reads by its cues only; the head rules are the first pass's
+        elif kind is None and m.start() < _HEAD and _EMAIL_STAMP.match(text[m.end():m.end() + 14]):
             kind, rule = "written", "head-date-with-time"
         elif kind is None and m.start() < 250 and not m.group("iy") and _bare_head_ok(before):
             kind, rule = "written", "head-date"
         if kind and kind != "period" and kind not in found:
             found[kind] = {"kind": kind, "date_from": d, "date_to": d, "rule": rule,
                            "words": _words(text, m.start(), m.end()), "page": _page(source_locations, m.start())}
-    return list(found.values())[:limit]
+    return found

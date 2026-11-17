@@ -20,8 +20,9 @@ log = logging.getLogger(__name__)
 READ_LABEL = "Read by Loupe · not confirmed"
 
 
-def store_for_file(db, file_id) -> int:
-    """Read the file's stored text and save new readings. Returns how many rows were added. Safe to repeat."""
+def store_for_file(db, file_id, apply: bool = True) -> int:
+    """Read the file's stored text and save new readings. Returns how many rows were added (``apply=False``: would be
+    added, writing nothing). Safe to repeat."""
     fid = file_id if isinstance(file_id, uuid.UUID) else uuid.UUID(str(file_id))
     row = db.execute(select(EvidenceFile.case_id, EvidenceDocumentText.content, EvidenceDocumentText.source_locations)
                      .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
@@ -36,10 +37,11 @@ def store_for_file(db, file_id) -> int:
         rule = f"{RULE_SET}:{r['rule']}"
         if (r["kind"], "rule", rule, r["date_from"], r["date_to"]) in have:
             continue
-        db.add(DocumentDateReading(case_id=case_id, evidence_file_id=fid, kind=r["kind"], date_from=r["date_from"],
-                                   date_to=r["date_to"], source="rule", rule=rule, words=r["words"], page=r["page"]))
+        if apply:
+            db.add(DocumentDateReading(case_id=case_id, evidence_file_id=fid, kind=r["kind"], date_from=r["date_from"],
+                                       date_to=r["date_to"], source="rule", rule=rule, words=r["words"], page=r["page"]))
         added += 1
-    if added:
+    if added and apply:
         db.flush()
     return added
 
