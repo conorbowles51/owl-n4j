@@ -215,3 +215,37 @@ def test_the_sweep_writes_nothing_while_a_release_holds_work(tmp_path, monkeypat
     assert res["stopped"] == "paused for a release" and res["embedded"] == 0 and emb.seen == [] and not store.rows
     flag.unlink()
     assert core.reconcile("c1", "ledger", [ledger_item("a", "one")], store, emb, should_stop=runner.release_held)["embedded"] == 1
+
+
+def test_a_nul_byte_in_a_text_is_dropped_before_it_reaches_postgres():
+    """Live 17 Nov: one graph quote holding a NUL byte made the insert fail in every pass of the sweep."""
+    item = Item("relationships", "k\x00ey", "quote with a\x00 nul", title="t\x00", cite="c\x00", person="p\x00")
+    assert "\x00" not in (item.key + item.text + item.title + item.cite + item.person)
+    assert item.text == "quote with a nul"
+
+
+def test_one_area_that_fails_never_holds_back_the_others(monkeypatch):
+    from services.embed_all import runner, sources
+
+    class Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, *a, **k): return type("R", (), {"scalar": lambda s: None})()
+
+    class Eng:
+        def connect(self): return Conn()
+    saved = []
+    monkeypatch.setattr(runner, "_save", lambda engine, case, area, sig, counts: saved.append(area))
+    monkeypatch.setattr(runner.sources, "signature", lambda conn, case, area: "sig")
+
+    def reader(area):
+        def read(conn, case):
+            if area == "ledger":
+                raise ValueError("bad row")
+            return [Item(area, "k", "text")]
+        return read
+    monkeypatch.setattr(runner.sources, "READERS", {a: reader(a) for a in ("ledger", "accounts")})
+    out = runner.sync_case(Eng(), "00000000-0000-0000-0000-000000000001", store=FakeStore(), embed=Embedder(),
+                           areas=("ledger", "accounts"))
+    assert out[0]["area"] == "ledger" and "ValueError" in out[0]["error"]
+    assert out[1]["area"] == "accounts" and out[1]["embedded"] == 1 and saved == ["accounts"]

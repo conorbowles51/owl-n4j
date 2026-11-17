@@ -50,6 +50,13 @@ class Item:
     keep_text: bool = True         # False: the text lives elsewhere (phone conversation files)
     pieces: list[str] = field(default_factory=list)
 
+    def __post_init__(self):
+        # PostgreSQL text cannot hold a NUL byte (live 17 Nov: one graph quote with one failed every pass of the sweep)
+        for name in ("key", "text", "title", "cite", "person", "extraction_id"):
+            value = getattr(self, name)
+            if isinstance(value, str) and "\x00" in value:
+                setattr(self, name, value.replace("\x00", ""))
+
     def digest(self) -> str:
         h = hashlib.sha256()
         h.update(json.dumps([self.text, self.title, self.cite, self.date.isoformat() if self.date else "", self.person,

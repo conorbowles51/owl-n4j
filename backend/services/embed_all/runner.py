@@ -131,26 +131,35 @@ def sync_case(engine, case_id: str, *, store=None, chunks=None, embed=None, area
                 sig = sources.signature(c, case_id, area)
             if not force and _saved(c, case_id, area) == sig:
                 continue
-        with ai_cost_context(job_type=CostJobType.INGESTION, case_id=cuuid, description="Case search index (%s)" % area):
-            if area == ENTITIES:
-                from services import entity_vectors
-                try:
-                    r = entity_vectors.backfill_case(case_id)
-                except Exception as exc:  # graph unreachable or the service refused: retried next pass
-                    r = {"embedded": 0, "stopped": str(exc)[:300]}
-                res = {"area": area, "embedded": r.get("embedded", 0), "stopped": r.get("stopped")}
-                complete = not res["stopped"]
-            elif area == phone_area.AREA:
-                if chunks is None:
-                    from services.vector_db_service import get_vector_db_service
-                    chunks = get_vector_db_service().chunk_collection
-                res = phone_area.sync(engine, case_id, chunks, embed, max_files=PHONE_FILES_PER_STEP, should_stop=should_stop)
-                complete = res["stopped"] is None and res["pending"] == 0 and res["files"] < PHONE_FILES_PER_STEP
-            else:
-                with engine.connect() as c:
-                    items = list(sources.READERS[area](c, case_id))
-                res = reconcile(case_id, area, items, store, embed, should_stop=should_stop)
-                complete = res["stopped"] is None
+        try:
+            with ai_cost_context(job_type=CostJobType.INGESTION, case_id=cuuid,
+                                 description="Case search index (%s)" % area):
+                if area == ENTITIES:
+                    from services import entity_vectors
+                    try:
+                        r = entity_vectors.backfill_case(case_id)
+                    except Exception as exc:  # graph unreachable or the service refused: retried next pass
+                        r = {"embedded": 0, "stopped": str(exc)[:300]}
+                    res = {"area": area, "embedded": r.get("embedded", 0), "stopped": r.get("stopped")}
+                    complete = not res["stopped"]
+                elif area == phone_area.AREA:
+                    if chunks is None:
+                        from services.vector_db_service import get_vector_db_service
+                        chunks = get_vector_db_service().chunk_collection
+                    res = phone_area.sync(engine, case_id, chunks, embed, max_files=PHONE_FILES_PER_STEP,
+                                          should_stop=should_stop)
+                    complete = res["stopped"] is None and res["pending"] == 0 and res["files"] < PHONE_FILES_PER_STEP
+                else:
+                    with engine.connect() as c:
+                        items = list(sources.READERS[area](c, case_id))
+                    res = reconcile(case_id, area, items, store, embed, should_stop=should_stop)
+                    complete = res["stopped"] is None
+        except Exception as exc:
+            # a defect in one area (a bad row, a graph that is down) never holds back the other areas or cases; the area
+            # is tried again next pass and the pass says which area failed and why
+            logger.warning("embed_all %s %s failed: %s", case_id, area, exc, exc_info=True)
+            results.append({"area": area, "error": "%s: %s" % (type(exc).__name__, str(exc)[:300])})
+            continue
         results.append(res)
         if complete:
             _save(engine, case_id, area, sig, res)
@@ -186,6 +195,8 @@ def run_pass(engine=None, *, embed=None, budget_seconds: float = PASS_SECONDS,
             summary["embedded"] += r.get("embedded", 0) + r.get("updated", 0) + r.get("windows", 0)
             summary["removed"] += r.get("removed", 0) + r.get("removed_files", 0)
             summary["stopped"] = summary["stopped"] or r.get("stopped")
+            if r.get("error"):
+                summary.setdefault("errors", []).append("%s: %s" % (r["area"], r["error"]))
         summary["cases"] += 1
         if summary["stopped"]:
             break
