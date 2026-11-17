@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -82,4 +82,26 @@ it("opens no thread when the address names none", async () => {
   show(`/cases/${caseId}/agent`)
   await waitFor(() => expect(agentAPI.listThreads).toHaveBeenCalled())
   expect(agentAPI.getThread).not.toHaveBeenCalled()
+})
+
+it("at phone width shows chat and artifacts one at a time, full width, with no side rail", async () => {
+  const realMatchMedia = window.matchMedia
+  window.matchMedia = ((query: string) => ({
+    matches: query === "(max-width: 767px)", media: query, onchange: null,
+    addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+  try {
+    show(`/cases/${caseId}/agent?thread=${thread.id}`)
+    expect(await screen.findByText("Acme paid Ann three times in January.")).toBeTruthy()
+    const panes = screen.getByTestId("agent-narrow-panes")
+    expect(panes).toBeTruthy()
+    expect(screen.queryByTitle("Entity details")).toBeNull()
+    expect(screen.queryByRole("button", { name: /expand workspace/i })).toBeNull()
+    fireEvent.click(screen.getByRole("tab", { name: /artifacts \(0\)/i }))
+    await waitFor(() => expect(screen.queryByText("Acme paid Ann three times in January.")).toBeNull())
+    expect(screen.getByRole("tab", { name: /artifacts/i }).getAttribute("aria-selected")).toBe("true")
+  } finally {
+    window.matchMedia = realMatchMedia
+  }
 })

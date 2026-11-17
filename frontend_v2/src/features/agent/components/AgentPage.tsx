@@ -88,6 +88,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
 import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 import {
@@ -580,6 +581,10 @@ export function AgentPage() {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(false)
   const [detailsPanelTab, setDetailsPanelTab] = useState<"details" | "notebook">("details")
+  // Below 768 px the chat and the artifacts take turns at full width (lx-deepinvest 17 Nov: side by side at 390 px
+  // they were squeezed and their buttons clipped).
+  const narrowViewport = useMediaQuery("(max-width: 767px)")
+  const [narrowPane, setNarrowPane] = useState<"chat" | "artifacts">("chat")
   const selectNodes = useGraphStore((s) => s.selectNodes)
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const sharedPanelTab = useUIStore((s) => s.graphPanelTab)
@@ -1090,6 +1095,272 @@ export function AgentPage() {
   const activeThreadTitle =
     threads.find((thread) => thread.id === activeThreadId)?.title ?? "New agent thread"
 
+  const conversationPane = (
+      <section className="flex h-full min-w-0 flex-col">
+        <header className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-8 items-center justify-center rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+              <Bot className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold text-foreground">
+                AI Agent
+              </h1>
+              <p className="truncate text-xs text-muted-foreground">
+                {activeThreadTitle}
+              </p>
+            </div>
+          </div>
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+            {caseLayer === "significant" ? (
+              <Badge
+                variant="outline"
+                className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200"
+              >
+                <Star className="size-3 fill-current" />
+                Significant only
+              </Badge>
+            ) : null}
+            <AgentCapabilitiesHelp onPick={setInput} />
+            <DeepSwitch checked={deep} disabled={isLoading || (allCases && caseLayer !== "significant")} onCheckedChange={setDeep} />
+            <AllCasesSwitch
+              checked={allCases && caseLayer !== "significant"}
+              disabled={caseLayer === "significant" || isLoading}
+              onCheckedChange={setAllCases}
+            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-8"
+                  aria-label="Agent settings"
+                  title="Agent settings"
+                >
+                  <Settings2 className="size-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-3">
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      Agent settings
+                    </div>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      Tune how the agent explains its work in this browser.
+                    </p>
+                  </div>
+                  <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-3">
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="agent-investigation-trail"
+                        className="text-sm font-medium text-foreground"
+                      >
+                        Investigation trail
+                      </label>
+                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                        Show live searches, graph queries, and artifact steps in the chat.
+                      </p>
+                    </div>
+                    <Switch
+                      id="agent-investigation-trail"
+                      size="sm"
+                      checked={showInvestigationTrail}
+                      onCheckedChange={setShowInvestigationTrail}
+                      aria-label="Show investigation trail"
+                    />
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <ActiveAIModel workload="agent" />
+            <Badge variant="outline">
+              {artifacts.length} artifacts
+            </Badge>
+          </div>
+        </header>
+
+        <MandateUsageBanner
+          versionNumber={mandateUsage?.version?.version_number ?? caseContext.data?.active_mandate?.version_number}
+          activeVersionNumber={mandateUsage?.active_version_number ?? caseContext.data?.active_mandate?.version_number}
+          stale={mandateUsage?.is_stale}
+          incomplete={mandateUsage ? mandateUsage.is_incomplete : !caseContext.data?.active_mandate}
+          temporaryOverride={mandateOverride}
+          onTemporaryOverrideChange={setMandateOverride}
+          onAdoptCurrent={mandateUsage?.is_stale ? adoptCurrentMandate : undefined}
+        />
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+          {messages.length === 0 ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="w-full max-w-2xl text-center">
+                <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-lg border border-border bg-card">
+                  <Sparkles className="size-5 text-amber-600 dark:text-amber-300" />
+                </div>
+                <h2 className="text-sm font-semibold text-foreground">
+                  Ask the agent to investigate
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {caseLayer === "significant"
+                    ? "It will investigate only the entities and induced relationships in your Significant layer."
+                    : "Ask for case research, a saved finding, a detailed report, a workbook, a presentation or an interactive analysis."}
+                </p>
+                {caseId && caseLayer !== "significant" && (
+                  <div className="mt-5">
+                    <h3 className="mb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Or start a guided workflow
+                    </h3>
+                    <AgentWorkflowPicker
+                      caseId={caseId}
+                      disabled={isLoading}
+                      onStart={(workflowId, question) => sendMessage(question, workflowId)}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+              {messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  linked={message.id === linkedMessage && activeThreadId === linkedThread}
+                  caseId={caseId}
+                  showInvestigationTrail={showInvestigationTrail}
+                  onClarificationAnswer={
+                    message.id === activeClarificationMessageId && !isLoading
+                      ? (answer) => sendMessage(answer, undefined, /^continue$/i.test(answer.trim()) && message.clarification?.context.reason === "tool_budget_exhausted" ? message.clarification.pending_run_id : undefined)
+                      : undefined
+                  }
+                  onRetry={
+                    message.retryQuestion && !isLoading ? () => { setResumeId(message.runId ?? undefined); setRetryQuestion(message.retryQuestion ?? null) } : undefined
+                  }
+                />
+              ))}
+              {!isLoading && unanswered !== null && (
+                <AgentUnansweredNote resumable={!!messages[messages.length - 1]?.runId} onRetry={() => { setResumeId(messages[messages.length - 1]?.runId ?? undefined); setRetryQuestion(unanswered) }} />
+              )}
+              {isLoading && viewingRunningThread && sharedRun && (
+                <AgentRunProgress
+                  run={sharedRun}
+                  onStop={activeRunId ? cancelActiveRun : undefined}
+                  onRetry={sharedRun.inputMessage ? retryStoppedRun : undefined}
+                  onDismiss={dismissStoppedRun}
+                />
+              )}
+              {isLoading && viewingRunningThread && sharedRun && !sharedRun.stale && activeRunId && (
+                <ToolSteeringCard
+                  runId={activeRunId}
+                  trace={visibleToolTrace}
+                  streamed={streamSteering}
+                  onSteering={setSteeringView}
+                />
+              )}
+              {isLoading && viewingRunningThread && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0 || (steeringView?.applied.length ?? 0) > 0) && (
+                <InvestigationTrail
+                  activities={activityTrail}
+                  trace={visibleToolTrace}
+                  steering={steeringView ? [...steeringView.applied, ...steeringView.pending] : []}
+                  live
+                  defaultOpen
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {visibleToolTrace.length > 0 && !showInvestigationTrail && (
+          <ToolTrace trace={visibleToolTrace} />
+        )}
+
+        <div className="border-t border-border bg-background p-4">
+          {isLoading && !viewingRunningThread && sharedRun?.threadId && <div role="status" className="mx-auto mb-3 flex max-w-3xl flex-wrap items-center gap-2 rounded border border-border p-2 text-xs"><span>The agent is working in another conversation. You can read and export this saved work.</span><Button size="sm" variant="outline" onClick={() => { if (sharedRun.threadId) void loadThread(sharedRun.threadId) }}>View running conversation</Button></div>}
+          {composerClarification && (
+            <div className="mx-auto mb-3 max-w-3xl">
+              <ClarificationPanel
+                clarification={composerClarification}
+                onAnswer={(answer) => sendMessage(answer, undefined, /^continue$/i.test(answer.trim()) && composerClarification.context.reason === "tool_budget_exhausted" ? composerClarification.pending_run_id : undefined)}
+                disabled={isLoading}
+              />
+            </div>
+          )}
+          {showWorkflows && caseId && messages.length > 0 && caseLayer !== "significant" && (
+            <div className="mx-auto mb-3 max-h-96 max-w-3xl overflow-y-auto rounded-lg border border-border bg-background p-3">
+              <AgentWorkflowPicker
+                caseId={caseId}
+                disabled={isLoading}
+                onStart={(workflowId, question) => {
+                  setShowWorkflows(false)
+                  sendMessage(question, workflowId)
+                }}
+              />
+            </div>
+          )}
+          {revisionNeeded && <p role="status" className="mx-auto mb-2 max-w-3xl rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">The draft is saved, but checks found issues that need revision. Review the response and artifact notes before using it.</p>}
+          <AgentBriefAttachment key={activeThreadId ?? "new-thread"} brief={brief} onChange={setBrief} onBusyChange={setBriefLoading} disabled={isLoading} />
+          {deep && !isLoading ? (
+            <p className="mx-auto mb-1 max-w-3xl text-xs text-muted-foreground" data-testid="deep-cost-note">{DEEP_COST_NOTE}</p>
+          ) : null}
+          {!deep && !isLoading && looksBroad(input) ? (
+            <div className="mx-auto mb-1 flex max-w-3xl items-center gap-2 text-xs text-muted-foreground" data-testid="deep-offer">
+              <span>This is a broad question. A deep investigation works through the whole case and writes a full report.</span>
+              <Button type="button" size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setDeep(true)}>
+                Use deep investigation
+              </Button>
+            </div>
+          ) : null}
+          <div className="mx-auto flex min-w-0 max-w-3xl flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-2 shadow-sm">
+            {messages.length > 0 && caseLayer !== "significant" && (
+              <Button
+                size="sm"
+                variant={showWorkflows ? "secondary" : "ghost"}
+                onClick={() => setShowWorkflows(!showWorkflows)}
+                aria-expanded={showWorkflows}
+                aria-label="Guided workflows"
+              >
+                Workflows
+              </Button>
+            )}
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  sendMessage()
+                }
+              }}
+              className="order-first max-h-40 min-h-16 w-full min-w-0 basis-full resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
+              aria-label="Agent request"
+              placeholder="Describe the work and the report or artifact you need…"
+              rows={1}
+              disabled={isLoading}
+            />
+            <AgentModelPicker choices={modelChoices} value={modelKey} onChange={setModelKey} disabled={isLoading} />
+            <Button size="icon" className="ml-auto shrink-0" onClick={() => sendMessage()} disabled={(!input.trim() && !brief) || isLoading || briefLoading} aria-label="Send agent prompt">
+              {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            </Button>
+          </div>
+        </div>
+      </section>
+  )
+
+  const artifactsPane = (
+        <ArtifactWorkspace
+          artifacts={artifacts}
+          selectedArtifact={selectedArtifact}
+          selectedArtifactId={selectedArtifactId}
+          onSelectArtifact={handleArtifactSelect}
+          exportEnabled={!isLoading || !viewingRunningThread}
+          agentBusy={isLoading}
+          onEntitySelect={handleEntitySelect}
+          onSaved={(artifact) => { setArtifacts((current) => [...current.filter((a) => a.id !== artifact.id), artifact]); handleArtifactSelect(artifact) }}
+          onRevise={(message) => { void sendMessage(message) }}
+        />
+  )
+
   return (
     <AgentCitationProvider caseId={caseId ?? ""}>
     <div className="flex h-full min-h-0 bg-background">
@@ -1139,278 +1410,39 @@ export function AgentPage() {
         </div>
       </aside>
 
+      {narrowViewport ? (
+        <div className="flex min-w-0 flex-1 flex-col" data-testid="agent-narrow-panes">
+          <div role="tablist" aria-label="Agent panes" className="flex shrink-0 border-b border-border">
+            {(["chat", "artifacts"] as const).map((pane) => (
+              <button
+                key={pane}
+                type="button"
+                role="tab"
+                aria-selected={narrowPane === pane}
+                onClick={() => setNarrowPane(pane)}
+                className={`flex-1 px-3 py-2 text-sm ${narrowPane === pane ? "border-b-2 border-primary font-medium" : "text-muted-foreground"}`}
+              >
+                {pane === "chat" ? "Chat" : `Artifacts (${artifacts.length})`}
+              </button>
+            ))}
+          </div>
+          <div className="min-h-0 flex-1">{narrowPane === "chat" ? conversationPane : artifactsPane}</div>
+        </div>
+      ) : (
       <ResizablePanelGroup orientation="horizontal" className="min-w-0 flex-1">
         <ResizablePanel id="agent-conversation" order={1} defaultSize={58} minSize={36}>
-          <section className="flex h-full min-w-0 flex-col">
-            <header className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-8 items-center justify-center rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                  <Bot className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="truncate text-sm font-semibold text-foreground">
-                    AI Agent
-                  </h1>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {activeThreadTitle}
-                  </p>
-                </div>
-              </div>
-              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
-                {caseLayer === "significant" ? (
-                  <Badge
-                    variant="outline"
-                    className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200"
-                  >
-                    <Star className="size-3 fill-current" />
-                    Significant only
-                  </Badge>
-                ) : null}
-                <AgentCapabilitiesHelp onPick={setInput} />
-                <DeepSwitch checked={deep} disabled={isLoading || (allCases && caseLayer !== "significant")} onCheckedChange={setDeep} />
-                <AllCasesSwitch
-                  checked={allCases && caseLayer !== "significant"}
-                  disabled={caseLayer === "significant" || isLoading}
-                  onCheckedChange={setAllCases}
-                />
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="size-8"
-                      aria-label="Agent settings"
-                      title="Agent settings"
-                    >
-                      <Settings2 className="size-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 p-3">
-                    <div className="space-y-3">
-                      <div>
-                        <div className="text-sm font-semibold text-foreground">
-                          Agent settings
-                        </div>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                          Tune how the agent explains its work in this browser.
-                        </p>
-                      </div>
-                      <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-3">
-                        <div className="min-w-0">
-                          <label
-                            htmlFor="agent-investigation-trail"
-                            className="text-sm font-medium text-foreground"
-                          >
-                            Investigation trail
-                          </label>
-                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                            Show live searches, graph queries, and artifact steps in the chat.
-                          </p>
-                        </div>
-                        <Switch
-                          id="agent-investigation-trail"
-                          size="sm"
-                          checked={showInvestigationTrail}
-                          onCheckedChange={setShowInvestigationTrail}
-                          aria-label="Show investigation trail"
-                        />
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                <ActiveAIModel workload="agent" />
-                <Badge variant="outline">
-                  {artifacts.length} artifacts
-                </Badge>
-              </div>
-            </header>
-
-            <MandateUsageBanner
-              versionNumber={mandateUsage?.version?.version_number ?? caseContext.data?.active_mandate?.version_number}
-              activeVersionNumber={mandateUsage?.active_version_number ?? caseContext.data?.active_mandate?.version_number}
-              stale={mandateUsage?.is_stale}
-              incomplete={mandateUsage ? mandateUsage.is_incomplete : !caseContext.data?.active_mandate}
-              temporaryOverride={mandateOverride}
-              onTemporaryOverrideChange={setMandateOverride}
-              onAdoptCurrent={mandateUsage?.is_stale ? adoptCurrentMandate : undefined}
-            />
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
-              {messages.length === 0 ? (
-                <div className="flex h-full items-center justify-center">
-                  <div className="w-full max-w-2xl text-center">
-                    <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-lg border border-border bg-card">
-                      <Sparkles className="size-5 text-amber-600 dark:text-amber-300" />
-                    </div>
-                    <h2 className="text-sm font-semibold text-foreground">
-                      Ask the agent to investigate
-                    </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {caseLayer === "significant"
-                        ? "It will investigate only the entities and induced relationships in your Significant layer."
-                        : "Ask for case research, a saved finding, a detailed report, a workbook, a presentation or an interactive analysis."}
-                    </p>
-                    {caseId && caseLayer !== "significant" && (
-                      <div className="mt-5">
-                        <h3 className="mb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Or start a guided workflow
-                        </h3>
-                        <AgentWorkflowPicker
-                          caseId={caseId}
-                          disabled={isLoading}
-                          onStart={(workflowId, question) => sendMessage(question, workflowId)}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
-                  {messages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      message={message}
-                      linked={message.id === linkedMessage && activeThreadId === linkedThread}
-                      caseId={caseId}
-                      showInvestigationTrail={showInvestigationTrail}
-                      onClarificationAnswer={
-                        message.id === activeClarificationMessageId && !isLoading
-                          ? (answer) => sendMessage(answer, undefined, /^continue$/i.test(answer.trim()) && message.clarification?.context.reason === "tool_budget_exhausted" ? message.clarification.pending_run_id : undefined)
-                          : undefined
-                      }
-                      onRetry={
-                        message.retryQuestion && !isLoading ? () => { setResumeId(message.runId ?? undefined); setRetryQuestion(message.retryQuestion ?? null) } : undefined
-                      }
-                    />
-                  ))}
-                  {!isLoading && unanswered !== null && (
-                    <AgentUnansweredNote resumable={!!messages[messages.length - 1]?.runId} onRetry={() => { setResumeId(messages[messages.length - 1]?.runId ?? undefined); setRetryQuestion(unanswered) }} />
-                  )}
-                  {isLoading && viewingRunningThread && sharedRun && (
-                    <AgentRunProgress
-                      run={sharedRun}
-                      onStop={activeRunId ? cancelActiveRun : undefined}
-                      onRetry={sharedRun.inputMessage ? retryStoppedRun : undefined}
-                      onDismiss={dismissStoppedRun}
-                    />
-                  )}
-                  {isLoading && viewingRunningThread && sharedRun && !sharedRun.stale && activeRunId && (
-                    <ToolSteeringCard
-                      runId={activeRunId}
-                      trace={visibleToolTrace}
-                      streamed={streamSteering}
-                      onSteering={setSteeringView}
-                    />
-                  )}
-                  {isLoading && viewingRunningThread && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0 || (steeringView?.applied.length ?? 0) > 0) && (
-                    <InvestigationTrail
-                      activities={activityTrail}
-                      trace={visibleToolTrace}
-                      steering={steeringView ? [...steeringView.applied, ...steeringView.pending] : []}
-                      live
-                      defaultOpen
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-
-            {visibleToolTrace.length > 0 && !showInvestigationTrail && (
-              <ToolTrace trace={visibleToolTrace} />
-            )}
-
-            <div className="border-t border-border bg-background p-4">
-              {isLoading && !viewingRunningThread && sharedRun?.threadId && <div role="status" className="mx-auto mb-3 flex max-w-3xl flex-wrap items-center gap-2 rounded border border-border p-2 text-xs"><span>The agent is working in another conversation. You can read and export this saved work.</span><Button size="sm" variant="outline" onClick={() => { if (sharedRun.threadId) void loadThread(sharedRun.threadId) }}>View running conversation</Button></div>}
-              {composerClarification && (
-                <div className="mx-auto mb-3 max-w-3xl">
-                  <ClarificationPanel
-                    clarification={composerClarification}
-                    onAnswer={(answer) => sendMessage(answer, undefined, /^continue$/i.test(answer.trim()) && composerClarification.context.reason === "tool_budget_exhausted" ? composerClarification.pending_run_id : undefined)}
-                    disabled={isLoading}
-                  />
-                </div>
-              )}
-              {showWorkflows && caseId && messages.length > 0 && caseLayer !== "significant" && (
-                <div className="mx-auto mb-3 max-h-96 max-w-3xl overflow-y-auto rounded-lg border border-border bg-background p-3">
-                  <AgentWorkflowPicker
-                    caseId={caseId}
-                    disabled={isLoading}
-                    onStart={(workflowId, question) => {
-                      setShowWorkflows(false)
-                      sendMessage(question, workflowId)
-                    }}
-                  />
-                </div>
-              )}
-              {revisionNeeded && <p role="status" className="mx-auto mb-2 max-w-3xl rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">The draft is saved, but checks found issues that need revision. Review the response and artifact notes before using it.</p>}
-              <AgentBriefAttachment key={activeThreadId ?? "new-thread"} brief={brief} onChange={setBrief} onBusyChange={setBriefLoading} disabled={isLoading} />
-              {deep && !isLoading ? (
-                <p className="mx-auto mb-1 max-w-3xl text-xs text-muted-foreground" data-testid="deep-cost-note">{DEEP_COST_NOTE}</p>
-              ) : null}
-              {!deep && !isLoading && looksBroad(input) ? (
-                <div className="mx-auto mb-1 flex max-w-3xl items-center gap-2 text-xs text-muted-foreground" data-testid="deep-offer">
-                  <span>This is a broad question. A deep investigation works through the whole case and writes a full report.</span>
-                  <Button type="button" size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setDeep(true)}>
-                    Use deep investigation
-                  </Button>
-                </div>
-              ) : null}
-              <div className="mx-auto flex min-w-0 max-w-3xl flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-2 shadow-sm">
-                {messages.length > 0 && caseLayer !== "significant" && (
-                  <Button
-                    size="sm"
-                    variant={showWorkflows ? "secondary" : "ghost"}
-                    onClick={() => setShowWorkflows(!showWorkflows)}
-                    aria-expanded={showWorkflows}
-                    aria-label="Guided workflows"
-                  >
-                    Workflows
-                  </Button>
-                )}
-                <textarea
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault()
-                      sendMessage()
-                    }
-                  }}
-                  className="order-first max-h-40 min-h-16 w-full min-w-0 basis-full resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
-                  aria-label="Agent request"
-                  placeholder="Describe the work and the report or artifact you need…"
-                  rows={1}
-                  disabled={isLoading}
-                />
-                <AgentModelPicker choices={modelChoices} value={modelKey} onChange={setModelKey} disabled={isLoading} />
-                <Button size="icon" className="ml-auto shrink-0" onClick={() => sendMessage()} disabled={(!input.trim() && !brief) || isLoading || briefLoading} aria-label="Send agent prompt">
-                  {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                </Button>
-              </div>
-            </div>
-          </section>
+          {conversationPane}
         </ResizablePanel>
 
         <ResizableHandle withHandle />
 
         <ResizablePanel id="agent-artifacts" order={2} defaultSize={42} minSize={24}>
-          <ArtifactWorkspace
-            artifacts={artifacts}
-            selectedArtifact={selectedArtifact}
-            selectedArtifactId={selectedArtifactId}
-            onSelectArtifact={handleArtifactSelect}
-            exportEnabled={!isLoading || !viewingRunningThread}
-            agentBusy={isLoading}
-            onEntitySelect={handleEntitySelect}
-            onSaved={(artifact) => { setArtifacts((current) => [...current.filter((a) => a.id !== artifact.id), artifact]); handleArtifactSelect(artifact) }}
-            onRevise={(message) => { void sendMessage(message) }}
-          />
+          {artifactsPane}
         </ResizablePanel>
-
       </ResizablePanelGroup>
+      )}
       {detailsPanelOpen ? (
-        <aside className="h-full w-[360px] shrink-0">
+        <aside className={narrowViewport ? "fixed inset-0 z-40 bg-background" : "h-full w-[360px] shrink-0"}>
           <AgentEntityDetailsPanel
             caseId={caseId}
             tab={detailsPanelTab}
@@ -1418,7 +1450,7 @@ export function AgentPage() {
             onClose={() => setDetailsPanelOpen(false)}
           />
         </aside>
-      ) : (
+      ) : narrowViewport ? null : (
         <AgentEntityDetailsRail
           hasSelection={selectedNodeKeys.size > 0}
           activeTab={detailsPanelTab}
