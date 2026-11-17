@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { currentQuery, relationAPI, setCurrentQuery, toMembers, type RelationResult } from "./api"
 import { LookIntoButton } from "./LookIntoButton"
 import { RelationsPage } from "./RelationsPage"
+import { AddToMenu } from "@/features/phones/ui/AddToMenu"
+import { render as plainRender } from "@testing-library/react"
 
 vi.mock("@/features/phones/collect-targets", () => ({ useCollectTargets: () => ({ targets: [{ kind: "theory", id: "t1", label: "Acme pays Ann" }], note: null, loading: false, error: null }) }))
 
@@ -102,5 +104,22 @@ describe("a long result", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show more" }))
     expect(await screen.findByText("The next page row.")).toBeTruthy()
     expect(rows).toHaveBeenCalledWith("c1", "r", "candidates", 1)
+  })
+})
+
+
+describe("beside Add to… on the phone, passage and search screens", () => {
+  const links = [{ target_type: "phone_record" as const, target_id: "r1", label: "Call", source_anchor: {} },
+    { target_type: "evidence_passage" as const, target_id: "f:h:1:9", source_anchor: {} }]
+  const menu = <AddToMenu caseId="c1" links={links} noun="records" targets={[]} client={{} as never} origin="Added from Conversations" keys={false} />
+  it("offers the look in a router, and none where it could not open", () => {
+    wrap(menu)
+    expect(screen.getByRole("button", { name: "Look into how these relate" })).toBeTruthy()
+    plainRender(menu)
+    expect(screen.getAllByRole("button", { name: "Look into how these relate" }).length).toBe(1)
+  })
+  it("is not offered when nothing is selected", () => {
+    wrap(<AddToMenu caseId="c1" links={[]} noun="records" targets={[]} client={{} as never} origin="x" keys={false} />)
+    expect(screen.queryByRole("button", { name: "Look into how these relate" })).toBeNull()
   })
 })

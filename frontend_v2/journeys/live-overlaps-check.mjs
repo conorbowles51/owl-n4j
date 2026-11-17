@@ -42,10 +42,21 @@ try {
   const d = await download
   await d.saveAs(`${shots}/${width}-link-analysis.pdf`)
   note(`report downloaded: ${d.suggestedFilename()}`)
+  // a second screen: the Timeline's own button adds its range to the look in progress, so the group grows
+  await page.goto(`${base}/cases/${C}/timeline`, { waitUntil: "domcontentloaded" })
+  await page.getByText(/Looking into how 1 items relate/).waitFor({ timeout: 60000 })
+  await page.screenshot({ path: `${shots}/${width}-3-tray-on-timeline.png` })
+  const look = page.getByRole("button", { name: /Look into how these relate|Relate…/ }).first()
+  await look.waitFor({ state: "visible", timeout: 90000 })
+  await look.click()
+  await page.getByRole("button", { name: /Add to the look in progress \(1 items\)/ }).click()
+  await page.getByTestId("relation-summary").waitFor({ timeout: 180000 })
+  note(`after adding from the timeline: ${(await page.getByTestId("relation-summary").innerText()).slice(0, 200)}`)
+  await page.screenshot({ path: `${shots}/${width}-4-grown-result.png`, fullPage: true })
   await page.goto(`${base}/cases/${C}/graph`, { waitUntil: "domcontentloaded" })
   await page.getByText(/Looking into how \d+ items relate/).waitFor({ timeout: 60000 })
   note("tray shown on the graph screen")
-  await page.screenshot({ path: `${shots}/${width}-3-tray-on-graph.png` })
+  await page.screenshot({ path: `${shots}/${width}-5-tray-on-graph.png` })
   note(`console errors: ${errors.length}${errors.length ? " " + JSON.stringify(errors.slice(0, 3)) : ""}`)
 } catch (e) {
   note(`FAILED: ${e.message.split("\n")[0]}`)

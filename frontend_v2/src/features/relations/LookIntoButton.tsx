@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useInRouterContext, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SURFACE_WORDS, type GroupInput, type ItemInput, type Surface } from "@/features/theory/api"
@@ -31,7 +31,10 @@ export interface LookIntoProps {
  * named, never dropped without a word.
  */
 export function LookIntoButton(props: LookIntoProps) {
+  const inRouter = useInRouterContext()
   const v2 = useSwitch("corroborate-v2")
+  // Outside a router (a story, a unit test of a screen part) there is nowhere to open the result, so there is no button.
+  if (!inRouter) return null
   return v2 ? <CorroborateButton {...props} /> : <LookIntoClassic {...props} />
 }
 
