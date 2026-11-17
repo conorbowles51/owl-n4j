@@ -114,3 +114,10 @@ def test_a_date_only_item_never_claims_an_order_within_its_day():
     seq = rules.sequences([item("a", T0, type="phone_message", label="msg"), pay,
                            item("c", T0 + timedelta(hours=30), type="phone_record", label="meeting")], BASE)
     assert "date only" in seq[0]["reasons"][0]
+
+
+def test_two_phone_positions_are_compared_by_place_never_by_time_taken():
+    a = item("a", T0, type="phone_record", time_kind="phone_location", phone="A")
+    b = item("b", T0 + timedelta(minutes=15), type="phone_record", time_kind="phone_location", phone="B")
+    c, s = rules.time_proximity([a, b], BASE)
+    assert not c and "compared by place" in s[0]["searched"]

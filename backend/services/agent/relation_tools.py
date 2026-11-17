@@ -9,7 +9,9 @@ CITE = {"financial_transaction": "txn://{id}", "phone_record": "rec://{id}"}
 
 class RelationArgs(BaseModel):
     selection_id: str = Field(..., description="The id of the group the person marked with 'Look into how these relate'.")
-    section: str = Field("candidates", description="candidates, no_links, analyses or items")
+    section: str = Field("overview", description=(
+        "overview (one compact read of everything: start here), or candidates, no_links, analyses, items to page through "
+        "the full rows"))
     offset: int = Field(0, ge=0)
     limit: int = Field(25, ge=1, le=100)
 
@@ -27,7 +29,7 @@ def make_relation_tools(context):
     from services.relations import engine, runs
     from services.relations.sources import DbSources
 
-    def get_relation_results(selection_id, section="candidates", offset=0, limit=25):
+    def get_relation_results(selection_id, section="overview", offset=0, limit=25):
         with (context.ledger_session_factory or _financial_session)() as db:
             user = db.get(User, UUID(str(context.user_id))) if context.user_id else None
             if user is None or not user.is_active:
@@ -43,6 +45,25 @@ def make_relation_tools(context):
             if not stored:
                 members = [{k: v for k, v in m.items() if k in ("type", "id", "label", "quote")} for m in group["members"]]
                 stored, how = engine.run(DbSources(db, context.case_id), members), "run now, not saved"
+        if section == "overview":
+            cites = {i["ref"]: cite_for(i) for i in stored["items"]}
+            who = lambda refs: [cites.get(r, r[:8]) for r in refs]  # noqa: E731
+            cand = [{"kind": c["kind"], "strength": c["strength"], "members": who(c["members"]),
+                     "why": " ".join(c["reasons"])[:260], "chance": (c["chance"].get("words") or "")[:220]}
+                    for c in stored["candidates"]]
+            nol = [{"members": who(n["members"]), "searched": "; ".join(n["searched"])[:200],
+                    "out_of_reach": "; ".join(n["out_of_reach"])[:120]} for n in stored["no_links"]]
+            data = {"selection_id": selection_id, "section": "overview", "says": stored["says"], "source": how,
+                    "counts": stored["counts"], "baseline": stored["base"], "out_of_reach": stored["out_of_reach"],
+                    "analyses": [{"id": a["id"], "pairs": a["pairs"], "found": a["found"]} for a in stored["analyses"]],
+                    "items": [{"cite": cites[i["ref"]], "label": i["label"], "at": i["at"]} for i in stored["items"]],
+                    "candidates": cand[:30], "candidates_total": len(cand),
+                    "no_links": nol[:30], "no_links_total": len(nol),
+                    "more": "Page the rest with section candidates or no_links, offset and limit." if len(cand) > 30 or len(nol) > 30 else None,
+                    "rule": ("Strength comes from the stated rules, not from a model. Records show what occurs together, "
+                             "never why. Nothing found is what was searched, not proof that no link exists.")}
+            return context.result("get_relation_results", data,
+                                  summary=f"Read the overview: {len(cand)} candidates and {len(nol)} pairs with no link ({how}).")
         rows = {"candidates": stored["candidates"], "no_links": stored["no_links"], "analyses": stored["analyses"],
                 "items": [{**i, "cite": cite_for(i)} for i in stored["items"]]}.get(section)
         if rows is None:

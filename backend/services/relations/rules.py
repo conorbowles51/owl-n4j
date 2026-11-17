@@ -138,6 +138,12 @@ def time_proximity(items: list[dict], base: dict) -> tuple[list[dict], list[dict
     for (a, ta), (b, tb) in combinations([x for x in dated if x[1] is not None], 2):
         if a["ref"] == b["ref"]:
             continue
+        if a.get("time_kind") == "phone_location" and b.get("time_kind") == "phone_location":
+            # two position samples are compared by place (place_overlap), never by the time they were taken: two phones
+            # that are both switched on report positions at close times whether or not they are linked
+            searched.append({"analysis": "time_proximity", "members": [a["ref"], b["ref"]],
+                             "searched": "two phone positions are compared by place, not by time taken"})
+            continue
         day_precision = a.get("precision") == "day" or b.get("precision") == "day"
         gap = abs(ta - tb)
         slack = timedelta(hours=24) if day_precision else timedelta(0)

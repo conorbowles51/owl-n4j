@@ -502,8 +502,8 @@ WORKFLOWS = WORKFLOWS + (
         starting_question=("The group {group} was marked as possibly related. State what the link analysis found, name the "
                            "competing explanations, and say where no link was found and what was searched."),
         steps=(
-            S("get_relation_results", "read the candidate links, the pairs with no link and what was searched, the analyses "
-                                      "run and the chance beside each; state the counts before anything else", ()),
+            S("get_relation_results", "one call, section overview: the candidate links, the pairs with no link and what was searched, "
+                                      "the analyses run and the chance beside each; state the counts before anything else", ()),
             S("search_case", "search every kind of data for the record that would tell the explanations apart", ()),
             S("get_financial_transactions", "look in the ledger for that record when money is involved", (), optional=True),
             S("phone_messages", "look in the phones for that record when messages or calls are involved", (), optional=True),
@@ -516,7 +516,10 @@ WORKFLOWS = WORKFLOWS + (
         proposals=(("propose_relation_hypotheses", "each explanation, cited, as a model reading waiting for a person"),),
         person_confirms="each explanation, after opening a cited record; accepted into a theory as supports or contradicts",
         rules=("Records show what occurs together, never why. Never write that one thing caused, led to or proves another.",
-               "State what the analysis found with its counts first. Strength comes from the stated rules, not from you.",
+               "Read the overview once; do not page it again with read_tool_result_page. State what the analysis found with its "
+               "counts first. Strength comes from the stated rules, not from you.",
+               "Spend at most 8 calls on searching for the record that tells the explanations apart, then record the "
+               "explanations with propose_relation_hypotheses before the budget ends.",
                "Always include coincidence and routine among the explanations, with the chance figures from the results.",
                "For each explanation cite records for and against it, name the record that would tell it apart from the "
                "others, and say what you searched for it and what came back.",
