@@ -70,6 +70,12 @@ WORKLOADS: dict[str, dict[str, str]] = {
                        "types, named-set values, counts; no case material). Admin only; a person reviews and commits.",
         "group": "Phones",
     },
+    "search_ranking": {
+        "label": "Search ranking",
+        "description": "Scores each search result against the question, with a one-line reason, and suggests other "
+                       "ways to phrase the search. Sees the question and the found records only.",
+        "group": "Investigation",
+    },
     "financial_vision": {
         "label": "Statement page images",
         "description": "Reads held bank statement pages from their images; saved only when the figures reconcile exactly.",
@@ -130,6 +136,8 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
     # 02 section 6.8 step 2 (cb-mapdrafts): DeepSeek's strongest model, thinking at max (Neil, 2026-11-04: "We're
     # using deep seek everywhere possible in the platform. Deepseek at max performance.").
     "phone_mapping_draft": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
+    # lx-casesearch: the case search reranker; DeepSeek's fast model (Neil: "DeepSeek everywhere possible").
+    "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
     # The evidence engine's reader of wordless scanned pages (app.pipeline.page_image_reading): DeepSeek's image model,
     # the reader of choice for page images (financial_vision above). Only models that read images may be chosen.
@@ -156,6 +164,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "phone_mapping_draft": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
         "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
+        "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     },
     "gemini": {
         "chat": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
@@ -170,6 +179,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "phone_mapping_draft": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
         "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
+        "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     },
     "deepseek": {
         "chat": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
@@ -184,6 +194,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "phone_mapping_draft": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
         "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
+        "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     },
 }
 
