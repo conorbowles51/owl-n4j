@@ -68,13 +68,14 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
     item_areas = [a for a in areas if a not in ("phone_text", "documents")]
     over = FETCH * 3 if person else FETCH
     if item_areas and items_collection is not None:
-        res = items_collection.query(query_embeddings=[query_vector], n_results=over,
-                                     where=_where(case_id, item_areas, date_from, date_to),
-                                     include=["documents", "metadatas", "distances"])
-        for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
-            hits.append({"area": meta["area"], "key": meta["item_key"], "title": meta.get("title", ""),
-                         "cite": meta.get("cite", ""), "text": doc, "distance": dist, "person": meta.get("person", ""),
-                         "as_read": bool(meta.get("as_read"))})
+        for area in item_areas:  # one query per area: a crowded area cannot push another out of the candidates
+            res = items_collection.query(query_embeddings=[query_vector], n_results=over // 2,
+                                         where=_where(case_id, [area], date_from, date_to),
+                                         include=["documents", "metadatas", "distances"])
+            for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
+                hits.append({"area": meta["area"], "key": meta["item_key"], "title": meta.get("title", ""),
+                             "cite": meta.get("cite", ""), "text": doc, "distance": dist,
+                             "person": meta.get("person", ""), "as_read": bool(meta.get("as_read"))})
     chunk_areas = [a for a in areas if a in ("phone_text", "documents")]
     if chunk_areas and chunks_collection is not None and (date_from is None and date_to is None):
         conds = [{"case_id": str(case_id)}, {"ingestion_state": "active"}]
@@ -98,6 +99,9 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
         who = person.casefold()
         hits = [h for h in hits if who in (h["person"] + " " + h["text"]).casefold()]
     kept, seen = [], set()
+    # Each area's own order: the best hit of every area comes before the second hit of any. Measured on the demo case,
+    # one list by raw similarity let phone call lines ("Phone 4 | Phone") crowd out a voice-note transcript that says
+    # "do not call the other phone" for the query "the other phone".
     for h in sorted((h for h in hits if h["distance"] is not None and h["distance"] <= MAX_DISTANCE),
                     key=lambda h: h["distance"]):
         one = (h["area"], h["cite"] or h["key"], h["title"])  # two passages of one page are one hit: the nearer stays
@@ -105,6 +109,10 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
             continue
         seen.add(one)
         kept.append(h)
+    counts: dict[str, int] = {}
+    for h in kept:  # kept is in distance order: the count so far in the area is its rank there
+        counts[h["area"]] = counts.get(h["area"], 0) + 1
+        h["area_rank"] = counts[h["area"]]
     return kept
 
 
@@ -154,7 +162,7 @@ def fuse(meaning: list[dict], words: list[dict], limit: int) -> list[dict]:
     """Reciprocal rank fusion of the two lists; a hit in both says ``both``."""
     scores: dict[tuple, float] = {}
     byk: dict[tuple, dict] = {}
-    for rank, h in enumerate(sorted(meaning, key=lambda h: h["distance"]), 1):
+    for rank, h in enumerate(sorted(meaning, key=lambda h: (h.get("area_rank", 1), h["distance"])), 1):
         k = (h["area"], h["key"])
         byk[k] = dict(h, matched="meaning", similarity=round(similarity(h["distance"]) or 0, 3))
         scores[k] = scores.get(k, 0) + 1.0 / (K + rank)

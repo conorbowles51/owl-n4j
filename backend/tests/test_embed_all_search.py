@@ -12,7 +12,9 @@ class Coll:
 
     def query(self, query_embeddings, n_results, where, include):
         self.where = where
-        rows = sorted(self.rows, key=lambda r: r[2])[:n_results]
+        want = next((c["area"] for c in where.get("$and", []) if isinstance(c.get("area"), str)), None)
+        rows = sorted((r for r in self.rows if want is None or r[1].get("area") in (None, want)),
+                      key=lambda r: r[2])[:n_results]
         return {"documents": [[r[0] for r in rows]], "metadatas": [[r[1] for r in rows]], "distances": [[r[2] for r in rows]]}
 
 
@@ -36,7 +38,7 @@ def test_meaning_hits_filter_by_case_area_and_date_and_drop_far_passages():
     hits = S.meaning_hits("c", [0.1], items, None, ["ledger", "accounts"], date_from=date(2024, 1, 1), date_to=date(2024, 2, 1))
     assert [h["key"] for h in hits] == ["a"]
     conds = items.where["$and"]
-    assert {"case_id": "c"} in conds and {"area": {"$in": ["ledger", "accounts"]}} in conds
+    assert {"case_id": "c"} in conds and {"area": "accounts"} in conds  # one query per area
     assert any("item_ts" in c and "$gte" in c["item_ts"] for c in conds) and any("$lte" in c.get("item_ts", {}) for c in conds)
 
 
@@ -120,3 +122,11 @@ def test_a_new_vector_format_changes_the_area_signature_so_every_file_is_embedde
     before = phone_area.signature(Conn(), "c")
     monkeypatch.setattr(phone_area, "FORMAT", "e3")
     assert phone_area.signature(Conn(), "c") != before
+
+
+def test_the_best_hit_of_every_area_comes_before_the_second_hit_of_any():
+    items = Coll([("transcript", meta("transcripts", "t"), 1.30), ("pay 1", meta("ledger", "p1"), 1.00),
+                  ("pay 2", meta("ledger", "p2"), 1.05), ("pay 3", meta("ledger", "p3"), 1.10)])
+    hits = S.meaning_hits("c", [0.1], items, None, ["transcripts", "ledger"])
+    order = [h["key"] for h in S.fuse(hits, [], 10)]
+    assert order[:2] == ["p1", "t"] and order[2:] == ["p2", "p3"]
