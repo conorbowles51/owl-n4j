@@ -1127,9 +1127,11 @@ it("offers the same import action at the top and bottom and reports beside the o
   const summary = screen.getByRole("region", { name: "Statement checks" })
   expect(summary).toContainElement(buttons[0])
   expect(summary).not.toContainElement(buttons[1])
+  // the row the button sits in (a button that can say why it is disabled sits in a small holder)
+  const row = (b: HTMLElement) => (b.closest('[data-slot="disabled-reason"]') ?? b).parentElement
   fireEvent.click(buttons[1])
   const alert = await screen.findByText("Source changed. Reload review.")
-  expect(buttons[1].parentElement).toContainElement(alert)
+  expect(row(buttons[1])).toContainElement(alert)
   expect(
     within(summary).queryByText("Source changed. Reload review.")
   ).toBeNull()
@@ -1139,7 +1141,7 @@ it("offers the same import action at the top and bottom and reports beside the o
       "Source changed. Reload review."
     )
   )
-  expect(buttons[1].parentElement).not.toHaveTextContent("Source changed")
+  expect(row(buttons[1])).not.toHaveTextContent("Source changed")
 })
 it("shows an accepted import that is still saving as progress, not an error", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
