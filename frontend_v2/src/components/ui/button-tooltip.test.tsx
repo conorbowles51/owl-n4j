@@ -53,4 +53,18 @@ describe("Button keeps one element across renders", () => {
     rerender(<Button aria-label="Save the note"><X /></Button>)
     expect(screen.getByRole("button", { name: "Save the note" })).toBe(before)
   })
+
+  it("a button whose title clears when it turns enabled stays the same element", () => {
+    const draw = (off: boolean) => (
+      <Button disabled={off} title={off ? "Open a cited source first" : undefined} data-testid="accept">
+        Accept
+      </Button>
+    )
+    const { rerender } = render(draw(true))
+    const before = screen.getByTestId("accept")
+    expect(before).toBeDisabled()
+    rerender(draw(false))
+    expect(screen.getByTestId("accept")).toBe(before)
+    expect(before).toBeEnabled()
+  })
 })

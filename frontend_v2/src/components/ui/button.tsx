@@ -65,7 +65,8 @@ function Button(all: ButtonProps) {
   // The tree keeps one shape across renders (a button that turns enabled, or whose words become a spinner, stays the
   // same element): it is decided by which props are given, never by their values of the moment.
   const holds = "disabledReason" in all
-  const wraps = own && (holds || tooltip !== undefined || label !== undefined)
+  const named = "aria-label" in props || "title" in props
+  const wraps = own && (holds || "tooltip" in all || named)
   const drawn = (
     <Comp
       data-slot="button"
