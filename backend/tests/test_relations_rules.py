@@ -141,9 +141,9 @@ def test_shared_silence_scales_to_a_thousand_silences_per_phone():
     from datetime import datetime
     def gaps(offset):
         return [(T0 + timedelta(days=d, hours=offset), T0 + timedelta(days=d, hours=offset + 9)) for d in range(1100)]
-    t = time.time()
+    t = time.process_time()
     c, n = rules.shared_silence(None, gaps={"A": gaps(0), "B": gaps(1)})
-    assert time.time() - t < 20  # the first version rescanned every silence per overlap and did not finish on 1,000
+    assert time.process_time() - t < 20  # the first version rescanned every silence per overlap and did not finish on 1,000
     assert n["silences"] == {"A": 1100, "B": 1100} and c
 
 

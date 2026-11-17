@@ -172,10 +172,10 @@ def test_reopening_an_unchanged_batch_of_d5b330d1_size_computes_nothing(big_batc
     with patch.object(import_batches, 'batch_status', counted):
         with big_batch['Session']() as db:
             first = route(**kwargs, db=db)
-        started = time.perf_counter()
+        started = time.process_time()
         with big_batch['Session']() as db:
             again = route(**kwargs, db=db)
-        reopened = time.perf_counter() - started
+        reopened = time.process_time() - started
         assert len(calls) == 1, 'the second open of an unchanged batch is answered from the kept copy'
         assert bytes(again.body) == bytes(first.body)
         # The queue's lists are read on every open, kept copy or not.

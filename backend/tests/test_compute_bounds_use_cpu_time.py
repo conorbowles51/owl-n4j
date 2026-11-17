@@ -12,7 +12,7 @@ import re
 TESTS = pathlib.Path(__file__).resolve().parent
 WALL = {"time", "monotonic", "perf_counter"}
 WAITING = ("sleep", "Thread", "subprocess", "signal", "Popen", "Event", "timeout", "TIMEOUT", "_TextServer", "wait")
-_CANDIDATE = re.compile(r"assert[^\n]*time\.(?:time|monotonic|perf_counter)\(\)\s*-")
+_CANDIDATE = re.compile(r"time\.(?:time|monotonic|perf_counter)\(\)\s*-")
 
 
 def _is_wall_call(node: ast.AST) -> bool:
@@ -28,6 +28,24 @@ def _elapsed_bound(node: ast.AST) -> bool:
     return any(isinstance(op, ast.BinOp) and isinstance(op.op, ast.Sub) and _is_wall_call(op.left) for op in operands)
 
 
+def _elapsed_names(fn: ast.AST) -> set[str]:
+    """Names bound to an elapsed wall-clock time: `took = time.perf_counter() - t0`."""
+    names = set()
+    for node in ast.walk(fn):
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.Sub)
+                and _is_wall_call(node.value.left)):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return names
+
+
+def _bounds_elapsed_name(node: ast.AST, names: set[str]) -> bool:
+    """`assert took < 5` or `assert t_join < t_nested` where a side is an elapsed wall-clock time."""
+    if not (names and isinstance(node, ast.Assert) and isinstance(node.test, ast.Compare)):
+        return False
+    operands = [node.test.left, *node.test.comparators]
+    return any(isinstance(op, ast.Name) and op.id in names for op in operands)
+
+
 def wall_clock_bounds_on_computation(root: pathlib.Path = TESTS) -> list[str]:
     found = []
     for path in sorted(root.rglob("test_*.py")):
@@ -37,7 +55,8 @@ def wall_clock_bounds_on_computation(root: pathlib.Path = TESTS) -> list[str]:
         for fn in ast.walk(ast.parse(source)):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or not fn.name.startswith("test"):
                 continue
-            if not any(_elapsed_bound(node) for node in ast.walk(fn)):
+            names = _elapsed_names(fn)
+            if not any(_elapsed_bound(node) or _bounds_elapsed_name(node, names) for node in ast.walk(fn)):
                 continue
             body = ast.get_source_segment(source, fn) or ""
             if not any(word in body for word in WAITING):
@@ -59,3 +78,14 @@ def test_the_check_sees_a_wall_clock_bound_and_ignores_a_waiting_test(tmp_path):
         encoding="utf-8",
     )
     assert wall_clock_bounds_on_computation(tmp_path) == ["test_x.py::test_compute"]
+
+
+def test_the_check_sees_an_elapsed_time_kept_in_a_name(tmp_path):
+    (tmp_path / "test_y.py").write_text(
+        "import time\n"
+        "def test_faster():\n    t0 = time.perf_counter()\n    a = time.perf_counter() - t0\n"
+        "    t0 = time.perf_counter()\n    b = time.perf_counter() - t0\n    assert a < b\n"
+        "def test_cpu_named():\n    t0 = time.process_time()\n    a = time.process_time() - t0\n    assert a < 5\n",
+        encoding="utf-8",
+    )
+    assert wall_clock_bounds_on_computation(tmp_path) == ["test_y.py::test_faster"]

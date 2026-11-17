@@ -47,9 +47,9 @@ def test_a_phone_with_many_events_and_parties_is_grouped_in_time_that_grows_with
             ext, _ = phone(c, case, events=[_m(at(2023, 1, 1, 0, 0, 0) + __import__("datetime").timedelta(minutes=i),
                                                "synthetic %d" % (i // 2)) for i in range(n)])
         with engine.begin() as c:
-            started = time.monotonic()
+            started = time.process_time()
             out = copies.assign(c, ext, GEN)
-            took = time.monotonic() - started
+            took = time.process_time() - started
     assert out == {"groups": 0, "records": 0}  # a minute apart: no copies
     # measured on the scratch server (EXPLAIN ANALYZE): 0.13 s for 4,000 events with this change (0.78 s for 16,000),
     # 8.9 s for 4,000 before it; 11.7 s for a synthetic phone the size of the largest corpus phone (61,317 events,

@@ -5,6 +5,7 @@ Synthetic phones only: every name, address, number and tower key here is invente
 """
 from __future__ import annotations
 
+import gc
 import random
 import time
 from datetime import timedelta
@@ -102,12 +103,23 @@ def test_the_keyed_cell_join_returns_exactly_the_nested_loops_pairs_and_is_faste
         return [(rnd.choice(keys), DAY + timedelta(seconds=rnd.randrange(0, 6 * 3600)), "%s%d" % (tag, i), [])
                 for i in range(n)]
     A, B = side(3000, "a"), side(3000, "b")
-    t0 = time.perf_counter()
-    want = _nested(A, B, 900)
-    t_nested = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    got = colocation.cell_matches(A, B, 900)
-    t_join = time.perf_counter() - t0
+    def cpu(fn):
+        # CPU seconds, best of three with the collector off: heaps left by earlier tests trigger collections
+        # that land on whichever side allocates more.
+        best, out = None, None
+        gc.collect()
+        gc.disable()
+        try:
+            for _ in range(3):
+                t0 = time.process_time()
+                out = fn()
+                took = time.process_time() - t0
+                best = took if best is None else min(best, took)
+        finally:
+            gc.enable()
+        return best, out
+    t_nested, want = cpu(lambda: _nested(A, B, 900))
+    t_join, got = cpu(lambda: colocation.cell_matches(A, B, 900))
     key = lambda p: (p[0][2], p[1][2])  # noqa: E731
     assert sorted(got, key=key) == sorted(want, key=key) and len(want) > 1000
     assert t_join < t_nested
