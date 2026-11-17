@@ -41,7 +41,8 @@ def build(store, corroboration: dict, instance_id: str) -> dict[str, Any]:
     group = [p for p in everyone if p["key"] in keys]
     from services.corroborate import model as M
     start, end = M.as_utc(inst["start"]), M.as_utc(inst.get("money_until") or inst["end"])
-    recs = [r for r in store.records(group, [(start, end)], everyone) if r["ref"] in refs]
+    kept, _ = M.dedupe(store.records(group, [(start, end)], everyone))  # copies of one record are shown once
+    recs = [r for r in kept if refs & set(r["copies"])]
     recs.sort(key=lambda r: (r["at"], r["ref"]))
     label = {p["key"]: p["label"] for p in everyone}
     lanes: dict[str, dict] = {}
@@ -51,10 +52,11 @@ def build(store, corroboration: dict, instance_id: str) -> dict[str, Any]:
         lane = lanes.setdefault(who, {"person": who, "label": label.get(who, "Not placed on a person"), "events": []})
         ev = {"n": n, "ref": r["ref"], "kind": r.get("kind"), "kind_words": KIND_WORDS.get(r.get("kind"), "Record"),
               "at": r["at"].isoformat(), "day_only": bool(r.get("day_only")), "text": _text(r),
-              "with": [label.get(x, x) for x in r.get("parties") or [] if x != who]}
+              "with": [label.get(x, x) for x in r.get("parties") or [] if x != who],
+              "copies": len(r["copies"])}
         lane["events"].append(ev)
         events.append(ev)
-    missing = sorted(refs - {r["ref"] for r in recs})
+    missing = sorted(refs - {c for r in recs for c in r["copies"]})
     return {"instance": {"id": inst["id"], "label": inst["label"]}, "lanes": list(lanes.values()),
-            "events": len(events), "cited": len(refs),
+            "events": len(events), "cited": len(refs), "folded_copies": sum(len(refs & set(r["copies"])) - 1 for r in recs),
             "not_laid_out": [{"ref": m, "why": "The record could not be read again for this instance."} for m in missing]}

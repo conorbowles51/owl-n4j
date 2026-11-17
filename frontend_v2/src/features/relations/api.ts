@@ -89,6 +89,7 @@ export interface LaneEvent {
   day_only: boolean
   text: string
   with: string[]
+  copies?: number
 }
 
 export interface StoryLanes {
@@ -96,6 +97,7 @@ export interface StoryLanes {
   lanes: { person: string; label: string; events: LaneEvent[] }[]
   events: number
   cited: number
+  folded_copies?: number
   not_laid_out: { ref: string; why: string }[]
 }
 

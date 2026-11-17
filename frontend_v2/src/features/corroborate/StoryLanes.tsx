@@ -32,7 +32,7 @@ export function StoryLanes({ caseId, runId, instance, onClose }: { caseId: strin
                 <span className="font-mono text-xs" aria-label={`Event ${e.n}`}>{e.n}</span>
                 <span className="text-xs text-muted-foreground">{when(e.at, e.day_only)}</span>
                 <span className={`rounded px-1 text-xs ${KIND_CLASS[e.kind] ?? "bg-slate-100 text-slate-900"}`}>{e.kind_words}</span>
-                <span>{e.text}{e.with.length > 0 ? ` (with ${e.with.join(", ")})` : ""}</span>
+                <span>{e.text}{e.with.length > 0 ? ` (with ${e.with.join(", ")})` : ""}{(e.copies ?? 1) > 1 ? <span className="text-xs text-muted-foreground"> · {e.copies} copies of this record, shown once</span> : null}</span>
               </li>
             ))}
           </ol>

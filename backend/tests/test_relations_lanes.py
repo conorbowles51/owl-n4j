@@ -25,7 +25,7 @@ def test_lanes_hold_only_cited_records_in_time_order_with_one_lane_per_person():
     ordered = sorted(laid, key=lambda e: e["n"])
     assert [e["at"] for e in ordered] == sorted(e["at"] for e in ordered)
     assert len({lane["person"] for lane in out["lanes"]}) == len(out["lanes"])
-    assert out["events"] + len(out["not_laid_out"]) == len(cited)
+    assert out["events"] + out["folded_copies"] + len(out["not_laid_out"]) == len(cited)
 
 
 def test_an_instance_not_in_the_result_is_refused():
