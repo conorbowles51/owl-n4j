@@ -226,6 +226,28 @@ def comparison_set(kind: str, incidents: list[dict], period: tuple[date, date] |
     return ordinary, {"kind": kind, "words": words, "incident_noun": inc_noun, "ordinary_noun": ord_noun}
 
 
+# A phone covers the stretches of days on which it holds records: record days at most COVER_GAP_DAYS apart join one
+# stretch, and a stretch of fewer than COVER_MIN_DAYS record days is set aside (a clock error such as a 1970 or 2057
+# date, or a lone record far from the rest). Setting one aside only turns "absent" into "no data", never the reverse.
+COVER_GAP_DAYS = 14
+COVER_MIN_DAYS = 3
+
+
+def phone_spans(days: list[date]) -> tuple[list[tuple[datetime, datetime]], int]:
+    """(spans as UTC datetimes from the first day's start to the last day's end, record days set aside)."""
+    days = sorted(set(days))
+    runs: list[list[date]] = []
+    for d in days:
+        if runs and (d - runs[-1][-1]).days <= COVER_GAP_DAYS:
+            runs[-1].append(d)
+        else:
+            runs.append([d])
+    kept = [r for r in runs if len(r) >= COVER_MIN_DAYS]
+    spans = [(datetime.combine(r[0], time.min, timezone.utc), datetime.combine(r[-1], time.max, timezone.utc))
+             for r in kept]
+    return spans, sum(len(r) for r in runs if len(r) < COVER_MIN_DAYS)
+
+
 def in_window(rec: dict, inst: dict, *, money: bool = False) -> bool:
     end = inst["money_end"] if money else inst["end"]
     if rec.get("day_only"):

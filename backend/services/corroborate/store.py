@@ -35,6 +35,8 @@ class CaseStore:
         self.c = {"c": self.case}
         self._people: list[dict] | None = None
         self._zone: str | None = None
+        self._phone_days: dict[str, tuple[list, int]] = {}
+        self.set_aside: dict[str, int] = {}  # phone -> record days set aside from its coverage (``M.phone_spans``)
 
     def q(self, sql: str, **params):
         return self.db.execute(text(sql), {**self.c, **params})
@@ -417,22 +419,36 @@ class CaseStore:
         return out
 
     # -- coverage ------------------------------------------------------------------------------------------------
+    def phone_spans(self, extraction_id: str) -> tuple[list, int]:
+        """The stretches of days a phone holds records on (``M.phone_spans``). The days are read one index probe per
+        day (0.3 s for 1,030 days of a 540,000-record phone), not by counting every record."""
+        if extraction_id not in self._phone_days:
+            days = [r[0] for r in self.q(
+                "WITH RECURSIVE d(at) AS ("
+                " SELECT (SELECT min(instant_utc) FROM pol_activity_event WHERE extraction_id = :e)"
+                " UNION ALL SELECT (SELECT min(instant_utc) FROM pol_activity_event WHERE extraction_id = :e AND "
+                " instant_utc >= date_trunc('day', d.at, 'UTC') + interval '1 day') FROM d WHERE d.at IS NOT NULL)"
+                " SELECT (at AT TIME ZONE 'UTC')::date FROM d WHERE at IS NOT NULL", e=extraction_id)]
+            self._phone_days[extraction_id] = M.phone_spans(days)
+            if self._phone_days[extraction_id][1]:
+                self.set_aside[extraction_id] = self._phone_days[extraction_id][1]
+        return self._phone_days[extraction_id]
+
     def coverage(self, people: list[dict], doc_ids: list[str]) -> dict:
-        """What each source covers: a person's phones (first to last record), the months their accounts hold ledger
+        """What each source covers: a person's phones (the stretches of days they hold records on), the months their accounts hold ledger
         rows, phones that carry payment alerts, and each document's first to last dated row."""
         cov: dict[str, dict] = {}
         for p in people:
             c = cov.setdefault(p["key"], {"phone": [], "ledger": [], "alerts": []})
             for e in p["phones"]:
-                lo, hi = self.q("SELECT min(instant_utc), max(instant_utc) FROM pol_activity_event WHERE case_id = :c "
-                                "AND extraction_id = :e", e=e).first()
-                if lo:
-                    c["phone"].append((M.as_utc(lo), M.as_utc(hi)))
+                spans, _ = self.phone_spans(e)
+                if spans:
+                    c["phone"] += spans
                     n = self.q("SELECT count(*) FROM pv_record r JOIN pv_text t ON t.record_uid = r.record_uid AND "
                                "t.field_path = 'Body' WHERE r.case_id = :c AND r.extraction_id = :e AND "
                                "r.model_type = 'Notification' AND t.value ~ '\\$'", e=e).scalar() or 0
                     if n:
-                        c["alerts"].append((M.as_utc(lo), M.as_utc(hi)))
+                        c["alerts"] += spans
             for a in p["accounts"]:
                 for (month,) in self.q(
                         "SELECT DISTINCT date_trunc('month', COALESCE(transaction_date, posted_date)) FROM "
@@ -499,12 +515,16 @@ class CaseStore:
         return min(s[0] for s in spans).date(), max(s[1] for s in spans).date()
 
     def phone_starts(self, people: list[dict]) -> dict[str, datetime]:
-        """Each person's first phone record: a number's use before it belongs to someone else's time with it."""
+        """Each person's first outgoing phone record inside the phone's covered days (a 1970 or year-1 clock error is
+        not a start): a number's use before it belongs to someone else's time with it."""
         out = {}
         for p in people:
             for e in p["phones"]:
+                spans, _ = self.phone_spans(e)
+                if not spans:
+                    continue
                 lo = self.q("SELECT min(sort_instant) FROM phone_comm_events WHERE case_id = :c AND extraction_id = :e "
-                            "AND direction = 'outgoing'", e=e).scalar()
+                            "AND direction = 'outgoing' AND sort_instant >= :s", e=e, s=spans[0][0]).scalar()
                 if lo and (p["key"] not in out or M.as_utc(lo) < out[p["key"]]):
                     out[p["key"]] = M.as_utc(lo)
         return out

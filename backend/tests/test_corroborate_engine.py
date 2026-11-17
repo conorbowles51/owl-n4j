@@ -222,3 +222,22 @@ def test_every_level_sentence_states_its_counts():
                        ([{"type": "record", "id": "shopB"}, {"type": "record", "id": "shopD"}], {"kind": "together"})):
         lvl = _run(members, q)["level"]
         assert re.search(r"\d+ of \d+|none of the \d+|on the \d+ ", lvl["sentence"]), lvl
+
+
+def test_a_phones_coverage_sets_aside_clock_errors_and_lone_days():
+    from datetime import date, timedelta
+    real = [date(2022, 3, 1) + timedelta(days=n) for n in range(0, 60, 2)]
+    junk = [date(1, 1, 1), date(1970, 1, 20), date(2057, 8, 30)]
+    spans, aside = M.phone_spans(real + junk)
+    assert len(spans) == 1 and aside == 3
+    assert spans[0][0].date() == date(2022, 3, 1) and spans[0][1].date() == real[-1]
+    # a phone used once a week is still covered; two lone days far apart are not a stretch
+    weekly = [date(2023, 1, 2) + timedelta(days=7 * n) for n in range(6)]
+    assert len(M.phone_spans(weekly)[0]) == 1 and M.phone_spans(weekly[:1] + [date(2024, 1, 1)]) == ([], 2)
+
+
+def test_searched_lists_only_the_kinds_this_question_computed():
+    res = _run([{"type": "record", "id": f"r:{INCIDENTS[0]}"}], {"kind": "in_contact"})
+    checked = set(res["searched"]["kinds_checked"])
+    assert "contact" in checked and not checked & {"statement", "same_person"}
+    assert set(res["searched"]["kinds_with_nothing"]) <= checked

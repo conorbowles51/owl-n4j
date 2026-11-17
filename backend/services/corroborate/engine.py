@@ -143,6 +143,12 @@ def run(store, members: list[dict], question: dict | None = None,
     activity = store.activity(list(people.values()), [(i["start"], i["end"]) for i in instances])
     doc_ids = sorted({r["source"] for r in recs if r["kind"] == "doc_row"})
     cov = store.coverage(list(people.values()), doc_ids)
+    aside = {e: n for e, n in (getattr(store, "set_aside", None) or {}).items()
+             if any(e in p["phones"] for p in people.values())}
+    if aside:
+        notes.append(f"{sum(aside.values()):,} day{'' if sum(aside.values()) == 1 else 's'} with records far from the "
+                     f"rest of the records on {len(aside)} phone{'' if len(aside) == 1 else 's'} (a clock error such as a "
+                     "1970 date, or a lone record) are read but do not count as days a phone was in use.")
     step("Reading the records", len(raw), len(raw))
 
     group_vs = comparison["kind"] == "group_vs_group"
@@ -236,7 +242,7 @@ def run(store, members: list[dict], question: dict | None = None,
         "checks": checks,
         "people": [_person(p) for p in people.values()],
         "not_in_pattern": not_in,
-        "searched": _searched(rows, recs, raw, instances, people),
+        "searched": _searched(rows, recs, raw, instances, people, kind),
         "gaps": missing,
         "look_further": _further(store, people, everyone, rows, instances),
         "unread": unread,
@@ -364,14 +370,20 @@ def _person(p) -> dict:
 
 # ---- what was searched, what is missing, who is not in the pattern ------------------------------------------------
 
-def _searched(rows, recs, raw, instances, people) -> dict:
+def _searched(rows, recs, raw, instances, people, kind) -> dict:
+    """What was read and which kinds of link were computed for this question (only those)."""
     kinds = defaultdict(int)
     for r in raw:
         kinds[r["kind"]] += 1
     drawn = {r["link_kind"] for r in rows}
+    computed = {"contact", "together", "money", "access", "absence", "shared_content", "sequence"} | drawn
+    if kind in ("burst", "every_time", "together") or len(people) >= 3:
+        computed.add("activity")
+    if kind in ("statement", "document"):
+        computed.add("statement")
+    computed &= set(L.LINK_KINDS)
     return {"records_read": dict(kinds), "instances": len(instances), "people": len(people),
-            "kinds_checked": sorted(L.LINK_KINDS), "kinds_with_nothing": sorted(set(L.LINK_KINDS) - drawn -
-                                                                                {"same_person", "statement"})}
+            "kinds_checked": sorted(computed), "kinds_with_nothing": sorted(computed - drawn)}
 
 
 def _gaps(rows, instances, people, cov, store) -> list[dict]:
