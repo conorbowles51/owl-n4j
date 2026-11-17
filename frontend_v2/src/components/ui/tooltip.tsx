@@ -23,17 +23,53 @@ function TooltipProvider({
   )
 }
 
+/** When keyboard focus last reached this tooltip's control, and which control. */
+type Mark = { at: number; el: Element | null; scrolled: boolean }
+const FocusMark = React.createContext<React.RefObject<Mark> | null>(null)
+
 function Tooltip({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  const root = <TooltipPrimitive.Root data-slot="tooltip" {...props} />
-  return React.useContext(InProvider) ? root : <TooltipProvider>{root}</TooltipProvider>
+  const [own, setOwn] = React.useState(defaultOpen ?? false)
+  const focusRef = React.useRef<Mark>({ at: -Infinity, el: null, scrolled: false })
+  const change = (next: boolean) => {
+    // Focus can scroll a narrow panel to bring its control into view, and the tooltip closes on any scroll around
+    // its control: keep it open while that control still has focus, just after focus opened it.
+    const mark = focusRef.current
+    if (!next && mark.scrolled && document.activeElement === mark.el && performance.now() - mark.at < 400) return
+    setOwn(next)
+    onOpenChange?.(next)
+  }
+  const root = <TooltipPrimitive.Root data-slot="tooltip" open={openProp ?? own} onOpenChange={change} {...props} />
+  const marked = <FocusMark.Provider value={focusRef}>{root}</FocusMark.Provider>
+  return React.useContext(InProvider) ? marked : <TooltipProvider>{marked}</TooltipProvider>
 }
 
 function TooltipTrigger({
+  onFocus,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  const focusRef = React.useContext(FocusMark)
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      onFocus={(event) => {
+        if (focusRef) {
+          const mark: Mark = { at: performance.now(), el: event.currentTarget, scrolled: false }
+          focusRef.current = mark
+          // registered before the open tooltip's own scroll watch, so it is marked before that closes it
+          const scrolled = () => void (mark.scrolled = true)
+          window.addEventListener("scroll", scrolled, { capture: true })
+          setTimeout(() => window.removeEventListener("scroll", scrolled, { capture: true }), 400)
+        }
+        onFocus?.(event)
+      }}
+      {...props}
+    />
+  )
 }
 
 function TooltipContent({
@@ -48,7 +84,7 @@ function TooltipContent({
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md bg-slate-950 px-3 py-1.5 text-xs text-balance text-white shadow-lg fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "z-50 w-fit max-w-[min(24rem,calc(100vw-1rem))] origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md bg-slate-950 px-3 py-1.5 text-xs text-balance text-white shadow-lg fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className
         )}
         {...props}

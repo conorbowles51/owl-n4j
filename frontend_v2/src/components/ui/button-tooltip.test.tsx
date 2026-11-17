@@ -68,3 +68,23 @@ describe("Button keeps one element across renders", () => {
     expect(before).toBeEnabled()
   })
 })
+
+describe("Tooltip on keyboard focus in a narrow panel", () => {
+  it("stays open when focus scrolls the panel, and closes when focus moves on", async () => {
+    render(
+      <div data-testid="panel" style={{ overflowX: "auto", width: 55 }}>
+        <Button size="icon" aria-label="Edit case processing profile"><X /></Button>
+        <button type="button">Next control</button>
+      </div>
+    )
+    const button = screen.getByRole("button", { name: "Edit case processing profile" })
+    await act(async () => void button.focus())
+    expect(button).toHaveAttribute("data-state", expect.stringMatching(/open/))
+    // the browser then scrolls the panel to bring the focused control into view
+    await act(async () => void screen.getByTestId("panel").dispatchEvent(new Event("scroll")))
+    expect(button).toHaveAttribute("data-state", expect.stringMatching(/open/))
+    await act(async () => void screen.getByRole("button", { name: "Next control" }).focus())
+    expect(button).toHaveAttribute("data-state", "closed")
+  })
+})
+
