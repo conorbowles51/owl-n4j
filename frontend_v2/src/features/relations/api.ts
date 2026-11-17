@@ -48,6 +48,7 @@ export interface RelationResult {
   no_links: NoLink[]
   analyses: { id: string; title: string; pairs: number; found: number; note?: string; existing: string | null }[]
   out_of_reach: { analysis: string; reason: string }[]
+  paging?: { candidates: { total: number; shown: number }; no_links: { total: number; shown: number }; page: number }
   counts: { items: number; pairs: number; candidates: number; no_links: number; by_strength: Record<Strength, number> }
   seconds: number
 }
@@ -91,6 +92,9 @@ export const relationAPI = {
   get: (caseId: string, selectionId: string) => fetchAPI<RelationQuery>(`${base(caseId)}/relation-queries/${encodeURIComponent(selectionId)}`),
   rerun: (caseId: string, selectionId: string) =>
     fetchAPI<RelationRun>(`${base(caseId)}/relation-queries/${encodeURIComponent(selectionId)}/runs`, { method: "POST" }),
+  rows: <T,>(caseId: string, runId: string, section: "candidates" | "no_links", offset: number) =>
+    fetchAPI<{ total: number; returned: number; next_offset: number | null; rows: T[] }>(
+      `${base(caseId)}/relation-runs/${encodeURIComponent(runId)}/rows?section=${section}&offset=${offset}`),
   accept: (caseId: string, runId: string, n: number, entryId: string, relationship: "supports" | "contradicts") =>
     fetchAPI<{ added_link_ids: string[] }>(`${base(caseId)}/relation-runs/${encodeURIComponent(runId)}/hypotheses/${n}:accept`, {
       method: "POST",

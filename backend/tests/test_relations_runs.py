@@ -151,3 +151,31 @@ def test_a_passage_that_cannot_be_read_is_refused_with_the_reason():
     with mock.patch("services.evidence_page_text.passage_anchor", side_effect=PassageError("read again since")):
         with pytest.raises(case_selections.SelectionError, match="read again"):
             runs.normalise(None, "c", [{"type": "evidence_passage", "id": "abc:def:1:9"}])
+
+
+class SizeTests(DuplicateTestCase):
+    def setUp(self):
+        super().setUp()
+        Base.metadata.create_all(self.engine, tables=[CaseSelection.__table__, RelationRun.__table__])
+
+    def test_a_group_too_big_to_compare_is_refused_before_anything_is_saved(self):
+        members = [{"type": "place", "id": f"1,{n / 1000},5"} for n in range(runs.MAX_ITEMS + 1)]
+        with self.assertRaises(case_selections.SelectionError) as raised:
+            runs.save_group(self.db, case_id=self.case.id, members=members)
+        self.assertIn("pairs to compare", str(raised.exception))
+        self.assertEqual(self.db.query(CaseSelection).count(), 0)
+
+    def test_the_screen_reads_a_page_and_says_how_many_of_how_many_and_the_rest_is_one_call_away(self):
+        group = runs.save_group(self.db, case_id=self.case.id, members=[{"type": "place", "id": "1,1,5"}])
+        result = {"candidates": [{"n": n} for n in range(250)], "no_links": [{"n": n} for n in range(7)], "items": [], "analyses": [],
+                  "counts": {"items": 1}}
+        row = RelationRun(case_id=self.case.id, selection_id=__import__("uuid").UUID(group["id"]), status="done", result=result)
+        self.db.add(row)
+        self.db.commit()
+        view = runs.view(self.db, self.case.id, str(row.id))
+        self.assertEqual(len(view["result"]["candidates"]), runs.PAGE)
+        self.assertEqual(view["result"]["paging"]["candidates"], {"total": 250, "shown": runs.PAGE})
+        more = runs.rows(self.db, self.case.id, str(row.id), "candidates", offset=runs.PAGE, limit=200)
+        self.assertEqual((more["returned"], more["next_offset"], more["rows"][0]["n"]), (150, None, runs.PAGE))
+        with self.assertRaises(LookupError):
+            runs.rows(self.db, self.other_case.id, str(row.id), "candidates")

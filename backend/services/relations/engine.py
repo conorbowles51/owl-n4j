@@ -148,11 +148,19 @@ def run(sources, members: list[dict], progress: Callable[[str, int, int], None] 
         for a, b in combinations(dict.fromkeys(expanded), 2):
             linked.setdefault(_pair_key(a, b), []).append(cand)
     no_links = []
+    # notes about one pair are found by the pair; notes about a group of items (no date on record) by each member
+    by_pair: dict[frozenset, list[dict]] = {}
+    by_group: list[tuple[set, dict]] = []
+    for n in searched:
+        if len(n["members"]) == 2:
+            by_pair.setdefault(frozenset(n["members"]), []).append(n)
+        else:
+            by_group.append((set(n["members"]), n))
     for a, b in combinations(items, 2):
         if linked.get(_pair_key(a["ref"], b["ref"])):
             continue
         ids = matrix.applicable(a["type"], b["type"])
-        notes = [n for n in searched if {a["ref"], b["ref"]} <= set(n["members"])]
+        notes = by_pair.get(_pair_key(a["ref"], b["ref"]), []) + [n for members, n in by_group if a["ref"] in members and b["ref"] in members]
         if not ids:
             no_links.append({"members": [a["ref"], b["ref"]], "analyses": [], "searched": [],
                              "says": f"No analysis links a {matrix.words(a['type'])} to a {matrix.words(b['type'])}.",

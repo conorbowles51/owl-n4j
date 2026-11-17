@@ -6,6 +6,7 @@ One table, read by the engine to choose analyses and by the report to say, for a
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from itertools import combinations_with_replacement
 
 TYPES = {
@@ -53,8 +54,13 @@ def _pair(a: str, b: str) -> frozenset:
 
 
 def applicable(type_a: str, type_b: str) -> list[str]:
+    return list(_applicable(*sorted((type_a, type_b))))
+
+
+@lru_cache(maxsize=None)
+def _applicable(type_a: str, type_b: str) -> tuple:
     key = _pair(type_a, type_b)
-    return [aid for aid, spec in ANALYSES.items() if any(_pair(x, y) == key for x, y in spec["types"])]
+    return tuple(aid for aid, spec in ANALYSES.items() if any(_pair(x, y) == key for x, y in spec["types"]))
 
 
 def table() -> list[dict]:

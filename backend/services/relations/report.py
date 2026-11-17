@@ -30,6 +30,10 @@ def _names(members: list[str], labels: dict[str, str]) -> str:
     return "; ".join(_e(labels.get(m, m[:8])) for m in members)
 
 
+REPORT_CANDIDATES = 300
+REPORT_NO_LINKS = 100
+
+
 def render_html(*, case_name: str, generated_by: str, group: dict, run: dict, privilege_marking: str = "unmarked") -> str:
     result = run.get("result") or {}
     if not result:
@@ -42,16 +46,22 @@ def render_html(*, case_name: str, generated_by: str, group: dict, run: dict, pr
                     for i in result["items"])
     analyses = "".join(f"<tr><td>{_e(a['title'])}</td><td>{a['pairs']:,}</td><td>{a['found']:,}</td><td>{_e(a.get('note', ''))}</td></tr>"
                        for a in result["analyses"])
+    shown_cands = result["candidates"][:REPORT_CANDIDATES]
+    shown_nolinks = result["no_links"][:REPORT_NO_LINKS]
+    clipped = ((f"<p class='says'>This report lists the {len(shown_cands):,} strongest of {len(result['candidates']):,} candidate links. "
+                "The rest are on the screen.</p>") if len(result["candidates"]) > len(shown_cands) else "")
+    clipped_no = ((f"<p class='says'>This report lists {len(shown_nolinks):,} of {len(result['no_links']):,} pairs with no link found. "
+                   "The rest are on the screen.</p>") if len(result["no_links"]) > len(shown_nolinks) else "")
     cands = "".join(
         f"<li class='cand {x['strength']}'><span class='who'>{LEVEL_WORDS[x['strength']]} · {_e(KIND_WORDS.get(x['kind'], x['kind']))}</span> "
         f"<span class='sub'>{_names(x['members'], labels)}</span>{_e(' '.join(x['reasons']))}"
         + (f"<span class='sub chance'>Chance: {_e(x['chance']['words'])}</span>" if x["chance"].get("words") else "") + "</li>"
-        for x in result["candidates"]) or "<li class='muted'>No candidate link was found.</li>"
+        for x in shown_cands) or "<li class='muted'>No candidate link was found.</li>"
     nolinks = "".join(
         f"<li><span class='sub'>{_names(n['members'], labels)}</span>{_e(n['says'])}"
         + "".join(f"<span class='sub'>Searched: {_e(s)}</span>" for s in n["searched"])
         + "".join(f"<span class='sub'>Out of reach: {_e(s)}</span>" for s in n["out_of_reach"]) + "</li>"
-        for n in result["no_links"]) or "<li class='muted'>Every pair has at least one candidate link.</li>"
+        for n in shown_nolinks) or "<li class='muted'>Every pair has at least one candidate link.</li>"
     reach = "".join(f"<li>{_e(o['analysis'])}: {_e(o['reason'])}</li>" for o in result["out_of_reach"])
     hyp = run.get("hypotheses")
     if hyp:
@@ -95,8 +105,8 @@ def render_html(*, case_name: str, generated_by: str, group: dict, run: dict, pr
       <h2>The items ({c['items']:,})</h2><ul>{items}</ul>
       <h2>Analyses run</h2><table><tr><th>Analysis</th><th>Pairs covered</th><th>Links found</th><th>Note</th></tr>{analyses}</table>
       {'<h3>Out of reach</h3><ul>' + reach + '</ul>' if reach else ''}
-      <h2>Candidate links ({c['candidates']:,})</h2><p class="muted">Strongest first. Weak links are listed as weak.</p><ul>{cands}</ul>
-      <h2>Pairs with no link found ({c['no_links']:,})</h2><p class="muted">Each says what was searched. It is not proof that no link exists.</p><ul>{nolinks}</ul>
+      <h2>Candidate links ({c['candidates']:,})</h2><p class="muted">Strongest first. Weak links are listed as weak.</p>{clipped}<ul>{cands}</ul>
+      <h2>Pairs with no link found ({c['no_links']:,})</h2><p class="muted">Each says what was searched. It is not proof that no link exists.</p>{clipped_no}<ul>{nolinks}</ul>
       <h2>How they could be linked</h2>{hyp_html}
     </body></html>"""
 

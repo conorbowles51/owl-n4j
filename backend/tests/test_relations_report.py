@@ -34,3 +34,12 @@ def test_report_refuses_a_group_with_no_finished_run():
 def test_report_renders_a_pdf():
     pdf = R.render_pdf(case_name="Case", generated_by="Neil", group={}, run=run_view(True))
     assert pdf[:4] == b"%PDF"
+
+
+def test_a_long_report_says_how_many_it_lists_of_how_many():
+    run = run_view(False)
+    one = run["result"]["candidates"][0] if run["result"]["candidates"] else None
+    base = one or {"kind": "time_proximity", "members": [], "key": "time", "strength": "faint", "reasons": ["r"], "chance": {"words": "", "reading": "none"}}
+    run["result"]["candidates"] = [base] * (R.REPORT_CANDIDATES + 5)
+    html = R.render_html(case_name="C", generated_by="N", group={}, run=run)
+    assert f"lists the {R.REPORT_CANDIDATES:,} strongest of {R.REPORT_CANDIDATES + 5:,} candidate links" in html

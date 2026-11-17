@@ -88,3 +88,19 @@ describe("the result page", () => {
     expect((screen.getByRole("button", { name: "Accept as supports" }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+
+describe("a long result", () => {
+  it("says how many of how many are shown and reads the next page on request", async () => {
+    const big: RelationResult = { ...result, paging: { candidates: { total: 130, shown: 1 }, no_links: { total: 1, shown: 1 }, page: 100 }, counts: { ...result.counts, candidates: 130 } }
+    vi.spyOn(relationAPI, "get").mockResolvedValue({ group: { id: "g", member_count: 2, left_out: 0, members: [], created_at: "" },
+      run: { id: "r", selection_id: "g", status: "done", step: "Done", progress: {}, error: null, result: big, hypotheses: null } })
+    const rows = vi.spyOn(relationAPI, "rows").mockResolvedValue({ total: 130, returned: 1, next_offset: null,
+      rows: [{ ...result.candidates[0], reasons: ["The next page row."] }] } as never)
+    wrap(<Routes><Route path="/cases/:id/relations/:selectionId" element={<RelationsPage />} /></Routes>, "/cases/c1/relations/g")
+    expect(await screen.findByText("Showing 1 of 130.")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }))
+    expect(await screen.findByText("The next page row.")).toBeTruthy()
+    expect(rows).toHaveBeenCalledWith("c1", "r", "candidates", 1)
+  })
+})

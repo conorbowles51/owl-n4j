@@ -24,6 +24,9 @@ from services.relations.sources import DbSources
 
 log = logging.getLogger(__name__)
 WORDS = "Look into how these relate"
+# A look compares every pair, so its work and its result grow with the square of the items: 400 items are 79,800 pairs.
+MAX_ITEMS = 400
+PAGE = 100
 
 
 def normalise(db, case_id, members: list[dict]) -> list[dict]:
@@ -83,7 +86,13 @@ def save_group(db, *, case_id, members: list[dict], user=None, extends: str | No
         if base is None or base["group_type"] != "relation_query":
             raise case_selections.SelectionError("The query to add to is not in this case.")
         held = [{k: v for k, v in m.items() if k in ("type", "id", "label", "quote")} for m in base["members"]]
-    return case_selections.freeze(db, case_id=case_id, group_type="relation_query", members=held + normalise(db, case_id, list(members)),
+    chosen = held + normalise(db, case_id, list(members))
+    if len(chosen) > MAX_ITEMS:
+        pairs = len(chosen) * (len(chosen) - 1) // 2
+        raise case_selections.SelectionError(
+            f"{len(chosen):,} items make {pairs:,} pairs to compare, more than one look can read ({MAX_ITEMS} items). "
+            "Choose fewer items or look at a narrower range. Nothing was saved.")
+    return case_selections.freeze(db, case_id=case_id, group_type="relation_query", members=chosen,
                                   how={"surface": surface, **({"extends": extends} if extends else {}),
                                        **({"question": _question(question)} if question else {})},
                                   words=WORDS, user=user)
@@ -165,8 +174,39 @@ def view(db, case_id, run_id, *, with_result: bool = True) -> dict[str, Any]:
            "created_at": row.created_at.isoformat() if row.created_at else None,
            "finished_at": row.finished_at.isoformat() if row.finished_at else None}
     if with_result:
-        out["result"] = row.result
+        out["result"] = _first_page(row.result)
     return out
+
+
+def _first_page(result: dict | None) -> dict | None:
+    """The result with the first ``PAGE`` candidates and pairs with no link; ``paging`` says how many of how many, and
+    ``rows`` reads the rest. Counts, items and analyses are always whole."""
+    if not result:
+        return result
+    out = dict(result)
+    out["paging"] = {"candidates": {"total": len(result["candidates"]), "shown": min(PAGE, len(result["candidates"]))},
+                     "no_links": {"total": len(result["no_links"]), "shown": min(PAGE, len(result["no_links"]))}, "page": PAGE}
+    out["candidates"] = result["candidates"][:PAGE]
+    out["no_links"] = result["no_links"][:PAGE]
+    return out
+
+
+def rows(db, case_id, run_id, section: str, offset: int = 0, limit: int = PAGE) -> dict[str, Any]:
+    """More candidates or pairs with no link, in the order the run ranked them."""
+    if section not in ("candidates", "no_links"):
+        raise ValueError("Read candidates or no_links.")
+    row = db.get(RelationRun, uuid.UUID(str(run_id)))
+    if row is None or str(row.case_id) != str(case_id) or not row.result:
+        raise LookupError("That run is not in this case.")
+    everything = row.result[section]
+    page = everything[max(0, offset):max(0, offset) + max(1, min(limit, 500))]
+    return {"section": section, "total": len(everything), "offset": max(0, offset), "returned": len(page),
+            "next_offset": offset + len(page) if offset + len(page) < len(everything) else None, "rows": page}
+
+
+def full_result(db, case_id, run_id) -> dict | None:
+    row = db.get(RelationRun, uuid.UUID(str(run_id)))
+    return row.result if row is not None and str(row.case_id) == str(case_id) else None
 
 
 def latest_for(db, case_id, selection_id) -> str | None:

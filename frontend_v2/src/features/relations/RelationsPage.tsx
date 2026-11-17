@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { useCollectTargets } from "@/features/phones/collect-targets"
-import { downloadRelationReport, relationAPI, runIsWorking, type Candidate, type Hypothesis, type RelationResult, type Strength } from "./api"
+import { downloadRelationReport, relationAPI, runIsWorking, type Candidate, type Hypothesis, type NoLink, type RelationResult, type Strength } from "./api"
 
 const STRENGTH_WORDS: Record<Strength, string> = { strong: "Strong", moderate: "Moderate", weak: "Weak", faint: "Faint" }
 const KIND_WORDS: Record<string, string> = {
@@ -26,6 +26,50 @@ function CandidateRow({ c, labels }: { c: Candidate; labels: Map<string, string>
       </div>
       <p className="text-sm">{c.reasons.join(" ")}</p>
       {c.chance.words && <p className="text-sm text-muted-foreground">Chance: {c.chance.words}</p>}
+    </li>
+  )
+}
+
+/** The rows after the first page, read a page at a time ("Show more"); the counts above them are always whole. */
+function MoreRows<T>({ caseId, runId, section, total, shown, render }: {
+  caseId: string; runId: string; section: "candidates" | "no_links"; total: number; shown: number; render: (row: T, index: number) => React.ReactNode
+}) {
+  const [rows, setRows] = useState<T[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const loaded = shown + rows.length
+  const more = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const page = await relationAPI.rows<T>(caseId, runId, section, loaded)
+      setRows((r) => [...r, ...page.rows])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The next rows could not be read.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      {rows.map((r, i) => render(r, shown + i))}
+      {total > loaded && (
+        <li className="list-none">
+          <p className="text-sm text-muted-foreground">Showing {loaded.toLocaleString("en-US")} of {total.toLocaleString("en-US")}.</p>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void more()}>{busy ? "Reading…" : "Show more"}</Button>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        </li>
+      )}
+    </>
+  )
+}
+
+function NoLinkRow({ n, labels }: { n: NoLink; labels: Map<string, string> }) {
+  return (
+    <li className="rounded border p-2 text-sm">
+      <Names refs={n.members} labels={labels} /><p>{n.says}</p>
+      {n.searched.map((s, j) => <p key={`s${j}`} className="text-muted-foreground">Searched: {s}</p>)}
+      {n.out_of_reach.map((s, j) => <p key={`o${j}`} className="text-muted-foreground">Out of reach: {s}</p>)}
     </li>
   )
 }
@@ -141,18 +185,21 @@ export function RelationsPage() {
           <section aria-label="Candidate links">
             <h2 className="font-semibold">Candidate links ({result.counts.candidates.toLocaleString("en-US")})</h2>
             <p className="text-sm text-muted-foreground">Strongest first. Weak links are listed as weak.</p>
-            <ul className="space-y-2">{result.candidates.map((c, i) => <CandidateRow key={i} c={c} labels={labels} />)}</ul>
+            <ul className="space-y-2">
+              {result.candidates.map((c, i) => <CandidateRow key={i} c={c} labels={labels} />)}
+              <MoreRows<Candidate> caseId={caseId} runId={run.id} section="candidates" total={result.paging?.candidates.total ?? result.candidates.length}
+                shown={result.candidates.length} render={(c, i) => <CandidateRow key={`m${i}`} c={c} labels={labels} />} />
+            </ul>
             {result.candidates.length === 0 && <p className="text-sm">No candidate link was found.</p>}
           </section>
           <section aria-label="No link found">
             <h2 className="font-semibold">Pairs with no link found ({result.counts.no_links.toLocaleString("en-US")})</h2>
             <p className="text-sm text-muted-foreground">Each says what was searched. It is not proof that no link exists.</p>
-            <ul className="space-y-2">{result.no_links.map((n, i) => (
-              <li key={i} className="rounded border p-2 text-sm">
-                <Names refs={n.members} labels={labels} /><p>{n.says}</p>
-                {n.searched.map((s, j) => <p key={`s${j}`} className="text-muted-foreground">Searched: {s}</p>)}
-                {n.out_of_reach.map((s, j) => <p key={`o${j}`} className="text-muted-foreground">Out of reach: {s}</p>)}
-              </li>))}</ul>
+            <ul className="space-y-2">
+              {result.no_links.map((n, i) => <NoLinkRow key={i} n={n} labels={labels} />)}
+              <MoreRows<NoLink> caseId={caseId} runId={run.id} section="no_links" total={result.paging?.no_links.total ?? result.no_links.length}
+                shown={result.no_links.length} render={(n, i) => <NoLinkRow key={`m${i}`} n={n} labels={labels} />} />
+            </ul>
           </section>
           <section aria-label="Analyses run">
             <h2 className="font-semibold">Analyses run</h2>

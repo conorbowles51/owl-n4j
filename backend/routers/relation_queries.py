@@ -73,6 +73,17 @@ def rerun(case_id: UUID, selection_id: UUID, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.get("/{case_id}/relation-runs/{run_id}/rows", dependencies=[Depends(require_case_view)])
+def read_rows(case_id: UUID, run_id: UUID, section: str, offset: int = 0, limit: int = runs.PAGE,
+              db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        return runs.rows(db, case_id, str(run_id), section, offset, limit)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/{case_id}/relation-runs/{run_id}", dependencies=[Depends(require_case_view)])
 def read_run(case_id: UUID, run_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
@@ -115,7 +126,8 @@ def report(case_id: UUID, run_id: UUID, request: ReportRequest, db: Session = De
     from postgres.models.case import Case
     from services.relations import report as R
     try:
-        run = runs.view(db, case_id, str(run_id))
+        run = runs.view(db, case_id, str(run_id), with_result=False)
+        run["result"] = runs.full_result(db, case_id, str(run_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     group = case_selections.describe(db, case_id, run["selection_id"], member_limit=10**9)
