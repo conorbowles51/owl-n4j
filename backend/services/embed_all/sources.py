@@ -17,7 +17,9 @@ from sqlalchemy import text
 from services.embed_all.core import Item
 
 AREAS = ("ledger", "accounts", "judgements", "trails", "statement_pages", "casework", "timeline", "parties",
-         "transcripts")
+         "transcripts", "relationships")
+# Read from the graph, which has no cheap change signature: read once an hour per case (runner.HOURLY).
+GRAPH_AREAS = frozenset({"relationships"})
 
 
 def _day(d) -> str:
@@ -194,7 +196,53 @@ def transcripts(conn, case_id) -> Iterator[Item]:
                    extraction_id=str(r.extraction_id or ""), as_read=not (r.confirmed_at or r.corrected))
 
 
-READERS: dict[str, Callable] = {"ledger": ledger, "accounts": accounts, "judgements": judgements, "trails": trails,
+def relationship_item(case_id, row: dict, docs: dict) -> Item | None:
+    """One graph connection that carries a written detail: who, how, whom, the detail, and the quotes it was read from."""
+    detail = str(row.get("detail") or "").strip()
+    if not detail:
+        return None
+    kind = str(row.get("type") or "").replace("_", " ").lower()
+    quotes = row.get("quotes") or []
+    if isinstance(quotes, str):
+        quotes = [quotes]
+    quote_text = " | ".join(str(q).replace("\n", " ") for q in quotes[:3])[:700]
+    body = _join("%s %s %s." % (row.get("a") or "?", kind, row.get("b") or "?"), detail,
+                 ("Date: %s." % row["date"]) if row.get("date") else "",
+                 ("Amount: %s." % row["amount"]) if row.get("amount") else "",
+                 ("Read from: %s" % quote_text) if quote_text else "")
+    cite, page = "", None
+    locs = row.get("locations") or []
+    if isinstance(locs, str):
+        try:
+            locs = json.loads(locs)
+        except ValueError:
+            locs = []
+    for loc in locs if isinstance(locs, list) else []:
+        fid = docs.get(str(loc.get("source_document_id") or ""))
+        if fid:
+            cite = "doc://%s/%s" % (fid, loc.get("page_start") or "")
+            break
+    return Item("relationships", str(row["id"]), body, title="%s %s %s" % (row.get("a") or "?", kind, row.get("b") or "?"),
+                cite=cite or "/cases/%s/graph" % case_id, as_read=True, person=_join(row.get("a"), row.get("b")))
+
+
+def relationships(conn, case_id) -> Iterator[Item]:
+    """Connections between entities that have a detail, with their source quotes (the engine writes these)."""
+    from services.neo4j.driver import driver
+    docs = {str(r[0]): str(r[1]) for r in conn.execute(text(
+        "SELECT id, evidence_file_id FROM financial_source_documents WHERE case_id = :c"), {"c": str(case_id)})}
+    with driver.session() as session:
+        rows = session.run(
+            "MATCH (a)-[r]->(b) WHERE r.case_id = $c AND r.detail IS NOT NULL AND NOT a:RecycleBin AND NOT b:RecycleBin "
+            "RETURN elementId(r) AS id, a.name AS a, type(r) AS type, b.name AS b, r.detail AS detail, r.date AS date, "
+            "r.amount AS amount, r.source_quotes AS quotes, r.source_locations AS locations", c=str(case_id))
+        for row in rows:
+            item = relationship_item(case_id, dict(row), docs)
+            if item is not None:
+                yield item
+
+
+READERS: dict[str, Callable] = {"relationships": relationships, "ledger": ledger, "accounts": accounts, "judgements": judgements, "trails": trails,
                                 "statement_pages": statement_pages, "casework": casework, "timeline": timeline,
                                 "parties": parties, "transcripts": transcripts}
 

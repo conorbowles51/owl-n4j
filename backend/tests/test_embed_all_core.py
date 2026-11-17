@@ -159,3 +159,16 @@ def test_a_new_reader_version_changes_every_area_signature(monkeypatch):
     before = sources.signature(Conn(), "c", "casework")
     monkeypatch.setattr(sources, "SOURCES_VERSION", "s3")
     assert sources.signature(Conn(), "c", "casework") != before
+
+
+def test_a_graph_connection_with_a_detail_becomes_an_item_that_cites_its_statement_page():
+    from services.embed_all import sources
+    row = {"id": "5:abc:1", "a": "Mateo Ruiz", "type": "SENT_PAYMENT", "b": "Elkmere Home Lending",
+           "detail": "Mateo Ruiz sent a mortgage payment to Elkmere Home Lending", "date": "2024-03-02", "amount": 1980.0,
+           "quotes": ["2024-03-02 | ELKMERE HOME LENDING MORTGAGE | 1980.00"],
+           "locations": '[{"source_document_id": "sd1", "page_start": 2}]'}
+    item = sources.relationship_item("c1", row, {"sd1": "file-1"})
+    assert item.cite == "doc://file-1/2" and item.as_read and "sent payment" in item.text
+    assert "ELKMERE HOME LENDING MORTGAGE" in item.text and item.key == "5:abc:1"
+    assert sources.relationship_item("c1", dict(row, detail=" "), {}) is None  # no detail, nothing to search by
+    assert sources.relationship_item("c1", dict(row, locations="[]"), {}).cite == "/cases/c1/graph"

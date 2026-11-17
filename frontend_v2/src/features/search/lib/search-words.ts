@@ -53,6 +53,7 @@ export const MEANING_AREAS: Record<string, string> = {
   timeline: "Timeline",
   parties: "People and names on the phones",
   transcripts: "Transcripts and image text",
+  relationships: "Connections in the graph",
   documents: "Documents",
 }
 export const MEANING_WHY: Record<string, string> = { meaning: "by meaning", words: "by words", both: "by meaning and words" }

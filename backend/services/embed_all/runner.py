@@ -93,8 +93,8 @@ def sync_case(engine, case_id: str, *, store=None, chunks=None, embed=None, area
             results.append({"area": area, "skipped": "pass time used"})
             continue
         with engine.connect() as c:
-            if area == ENTITIES:
-                sig = "hour:%d" % (int(time.time()) // ENTITY_PERIOD_SECONDS)
+            if area == ENTITIES or area in sources.GRAPH_AREAS:
+                sig = "%s|hour:%d" % (sources.SOURCES_VERSION, int(time.time()) // ENTITY_PERIOD_SECONDS)
             elif area == phone_area.AREA:
                 sig = phone_area.signature(c, case_id)
             else:
