@@ -559,6 +559,10 @@ class AgentService:
         for case_id in other_cases:
             if not request.all_cases or not may_open(db, user, case_id):
                 raise PermissionError("Access to a source case changed; the saved work cannot be resumed")
+        # The reads above open a transaction. The model call that follows can take longer than the background
+        # connection's idle-in-transaction limit (10 min), and Postgres then ends the connection and fails the run
+        # (deep run 458cf3b2 at 81 min). Ending it here leaves the session idle, not idle in a transaction.
+        db.commit()
 
     @staticmethod
     def _steering_requests(db: Session, run_id) -> list[dict[str, Any]]:
@@ -577,6 +581,7 @@ class AgentService:
         except Exception:  # noqa: BLE001
             logger.warning("Reading the run's tool switches failed", exc_info=True)
             return []
+        db.commit()  # a read left open would be idle in a transaction during the next long model call
         return [entry for entry in value if isinstance(entry, dict)] if isinstance(value, list) else []
 
     def steer_run(self, *, db: Session, user: User, run_id: UUID, kind: str, group: str | None = None,
