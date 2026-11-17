@@ -648,6 +648,65 @@ class CaseStore:
             "financial_transactions WHERE case_id = :c AND account_id = ANY(CAST(:a AS uuid[])) AND direction = 'debit' "
             "AND COALESCE(transaction_date, posted_date) = :d", a=accs, d=day)]
 
+    # -- places a claim can name ---------------------------------------------------------------------------------
+    def known_places(self) -> list[dict]:
+        """Places a sentence can name: places a person has labelled (with a position) and the addresses on dossiers
+        (named, with no position unless the dossier gives one). ``match`` is the words looked for in a sentence."""
+        if getattr(self, "_known", None) is not None:
+            return self._known
+        out = []
+        try:
+            for label, lat, lon, rad in self.q("SELECT label, lat, lon, radius_m FROM pol_place_cluster WHERE case_id = :c "
+                                               "AND label IS NOT NULL"):
+                out.append({"name": label, "match": label, "lat": lat, "lon": lon, "radius_m": max(float(rad or 0), 100.0),
+                            "how": "a place a person named on the map", "label": ""})
+        except Exception:  # noqa: BLE001
+            self.db.rollback()
+        for p in self.people():
+            for ct in (self.dossier_contacts().get(p["key"]) or []):
+                if ct.get("kind") != "address" or not ct.get("value"):
+                    continue
+                val = str(ct["value"])
+                head = re.split(r",|\d", val, maxsplit=1)[0].strip() or val
+                out.append({"name": f"{head} ({ct.get('label') or 'address'} of {p['label']})", "match": head,
+                            "label": str(ct.get("label") or ""), "owner": p["key"], "address": val,
+                            "lat": ct.get("lat"), "lon": ct.get("lon"), "radius_m": 100.0,
+                            "how": "the address on the dossier"})
+        self._known = out
+        return out
+
+    def dossier_contacts(self) -> dict:
+        if getattr(self, "_contacts", None) is None:
+            self._contacts = {f"person:{pid}": c for pid, c in self.q(
+                "SELECT id, contacts FROM case_profiles WHERE case_id = :c AND archived_at IS NULL AND status = 'active'")}
+        return self._contacts
+
+    def routine_place(self, person: str, kind: str) -> dict | None:
+        """Where a person's phone sits at night (home) or on weekday middays (work), read from its positions: the
+        busiest ~200 m cell with at least ``HOME_MIN_POSITIONS`` positions. A reading by Loupe, said so in ``how``."""
+        p = next((x for x in self.people() if x["key"] == person), None)
+        if not p or not p["phones"]:
+            return None
+        zone = self.zone()
+        hours = "BETWEEN 0 AND 5" if kind == "home" else "BETWEEN 10 AND 15 AND EXTRACT(isodow FROM o.start_utc AT TIME ZONE :z) < 6"
+        rows = self.q("SELECT o.lat, o.lon FROM pol_place_observation o WHERE o.case_id = :c AND o.kind = 'presence' AND "
+                      "o.extraction_id = ANY(CAST(:e AS uuid[])) AND EXTRACT(hour FROM o.start_utc AT TIME ZONE :z) " + hours,
+                      e=p["phones"], z=zone).fetchall()
+        cells = defaultdict(list)
+        for la, lo in rows:
+            cells[(round(la / 0.002), round(lo / 0.002))].append((la, lo))
+        if not cells:
+            return None
+        best = max(cells.values(), key=len)
+        if len(best) < 5:
+            return None
+        lat = sum(x[0] for x in best) / len(best)
+        lon = sum(x[1] for x in best) / len(best)
+        rad = max(150.0, max(M.haversine_m(lat, lon, la, lo) for la, lo in best))
+        when = "between midnight and 5 am" if kind == "home" else "on weekdays between 10 am and 3 pm"
+        return {"lat": lat, "lon": lon, "radius_m": round(rad, 1), "positions": len(best),
+                "how": f"read from {p['label']}'s phone: {len(best)} positions {when} sit within about {int(rad)} m of one spot"}
+
     def facts(self) -> list[dict]:
         from services.corroborate import facts
         return facts.list_facts(self.db, self.case)
