@@ -1,5 +1,6 @@
 """Timeline Router - endpoints for timeline visualization data."""
 
+import logging
 from typing import Any, Literal, Optional
 from urllib.parse import quote
 from uuid import UUID
@@ -406,6 +407,7 @@ def add_timeline_entries(request: TimelineAddition, case_id: UUID = Query(...),
 @router.get("/entries")
 def get_timeline_entries(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
     limit: int = Query(2000, ge=1, le=2000), scope: Literal["all", "significant"] = "all",
+    confirmed_dates_only: bool = Query(False, description="Leave out document dates nobody has confirmed"),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_db_user)):
     try:
         get_case_if_allowed(db=db, case_id=case_id, user=current_user)
@@ -419,6 +421,14 @@ def get_timeline_entries(case_id: UUID = Query(...), offset: int = Query(0, ge=0
             # Photos with a date taken, from the photo's own data. They come with the last page, so each is
             # listed once; a photo a person has added by hand is already in the entries above.
             events = events + photo_events(db, case_id)
+            # Dates read from document text, each labelled as read by Loupe until a person confirms it.
+            # They are added, never swapped in: if they cannot be read, the entries above still come back.
+            from services.document_date_store import document_date_events
+            try:
+                with db.begin_nested():
+                    events = events + document_date_events(db, case_id, confirmed_only=confirmed_dates_only)
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).exception("document dates left off the Timeline for case %s", case_id)
         return dict(case_id=str(case_id), events=events, next_offset=offset + limit if more else None)
     except Exception as exc:
         _handle_error(exc)

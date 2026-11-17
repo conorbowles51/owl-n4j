@@ -69,9 +69,10 @@ def _view(r: DocumentDateReading, original: DocumentDateReading | None = None) -
 def effective(db, case_id, file_ids=None, confirmed_only: bool = False) -> list[dict]:
     """The date to use for each file and kind. A person's latest correction replaces the reading in use, and the
     reading it corrects is returned as ``original``. ``confirmed_only`` drops readings nobody confirmed."""
+    case_id = case_id if isinstance(case_id, uuid.UUID) else uuid.UUID(str(case_id))
     q = select(DocumentDateReading).where(DocumentDateReading.case_id == case_id)
     if file_ids is not None:
-        q = q.where(DocumentDateReading.evidence_file_id.in_(list(file_ids)))
+        q = q.where(DocumentDateReading.evidence_file_id.in_([x if isinstance(x, uuid.UUID) else uuid.UUID(str(x)) for x in file_ids]))
     rows = list(db.execute(q.order_by(DocumentDateReading.created_at)).scalars())
     by_id = {r.id: r for r in rows}
     corrected = {r.corrects_id for r in rows if r.source == "person" and r.corrects_id}
@@ -136,3 +137,35 @@ def backfill(db, case_id=None, limit: int | None = None, apply: bool = False) ->
     if apply:
         db.commit()
     return per_case
+
+
+DOC_EVENT_PREFIX = "docdate:"
+
+
+def document_date_events(db, case_id, confirmed_only: bool = False) -> list[dict]:
+    """Timeline events for dated documents. Each states that the date was read from the text, by Loupe or by a
+    person, and carries the words it came from. A period is one event on its first day."""
+    views = effective(db, case_id, confirmed_only=confirmed_only)
+    if not views:
+        return []
+    names = {str(i): n for i, n in db.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(
+        EvidenceFile.id.in_([uuid.UUID(v["evidence_file_id"]) for v in views]), EvidenceFile.deleted_at.is_(None)))}
+    words = {"written": "Document dated", "signed": "Document signed", "received": "Document received",
+             "period": "Document period"}
+    events = []
+    for v in views:
+        name = names.get(v["evidence_file_id"])
+        if name is None:
+            continue
+        who = v["label"] or f"Confirmed by {v['confirmed_by'] or 'a person'}"
+        span = v["date_from"] if v["date_from"] == v["date_to"] else f"{v['date_from']} to {v['date_to']}"
+        quote = f" Words: “{v['words']}”" + (f", page {v['page']}" if v["page"] else "") if v["words"] else ""
+        events.append(dict(
+            key=f"{DOC_EVENT_PREFIX}{v['id']}", name=words[v["kind"]], type=("Document date" if v["confirmed"] else "Document date, not confirmed"), date=v["date_from"], time=None,
+            amount=None, summary=f"{name}. {span}. {who}.{quote}", notes=None, connections=[],
+            source_references=[name], evidence_file_id=v["evidence_file_id"],
+            source=dict(kind="document_date", id=v["id"], date_basis=who, label=name, state="current"),
+            read_date=dict(kind=v["kind"], date_from=v["date_from"], date_to=v["date_to"], source=v["source"],
+                           confirmed=v["confirmed"], label=v["label"], words=v["words"], page=v["page"],
+                           original=v["original"])))
+    return events

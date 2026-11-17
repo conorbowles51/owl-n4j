@@ -68,7 +68,7 @@ from postgres.models.user import User
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from config import DATA_HOME, EVIDENCE_DATA_ROOT, USE_EVIDENCE_ENGINE
-from datetime import datetime
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 EVIDENCE_ROOT_DIR = EVIDENCE_DATA_ROOT
@@ -874,6 +874,55 @@ def get_evidence_record(
     from services.meaning_search import pending_chunk_counts
     return {**_evidence_record_from_db(record), 'reading_versions': reading_history(db, [record]).get(str(record.id), []),
             'search_pending_chunks': pending_chunk_counts(db, evidence_ids=[record.id]).get(str(record.id), 0)}
+
+
+class DocumentDateCorrection(BaseModel):
+    date_from: date
+    date_to: Optional[date] = None
+
+
+@router.get("/{evidence_id}/dates")
+def document_dates(evidence_id: str, db: Session = Depends(get_db)):
+    """The dates read from this file's text. Each says who read it and whether a person confirmed it; a corrected
+    date comes with the reading it replaces."""
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    from services import document_date_store
+    return {"dates": document_date_store.effective(db, record.case_id, [record.id])}
+
+
+@router.post("/{evidence_id}/dates/{reading_id}/confirm")
+def confirm_document_date(evidence_id: str, reading_id: UUID, db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_db_user)):
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    from routers.case_access import authorize_case_edit
+    from services import document_date_store
+    authorize_case_edit(db, record.case_id, current_user)
+    out = document_date_store.confirm(db, record.case_id, reading_id, current_user.id, current_user.name or current_user.email)
+    if out is None or out["evidence_file_id"] != str(record.id):
+        raise HTTPException(status_code=404, detail="Date not found")
+    db.commit()
+    return out
+
+
+@router.post("/{evidence_id}/dates/{reading_id}/correct")
+def correct_document_date(evidence_id: str, reading_id: UUID, body: DocumentDateCorrection, db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_db_user)):
+    record = _evidence_record_for_id(db, evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    from routers.case_access import authorize_case_edit
+    from services import document_date_store
+    authorize_case_edit(db, record.case_id, current_user)
+    out = document_date_store.correct(db, record.case_id, reading_id, body.date_from, body.date_to or body.date_from,
+                                      current_user.id, current_user.name or current_user.email)
+    if out is None or out["evidence_file_id"] != str(record.id):
+        raise HTTPException(status_code=404, detail="Date not found, or the end is before the start")
+    db.commit()
+    return out
 
 
 @router.get("/{evidence_id}/text-matches", response_model=DocumentTextMatchesResponse)

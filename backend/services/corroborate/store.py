@@ -297,8 +297,37 @@ class CaseStore:
                         "parties": parties, "source": file_id, "source_label": name})
         return out
 
-    def documents_naming(self, people: list[dict]) -> list[str]:
-        """Documents whose text names one of the people in full (surname search first, then the full-name check)."""
+    def dated_documents(self, people: list[dict], windows: list[tuple[datetime, datetime]]) -> list[dict]:
+        """Records for documents that name one of the people and state a date of their own (written, signed or
+        received), read from the text by Loupe or corrected by a person. The day is the document's; the body says
+        so, and says "read by Loupe, not confirmed" until a person confirms the date. Time-of-day is unknown."""
+        from services import document_date_store as D
+        ids = self.documents_naming(people, need_time=False)
+        if not ids or not windows:
+            return []
+        out = []
+        for v in D.effective(self.db, self.case, ids, confirmed_only=getattr(self, "confirmed_dates_only", False)):
+            if v["kind"] == "period":
+                continue
+            day = M.as_utc(datetime.fromisoformat(v["date_from"]))
+            if not any(lo_ <= day <= hi_ or lo_.date() <= day.date() <= hi_.date() for lo_, hi_ in windows):
+                continue
+            row = self.q("SELECT f.original_filename, t.content FROM evidence_document_texts t JOIN evidence_files f ON "
+                         "f.id = t.evidence_file_id WHERE f.id = :f", f=v["evidence_file_id"]).first()
+            if not row:
+                continue
+            name, content = row
+            words = re.sub(r"\s+", " ", content or "")
+            parties = [p["key"] for p in people if any(M.names_match(n, words) for n in p["names"] if n)]
+            who = v["label"] or f"confirmed by {v['confirmed_by'] or 'a person'}"
+            out.append({"ref": f"document_date:{v['id']}", "kind": "doc_row", "at": day, "day_only": True, "parties": parties,
+                        "body": f"Document {v['kind']} {v['date_from']} ({who}): {v['words']}"[:300],
+                        "source": v["evidence_file_id"], "source_label": name, "read_date": True})
+        return out
+
+    def documents_naming(self, people: list[dict], need_time: bool = True) -> list[str]:
+        """Documents whose text names one of the people in full (surname search first, then the full-name check).
+        ``need_time`` keeps only documents with a dated and timed line, as the document rows need."""
         surnames = sorted({M.name_words(n)[-1] for p in people for n in p["names"] if n and len(M.name_words(n)) >= 2})
         if not surnames:
             return []
@@ -307,7 +336,7 @@ class CaseStore:
                 "SELECT f.id, t.content FROM evidence_document_texts t JOIN evidence_files f ON f.id = t.evidence_file_id "
                 "WHERE f.case_id = :c AND f.deleted_at IS NULL AND t.content ~* :rx",
                 rx="(" + "|".join(re.escape(s) for s in surnames) + ")"):
-            if _STAMP.search(content or "") and any(M.names_match(n, content) for p in people for n in p["names"] if n):
+            if (not need_time or _STAMP.search(content or "")) and any(M.names_match(n, content) for p in people for n in p["names"] if n):
                 ids.append(str(fid))
         return ids
 
@@ -398,6 +427,7 @@ class CaseStore:
                     recs.append({"ref": f"document_row:{fid}:{r['index']}", "kind": "doc_row", "at": r["at"],
                                  "parties": r["parties"], "body": r["text"], "source": fid,
                                  "source_label": r["source_label"]})
+        recs.extend(self.dated_documents(people, windows))
         return recs
 
     def activity(self, people: list[dict], windows) -> dict[str, list[datetime]]:

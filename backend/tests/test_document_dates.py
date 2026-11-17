@@ -114,3 +114,48 @@ class Store(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Used(Store):
+    """Where the dates are used: the Timeline events and Corroborate's dated documents."""
+
+    def test_timeline_event_says_read_by_loupe_with_words_until_confirmed_and_the_type_lets_a_filter_drop_it(self):
+        S.store_for_file(self.db, self.file)
+        (e,) = S.document_date_events(self.db, self.case)
+        self.assertEqual((e["date"], e["type"]), ("2026-08-05", "Document date, not confirmed"))
+        self.assertIn(S.READ_LABEL, e["summary"])
+        self.assertIn("Invoice date", e["summary"])
+        rid = S.effective(self.db, self.case)[0]["id"]
+        self.assertEqual(S.document_date_events(self.db, self.case, confirmed_only=True), [])
+        S.confirm(self.db, self.case, rid, None, "Neil Byrne")
+        (e,) = S.document_date_events(self.db, self.case, confirmed_only=True)
+        self.assertEqual(e["type"], "Document date")
+        self.assertIn("Confirmed by Neil Byrne", e["summary"])
+
+    def test_timeline_uses_only_the_corrected_date_and_shows_the_original(self):
+        S.store_for_file(self.db, self.file)
+        rid = S.effective(self.db, self.case)[0]["id"]
+        S.correct(self.db, self.case, rid, date(2026, 8, 7), date(2026, 8, 7), None, "Neil Byrne")
+        (e,) = S.document_date_events(self.db, self.case)
+        self.assertEqual(e["date"], "2026-08-07")
+        self.assertEqual(e["read_date"]["original"]["date_from"], "2026-08-05")
+
+    def test_corroborate_gets_a_day_only_record_for_a_document_naming_the_person(self):
+        from datetime import datetime, timezone
+        from services.corroborate.store import CaseStore as Store
+        S.store_for_file(self.db, self.file)
+        self.db.execute(__import__("sqlalchemy").text("UPDATE evidence_document_texts SET content = :t"),
+                        {"t": "Invoice date: 5 August 2026 billed to Ann Arden total 10"})
+        S.store_for_file(self.db, self.file)
+        stub = Store.__new__(Store)
+        stub.db, stub.case, stub.c = self.db, str(self.case), {"c": str(self.case)}
+        # SQLite keeps a uuid without hyphens; PostgreSQL reads either form
+        stub.q = lambda sql, **p: self.db.execute(__import__("sqlalchemy").text(sql), {**p, "f": p["f"].replace("-", "")})
+        stub.documents_naming = lambda people, need_time=True: [str(self.file)]
+        people = [{"key": "ann", "names": ["Ann Arden"]}]
+        lo, hi = datetime(2026, 8, 5, 22, tzinfo=timezone.utc), datetime(2026, 8, 6, 2, tzinfo=timezone.utc)
+        (rec,) = Store.dated_documents(stub, people, [(lo, hi)])
+        self.assertEqual((rec["kind"], rec["day_only"], rec["parties"]), ("doc_row", True, ["ann"]))
+        self.assertIn("not confirmed", rec["body"])
+        far = (datetime(2026, 9, 1, tzinfo=timezone.utc), datetime(2026, 9, 2, tzinfo=timezone.utc))
+        self.assertEqual(Store.dated_documents(stub, people, [far]), [])

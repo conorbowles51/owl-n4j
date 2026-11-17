@@ -69,6 +69,7 @@ import { toast } from "sonner"
 import { textWorkbenchHref } from "../lib/text-workbench-link"
 import { FileAddActions } from "./FileAddActions"
 import { PhotoDataPanel } from "./PhotoDataPanel"
+import { DocumentDatesPanel } from "./DocumentDatesPanel"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
@@ -618,6 +619,7 @@ function DetailsPanelContent({
           {mediaType === "image" && !fileMissing && (
             <PhotoDataPanel caseId={caseId} fileId={file.id} canEdit={canEdit} />
           )}
+          {!fileMissing && <DocumentDatesPanel caseId={caseId} fileId={file.id} canEdit={canEdit} />}
 
           {/* Smart thumbnail */}
           {!fileMissing && (
