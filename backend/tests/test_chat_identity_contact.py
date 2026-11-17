@@ -29,6 +29,7 @@ class ChatContact(unittest.TestCase):
         self.assertIn("2 calls, 6 messages", out[0]["text"])
         self.assertIn("no person has linked", out[0]["text"])
         self.assertIn("Mateo Ruiz", out[0]["metadata"]["filename"])
+        self.assertTrue(out[0]["metadata"]["no_cite"], "a count has no file to cite; a doc:// link would open nothing")
 
     def test_zero_between_their_numbers_says_no_and_a_similar_name_elsewhere_is_not_them(self):
         def between(conn, case, **k):
@@ -57,6 +58,7 @@ class ChatContact(unittest.TestCase):
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         src = open(os.path.join(here, "services", "rag_service.py"), encoding="utf-8").read()
         self.assertIn("_phone_contact_passages(question, case_id, debug_log)", src)
+        self.assertEqual(src.count('metadata.get("no_cite")'), 2)  # the context's Cite line and the source list
 
 
 if __name__ == "__main__":

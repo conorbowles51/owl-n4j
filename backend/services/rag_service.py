@@ -1251,7 +1251,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 lines.append(f"--- Passage {i}: {doc_name}{page_info}{doc_marker} ---")
                 from services.case_citations import chunk_cite
                 passage_cite = chunk_cite({**metadata, "filename": doc_name})
-                if passage_cite:
+                if passage_cite and not metadata.get("no_cite"):  # a count has no document to open
                     lines.append(f"Cite: {passage_cite}")
                 for about in chunk.get("_about") or ([chunk["about"]] if chunk.get("about") else []):
                     lines.append(f"Source of: {about}")
@@ -2767,7 +2767,7 @@ Only include candidates with score >= 5."""
                 source_payload["page"] = metadata.get("page_start")
             from services.case_citations import chunk_cite
             cite = chunk_cite({**metadata, "filename": str(filename)})
-            if cite and not record_uid:
+            if cite and not record_uid and not metadata.get("no_cite"):
                 source_payload["cite"] = cite
             if record_uid:
                 source_payload.update({

@@ -79,5 +79,6 @@ def passages(conn, case_id, question) -> list:
             "metadata": {"case_id": str(case_id), "doc_id": "phone-contact:%s:%s" % (ida, idb),
                          "doc_name": "Phone contact between %s and %s" % (na, nb),
                          "filename": "Phone contact between %s and %s" % (na, nb),
-                         "ingestion_state": "active", "source_kind": "phone_contact_count"}})
+                         "ingestion_state": "active", "source_kind": "phone_contact_count",
+                         "no_cite": True}})  # a count has no file: no doc:// link to nothing
     return out
