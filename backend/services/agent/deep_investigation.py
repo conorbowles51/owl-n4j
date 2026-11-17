@@ -434,11 +434,22 @@ def checkpoint_state(plan: dict | None) -> dict | None:
     return deepcopy(plan) if plan else None
 
 
+def mark_unsupported_glyphs(text: str) -> str:
+    """Characters the export fonts lack (emoji in a quoted message) would fail the PDF and Word export. Each is
+    written as its code point in brackets, so the reader sees that a symbol was there and nothing is dropped."""
+    import unicodedata
+    from services.agent.export_documents import _export_glyphs
+    supported = _export_glyphs()
+    return "".join(
+        c if (c.isspace() or unicodedata.category(c) in {"Cc", "Cf"} or ord(c) in supported) else "[U+%04X]" % ord(c)
+        for c in text)
+
+
 def report_artifact(answer: str, plan: dict) -> dict | None:
     """The finished answer as a report artifact, so it exports through the existing PDF and Word path. Sections are
     the answer's own headings; text before the first heading is the opening section. None when there is no text."""
     import re
-    text = (answer or "").strip()
+    text = mark_unsupported_glyphs((answer or "").strip())
     if not text:
         return None
     from services.agent.tools import _artifact

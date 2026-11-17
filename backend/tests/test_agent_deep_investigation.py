@@ -245,3 +245,14 @@ def test_deep_run_rereads_and_notes_are_free_without_a_cap(monkeypatch):
     plain = AgentToolContext(case_id="00000000-0000-0000-0000-000000000001")
     refused = [g._free_call_refusal("read_tool_result_page", plain) for _ in range(40)]
     assert any(r is not None for r in refused)
+
+
+def test_report_with_an_emoji_from_a_quoted_message_still_exports_to_pdf():
+    from services.agent.exports import render_artifact_export
+    answer = "# Report\n\n## Contacts\nDesmond's phone lists \"Mateo \U0001f527\" (+1 443-555-0181)."
+    art = D.report_artifact(answer, plan())
+    body = art["data"]["sections"][-1]["content"]
+    assert "[U+1F527]" in body and "\U0001f527" not in body
+    from types import SimpleNamespace
+    obj = SimpleNamespace(type="report", title=art["title"], payload=art["data"], extra_metadata={})
+    assert render_artifact_export(obj, "pdf").content[:4] == b"%PDF"
