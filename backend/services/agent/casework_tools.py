@@ -166,17 +166,20 @@ def case_search_entry_ids(conn, case_id, words: str) -> list[uuid.UUID]:
 
 
 def casework(db, case_id, *, kinds=(), search=None, tag=None, offset=0, limit=20) -> dict[str, Any]:
-    """Notes, findings and theories, newest first, each with its links cited."""
+    """Notes, findings and theories, each with its links cited: newest first, or with ``search`` best match first
+    (the case search's order), so an entry edited a minute ago does not outrank the one that answers the words."""
     from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
     from services.phone import link_states
     conn = db.connection()
     cond = [WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None)]
     if kinds:
         cond.append(WorkspaceEntry.entry_type.in_(list(kinds)))
+    found_order: list[uuid.UUID] | None = None
     if search and search.strip():
         # lx-sharedsearch: the words are searched by the shared case search (words and meaning, every page read),
         # then the other filters apply to the entries it found; a failure raises, no partial list is returned
-        cond.append(WorkspaceEntry.id.in_(case_search_entry_ids(conn, case_id, search.strip())))
+        found_order = case_search_entry_ids(conn, case_id, search.strip())
+        cond.append(WorkspaceEntry.id.in_(found_order))
     if tag and tag.strip():
         t = tag.strip()
         cond.append(WorkspaceEntry.tags.contains([t]) if db.get_bind().dialect.name == "postgresql"
@@ -184,8 +187,14 @@ def casework(db, case_id, *, kinds=(), search=None, tag=None, offset=0, limit=20
     from sqlalchemy import func
     total = int(db.scalar(select(func.count()).select_from(WorkspaceEntry).where(*cond)) or 0)
     offset, limit = max(0, int(offset or 0)), max(1, min(int(limit or 20), 50))
-    entries = db.scalars(select(WorkspaceEntry).where(*cond).order_by(WorkspaceEntry.updated_at.desc(),
-                                                                       WorkspaceEntry.id).offset(offset).limit(limit)).all()
+    if found_order is None:
+        entries = db.scalars(select(WorkspaceEntry).where(*cond).order_by(
+            WorkspaceEntry.updated_at.desc(), WorkspaceEntry.id).offset(offset).limit(limit)).all()
+    else:
+        # the found set is already bounded by the search; page it in the search's order
+        rank = {i: n for n, i in enumerate(found_order)}
+        matching = db.scalars(select(WorkspaceEntry).where(*cond)).all()
+        entries = sorted(matching, key=lambda e: rank.get(e.id, len(rank)))[offset:offset + limit]
     items = []
     for e in entries:
         links = db.scalars(select(WorkspaceEntryLink).where(WorkspaceEntryLink.entry_id == e.id,
@@ -207,7 +216,8 @@ def casework(db, case_id, *, kinds=(), search=None, tag=None, offset=0, limit=20
             "coverage": "Read %d of %d casework entries%s%s%s." % (
                 len(items), total, " (%s)" % ", ".join(kinds) if kinds else "",
                 " tagged %s" % tag.strip() if tag and tag.strip() else "",
-                " found by the case search for %r (the words, and entries close in meaning)" % search.strip()
+                " found by the case search for %r (the words, and entries close in meaning), best match first"
+                % search.strip()
                 if search and search.strip() else ""),
             "limitation": ("Only %d of %d are in this result; read on with offset %d." % (len(items), total, nxt))
             if nxt is not None else None, "link_states": _link_state_note(marked)}
