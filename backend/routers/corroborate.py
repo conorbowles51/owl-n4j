@@ -54,6 +54,16 @@ def list_incidents(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, An
     return {"incidents": incidents.incident_dates(db, case_id)}
 
 
+@router.get("/{case_id}/corroborate/drafts/{draft_id}", dependencies=[Depends(require_case_view)])
+def read_draft(case_id: UUID, draft_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """A question the assistant drafted: its items and question, for the composer. Reading it runs nothing."""
+    group = case_selections.describe(db, case_id, str(draft_id), member_limit=10**9)
+    if group is None or group["group_type"] != "relation_query" or (group.get("how") or {}).get("surface") != "assistant_draft":
+        raise HTTPException(status_code=404, detail="That draft is not in this case.")
+    return {"id": group["id"], "members": [{k: v for k, v in m.items() if k in ("type", "id", "label", "quote")} for m in group["members"]],
+            "question": (group.get("how") or {}).get("question") or {}, "drafted_by": "assistant"}
+
+
 class GroupRequest(BaseModel):
     members: list[Member] = Field(min_length=1, max_length=case_selections.MAX_MEMBERS)
     by: str = Field(max_length=20)

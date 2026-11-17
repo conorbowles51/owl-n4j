@@ -135,6 +135,8 @@ export const corroborateAPI = {
   area: (caseId: string, areas: number[][][]) => fetchAPI<AreaSelection>(`${base(caseId)}/area`, { method: "POST", body: { areas } }),
   group: (caseId: string, members: RelationMember[], by: GroupBy) =>
     fetchAPI<Grouped>(`${base(caseId)}/group`, { method: "POST", body: { members, by } }),
+  draft: (caseId: string, id: string) =>
+    fetchAPI<{ id: string; members: RelationMember[]; question: { kind?: string; text?: string; chips?: Record<string, unknown> }; drafted_by: string }>(`${base(caseId)}/drafts/${encodeURIComponent(id)}`),
   incidents: (caseId: string) => fetchAPI<{ incidents: Incident[] }>(`${base(caseId)}/incidents`),
   subsets: (caseId: string) => fetchAPI<{ subsets: Subset[] }>(`${base(caseId)}/subsets`),
   saveSubset: (caseId: string, name: string, members: RelationMember[]) =>

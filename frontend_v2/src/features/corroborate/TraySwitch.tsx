@@ -5,6 +5,7 @@ import { useSwitch } from "@/lib/ui-switches"
 // The selection tray, its question menu and the item keys load only when the switch is on, so they stay out of the
 // main script (the size budget in frontend_v2/scripts/bundle-budget.js).
 const CorroborateTray = lazy(() => import("./CorroborateTray").then((m) => ({ default: m.CorroborateTray })))
+const DraftOpener = lazy(() => import("./DraftOpener").then((m) => ({ default: m.DraftOpener })))
 const ItemKeys = lazy(() => import("./ItemKeys").then((m) => ({ default: m.ItemKeys })))
 
 /** Behind the switch `corroborate-v2` (off until Neil approves the page): the selection tray, else the look tray. */
@@ -15,6 +16,7 @@ export function TraySwitch() {
     <Suspense fallback={null}>
       <CorroborateTray />
       <ItemKeys />
+      <DraftOpener />
     </Suspense>
   )
 }

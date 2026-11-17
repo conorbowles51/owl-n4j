@@ -17,7 +17,7 @@ const CHIP_WORDS: Record<keyof QuestionChips, string> = { when: "When", nights: 
  * three to five questions each with its count, and shows the chosen question as editable chips. Loupe picks what to
  * compare with and shows it; the person can change it. Corroborate saves the whole selection as one group and runs it.
  */
-export function QuestionMenu({ caseId, onClose, initialScope }: { caseId: string; onClose: () => void; initialScope?: Scope }) {
+export function QuestionMenu({ caseId, onClose, initialScope, draftedKind }: { caseId: string; onClose: () => void; initialScope?: Scope; /** A question the assistant drafted: it opens chosen, marked as the assistant's, and runs only when the person presses Corroborate. */ draftedKind?: string }) {
   const parts = useSelection(caseId)
   const members = selectionMembers(parts)
   const key = members.map((m) => `${m.type}:${m.id}`).join("|")
@@ -36,9 +36,9 @@ export function QuestionMenu({ caseId, onClose, initialScope }: { caseId: string
   }
   useEffect(() => {
     if (preview.data && !picked && preview.data.questions.length) {
-      choose(preview.data.questions[0])
+      choose(preview.data.questions.find((x) => x.kind === draftedKind) ?? preview.data.questions[0])
     }
-  }, [preview.data, picked])
+  }, [preview.data, picked, draftedKind])
   const run = async () => {
     if (!picked || !chips) return
     setBusy(true)
@@ -89,7 +89,7 @@ export function QuestionMenu({ caseId, onClose, initialScope }: { caseId: string
       <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Corroborate</DialogTitle>
-          <DialogDescription>Pick the question. Loupe checks every kind of record that applies. The records show what occurs together, not why.</DialogDescription>
+          <DialogDescription>{draftedKind ? "The assistant drafted this question. Check it, change it if you want, then press Corroborate. Nothing has run. " : ""}Pick the question. Loupe checks every kind of record that applies. The records show what occurs together, not why.</DialogDescription>
         </DialogHeader>
         {members.length === 0 && <p className="text-sm">Nothing is selected.</p>}
         {preview.isLoading && <p role="status" className="text-sm">Reading {members.length.toLocaleString("en-US")} selected items…</p>}

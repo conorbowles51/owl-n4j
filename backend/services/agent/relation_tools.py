@@ -16,6 +16,15 @@ class RelationArgs(BaseModel):
     limit: int = Field(25, ge=1, le=100)
 
 
+class DraftArgs(BaseModel):
+    members: list[dict] = Field(..., min_length=1, max_length=500, description=(
+        "The items to ask about, each {type, id, label?}: phone_record (a record uid), financial_transaction, evidence, "
+        "graph_entity, person, phone, document_row."))
+    kind: str = Field("in_contact", description="The question: in_contact, together, payment, every_time, who_else, statement, who_used, connected, behaviour_change or document.")
+    text: str = Field(..., max_length=300, description="The question in plain words, as the person would read it.")
+    people: list[str] = Field(default_factory=list, description="Person keys to ask about, if known.")
+
+
 def cite_for(item: dict) -> str:
     form = CITE.get(item["type"])
     return form.format(id=item["id"]) if form else f"{item['type']}:{item['id']} ({item['label']})"
@@ -80,7 +89,36 @@ def make_relation_tools(context):
         return context.result("get_relation_results", data,
                               summary=f"Read {len(page)} of {len(rows)} {section.replace('_', ' ')} ({how}).")
 
+    def draft_corroborate_question(members, text, kind="in_contact", people=()):
+        """Save a drafted question for the person to open in the Corroborate composer. It is never run here."""
+        from services.corroborate import questions
+        with (context.ledger_session_factory or _financial_session)() as db:
+            user = db.get(User, UUID(str(context.user_id))) if context.user_id else None
+            if user is None or not user.is_active:
+                raise PermissionError("An active case editor is required.")
+            check_case_access(db, UUID(str(context.case_id)), user, required_permission=("case", "edit"))
+            if questions.canonical(kind) is None:
+                return context.result("draft_corroborate_question", {"error": "Unknown question kind."},
+                                      summary="That question is not one Corroborate asks.", status="error", error="Unknown question kind.")
+            try:
+                group = runs.save_group(db, case_id=context.case_id, members=list(members), user=user, surface="assistant_draft",
+                                        question={"kind": questions.canonical(kind), "text": text,
+                                                  "chips": {"people": list(people), "what": "drafted by the assistant, not confirmed"}})
+            except case_selections.SelectionError as exc:
+                db.rollback()
+                return context.result("draft_corroborate_question", {"error": str(exc)}, summary=str(exc), status="error", error=str(exc))
+        link = f"/cases/{context.case_id}/agent?corro_draft={group['id']}"
+        data = {"draft_id": group["id"], "items": group["member_count"], "left_out": group.get("left_out", 0), "open_link": link,
+                "rule": ("This is a draft. Nothing has run. Tell the person it opens in the Corroborate composer, where they check "
+                         "the question and press Corroborate. Give the link as [Open in Corroborate](" + link + ").")}
+        return context.result("draft_corroborate_question", data,
+                              summary=f"Drafted a question over {group['member_count']} items. Not run.")
+
     return [StructuredTool.from_function(
+        func=draft_corroborate_question, name="draft_corroborate_question", args_schema=DraftArgs,
+        description=("Draft a Corroborate question over items you have found, for the person to open in the composer. It never runs "
+                     "the question: the person confirms it. Offer the returned link in your answer.")),
+        StructuredTool.from_function(
         func=get_relation_results, name="get_relation_results", args_schema=RelationArgs,
         description=("Read the link analysis of a group the person marked with 'Corroborate': candidate links "
                      "(kind, members, strength by stated rule, the chance beside each), the pairs where nothing was found with "

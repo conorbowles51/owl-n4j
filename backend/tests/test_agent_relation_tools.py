@@ -46,3 +46,25 @@ def test_overview_is_one_compact_read_with_totals_and_cites():
     assert data["more"] and "rec://p" in data["items"][0]["cite"] and data["items"][1]["cite"] == "txn://t"
     assert len(json.dumps(data)) < 20000  # 40 candidates of 1,800 characters each would be 70,000
     assert "not proof" in data["rule"]
+
+
+def test_a_drafted_question_is_saved_for_the_person_and_never_run():
+    context, seen = make()
+    with mock.patch("services.case_service.check_case_access"), \
+         mock.patch("services.relations.runs.save_group", return_value={"id": "g1", "member_count": 2}) as save, \
+         mock.patch("services.relations.runs.start") as start:
+        t = {x.name: x for x in relation_tools.make_relation_tools(context)}["draft_corroborate_question"]
+        t.func(members=[{"type": "phone_record", "id": "p"}], text="Were they in contact?", kind="in_contact")
+    assert save.call_args.kwargs["surface"] == "assistant_draft"
+    start.assert_not_called()
+    assert seen["data"]["open_link"].endswith("/agent?corro_draft=g1")
+    assert "Nothing has run" in seen["data"]["rule"]
+
+
+def test_a_draft_with_an_unknown_question_kind_is_refused():
+    context, seen = make()
+    with mock.patch("services.case_service.check_case_access"), mock.patch("services.relations.runs.save_group") as save:
+        t = {x.name: x for x in relation_tools.make_relation_tools(context)}["draft_corroborate_question"]
+        t.func(members=[{"type": "phone_record", "id": "p"}], text="x", kind="guilty")
+    save.assert_not_called()
+    assert seen["status"] == "error"

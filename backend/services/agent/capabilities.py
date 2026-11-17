@@ -232,6 +232,7 @@ SUPPORT_TOOLS: dict[str, str] = {
     "propose_claim": "proposes work", "propose_entity": "proposes work", "propose_glossary_term": "proposes work",
     "propose_assumption": "proposes work", "propose_relation_hypotheses": "proposes work",
     "get_relation_results": "reads how marked items could be linked",
+    "draft_corroborate_question": "proposes work",
     "propose_dossier_change": "proposes dossier creation and updates",
     "identifier_in_other_cases": "reads other cases", "list_my_cases": "reads other cases",
     "find_identifier_across_cases": "reads other cases", "read_in_case": "reads other cases",

@@ -58,7 +58,7 @@ GROUPS: tuple[dict[str, Any], ...] = (
     {"id": "casework", "name": "Case notes and theories", "about": "Notes, findings, theories, tasks and the case set-up",
      "words": r"notes?|findings?|theor\w*|tasks?|deadlines?|mandate|glossary|code words?|casework|background",
      "tools": ("get_casework", "get_theory", "get_case_configuration", "get_case_work", "get_glossary",
-               "plan_theory_sweep", "get_relation_results")},
+               "plan_theory_sweep", "get_relation_results", "draft_corroborate_question")},
     {"id": "outputs", "name": "Tables, charts and reports", "about": "Build and revise tables, charts, maps and reports",
      "words": r"tables?|charts?|diagrams?|draw|build|make|create|reports?|workbook|spreadsheet|slides?|"
               r"presentation|export|update|revise|summar\w*",
