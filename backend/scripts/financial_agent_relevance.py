@@ -422,6 +422,20 @@ def _base_tree(sha):
     return tree
 
 
+# A worker whose tree logged one of these at start ran some searches without their store: its side measures neither
+# tree (17 Nov 13:48 UTC a run on the loaded box logged Chroma's "pool timed out" and started without vector search).
+DEGRADED_START = ('Vector search will be disabled', 'Could not initialize VectorDBService')
+
+
+def degraded_lines(worker_log_text):
+    """The verdict lines for a gate run whose worker started without a search store; [] when both started whole."""
+    hit = next((m for m in DEGRADED_START if m in (worker_log_text or '')), None)
+    if not hit:
+        return []
+    return ['NO VERDICT: a worker started without vector search ("%s" in the workers log), so this run measures '
+            'neither tree; run the gate again' % hit]
+
+
 class Worker:
     """One tree's worker process (``worker`` subcommand, run from that tree's backend with this file's runner)."""
 
@@ -505,8 +519,13 @@ def cmd_gate(args):
         tree = _base_tree(head)
         os.makedirs(GATE_DIR, mode=0o700, exist_ok=True)
         stem = os.path.join(GATE_DIR, '%s-%s-vs-%s' % (args.label, sha[:12], head[:12]))
+        wlog = stem + '.workers.log'
+        start = os.path.getsize(wlog) if os.path.exists(wlog) else 0
         base, cand, bsha, csha = interleaved(paths, args.kinds, args.repeat, os.path.join(tree, 'backend'),
-                                             os.path.abspath('.'), stem + '.workers.log')
+                                             os.path.abspath('.'), wlog)
+        with open(wlog, errors='replace') as f:
+            f.seek(start)
+            degraded = degraded_lines(f.read())
         write_runs(stem + '.base.json', base, paths, tree)
         write_runs(stem + '.cand.json', cand, paths)
         cmp = R.compare(base, cand)
@@ -523,6 +542,9 @@ def cmd_gate(args):
         if cand[0]['missing']:
             lines.append('tools not in the candidate (not scored): %s' % ', '.join(cand[0]['missing']))
         verdicts.append(cmp['verdict'])
+        if degraded:
+            lines += degraded
+            verdicts.append('NO VERDICT')
     for spec in args.reports or []:
         # R1=base1.md,base2.md:cand1.md,cand2.md  (baseline files : candidate files), or R1=cand1.md,cand2.md
         rid, files = spec.split('=', 1)
@@ -539,7 +561,7 @@ def cmd_gate(args):
                 ''.join('; %s %s->%s (noise %s)' % (x['metric'], x['base'], x['cand'], x['noise'])
                         for x in rc['losses'])))
             verdicts.append(rc['verdict'])
-    final = 'FAIL' if 'FAIL' in verdicts else ('PASS' if verdicts else 'NO DATA')
+    final = final_verdict(verdicts)
     lines.insert(1, 'VERDICT: %s' % final)
     os.makedirs(VERDICT_DIR, exist_ok=True)
     out = os.path.join(VERDICT_DIR, '%s-%s.txt' % (args.label, sha[:12]))
@@ -548,6 +570,13 @@ def cmd_gate(args):
     print('\n'.join(lines))
     print('written to %s' % out)
     return 0 if final == 'PASS' else 1
+
+
+def final_verdict(verdicts):
+    """A run that measured neither tree outranks its PASS or FAIL; then any FAIL; else PASS (NO DATA: nothing ran)."""
+    if 'NO VERDICT' in verdicts:
+        return 'NO VERDICT'
+    return 'FAIL' if 'FAIL' in verdicts else ('PASS' if verdicts else 'NO DATA')
 
 
 def main(argv=None):

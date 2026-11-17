@@ -359,3 +359,15 @@ def test_next_offset_reads_the_tools_page_marker():
     assert R.next_offset({'result_id': 'r', 'data': {'next_offset': 50, 'items': []}}) == 50
     assert R.next_offset({'next_offset': None}) is None and R.next_offset({'next_offset': True}) is None
     assert R.next_offset([1, 2]) is None
+
+
+def test_a_worker_started_without_vector_search_gives_no_verdict():
+    """17 Nov 13:48 UTC: Chroma's pool timed out on the loaded box and the tree started with vector search off; a
+    gate on such a worker measures neither tree, so it neither passes nor fails."""
+    log = ('Warning: Could not initialize VectorDBService: RuntimeError: ChromaDB HTTP client failed: pool timed out\n'
+           '   Vector search will be disabled.\n')
+    lines = G.degraded_lines(log)
+    assert len(lines) == 1 and lines[0].startswith('NO VERDICT')
+    assert G.degraded_lines('[Embedding] Using OpenAI model: text-embedding-3-small\n') == []
+    assert G.final_verdict(['PASS', 'NO VERDICT']) == 'NO VERDICT' == G.final_verdict(['FAIL', 'NO VERDICT'])
+    assert G.final_verdict(['PASS', 'FAIL']) == 'FAIL' and G.final_verdict([]) == 'NO DATA'
