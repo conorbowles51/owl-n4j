@@ -27,7 +27,9 @@ MAX_DISTANCE = 1.44  # squared L2 of unit vectors: cosine 0.28 and above. Measur
 # score cosine 0.31 to 0.50, a query with no answer ("burner") scores 0.22 to 0.24 against the nearest unrelated text
 SNIPPET = 400
 DERIVED_AREAS = frozenset({"relationships"})  # graph text the engine wrote from a source; the source record ranks first
-DERIVED_WEIGHT = 0.6  # a derived hit's fused score is scaled by this, so source records outrank it at equal evidence
+ENTITY_WEIGHT = 0.6  # a graph entity (a bare name) scores below a source record with the same evidence; measured 17 Nov
+ALSO_SHOWN = 5  # connections folded into one hit: their titles and openings stay on the hit
+ALSO_CHARS = 240
 DERIVED_OFFSET = 3  # a derived hit ranks as if this many places further down its own area's list
 FETCH = 60
 
@@ -44,15 +46,27 @@ def _ts(value):
 
 
 def _snippet(body: str, terms: list[str]) -> str:
+    """The window of the text that holds the most of the question's terms (a statement page of 40 lines shows the
+    line that matched, not the first line that has one of the words)."""
     body = body or ""
-    at = -1
     low = body.casefold()
-    for t in terms:
-        at = low.find(t.casefold())
-        if at >= 0:
-            break
-    start = max(0, at - SNIPPET // 3) if at >= 0 else 0
-    return body[start:start + SNIPPET].strip()
+    wanted = [t.casefold() for t in terms if t]
+    spots: list[int] = []
+    for t in wanted:
+        at, n = low.find(t), 0
+        while at >= 0 and n < 100:
+            spots.append(at)
+            at, n = low.find(t, at + 1), n + 1
+    if not spots:
+        return body[:SNIPPET].strip()
+    best, best_start = -1, 0
+    for at in sorted(set(spots)):
+        start = max(0, at - SNIPPET // 3)
+        window = low[start:start + SNIPPET]
+        got = sum(1 for t in wanted if t in window)
+        if got > best:
+            best, best_start = got, start
+    return body[best_start:best_start + SNIPPET].strip()
 
 
 def _where(case_id, areas, date_from, date_to):
@@ -147,6 +161,8 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
             first = subjects.setdefault((h["area"], h["cite"], who), h)
             if first is not h:
                 first["also"] = first.get("also", 0) + 1
+                if len(first.setdefault("also_hits", [])) < ALSO_SHOWN:  # the collapsed facts stay readable
+                    first["also_hits"].append({"title": h["title"], "text": h["text"][:ALSO_CHARS]})
                 continue
         seen.add(one)
         kept.append(h)
@@ -228,8 +244,8 @@ def fuse(meaning: list[dict], words: list[dict], limit: int) -> list[dict]:
             byk[k] = dict(h, matched="words")
         scores[k] = scores.get(k, 0) + 1.0 / (K + rank)
     for k in scores:
-        if k[0] in DERIVED_AREAS or k[0] == "entities":
-            scores[k] *= DERIVED_WEIGHT
+        if k[0] == "entities":
+            scores[k] *= ENTITY_WEIGHT
     out = []
     for k in sorted(scores, key=lambda k: -scores[k])[:limit]:
         h = byk[k]

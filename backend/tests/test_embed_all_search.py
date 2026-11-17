@@ -201,8 +201,23 @@ def test_phone_windows_and_document_passages_are_asked_for_in_separate_queries()
     assert sorted(h["area"] for h in hits) == ["documents", "phone_text"]  # no hit twice
 
 
-def test_derived_graph_text_scores_below_a_source_record_with_the_same_evidence():
-    meaning = [{"area": "relationships", "key": "r", "distance": 0.4, "text": "x", "person": "", "area_rank": 1},
-               {"area": "entities", "key": "e", "distance": 0.4, "text": "x", "person": "", "area_rank": 1},
+def test_a_graph_entity_scores_below_a_source_record_with_the_same_evidence():
+    meaning = [{"area": "entities", "key": "e", "distance": 0.4, "text": "x", "person": "", "area_rank": 1},
                {"area": "documents", "key": "d", "distance": 0.4, "text": "y", "person": "", "area_rank": 1}]
     assert [h["key"] for h in S.fuse(meaning, [], 10)][0] == "d"
+
+
+def test_collapsed_connections_stay_readable_on_the_hit_that_stands_for_them():
+    def rel(key, b, dist):
+        title = "storage agreement unit 212 mentioned in %s" % b
+        return ("%s. read from: quote %s" % (title, b),
+                meta("relationships", key, title=title, person="storage agreement unit 212 " + b, cite="/cases/c/graph"), dist)
+    hits = S.meaning_hits("c", [0.1], Coll([rel("r%d" % i, "place%d" % i, 0.5 + i * 0.01) for i in range(8)]), None,
+                          ["relationships"])
+    assert len(hits) == 1 and hits[0]["also"] == 7
+    assert len(hits[0]["also_hits"]) == S.ALSO_SHOWN and "quote place1" in hits[0]["also_hits"][0]["text"]
+
+
+def test_the_snippet_shows_the_window_with_most_of_the_question_words():
+    body = "cash note. " + "x " * 300 + "CASH DEPOSIT BR 031 WEXMOOR posted"
+    assert "WEXMOOR" in S._snippet(body, ["cash", "deposit", "posted"])
