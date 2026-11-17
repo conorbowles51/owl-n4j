@@ -17,7 +17,7 @@ from postgres.session import get_db
 from routers.case_access import require_case_edit, require_case_view
 from routers.users import get_current_db_user
 from services import case_selections
-from services.corroborate import area, claims as saved_claims, facts, incidents, pasted, preview, questions, subsets
+from services.corroborate import area, claims as saved_claims, facts, grouping, incidents, pasted, preview, questions, subsets
 from services.corroborate import scope as scope_rules
 from services.relations import runs
 
@@ -52,6 +52,27 @@ def read_preview(case_id: UUID, request: PreviewRequest, db: Session = Depends(g
 def list_incidents(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Dates the case's theories and findings state, for the preset windows round an incident."""
     return {"incidents": incidents.incident_dates(db, case_id)}
+
+
+class GroupRequest(BaseModel):
+    members: list[Member] = Field(min_length=1, max_length=case_selections.MAX_MEMBERS)
+    by: str = Field(max_length=20)
+
+
+@router.post("/{case_id}/corroborate/group", dependencies=[Depends(require_case_view)])
+def group_selection(case_id: UUID, request: GroupRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """The selection grouped by person, day, place, amount or app. Whole counts; what cannot be placed is counted."""
+    from services.corroborate.store import CaseStore
+    store = CaseStore(db, case_id)
+    members = [m.model_dump(exclude_none=True) for m in request.members]
+    try:
+        points, unread = store.selection_points(members)
+        names = {p["key"]: p["label"] for p in store.people()}
+        out = grouping.group_points(points, request.by, store.zone(), names)
+    except (case_selections.SelectionError, grouping.GroupError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    out["unread"] = len(unread)
+    return out
 
 
 class ListRequest(BaseModel):

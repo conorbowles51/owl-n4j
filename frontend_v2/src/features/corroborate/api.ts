@@ -75,6 +75,25 @@ export interface Incident {
   title: string
 }
 
+export type GroupBy = "person" | "day" | "place" | "amount" | "app"
+export interface ItemGroup {
+  key: string
+  label: string
+  count: number
+  members: RelationMember[]
+  people: string[]
+}
+export interface Grouped {
+  by: GroupBy
+  groups: ItemGroup[]
+  group_count: number
+  clipped: number
+  in_several_groups: number
+  left_out: { count: number; why: string }[]
+  left_out_total: number
+  unread: number
+}
+
 export interface Subset {
   id: string
   name: string
@@ -114,6 +133,8 @@ export const corroborateAPI = {
   run: (caseId: string, body: { members: RelationMember[]; question: Record<string, unknown>; surface: string }) =>
     fetchAPI<{ group: { id: string; member_count: number; left_out: number } }>(`${base(caseId)}/run`, { method: "POST", body }),
   area: (caseId: string, areas: number[][][]) => fetchAPI<AreaSelection>(`${base(caseId)}/area`, { method: "POST", body: { areas } }),
+  group: (caseId: string, members: RelationMember[], by: GroupBy) =>
+    fetchAPI<Grouped>(`${base(caseId)}/group`, { method: "POST", body: { members, by } }),
   incidents: (caseId: string) => fetchAPI<{ incidents: Incident[] }>(`${base(caseId)}/incidents`),
   subsets: (caseId: string) => fetchAPI<{ subsets: Subset[] }>(`${base(caseId)}/subsets`),
   saveSubset: (caseId: string, name: string, members: RelationMember[]) =>

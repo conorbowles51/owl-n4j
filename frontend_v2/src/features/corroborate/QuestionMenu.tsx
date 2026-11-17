@@ -4,7 +4,9 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { setCurrentQuery } from "@/features/relations/api"
-import { corroborateAPI, scopeIsEmpty, type QuestionChips, type Scope, type SuggestedQuestion } from "./api"
+import { corroborateAPI, scopeIsEmpty, type ItemGroup, type QuestionChips, type Scope, type SuggestedQuestion } from "./api"
+import { againstOthers } from "./group-runs"
+import { GroupPicker } from "./GroupPicker"
 import { ScopeBar } from "./ScopeBar"
 import { selectionMembers, useSelection } from "./selection-store"
 
@@ -56,6 +58,31 @@ export function QuestionMenu({ caseId, onClose, initialScope }: { caseId: string
       setBusy(false)
     }
   }
+  // One group asked about alone, or every group in turn, each against the others (group_vs_group in the engine).
+  const [each, setEach] = useState<{ label: string; id: string }[]>([])
+  const runGroups = async (runs: ItemGroup[], all: ItemGroup[]) => {
+    if (!picked || !chips) return
+    setBusy(true)
+    setError(null)
+    setEach([])
+    const done: { label: string; id: string }[] = []
+    try {
+      for (const g of runs) {
+        const made = await corroborateAPI.run(caseId, { members: g.members, surface: "corroborate", question: { kind: picked.kind, text: picked.text, chips: { ...chips, compare_with: "group_vs_group", against: againstOthers(all, g), group: g.label } } })
+        done.push({ label: g.label, id: made.group.id })
+        setEach([...done])
+      }
+      if (runs.length === 1) {
+        setCurrentQuery(caseId, { id: done[0].id, count: runs[0].count })
+        onClose()
+        navigate(`/cases/${caseId}/relations/${done[0].id}`)
+      }
+    } catch (e) {
+      setError(`${done.length ? `${done.length} of ${runs.length} groups ran. ` : ""}${e instanceof Error ? e.message : "Corroborate could not start."} Nothing else was changed.`)
+    } finally {
+      setBusy(false)
+    }
+  }
   const d = preview.data
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
@@ -80,6 +107,12 @@ export function QuestionMenu({ caseId, onClose, initialScope }: { caseId: string
               {d.left_out.count > 0 && <p role="status">{d.left_out.count.toLocaleString("en-US")} chosen items are not in this case and are left out.</p>}
             </div>
             <ScopeBar caseId={caseId} scope={scope} onChange={(next) => { setScope(next); setPicked(null) }} preview={d} />
+            <GroupPicker caseId={caseId} members={members} busy={busy} onGroup={(g, all) => void runGroups([g], all)} onEach={(runs, all) => void runGroups(runs, all)} />
+            {each.length > 0 && (
+              <ul className="text-xs" aria-label="Group results">
+                {each.map((r) => <li key={r.id}>{r.label}: <a className="underline" href={`/cases/${caseId}/relations/${r.id}`}>open the result</a></li>)}
+              </ul>
+            )}
             <div role="radiogroup" aria-label="Questions" className="flex flex-col gap-1">
               {d.questions.map((q) => (
                 <label key={q.kind} className="flex cursor-pointer items-start gap-2 rounded border px-2 py-1 has-[:checked]:border-primary has-[:checked]:bg-primary/10">

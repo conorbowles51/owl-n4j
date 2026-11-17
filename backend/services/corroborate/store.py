@@ -142,7 +142,7 @@ class CaseStore:
             pt = {"ref": ref, "type": t, "people": [], "label": m.get("label") or ref}
             if t == "phone_record" and _uid(mid):
                 row = self.q(
-                    "SELECT extraction_id, COALESCE(sort_instant, NULL), kind FROM phone_comm_events WHERE case_id = :c "
+                    "SELECT extraction_id, COALESCE(sort_instant, NULL), kind, app FROM phone_comm_events WHERE case_id = :c "
                     "AND record_uid = :u ORDER BY sort_instant NULLS LAST LIMIT 1", u=mid).first()
                 pos = None if row else self.q(
                     "SELECT extraction_id, start_utc, lat, lon, radius_m, kind FROM pol_place_observation WHERE "
@@ -151,7 +151,7 @@ class CaseStore:
                     "SELECT extraction_id, instant_utc FROM pol_activity_event WHERE case_id = :c AND record_uid = :u "
                     "ORDER BY instant_utc LIMIT 1", u=mid).first()
                 if row:
-                    pt.update(phone=str(row[0]), at=M.as_utc(row[1]), kind=row[2])
+                    pt.update(phone=str(row[0]), at=M.as_utc(row[1]), kind=row[2], app=row[3])
                     pt["people"] = [by_phone.get(str(row[0]))] + self._record_parties(mid, people)
                 elif pos:
                     pt.update(phone=str(pos[0]), at=M.as_utc(pos[1]), kind="position" if pos[5] == "presence" else
