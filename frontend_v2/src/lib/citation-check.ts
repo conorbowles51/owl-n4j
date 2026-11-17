@@ -3,9 +3,9 @@ import { fetchAPI } from "@/lib/api-client"
 /** What the case says about one citation (POST /api/citations/resolve; backend services/case_citations.py). */
 export interface CitationResolution {
   href: string
-  scheme: "doc" | "txn" | "rec"
+  scheme: "doc" | "txn" | "rec" | "entity"
   /** other_case: a payment link that carries another case; it opens in that case */
-  status: "ok" | "not_in_case" | "ambiguous" | "other_case"
+  status: "ok" | "not_in_case" | "ambiguous" | "other_case" | "unchecked"
   reason?: string
   page?: number
   page_given: boolean

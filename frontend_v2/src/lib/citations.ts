@@ -7,6 +7,7 @@
  * - txn://<transaction_id>: a ledger row; opens the Financial page on that row at its statement page.
  *   The Financial page payment links written before txn:// (/cases/<case>/financial?...&payment=<id>) are read as txn.
  * - rec://<record_uid>[#<field>]: a phone record (03 section 11.5).
+ * - entity://<graph key>: a graph entity; opens the Graph page with that entity selected.
  */
 const UUID_TEXT = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 const UUID = new RegExp(`^${UUID_TEXT}$`)
@@ -36,6 +37,7 @@ export type Citation =
     }
   | { scheme: "txn"; href: string; target: string; legacy: boolean; linkedCaseId?: string }
   | { scheme: "rec"; href: string; target: string; field: string | null }
+  | { scheme: "entity"; href: string; target: string }
 
 function decode(value: string) {
   try {
@@ -51,6 +53,10 @@ export function parseCitation(href: string | undefined | null): Citation | null 
   if (href.startsWith("txn://")) {
     const target = href.slice(6).replace(/\/+$/, "")
     return UUID.test(target) ? { scheme: "txn", href, target: target.toLowerCase(), legacy: false } : null
+  }
+  if (href.startsWith("entity://")) {
+    const key = decode(href.slice(9).replace(/\/+$/, "")).trim()
+    return key && key.length <= 512 ? { scheme: "entity", href, target: key } : null
   }
   if (href.startsWith("rec://")) {
     const rest = href.slice(6)
@@ -91,8 +97,8 @@ export function isCitationHref(href: string) {
   return parseCitation(href) !== null
 }
 
-const LINK = /\]\(\s*<?((?:doc|txn|rec|evidence):\/\/[^)>\s]*|(?:https?:\/\/[^)\s>]*?)?\/?cases\/[^)\s>]*)>?(?:\s+"[^"]*")?\s*\)/g
-const DEFINITION = /^\s*\[[^\]]+\]:\s*<?((?:doc|txn|rec|evidence):\/\/\S+?)>?\s*$/gm
+const LINK = /\]\(\s*<?((?:doc|txn|rec|entity|evidence):\/\/[^)>\s]*|(?:https?:\/\/[^)\s>]*?)?\/?cases\/[^)\s>]*)>?(?:\s+"[^"]*")?\s*\)/g
+const DEFINITION = /^\s*\[[^\]]+\]:\s*<?((?:doc|txn|rec|entity|evidence):\/\/\S+?)>?\s*$/gm
 
 /** Every citation href in Markdown text, in order, once each (inline links and reference definitions). */
 export function citationHrefs(markdown: string | undefined | null): string[] {
@@ -118,6 +124,11 @@ export function docHrefByName(filename: string, page?: number | null) {
 /** The key that groups citations of one file (its id, or its name when cited by name). */
 export function documentKey(citation: Citation & { scheme: "doc" }) {
   return citation.byName ? `name:${citation.target}` : `id:${citation.target}`
+}
+
+/** The Graph page with one entity selected. */
+export function entityPath(caseId: string, key: string) {
+  return `/cases/${encodeURIComponent(caseId)}/graph?${new URLSearchParams({ entity: key })}`
 }
 
 /** The Financial page on one payment: the payment's details open at its statement page. */

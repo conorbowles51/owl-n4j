@@ -97,12 +97,22 @@ export function GraphPage() {
   const setSpotlightVisible = useGraphStore((s) => s.setSpotlightVisible)
   const spotlightActive = spotlightVisible && subgraphNodeKeys.size > 0
 
-  const workspaceGraphSource = (location.state as { workspaceGraphSource?: {
+  const stateGraphSource = (location.state as { workspaceGraphSource?: {
     sourceType: string
     sourceId: string
     sourceLabel: string
     entityKeys: string[]
   } } | null)?.workspaceGraphSource
+  // An entity:// citation opens this page with ?entity=<graph key>: that entity is selected in the spotlight.
+  const citedEntity = new URLSearchParams(location.search).get("entity")
+  const citedGraphSource = useMemo(
+    () =>
+      citedEntity
+        ? { sourceType: "Cited entity", sourceId: citedEntity, sourceLabel: citedEntity, entityKeys: [citedEntity] }
+        : undefined,
+    [citedEntity]
+  )
+  const workspaceGraphSource = stateGraphSource ?? citedGraphSource
 
   /* ---- Dialog states ---- */
   const [addNodeOpen, setAddNodeOpen] = useState(false)

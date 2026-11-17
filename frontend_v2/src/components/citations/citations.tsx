@@ -3,7 +3,7 @@ import { QueryClientContext, useQuery } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import { resolveCitations, type CitationResolution } from "@/lib/citation-check"
-import { citationHrefs, parseCitation, paymentPath, type Citation } from "@/lib/citations"
+import { citationHrefs, parseCitation, entityPath, paymentPath, type Citation } from "@/lib/citations"
 import { recordPath } from "@/lib/record-links"
 import { DocumentViewer } from "@/components/ui/document-viewer"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -74,6 +74,8 @@ export function CitationProvider({
       showDocument(resolution, resolution.evidence_file_id)
     else if (citation.scheme === "txn")
       window.open(paymentPath(citation.legacy && citation.linkedCaseId ? citation.linkedCaseId : caseId, citation.target), "_blank", "noopener")
+    else if (citation.scheme === "entity")
+      window.open(entityPath(caseId, citation.target), "_blank", "noopener")
     else if (citation.scheme === "rec") {
       if (recordPanel) setRecord(citation.target)
       else window.open(recordPath(caseId, citation.target, citation.field), "_blank", "noopener")
@@ -216,6 +218,19 @@ export function CitationLink({
       <Link to={recordPath(opener.caseId, citation.target, citation.field)} className={className} title={title}>
         {label ?? children}
       </Link>
+    )
+  if (citation.scheme === "entity")
+    return (
+      <a
+        href={entityPath(opener.caseId, citation.target)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+        title={title ?? "Opens this entity on the Graph page"}
+        data-citation-scheme="entity"
+      >
+        {label ?? children}
+      </a>
     )
   if (citation.scheme === "txn")
     return (

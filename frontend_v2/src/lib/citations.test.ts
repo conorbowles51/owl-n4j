@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { citationHrefs, parseCitation } from "./citations"
+import { citationHrefs, entityPath, parseCitation } from "./citations"
 
 const ID = "0b6c2a1e-7d4f-4c1a-9e2b-5f3a8c9d0e11"
 
@@ -28,5 +28,13 @@ describe("one citation parser", () => {
   it("lists each citation of a text once", () => {
     expect(citationHrefs(`[a](txn://${ID}) [b](txn://${ID}) [c](doc://x.pdf/2) [w](https://example.com)\n\n[d]: doc://${ID}/3`))
       .toEqual([`txn://${ID}`, "doc://x.pdf/2", `doc://${ID}/3`])
+  })
+
+  it("reads entity://<graph key> and opens it on the Graph page", () => {
+    expect(parseCitation("entity://harold-vint")).toEqual({ scheme: "entity", href: "entity://harold-vint", target: "harold-vint" })
+    expect(parseCitation("entity://Harold%20Vint")?.target).toBe("Harold Vint")
+    expect(parseCitation("entity://")).toBeNull()
+    expect(citationHrefs("[Vint](entity://harold-vint)")).toEqual(["entity://harold-vint"])
+    expect(entityPath("c1", "Harold Vint")).toBe("/cases/c1/graph?entity=Harold+Vint")
   })
 })
