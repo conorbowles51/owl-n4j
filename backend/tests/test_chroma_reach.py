@@ -29,6 +29,8 @@ class Store:
         self.thin = set()         # only a query deeper than the app's finds them
         self.writes = []
         self.steals = {}          # adding the key takes the only link of the value
+        self.writer_adds = 0      # another writer adds this many records beside each add (a backfill the release runs)
+        self.drop_adds = False    # the server answers an add and stores nothing
 
     def add(self, cid, rid, case, state="active", vector=None):
         self.records[cid][rid] = {"vector": vector or [float(len(self.records[cid]) + 1), 0.0], "document": f"text {rid}",
@@ -118,9 +120,13 @@ def serve(store):
                 for n, rid in enumerate(ids):
                     records[rid] = {"vector": body["embeddings"][n], "metadata": body["metadatas"][n],
                                     "document": body["documents"][n]}
+            if action == "add" and store.drop_adds:
+                return self._send({})
             if action == "add":
                 records[body["ids"][0]] = {"vector": body["embeddings"][0], "metadata": body["metadatas"][0],
                                            "document": body["documents"][0]}
+                for _ in range(store.writer_adds):
+                    store.add(cid, f"w{len(records)}", "case-w")
                 store.orphans.discard(body["ids"][0])
                 if body["ids"][0] in store.steals:
                     store.orphans.add(store.steals.pop(body["ids"][0]))
@@ -542,3 +548,31 @@ def test_check_queues_what_its_search_depth_misses(chroma, tmp_path):
     assert done.returncode == 1, done.stdout + done.stderr
     assert "2 searched records unreached (0 at any depth, 1 already listed)" in done.stdout
     assert (tmp_path / "entities.ids").read_text() == "e7\n"
+
+
+def test_relink_beside_a_writer_that_adds_records_passes(chroma, tmp_path):
+    """17 Nov 05:58: the embed-all backfill added 847 chunks during a release's relink; the count differed, the relink
+    exited 1 and the release stopped, though every relinked record was stored again."""
+    store, url = chroma
+    store.add("c1", "a0", "case-a")
+    store.add("c1", "a1", "case-a")
+    store.orphans.add("a1")
+    store.writer_adds = 3
+    ids = tmp_path / "ids"
+    ids.write_text("a1\n")
+    done = run("relink", "--url", url, "--collection", "chunks", "--ids", str(ids), "--apply")
+    assert done.returncode == 0, done.stdout + done.stderr
+    report = json.loads(done.stdout)
+    assert report["lost"] == [] and report["after"] > report["before"] and "a1" in store.records["c1"]
+
+
+def test_relink_fails_when_a_record_it_deleted_is_not_stored_again(chroma, tmp_path):
+    store, url = chroma
+    store.add("c1", "a0", "case-a")
+    store.add("c1", "a1", "case-a")
+    store.drop_adds = True
+    ids = tmp_path / "ids"
+    ids.write_text("a1\n")
+    done = run("relink", "--url", url, "--collection", "chunks", "--ids", str(ids), "--apply")
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert json.loads(done.stdout)["lost"] == ["a1"]

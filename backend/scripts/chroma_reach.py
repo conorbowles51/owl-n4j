@@ -161,7 +161,7 @@ def sweep(chroma, name):
 
 
 def relink(chroma, name, ids, apply, attempts=RELINK_ATTEMPTS, keep=None):
-    """Delete and add each record from its stored copy, then ask for all of them. The count must end where it began.
+    """Delete and add each record from its stored copy, then ask for all of them. Every one must be stored again.
 
     Asked for after the whole list, not one by one: a record added later can take the only link of one added earlier
     (5 Nov 2026: 1 of 50 lost its link that way within the same run). A list may be old: an id no longer stored is
@@ -197,6 +197,11 @@ def relink(chroma, name, ids, apply, attempts=RELINK_ATTEMPTS, keep=None):
         if not pending:
             break
     report["found"], report["not_found"] = len(questions) - len(pending), pending
+    # Only ids on the list are deleted, so a loss is one of them not stored again. The count is reported, not
+    # compared: a writer the release does not pause (17 Nov: the embed-all backfill, 847 chunks added during one
+    # relink) moves it, and a count that had to end where it began stopped every release.
+    stored = set(chroma.call(f"collections/{cid}/get", {"ids": list(questions), "include": []})["ids"]) if questions else set()
+    report["lost"] = sorted(set(questions) - stored)
     report["after"] = chroma.call(f"collections/{cid}/count")
     return report
 
@@ -212,6 +217,7 @@ def follow(chroma, name, tried, report, keep):
         more = relink(chroma, name, fresh, True, keep=keep)
         report["found"] += more["found"]
         report["not_found"] += more["not_found"]
+        report["lost"] = sorted(set(report.get("lost", [])) | set(more.get("lost", [])))
         report["followed"] = report.get("followed", 0) + len(fresh)
         report["after"] = more["after"]
     report["unreached_after"] = [u["id"] for u in sweep(chroma, name)["unreached"] if u["searched"]]
@@ -472,8 +478,8 @@ def main(argv=None):
         if args.apply:
             follow(chroma, name, ids, report, args.keep)
         print(json.dumps(report))
-        # A record left unreached is reported and stays where it was; only a changed count means something was lost.
-        return 1 if report.get("after", report["before"]) != report["before"] else 0
+        # A record left unreached is reported and stays where it was; only a record deleted and not stored again is lost.
+        return 1 if report.get("lost") else 0
     names = args.collection or list(DEPTHS)
     if args.action == "sweep":
         reports = [sweep(chroma, name) for name in names]
