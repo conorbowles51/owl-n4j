@@ -17,7 +17,7 @@ from postgres.session import get_db
 from routers.case_access import require_case_edit, require_case_view
 from routers.users import get_current_db_user
 from services import case_selections
-from services.corroborate import area, facts, pasted, preview, questions
+from services.corroborate import area, facts, pasted, preview, questions, subsets
 from services.corroborate import scope as scope_rules
 from services.relations import runs
 
@@ -192,3 +192,36 @@ def watch_stop(case_id: UUID, watch_id: UUID, db: Session = Depends(get_db)) -> 
         return facts.stop(db, case_id, watch_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+class SubsetRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    members: list[Member] = Field(min_length=1, max_length=case_selections.MAX_MEMBERS)
+
+
+@router.get("/{case_id}/corroborate/subsets", dependencies=[Depends(require_case_view)])
+def list_subsets(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return {"subsets": subsets.listing(db, case_id)}
+
+
+@router.post("/{case_id}/corroborate/subsets", dependencies=[Depends(require_case_edit)])
+def save_subset(case_id: UUID, request: SubsetRequest, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)) -> dict[str, Any]:
+    try:
+        return subsets.save(db, case_id=case_id, name=request.name, members=[m.model_dump(exclude_none=True) for m in request.members], user=user)
+    except case_selections.SelectionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+class CombineRequest(BaseModel):
+    first: UUID
+    second: UUID
+    op: str
+
+
+@router.post("/{case_id}/corroborate/subsets/combine", dependencies=[Depends(require_case_view)])
+def combine_subsets(case_id: UUID, request: CombineRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        return subsets.combine(db, case_id, str(request.first), str(request.second), request.op)
+    except case_selections.SelectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

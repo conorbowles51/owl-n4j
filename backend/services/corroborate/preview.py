@@ -120,6 +120,7 @@ def read(db, case_id, members: list[dict[str, Any]], *, sources=None, scope: dic
         "selected": len(kept),
         "scope": {"active": scoped["active"], "words": scoped["words"], "outside": scoped["outside"],
                   "outside_total": scoped["outside_total"], "no_time": scoped["no_time"],
+                  "anchors": scoped.get("anchors"), "anchors_date_only": scoped.get("anchors_date_only", 0),
                   "kept": [{"type": i["type"], "id": i["id"]} for i in items] if scoped["active"] else None},
         "left_out": {"count": len(left), "examples": [m["id"] for m in left[:20]]},
         "taken": {

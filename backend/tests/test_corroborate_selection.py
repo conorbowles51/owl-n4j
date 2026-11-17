@@ -180,3 +180,49 @@ def test_a_zone_loupe_does_not_know_is_refused_in_words():
     from services.corroborate import scope
     with pytest.raises(scope.ScopeError, match="not a time zone"):
         scope.apply([_it("evidence", "2026-05-15T23:30:00+00:00")], {"from": "2026-05-01", "zone": "Mars/Base"})
+
+
+def test_a_relative_window_keeps_what_is_within_minutes_of_each_payment_and_says_date_only_payments_cannot_anchor():
+    from services.corroborate import scope
+    pay = {**_it("financial_transaction", "2026-05-15T10:00:00+00:00", ["Marsh"]), "precision": "minute"}
+    dated = {**_it("financial_transaction", "2026-05-16T00:00:00+00:00", ["Marsh"]), "precision": "day"}
+    near = _it("phone_record", "2026-05-15T09:45:00+00:00")
+    far = _it("phone_record", "2026-05-15T08:00:00+00:00")
+    after = _it("phone_record", "2026-05-15T10:20:00+00:00")
+    rel = {"relative": {"anchor_kind": "financial_transaction", "person": "Marsh", "before_min": 30, "after_min": 0}}
+    out = scope.apply([pay, dated, near, far, after], rel)
+    assert [i["at"][11:16] for i in out["kept"] if i["type"] == "phone_record"] == ["09:45"]
+    assert out["anchors"] == 1 and out["anchors_date_only"] == 1
+    assert out["outside"] == {"phone_record": 2}
+    assert out["words"] == ["30 min before to 0 min after each financial transaction involving Marsh"]
+
+
+class SubsetTests(DuplicateTestCase):
+    def setUp(self):
+        super().setUp()
+        Base.metadata.create_all(self.engine, tables=[CaseSelection.__table__])
+        p = mock.patch.object(case_selections, "graph_keys_in_case", side_effect=lambda case_id, keys: set(keys))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_saved_subsets_are_listed_by_name_and_set_operations_count_both_sides(self):
+        from services.corroborate import subsets
+        a = subsets.save(self.db, case_id=self.case.id, name="Kell's circle", members=[{"type": "graph_entity", "id": x} for x in "abc"])
+        b = subsets.save(self.db, case_id=self.case.id, name="Friday nights", members=[{"type": "graph_entity", "id": x} for x in "bcd"])
+        self.assertEqual([s["name"] for s in subsets.listing(self.db, self.case.id)], ["Friday nights", "Kell's circle"])
+        def ids(op):
+            out = subsets.combine(self.db, self.case.id, a["id"], b["id"], op)
+            return [m["id"] for m in out["members"]], out["first"], out["second"]
+        self.assertEqual(ids("both"), (["b", "c"], 3, 3))
+        self.assertEqual(ids("either")[0], ["a", "b", "c", "d"])
+        self.assertEqual(ids("a_not_b")[0], ["a"])
+        self.assertEqual(ids("b_not_a")[0], ["d"])
+
+    def test_a_subset_of_another_case_is_not_found_and_an_unnamed_one_is_refused(self):
+        from services.corroborate import subsets
+        other = subsets.save(self.db, case_id=self.other_case.id, name="x", members=[{"type": "graph_entity", "id": "a"}])
+        mine = subsets.save(self.db, case_id=self.case.id, name="y", members=[{"type": "graph_entity", "id": "a"}])
+        with self.assertRaises(case_selections.SelectionError):
+            subsets.combine(self.db, self.case.id, mine["id"], other["id"], "both")
+        with self.assertRaises(case_selections.SelectionError):
+            subsets.save(self.db, case_id=self.case.id, name="  ", members=[{"type": "graph_entity", "id": "a"}])

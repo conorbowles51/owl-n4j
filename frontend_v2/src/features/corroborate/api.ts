@@ -23,18 +23,19 @@ export interface Scope {
   to?: string
   zone?: string
   recurring?: { weekday: number | null; from_hour: number; to_hour: number }
+  relative?: { anchor_kind: string; person?: string; before_min: number; after_min: number }
   kinds?: string[]
   people?: string[]
 }
 
 export function scopeIsEmpty(s: Scope): boolean {
-  return !s.from && !s.to && !s.recurring && !(s.kinds?.length) && !(s.people?.length)
+  return !s.from && !s.to && !s.recurring && !s.relative && !(s.kinds?.length) && !(s.people?.length)
 }
 
 export interface Preview {
   members: number
   selected: number
-  scope: { active: boolean; words: string[]; outside: Record<string, number>; outside_total: number; no_time: number; kept: { type: string; id: string }[] | null }
+  scope: { active: boolean; words: string[]; outside: Record<string, number>; outside_total: number; no_time: number; anchors: number | null; anchors_date_only: number; kept: { type: string; id: string }[] | null }
   left_out: { count: number; examples: string[] }
   taken: {
     people: { key: string; label: string; count: number }[]
@@ -60,11 +61,31 @@ export interface AreaSelection {
   total: number
 }
 
+export interface Subset {
+  id: string
+  name: string
+  member_count: number
+  created_at: string | null
+}
+
+export interface Combined {
+  members: RelationMember[]
+  count: number
+  first: number
+  second: number
+  words: string
+}
+
 const base = (caseId: string) => `/api/cases/${encodeURIComponent(caseId)}/corroborate`
 
 export const corroborateAPI = {
   preview: (caseId: string, members: RelationMember[], scope?: Scope) =>
     fetchAPI<Preview>(`${base(caseId)}/preview`, { method: "POST", body: { members, ...(scope ? { scope } : {}) } }),
   area: (caseId: string, areas: number[][][]) => fetchAPI<AreaSelection>(`${base(caseId)}/area`, { method: "POST", body: { areas } }),
+  subsets: (caseId: string) => fetchAPI<{ subsets: Subset[] }>(`${base(caseId)}/subsets`),
+  saveSubset: (caseId: string, name: string, members: RelationMember[]) =>
+    fetchAPI<{ id: string; member_count: number }>(`${base(caseId)}/subsets`, { method: "POST", body: { name, members } }),
+  combine: (caseId: string, first: string, second: string, op: string) =>
+    fetchAPI<Combined>(`${base(caseId)}/subsets/combine`, { method: "POST", body: { first, second, op } }),
   matchList: (caseId: string, text: string) => fetchAPI<ListMatch>(`${base(caseId)}/match-list`, { method: "POST", body: { text } }),
 }

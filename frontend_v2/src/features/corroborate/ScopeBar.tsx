@@ -54,6 +54,31 @@ export function ScopeBar({ scope, onChange, preview }: { scope: Scope; onChange:
           </div>
         </div>
       </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={!!scope.relative}
+            onChange={(e) => set({ relative: e.target.checked ? { anchor_kind: "financial_transaction", before_min: 30, after_min: 0 } : undefined })} />
+          Around each payment
+        </label>
+        {scope.relative && (
+          <>
+            <input aria-label="Minutes before" type="number" min={0} className="w-16 rounded border bg-card px-1 py-1 text-sm text-foreground" value={scope.relative.before_min}
+              onChange={(e) => set({ relative: { ...scope.relative!, before_min: Number(e.target.value) } })} />
+            <span>min before,</span>
+            <input aria-label="Minutes after" type="number" min={0} className="w-16 rounded border bg-card px-1 py-1 text-sm text-foreground" value={scope.relative.after_min}
+              onChange={(e) => set({ relative: { ...scope.relative!, after_min: Number(e.target.value) } })} />
+            <span>min after, to</span>
+            <input aria-label="Payments to this person" placeholder="anyone" className="w-28 rounded border bg-card px-1 py-1 text-sm text-foreground" value={scope.relative.person ?? ""}
+              onChange={(e) => set({ relative: { ...scope.relative!, person: e.target.value || undefined } })} />
+          </>
+        )}
+      </div>
+      {preview.scope.anchors !== null && scope.relative && (
+        <p role="status" className="text-xs">
+          {preview.scope.anchors.toLocaleString("en-US")} {preview.scope.anchors === 1 ? "payment has" : "payments have"} a time to hang the window on.
+          {preview.scope.anchors_date_only > 0 && ` ${preview.scope.anchors_date_only.toLocaleString("en-US")} ${preview.scope.anchors_date_only === 1 ? "has" : "have"} only a date, so a window of minutes cannot be placed round ${preview.scope.anchors_date_only === 1 ? "it" : "them"}.`}
+        </p>
+      )}
       <fieldset className="mt-1 flex flex-wrap gap-2 text-xs">
         <legend className="text-muted-foreground">Record kinds</legend>
         {kinds.map((k) => (

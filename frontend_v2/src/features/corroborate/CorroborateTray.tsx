@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { clearSelection, removePart, selectionCount, useSelection } from "./selection-store"
 import { QuestionMenu } from "./QuestionMenu"
 import { PasteList } from "./PasteList"
+import { SavedSubsets } from "./SavedSubsets"
 
 /**
  * The selection tray (lx-corroselect B): every part of the case-wide selection as a removable chip with its count and
@@ -14,6 +15,7 @@ export function CorroborateTray() {
   const parts = useSelection(caseId)
   const [menu, setMenu] = useState(false)
   const [paste, setPaste] = useState(false)
+  const [saved, setSaved] = useState(false)
   if (!caseId) return null
   const total = selectionCount(parts)
   if (!parts.length)
@@ -21,9 +23,11 @@ export function CorroborateTray() {
       <>
         <div className="fixed bottom-3 right-3 z-40">
           <Button size="sm" variant="outline" onClick={() => setPaste(true)} title="Paste numbers, accounts or plates to corroborate">Paste a list…</Button>
+          <Button size="sm" variant="outline" className="ml-1" onClick={() => setSaved(true)}>Saved subsets…</Button>
         </div>
         {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => { setPaste(false); setMenu(true) }} />}
         {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
+      {saved && <SavedSubsets caseId={caseId} onClose={() => setSaved(false)} />}
       </>
     )
   return (
@@ -33,6 +37,7 @@ export function CorroborateTray() {
           <strong>{total.toLocaleString("en-US")} {total === 1 ? "item" : "items"} selected</strong>
           <Button size="sm" onClick={() => setMenu(true)}>Corroborate</Button>
           <button type="button" className="text-muted-foreground underline" onClick={() => setPaste(true)}>Paste a list</button>
+          <button type="button" className="text-muted-foreground underline" onClick={() => setSaved(true)}>Save or combine</button>
           <button type="button" className="text-muted-foreground underline" onClick={() => clearSelection(caseId)}>Clear</button>
         </div>
         <ul className="flex flex-wrap gap-1">
@@ -48,6 +53,7 @@ export function CorroborateTray() {
       </div>
       {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => setPaste(false)} />}
       {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
+      {saved && <SavedSubsets caseId={caseId} onClose={() => setSaved(false)} />}
     </>
   )
 }

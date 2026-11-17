@@ -8,7 +8,7 @@ Nothing is deleted from the selection; the scope only chooses what the question 
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, time
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -41,7 +41,7 @@ def in_scope(item: dict[str, Any], scope: dict[str, Any], zone: ZoneInfo) -> tup
         names = {rules.name_key(n) for n in (item.get("names") or []) + [item.get("label") or ""]}
         if not any(p and any(p in n for n in names) for p in people):
             return False, False
-    needs_time = any(scope.get(k) for k in ("from", "to", "recurring"))
+    needs_time = any(scope.get(k) for k in ("from", "to", "recurring"))  # a relative window is applied in apply()
     if not needs_time:
         return True, False
     when = rules.parse_when(item.get("at"))
@@ -66,6 +66,25 @@ def in_scope(item: dict[str, Any], scope: dict[str, Any], zone: ZoneInfo) -> tup
     return True, False
 
 
+def _relative_anchors(items: list[dict[str, Any]], rel: dict[str, Any]) -> tuple[list[datetime], int]:
+    """The moments a relative window hangs on: items of the anchor kind (to a person, if named). An anchor that has only
+    a date cannot place a window of minutes; those are counted and said, never used as midnight."""
+    kind = rel.get("anchor_kind") or "financial_transaction"
+    person = rules.name_key(rel.get("person") or "")
+    anchors, dateonly = [], 0
+    for item in items:
+        if item["type"] != kind:
+            continue
+        if person and not any(person in rules.name_key(n) for n in (item.get("names") or []) + [item.get("label") or ""]):
+            continue
+        when = rules.parse_when(item.get("at"))
+        if when is None or item.get("precision") == "day":
+            dateonly += 1
+        else:
+            anchors.append(when)
+    return anchors, dateonly
+
+
 def words(scope: dict[str, Any]) -> list[str]:
     zone = scope.get("zone") or "UTC"
     out = []
@@ -75,6 +94,11 @@ def words(scope: dict[str, Any]) -> list[str]:
     if rec:
         day = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][int(rec["weekday"])] if rec.get("weekday") is not None else "every day"
         out.append(f"{'every ' + day if rec.get('weekday') is not None else day}, {int(rec.get('from_hour', 0)):02d}:00 to {int(rec.get('to_hour', 24)) % 24:02d}:00 ({zone})")
+    rel = scope.get("relative")
+    if rel:
+        out.append(f"{int(rel.get('before_min', 0))} min before to {int(rel.get('after_min', 0))} min after each "
+                   f"{str(rel.get('anchor_kind') or 'financial_transaction').replace('_', ' ')}"
+                   + (f" involving {rel['person']}" if rel.get("person") else ""))
     if scope.get("kinds"):
         out.append("only " + ", ".join(str(k).replace("_", " ") for k in scope["kinds"]))
     if scope.get("people"):
@@ -85,16 +109,26 @@ def words(scope: dict[str, Any]) -> list[str]:
 def apply(items: list[dict[str, Any]], scope: dict[str, Any] | None) -> dict[str, Any]:
     """What is in scope, and what is outside it by kind, so nothing is hidden silently."""
     scope = dict(scope or {})
-    if not any(scope.get(k) for k in ("from", "to", "recurring", "kinds", "people")):
+    if not any(scope.get(k) for k in ("from", "to", "recurring", "relative", "kinds", "people")):
         return {"active": False, "kept": items, "outside": {}, "outside_total": 0, "no_time": 0, "words": []}
     zone = _zone(scope.get("zone"))
+    rel = scope.get("relative")
+    anchors, dateonly = _relative_anchors(items, rel) if rel else ([], 0)
+    before, after = (timedelta(minutes=int(rel.get("before_min", 0))), timedelta(minutes=int(rel.get("after_min", 0)))) if rel else (None, None)
     kept, outside, no_time = [], Counter(), 0
     for item in items:
         keep, untimed = in_scope(item, scope, zone)
+        if keep and rel:
+            when = rules.parse_when(item.get("at"))
+            if when is None or item.get("precision") == "day":
+                untimed = True
+            elif not any(a - before <= when <= a + after for a in anchors):
+                keep = False
         no_time += 1 if untimed else 0
         if keep:
             kept.append(item)
         else:
             outside[item["type"]] += 1
     return {"active": True, "kept": kept, "outside": dict(outside), "outside_total": sum(outside.values()),
-            "no_time": no_time, "words": words(scope)}
+            "no_time": no_time, "words": words(scope),
+            "anchors": len(anchors) if rel else None, "anchors_date_only": dateonly}
