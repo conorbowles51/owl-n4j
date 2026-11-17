@@ -129,3 +129,13 @@ def active_rows(db, *, case_id=None) -> list:
     if case_id:
         query = query.where(R.case_id == case_id)
     return [r for r in _latest(db.scalars(query).all()) if r.action == "rate"]
+
+
+def export_document(db, *, case_id=None) -> dict:
+    """Every active rating as a relevance test set in lx-relevancetest's query shape (see ``relevance_case``).
+    Real case questions: written outside the repository, never committed."""
+    return {"about": "Relevance test items from people's ratings of agent answers (lx-agenttools D20). Each item "
+                     "is the question as asked and the complaint; when the person picked a record it is the "
+                     "relevant record the answer must reach. Built from live ratings: never committed, never "
+                     "given to the agent.",
+            "case": "ratings", "queries": [relevance_case(r) for r in active_rows(db, case_id=case_id)]}

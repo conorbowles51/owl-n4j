@@ -116,6 +116,15 @@ def test_an_active_rating_becomes_a_relevance_test_item_with_its_picked_record(w
     assert item["answer_message_id"] == str(world["answer"].id)
 
 
+def test_export_document_holds_each_active_rating_and_not_a_withdrawn_one(world):
+    _rate(world, "missed_something", record_ref="txn://9f1c")
+    _rate(world, "too_thin")
+    _rate(world, "too_thin", withdraw=True)
+    doc = AR.export_document(world["db"], case_id=world["case"].id)
+    assert [q["complaint"] for q in doc["queries"]] == ["missed_something"]
+    assert doc["queries"][0]["relevant"][0]["any"] == ["txn://9f1c"]
+
+
 def test_the_rating_route_takes_only_the_three_kinds():
     from routers import agent as router
     body = router.AnswerRatingBody(case_id=uuid.uuid4(), kind="too_thin")
