@@ -87,7 +87,13 @@ export function CitationProvider({
   return (
     <OpenerContext.Provider value={opener}>
       {children}
-      {record && <PhoneRecordPanel caseId={caseId} recordUid={record} onClose={() => setRecord(null)} />}
+      {record && (
+        // The docked panel is built for a flex row; rendered inline it landed after the last line of a long answer,
+        // out of sight. It opens over the page's right edge instead.
+        <div data-testid="citation-record-overlay" className="fixed inset-y-0 right-0 z-50 w-[400px] max-w-full shadow-xl [&>aside]:!w-full">
+          <PhoneRecordPanel caseId={caseId} recordUid={record} onClose={() => setRecord(null)} />
+        </div>
+      )}
       <Dialog open={!!choice} onOpenChange={(next) => !next && setChoice(null)}>
         <DialogContent>
           <DialogHeader>

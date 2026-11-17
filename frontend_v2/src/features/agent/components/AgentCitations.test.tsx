@@ -125,6 +125,17 @@ it("opens the phone record's panel beside the answer when a rec:// link is click
   expect(screen.queryByRole("region", { name: "Record behind this message" })).toBeNull()
 })
 
+it("shows the phone record panel over the page, not at the end of a long answer (live: a click showed nothing)", async () => {
+  const uid = "3af41de3-c6aa-4b1e-9d0e-2f4f0df3ffe5"
+  resolutions.items = [ok(`rec://${uid}`, { scheme: "rec", record_uid: uid })]
+  answer(`She wrote it in [C3 WhatsApp message, Tue, Mar 14, 2023](rec://${uid}).`)
+  fireEvent.click(await screen.findByRole("button", { name: "C3 WhatsApp message, Tue, Mar 14, 2023" }))
+  const panel = await screen.findByRole("region", { name: "Record behind this message" })
+  const overlay = panel.closest('[data-testid="citation-record-overlay"]')
+  expect(overlay).not.toBeNull()
+  expect(overlay).toHaveClass("fixed")
+})
+
 it("says under an answer how many citations were checked and how many are not in the case", async () => {
   const { CitationCheckLine } = await import("./AgentCitations")
   render(<CitationCheckLine check={{ total: 5, ok: 3, not_in_case: 1, ambiguous: 1, page_not_given: 2 }} />)
