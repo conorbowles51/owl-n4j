@@ -197,7 +197,8 @@ def _public(h: dict, n: int) -> dict:
             "unit": h.get("unit"), "chars_not_shown": h.get("chars_not_shown", 0), "score": h.get("score"),
             "grade": h["grade"], "reason": h.get("reason"), "matched": h.get("sources") or [],
             "also_at": h.get("also_at") or [], "read_by_a_model": bool(h.get("as_read")),
-            **({"unit_note": h["unit_note"]} if h.get("unit_note") else {})}
+            **({"unit_note": h["unit_note"]} if h.get("unit_note") else {}),
+            **({"also_connections": h["also"], "also_shown": h.get("also_hits") or []} if h.get("also") else {})}
 
 
 def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, areas: Iterable[str] | None = None,
