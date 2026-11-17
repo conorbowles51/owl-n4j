@@ -389,7 +389,8 @@ RANKED_KEYS = ("total", "shown", "offset", "next_offset", "grades", "grade_rule"
                "not_searched", "why_empty", "notes", "meaning_search", "reranked", "understood", "available", "reason")
 _AREA_KIND = {"phone_text": "phones", "parties": "phones", "transcripts": "phones", "documents": "documents",
               "statement_pages": "documents", "ledger": "ledger", "accounts": "ledger", "judgements": "ledger",
-              "trails": "ledger", "timeline": "timeline", "casework": "casework", "graph": "graph"}
+              "trails": "ledger", "timeline": "timeline", "casework": "casework", "graph": "graph",
+              "relationships": "graph", "entities": "graph"}
 
 
 def search_by_meaning(conn, case_id, query, *, areas=(), phones=(), person=None, start=None, end=None, offset=0,

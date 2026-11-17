@@ -28,7 +28,7 @@ KIND_AREAS: dict[str, tuple[str, ...]] = {
     "phones": ("phone_text", "parties", "transcripts"),
     "documents": ("documents", "statement_pages"),
     "ledger": ("ledger", "accounts", "judgements", "trails"),
-    "graph": (),
+    "graph": ("relationships",),
     "timeline": ("timeline",),
     "casework": ("casework",),
 }
@@ -37,7 +37,8 @@ AREA_KIND = {a: k for k, areas in KIND_AREAS.items() for a in areas}
 KIND_LABEL = {"phone_text": "phone messages", "parties": "phone contact", "transcripts": "transcript",
               "documents": "document passage", "statement_pages": "statement page", "ledger": "statement row",
               "accounts": "bank account", "judgements": "judgement call", "trails": "money trail",
-              "timeline": "timeline event", "casework": "note or finding", "graph": "graph entity"}
+              "timeline": "timeline event", "casework": "note or finding", "graph": "graph entity",
+              "relationships": "graph connection"}
 FETCH = 60
 GRAPH_TERMS = 4
 
@@ -195,8 +196,15 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
     searched: list[str] = []
     not_searched: list[str] = []
     only = set(areas or ())
+    # "entities" (the embedded-records search's name for the entity vectors) is the graph's entity search here;
+    # "graph" asks for entities and their connections, "relationships" for the connections alone
+    if "graph" in only:
+        only.add("relationships")
+    if "entities" in only:
+        only.add("graph")
+    entities = "graph" in kinds and (not only or "graph" in only)
     if only:
-        kinds = tuple(k for k in kinds if k != "graph" or "graph" in only)
+        kinds = tuple(k for k in kinds if k != "graph" or "graph" in only or "relationships" in only)
     areas = [a for k in kinds for a in KIND_AREAS[k] if not only or a in only]
     if date_from is not None or date_to is not None:
         notes.append("Only records dated inside the dates asked for were searched; phone messages and document "
@@ -270,7 +278,7 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
             not_searched.append("documents by their words (%s)" % str(exc)[:120])
     clock["document_words"] = round(time.time() - t0, 2)
     t0 = time.time()
-    if "graph" in kinds:
+    if entities:
         gw, gm, gn = _graph(case_id, question, understood.get("names") or [], understood.get("terms") or [],
                             embed_query=embed)
         meaning_all += gm

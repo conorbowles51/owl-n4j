@@ -311,3 +311,30 @@ def test_graph_names_are_looked_up_for_names_and_identifiers_not_ordinary_words(
     monkeypatch.setattr(V, "get_vector_db_service", lambda: Vec())
     net._graph("c", "q", ["Ann Ross"], ["patients", "refund", "2204"], embed_query=lambda q: [0.0])
     assert asked == ["Ann Ross", "2204"]
+
+
+def test_graph_connections_and_entities_are_searched_as_the_graph(monkeypatch):
+    """Fails on the code before: the graph's embedded connections ("relationships") were never searched, and asking
+    for "entities" (the embedded-records search's name for them) searched no graph at all."""
+    import importlib
+    from services.case_search import net
+    from services.embed_all import search as ES
+    G = importlib.import_module("services.neo4j.graph_service")
+    from services import vector_db_service as V
+    seen = {"areas": set(), "graph": 0}
+    monkeypatch.setattr(ES, "meaning_hits", lambda c, v, i, ch, areas, **k: seen["areas"].update(areas) or [])
+    monkeypatch.setattr(ES, "word_hits", lambda c, k, t, areas, **kw: seen["areas"].update(areas) or [])
+    monkeypatch.setattr(G.graph_service, "search_nodes", lambda p, **k: [])
+
+    class Vec:
+        def search_entities(self, *a, **k):
+            seen["graph"] += 1
+            return []
+    monkeypatch.setattr(V, "get_vector_db_service", lambda: Vec())
+    kw = dict(embed_query=lambda q: [0.0], collections=(object(), object()))
+    u = {"phrasings": [], "expansions": [], "names": [], "terms": []}
+    net.gather(object(), "c", "q", u, net.KINDS, **kw)
+    assert "relationships" in seen["areas"] and seen["graph"] == 1
+    seen["areas"].clear()
+    net.gather(object(), "c", "q", u, ("graph",), areas=["entities"], **kw)
+    assert seen["graph"] == 2 and "relationships" not in seen["areas"]
