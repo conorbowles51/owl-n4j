@@ -20,6 +20,7 @@ def make():
     context = SimpleNamespace(case_id="00000000-0000-0000-0000-000000000001", user_id="00000000-0000-0000-0000-000000000002",
                               ledger_session_factory=lambda: contextlib.nullcontext(mock.MagicMock()))
     context.result = lambda name, data, summary=None, **kw: seen.update(name=name, data=data, summary=summary, **kw) or seen
+    context.draft_session_factory = lambda: contextlib.nullcontext(mock.MagicMock())
     return context, seen
 
 
@@ -68,3 +69,21 @@ def test_a_draft_with_an_unknown_question_kind_is_refused():
         t.func(members=[{"type": "phone_record", "id": "p"}], text="x", kind="guilty")
     save.assert_not_called()
     assert seen["status"] == "error"
+
+
+def test_a_draft_is_saved_through_a_writable_session_not_the_runners_read_only_one():
+    # Live 17 Nov: the runner's session is SET TRANSACTION READ ONLY, so a save through it failed and no draft opened.
+    context, seen = make()
+    del context.draft_session_factory
+    def read_only():
+        raise AssertionError("the draft used the runner's read-only session")
+    context.ledger_session_factory = read_only
+    writable = mock.MagicMock()
+    with mock.patch("services.case_service.check_case_access"), \
+         mock.patch("services.agent.proposal_tools._write_session", return_value=contextlib.nullcontext(writable)) as ws, \
+         mock.patch("services.relations.runs.save_group", return_value={"id": "g1", "member_count": 1}) as save:
+        t = {x.name: x for x in relation_tools.make_relation_tools(context)}["draft_corroborate_question"]
+        t.func(members=[{"type": "phone_record", "id": "p"}], text="Were they in contact?", kind="in_contact")
+    ws.assert_called_once()
+    assert save.call_args.args[0] is writable
+    assert seen["data"]["draft_id"] == "g1"

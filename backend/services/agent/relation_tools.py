@@ -92,7 +92,9 @@ def make_relation_tools(context):
     def draft_corroborate_question(members, text, kind="in_contact", people=()):
         """Save a drafted question for the person to open in the Corroborate composer. It is never run here."""
         from services.corroborate import questions
-        with (context.ledger_session_factory or _financial_session)() as db:
+        from services.agent.proposal_tools import _write_session
+        # A draft is a saved group, so this session must be writable: the runner's own session is read-only.
+        with (getattr(context, "draft_session_factory", None) or _write_session)() as db:
             user = db.get(User, UUID(str(context.user_id))) if context.user_id else None
             if user is None or not user.is_active:
                 raise PermissionError("An active case editor is required.")
