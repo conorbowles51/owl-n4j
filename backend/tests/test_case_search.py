@@ -338,3 +338,66 @@ def test_graph_connections_and_entities_are_searched_as_the_graph(monkeypatch):
     seen["areas"].clear()
     net.gather(object(), "c", "q", u, ("graph",), areas=["entities"], **kw)
     assert seen["graph"] == 2 and "relationships" not in seen["areas"]
+
+
+def test_documents_by_their_words_join_the_shared_word_list(monkeypatch):
+    """Fails on the code before: documents found by their words were a list of their own, so the first of them
+    scored beside the best word hit of every other area (gate 17 Nov: two document records origin showed in its
+    first 50 fell past 50)."""
+    from services.case_search import net
+    from services.embed_all import search as ES
+    monkeypatch.setattr(ES, "meaning_hits", lambda *a, **k: [])
+    monkeypatch.setattr(ES, "word_hits", lambda c, k, t, areas, **kw: [
+        {"area": a, "key": "%s%d" % (a, i), "text": "refund", "words": 2} for i in range(1, 4) for a in areas])
+    monkeypatch.setattr(net, "_documents_by_words", lambda conn, c, q: ([
+        {"area": "documents", "key": "d%d" % i, "text": "refund", "sources": ["document words"]} for i in range(1, 4)],
+        {}))
+    got = net.gather(object(), "c", "refund patients", {"phrasings": [], "expansions": []}, ("ledger", "documents"),
+                     embed_query=lambda q: [0.0], collections=(object(), object()))
+    keys = [c["key"] for c in got["candidates"]]
+    assert keys.index("d1") > keys.index("ledger1") and keys.index("d1") > keys.index("statement_pages1"), keys
+
+
+def test_name_ties_share_one_list_and_far_entities_are_left_out(monkeypatch):
+    """Fails on the code before: each name tie was a list of its own, so a row found by three ties of one account
+    scored three credits (demo case, 17 Nov: 40 of a question's first 50 places were one account's ledger rows), and
+    the graph's nearest 20 entities came in however far their meaning was."""
+    import importlib
+    from services.case_search import net
+    from services.embed_all import search as ES
+    G = importlib.import_module("services.neo4j.graph_service")
+    from services import vector_db_service as V
+    monkeypatch.setattr(ES, "meaning_hits", lambda c, v, i, ch, areas, **k: [
+        {"area": "casework", "key": "note%d" % n, "text": "t", "distance": 0.1 * n, "area_rank": n} for n in range(1, 4)])
+
+    def words(c, k, terms, areas, **kw):
+        if terms and terms[0].startswith("004"):
+            return [{"area": "ledger", "key": "row%d" % n, "text": "t", "words": 1} for n in range(1, 4)]
+        return []
+    monkeypatch.setattr(ES, "word_hits", words)
+    monkeypatch.setattr(G.graph_service, "search_nodes", lambda p, **k: [])
+
+    class Vec:
+        def search_entities(self, *a, **k):
+            return [{"id": "near", "text": "e", "distance": 0.9, "metadata": {}},
+                    {"id": "far", "text": "e", "distance": 1.9, "metadata": {}}]
+    monkeypatch.setattr(V, "get_vector_db_service", lambda: Vec())
+    u = {"phrasings": [], "expansions": [{"term": "0042118830"}, {"term": "0042118847"}, {"term": "0042118851"}],
+         "names": [], "terms": []}
+    got = net.gather(object(), "c", "q", u, ("ledger", "casework", "graph"), embed_query=lambda q: [0.0],
+                     collections=(object(), object()))
+    keys = [c["key"] for c in got["candidates"]]
+    assert keys.index("note1") < keys.index("row1") and "far" not in keys and "near" in keys, keys
+
+
+def test_one_file_uploaded_twice_shows_each_page_once_with_the_other_copy_listed():
+    """Fails on the code before: the same statement uploaded twice (one content hash, two files) showed each page
+    twice, once a place each (second demo case, 17 Nov: four statements, eight places)."""
+    a, b, c = ("%08d-0000-0000-0000-000000000000" % n for n in (1, 2, 3))
+    cands = [{"area": "statement_pages", "key": "a1", "cite": "doc://%s/1" % a, "text": "statement page one"},
+             {"area": "documents", "key": "b1", "cite": "doc://%s/1" % b, "text": "page one as a passage"},
+             {"area": "documents", "key": "c1", "cite": "doc://%s/1" % c, "text": "another file"},
+             {"area": "documents", "key": "b2", "cite": "doc://%s/2" % b, "text": "page two"}]
+    out, removed = S.dedupe(cands, {a: "h1", b: "h1", c: "h2"})
+    assert [h["key"] for h in out] == ["a1", "c1", "b2"] and removed == 1
+    assert out[0]["also_at"] == ["doc://%s/1" % b]

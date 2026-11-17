@@ -10,6 +10,7 @@ does not pay the model again.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import threading
 import time
@@ -19,6 +20,8 @@ from services.case_search import net, rerank as R, units
 from services.case_search.net import KIND_LABEL, KINDS
 from services.case_search.shape import RESULT_KEYS, why_empty
 from services.case_search.understand import understand
+
+logger = logging.getLogger(__name__)
 
 GRADE_RULE = ("Strong: the ranking model scored 7-10 (states or rests the answer); Moderate: 4-6 (related "
               "background); Weak: 0-3 (shares words, about something else); Ungraded: not scored.")
@@ -43,17 +46,43 @@ def _fingerprint(h: dict) -> str:
     return hashlib.sha1(("%s|%s" % (net.AREA_KIND.get(h["area"], h["area"]), body)).encode()).hexdigest()
 
 
-def dedupe(cands: list[dict]) -> tuple[list[dict], int]:
-    """Same citation, or the same text in the same kind of material (one message on two phones, one statement
-    page read twice): kept once, the other places listed in ``also_at``."""
+DOC_CITE = re.compile(r"^doc://([0-9a-fA-F-]{36})/(\d*)")
+
+
+def file_hashes(conn, cands: list[dict]) -> dict[str, str]:
+    """Each cited document file's content hash, to know one file uploaded twice."""
+    ids = sorted({m.group(1) for m in (DOC_CITE.match(c.get("cite") or "") for c in cands) if m})
+    if not ids or conn is None:
+        return {}
+    from sqlalchemy import text
+    try:
+        with conn.begin_nested():
+            rows = conn.execute(text("SELECT id::text, sha256 FROM evidence_files WHERE id::text = ANY(:ids)"),
+                                {"ids": ids}).fetchall()
+    except Exception:  # noqa: BLE001 - without hashes, copies are kept apart, as before
+        logger.warning("File hashes could not be read", exc_info=True)
+        return {}
+    return {r[0]: r[1] for r in rows if r[1]}
+
+
+def dedupe(cands: list[dict], hashes: dict[str, str] | None = None) -> tuple[list[dict], int]:
+    """Same citation, the same page of one file uploaded twice (the same content hash), or the same text in the same
+    kind of material (one message on two phones, one statement page read twice): kept once, the other places listed
+    in ``also_at``."""
     out: list[dict] = []
     by_cite: dict[str, dict] = {}
     by_text: dict[str, dict] = {}
+    by_page: dict[tuple, dict] = {}
+    hashes = hashes or {}
     removed = 0
     for h in cands:
         cite = h.get("cite") or ""
         fp = _fingerprint(h) if (h.get("text") or "").strip() else None
+        m = DOC_CITE.match(cite)
+        page = (hashes[m.group(1)], m.group(2)) if m and m.group(1) in hashes else None
         first = by_cite.get(cite) if cite else None
+        if first is None and page:
+            first = by_page.get(page)
         if first is None and fp:
             first = by_text.get(fp)
         if first is not None:
@@ -64,6 +93,8 @@ def dedupe(cands: list[dict]) -> tuple[list[dict], int]:
             continue
         if cite:
             by_cite[cite] = h
+        if page:
+            by_page[page] = h
         if fp:
             by_text[fp] = h
         out.append(h)
@@ -125,7 +156,7 @@ def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], areas=None, 
     clock["gather"] = round(time.time() - t0, 2)
     clock.update(got.get("clock") or {})
     notes += got["notes"]
-    cands, removed = dedupe(got["candidates"])
+    cands, removed = dedupe(got["candidates"], file_hashes(conn, got["candidates"]))
     for c in cands:
         c["kind"] = net.AREA_KIND.get(c["area"], c["area"])
         c["kind_label"] = KIND_LABEL.get(c["area"], c["area"])
