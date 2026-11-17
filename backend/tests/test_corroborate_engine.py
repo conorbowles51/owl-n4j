@@ -241,3 +241,16 @@ def test_searched_lists_only_the_kinds_this_question_computed():
     checked = set(res["searched"]["kinds_checked"])
     assert "contact" in checked and not checked & {"statement", "same_person"}
     assert set(res["searched"]["kinds_with_nothing"]) <= checked
+
+
+def test_coincidence_names_the_link_between_people_before_one_persons_own_records():
+    from services.corroborate.levels import sentence
+    inst = [{"id": "a", "side": "incident"}]
+    comp = {"incident_noun": "instances asked about", "ordinary_noun": "ordinary days"}
+    alone = {"label": "Ann Arden's phone silent for 4 hours or more", "people": ["ann"], "weight": "full",
+             "incident": {"present": 3, "of": 5}, "ordinary": {"present": 99, "of": 103}}
+    pair = {"label": "Ann Arden and Bob Brook in contact", "people": ["ann", "bob"], "weight": "full",
+            "incident": {"present": 1, "of": 5}, "ordinary": {"present": 3, "of": 103}}
+    words = sentence({"key": "coincidence", "rule": "as_often_or_explained", "separating_kinds": []}, [],
+                     [alone, pair], comp, inst * 5, [], [])
+    assert words.startswith("Coincidence likely: Ann Arden and Bob Brook in contact on too few") and "1 of 5" in words

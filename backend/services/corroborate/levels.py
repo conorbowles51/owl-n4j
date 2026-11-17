@@ -207,8 +207,16 @@ def sentence(level: dict, full_sep, present_rows, comparison, incidents, missing
     if level["rule"] == "together_once_no_contact":
         return ("Coincidence likely: they were in the same place once, and nothing else links them: no contact, money "
                 f"or document {checked}.")
-    often = [r for r in present_rows if as_often_ordinary(r)]
-    low = [r for r in present_rows if r.get("weight") != "full"]
+    # a row between two people says more about a link than one person's own records: it leads when there is one
+    pairs = [r for r in present_rows if len(r["people"]) >= 2]
+    pool = pairs or present_rows
+    often = [r for r in pool if as_often_ordinary(r)]
+    low = [r for r in pool if r.get("weight") != "full"]
+    rare = [r for r in pool if r not in often and r not in low]
+    if rare and not often and not low:
+        r = best(rare)
+        return (f"Coincidence likely: {r['label']} on too few of the {comparison['incident_noun']} to set them apart "
+                f"({_counts_words(r, comparison)}).")
     if often:
         r = best(often)
         return (f"Coincidence likely: {r['label']}, as often on {comparison['ordinary_noun']} "
