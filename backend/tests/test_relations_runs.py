@@ -179,3 +179,24 @@ class SizeTests(DuplicateTestCase):
         self.assertEqual((more["returned"], more["next_offset"], more["rows"][0]["n"]), (150, None, runs.PAGE))
         with self.assertRaises(LookupError):
             runs.rows(self.db, self.other_case.id, str(row.id), "candidates")
+
+
+def test_a_map_area_of_one_phone_cluster_is_compared_as_one_place_per_phone_not_each_position_with_each():
+    """lx-corroselect, lx-demo 17 Nov: 475 positions + 14 graph items was refused (119,316 pairs). Positions of one
+    phone within 500 m are one place member; other members and lone positions stay as they are."""
+    phones = ["p1", "p2", "p3", "p4", "p5"]
+    pos = {f"u{n}": (phones[n % 5], 51.5 + (n % 7) * 0.0003, -0.1) for n in range(475)}
+    pos["far"] = ("p1", 52.5, -0.1)
+    members = [{"type": "phone_record", "id": uid} for uid in pos] + \
+              [{"type": "transaction", "id": f"t{n}"} for n in range(14)]
+    out, folded = runs.fold_units(members, pos, {"p1": "Kell's phone"})
+    assert len(out) == 5 + 1 + 14
+    assert sum(f["positions"] for f in folded) == 475 and len(folded) == 5
+    assert any(f["label"] == "95 positions of Kell's phone" for f in folded)
+    assert {"type": "phone_record", "id": "far"} in out
+    assert all(m["type"] == "place" and m["id"].count(",") == 3 for m in out[:0] + [f["member"] for f in folded])
+
+
+def test_a_group_within_the_limit_is_compared_as_it_is():
+    members = [{"type": "phone_record", "id": "a"}, {"type": "phone_record", "id": "b"}]
+    assert runs.pair_units(None, "c", members) == (members, [])

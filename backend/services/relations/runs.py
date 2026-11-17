@@ -88,14 +88,83 @@ def save_group(db, *, case_id, members: list[dict], user=None, extends: str | No
         held = [{k: v for k, v in m.items() if k in ("type", "id", "label", "quote")} for m in base["members"]]
     chosen = held + normalise(db, case_id, list(members))
     if len(chosen) > MAX_ITEMS:
-        pairs = len(chosen) * (len(chosen) - 1) // 2
-        raise case_selections.SelectionError(
-            f"{len(chosen):,} items make {pairs:,} pairs to compare, more than one look can read ({MAX_ITEMS} items). "
-            "Choose fewer items or look at a narrower range. Nothing was saved.")
+        units, folded = pair_units(db, case_id, chosen)
+        if len(units) > MAX_ITEMS:
+            pairs = len(units) * (len(units) - 1) // 2
+            more = (f" (positions of one phone in one place count as one: {len(chosen):,} items are {len(units):,})"
+                    if folded else "")
+            raise case_selections.SelectionError(
+                f"{len(units):,} items make {pairs:,} pairs to compare{more}, more than one look can read "
+                f"({MAX_ITEMS} items). Choose fewer items or look at a narrower range. Nothing was saved.")
     return case_selections.freeze(db, case_id=case_id, group_type="relation_query", members=chosen,
                                   how={"surface": surface, **({"extends": extends} if extends else {}),
                                        **({"question": _question(question)} if question else {})},
                                   words=WORDS, user=user)
+
+
+FOLD_JOIN_M = 500.0  # a phone's position within this distance of the first position of its place joins that place
+
+
+def pair_units(db, case_id, members: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The members the pair step compares. A group over ``MAX_ITEMS`` (a Map area brings in every position there)
+    has the presence positions of each phone in each place made one place member (its centre, and a radius reaching
+    its furthest position), so 475 positions of 5 phones are 5 places, not 475 items and 112,575 pairs. Corroborate
+    still weighs every position. Returns the members and, per place made, its phone, label and the positions it
+    holds. A group within the limit is returned as it is."""
+    if len(members) <= MAX_ITEMS:
+        return members, []
+    from sqlalchemy import text
+    ids = [str(m["id"]) for m in members if m.get("type") == "phone_record"]
+    rows = db.execute(text(
+        "SELECT DISTINCT ON (record_uid) CAST(record_uid AS text), CAST(extraction_id AS text), lat, lon "
+        "FROM pol_place_observation WHERE case_id = :c AND kind = 'presence' AND lat IS NOT NULL AND lon IS NOT NULL "
+        "AND CAST(record_uid AS text) = ANY(:ids) ORDER BY record_uid, start_utc"),
+        {"c": str(case_id), "ids": ids}).fetchall() if ids else []
+    pos = {r[0]: (r[1], float(r[2]), float(r[3])) for r in rows}
+    try:
+        from services.phone.readings import phone_labels
+        labels = phone_labels(db.connection(), str(case_id)) if pos else {}
+    except Exception:  # noqa: BLE001 - without labels the place says "one phone"
+        labels = {}
+    return fold_units(members, pos, labels)
+
+
+def fold_units(members: list[dict], pos: dict[str, tuple[str, float, float]], labels: dict[str, str]):
+    """``pos``: record id -> (phone, lat, lon) of each presence position among the members."""
+    from services.corroborate import model as M
+    groups: dict[str, list[list[tuple[str, float, float]]]] = {}
+    for uid, (phone, lat, lon) in sorted(pos.items(), key=lambda x: (x[1][1], x[1][2])):
+        places = groups.setdefault(phone, [])
+        home = next((g for g in places if M.haversine_m(g[0][1], g[0][2], lat, lon) <= FOLD_JOIN_M), None)
+        if home is None:
+            places.append([(uid, lat, lon)])
+        else:
+            home.append((uid, lat, lon))
+    folded, place_of = [], {}
+    for phone, places in groups.items():
+        for g in places:
+            if len(g) < 2:
+                continue
+            lat = sum(x[1] for x in g) / len(g)
+            lon = sum(x[2] for x in g) / len(g)
+            radius = max([50.0] + [M.haversine_m(lat, lon, x[1], x[2]) for x in g])
+            label = f"{len(g):,} positions of {labels.get(phone) or 'one phone'}"
+            member = {"type": "place", "id": f"{lat:.6f},{lon:.6f},{radius:.0f},{phone}", "label": label}
+            folded.append({"phone": phone, "label": label, "positions": len(g), "member": member,
+                           "refs": [f"phone_record:{x[0]}" for x in g]})
+            for x in g:
+                place_of[x[0]] = member
+    if not folded:
+        return members, []
+    out, seen = [], set()
+    for m in members:
+        target = place_of.get(str(m["id"])) if m.get("type") == "phone_record" else None
+        if target is None:
+            out.append(m)
+        elif target["id"] not in seen:
+            seen.add(target["id"])
+            out.append(target)
+    return out, folded
 
 
 def start(db, *, case_id, selection_id, user=None, session_factory=None, inline: bool = False) -> dict:
@@ -142,11 +211,20 @@ def work(run_id: str, case_id: str, *, session_factory) -> None:
             row.result = {"corroboration": corroboration, "partial": True}
             row.progress = {**(row.progress or {}), "level": corroboration["level"]["name"]}
             session.commit()
-        result = engine.run(DbSources(session, case_id), members, progress)
+        link_members, folded = pair_units(session, case_id, members)
+        result = engine.run(DbSources(session, case_id), link_members, progress)
+        if folded:
+            result["folded"] = {
+                "says": (f"{sum(f['positions'] for f in folded):,} positions of {len({f['phone'] for f in folded})} "
+                         f"phone{'' if len({f['phone'] for f in folded}) == 1 else 's'} are compared as "
+                         f"{len(folded)} place{'' if len(folded) == 1 else 's'}: positions of one phone in one place "
+                         f"count as one item here. The group holds {len(members):,} items."),
+                "places": [{"label": f["label"], "ref": f"place:{f['member']['id']}", "positions": f["positions"],
+                            "records": f["refs"]} for f in folded]}
         if corroboration is not None:
             result["corroboration"] = corroboration
         row.result, row.status, row.step = result, "done", "Done"
-        row.progress = {"items": result["counts"]["items"], "candidates": result["counts"]["candidates"],
+        row.progress = {"items": len(members), **({"compared": result["counts"]["items"]} if folded else {}), "candidates": result["counts"]["candidates"],
                         "no_links": result["counts"]["no_links"],
                         **({"level": corroboration["level"]["name"]} if corroboration is not None else {})}
         row.finished_at = datetime.now(timezone.utc)

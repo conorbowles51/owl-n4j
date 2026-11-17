@@ -103,9 +103,16 @@ class DbSources:
         item["names"] = []
 
     def _place(self, item, m, fact):
+        parts = str(m["id"]).split(",")
         try:
-            lat, lon, radius = (float(x) for x in str(m["id"]).split(","))
+            lat, lon, radius = (float(x) for x in parts[:3])
         except ValueError:
+            return
+        if len(parts) == 4 and _uid(parts[3]):  # a phone's positions in one place, made one item (runs.pair_units)
+            item["phone"] = parts[3]
+            item["place"] = {"lat": lat, "lon": lon, "radius_m": radius, "source": "positions of one phone"}
+            return
+        if len(parts) != 3:
             return
         item["place"] = {"lat": lat, "lon": lon, "radius_m": radius, "source": "chosen on the map"}
 
