@@ -1,3 +1,6 @@
+import { CorroborateRows } from "@/features/corroborate/CorroborateRows"
+import { toMembers } from "@/features/relations/api"
+import type { ItemInput } from "@/features/theory/api"
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
@@ -128,6 +131,8 @@ export function SearchResultsPage() {
                     .catch((e) => setUndoNote(e instanceof Error ? e.message : "The add could not be undone."))
                 }}
               />
+              <CorroborateRows caseId={caseId} screen="Search" words={`Search "${q}", ${all ? "every hit" : "chosen hits"}`} count={all ? total : picked.size}
+                read={async () => toMembers(chosen.links.map((l) => ({ target_type: l.target_type as ItemInput["target_type"], target_id: l.target_id, target_label: l.label ?? undefined }))) } />
             </div>
           )}
           {undoNote && <p role="status" className="text-xs">{undoNote}</p>}

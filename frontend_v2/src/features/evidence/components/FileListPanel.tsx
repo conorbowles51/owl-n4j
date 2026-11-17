@@ -52,7 +52,8 @@ import {
   useUnpinItem,
 } from "@/features/workspace/hooks/use-workspace"
 
-import { FILE_PAGE_SIZE } from "../folders.api"
+import { FILE_PAGE_SIZE, foldersAPI } from "../folders.api"
+import { readWholeResult } from "../select-all"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 
 interface FileListPanelProps {
@@ -214,6 +215,25 @@ export function FileListPanel({
       clearSelection()
     } else {
       selectAllFiles(allFileIds)
+    }
+  }
+
+  // Select all N: every page of the same filter, so the selection is the whole result and the count says so.
+  const [selectingAll, setSelectingAll] = useState(false)
+  const selectWholeResult = async () => {
+    setSelectingAll(true)
+    try {
+      const read = await readWholeResult((offset, limit) =>
+        searching
+          ? foldersAPI.search(caseId, fileSearchTerm, searchMode === "subtree" ? "subtree" : "case", currentFolderId, { ...params, offset, limit })
+          : foldersAPI.getContents(caseId, currentFolderId, { ...params, offset, limit }),
+      )
+      selectAllFiles(read.files.map((f) => f.id))
+      toast.success(read.complete ? `All ${read.total.toLocaleString("en-US")} files selected` : `Only ${read.files.length.toLocaleString("en-US")} of ${read.total.toLocaleString("en-US")} files could be read; those are selected`)
+    } catch (e) {
+      toast.error(`The files could not all be read: ${e instanceof Error ? e.message : "it failed"}. Nothing was selected.`)
+    } finally {
+      setSelectingAll(false)
     }
   }
 
@@ -475,6 +495,11 @@ export function FileListPanel({
         <div className="flex items-center justify-between border-t border-border px-4 py-1.5 text-xs text-muted-foreground">
           <span>
             Showing {pageStart}-{pageEnd} of {fileTotal.toLocaleString()} files
+            {selectedFileIds.size !== fileTotal && (
+              <button type="button" className="ml-2 underline" disabled={selectingAll} onClick={() => void selectWholeResult()}>
+                {selectingAll ? "Reading every page…" : `Select all ${fileTotal.toLocaleString("en-US")} files`}
+              </button>
+            )}
           </span>
           <div className="flex items-center gap-1">
             <Button

@@ -63,7 +63,7 @@ def _list(names: list[str]) -> str:
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def read(db, case_id, members: list[dict[str, Any]], *, sources=None,
+def read(db, case_id, members: list[dict[str, Any]], *, sources=None, scope: dict[str, Any] | None = None,
          graph: Callable[[str, list[str]], dict[str, dict[str, Any]]] = graph_facts) -> dict[str, Any]:
     """The selection as Loupe reads it: counts of people, times, places and items, and what was not in the case."""
     from services.relations import runs
@@ -71,6 +71,9 @@ def read(db, case_id, members: list[dict[str, Any]], *, sources=None,
     named = case_selections.clean_members("relation_query", runs.normalise(db, case_id, list(members)))
     kept, left = case_selections.split_by_case(db, case_id, named)
     items = (sources or DbSources(db, case_id)).load_items(kept) if kept else []
+    from services.corroborate import scope as scope_rules
+    scoped = scope_rules.apply(items, scope)
+    items = scoped["kept"]
     keys = [i["id"] for i in items if i["type"] in ("graph_entity", "timeline_event")]
     try:
         nodes = graph(str(case_id), keys) if keys else {}
@@ -113,7 +116,11 @@ def read(db, case_id, members: list[dict[str, Any]], *, sources=None,
     days.sort()
     kinds = Counter(i["type"] for i in items)
     return {
-        "members": len(kept),
+        "members": len(items),
+        "selected": len(kept),
+        "scope": {"active": scoped["active"], "words": scoped["words"], "outside": scoped["outside"],
+                  "outside_total": scoped["outside_total"], "no_time": scoped["no_time"],
+                  "kept": [{"type": i["type"], "id": i["id"]} for i in items] if scoped["active"] else None},
         "left_out": {"count": len(left), "examples": [m["id"] for m in left[:20]]},
         "taken": {
             "people": [{"key": k, "label": shown[k], "count": n} for k, n in people.most_common()],

@@ -47,7 +47,7 @@ class PreviewTests(DuplicateTestCase):
                  item("graph_entity", "ok:okafor", "Okafor", at="2026-05-19T01:00:00+00:00"),
                  item("graph_entity", "ok:wh", "Warehouse")]
         out = self.run_preview(members, items)
-        self.assertEqual(out["members"], 3)
+        self.assertEqual((out["members"], out["selected"]), (3, 3))
         self.assertEqual(out["left_out"]["count"], 1)  # said, not dropped
         self.assertEqual([p["label"] for p in out["taken"]["people"]], ["Kell", "Okafor"])
         self.assertEqual(out["taken"]["places"], [{"label": "Warehouse", "count": 1}])
@@ -140,3 +140,43 @@ def test_an_area_with_fewer_than_three_corners_is_refused():
     from services.corroborate import area
     with pytest.raises(ValueError, match="three corners"):
         area.members_in_areas(_Conn([]), "c", [[[0, 0], [1, 1]]], places=lambda *a: [])
+
+
+def _it(kind, at, names=()):
+    return {"ref": kind + str(at), "type": kind, "id": str(at), "label": kind, "at": at, "names": list(names)}
+
+
+def test_a_recurring_friday_night_window_holds_saturday_small_hours_and_names_what_is_outside():
+    from services.corroborate import scope
+    items = [_it("phone_record", "2026-05-15T23:30:00+00:00"),   # Friday 23:30
+             _it("phone_record", "2026-05-16T02:00:00+00:00"),   # Saturday 02:00, still Friday night
+             _it("phone_record", "2026-05-16T12:00:00+00:00"),   # Saturday midday
+             _it("financial_transaction", "2026-05-15T10:00:00+00:00"),  # Friday morning
+             _it("evidence", None)]
+    out = scope.apply(items, {"recurring": {"weekday": 4, "from_hour": 22, "to_hour": 4}})
+    assert [i["at"] for i in out["kept"]] == ["2026-05-15T23:30:00+00:00", "2026-05-16T02:00:00+00:00", None]
+    assert out["outside"] == {"phone_record": 1, "financial_transaction": 1}
+    assert out["no_time"] == 1  # an item with no time stays in scope and is counted, not dropped unseen
+    assert "every Friday, 22:00 to 04:00 (UTC)" in out["words"]
+
+
+def test_the_zone_decides_the_hour_and_is_named():
+    from services.corroborate import scope
+    item = _it("phone_record", "2026-05-15T23:30:00+00:00")  # 19:30 in New York
+    assert scope.apply([item], {"recurring": {"weekday": 4, "from_hour": 22, "to_hour": 4}, "zone": "America/New_York"})["outside_total"] == 1
+    assert scope.apply([item], {"from": "2026-05-15", "zone": "America/New_York"})["words"] == ["2026-05-15 to end (America/New_York)"]
+
+
+def test_kinds_and_people_narrow_and_an_empty_scope_changes_nothing():
+    from services.corroborate import scope
+    items = [_it("phone_record", "2026-05-15T23:30:00+00:00", ["Kell"]), _it("financial_transaction", "2026-05-15T23:30:00+00:00", ["Marsh"])]
+    assert scope.apply(items, {})["active"] is False and len(scope.apply(items, {})["kept"]) == 2
+    out = scope.apply(items, {"people": ["Marsh"], "kinds": ["financial_transaction"]})
+    assert [i["type"] for i in out["kept"]] == ["financial_transaction"] and out["outside"] == {"phone_record": 1}
+
+
+def test_a_zone_loupe_does_not_know_is_refused_in_words():
+    import pytest
+    from services.corroborate import scope
+    with pytest.raises(scope.ScopeError, match="not a time zone"):
+        scope.apply([_it("evidence", "2026-05-15T23:30:00+00:00")], {"from": "2026-05-01", "zone": "Mars/Base"})

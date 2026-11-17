@@ -1,3 +1,4 @@
+import { GraphLasso } from "@/features/corroborate/GraphLasso"
 import { announce } from "@/features/guidance/announce"
 import { OPEN_RECYCLE_BIN } from "@/features/guidance/next-steps"
 import { lazy, Suspense, useRef, useState, useCallback, useMemo, useEffect } from "react"
@@ -418,6 +419,7 @@ export function GraphPage() {
                   onLayoutProgress={setLayoutWork}
                 />
               )}
+              {graphDimension !== "3d" && caseId && <GraphLasso caseId={caseId} data={displayData} graphRef={graphRef} />}
               {graphDimension !== "3d" && (
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center">
                   <div className="pointer-events-auto w-full max-w-2xl bg-background/90">

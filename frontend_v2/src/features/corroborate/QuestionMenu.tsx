@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { relationAPI, setCurrentQuery } from "@/features/relations/api"
-import { corroborateAPI, type QuestionChips, type SuggestedQuestion } from "./api"
+import { corroborateAPI, type QuestionChips, type Scope, type SuggestedQuestion } from "./api"
+import { ScopeBar, scopeIsEmpty } from "./ScopeBar"
 import { selectionMembers, useSelection } from "./selection-store"
 
 const CHIP_WORDS: Record<keyof QuestionChips, string> = { when: "When", nights: "Nights", who: "Who", what: "What", compare_with: "Compare with" }
@@ -19,7 +20,9 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
   const members = selectionMembers(parts)
   const key = members.map((m) => `${m.type}:${m.id}`).join("|")
   const navigate = useNavigate()
-  const preview = useQuery({ queryKey: ["corroborate-preview", caseId, key], queryFn: () => corroborateAPI.preview(caseId, members), enabled: members.length > 0, staleTime: 30_000 })
+  const [scope, setScope] = useState<Scope>({})
+  const scopeKey = JSON.stringify(scope)
+  const preview = useQuery({ queryKey: ["corroborate-preview", caseId, key, scopeKey], queryFn: () => corroborateAPI.preview(caseId, members, scopeIsEmpty(scope) ? undefined : scope), enabled: members.length > 0, staleTime: 30_000, placeholderData: (prev) => prev })
   const [picked, setPicked] = useState<SuggestedQuestion | null>(null)
   const [chips, setChips] = useState<QuestionChips | null>(null)
   const [busy, setBusy] = useState(false)
@@ -39,7 +42,11 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
     setBusy(true)
     setError(null)
     try {
-      const made = await relationAPI.create(caseId, { members, surface: "corroborate", question: { kind: picked.kind, text: picked.text, chips } })
+      // Inside the scope only: the preview named exactly which items are in it. The scope is kept with the question.
+      const kept = preview.data?.scope.kept
+      const keep = kept ? new Set(kept.map((k) => `${k.type}:${k.id}`)) : null
+      const asked = keep ? members.filter((m) => keep.has(`${m.type}:${m.id}`)) : members
+      const made = await relationAPI.create(caseId, { members: asked, surface: "corroborate", question: { kind: picked.kind, text: picked.text, chips: { ...chips, ...(preview.data?.scope.words.length ? { scope: preview.data.scope.words.join("; ") } : {}) } } })
       setCurrentQuery(caseId, { id: made.group.id, count: made.group.member_count })
       onClose()
       navigate(`/cases/${caseId}/relations/${made.group.id}`)
@@ -72,6 +79,7 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
               </ul>
               {d.left_out.count > 0 && <p role="status">{d.left_out.count.toLocaleString("en-US")} chosen items are not in this case and are left out.</p>}
             </div>
+            <ScopeBar scope={scope} onChange={(next) => { setScope(next); setPicked(null) }} preview={d} />
             <div role="radiogroup" aria-label="Questions" className="flex flex-col gap-1">
               {d.questions.map((q) => (
                 <label key={q.kind} className="flex cursor-pointer items-start gap-2 rounded border px-2 py-1 has-[:checked]:border-primary has-[:checked]:bg-primary/10">

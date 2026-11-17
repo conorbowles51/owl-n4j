@@ -47,7 +47,7 @@ def _question(raw: dict) -> dict:
     """The question as the person left it: its kind and the chips (when, nights, who, what, compare with), as text."""
     chips = raw.get("chips") if isinstance(raw.get("chips"), dict) else {}
     return {"kind": str(raw.get("kind") or "")[:40], "text": str(raw.get("text") or "")[:500],
-            "chips": {k: str(v)[:300] for k, v in chips.items() if k in ("when", "nights", "who", "what", "compare_with")}}
+            "chips": {k: str(v)[:300] for k, v in chips.items() if k in ("when", "nights", "who", "what", "compare_with", "scope")}}
 
 
 def save_group(db, *, case_id, members: list[dict], user=None, extends: str | None = None, surface: str = "relation",

@@ -13,6 +13,7 @@ from postgres.session import get_db
 from routers.case_access import require_case_view
 from services import case_selections
 from services.corroborate import area, pasted, preview
+from services.corroborate import scope as scope_rules
 
 router = APIRouter(prefix="/api/cases", tags=["corroborate"])
 
@@ -26,13 +27,15 @@ class Member(BaseModel):
 
 class PreviewRequest(BaseModel):
     members: list[Member] = Field(min_length=1, max_length=case_selections.MAX_MEMBERS)
+    scope: dict[str, Any] | None = None
 
 
 @router.post("/{case_id}/corroborate/preview", dependencies=[Depends(require_case_view)])
 def read_preview(case_id: UUID, request: PreviewRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
-        return preview.preview(db, case_id, [m.model_dump(exclude_none=True) for m in request.members])
-    except case_selections.SelectionError as exc:
+        return preview.preview(db, case_id, [m.model_dump(exclude_none=True) for m in request.members],
+                               scope=request.scope)
+    except (case_selections.SelectionError, scope_rules.ScopeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
 

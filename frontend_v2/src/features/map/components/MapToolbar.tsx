@@ -1,3 +1,4 @@
+import { CorroborateArea } from "@/features/corroborate/CorroborateArea"
 import { useState } from "react"
 import {
   BoxSelect,
@@ -455,6 +456,7 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
                     }}
                   />
                 )}
+                {caseId && <CorroborateArea caseId={caseId} areas={boundingShapes.map((b) => b.coordinates)} />}
                 <button
                   type="button"
                   onClick={clearBoundingShapes}

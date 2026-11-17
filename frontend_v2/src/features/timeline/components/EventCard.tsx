@@ -91,6 +91,8 @@ export const EventCard = memo(function EventCard({
 
   return (
     <article
+      data-corro={`timeline_event:${event.key}`}
+      data-corro-label={event.name}
       role="button"
       tabIndex={0}
       onClick={handleClick}

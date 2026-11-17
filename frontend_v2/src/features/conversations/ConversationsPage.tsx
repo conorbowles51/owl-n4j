@@ -1,3 +1,4 @@
+import { CorroborateRows } from "@/features/corroborate/CorroborateRows"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
@@ -777,6 +778,13 @@ export function ConversationsPage() {
                 <GoToDate days={stream.index.items} where={view.thread && !view.people.length ? "in this thread" : "in these results"} open={goOpen} onOpenChange={setGoOpen}
                   onGo={(day) => { setGoOpen(false); setJump({ day, seq: Date.now() }) }} />
               )}
+              <CorroborateRows caseId={caseId} screen="Conversations" words={filterWords}
+                count={selection.all && stream.status === "ready" ? stream.total : selection.rows.length}
+                read={async () => {
+                  const rows = selection.all && stream.status === "ready" ? await stream.allRows() : selection.rows
+                  const seen = new Set<string>()
+                  return rows.flatMap((r) => (seen.has(r.record_uid) ? [] : (seen.add(r.record_uid), [{ type: "phone_record", id: r.record_uid, label: r.line }])))
+                }} />
               <Button size="sm" variant="outline" disabled={links.length === 0} onClick={writeNote}
                 title={selection.rows.length === 0 ? "Select messages to write a note about them" : undefined}>
                 Write a note about these

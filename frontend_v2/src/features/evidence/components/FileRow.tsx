@@ -157,6 +157,8 @@ export function FileRow({
 
   return (
     <TableRow
+      data-corro={`evidence:${file.id}`}
+      data-corro-label={file.original_filename}
       className={cn(
         "group",
         isSelected && "bg-amber-500/5",
