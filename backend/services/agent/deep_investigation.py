@@ -195,8 +195,18 @@ def progress(plan: dict) -> dict[str, Any]:
             "analyses": [{k: a.get(k) for k in ("approach", "status", "created")} for a in plan.get("analyses", [])]}
 
 
+def _noted(plan: dict, item: dict, unit: str | None = None) -> bool:
+    """A note under the item (naming the unit, when the item has units): the evidence that the work was done."""
+    for n in plan["notebook"]:
+        if n.get("item") == item["id"] and (unit is None or unit.lower() in (n["fact"] + " " + n["cite"]).lower()):
+            return True
+    return False
+
+
 def mark(plan: dict, updates: list[dict]) -> dict[str, Any]:
-    """Apply the model's marks. Returns what was applied and what was refused, in plain words."""
+    """Apply the model's marks. Returns what was applied and what was refused, in plain words. An item is done only
+    with a note under it (for each unit, a note that names it): a finding, or an absence recorded as a note whose
+    citation reads 'searched: <what was searched>'."""
     applied, refused = [], []
     for u in updates or []:
         item = item_by_id(plan, str(u.get("item") or ""))
@@ -209,13 +219,21 @@ def mark(plan: dict, updates: list[dict]) -> dict[str, Any]:
             known = {t.lower(): t for t in item["target"]}
             for x in units:
                 canon = known.get(x.lower())
-                if canon and canon not in item["covered"]:
+                if canon and canon not in item["covered"] and _noted(plan, item, canon):
                     item["covered"].append(canon)
         if status == "done":
             if item["target"] and len(set(item["covered"])) < len(item["target"]):
                 missing = [t for t in item["target"] if t not in item["covered"]]
                 item["status"] = "in_progress"
-                refused.append({"item": item["id"], "why": "Not yet done: still to cover %s." % ", ".join(missing)})
+                refused.append({"item": item["id"], "why": "Not yet done: no note under this item for %s. Read each, "
+                                "then record what it showed with deep_notebook_add (item %s, naming it)." % (
+                                    ", ".join(missing), item["id"])})
+                continue
+            if not item["target"] and not _noted(plan, item):
+                item["status"] = "in_progress"
+                refused.append({"item": item["id"], "why": "Not yet done: no note under this item. Record what the "
+                                "work found with deep_notebook_add (item %s); an absence is a note whose citation reads "
+                                "'searched: <what was searched>'." % item["id"]})
                 continue
             item["status"], item["reason"] = "done", None
         elif status == "not_done":

@@ -39,16 +39,32 @@ def test_plan_has_per_phone_units_and_every_domain_builds():
         assert D.build_plan(domain, question="q")["items"]
 
 
-def test_done_needs_every_unit_and_not_done_needs_a_reason():
+def note(p, item, fact):
+    D.notebook_add(p, [{"item": item, "fact": fact, "cite": "rec://x"}])
+
+
+def test_done_needs_a_note_for_every_unit_and_not_done_needs_a_reason():
     p = plan()
-    got = D.mark(p, [{"item": "conversations", "status": "done", "units": ["phone 1", "Phone 2"]}])
-    assert got["applied"] == [] and "Phone 3" in got["refused"][0]["why"]
+    got = D.mark(p, [{"item": "conversations", "status": "done", "units": LABELS}])
+    assert got["applied"] == [] and "Phone 1" in got["refused"][0]["why"]  # naming the units is not evidence
+    note(p, "conversations", "Phone 1 read to the end: 200 messages")
+    note(p, "conversations", "Phone 2 read to the end")
+    got = D.mark(p, [{"item": "conversations", "status": "done", "units": ["phone 1", "Phone 2", "Phone 3"]}])
+    assert got["applied"] == [] and "Phone 3" in got["refused"][0]["why"] and "Phone 1" not in got["refused"][0]["why"]
     assert not D.is_closed(D.item_by_id(p, "conversations"))
+    note(p, "conversations", "Phone 3 holds nothing in the window")
     got = D.mark(p, [{"item": "conversations", "status": "done", "units": ["Phone 3"]}])
     assert got["applied"] == ["conversations"] and D.is_closed(D.item_by_id(p, "conversations"))
     assert D.mark(p, [{"item": "media", "status": "not_done"}])["refused"]
     assert D.mark(p, [{"item": "media", "status": "not_done", "reason": "no media in the case"}])["applied"] == ["media"]
     assert D.mark(p, [{"item": "nope", "status": "done"}])["refused"]
+
+
+def test_an_item_without_units_is_done_only_with_a_note():
+    p = plan()
+    assert D.mark(p, [{"item": "network", "status": "done"}])["refused"]
+    D.notebook_add(p, [{"item": "network", "fact": "no alias found", "cite": "searched: identity suggestions"}])
+    assert D.mark(p, [{"item": "network", "status": "done"}])["applied"] == ["network"]
 
 
 def test_notebook_needs_a_citation_and_goes_to_the_writer_once():
@@ -126,15 +142,15 @@ def run_stream(script, deep=True):
 
 
 def test_loop_returns_to_work_until_checklist_is_closed_then_writes():
-    marks = [{"id": "c1", "name": "deep_mark", "args": {"updates": [
-        {"item": i["id"], "status": "done", "units": LABELS} for i in plan()["items"]]}},
-        {"id": "c2", "name": "deep_notebook_add", "args": {"notes": [
-            {"item": "windows", "fact": "found", "cite": "rec://9"}]}}]
+    marks = [{"id": "c2", "name": "deep_notebook_add", "args": {"notes": [
+        {"item": i["id"], "fact": "%s: %s" % (i["id"], " ".join(LABELS)), "cite": "rec://9"} for i in plan()["items"]]}},
+        {"id": "c1", "name": "deep_mark", "args": {"updates": [
+            {"item": i["id"], "status": "done", "units": LABELS} for i in plan()["items"]]}}]
     # First the model writes at once (no tool call): the gate sends it back; then it closes every item.
     r, events = run_stream([None, marks])
     final = [e for e in events if e["type"] == "final"][0]["result"]
     prog = [e for e in events if e["type"] == "deep_progress"]
-    assert prog and prog[-1]["progress"]["open"] == 0 and prog[-1]["progress"]["notes"] == 1
+    assert prog and prog[-1]["progress"]["open"] == 0 and prog[-1]["progress"]["notes"] == len(plan()["items"])
     assert final["answer"]
     system = " ".join(str(getattr(m, "content", "")) for m in r.base_model.final_messages)
     assert "rec://9" in system  # the notebook reaches the writer
