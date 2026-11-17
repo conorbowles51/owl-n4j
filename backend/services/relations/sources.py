@@ -220,14 +220,18 @@ class DbSources:
 
     def pair_stats(self, ea: str, eb: str) -> dict:
         """Days the two phones were within about 30 minutes and 250 m of each other, and days both were active."""
+        # an equi-join over each of the other phone's cells and its 26 neighbours (the half-hour and 450 m squares beside it)
+        # reads the same thing as a range join, in milliseconds on 67,000 positions; the range join timed out at 90 s
         row = self.db.execute(text("""
             WITH a AS (SELECT floor(extract(epoch FROM instant) / 900) AS bin, round(lat / 0.002) AS la, round(lon / 0.002) AS lo,
                               instant::date AS d FROM phone_location_points
                        WHERE case_id = :c AND extraction_id = CAST(:a AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL),
-                 b AS (SELECT floor(extract(epoch FROM instant) / 900) AS bin, round(lat / 0.002) AS la, round(lon / 0.002) AS lo,
+                 b AS (SELECT DISTINCT floor(extract(epoch FROM instant) / 900) AS bin, round(lat / 0.002) AS la, round(lon / 0.002) AS lo,
                               instant::date AS d FROM phone_location_points
-                       WHERE case_id = :c AND extraction_id = CAST(:b AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL)
-            SELECT (SELECT count(DISTINCT a.d) FROM a JOIN b ON abs(a.bin - b.bin) <= 1 AND abs(a.la - b.la) <= 1 AND abs(a.lo - b.lo) <= 1),
+                       WHERE case_id = :c AND extraction_id = CAST(:b AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL),
+                 bx AS (SELECT DISTINCT b.bin + k1 AS bin, b.la + k2 AS la, b.lo + k3 AS lo
+                        FROM b CROSS JOIN generate_series(-1, 1) k1 CROSS JOIN generate_series(-1, 1) k2 CROSS JOIN generate_series(-1, 1) k3)
+            SELECT (SELECT count(DISTINCT a.d) FROM a JOIN bx ON bx.bin = a.bin AND bx.la = a.la AND bx.lo = a.lo),
                    (SELECT count(*) FROM (SELECT d FROM a INTERSECT SELECT d FROM b) x)"""),
             {"c": self.case, "a": ea, "b": eb}).first()
         return {"days_together": int(row[0] or 0), "days_both_active": int(row[1] or 0)}
