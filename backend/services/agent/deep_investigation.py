@@ -371,6 +371,8 @@ def render_block(plan: dict) -> str:
         "Dates and times of events at night are given in the local time with the zone named, with the date the "
         "people lived it; say UTC where UTC is used.",
         "Your readings are your readings: label them as such until a person confirms.",
+        "Write the report as your final answer, in markdown. Do not build report, table or other artifacts: the "
+        "finished answer is saved as a report the person exports to PDF.",
         METHOD.get(plan["domain"], ""),
         "Checklist for this question (%s): %s" % (plan["domain"], "; ".join(i["id"] for i in plan["items"])),
     ]
@@ -402,3 +404,42 @@ def final_rules(plan: dict | None = None) -> str:
 
 def checkpoint_state(plan: dict | None) -> dict | None:
     return deepcopy(plan) if plan else None
+
+
+def report_artifact(answer: str, plan: dict) -> dict | None:
+    """The finished answer as a report artifact, so it exports through the existing PDF and Word path. Sections are
+    the answer's own headings; text before the first heading is the opening section. None when there is no text."""
+    import re
+    text = (answer or "").strip()
+    if not text:
+        return None
+    from services.agent.tools import _artifact
+    title = "Deep investigation report"
+    first = re.match(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", text, re.M)
+    if first:
+        title = first.group(1).strip()[:160]
+    sections: list[dict] = []
+    parts = re.split(r"^(?=\s{0,3}#{1,4}\s)", text, flags=re.M)
+    for part in parts:
+        if not part.strip():
+            continue
+        head = re.match(r"^\s{0,3}(#{1,4})\s+(.+?)\s*#*\s*$", part, re.M)
+        if head and part.lstrip().startswith("#"):
+            level, heading = len(head.group(1)), head.group(2).strip()[:160]
+            body = part[head.end():].strip() or "No text."
+        else:
+            level, heading, body = 2, "Summary", part.strip()
+        if level == 1 and not sections and not body.strip("# "):
+            continue
+        sections.append({"id": "section-%d" % (len(sections) + 1), "heading": heading, "content": body,
+                         "level": max(1, min(level, 6)), "embeds": []})
+    if not sections:
+        return None
+    return _artifact("report", title, {
+        "title": title, "purpose": "A deep investigation of the case, written for the person who asked.",
+        "audience": "", "scope": plan.get("question", "")[:1500],
+        "included_items": [i["title"] for i in plan["items"]][:40], "sections": sections,
+        "embedded_artifacts": [], "open_questions": []},
+        {"section_count": len(sections), "embedded_artifact_count": 0, "source_result_ids": [],
+         "revision_note": "", "status": "draft", "origin": "deep_investigation",
+         "checklist": progress(plan)})

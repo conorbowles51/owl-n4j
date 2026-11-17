@@ -176,3 +176,18 @@ def test_method_names_only_tools_this_build_registers():
     named = {w for text in D.METHOD.values() for w in re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", text)}
     named -= {"has_more", "phone_messages_x"}
     assert named - have == set(), sorted(named - have)
+
+
+def test_report_artifact_follows_the_answers_own_headings():
+    answer = "# Report for the client\n\nOpening.\n\n## Summary\nx\n\n## Inventory\ny\n"
+    art = D.report_artifact(answer, plan())
+    assert art["type"] == "report" and art["title"] == "Report for the client"
+    heads = [s["heading"] for s in art["data"]["sections"]]
+    assert heads == ["Report for the client", "Summary", "Inventory"], heads
+    assert D.report_artifact("", plan()) is None
+
+
+def test_deep_run_adds_the_report_as_an_artifact():
+    r, events = run_stream([None] * (D.MAX_GATES + 1))
+    final = [e for e in events if e["type"] == "final"][0]["result"]
+    assert any((a.get("metadata") or {}).get("origin") == "deep_investigation" for a in final["artifacts"])

@@ -258,6 +258,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
     source_message_keys = {fingerprint([m.tool_call_id, m.content]) for m in source_messages}
     malformed_streak = int(checkpoint.get('malformed_streak', 0))
     lint_repaired = False
+    deep_artifact = None
     resume_note = checkpoint.get('resume_note')
     if checkpoint and not resume_note and phase != 'done':
         resume_note = ('Saved work has resumed; this is an execution note, not a new investigator instruction. '
@@ -592,10 +593,16 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                             "- " + x for x in left[:10])
             # A group the person switched off is named under Not examined, with its steps (rule 1).
             answer = tool_groups.with_not_examined(answer, steer_applied, last_step=used)
+            if context.deep_plan is not None and answer and not completion_issues and not deep_artifact:
+                deep_artifact = D.report_artifact(answer, context.deep_plan)
+                if deep_artifact:
+                    artifacts.append(g.to_jsonable(deep_artifact))
             phase = "done"
             save()
     if clarification:
         yield {"type": "clarification", "clarification": clarification}
+    if deep_artifact:
+        yield {"type": "artifact", "artifact": deep_artifact}
     if answer:
         yield {"type": "answer", "answer": g._streamed_answer(context, case_id, answer)}
     yield {"type": "final", "result": {"answer": answer, "artifacts": artifacts, "clarification": clarification,
