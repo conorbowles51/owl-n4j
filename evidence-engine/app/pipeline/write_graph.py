@@ -424,6 +424,39 @@ async def write_graph(
     await _embed_entities(entities, case_id)
 
 
+async def add_checked_facts(updates: list[dict[str, Any]], case_id: str) -> set[str]:
+    """Facts a later claim check passed, merged into nodes already in the graph (services/checked_claims_graph.py).
+
+    Each update holds ``entity`` (the node's id, name, category, aliases, description and its facts with the new ones
+    merged in), ``previous_facts`` (the node's facts as read) and ``claim_ids`` (the passed claims). Only the facts and
+    the claim ids change, under the case write lock; a node whose facts changed since they were read is left alone
+    and counted as skipped, so nothing written meanwhile is lost. The written nodes' search vectors are rebuilt."""
+    if not updates:
+        return set()
+    rows = [{"id": u["entity"].id, "facts": json.dumps(u["entity"].verified_facts), "previous": u["previous_facts"],
+             "claim_ids": list(u["claim_ids"])} for u in updates]
+    written: list[str] = []
+    for start in range(0, len(rows), 100):
+        batch = sanitize_json(rows[start:start + 100])
+        guarded = (
+            "MERGE (writeLock:IngestionCaseWriteLock {case_id: $case_id}) "
+            "SET writeLock.sequence = coalesce(writeLock.sequence, 0) + 1 WITH writeLock "
+            f"UNWIND $rows AS row MATCH (n:{ENTITY_LABEL_EXPRESSION} {{id: row.id, case_id: $case_id}}) "
+            "WHERE NOT n:RecycleBin AND coalesce(n.verified_facts, '') = coalesce(row.previous, '') "
+            "SET n.verified_facts = row.facts, "
+            "n.source_claim_ids = reduce(acc = [], x IN (coalesce(n.source_claim_ids, []) + row.claim_ids) "
+            "| CASE WHEN x IN acc THEN acc ELSE acc + x END) "
+            "RETURN n.id AS id")
+        result = await neo4j_client.execute_query(guarded, {"rows": batch, "case_id": case_id})
+        written.extend(str(r["id"]) for r in (result or []))
+    skipped = len(rows) - len(written)
+    if skipped:
+        logger.warning("Checked facts: %d node(s) changed since read, left for the next run", skipped)
+    done = set(written)
+    await _embed_entities([u["entity"] for u in updates if u["entity"].id in done], case_id)
+    return done
+
+
 async def _write_document_links(entities: list[ResolvedEntity], case_id: str) -> None:
     """Each entity MENTIONED_IN the Document node of every file it was read from (pipeline/document_links.py)."""
     from app.pipeline.document_links import write_document_links

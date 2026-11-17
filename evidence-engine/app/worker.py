@@ -78,9 +78,11 @@ async def process_merge(ctx: dict, job_id: str, case_id: str) -> None:
 async def check_unreviewed_claims(ctx: dict, case_id: str) -> None:
     """Check the claims earlier ingestions left unreviewed in this case (app.services.claim_backfill), cheapest file
     first, until the case's AI spending limit."""
-    from app.services import claim_backfill
+    from app.services import checked_claims_graph, claim_backfill
     outcome = await claim_backfill.check_case(async_session, case_id, apply=True)
     logger.info("Claim check of case %s: %s", case_id, claim_backfill.summary([outcome]))
+    # the claims that passed join the graph through the ingestion graph write, as passed claims do at ingestion
+    await checked_claims_graph.add_passed_claims(async_session, case_id, apply=True)
 
 
 async def process_phone_capture(ctx: dict, job_id: str, case_id: str) -> None:

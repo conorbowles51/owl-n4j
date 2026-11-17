@@ -35,7 +35,7 @@ describe("UncheckedClaimsNotice", () => {
     renderNotice("f1")
     expect(await screen.findByText(uncheckedClaimsText(250))).toBeTruthy()
     expect(screen.getByText(/1,250 unchecked claims in all/)).toBeTruthy()
-    expect(screen.getByText(/are not added to the graph yet/)).toBeTruthy() // a passed check is not shown as in the graph
+    expect(screen.getByText(/pass are added to the graph when the check ends/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Check them" }))
     await waitFor(() => expect(mocked).toHaveBeenCalledWith("/api/claim-checks/c1/check", { method: "POST" }))
   })

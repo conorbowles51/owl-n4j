@@ -58,5 +58,5 @@ async def check(case_id: UUID, db: Session = Depends(get_db), user: User = Depen
         raise HTTPException(status_code=502, detail="The claim check could not be started. Try again later.") from exc
     return {"case_id": str(case_id), "queued": bool(answer.get("queued")),
             "message": ("Checking started: each claim is read against its file, and the count above goes down as "
-                        "they are done. Checked claims are not yet added to the graph.") if answer.get("queued") else
+                        "they are done. Claims that pass are added to the graph when the check ends.") if answer.get("queued") else
                        "A claim check of this case is already running."}
