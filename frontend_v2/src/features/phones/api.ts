@@ -556,7 +556,7 @@ export async function getPhoneMapSummary(caseId: string, filter: PhoneMapFilter 
   return PhoneMapSummarySchema.parse(await fetchAPI("/api/phones/map/summary", { method: "POST", body: { case_id: caseId, filter }, read: true, signal }))
 }
 export async function getPhoneMapPoints(caseId: string, bbox: number[], zoom: number, filter: PhoneMapFilter = {}, signal?: AbortSignal) {
-  return PhoneMapPointsSchema.parse(await fetchAPI("/api/phones/map/points", { method: "POST", body: { case_id: caseId, bbox, zoom, filter }, read: true, signal }))
+  return PhoneMapPointsSchema.parse(await fetchAPI("/api/phones/map/points", { method: "POST", body: { case_id: caseId, bbox, zoom: Math.min(24, Math.max(0, zoom)), filter }, read: true, signal }))
 }
 
 /** Timed positions in time order, for routes; `untimed` positions have no place in a route and are counted. */
