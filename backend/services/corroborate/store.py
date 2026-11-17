@@ -503,12 +503,14 @@ class CaseStore:
     def period(self, people: list[dict]) -> tuple[date, date] | None:
         """The days the comparison is drawn from: where the people's phones all hold records (their overlap), else
         every day any of their phones or accounts covers."""
-        cov = self.coverage(people, [])
-        phone_spans = [(min(s[0] for s in c["phone"]), max(s[1] for s in c["phone"])) for c in cov.values() if c.get("phone")]
+        per_person = {p["key"]: [sp for e in p["phones"] for sp in self.phone_spans(e)[0]] for p in people}
+        phone_spans = [(min(s[0] for s in v), max(s[1] for s in v)) for v in per_person.values() if v]
         if len(phone_spans) >= 2:
             lo, hi = max(s[0] for s in phone_spans), min(s[1] for s in phone_spans)
             if lo < hi:
                 return lo.date(), hi.date()
+        # no overlap of two phones: every day any of their phones or accounts covers (the full coverage, with ledgers)
+        cov = self.coverage(people, [])
         spans = [s for c in cov.values() for k in ("phone", "ledger") for s in c.get(k, [])]
         if not spans:
             return None
