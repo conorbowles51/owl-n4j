@@ -22,7 +22,7 @@ FREE = "free text matched outside the case search; a structured filter of its ow
 
 ALLOWED: dict[str, tuple[int, str]] = {
     # the shared search and what it calls
-    "services/embed_all/search.py": (5, SEARCH),
+    "services/embed_all/search.py": (3, SEARCH),
     "services/phone/chat_retrieval.py": (2, SEARCH),
     "services/evidence_text_search_service.py": (2, SEARCH),
     "services/search/search.py": (7, SEARCH),
