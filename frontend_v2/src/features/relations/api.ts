@@ -20,6 +20,8 @@ export interface RelationItem {
   id: string
   label: string
   at: string | null
+  /** "day": a date with no time of day, shown as a date only. */
+  precision?: "day"
   state?: string
 }
 

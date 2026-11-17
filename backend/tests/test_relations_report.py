@@ -43,3 +43,10 @@ def test_a_long_report_says_how_many_it_lists_of_how_many():
     run["result"]["candidates"] = [base] * (R.REPORT_CANDIDATES + 5)
     html = R.render_html(case_name="C", generated_by="N", group={}, run=run)
     assert f"lists the {R.REPORT_CANDIDATES:,} strongest of {R.REPORT_CANDIDATES + 5:,} candidate links" in html
+
+
+def test_a_date_only_item_shows_its_date_and_no_time_of_day():
+    run = run_view(False)
+    run["result"]["items"][1] = {**run["result"]["items"][1], "at": "2026-03-01T00:00:00+00:00", "precision": "day"}
+    html = R.render_html(case_name="C", generated_by="N", group={}, run=run)
+    assert "2026-03-01</span>" in html and "2026-03-01 00:00" not in html

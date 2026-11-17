@@ -180,7 +180,7 @@ export function RelationsPage() {
           {reportError && <p role="alert" className="text-sm text-destructive">{reportError}</p>}
           <section aria-label="Items">
             <h2 className="font-semibold">The items</h2>
-            <ul className="text-sm">{result.items.map((i) => <li key={i.ref}>{i.label} <span className="text-muted-foreground">({i.type.replace(/_/g, " ")}{i.at ? `, ${i.at.slice(0, 16).replace("T", " ")}` : ", no date on record"})</span></li>)}</ul>
+            <ul className="text-sm">{result.items.map((i) => <li key={i.ref}>{i.label} <span className="text-muted-foreground">({i.type.replace(/_/g, " ")}{i.at ? `, ${i.at.slice(0, i.precision === "day" ? 10 : 16).replace("T", " ")}` : ", no date on record"})</span></li>)}</ul>
           </section>
           <section aria-label="Candidate links">
             <h2 className="font-semibold">Candidate links ({result.counts.candidates.toLocaleString("en-US")})</h2>

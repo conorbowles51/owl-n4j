@@ -42,7 +42,7 @@ def render_html(*, case_name: str, generated_by: str, group: dict, run: dict, pr
     label = privilege_label(privilege_marking)
     c = result["counts"]
     items = "".join(f"<li>{_e(i['label'])} <span class='sub'>{_e(i['type'].replace('_', ' '))}"
-                    + (f" · {_e(i['at'][:16].replace('T', ' '))}" if i.get("at") else " · no date on record") + "</span></li>"
+                    + (f" · {_e(i['at'][:(10 if i.get('precision') == 'day' else 16)].replace('T', ' '))}" if i.get("at") else " · no date on record") + "</span></li>"
                     for i in result["items"])
     analyses = "".join(f"<tr><td>{_e(a['title'])}</td><td>{a['pairs']:,}</td><td>{a['found']:,}</td><td>{_e(a.get('note', ''))}</td></tr>"
                        for a in result["analyses"])

@@ -544,13 +544,28 @@ def shared_silence(streams: dict[str, list[datetime]] | None, minimum: timedelta
                 (usual if ok_a and ok_b else unusual).append(row)
         words = (f"Phone {pa[:8]} has {_n(len(gaps[pa]))} silences of {minimum.total_seconds() / 3600:.0f} hours or more "
                  f"in the period; phone {pb[:8]} has {_n(len(gaps[pb]))}.")
-        for row in unusual:
-            who = "either phone's" if not (row["usual_a"] or row["usual_b"]) else "one phone's"
-            where = ("longer than a night" if row["hours"] >= 24 else f"outside {who} usual quiet hours")
-            out.append(candidate("shared_silence", [pa, pb], "time", "moderate" if row["hours"] >= 24 else "weak",
-                                 [f"Both phones were silent for {row['hours']} hours from {row['start'][:16].replace('T', ' ')} "
-                                  f"to {row['end'][5:16].replace('T', ' ')}, {where}."],
-                                 chance={"words": words, "reading": "uncommon", "share_of_days": None}, extra=row))
+        # a few unusual shared silences are each a candidate; many of one pair are one candidate listing every stretch
+        for group, label in (([r for r in unusual if r["hours"] >= 24], "a day or more"),
+                             ([r for r in unusual if r["hours"] < 24], "outside their usual quiet hours")):
+            if not group:
+                continue
+            if len(group) > 3:
+                longest = max(group, key=lambda r: r["hours"])
+                out.append(candidate("shared_silence", [pa, pb], "time", "weak",
+                                     [f"Both phones were silent together {_n(len(group))} times for {label}; the longest was "
+                                      f"{longest['hours']} hours from {longest['start'][:16].replace('T', ' ')}."],
+                                     chance={"words": words + f" With this many silences each, shared stretches are expected: "
+                                                              f"{_n(len(group))} of them are shared.", "reading": "ordinary",
+                                             "share_of_days": None},
+                                     extra={"stretches": group, "count": len(group)}))
+                continue
+            for row in group:
+                who = "either phone's" if not (row["usual_a"] or row["usual_b"]) else "one phone's"
+                where = ("longer than a night" if row["hours"] >= 24 else f"outside {who} usual quiet hours")
+                out.append(candidate("shared_silence", [pa, pb], "time", "moderate" if row["hours"] >= 24 else "weak",
+                                     [f"Both phones were silent for {row['hours']} hours from {row['start'][:16].replace('T', ' ')} "
+                                      f"to {row['end'][5:16].replace('T', ' ')}, {where}."],
+                                     chance={"words": words, "reading": "uncommon", "share_of_days": None}, extra=row))
         if usual:
             longest = max(usual, key=lambda r: r["hours"])
             out.append(candidate("shared_silence", [pa, pb], "time", "faint",

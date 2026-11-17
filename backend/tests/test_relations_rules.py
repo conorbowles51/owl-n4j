@@ -172,3 +172,13 @@ def test_a_date_or_time_in_free_text_is_never_read_as_a_phone_number():
         assert [f for f in rules.extract_identifiers(text) if f["kind"] == "number"] == [], text
     found = rules.extract_identifiers("Call +1 443 555 0131 at 2024-05-03 23:14")
     assert [(f["kind"], f["value"]) for f in found] == [("number", "14435550131")]
+
+
+def test_many_long_shared_silences_of_one_pair_are_one_candidate_not_sixty_three():
+    long = [(T0 + timedelta(days=10 * d), T0 + timedelta(days=10 * d, hours=40)) for d in range(63)]
+    c, _ = rules.shared_silence(None, gaps={"A": long, "B": long})
+    assert len(c) == 1 and c[0]["strength"] == "weak" and c[0]["detail"]["count"] == 63
+    assert "63 times for a day or more" in c[0]["reasons"][0] and c[0]["chance"]["reading"] == "ordinary"
+    few = long[:3]
+    c, _ = rules.shared_silence(None, gaps={"A": few, "B": few})
+    assert len(c) == 3 and all(x["strength"] == "moderate" for x in c)
