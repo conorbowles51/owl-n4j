@@ -27,7 +27,7 @@ ACTIONS = frozenset({
     "propose_relation_hypotheses", "plan_theory_sweep", "propose_counter_arguments", "propose_judgement_call",
     "propose_workspace_entry", "propose_dossier_change", "propose_lead_card", "propose_timeline_addition",
     "propose_link", "propose_control_claim", "propose_payment_purpose", "propose_claim", "propose_entity",
-    "propose_glossary_term", "propose_assumption", "draft_control_claim", "draft_payment_purpose", "deep_mark",
+    "propose_glossary_term", "propose_assumption", "draft_control_claim", "draft_payment_purpose", "draft_corroborate_question", "deep_mark",
     "deep_notebook_add", "record_working_notes", "read_tool_result_page",
 })
 
