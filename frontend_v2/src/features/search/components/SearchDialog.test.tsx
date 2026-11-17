@@ -218,6 +218,14 @@ describe("Search dialog", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Exact characters" }))
     await waitFor(() => expect(api.searchCase).toHaveBeenCalledWith("case-1", "jo", true, expect.anything()))
   })
+  it("no word hit says the words were not found as written, not that nothing in the case matches", async () => {
+    // live 17 Nov: "Nothing in this case matches Ruiz bought tools at Penn's shop." sat above By meaning (12 of 304)
+    api.searchCase.mockResolvedValue(result({ query: "Ruiz bought tools at Penn's shop", groups: [] }))
+    page()
+    await openAndType("Ruiz bought tools at Penn's shop")
+    expect(await screen.findByText("No record holds these words as written: Ruiz bought tools at Penn's shop.")).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing in this case matches/)).toBeNull()
+  })
   it("Back from an opened hit shows the same results again (S-9)", async () => {
     page()
     await openAndType("jose")

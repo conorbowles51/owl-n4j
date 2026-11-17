@@ -202,7 +202,7 @@ function SearchBody(props: {
           {l.message}
         </p>
       ))}
-      {shown.length === 0 && <p className="p-4 text-sm">Nothing in this case matches {data.query}.</p>}
+      {shown.length === 0 && <p className="p-4 text-sm">No record holds these words as written: {data.query}.</p>}
       {shown.map((g) => (
         <CommandGroup key={g.group} heading={`${GROUP_NAMES[g.group] ?? g.group} (${g.total.toLocaleString("en-US")})`}>
           {g.note && <p className="px-2 pb-1 text-xs">{g.note}</p>}
