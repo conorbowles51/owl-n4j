@@ -57,11 +57,11 @@ def members_in_areas(conn, case_id, areas: list[list[list[float]]], *, places=gr
     seen: dict[str, str] = {}
     phones: set[str] = set()
     kinds: dict[str, int] = {}
-    rows = conn.execute(text(
+    statement = text(
         "SELECT t.record_uid, t.extraction_id, t.model_type, t.lat, t.lon FROM pv_location_point t WHERE t.case_id = :c "
-        "AND t.lat IS NOT NULL AND t.lon IS NOT NULL AND t.lat BETWEEN :s AND :n AND t.lon BETWEEN :w AND :e"),
-        {"c": str(case_id), "w": bbox[0], "s": bbox[1], "e": bbox[2], "n": bbox[3]}).execution_options(
-        stream_results=True, yield_per=5000)
+        "AND t.lat IS NOT NULL AND t.lon IS NOT NULL AND t.lat BETWEEN :s AND :n AND t.lon BETWEEN :w AND :e"
+    ).execution_options(stream_results=True, yield_per=5000)
+    rows = conn.execute(statement, {"c": str(case_id), "w": bbox[0], "s": bbox[1], "e": bbox[2], "n": bbox[3]})
     for r in rows:
         if r.record_uid is None or not inside_any(r.lon, r.lat, rings):
             continue

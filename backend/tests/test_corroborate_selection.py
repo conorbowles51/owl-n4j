@@ -104,17 +104,14 @@ def test_a_paste_over_the_limit_is_refused_with_the_number():
         pasted.match(None, "c", "\n".join(str(1000000 + i) for i in range(2001)), finders=())
 
 
-class _Rows(list):
-    def execution_options(self, **kw):
-        return self
-
-
 class _Conn:
+    """Like a real connection: the statement takes execution options, the result is only iterated."""
     def __init__(self, rows):
         self.rows = rows
 
-    def execute(self, *a, **k):
-        return _Rows(self.rows)
+    def execute(self, statement, params=None):
+        assert hasattr(statement, "compile"), "execute takes a statement, as a real connection does"
+        return iter(self.rows)
 
 
 def _row(uid, ext, model, lon, lat):
