@@ -21,6 +21,7 @@ from services.agent.ledger_run_cache import LedgerRunCache
 from services.neo4j.driver import driver
 from services.neo4j.financial_service import financial_service
 from services.neo4j.geo_service import geo_service
+from services.agent.result_shape import with_shape
 from services.neo4j.graph_service import graph_service
 from services.neo4j.timeline_service import timeline_service
 from services.vector_db_service import get_vector_db_service
@@ -118,6 +119,9 @@ class AgentToolContext:
         error: str | None = None,
     ) -> dict[str, Any]:
         result_id = f"res_{uuid.uuid4().hex[:12]}"
+        if status == "success":
+            # lx-agenttools D19: every read tool states total, shown, next, searched, not searched, why empty.
+            data, summary = with_shape(tool_name, to_jsonable(data), summary)
         safe_data = to_jsonable(data)
         self.result_store[result_id] = safe_data
         payload = {
