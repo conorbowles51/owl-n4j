@@ -156,9 +156,20 @@ def report(case_id: UUID, run_id: UUID, request: ReportRequest, db: Session = De
         raise HTTPException(status_code=404, detail=str(exc))
     group = case_selections.describe(db, case_id, run["selection_id"], member_limit=10**9)
     case = db.query(Case).filter(Case.id == case_id).first()
+    lanes = None
+    corroboration = (run["result"] or {}).get("corroboration")
+    if corroboration:
+        from services.corroborate.store import CaseStore
+        from services.relations import lanes as L
+        store, lanes = CaseStore(db, case_id), []
+        for inst in corroboration["comparison"]["incident"] + corroboration["comparison"]["ordinary"]:
+            try:
+                lanes.append(L.build(store, corroboration, inst["id"]))
+            except LookupError as exc:
+                lanes.append({"instance": {"id": inst["id"], "label": inst["label"]}, "lanes": [], "error": str(exc)})
     try:
         content = R.render_pdf(case_name=case.title if case else "", generated_by=user.name or user.email,
-                               group=group, run=run, privilege_marking=request.privilege_marking)
+                               group=group, run=run, privilege_marking=request.privilege_marking, lanes=lanes)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     name = f"link-analysis-{datetime.now().strftime('%Y%m%d')}.pdf"
