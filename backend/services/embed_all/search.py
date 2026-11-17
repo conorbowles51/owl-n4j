@@ -62,28 +62,23 @@ def _where(case_id, areas, date_from, date_to):
     return {"$and": conds}
 
 
+QUERY_WORKERS = 8  # Chroma queries of one search sent side by side
+
 def meaning_hits(case_id, query_vector, items_collection, chunks_collection, areas, *, phone=None, person=None,
                  date_from=None, date_to=None, entities_collection=None) -> list[dict]:
-    hits: list[dict] = []
+    # Every Chroma query is sent at once and read back in this order (lx-casesearch 17 Nov: 12 queries one after
+    # another took 5.5 s at load 7 and 42-107 s at load 50-75; side by side 2.4 s at load 7, the same hits).
+    include = ["documents", "metadatas", "distances"]
+    jobs: list[tuple[str, Any, dict]] = []
     if "entities" in areas and entities_collection is not None and date_from is None and date_to is None:
-        res = entities_collection.query(query_embeddings=[query_vector], n_results=FETCH // 2,
-                                        where={"case_id": str(case_id)}, include=["documents", "metadatas", "distances"])
-        for eid, doc, meta, dist in zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]):
-            hits.append({"area": "entities", "key": eid, "title": meta.get("name") or eid,
-                         "cite": "/cases/%s/graph" % case_id, "text": doc, "distance": dist, "person": meta.get("name") or "",
-                         "as_read": False})
+        jobs.append(("entities", entities_collection, dict(n_results=FETCH // 2, where={"case_id": str(case_id)})))
     areas = [a for a in areas if a != "entities"]
     item_areas = [a for a in areas if a not in ("phone_text", "documents")]
     over = FETCH * 3 if person else FETCH
     if item_areas and items_collection is not None:
         for area in item_areas:  # one query per area: a crowded area cannot push another out of the candidates
-            res = items_collection.query(query_embeddings=[query_vector], n_results=over // 2,
-                                         where=_where(case_id, [area], date_from, date_to),
-                                         include=["documents", "metadatas", "distances"])
-            for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
-                hits.append({"area": meta["area"], "key": meta["item_key"], "title": meta.get("title", ""),
-                             "cite": meta.get("cite", ""), "text": doc, "distance": dist,
-                             "person": meta.get("person", ""), "as_read": bool(meta.get("as_read"))})
+            jobs.append(("items", items_collection, dict(n_results=over // 2,
+                                                         where=_where(case_id, [area], date_from, date_to))))
     chunk_areas = [a for a in areas if a in ("phone_text", "documents")]
     if chunk_areas and chunks_collection is not None and (date_from is None and date_to is None):
         conds = [{"case_id": str(case_id)}, {"ingestion_state": "active"}]
@@ -91,18 +86,39 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
             conds.append({"source_kind": "phone_text"})
         if phone:
             conds.append({"extraction_id": str(phone)})
-        res = chunks_collection.query(query_embeddings=[query_vector], n_results=over,
-                                      where={"$and": conds}, include=["documents", "metadatas", "distances"])
-        for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
-            is_phone = meta.get("source_kind") == "phone_text"
-            area = "phone_text" if is_phone else "documents"
-            if area not in chunk_areas:
-                continue
-            cite = meta.get("url") if is_phone else "doc://%s/%s" % (meta.get("evidence_file_id") or meta.get("doc_id"),
-                                                                     meta.get("page_start") or "")
-            hits.append({"area": area, "key": "%s:%s" % (meta.get("evidence_file_id"), meta.get("chunk_index")),
-                         "title": meta.get("doc_name") or meta.get("file_name") or "", "cite": cite or "",
-                         "text": doc, "distance": dist, "person": "", "as_read": False})
+        jobs.append(("chunks", chunks_collection, dict(n_results=over, where={"$and": conds})))
+
+    def run(job):
+        return job[1].query(query_embeddings=[query_vector], include=include, **job[2])
+    if len(jobs) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(QUERY_WORKERS, len(jobs))) as pool:
+            results = list(pool.map(run, jobs))
+    else:
+        results = [run(j) for j in jobs]
+    hits: list[dict] = []
+    for (kind, _, _), res in zip(jobs, results):
+        if kind == "entities":
+            for eid, doc, meta, dist in zip(res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]):
+                hits.append({"area": "entities", "key": eid, "title": meta.get("name") or eid,
+                             "cite": "/cases/%s/graph" % case_id, "text": doc, "distance": dist,
+                             "person": meta.get("name") or "", "as_read": False})
+        elif kind == "items":
+            for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
+                hits.append({"area": meta["area"], "key": meta["item_key"], "title": meta.get("title", ""),
+                             "cite": meta.get("cite", ""), "text": doc, "distance": dist,
+                             "person": meta.get("person", ""), "as_read": bool(meta.get("as_read"))})
+        else:
+            for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
+                is_phone = meta.get("source_kind") == "phone_text"
+                area = "phone_text" if is_phone else "documents"
+                if area not in chunk_areas:
+                    continue
+                cite = meta.get("url") if is_phone else "doc://%s/%s" % (
+                    meta.get("evidence_file_id") or meta.get("doc_id"), meta.get("page_start") or "")
+                hits.append({"area": area, "key": "%s:%s" % (meta.get("evidence_file_id"), meta.get("chunk_index")),
+                             "title": meta.get("doc_name") or meta.get("file_name") or "", "cite": cite or "",
+                             "text": doc, "distance": dist, "person": "", "as_read": False})
     if person:
         who = person.casefold()
         hits = [h for h in hits if who in (h["person"] + " " + h["text"]).casefold()]

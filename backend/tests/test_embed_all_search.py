@@ -150,3 +150,20 @@ class EntColl:
 def test_graph_entities_are_searched_by_meaning_in_the_case_only():
     hits = S.meaning_hits("c", [0.1], None, None, ["entities"], entities_collection=EntColl())
     assert [(h["area"], h["title"], h["cite"]) for h in hits] == [("entities", "Travis Kell", "/cases/c/graph")]
+
+
+def test_the_queries_of_one_search_go_side_by_side_and_read_back_the_same_hits():
+    import threading
+    rows = [("pay %s" % a, meta(a, "k" + a), 0.1 + i / 100) for i, a in enumerate(("ledger", "accounts", "parties"))]
+
+    class Slow(Coll):
+        """Each query waits until three are in flight at once: one after another, they never are."""
+        barrier = threading.Barrier(3, timeout=5)
+
+        def query(self, **kw):
+            Slow.barrier.wait()
+            return Coll.query(self, **kw)
+    hits = S.meaning_hits("c", [0.1], Slow(rows), None, ["ledger", "accounts", "parties"])
+    serial = S.meaning_hits("c", [0.1], Coll(rows), None, ["ledger", "accounts", "parties"])
+    assert [(h["area"], h["key"], h["distance"]) for h in hits] == [(h["area"], h["key"], h["distance"]) for h in serial]
+    assert [h["area"] for h in hits] == ["ledger", "accounts", "parties"]
