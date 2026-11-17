@@ -324,3 +324,38 @@ def test_the_runner_scores_decoys_on_the_cited_record():
     import inspect
     import scripts.financial_agent_relevance as F
     assert 'decoy_texts=[R.cited_text(u) for u in units]' in inspect.getsource(F.Runner.run)
+
+
+def _paged_run(page1_has_c, page2_has_c=None):
+    """One meaning query with a full first page; record C sits at the end of page 1 or on page 2."""
+    texts = [R.norm('noise')] * 47 + ([R.norm('gamma record')] if page1_has_c else []) + [R.norm('noise')] * 2
+    texts = texts[:50] if page1_has_c else [R.norm('noise')] * 50
+    rel = [{'id': 'C', 'any': ['gamma']}]
+    score = R.score_query(texts, rel)
+    if page2_has_c is not None:
+        R.add_next_page(score, [R.norm('noise')] + ([R.norm('gamma record')] if page2_has_c else []), rel)
+    q = {'demo:q3': dict(kind='meaning', score=score)}
+    return dict(queries=q, aggregate=R.aggregate(q.values()))
+
+
+def test_a_record_pushed_onto_the_next_page_is_moved_not_lost():
+    """lx-casesearch 17 Nov: a record at 48 of 50 went to 51 because three units ranked above it, and the gate called
+    it lost. On page 2 it is found: listed with both ranks, counted through recall at 50, never LOST."""
+    cmp = R.compare([_paged_run(True)], [_paged_run(False, page2_has_c=True)])
+    assert not cmp['lost_records']
+    assert cmp['moved_past_first_page'] == [dict(query='demo:q3', record='C', base=48, cand=52)]
+    assert any(e['metric'] == 'recall_at_50' for e in cmp['losses'])  # the drop still counts in the metric
+    lines = R.verdict_lines(cmp, _paged_run(True)['aggregate'], _paged_run(False, True)['aggregate'])
+    assert any(x.startswith('moved past the first page: demo:q3 C: rank 48 -> 52') for x in lines)
+
+
+def test_a_record_on_neither_page_is_still_lost():
+    for cand in (_paged_run(False, page2_has_c=False), _paged_run(False)):
+        cmp = R.compare([_paged_run(True)], [cand])
+        assert cmp['verdict'] == 'FAIL' and [e['record'] for e in cmp['lost_records']] == ['C']
+
+
+def test_next_offset_reads_the_tools_page_marker():
+    assert R.next_offset({'result_id': 'r', 'data': {'next_offset': 50, 'items': []}}) == 50
+    assert R.next_offset({'next_offset': None}) is None and R.next_offset({'next_offset': True}) is None
+    assert R.next_offset([1, 2]) is None

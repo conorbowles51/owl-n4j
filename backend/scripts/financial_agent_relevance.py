@@ -243,10 +243,22 @@ class Runner:
             return row
         t0 = time.time()
         try:
-            units = R.result_units(tool.invoke(q['args']))
+            payload = tool.invoke(q['args'])
+            units = R.result_units(payload)
             texts = [R.unit_text(u) for u in units]
-            row['score'] = R.score_query(texts, judged_relevant(q), q.get('decoys') or [],
+            relevant = judged_relevant(q)
+            row['score'] = R.score_query(texts, relevant, q.get('decoys') or [],
                                          decoy_texts=[R.cited_text(u) for u in units])
+            nxt = R.next_offset(payload)
+            if nxt is not None and any(v is None for v in row['score']['ranks'].values()):
+                # A judged record missing from a full first page may sit on page 2: fetch it so the gate can tell a
+                # record pushed down a few places from one the search no longer finds. Recall stays page 1's.
+                try:
+                    more = R.result_units(tool.invoke(dict(q['args'], offset=nxt)))
+                except Exception as exc:  # noqa: BLE001 - no page 2: a missing record stays missing
+                    row['next_page_error'] = '%s: %s' % (type(exc).__name__, str(exc)[:200])
+                else:
+                    R.add_next_page(row['score'], [R.unit_text(u) for u in more], relevant)
             if dump:
                 dump.write(json.dumps(dict(query='%s:%s' % (judged['case'], q['id']), args=q['args'],
                                            units=[t[:400] for t in texts[:50]]), ensure_ascii=False) + '\n')

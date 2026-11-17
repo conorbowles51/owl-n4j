@@ -59,6 +59,24 @@ def result_units(payload: Any) -> list[Any]:
     return found
 
 
+def next_offset(payload: Any) -> int | None:
+    """The offset of a tool result's next page, when the tool says there is one (``next_offset``), else None."""
+    data = payload.get("data", payload) if isinstance(payload, dict) and "result_id" in payload else payload
+    nxt = data.get("next_offset") if isinstance(data, dict) else None
+    return nxt if isinstance(nxt, int) and not isinstance(nxt, bool) and nxt > 0 else None
+
+
+def add_next_page(score: dict, texts: list[str], relevant: list[dict]) -> dict:
+    """Record where the judged records the first page missed sit on the tool's next page (``texts``, the next
+    page's units in order): ``next_page_ranks`` {record: rank counted on from the first page, or None}. Recall and
+    ranks stay the first page's; the gate reads this only to tell a record pushed onto page 2 from a record the
+    search no longer finds."""
+    missing = [r for r in relevant if not score["ranks"].get(r["id"])]
+    score["next_page_ranks"] = {
+        r["id"]: next((score["units"] + i + 1 for i, t in enumerate(texts) if matches(t, r)), None) for r in missing}
+    return score
+
+
 def unit_text(unit: Any) -> str:
     return norm(unit if isinstance(unit, str) else json.dumps(unit, ensure_ascii=False, default=str))
 
@@ -164,8 +182,11 @@ def compare(base_runs: list[dict], cand_runs: list[dict]) -> dict:
     A metric is a loss when the candidate's mean is worse than the baseline's mean by more than the larger of the two
     spreads (same-settings runs differ by that much on their own). A judged record is lost when every baseline run
     found it in the top 50 and no candidate run found it at all: a record the search found before and finds no more.
-    A record that moved out of the top 10 is listed, and counts through recall at 10. Gains are listed the same way."""
-    losses, gains, lost, moved, regained = [], [], [], [], []
+    A record that moved out of the top 10 is listed, and counts through recall at 10. A record every candidate run
+    shows on the tool's next page (``next_page_ranks``) is found, not lost: it is listed as moved past the first page
+    with both ranks and counts through recall at 50 (lx-casesearch 17 Nov: a record at 48 of 50 that went to 51
+    because three units ranked above it failed the gate as lost). Gains are listed the same way."""
+    losses, gains, lost, moved, regained, paged = [], [], [], [], [], []
     kinds = sorted({k for r in base_runs + cand_runs for k in r["aggregate"]})
     for kind in kinds:
         for metric in HIGHER_BETTER + LOWER_BETTER:
@@ -198,13 +219,19 @@ def compare(base_runs: list[dict], cand_runs: list[dict]) -> dict:
             c_any = any(s["ranks"].get(rid) for s in cs)
             c10 = any(s["ranks"].get(rid) and s["ranks"][rid] <= 10 for s in cs)
             if b50 and not c_any:
-                lost.append(dict(query=qid, record=rid, why="found before, not found now"))
+                later = [(s.get("next_page_ranks") or {}).get(rid) for s in cs]
+                if all(later):
+                    paged.append(dict(query=qid, record=rid, base=max(s["ranks"][rid] for s in bs),
+                                      cand=max(later)))
+                else:
+                    lost.append(dict(query=qid, record=rid, why="found before, not found now"))
             elif b10 and not c10:
                 moved.append(dict(query=qid, record=rid))
             elif not any(s["ranks"].get(rid) for s in bs) and all(s["ranks"].get(rid) for s in cs):
                 regained.append(dict(query=qid, record=rid))
     verdict = "FAIL" if losses or lost else "PASS"
-    return dict(verdict=verdict, losses=losses, lost_records=lost, moved_out_of_top10=moved, gains=gains,
+    return dict(verdict=verdict, losses=losses, lost_records=lost, moved_out_of_top10=moved,
+                moved_past_first_page=paged, gains=gains,
                 newly_found=regained, base_runs=len(base_runs), cand_runs=len(cand_runs))
 
 
@@ -226,6 +253,9 @@ def verdict_lines(cmp: dict, base_agg: dict, cand_agg: dict, label: str = "retri
         lines.append("LOSS %s %s: %s -> %s (noise %s)" % (e["kind"], e["metric"], e["base"], e["cand"], e["noise"]))
     for e in cmp["lost_records"]:
         lines.append("LOST %s %s: %s" % (e["query"], e["record"], e["why"]))
+    for e in cmp.get("moved_past_first_page", []):
+        lines.append("moved past the first page: %s %s: rank %s -> %s (counted in recall at 50, not lost)" % (
+            e["query"], e["record"], e["base"], e["cand"]))
     for e in cmp["moved_out_of_top10"]:
         lines.append("moved out of top 10: %s %s" % (e["query"], e["record"]))
     for e in cmp["gains"]:
