@@ -66,9 +66,9 @@ def file_hashes(conn, cands: list[dict]) -> dict[str, str]:
 
 
 def dedupe(cands: list[dict], hashes: dict[str, str] | None = None) -> tuple[list[dict], int]:
-    """Same citation, the same page of one file uploaded twice (the same content hash), or the same text in the same
-    kind of material (one message on two phones, one statement page read twice): kept once, the other places listed
-    in ``also_at``."""
+    """Same record (its own citation, else its area and key), the same page of one file uploaded twice (the same
+    content hash), or the same text in the same kind of material (one message on two phones, one statement page read
+    twice): kept once, the other places listed in ``also_at``."""
     out: list[dict] = []
     by_cite: dict[str, dict] = {}
     by_text: dict[str, dict] = {}
@@ -77,22 +77,25 @@ def dedupe(cands: list[dict], hashes: dict[str, str] | None = None) -> tuple[lis
     removed = 0
     for h in cands:
         cite = h.get("cite") or ""
+        # a record's own citation (txn://, rec://, doc://, entity://) names it; a page link (every graph connection
+        # cites the case's graph page, every bank account its financial page) does not, so area and key do
+        ident = cite if "://" in cite else ("%s|%s" % (h.get("area"), h["key"]) if h.get("key") else "")
         fp = _fingerprint(h) if (h.get("text") or "").strip() else None
         m = DOC_CITE.match(cite)
         page = (hashes[m.group(1)], m.group(2)) if m and m.group(1) in hashes else None
-        first = by_cite.get(cite) if cite else None
+        first = by_cite.get(ident) if ident else None
         if first is None and page:
             first = by_page.get(page)
         if first is None and fp:
             first = by_text.get(fp)
         if first is not None:
             removed += 1
-            if cite and cite != first.get("cite") and cite not in first.setdefault("also_at", []):
+            if "://" in cite and cite != first.get("cite") and cite not in first.setdefault("also_at", []):
                 first["also_at"].append(cite)
             first["sources"] = sorted(set(first.get("sources") or []) | set(h.get("sources") or []))
             continue
-        if cite:
-            by_cite[cite] = h
+        if ident:
+            by_cite[ident] = h
         if page:
             by_page[page] = h
         if fp:

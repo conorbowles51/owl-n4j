@@ -103,6 +103,21 @@ def test_the_same_message_on_two_phones_is_kept_once_with_the_other_place():
     assert a["also_at"] == ["rec://b"] and a["sources"] == ["meaning", "words"]
 
 
+def test_hits_that_share_a_page_link_are_different_records_and_all_kept():
+    # graph connections all cite the case's graph page and bank accounts its financial page (demo case, gate 17 Nov:
+    # 43 connections in origin's first 50 were one after duplicates were removed); a page link is not a record
+    r1 = {"area": "relationships", "key": "rel:1", "cite": "/cases/c/graph",
+          "text": "Penn's Used Tools LLC received payment CARD SALE M RUIZ 05/22/2024", "sources": ["meaning"]}
+    r2 = {"area": "relationships", "key": "rel:2", "cite": "/cases/c/graph",
+          "text": "Penn's Used Tools LLC sent payment CARD SALE C RUIZ 05/08/2024", "sources": ["meaning"]}
+    a1 = {"area": "accounts", "key": "acct:1", "cite": "/cases/c/financial", "text": "bank 0042118830",
+          "sources": ["words"]}
+    again = dict(r1, sources=["words"])
+    out, removed = S.dedupe([r1, r2, a1, again])
+    assert out == [r1, r2, a1] and removed == 1
+    assert r1["sources"] == ["meaning", "words"] and "also_at" not in r1
+
+
 def test_grades_follow_the_stated_rule():
     assert [S.grade(s) for s in (10, 7, 6.5, 4, 3.9, 0, None)] == [
         "strong", "strong", "moderate", "moderate", "weak", "weak", "ungraded"]
