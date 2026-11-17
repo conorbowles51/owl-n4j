@@ -1,10 +1,12 @@
 import { useState } from "react"
+import { LearnMore } from "@/components/ui/learn-more"
 import { ChevronDown, ChevronRight, Focus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getNodeColor } from "@/lib/theme"
 import { typeLabel, typeLabelPlural } from "@/lib/type-label"
 import { useGraphStore } from "@/stores/graph.store"
 import type { GraphNode } from "@/types/graph.types"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface GraphLegendProps {
   /** The nodes drawn now (after any filter). */
@@ -125,15 +127,19 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                       {total > count ? `${count} of ${total}` : count}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-amber-600"
-                    onClick={() => spotlightAllOfType(type)}
-                    aria-label={`Put all ${total} ${typeLabelPlural(type)} in the spotlight`}
-                    title={`Put all ${total} ${typeLabelPlural(type)} in this case in the spotlight${total > count ? `, including ${total - count} hidden by the filter` : ""}`}
-                  >
-                    <Focus className="size-3" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-amber-600"
+                        onClick={() => spotlightAllOfType(type)}
+                        aria-label={`Put all ${total} ${typeLabelPlural(type)} in the spotlight`}
+                      >
+                        <Focus className="size-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{`Put all ${total} ${typeLabelPlural(type)} in this case in the spotlight${total > count ? `, including ${total - count} hidden by the filter` : ""}`}</TooltipContent>
+                  </Tooltip>
                 </div>
               )
             })}
@@ -145,6 +151,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
             <p className="shrink-0 max-w-[16rem] border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground" data-testid="legend-money-note">
               Financial transactions are rows of bank statements. Transactions are payments the model read from
               documents.
+              <LearnMore term="Financial transaction" />
             </p>
           ) : null}
 

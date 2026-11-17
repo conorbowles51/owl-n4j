@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { AddOtherPhones } from "../ui/AddOtherPhones"
 import { useQuery } from "@tanstack/react-query"
 import { ReviewCoverage } from "./ReviewCoverage"
@@ -307,7 +308,7 @@ export function PhoneSummaryPage() {
           <dd>{p.report.producer ?? "not recorded"}</dd>
           <dt>Extraction type</dt>
           <dd>{p.report.extraction_type ?? "not recorded"}</dd>
-          <dt>SHA-256 received</dt>
+          <dt>SHA-256 received<InfoTip text="A fingerprint of the exact bytes received. If one byte changes, the fingerprint changes." term="Hash or SHA-256" /></dt>
           <dd className="break-all">{p.report.container_sha256 ?? "not recorded"}</dd>
         </dl>
       </Section>

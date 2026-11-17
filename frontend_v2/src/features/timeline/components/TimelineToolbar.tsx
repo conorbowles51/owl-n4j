@@ -3,6 +3,7 @@ import { Download, Search, X, SlidersHorizontal } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 interface TimelineToolbarProps {
   searchTerm: string
   onSearchChange: (term: string) => void
@@ -85,12 +86,18 @@ export const TimelineToolbar = forwardRef<HTMLInputElement, TimelineToolbarProps
             className="pl-8 h-7 text-xs"
           />
           {searchTerm && (
-            <button
-              onClick={() => onSearchChange("")}
-              className="absolute right-2 top-1.5 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  aria-label="Clear search"
+                  onClick={() => onSearchChange("")}
+                  className="absolute right-2 top-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Clear search</TooltipContent>
+            </Tooltip>
           )}
         </div>
 

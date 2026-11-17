@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { LearnMore } from "@/components/ui/learn-more"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -39,7 +40,7 @@ export function SavedSubsets({ caseId, onClose }: { caseId: string; onClose: () 
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Saved subsets</DialogTitle>
-          <DialogDescription>Keep what you have selected under a name, bring it back later, or combine two.</DialogDescription>
+          <DialogDescription>Keep what you have selected under a name, bring it back later, or combine two.<LearnMore term="Saved subsets" /></DialogDescription>
         </DialogHeader>
         <div className="flex items-end gap-2">
           <label className="flex flex-1 flex-col text-sm">Save the {members.length.toLocaleString("en-US")} selected items as

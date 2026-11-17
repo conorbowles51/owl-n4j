@@ -430,7 +430,7 @@ export function NodeDetailSheet({
           >
             <Pencil className="size-3.5" />
           </Button>
-          <Button
+          <Button aria-label="Show connected items"
             variant="ghost"
             size="icon-sm"
             onClick={() => onExpandNode?.(detail.key)}
@@ -556,7 +556,7 @@ export function NodeDetailSheet({
                       key={i}
                       className="flex items-start gap-2 rounded-md border border-border/50 p-2"
                     >
-                      <Button
+                      <Button aria-label={fact.pinned ? "Unpin this fact" : "Pin this fact"}
                         variant="ghost"
                         size="icon-sm"
                         className="mt-0.5 shrink-0"

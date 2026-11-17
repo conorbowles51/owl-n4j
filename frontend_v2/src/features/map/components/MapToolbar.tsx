@@ -30,6 +30,7 @@ import {
 } from "@/lib/location-confidence"
 import { getVisibleLocations } from "../lib/visible-locations"
 import { AddToTheory } from "@/features/theory/AddToTheory"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface MapToolbarProps {
   caseId: string
@@ -251,6 +252,7 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
               }
               size="sm"
               className="h-7 text-xs"
+              data-guide="map-areas"
             >
               <Pencil className="mr-1 size-3.5" />
               Areas
@@ -379,14 +381,19 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
                     <span className="ml-auto text-[10px] text-muted-foreground">
                       {Math.max(shape.coordinates.length - 1, 0)} points
                     </span>
-                    <button
-                      type="button"
-                      className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
-                      aria-label={`Remove pending area ${index + 1}`}
-                      onClick={() => removeDraftBoundingShape(shape.id)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                          aria-label={`Remove pending area ${index + 1}`}
+                          onClick={() => removeDraftBoundingShape(shape.id)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{`Remove pending area ${index + 1}`}</TooltipContent>
+                    </Tooltip>
                   </div>
                 ))}
                 <div className="grid grid-cols-2 gap-1 pt-1">
@@ -432,14 +439,19 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
                     <span className="ml-auto text-[10px] text-muted-foreground">
                       {Math.max(shape.coordinates.length - 1, 0)} points
                     </span>
-                    <button
-                      type="button"
-                      className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
-                      aria-label={`Remove area ${index + 1}`}
-                      onClick={() => removeBoundingShape(shape.id)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                          aria-label={`Remove area ${index + 1}`}
+                          onClick={() => removeBoundingShape(shape.id)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{`Remove area ${index + 1}`}</TooltipContent>
+                    </Tooltip>
                   </div>
                 ))}
                 {caseId && visibleMapLocations.length > 0 && (

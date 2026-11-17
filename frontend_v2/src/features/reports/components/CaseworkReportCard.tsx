@@ -28,7 +28,7 @@ export function CaseworkReportCard({ caseId }: { caseId: string }) {
   }
 
   return (
-    <section className="rounded border p-4" aria-labelledby="casework-report-heading">
+    <section className="rounded border p-4" aria-labelledby="casework-report-heading" data-guide="reports-casework">
       <h2 id="casework-report-heading" className="font-medium">Casework report</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         The case's Findings, including financial findings saved from the ledger, with what each cites, then Theories and

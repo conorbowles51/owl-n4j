@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
@@ -136,6 +137,7 @@ function ProposalBody({ item }: { item: AgentProposal }) {
         <p className="text-xs text-muted-foreground">
           A model reading, not confirmed. Accepting records the meaning below as your reading, under your name, and joins
           every mention to its ledger rows.
+          <LearnMore term="Model reading" />
         </p>
       </div>
     )

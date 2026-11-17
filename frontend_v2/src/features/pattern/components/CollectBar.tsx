@@ -39,7 +39,7 @@ export function KeepResult({ caseId, request, origin }: { caseId: string; reques
   const current = snap && keptFor === key ? snap : null
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      {!current && <Button size="sm" variant="outline" disabled={busy} onClick={keep}>{busy ? "Keeping…" : "Keep this result"}</Button>}
+      {!current && <Button size="sm" variant="outline" disabled={busy} onClick={keep} data-guide="pattern-keep">{busy ? "Keeping…" : "Keep this result"}</Button>}
       {current && (
         <>
           <span>Kept: {current.label}, {current.record_count.toLocaleString("en-US")} records behind it.</span>

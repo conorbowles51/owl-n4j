@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { useEvidenceMoves } from "../hooks/use-evidence-moves"
 import type { MoveSource } from "../utils/move-targets"
 import { OpenFileLocationButton } from "./OpenFileLocationButton"
@@ -294,6 +295,9 @@ export function FileRow({
           >
             File missing
           </span>
+        )}
+        {file.file_missing_since && (
+          <InfoTip text={fileMissingText(file.file_missing_since)} term="File missing" />
         )}
         <FileCheckBadges file={file} />
         {typeCategory === 'Audio' && <button className="mt-1 block text-left text-[10px] text-muted-foreground hover:underline"

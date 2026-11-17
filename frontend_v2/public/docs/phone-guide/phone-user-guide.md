@@ -29,9 +29,14 @@ Screenshots and examples use invented phones and invented people only.
 19. [Resume and hand over](#resume-and-hand-over)
 20. [Compare phones for a person or a pair](#compare-phones-for-a-person-or-a-pair)
 21. [Explain a finding](#explain-a-finding)
-22. [Report a problem](#report-a-problem)
-23. [A list for each record type](#a-list-for-each-record-type)
-24. [The training case](#the-training-case)
+22. [Follow the readiness card while a phone is read](#follow-the-readiness-card-while-a-phone-is-read)
+23. [See the database row behind a record](#see-the-database-row-behind-a-record)
+24. [Read a phone again with an independent tool](#read-a-phone-again-with-an-independent-tool)
+25. [Switch phones on and off](#switch-phones-on-and-off)
+26. [See where phones were together](#see-where-phones-were-together)
+27. [Report a problem](#report-a-problem)
+28. [A list for each record type](#a-list-for-each-record-type)
+29. [The training case](#the-training-case)
 
 ## What is in this build
 
@@ -234,6 +239,72 @@ Two columns, one per phone, aligned by matching message, with counts on both, on
 Every finding that holds phone records shows **How this was found**: the scope and searches behind it, the decisions and readings it relies on with their state, and whether it is a **Lead for enquiry** or a **Result for report**. Nothing in it is typed by hand.
 
 **Available:** not yet.
+
+## Follow the readiness card while a phone is read
+
+After you add a phone report in **Evidence**, a card named **Getting [file name] ready** follows it until it can be used. It lists three steps in words: **Checking the report**, **Reading records** and **Checking nothing is missing**. The step in progress gives true counts, such as how many records and files are read so far or which entry of the report is being compared, and the time left once Loupe has measured this step's pace.
+
+- **Pause** pauses the reading. **Resume** carries on from there.
+- If nothing changes for 30 seconds, the card says so and gives the time of the last change. The reading carries on; this tells you it is slow, not that it failed.
+- If the reading stops, the card names the step where it stopped and gives a reference. **Try again** restarts it where that is possible.
+- **Cancel** first tells you what it keeps: **Cancel stops the reading. The upload, its fingerprints and its evidence entry are kept, and the report can be read again. What was read so far is removed.** Choose **Cancel the reading** or **Keep reading**.
+
+When the card finishes, it counts the report's files by outcome: how many match the report's fingerprint, how many the report lists but the production does not hold, how many differ in size, and so on. Those counts tell you, before you rely on the phone, whether the production holds everything the report describes. **Clear** removes a finished card from the list.
+
+**Available:** yes.
+
+## See the database row behind a record
+
+Many phone records come from an app's own database on the phone. At the foot of the record panel, the **Source database** part lets you check a record against that database, not only against the report's summary of it.
+
+1. Open a record from its list. The record panel opens beside the list.
+2. Select **Open source row**, or **Open source database** when the report does not name a row. Loupe copies the app database and opens the copy read-only, so nothing in the production changes.
+3. Read what the report says: which table the record came from and at which position in the file. Below that, Loupe names the row holding that position, lists its columns with their values as stored, and shows the bytes at that position as they are.
+4. Open **Tables in this database** to browse any table, 500 rows at a time.
+
+When the database cannot be shown, the panel says why and lists the files it looked for with what happened to each. Use the row when a reading looks wrong or someone questions it: it shows exactly what the phone held.
+
+**Available:** yes.
+
+## Read a phone again with an independent tool
+
+**Read again by an independent tool**, under **Analyses**, reads each phone a second time with an open-source tool: ALEAPP for Android phones, iLEAPP for iPhones. The tool reads only the files whose fingerprints match the report. Loupe then compares its reading with the report's records. A second reading made separately from the report shows where the report may have missed, added or changed records.
+
+1. Under **Read each phone again**, select **Read again with ALEAPP** or **Read again with iLEAPP** for a phone. A phone whose operating system the report does not state shows **No tool for this operating system**. Phones are read one at a time, and each line says when its reading finished and how many files it read.
+2. When the phones are read, press **Run** to compare.
+3. Read the results by tab: **Totals differ**, **Only the tool read**, **Only in the report**, **Times differ**, **Content differs**, **Read the same** and **Not compared**. Text messages, calls, WhatsApp messages, contacts and web history are compared.
+
+A record only the tool read may be one the report did not decode, or a deleted row. A time that differs gives both times as written. The tool's readings stay the tool's, named with its version: they never change or join the report's records. A record panel shows the tool's reading beside the record under **Read again by an independent tool**.
+
+**Available:** yes.
+
+## Switch phones on and off
+
+This part appears only where it has been turned on for you.
+
+On a screen that shows more than one phone, such as the Map, Conversations, the phone view of the Timeline, Places, Media and the phone analyses, the **Phones** row lists every phone in the case with its label, its owner and its count on this screen. Untick a phone to take it off. **Only this** keeps one phone; **All** brings every phone back. With more than 6 phones, the row offers **Find a phone or owner** and groups the phones by owner, with **No owner named** last.
+
+A phone that is off is left out of what the screen shows and out of its counts, and the line under the row says so, for example **3 of 5 phones are on. The 2 off are not drawn or counted.** The choice is kept in the page address, so a reload or a copied address keeps it.
+
+On the Map, **Show routes** joins each phone's positions in time order. The line beside it counts the moves shown and the gaps over 2 hours left unjoined, so a long gap never reads as a journey. Positions with no time are counted and left out of the routes.
+
+A page that belongs to one phone says **This page shows one phone. Add other phones in Conversations, Timeline or Map.** Each link opens that screen with this phone on, ready to switch on others.
+
+**Available:** where it has been turned on for you.
+
+## See where phones were together
+
+This part appears only where it has been turned on for you, and with phone switching above.
+
+When two to eight phones are on, Loupe looks for times they were in the same place, people they share and messages passed from one to the other.
+
+- **Map:** **Show where the phones were together** lists each meeting: the phones, when, how many 15-minute slots they shared in the same 550 m square, and the best accuracy their positions state, or that accuracy was not stated. **Show** marks the meeting on the map. A meeting in a place where many other phones also were is marked **Busy place: weak**, because a crowded place says little about two people meeting.
+- **Timeline:** **Shared moments** counts the times the chosen phones were in the same place over the period shown, and lists each one.
+- **Conversations:** **People on more than one of these phones** lists each shared contact with its count on each phone. **Relay chains** lists a person who dealt with one phone and then another within minutes, with the time.
+
+Each line has **Open the [number] records** and **Corroborate**, so you can read the records behind it or weigh it with other material. **What was searched** lists what Loupe looked at and what was out of reach, so a part with nothing found tells you what was searched, not that nothing happened. With more than eight phones on, Loupe asks you to switch some off.
+
+**Available:** where it has been turned on for you.
 
 ## Report a problem
 

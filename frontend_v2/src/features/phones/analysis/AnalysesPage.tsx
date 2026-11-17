@@ -16,7 +16,7 @@ export default function AnalysesPage() {
     <div className="space-y-4 p-4" data-testid="phone-analyses-page">
       <h1 className="text-lg font-semibold">Phone analyses</h1>
       <p className="text-sm">Each analysis points to records to examine. Every result is a lead for enquiry, not a finding.</p>
-      <ul className="space-y-2">
+      <ul className="space-y-2" data-guide="analyses-list">
         {ANALYSES.map((a) => (
           <li key={a.path} className="rounded border p-2 text-sm">
             <Link className="font-medium underline" to={`/cases/${caseId}/${a.path}`}>{a.title}</Link>
@@ -39,7 +39,7 @@ function KeptList({ caseId }: { caseId: string }) {
   if (!q.data || q.data.total === 0) return null
   const shown = q.data.items.length
   return (
-    <section aria-label="Kept results" className="space-y-2 text-sm">
+    <section aria-label="Kept results" data-guide="analyses-kept" className="space-y-2 text-sm">
       <h2 className="font-medium">Kept results</h2>
       <p className="text-xs">{q.data.total.toLocaleString("en-US")} kept{shown < q.data.total ? `, the latest ${shown.toLocaleString("en-US")} shown` : ""}.</p>
       <ul className="space-y-2">

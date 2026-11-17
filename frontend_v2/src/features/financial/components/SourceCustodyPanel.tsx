@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { randomRequestId } from "@/lib/browser-crypto"
@@ -90,6 +91,7 @@ export function SourceCustodyPanel({
       >
         Source custody records
       </Button>
+      <InfoTip text="The record of how this source was received and handled." term="Custody" />
       {opened && (
         <CustodyEditor
           key={`${caseId}:${fileId}`}

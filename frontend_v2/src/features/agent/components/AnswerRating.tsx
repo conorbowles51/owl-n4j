@@ -61,7 +61,7 @@ export function AnswerRating({
 
   const has = (kind: AnswerRatingKind) => active.some((r) => r.kind === kind)
   return (
-    <div className="mt-1 text-xs" aria-label="Rate this answer">
+    <div className="mt-1 text-xs" aria-label="Rate this answer" data-guide="agent-rate">
       <div className="flex flex-wrap items-center gap-1">
         <span className="text-muted-foreground">Rate this answer:</span>
         {KINDS.map(({ kind, label, hint }) => (

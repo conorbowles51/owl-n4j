@@ -46,6 +46,7 @@ import {
   toLinkInput,
 } from "../casework-utils"
 import { CaseworkAttachmentPicker } from "./CaseworkAttachmentPicker"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 export interface CaseworkComposerValue {
   entry_type: CaseworkEntryType
@@ -536,18 +537,23 @@ export function CaseworkComposer({
               >
                 {tag}
                 {canEdit && (
-                  <button
-                    type="button"
-                    aria-label={`Remove ${tag} tag`}
-                    onClick={() =>
-                      setValue((current) => ({
-                        ...current,
-                        tags: current.tags.filter((item) => item !== tag),
-                      }))
-                    }
-                  >
-                    <X className="size-3 text-muted-foreground" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${tag} tag`}
+                        onClick={() =>
+                          setValue((current) => ({
+                            ...current,
+                            tags: current.tags.filter((item) => item !== tag),
+                          }))
+                        }
+                      >
+                        <X className="size-3 text-muted-foreground" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{`Remove ${tag} tag`}</TooltipContent>
+                  </Tooltip>
                 )}
               </span>
             ))}

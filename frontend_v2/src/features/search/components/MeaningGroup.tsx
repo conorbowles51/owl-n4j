@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { CommandGroup, CommandItem } from "@/components/ui/command"
 import { citationsAsWords } from "@/lib/citations"
 import type { MeaningResult } from "../api"
@@ -53,6 +54,7 @@ export default function MeaningGroup({ meaning, error, onOpen }: { meaning: Mean
         <p key={n} role="note" className="px-2 pb-1 text-xs">{n}</p>
       ))}
       {meaning.not_searched.length > 0 && <p className="px-2 pb-1 text-xs text-muted-foreground">Not searched: {meaning.not_searched.join("; ")}.</p>}
+      <p className="px-2 pb-1 text-xs text-muted-foreground"><LearnMore term="By meaning" label="About search by meaning" /></p>
     </CommandGroup>
   )
 }

@@ -1,4 +1,6 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { LearnMore } from "@/components/ui/learn-more"
+import { announce } from "@/features/guidance/announce"
 import { Button } from "@/components/ui/button"
 import { groupByOwner, layersOn, MANY_PHONES, onlyLayer, toChosen, toggleLayer } from "../lib/phone-layers"
 import { PhoneShape } from "./PhoneChip"
@@ -12,7 +14,7 @@ const n = (v: number) => v.toLocaleString("en-US")
  * on or off on its own, with All and Only this. A phone off is not drawn and not counted by the screen; a phone with
  * nothing in the view says 0.
  */
-export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
+export function PhoneLayers({ phones, chosen, onChange: setChosen, counts, noun }: {
   phones: LayerPhone[]
   /** The `phones` address parameter: empty means every phone is on. */
   chosen: string[]
@@ -24,6 +26,16 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
 }) {
   const all = phones.map((p) => p.id)
   const on = layersOn(all, chosen)
+  // a phone turned on (or All, Only this): the next steps follow once the person stops changing them (lx-guidecover E)
+  const settle = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(settle.current), [])
+  const onChange = (next: string[]) => {
+    setChosen(next)
+    const nowOn = layersOn(all, next).length
+    window.clearTimeout(settle.current)
+    if (nowOn > on.length || next.length === 0)
+      settle.current = window.setTimeout(() => announce(null, { kind: "layers-changed", on: nowOn, total: all.length }), 1500)
+  }
   // on a narrow screen the list opens on request, so it does not push the screen's own content out of view
   const [open, setOpen] = useState(() => typeof window.matchMedia !== "function" || window.matchMedia("(min-width: 768px)").matches)
   const many = phones.length > MANY_PHONES
@@ -44,7 +56,7 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
   }
   if (phones.length < 2) return null
   return (
-    <section role="group" aria-label="Phone layers" className="flex flex-col gap-1 border-b bg-card px-3 py-2 text-sm" data-testid="phone-layers">
+    <section role="group" aria-label="Phone layers" className="flex flex-col gap-1 border-b bg-card px-3 py-2 text-sm" data-testid="phone-layers" data-guide="phone-layers">
       <button type="button" className="flex items-center gap-2 text-left font-medium md:hidden" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         Phones: {on.length === all.length ? `all ${n(all.length)} on` : `${n(on.length)} of ${n(all.length)} on`} <span aria-hidden>{open ? "▾" : "▸"}</span>
       </button>
@@ -70,6 +82,7 @@ export function PhoneLayers({ phones, chosen, onChange, counts, noun }: {
       )}
       <p role="status" className={`text-xs text-muted-foreground ${open ? "" : "hidden md:block"}`}>
         {on.length === all.length ? `All ${n(all.length)} phones are on.` : `${n(on.length)} of ${n(all.length)} phones are on. The ${n(all.length - on.length)} off ${all.length - on.length === 1 ? "is" : "are"} not drawn or counted.`}
+        <LearnMore term="Phone layers" />
       </p>
     </section>
   )

@@ -31,6 +31,7 @@ import {
   useCaseProcessingProfile,
   useUpdateCaseProcessingProfile,
 } from "../hooks/use-case-processing-profile"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface CaseProcessingProfileDialogProps {
   caseId: string
@@ -303,14 +304,19 @@ export function CaseProcessingProfileDialog({
                             *
                           </span>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => removeEntityType(index)}
-                          className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-muted"
-                          aria-label={`Remove ${entity.name}`}
-                        >
-                          <X className="size-2.5" />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => removeEntityType(index)}
+                              className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-muted"
+                              aria-label={`Remove ${entity.name}`}
+                            >
+                              <X className="size-2.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{`Remove ${entity.name}`}</TooltipContent>
+                        </Tooltip>
                       </Badge>
                     ))}
                   </div>

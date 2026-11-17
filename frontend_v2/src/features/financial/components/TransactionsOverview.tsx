@@ -12,6 +12,7 @@ import {
 } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { paymentDay } from "../lib/investigator-workspace"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 export type OverviewGroup = "category" | "holder" | "account" | "statement" | "month"
 
@@ -440,14 +441,17 @@ function GroupBars({
             </button>
             <div className="flex h-4 overflow-hidden rounded" style={{ width: `${Math.max(width, 2)}%` }} aria-label={`Categories of ${g.label}`}>
               {parts.map((part) => (
-                <button
-                  key={part.key}
-                  type="button"
-                  title={`${part.key}: ${exact(part.credit)} in, ${exact(part.debit)} out, ${part.count} payments. Click to filter.`}
-                  aria-label={`${part.key} in ${g.label}`}
-                  onClick={() => onCategory(part.key)}
-                  style={{ flex: `${Number(part.credit + part.debit) || 1} 1 0`, background: categoryTone(part.key, colors.get(part.key.toLowerCase())).dot }}
-                />
+                <Tooltip key={part.key}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`${part.key} in ${g.label}`}
+                      onClick={() => onCategory(part.key)}
+                      style={{ flex: `${Number(part.credit + part.debit) || 1} 1 0`, background: categoryTone(part.key, colors.get(part.key.toLowerCase())).dot }}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>{`${part.key}: ${exact(part.credit)} in, ${exact(part.debit)} out, ${part.count} payments. Click to filter.`}</TooltipContent>
+                </Tooltip>
               ))}
             </div>
             <span className="text-right text-sm tabular-nums" title={`${exact(g.credit)} in, ${exact(g.debit)} out`}>

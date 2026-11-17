@@ -106,7 +106,7 @@ export function PatternsPage() {
       <PageHeader title="Phone patterns" description="Day view, pattern grid, places, together and statement checks for one phone or person." />
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-sm" htmlFor="pattern-subject">Phone or person</label>
-        <select id="pattern-subject" className="rounded border bg-background px-2 py-1 text-sm"
+        <select id="pattern-subject" data-guide="pattern-subject" className="rounded border bg-background px-2 py-1 text-sm"
           value={subject ? subjectKey(subject) : ""} onChange={(e) => set("subject", e.target.value)}>
           {subjects.data?.extractions.map((e) => <option key={e.extraction_id} value={`e:${e.extraction_id}`}>{e.label}</option>)}
           {subjects.data?.dossiers.map((d) => <option key={d.dossier_id} value={`d:${d.dossier_id}`}>{d.name} (person)</option>)}
@@ -122,10 +122,10 @@ export function PatternsPage() {
       ))}
       {noDaysWords(subjects.data, subject) && <p className="text-xs text-muted-foreground">{noDaysWords(subjects.data, subject)}</p>}
       <KeyDatesBar caseId={caseId} />
-      <nav aria-label="Pattern views" className="flex flex-wrap gap-1">
+      <nav aria-label="Pattern views" data-guide="pattern-views" className="flex flex-wrap gap-1">
         {VIEWS.map((v) => (
           <Button key={v.id} size="sm" variant={view === v.id ? "primary" : "outline"} aria-pressed={view === v.id}
-            onClick={() => set("view", v.id)}>{v.label}</Button>
+            data-guide={v.id === "check" ? "pattern-check" : undefined} onClick={() => set("view", v.id)}>{v.label}</Button>
         ))}
       </nav>
       {subjects.isError && <p role="alert" className="text-sm text-destructive">{errorWords(subjects.error)}</p>}

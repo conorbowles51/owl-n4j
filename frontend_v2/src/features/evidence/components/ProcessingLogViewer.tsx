@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { FileText, ArrowDownToLine } from "lucide-react"
 import { evidenceAPI } from "../api"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 interface ProcessingLogViewerProps {
   caseId: string
   limit?: number
@@ -85,15 +86,20 @@ export function ProcessingLogViewer({
             </button>
           ))}
         </div>
-        <button
-          onClick={() => setPinBottom(!pinBottom)}
-          className={`rounded p-1 transition-colors ${
-            pinBottom ? "text-amber-500" : "text-gray-500 hover:text-gray-300"
-          }`}
-          title={pinBottom ? "Auto-scroll on" : "Auto-scroll off"}
-        >
-          <ArrowDownToLine className="size-3" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label={pinBottom ? "Stop following new log lines" : "Follow new log lines"}
+              onClick={() => setPinBottom(!pinBottom)}
+              className={`rounded p-1 transition-colors ${
+                pinBottom ? "text-amber-500" : "text-gray-500 hover:text-gray-300"
+              }`}
+            >
+              <ArrowDownToLine className="size-3" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{pinBottom ? "Stop following new log lines" : "Follow new log lines"}</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Log entries */}

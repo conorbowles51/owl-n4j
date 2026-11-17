@@ -18,6 +18,7 @@ export function FinancialReportsList({ caseId }: { caseId: string }) {
   return (
     <section
       aria-label="Saved financial reports"
+      data-guide="reports-financial"
       className="space-y-3 rounded border bg-card p-4"
     >
       <h2 className="font-semibold">Financial reports</h2>

@@ -94,7 +94,7 @@ export function DeadlinesSection({ caseId, canEdit = true }: DeadlinesSectionPro
                 </div>
               </div>
               {canEdit && <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                <Button
+                <Button aria-label="Edit this deadline"
                   variant="ghost"
                   size="icon-sm"
                   className="size-6"
@@ -102,7 +102,7 @@ export function DeadlinesSection({ caseId, canEdit = true }: DeadlinesSectionPro
                 >
                   <Pencil className="size-3" />
                 </Button>
-                <Button
+                <Button aria-label="Delete this deadline"
                   variant="ghost"
                   size="icon-sm"
                   className="size-6"

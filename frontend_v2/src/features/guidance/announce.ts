@@ -13,6 +13,7 @@ export interface Announced extends NextStepsCard {
 }
 
 const KEEP = 6
+const REPLACES = new Set<string>(["layers-changed"])
 let counter = 0
 
 interface NextStepsState {
@@ -27,7 +28,8 @@ export const useNextSteps = create<NextStepsState>((set) => ({
   add: (card) =>
     set((s) => ({
       // the same action announced twice in a row (a refetch, a second tab event) is one card
-      cards: [card, ...s.cards.filter((c) => !(c.caseId === card.caseId && c.title === card.title))].slice(0, KEEP),
+      // a setting changed again (phone layers) replaces its earlier card instead of stacking a new one
+      cards: [card, ...s.cards.filter((c) => !(c.caseId === card.caseId && (c.title === card.title || (REPLACES.has(card.kind) && c.kind === card.kind))))].slice(0, KEEP),
     })),
   dismiss: (id) => set((s) => ({ cards: s.cards.filter((c) => c.id !== id) })),
   clear: (caseId) => set((s) => ({ cards: s.cards.filter((c) => c.caseId !== caseId) })),

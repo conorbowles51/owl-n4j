@@ -11,7 +11,7 @@ import { nextSteps } from "./next-steps"
 import { NextStepsHost } from "./NextStepsHost"
 import { startSteps } from "./start-steps"
 import { TourHost } from "./TourHost"
-import { findTarget, tourArea, TOURS } from "./tours"
+import { findTarget, panelAreas, stepsOnScreen, tourArea, TOURS } from "./tours"
 import { finishedBetween, processedFacts } from "./watchers"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
@@ -111,14 +111,56 @@ describe("next steps after an action", () => {
   })
 })
 
+/**
+ * The controls a tour points at, drawn with a size (jsdom lays nothing out, a browser would): a tour step shows only
+ * when its control is on screen.
+ */
+function drawScreen(html: string) {
+  const host = document.createElement("div")
+  host.setAttribute("data-testid", "screen")
+  host.innerHTML = html
+  document.body.appendChild(host)
+  for (const el of Array.from(host.querySelectorAll<HTMLElement>("*")))
+    el.getBoundingClientRect = () => ({ width: 80, height: 24, top: 0, left: 0, bottom: 24, right: 80, x: 0, y: 0, toJSON: () => ({}) })
+  return host
+}
+afterEach(() => document.querySelectorAll('[data-testid="screen"]').forEach((e) => e.remove()))
+
 describe("first-visit tours", () => {
-  it("every area has 3 to 5 steps and every case screen maps to its area", () => {
+  it("every area has 3 to 6 steps and every case screen maps to its area", () => {
     for (const tour of Object.values(TOURS)) expect(tour.steps.length).toBeGreaterThanOrEqual(3)
-    for (const tour of Object.values(TOURS)) expect(tour.steps.length).toBeLessThanOrEqual(5)
+    for (const tour of Object.values(TOURS)) expect(tour.steps.length).toBeLessThanOrEqual(6)
     expect(tourArea("/cases/c1")).toBe("workspace")
-    expect(tourArea("/cases/c1/phone-analyses/plans")).toBe("phones")
+    expect(tourArea("/cases/c1/phone-analyses/plans")).toBe("analyses")
+    expect(tourArea("/cases/c1/phones/e1/records/conversations")).toBe("conversations")
+    expect(tourArea("/cases/c1/phones/e1/records/calls")).toBe("phones")
+    expect(tourArea("/cases/c1/evidence/f1/text")).toBe("text")
     expect(tourArea("/cases/c1/financial?view=overview")).toBe("financial")
-    expect(tourArea("/cases/c1/settings")).toBeNull()
+    expect(tourArea("/cases/c1/settings")).toBe("settings")
+    // a panel tour has no address of its own
+    expect(tourArea("/cases/c1/corroborate")).toBeNull()
+  })
+
+  it("skips a step whose control is not on screen, and finds a panel tour by its open panel", () => {
+    drawScreen('<button>Overview</button><button>Statements</button>')
+    expect(stepsOnScreen(TOURS.financial).map((s) => s.title)).toEqual(["The money in the case", "Statements to check"])
+    expect(panelAreas()).toEqual([])
+    drawScreen('<div data-guide="corroborate-tray">Paste a list</div>')
+    // the three buttons on every screen are not the open selection
+    expect(panelAreas()).toEqual([])
+    drawScreen('<div role="region" data-guide="corroborate-tray"><button data-guide="corroborate-run">Corroborate</button></div>')
+    expect(panelAreas()).toEqual(["corroborate"])
+  })
+
+  it("does not open while none of its controls are drawn, and opens once they are", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    server()
+    wrap(<TourHost caseId="c1" />, "/cases/c1/reports")
+    await act(async () => void vi.advanceTimersByTime(1500))
+    expect(screen.queryByTestId("tour-popup")).toBeNull()
+    drawScreen('<a data-guide="reports-new">New financial report</a>')
+    await act(async () => void vi.advanceTimersByTime(1200))
+    expect(await screen.findByTestId("tour-popup")).toBeTruthy()
   })
 
   it("points at the first control on screen, by selector or by its words", () => {
@@ -136,6 +178,7 @@ describe("first-visit tours", () => {
   it("opens by itself once, can be skipped, and the skip is kept for the next session", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const s = server()
+    drawScreen("<canvas></canvas>")
     const first = wrap(<TourHost caseId="c1" />, "/cases/c1/graph")
     await act(async () => void vi.advanceTimersByTime(1500))
     expect(await screen.findByTestId("tour-popup")).toBeTruthy()
@@ -152,6 +195,7 @@ describe("first-visit tours", () => {
   it("resumes at the step where it was left", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const s = server()
+    drawScreen("<button>Overview</button><button>Transactions</button><button>Follow the money</button><button>Statements</button>")
     const first = wrap(<TourHost caseId="c1" />, "/cases/c1/financial")
     await act(async () => void vi.advanceTimersByTime(1500))
     fireEvent.click(await screen.findByRole("button", { name: "Next" }))
@@ -160,12 +204,14 @@ describe("first-visit tours", () => {
     wrap(<TourHost caseId="c1" />, "/cases/c1/financial")
     await act(async () => void vi.advanceTimersByTime(1500))
     expect(await screen.findByText("Every payment")).toBeTruthy()
-    expect(screen.getByText("Financial · 2 of 5")).toBeTruthy()
+    // 4 of the tour's 6 controls are on this screen: the two not drawn are skipped, never pointed at
+    expect(screen.getByText("Financial · 2 of 4")).toBeTruthy()
   })
 
   it("steps aside while another dialog is open and comes back when it closes", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     server()
+    drawScreen('<button data-guide="evidence-upload">Upload</button>')
     wrap(<TourHost caseId="c1" />, "/cases/c1/evidence")
     await act(async () => void vi.advanceTimersByTime(1500))
     expect(await screen.findByTestId("tour-popup")).toBeTruthy()
@@ -182,6 +228,7 @@ describe("first-visit tours", () => {
   it("turning guidance off stops popups for that person across sessions", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const s = server()
+    drawScreen('<div aria-label="Places map"></div><button>Draw</button><canvas></canvas><textarea></textarea>')
     const first = wrap(<TourHost caseId="c1" />, "/cases/c1/map")
     await act(async () => void vi.advanceTimersByTime(1500))
     fireEvent.click(await screen.findByRole("button", { name: "Turn guidance off" }))
@@ -213,5 +260,33 @@ describe("start here and processing watch", () => {
     expect(done.map((j) => j.id)).toEqual(["a"])
     expect(failed.map((j) => j.id)).toEqual(["b"])
     expect(processedFacts(done, failed)).toEqual({ kind: "document-processed", files: 1, names: 5, links: 2, failed: 1, fileName: "a.pdf", evidenceId: "e-a" })
+  })
+})
+
+describe("next steps for the features added since the first guidance (lx-guidecover E)", () => {
+  it("a Corroborate result, a no-link result, a deep investigation, a case search, a comparison and layers each lead on", () => {
+    const corro = nextSteps("c1", { kind: "corroborate-done", level: "Probable link", items: 4, selectionId: "s1" })!
+    expect(corro.title).toBe("4 items weighed: Probable link.")
+    expect(corro.steps.map((s) => s.id)).toEqual(["result", "theory", "timeline"])
+    expect(corro.steps[0].to).toBe("/cases/c1/relations/s1")
+    expect(nextSteps("c1", { kind: "corroborate-done", level: "x", items: 2, noLink: true })!.title).toContain("not proof that no link exists")
+    const deep = nextSteps("c1", { kind: "agent-run-done", threadId: "t1", payments: 2, records: 0, deep: true })!
+    expect(deep.title).toContain("deep investigation finished")
+    expect(deep.steps[0]).toMatchObject({ id: "report", to: "/cases/c1/agent?thread=t1" })
+    const found = nextSteps("c1", { kind: "case-search-done", query: "orden", hits: 1, noun: "payments" })!
+    expect(found.title).toBe('1 payment match "orden". Tick hits to add them to a theory or dossier, or to Corroborate them.')
+    expect(found.steps.map((s) => s.id)).toEqual(["agent", "keywords"])
+    expect(nextSteps("c1", { kind: "case-search-done", query: "x", hits: 0, noun: "payments" })).toBeNull()
+    expect(nextSteps("c1", { kind: "phones-compared", title: "Two extractions of one phone", differences: 0 })!.steps.map((s) => s.id)).toEqual(["analyses"])
+    const layers = nextSteps("c1", { kind: "layers-changed", on: 2, total: 5 })!
+    expect(layers.title).toBe("2 of 5 phones on. Phones that are off are not drawn or counted on any phone screen.")
+    expect(layers.steps.map((s) => s.id)).toEqual(["map", "conversations", "timeline"])
+  })
+
+  it("changing phone layers again replaces the earlier card", () => {
+    useNextSteps.setState({ cards: [] })
+    announce("c1", { kind: "layers-changed", on: 2, total: 5 })
+    announce("c1", { kind: "layers-changed", on: 3, total: 5 })
+    expect(useNextSteps.getState().cards.map((c) => c.title)).toEqual(["3 of 5 phones on. Phones that are off are not drawn or counted on any phone screen."])
   })
 })

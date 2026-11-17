@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { profilesAPI, type Profile } from "../api"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 function emptyProfile(): Profile {
   return {
@@ -182,10 +183,10 @@ export function ProfileManagementPage() {
                   )}
                 </div>
                 <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <Button variant="ghost" size="icon-sm" onClick={() => openEdit(profile)}>
+                  <Button aria-label={`Edit profile ${profile.name}`} variant="ghost" size="icon-sm" onClick={() => openEdit(profile)}>
                     <Edit2 className="size-3.5" />
                   </Button>
-                  <Button
+                  <Button aria-label={`Delete profile ${profile.name}`}
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => deleteMutation.mutate(profile.name)}
@@ -268,14 +269,19 @@ export function ProfileManagementPage() {
                           *
                         </span>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => removeEntityType(index)}
-                        className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-muted"
-                        aria-label={`Remove ${entity.name}`}
-                      >
-                        <X className="size-2.5" />
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => removeEntityType(index)}
+                            className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-muted"
+                            aria-label={`Remove ${entity.name}`}
+                          >
+                            <X className="size-2.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>{`Remove ${entity.name}`}</TooltipContent>
+                      </Tooltip>
                     </Badge>
                   ))}
                 </div>

@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,7 @@ export function UncheckedClaimsNotice({ fileId, caseId, canEdit }: { fileId: str
         {" "}{CHECKED_NOT_IN_GRAPH}
         {canEdit ? "" : " Someone who can edit this case can start it."}
         {total > count ? ` The case has ${total.toLocaleString()} unchecked claims in all; the check takes them all, smallest file first.` : ""}
+        <LearnMore term="Unchecked claims" />
       </p>
       {canEdit && (
         <Button size="sm" variant="outline" disabled={check.isPending} onClick={() => check.mutate()}>

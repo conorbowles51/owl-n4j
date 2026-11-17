@@ -31,6 +31,7 @@ import {
   unmergeSpeaker,
 } from "./audio-transcript.utils"
 import { TranscriptSpeakerManager } from "./TranscriptSpeakerManager"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 export interface AudioTranscriptViewerProps {
   onTurnTextChange?: (id: string, text: string) => void
@@ -383,20 +384,24 @@ export function AudioTranscriptViewer({
                   const above = speakerOrder % 2 === 0
                   const elapsed = segment.start <= currentTime
                   return (
-                    <button
-                      key={segment.id || index}
-                      type="button"
-                      onClick={() => seek(segment.start)}
-                      title={`${speakerName(segment.speaker)} at ${formatTime(segment.start)}`}
-                      className={cn(
-                        "absolute h-6 min-w-0.5 rounded-sm border transition-colors",
-                        above ? "bottom-1/2 mb-1" : "top-1/2 mt-1",
-                        elapsed
-                          ? "border-amber-300/70 bg-amber-400/80"
-                          : "border-stone-600 bg-stone-700 hover:bg-stone-600"
-                      )}
-                      style={{ left: `${left}%`, width: `${width}%` }}
-                    />
+                    <Tooltip key={segment.id || index}>
+                      <TooltipTrigger asChild>
+                        <button
+                          aria-label={`Play from ${speakerName(segment.speaker)} at ${formatTime(segment.start)}`}
+                          type="button"
+                          onClick={() => seek(segment.start)}
+                          className={cn(
+                            "absolute h-6 min-w-0.5 rounded-sm border transition-colors",
+                            above ? "bottom-1/2 mb-1" : "top-1/2 mt-1",
+                            elapsed
+                              ? "border-amber-300/70 bg-amber-400/80"
+                              : "border-stone-600 bg-stone-700 hover:bg-stone-600"
+                          )}
+                          style={{ left: `${left}%`, width: `${width}%` }}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent>{`Play from ${speakerName(segment.speaker)} at ${formatTime(segment.start)}`}</TooltipContent>
+                    </Tooltip>
                   )
                 })}
                 {segments.length === 0 && (
@@ -540,14 +545,19 @@ export function AudioTranscriptViewer({
                 className="h-9 bg-stone-50 pl-9 pr-9 text-sm dark:bg-black/20"
               />
               {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
-                  title="Clear search"
-                >
-                  <X className="size-3.5" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      aria-label="Clear search"
+                      type="button"
+                      onClick={() => setQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Clear search</TooltipContent>
+                </Tooltip>
               )}
             </div>
             <span className="min-w-16 text-center text-[11px] tabular-nums text-stone-500">
@@ -651,16 +661,21 @@ export function AudioTranscriptViewer({
                               {speakerName(segment.speaker)}
                             </span>
                             {onSpeakerSettingsChange && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  startEditingSpeaker(segment.speaker, index)
-                                }
-                                className="opacity-0 text-stone-400 transition-opacity hover:text-stone-700 group-hover:opacity-100 focus:opacity-100 dark:hover:text-stone-200"
-                                title={`Rename ${speakerName(segment.speaker)}`}
-                              >
-                                <Pencil className="size-3" />
-                              </button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    aria-label={`Rename ${speakerName(segment.speaker)}`}
+                                    type="button"
+                                    onClick={() =>
+                                      startEditingSpeaker(segment.speaker, index)
+                                    }
+                                    className="opacity-0 text-stone-400 transition-opacity hover:text-stone-700 group-hover:opacity-100 focus:opacity-100 dark:hover:text-stone-200"
+                                  >
+                                    <Pencil className="size-3" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>{`Rename ${speakerName(segment.speaker)}`}</TooltipContent>
+                              </Tooltip>
                             )}
                           </>
                         )}

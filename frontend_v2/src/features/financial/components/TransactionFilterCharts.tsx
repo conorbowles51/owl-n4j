@@ -9,6 +9,7 @@ import {
   filterAnalysis,
   type AnalysisFilters,
 } from "../lib/transaction-analysis"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const CATEGORY_PAGE_SIZE = 8
 const MONTH_PAGE_SIZE = 12
@@ -217,26 +218,29 @@ export function TransactionFilterCharts({
                           filters.analysisPeriod === m.month &&
                           filters.analysisDirection === d
                         return (
-                          <button
-                            key={d}
-                            type="button"
-                            aria-label={`${m.month}: ${directionName(d)} ${money(m[d])}`}
-                            aria-pressed={selected}
-                            title={`${m.month} · ${directionName(d)}: ${money(m[d])}. Click to filter.`}
-                            className="w-full min-h-[6px] cursor-pointer border-0 p-0 transition-opacity hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                            style={{
-                              height: `${chartRatio(m[d], m.credit + m.debit) * 100}%`,
-                              background: `var(--finance-${d})`,
-                              opacity:
-                                filters.analysisDirection && !selected
-                                  ? 0.4
-                                  : 1,
-                              boxShadow: selected
-                                ? "inset 0 0 0 2px var(--foreground)"
-                                : undefined,
-                            }}
-                            onClick={() => selectMonth(m.month, d)}
-                          />
+                          <Tooltip key={d}>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={`${m.month}: ${directionName(d)} ${money(m[d])}`}
+                                aria-pressed={selected}
+                                className="w-full min-h-[6px] cursor-pointer border-0 p-0 transition-opacity hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                                style={{
+                                  height: `${chartRatio(m[d], m.credit + m.debit) * 100}%`,
+                                  background: `var(--finance-${d})`,
+                                  opacity:
+                                    filters.analysisDirection && !selected
+                                      ? 0.4
+                                      : 1,
+                                  boxShadow: selected
+                                    ? "inset 0 0 0 2px var(--foreground)"
+                                    : undefined,
+                                }}
+                                onClick={() => selectMonth(m.month, d)}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>{`${m.month} · ${directionName(d)}: ${money(m[d])}. Click to filter.`}</TooltipContent>
+                          </Tooltip>
                         )
                       })}
                   </div>

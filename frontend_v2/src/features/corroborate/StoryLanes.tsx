@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { InfoTip } from "@/components/ui/info-tip"
 import { relationAPI } from "@/features/relations/api"
 
 const KIND_CLASS: Record<string, string> = {
@@ -17,7 +18,7 @@ export function StoryLanes({ caseId, runId, instance, onClose }: { caseId: strin
   return (
     <section aria-label="Story lanes" className="rounded border p-3" data-testid="story-lanes">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-semibold">What happened, person by person{q.data ? `: ${q.data.instance.label}` : ""}</h3>
+        <h3 className="font-semibold">What happened, person by person{q.data ? `: ${q.data.instance.label}` : ""}<InfoTip text="One lane per person, with the events numbered in time order and coloured by kind of record." term="Story lanes" /></h3>
         <button type="button" className="text-sm underline" onClick={onClose}>Close</button>
       </div>
       {q.isLoading && <p role="status" className="text-sm">Reading the records for this instance…</p>}

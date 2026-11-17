@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import { artifactRows, artifactText } from "../artifact-data"
 import { evaluateScenario } from "../scenario-expression"
@@ -21,7 +22,7 @@ export function ArtifactScenario({ interactions }: { interactions: Record<string
   })
   return <section aria-label="Scenario calculator" className="rounded-lg border border-border bg-muted/20 p-4">
     <h3 className="text-sm font-semibold">Explore assumptions</h3>
-    <p className="mt-1 text-xs text-muted-foreground">Scenario values only. Editing these inputs does not change evidence or saved case records.</p>
+    <p className="mt-1 text-xs text-muted-foreground">Scenario values only. Editing these inputs does not change evidence or saved case records.<LearnMore term="Scenario" /></p>
     <div className="my-4 grid grid-cols-1 gap-3 sm:grid-cols-2">{inputs.map((input) => {
       const key = artifactText(input.key)
       return <label key={key} className="block text-xs font-medium">{artifactText(input.label || key)}<input type="number" step={typeof input.step === "number" ? input.step : "any"} min={typeof input.min === "number" ? input.min : undefined} max={typeof input.max === "number" ? input.max : undefined} value={entered[key] ?? artifactText(input.value)} onChange={(e) => setEntered((current) => ({ ...current, [key]: e.target.value }))} className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-sm" /></label>

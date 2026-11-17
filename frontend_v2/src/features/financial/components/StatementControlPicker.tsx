@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { proposeStatementControls } from "../lib/statement-control-proposals"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -80,7 +81,7 @@ export function StatementControlPicker({
       className="space-y-3 rounded border p-3"
       aria-label={`Choose source for ${label}`}
     >
-      <h4 className="font-semibold">Choose the printed source for {label}</h4>
+      <h4 className="font-semibold">Choose the printed source for {label}<InfoTip text="A statement control is a printed date, balance or total used to check the reviewed statement." term="Statement control" /></h4>
       <p>
         Select the original cell containing this control. Its text and location
         will be preserved separately from your reading.

@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -189,7 +190,7 @@ export function AddToTheoryDialog({ caseId, surface, items, group, onClose }: Om
               />
             </label>
             <fieldset className="flex flex-col gap-1">
-              <legend className="mb-1">How it bears on the theory</legend>
+              <legend className="mb-1">How it bears on the theory<InfoTip text="Supports and Contradicts take a side. Context is the default and takes none." term="Supports Contradicts and Context" /></legend>
               <div role="radiogroup" aria-label="How it bears on the theory" className="flex flex-wrap gap-1.5">
                 {ADD_RELATIONSHIPS.map((r) => (
                   <label

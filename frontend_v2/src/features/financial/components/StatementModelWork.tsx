@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { confirmStatement, type StatementModelWork } from "../lib/statement-model-work"
@@ -52,6 +53,7 @@ export function StatementModelWorkMark({
         {saved
           ? "No person has checked these payments against the statement yet."
           : "No person has checked the statement's account and details against the page yet."}
+        <LearnMore term="By Claude not confirmed" />
       </p>
       <button type="button" className="text-xs underline" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {open ? "Hide what was done" : "What was done"}

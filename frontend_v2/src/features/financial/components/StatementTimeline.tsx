@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { StatementSourceButton } from "./StatementSourceButton"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 export type CoveragePeriod = {
   period_id: string
   source_document_id: string
@@ -122,14 +123,19 @@ export function StatementTimeline({
               </span>
             </div>
             <div className="relative h-7 rounded bg-muted/30">
-              <button
-                type="button"
-                aria-label={`Inspect statement ${index + 1}: ${period.start} to ${period.end}`}
-                aria-pressed={selected === period.period_id}
-                onClick={() => setSelected(period.period_id)}
-                style={position(period.from, period.to)}
-                className={`absolute h-full min-w-1 rounded border-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${period.included ? "border-sky-500 bg-sky-500/40" : "border-dashed border-amber-500 bg-amber-500/15"}`}
-              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={`Inspect statement ${index + 1}: ${period.start} to ${period.end}`}
+                    aria-pressed={selected === period.period_id}
+                    onClick={() => setSelected(period.period_id)}
+                    style={position(period.from, period.to)}
+                    className={`absolute h-full min-w-1 rounded border-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${period.included ? "border-sky-500 bg-sky-500/40" : "border-dashed border-amber-500 bg-amber-500/15"}`}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{`Inspect statement ${index + 1}: ${period.start} to ${period.end}`}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         ))}

@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { Button } from "@/components/ui/button"
 import type { TraceAssetUse, TraceAssetResults } from "../lib/trace-assets"
 import { correctionMoney } from "../lib/correction-contract"
@@ -283,7 +284,7 @@ export function TraceAssetResultsPanel({
       aria-label="Conditional asset-use allocations"
       className="space-y-2 rounded border p-3"
     >
-      <h4 className="font-semibold">Conditional asset-use allocations</h4>
+      <h4 className="font-semibold">Conditional asset-use allocations<InfoTip text="These results depend on the assumptions you set. Change the assumptions and the results can change." term="Conditional" /></h4>
       {items.map((item, i) => (
         <article key={`${item.transaction_id}-${i}`} className="space-y-1">
           <p>

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { SlidersHorizontal, X } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * Every filter, page switch and display choice for the Transactions page in one panel that floats over the
@@ -93,14 +94,19 @@ export function TransactionControlPanel({
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-3">
           <h2 className="text-base font-semibold">Filters and page controls</h2>
-          <button
-            type="button"
-            onClick={collapse}
-            aria-label="Collapse filters and page controls"
-            className="rounded p-1 hover:bg-muted"
-          >
-            <X className="size-4" aria-hidden="true" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={collapse}
+                aria-label="Collapse filters and page controls"
+                className="rounded p-1 hover:bg-muted"
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Collapse filters and page controls</TooltipContent>
+          </Tooltip>
         </div>
         <div className="space-y-5 p-4 text-sm">{children}</div>
       </aside>

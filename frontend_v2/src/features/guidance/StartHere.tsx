@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { guidanceAPI } from "./api"
 import { START_TIP, startSteps } from "./start-steps"
 import { useGuidance } from "./settings"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * The first-visit card on the case home (lx-guide C): what to do first, from what the case has. It shows while
@@ -26,9 +27,14 @@ export function StartHere({ caseId }: { caseId: string }) {
     >
       <div className="flex items-start gap-2">
         <h2 className="flex-1 font-semibold">Start here</h2>
-        <button type="button" aria-label="Hide Start here" className="rounded p-0.5 hover:bg-muted" disabled={g.saving} onClick={() => void g.hideTip(START_TIP)}>
-          <X className="size-4" aria-hidden="true" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" aria-label="Hide Start here" className="rounded p-0.5 hover:bg-muted" disabled={g.saving} onClick={() => void g.hideTip(START_TIP)}>
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Hide Start here</TooltipContent>
+        </Tooltip>
       </div>
       <ul className="mt-2 flex flex-col gap-1.5">
         {steps.map((s) => (

@@ -581,7 +581,7 @@ export function ConversationsPage() {
           </p>
         )}
         {counts && (
-          <p className="text-sm" data-testid="not-reviewed">
+          <p className="text-sm" data-testid="not-reviewed" data-guide="conversations-review">
             Not yet reviewed: {fmt(counts.not_reviewed ?? 0)} of {fmt(counts.threads ?? 0)} threads
           </p>
         )}
@@ -614,7 +614,7 @@ export function ConversationsPage() {
             </button>
           </nav>
         )}
-        {!railed && <nav aria-label="Threads and people" className="flex w-80 shrink-0 flex-col border-r bg-card">
+        {!railed && <nav aria-label="Threads and people" className="flex w-80 shrink-0 flex-col border-r bg-card" data-guide="conversations-list">
           <div className="flex gap-1 border-b p-2" role="group" aria-label="List">
             <Button size="sm" variant={view.tab === "threads" ? "secondary" : "ghost"} aria-pressed={view.tab === "threads"} onClick={() => setView({ tab: "threads", people: [] })}>
               Threads
@@ -740,7 +740,7 @@ export function ConversationsPage() {
             {!current && view.tab === "people" && !view.people.length ? (
               <span>Pick a person to read every message with them.</span>
             ) : null}
-            <span className="ml-auto flex flex-wrap items-center gap-1">
+            <span className="ml-auto flex flex-wrap items-center gap-1" data-guide="conversations-actions">
               <label className="inline-flex items-center gap-1 text-xs">
                 <input type="checkbox" checked={view.everyCopy} onChange={(e) => setView({ everyCopy: e.target.checked })} />
                 Show every copy
@@ -929,7 +929,7 @@ export function ConversationsPage() {
             <p className="p-4 text-sm text-muted-foreground">{threadsQ.isLoading ? "Loading the conversations" : view.tab === "threads" ? "No conversation matches these filters." : ""}</p>
           )}
           {strip.length > 0 && (
-            <div role="group" aria-label="Message density">
+            <div role="group" aria-label="Message density" data-guide="conversations-strip">
               <TimeStrip days={strip} zone={stream.index?.zone.label ?? zoneName} onPickDay={(day) => setJump({ day, seq: Date.now() })} />
             </div>
           )}

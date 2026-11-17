@@ -63,7 +63,7 @@ function RunControl({ caseId, run, onRequested }: { caseId: string; run: Analysi
   const p = run?.progress || {}
   return (
     <section aria-label="Run" className="flex flex-wrap items-center gap-3 text-sm">
-      <Button size="sm" onClick={() => request.mutate()} disabled={!!busy || request.isPending}>Run</Button>
+      <Button size="sm" onClick={() => request.mutate()} disabled={!!busy || request.isPending} data-guide="analyses-run">Run</Button>
       {busy && (
         <>
           <span role="status">{run!.status === "queued" ? "Waiting to start." : `Read ${(p.read ?? 0).toLocaleString("en-US")} of ${(p.total ?? 0).toLocaleString("en-US")} readings.`}</span>

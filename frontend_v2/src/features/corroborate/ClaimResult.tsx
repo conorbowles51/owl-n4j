@@ -1,4 +1,5 @@
 import type { Corroboration } from "./result-types"
+import { LearnMore } from "@/components/ui/learn-more"
 
 const LEVEL_CLASS: Record<string, string> = { claim_fits: "border-green-700", claim_contradicts: "border-red-700", cant_tell: "border-slate-400" }
 const WORDS: Record<string, string> = { fits: "Fits", contradicts: "Contradicts", cant_tell: "Can't tell" }
@@ -13,7 +14,7 @@ export function ClaimResult({ c }: { c: Corroboration }) {
         <p className="text-sm text-muted-foreground">“{c.claim?.sentence}”</p>
         <h2 className="text-lg font-semibold">{WORDS[(c.level as { verdict?: string }).verdict ?? ""] ?? c.level.name}</h2>
         <p>{c.level.sentence}</p>
-        <p className="text-xs text-muted-foreground">Set by a stated rule from the phones' records, not by a model. Confirmed by {c.claim?.confirmed_by ?? "a person"}{c.claim?.edited.length ? `; changed from Loupe's reading: ${c.claim.edited.join(", ")}` : ""}.</p>
+        <p className="text-xs text-muted-foreground">Set by a stated rule from the phones' records, not by a model. Confirmed by {c.claim?.confirmed_by ?? "a person"}{c.claim?.edited.length ? `; changed from Loupe's reading: ${c.claim.edited.join(", ")}` : ""}.<LearnMore term="Fits and Contradicts" /></p>
       </section>
       <section aria-label="What the records show">
         <h2 className="font-semibold">What the records show</h2>

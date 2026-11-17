@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { formatLedgerAmount } from "../lib/ledger-format"
 
 /**
@@ -37,7 +38,7 @@ export function ReviewCorrectionNote({
       data-testid="review-correction"
       className="mt-1 space-y-0.5 rounded border border-[#9fb7e8] bg-[#eef3fd] px-2 py-1 text-[12px] text-[#1d3a75] dark:bg-blue-950/40 dark:text-blue-200"
     >
-      <p className="font-semibold">Corrected before import. The corrected value comes first and is the one used.</p>
+      <p className="font-semibold">Corrected before import. The corrected value comes first and is the one used.<LearnMore term="Corrected before import" /></p>
       {correction.changes.map((change) => (
         <p key={change.field}>
           {FIELD[change.field]}: <span className="font-mono font-semibold">{shown(change.field, change.saved, currency)}</span>

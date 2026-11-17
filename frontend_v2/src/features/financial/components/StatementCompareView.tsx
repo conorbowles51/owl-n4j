@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { useCallback, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
@@ -178,7 +179,7 @@ function FactsStrip({
             <th className="w-[26%] py-1 pr-2 font-normal">Fact</th>
             <th className="py-1 pr-2 font-normal">This statement</th>
             <th className="py-1 pr-2 font-normal">Matching statement</th>
-            <th className="w-[22%] py-1 font-normal">Result</th>
+            <th className="w-[22%] py-1 font-normal">Result<InfoTip text="Agrees and Differs compare the two statements. Cannot compare means one side is not known; an unknown value is never treated as equal." term="Agrees and Differs" /></th>
           </tr>
         </thead>
         <tbody>

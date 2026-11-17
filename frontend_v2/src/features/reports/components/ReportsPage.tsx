@@ -14,7 +14,7 @@ export function ReportsPage() {
         <span className="font-display text-sm font-semibold">Reports</span>
         <div className="flex-1" />
         {caseId && (
-          <Button variant="primary" size="sm" asChild>
+          <Button variant="primary" size="sm" asChild data-guide="reports-new">
             <Link to={`/cases/${caseId}/financial?view=findings`}>
               <Plus className="size-3.5" />
               New financial report

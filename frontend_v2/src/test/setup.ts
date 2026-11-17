@@ -16,6 +16,16 @@ if (typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = () => undefined
 }
 
+// jsdom has no ResizeObserver; a tooltip measures its trigger with one when it opens (every icon-only Button has a
+// tooltip that keyboard focus opens, lx-guidecover). A test that needs real sizes still installs its own.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver
+}
+
 if (typeof globalThis.localStorage?.getItem !== "function") {
   const values = new Map<string, string>()
   const storage: Storage = {

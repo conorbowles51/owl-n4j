@@ -1,4 +1,5 @@
 import { Switch } from "@/components/ui/switch"
+import { InfoTip } from "@/components/ui/info-tip"
 
 import { DEEP_COST_NOTE } from "../deep-investigation"
 
@@ -19,6 +20,7 @@ export function DeepSwitch({
         (checked ? "border-sky-500/40 bg-sky-500/10" : "border-border")
       }
       title={DEEP_COST_NOTE}
+      data-guide="agent-deep"
     >
       <Switch
         id="agent-deep"
@@ -31,6 +33,7 @@ export function DeepSwitch({
       <label htmlFor="agent-deep" className="whitespace-nowrap text-xs font-medium text-foreground">
         Deep investigation
       </label>
+      <InfoTip text={DEEP_COST_NOTE} term="Deep investigation" />
     </div>
   )
 }

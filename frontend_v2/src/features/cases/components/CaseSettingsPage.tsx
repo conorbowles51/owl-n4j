@@ -340,7 +340,7 @@ export function CaseSettingsPage() {
           actions={<Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>}
         />
 
-        <Card className="mt-6 gap-5 p-5">
+        <Card className="mt-6 gap-5 p-5" data-guide="settings-details">
           <CardHeader className="grid-cols-[auto_1fr] grid-rows-[auto_auto] gap-x-3">
             <div className="row-span-2 flex size-9 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
               <FilePenLine className="size-4" />

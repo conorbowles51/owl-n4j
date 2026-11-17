@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useRef, useState } from "react"
@@ -107,6 +108,7 @@ function CandidateAccountFormForm({
       >
         {opened ? "Hide provisional account" : "Set up a provisional account"}
       </Button>
+      <InfoTip text="A provisional account is recorded for working use while its identity or other details are still unconfirmed." term="Provisional" />
       {opened && (
         <>
           <p>

@@ -6,6 +6,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { useNextSteps, type Announced } from "./announce"
 import type { NextStep } from "./next-steps"
 import { useGuidance } from "./settings"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * Where the next steps after an action appear (lx-guide B, D): a small card above the history strip that stays until
@@ -72,9 +73,14 @@ export function NextStepsCardView({ card, onClose }: { card: Announced; onClose:
       <div className="flex items-start gap-2">
         <Lightbulb className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
         <p className="flex-1 font-medium">{card.title}</p>
-        <button type="button" aria-label="Dismiss these next steps" className="rounded p-0.5 hover:bg-muted" onClick={onClose}>
-          <X className="size-4" aria-hidden="true" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" aria-label="Dismiss these next steps" className="rounded p-0.5 hover:bg-muted" onClick={onClose}>
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Dismiss these next steps</TooltipContent>
+        </Tooltip>
       </div>
       <ul className="mt-2 flex flex-col gap-1.5">
         {steps.map((step) => (

@@ -7,6 +7,7 @@ import { historyAPI, stepsKey, type Step } from "../api"
 import { returnTo, useHistory } from "./recorder"
 import { AllStepsDialog } from "./AllSteps"
 import { keepInView, STRIP_STEPS, when } from "./time-words"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * The slender history strip (lx-guide H): the last 8 steps in this case, oldest on the left, the current one
@@ -71,9 +72,14 @@ export function HistoryStrip({ caseId }: { caseId: string }) {
       {message && (
         <p role="status" className="absolute bottom-full left-2 right-2 mb-1 flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
           <span className="flex-1">{message}</span>
-          <button type="button" aria-label="Close this message" onClick={() => say(null)}>
-            <X className="size-3.5" aria-hidden="true" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" aria-label="Close this message" onClick={() => say(null)}>
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Close this message</TooltipContent>
+          </Tooltip>
         </p>
       )}
       {all && <AllStepsDialog caseId={caseId} onClose={() => setAll(false)} onOpen={(s) => { setAll(false); go(s) }} />}

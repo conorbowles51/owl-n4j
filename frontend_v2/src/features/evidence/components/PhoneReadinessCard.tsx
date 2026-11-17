@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { InfoTip } from "@/components/ui/info-tip"
 import { AlertCircle, CheckCircle2, Circle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -88,6 +89,7 @@ export function PhoneReadinessCard({ job, onPause, onResume, onCancel, onClear, 
                   <Circle className="size-3 text-muted-foreground/50" />
                 )}
                 <span className={cn(done || running ? "text-foreground" : "text-muted-foreground")}>{step.label}</span>
+                {step.key === "checking_complete" ? <InfoTip text="Loupe checks what it read against the report, record by record, before it calls the phone ready." term="Checking nothing is missing" /> : null}
                 {done ? <span className="text-muted-foreground">: done</span> : null}
                 {running && job.paused ? <span className="text-muted-foreground">: paused</span> : null}
               </span>

@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { useQuery } from "@tanstack/react-query"
 import { graphAPI } from "../api"
 
@@ -18,7 +19,7 @@ export function MergeLineage({ caseId, entityKey }: { caseId: string; entityKey:
   if (!merges.length) return null
   return (
     <section aria-label="Merged from" className="mx-4 my-3 rounded border p-3 text-xs">
-      <h4 className="mb-1.5 font-semibold uppercase tracking-wider text-muted-foreground">Merged from</h4>
+      <h4 className="mb-1.5 font-semibold uppercase tracking-wider text-muted-foreground">Merged from<span className="normal-case"><InfoTip text="The names and keys this entity replaced, with who merged them and when." term="Merged from" /></span></h4>
       <ul className="space-y-2">
         {merges.map((merge) => (
           <li key={merge.merge_job_id}>

@@ -232,14 +232,19 @@ export function FileListToolbar({
             />
           </div>
           {activeSearchTerm && (
-            <button
-              type="button"
-              aria-label="Clear search"
-              onClick={() => setActiveSearchTerm("")}
-              className="mr-1.5 flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <X className="size-3.5" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setActiveSearchTerm("")}
+                  className="mr-1.5 flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Clear search</TooltipContent>
+            </Tooltip>
           )}
         </div>
 
@@ -332,6 +337,7 @@ export function FileListToolbar({
                   size="sm"
                   className="h-8 gap-1.5 text-xs"
                   disabled={uploadMutation.isPending}
+                  data-guide="evidence-upload"
                 >
                   <Upload className="size-3.5" />
                   {uploadMutation.isPending ? "Uploading..." : "Upload"}

@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { Disclosure } from "./Disclosure"
 import { CounterpartyPartyDirectory } from "./CounterpartyPartyDirectory"
 import { useState } from "react"
@@ -84,6 +85,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
             <option value="working">All imported payments</option>
             <option value="verified">Verified payments only</option>
           </select>
+          <InfoTip text="Verified payments only counts payments whose statement period checks out against its printed balances or totals. All imported payments counts the rest as well." term="Verified totals" />
         </label>
         <RequestedCoveragePanel caseId={caseId} params={params} />
         <LedgerExportButton caseId={caseId} params={params} />

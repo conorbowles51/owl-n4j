@@ -131,6 +131,7 @@ export function DossiersPage() {
             </div>
             {canEdit && (
               <Button
+                data-guide="dossiers-new"
                 className="min-h-10"
                 variant="primary"
                 onClick={() => setCreateOpen(true)}
@@ -142,6 +143,7 @@ export function DossiersPage() {
         </div>
       </header>
       <nav
+        data-guide="dossiers-views"
         aria-label="Dossier views"
         className="flex shrink-0 gap-5 border-b border-border/75 px-5 sm:px-8"
       >
@@ -175,7 +177,10 @@ export function DossiersPage() {
         />
       ) : (
         <>
-          <div className="flex shrink-0 flex-wrap items-center gap-3 px-5 py-4 sm:px-8">
+          <div
+            data-guide="dossiers-filters"
+            className="flex shrink-0 flex-wrap items-center gap-3 px-5 py-4 sm:px-8"
+          >
             <div className="relative min-w-56 flex-1">
               <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -272,7 +277,10 @@ export function DossiersPage() {
                     </span>
                     <span>Recently updated first</span>
                   </div>
-                  <div className="divide-y divide-border/60">
+                  <div
+                    data-guide="dossiers-list"
+                    className="divide-y divide-border/60"
+                  >
                     {dossiers.map((dossier) => (
                       <button
                         key={dossier.id}

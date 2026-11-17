@@ -1,4 +1,5 @@
 import { announce } from "@/features/guidance/announce"
+import { LearnMore } from "@/components/ui/learn-more"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AddToTheory } from "@/features/theory/AddToTheory"
 import type { MutableRefObject, ReactNode } from "react"
@@ -122,6 +123,7 @@ import type {
   AgentRunSteering,
   AgentSteeringEntry,
 } from "../types"
+import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 type Dict = Record<string, unknown>
 
@@ -1004,6 +1006,7 @@ export function AgentPage() {
               threadId: response.thread_id,
               payments: new Set(response.answer.match(/txn:\/\/[^\s)\]]+/g) ?? []).size,
               records: new Set(response.answer.match(/rec:\/\/[^\s)\]]+/g) ?? []).size,
+              deep: deep && !(allCases && caseLayer !== "significant"),
             })
           }
 
@@ -1546,6 +1549,7 @@ function MessageBubble({
         <div className="mt-1 text-[11px] text-muted-foreground" data-testid="agent-answer-meta">
           {formatTime(message.createdAt)}
           {message.writtenBy ? ` · ${message.writtenBy}` : ""}
+          {message.content.includes("**Source check**") && <LearnMore term="Source check" label="About the Source check" />}
         </div>
         {caseId && !message.pending && !showClarificationPanel && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
           <AnswerRating caseId={caseId} messageId={message.id} />
@@ -2938,15 +2942,18 @@ function MapArtifact({
           const left = maxLng === minLng ? 50 : ((location.longitude - minLng) / lngSpan) * 86 + 7
           const top = maxLat === minLat ? 50 : 93 - ((location.latitude - minLat) / latSpan) * 86
           return (
-            <button
-              key={valueText(location.raw.key || index)}
-              type="button"
-              className="absolute size-3 rounded-full bg-amber-400 shadow-[0_0_0_4px_rgba(227,59,76,.22)] outline-none ring-offset-2 ring-offset-slate-950 transition-transform hover:scale-125 focus-visible:ring-2 focus-visible:ring-amber-300"
-              style={{ left: `${left}%`, top: `${top}%` }}
-              title={valueText(location.raw.name || location.raw.key)}
-              aria-label={`Location ${index + 1}: ${valueText(location.raw.name || location.raw.key || "Unnamed location")}`}
-              onClick={() => open(location.raw)}
-            />
+            <UiTooltip key={valueText(location.raw.key || index)}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="absolute size-3 rounded-full bg-amber-400 shadow-[0_0_0_4px_rgba(227,59,76,.22)] outline-none ring-offset-2 ring-offset-slate-950 transition-transform hover:scale-125 focus-visible:ring-2 focus-visible:ring-amber-300"
+                  style={{ left: `${left}%`, top: `${top}%` }}
+                  aria-label={`Location ${index + 1}: ${valueText(location.raw.name || location.raw.key || "Unnamed location")}`}
+                  onClick={() => open(location.raw)}
+                />
+              </TooltipTrigger>
+              <TooltipContent>{`Location ${index + 1}: ${valueText(location.raw.name || location.raw.key || "Unnamed location")}`}</TooltipContent>
+            </UiTooltip>
           )
         })}
       </div>

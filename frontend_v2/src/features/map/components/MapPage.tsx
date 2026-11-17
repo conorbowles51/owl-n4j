@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { InfoTip } from "@/components/ui/info-tip"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { getPhoneMapNear, getPhoneMapPoints, getPhoneMapSummary, getPhoneMapTrajectory, type PhoneMapFilter } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
@@ -212,10 +213,11 @@ export function MapPage() {
           onChange={(ids) => carried.apply({ ...carried.scope, phones: phoneList.filter((p) => ids.includes(p.id)) })} />
       )}
       {layersOn && phones.on && (
-        <div className="flex flex-wrap items-center gap-3 border-b bg-card px-3 py-1 text-sm" data-testid="route-bar">
+        <div className="flex flex-wrap items-center gap-3 border-b bg-card px-3 py-1 text-sm" data-testid="route-bar" data-guide="map-routes">
           <label className="inline-flex items-center gap-1.5">
             <input type="checkbox" checked={routes} onChange={(e) => setRoutes(e.target.checked)} /> Show routes
           </label>
+          <InfoTip text="Draws each phone's path in time order. Gaps of more than 2 hours are not drawn and are counted instead." term="Show routes" />
           {routes && routeQuery.isLoading && <span role="status">Reading routes</span>}
           {routes && routeQuery.isError && <span role="alert">The routes could not be read. Try again.</span>}
           {routes && routeQuery.data && (

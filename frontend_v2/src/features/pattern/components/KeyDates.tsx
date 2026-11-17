@@ -31,7 +31,7 @@ export function KeyDatesBar({ caseId }: { caseId: string }) {
   }
   const items = q.data?.items || []
   return (
-    <section aria-label="Key dates" className="flex flex-col gap-1 text-sm">
+    <section aria-label="Key dates" data-guide="pattern-key-dates" className="flex flex-col gap-1 text-sm">
       <div className="flex flex-wrap items-center gap-1">
         <span className="font-medium">Key dates ({items.length.toLocaleString("en-US")})</span>
         {items.map((k) => (

@@ -163,6 +163,7 @@ export function FolderTreeSidebar({
             size="sm"
             className="h-7 w-full justify-start gap-2 px-2 text-xs text-muted-foreground"
             onClick={onOpenDeleted}
+            data-guide="evidence-deleted"
           >
             <Trash2 className="size-3.5" />
             Deleted items

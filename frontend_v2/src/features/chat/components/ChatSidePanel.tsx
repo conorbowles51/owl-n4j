@@ -236,7 +236,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
             className="min-h-[36px] max-h-[80px] resize-none text-sm"
             rows={1}
           />
-          <Button
+          <Button aria-label="Send message"
             size="icon"
             className="size-9 shrink-0 bg-amber-500 hover:bg-amber-600 text-white"
             onClick={handleSend}

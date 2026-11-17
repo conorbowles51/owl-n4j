@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { z } from "zod"
 import { statementCalculation } from "../lib/statement-assessment"
 
@@ -44,7 +45,7 @@ export function StatementReconciliationSummary({
       className="rounded border bg-card p-3 my-3 text-sm space-y-2"
       aria-busy={!!pending}
     >
-      {!compact && <p className="font-semibold">Reconciliation</p>}
+      {!compact && <p className="font-semibold">Reconciliation<InfoTip text="The statement's recorded movements compared with its opening and closing balances or printed totals." term="Reconciliation" /></p>}
       <dl className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {(compact ? values.slice(3) : values).map(([label, value]) => (
           <div key={label}>

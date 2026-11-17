@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { announce } from "@/features/guidance/announce"
 import { Link, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -62,7 +63,7 @@ function RunControl({ caseId, run, client, onRequested }: { caseId: string; run:
   const p = run?.progress || {}
   return (
     <section aria-label="Run" className="flex flex-wrap items-center gap-3 text-sm">
-      <Button size="sm" onClick={() => request.mutate()} disabled={!!busy || request.isPending}>Run</Button>
+      <Button size="sm" onClick={() => request.mutate()} disabled={!!busy || request.isPending} data-guide="analyses-run">Run</Button>
       {busy && (
         <>
           <span role="status">{run!.status === "queued" ? "Waiting to start." : `Read ${(p.read ?? 0).toLocaleString("en-US")} of ${(p.total ?? 0).toLocaleString("en-US")} phones.`}</span>
@@ -220,13 +221,17 @@ export function ApproachLayout(p: ApproachLayoutProps) {
     const items = runs.data?.items || []
     setRun((cur) => cur ?? items.find((r) => r.status === "completed") ?? items[0] ?? null)
   }, [runs.data])
+  const finishedHere = useRef(false)
   const active = run && (run.status === "queued" || run.status === "running")
   useEffect(() => {
     if (!active || !run) return
     const t = window.setInterval(async () => {
       const next = await client.run(caseId, run.id)
       setRun(next)
-      if (next.status === "completed") qc.invalidateQueries({ queryKey: [queryKey, "results", caseId] })
+      if (next.status === "completed") {
+        finishedHere.current = true
+        qc.invalidateQueries({ queryKey: [queryKey, "results", caseId] })
+      }
     }, 2000)
     return () => window.clearInterval(t)
   }, [active, run, caseId, qc, client, queryKey])
@@ -237,6 +242,13 @@ export function ApproachLayout(p: ApproachLayoutProps) {
     enabled: !!done,
   })
   const total = results.data?.total ?? 0
+  // a comparison of two phones or extractions that finished while watched: the next steps follow (lx-guidecover E)
+  const loadedTotal = results.data?.total
+  useEffect(() => {
+    if (!finishedHere.current || loadedTotal === undefined) return
+    finishedHere.current = false
+    if (p.pairByDesign) announce(caseId, { kind: "phones-compared", title: p.title, differences: loadedTotal })
+  }, [loadedTotal, caseId, p.pairByDesign, p.title])
   const shown = results.data?.items.length ?? 0
   const byKind = (done?.counts as { by_kind?: Record<string, number> } | null)?.by_kind || {}
   return (

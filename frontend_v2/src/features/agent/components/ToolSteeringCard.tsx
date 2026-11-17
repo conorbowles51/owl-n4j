@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { InfoTip } from "@/components/ui/info-tip"
+import { LearnMore } from "@/components/ui/learn-more"
 
 import { agentAPI } from "../api"
 import type { AgentRunSteering, AgentToolGroup, AgentToolTraceItem } from "../types"
@@ -139,6 +141,7 @@ export function ToolSteeringCard({
       aria-labelledby="agent-tools-heading"
       className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3.5 text-sm"
       data-testid="agent-tool-steering"
+      data-guide="agent-tools"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="agent-tools-heading" className="text-sm font-semibold text-foreground">
@@ -146,6 +149,8 @@ export function ToolSteeringCard({
         </h2>
         <span className="text-xs text-muted-foreground">
           Chosen from your question. Switch one off or on; it applies from the next step.
+          <InfoTip text="A group you switch off is listed under Not examined at the end of the answer, so a narrowed answer is never read as complete." term="Not examined" />
+          <LearnMore term="Tools for this question" />
         </span>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

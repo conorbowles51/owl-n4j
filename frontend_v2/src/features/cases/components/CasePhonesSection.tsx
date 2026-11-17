@@ -23,7 +23,7 @@ export function CasePhonesSection({ caseId, isSuperAdmin, isAdmin = isSuperAdmin
   if (list.length === 0) return null
   return (
     <div id="phones" ref={ref}>
-      <Card className="mt-6 gap-4 p-5">
+      <Card className="mt-6 gap-4 p-5" data-guide="settings-phones">
         <CardHeader>
           <CardTitle className="text-base">Phones</CardTitle>
           <CardDescription>Settings for the phones in this case. Each phone's own choices are on its Phone summary.</CardDescription>

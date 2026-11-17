@@ -2,7 +2,8 @@ import { CorroborateRows } from "@/features/corroborate/CorroborateRows"
 import { toMembers } from "@/features/relations/api"
 import type { ItemInput } from "@/features/theory/api"
 import { useQuery } from "@tanstack/react-query"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { announce } from "@/features/guidance/announce"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
@@ -54,6 +55,11 @@ export function SearchResultsPage() {
     },
   })
   const name = GROUP_NAMES[group] ?? group
+  // the whole group has been read: the next steps follow (lx-guidecover E), once per search
+  const doneTotal = res.data?.total
+  useEffect(() => {
+    if (doneTotal) announce(caseId, { kind: "case-search-done", query: q, hits: doneTotal, noun: noun(group) })
+  }, [caseId, q, group, doneTotal])
   const caseQuery = useCase(caseId)
   const { canEdit } = useCasePermissions(caseQuery.data)
   const collect = useCollectTargets(caseId)
@@ -87,7 +93,7 @@ export function SearchResultsPage() {
   const addNoun = asOne ? "selection" : noun(group)
   return (
     <div className="flex h-full flex-col gap-2 overflow-auto p-4">
-      <h1 className="text-lg font-semibold">
+      <h1 className="text-lg font-semibold" data-guide="search-heading">
         {name} matching {q}
       </h1>
       {res.isLoading && <p role="status" className="text-sm">Reading every match</p>}
@@ -108,7 +114,7 @@ export function SearchResultsPage() {
           {res.data.totals && <PaymentTotalsLine totals={res.data.totals} />}
           {res.data.searched && <p className="text-xs text-muted-foreground">{res.data.searched}</p>}
           {res.data.items.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3 text-sm" aria-label="Add to">
+            <div className="flex flex-wrap items-center gap-3 text-sm" aria-label="Add to" data-guide="search-add">
               <label className="flex items-center gap-1.5">
                 <input type="checkbox" checked={all} onChange={(e) => { setAll(e.target.checked); setPicked(new Set()) }} />
                 Every hit ({total.toLocaleString("en-US")})
@@ -146,7 +152,7 @@ export function SearchResultsPage() {
               {frozen.data.left_out > 0 ? ` ${frozen.data.left_out.toLocaleString("en-US")} of the ${frozen.data.group_total.toLocaleString("en-US")} hits have no phone record behind them and are left out.` : ""}
             </p>
           )}
-          <ul className="flex flex-col divide-y rounded border">
+          <ul className="flex flex-col divide-y rounded border" data-guide="search-hits">
             {res.data.items.map((h, i) => (
               <li key={`${i}-${h.record_uid ?? h.evidence_file_id ?? h.identity_key ?? h.title}`} className="flex items-start gap-2 p-2">
                 <input

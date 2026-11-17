@@ -23,6 +23,7 @@ import {
 } from "../hooks/use-folder-context"
 import { ProfileChainPreview } from "./ProfileChainPreview"
 import type { FolderProfile, ProfileOverrides } from "@/types/evidence.types"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface FolderContextDialogProps {
   folderId: string
@@ -323,14 +324,19 @@ export function FolderContextDialog({
                             *
                           </span>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => removeEntityType(index)}
-                          className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-amber-500/20"
-                          aria-label={`Remove ${entity.name}`}
-                        >
-                          <X className="size-2.5" />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => removeEntityType(index)}
+                              className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-amber-500/20"
+                              aria-label={`Remove ${entity.name}`}
+                            >
+                              <X className="size-2.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{`Remove ${entity.name}`}</TooltipContent>
+                        </Tooltip>
                       </Badge>
                     ))}
                   </div>

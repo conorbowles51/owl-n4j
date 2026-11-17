@@ -52,7 +52,7 @@ function AdminBackgroundTasks() {
         <Badge variant={running.length > 0 ? "amber" : "slate"}>
           {running.length} recorded running
         </Badge>
-        <Button variant="ghost" size="sm" onClick={() => refetch()}>
+        <Button aria-label="Refresh the task list" variant="ghost" size="sm" onClick={() => refetch()}>
           <RefreshCw className="size-3.5" />
         </Button>
       </div>

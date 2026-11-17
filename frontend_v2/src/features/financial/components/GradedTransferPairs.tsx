@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { LearnMore } from "@/components/ui/learn-more"
 import { Button } from "@/components/ui/button"
 import { LevelBadge } from "@/features/phones/analysis/MoneyPairings"
 import { correctionMoney } from "../lib/correction-contract"
@@ -38,7 +39,7 @@ export function GradedTransferPairs({
         {graded.left_out_words ? ` · ${graded.left_out_words}` : ""}
       </p>
       <Disclosure label="How the strength is set">
-        <p>{graded.rule}</p>
+        <p>{graded.rule}<LearnMore term="Graded likelihood" /></p>
       </Disclosure>
       <label className="flex items-center gap-1 text-sm">
         Strength

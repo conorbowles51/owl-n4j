@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
@@ -63,7 +64,7 @@ export function PhotoDataPanel({ caseId, fileId, canEdit }: { caseId: string; fi
             {data.width && data.height ? (<><dt>Size</dt><dd>{data.width} × {data.height}</dd></>) : null}
           </dl>
           {detail.absent.length > 0 && <p>Absent from the file: {detail.absent.join(", ")}.</p>}
-          {data.date_taken && <p className="text-muted-foreground">A camera’s clock can be wrong.</p>}
+          {data.date_taken && <p className="text-muted-foreground">A camera’s clock can be wrong.<LearnMore term="Photo data" /></p>}
         </>
       )}
       <label className="grid gap-1">

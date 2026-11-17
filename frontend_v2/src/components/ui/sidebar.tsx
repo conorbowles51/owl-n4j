@@ -373,6 +373,7 @@ export function AppSidebar() {
           <button
             type="button"
             onClick={() => document.dispatchEvent(new CustomEvent("owl:toggle-command-palette"))}
+            data-guide="case-search"
             aria-label={!sidebarExpanded ? "Search this case (Ctrl+K)" : undefined}
             className={cn(
               "mt-3 flex items-center rounded-lg border border-sidebar-border text-sm text-sidebar-muted outline-none hover:bg-slate-50 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/35 dark:hover:bg-white/[0.055]",

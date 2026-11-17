@@ -106,7 +106,7 @@ export function ChatInput({
   return (
     <div className="border-t border-border">
       <div className="flex items-center gap-1.5 border-b border-border px-4 py-2">
-        <div className="flex rounded-md border border-border bg-muted/50 p-0.5">
+        <div className="flex rounded-md border border-border bg-muted/50 p-0.5" data-guide="chat-scope">
           <button
             type="button"
             className={cn(
@@ -198,7 +198,7 @@ export function ChatInput({
         </div>
       )}
 
-      <div className="flex items-end gap-2 p-4">
+      <div className="flex items-end gap-2 p-4" data-guide="chat-ask">
         <ActiveAIModel workload="chat" />
 
         <Textarea
@@ -210,7 +210,7 @@ export function ChatInput({
           className="min-h-[40px] max-h-[160px] resize-none"
           rows={1}
         />
-        <Button
+        <Button aria-label="Send message"
           variant="primary"
           size="icon-sm"
           onClick={handleSend}

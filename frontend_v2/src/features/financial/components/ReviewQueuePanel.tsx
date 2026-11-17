@@ -647,6 +647,7 @@ export function ReviewQueuePanel({
                 ? "Nothing here needs you and nothing here is blocked. Statements set aside on purpose are finished; anything still in progress is moved on by Loupe."
               : "Only what needs a person. Each item says what is wrong, where to look in the PDF and what to enter. It saves by itself once it checks out."
             }
+            term={list === "copies" || list === "not_payment" ? "Set aside" : list === "waiting" ? "Needs you" : undefined}
           />
         </p>
       </header>
@@ -1487,6 +1488,7 @@ function NeedsItem({
           <div className="flex flex-wrap items-center gap-2 rounded border border-amber-300 p-2 text-xs" aria-label="Original">
             <span className="min-w-0 flex-1">
               <span className="font-medium">May be a copy of:</span> {originalLine(entry.original)}
+              <InfoTip text="This statement may be a copy of one already imported. Compare the two and keep one; the copy counts nothing." term="May be a copy of" />
             </span>
             {onCompare && (
               <Button size="sm" variant="outline" onClick={onCompare}>

@@ -12,6 +12,7 @@ import { useEvidenceJobWatcher } from "./watchers"
 import { HistoryStrip } from "./history/HistoryStrip"
 import { HistoryDocument } from "./history/HistoryDocument"
 import { useReturnCheck, useStepRecorder } from "./history/recorder"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * Guidance and step history inside a case (lx-guide), mounted once by the case layout: the slender bar at the bottom
@@ -70,16 +71,20 @@ export function CaseBottomBar({ caseId }: { caseId: string }) {
           <ErrorBoundary fallback={<span className="flex-1 text-[11px]">Your steps could not be shown.</span>}>
             <HistoryStrip caseId={caseId} />
           </ErrorBoundary>
-          <button
-            type="button"
-            aria-label="Fold the history to one button"
-            title="Fold the history to one button"
-            className="shrink-0 rounded p-0.5 hover:bg-muted"
-            disabled={g.saving}
-            onClick={() => void g.setHistoryCollapsed(true)}
-          >
-            <ChevronDown className="size-3.5" aria-hidden="true" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Fold the history to one button"
+                className="shrink-0 rounded p-0.5 hover:bg-muted"
+                disabled={g.saving}
+                onClick={() => void g.setHistoryCollapsed(true)}
+              >
+                <ChevronDown className="size-3.5" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Fold the history to one button</TooltipContent>
+          </Tooltip>
         </>
       )}
       <GuideMenu caseId={caseId} />

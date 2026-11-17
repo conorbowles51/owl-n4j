@@ -114,7 +114,7 @@ export function ConversationSidebar({
   // Collapsed state — just toggle button
   if (!isOpen) {
     return (
-      <div className="flex flex-col items-center gap-2 border-r border-border bg-panel px-1 py-2">
+      <div className="flex flex-col items-center gap-2 border-r border-border bg-panel px-1 py-2" data-guide="chat-conversations">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -136,13 +136,13 @@ export function ConversationSidebar({
   }
 
   return (
-    <div className="flex w-60 flex-col border-r border-border bg-panel">
+    <div className="flex w-60 flex-col border-r border-border bg-panel" data-guide="chat-conversations">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-3 py-1">
         <span className="font-display text-xs font-semibold text-foreground">
           Conversations
         </span>
-        <Button
+        <Button aria-label="Hide conversations"
           variant="ghost"
           size="icon-sm"
           onClick={() => setOpen(false)}

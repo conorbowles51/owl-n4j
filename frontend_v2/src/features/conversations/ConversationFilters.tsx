@@ -108,7 +108,7 @@ export function ConversationFilters({ view, setView, listFilter, zoneWords, thre
   const stateCount = (deletion !== "any" ? 1 : 0) + (view.unreadable !== null ? 1 : 0)
   const dated = !!(view.from || view.to)
   return (
-    <div className="flex flex-col gap-1" data-testid="conversation-filters">
+    <div className="flex flex-col gap-1" data-testid="conversation-filters" data-guide="conversations-filters">
       <div className="flex flex-wrap items-center gap-1.5 text-sm">
         {phones && phones.length > 1 && (
           <Pick label="Phones" count={view.phones.length}>

@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -167,9 +168,10 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
               <span className="block text-muted-foreground">
                 You've checked {checked.toLocaleString()}.
                 {checkFirst ? ` Start with the ${checkFirst.toLocaleString()} to check first: they can change the money itself.` : ""}
+                {checkFirst ? <LearnMore term="Check first" /> : null}
               </span>
             ) : null}
-            <InfoTip text="Places where the processor chose a value the page does not print outright, or chose between two readings. Nothing is held for these. Check any of them in the flow of work: Looks right keeps the rule as it is; a correction with its reason is sent back as a proposed improvement to the processor." />
+            <InfoTip text="Places where the processor chose a value the page does not print outright, or chose between two readings. Nothing is held for these. Check any of them in the flow of work: Looks right keeps the rule as it is; a correction with its reason is sent back as a proposed improvement to the processor." term="Judgement calls" />
           </h3>
           <p className="text-sm font-medium" role="status">
             {counts.data ? countLine(counts.data.case) || "No judgement calls recorded in this case." : ""}

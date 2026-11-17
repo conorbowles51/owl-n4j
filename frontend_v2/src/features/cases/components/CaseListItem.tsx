@@ -82,7 +82,7 @@ export function CaseListItem({
           </Button>
         )}
         {onDelete && (
-          <Button
+          <Button aria-label="Delete this case"
             variant="ghost"
             size="icon-sm"
             className="size-6 opacity-0 group-hover:opacity-100"

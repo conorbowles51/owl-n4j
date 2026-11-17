@@ -31,7 +31,7 @@ export function MandateUsageBanner({
     try { await onAdoptCurrent() } finally { setAdopting(false) }
   }
 
-  return <div className={`border-b px-4 py-2 ${stale ? "border-status-warning/50 bg-status-warning-soft" : "border-border bg-muted/10"}`}>
+  return <div data-guide="case-objective" className={`border-b px-4 py-2 ${stale ? "border-status-warning/50 bg-status-warning-soft" : "border-border bg-muted/10"}`}>
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-2 text-xs">
         <BookOpenCheck className={`size-3.5 ${incomplete ? "text-muted-foreground" : "text-violet-500"}`} />

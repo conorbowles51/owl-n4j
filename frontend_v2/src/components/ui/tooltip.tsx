@@ -5,23 +5,29 @@ import { Tooltip as TooltipPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/cn"
 
+/** Set under a TooltipProvider, so a Tooltip outside one (a test, a portal) brings its own instead of failing. */
+const InProvider = React.createContext(false)
+
 function TooltipProvider({
   delayDuration = 0,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
-    <TooltipPrimitive.Provider
-      data-slot="tooltip-provider"
-      delayDuration={delayDuration}
-      {...props}
-    />
+    <InProvider.Provider value={true}>
+      <TooltipPrimitive.Provider
+        data-slot="tooltip-provider"
+        delayDuration={delayDuration}
+        {...props}
+      />
+    </InProvider.Provider>
   )
 }
 
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+  const root = <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+  return React.useContext(InProvider) ? root : <TooltipProvider>{root}</TooltipProvider>
 }
 
 function TooltipTrigger({

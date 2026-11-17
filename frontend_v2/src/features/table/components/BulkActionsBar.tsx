@@ -31,7 +31,7 @@ export function BulkActionsBar({
   if (count === 0) return null
 
   return (
-    <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-1.5 animate-in slide-in-from-top-1 duration-200">
+    <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-1.5 animate-in slide-in-from-top-1 duration-200" data-guide="table-bulk">
       <Badge variant="secondary" className="font-medium">
         {count} selected
       </Badge>

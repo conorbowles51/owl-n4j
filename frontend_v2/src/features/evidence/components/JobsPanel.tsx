@@ -532,7 +532,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
     sortedJobs.length > 0
 
   return (
-    <div className="flex h-full flex-col bg-muted/20">
+    <div className="flex h-full flex-col bg-muted/20" data-guide="jobs-panel">
       {/* A retry can be held just as a first attempt can, and this panel is
           where the person is looking when it is. */}
       <ProcessHoldDialog gate={gate} />

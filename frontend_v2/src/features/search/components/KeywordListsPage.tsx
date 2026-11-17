@@ -27,7 +27,7 @@ export function KeywordListsPage() {
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-4">
       <h1 className="text-lg font-semibold">Keyword lists</h1>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-muted-foreground" data-guide="keywords-intro">
         Each list runs on every phone in the case, including phones added later, and again whenever a phone is read or
         re-read. Save a list from search (Ctrl+K), with &ldquo;Save as keyword list&rdquo;.
       </p>
@@ -67,7 +67,7 @@ function KeywordListCard({ caseId, list, open }: { caseId: string; list: Keyword
       <TheoryLine caseId={caseId} list={list} />
       {open && run && (
         <div className="mt-2 overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" data-guide="keywords-counts">
             <thead>
               <tr className="text-left text-xs text-muted-foreground">
                 <th className="p-1">Term</th>
@@ -160,7 +160,7 @@ function TheoryLine({ caseId, list }: { caseId: string; list: KeywordList }) {
         <span className="text-muted-foreground">Not attached to a theory.</span>
       )}
       {!picking ? (
-        <Button size="sm" variant="outline" onClick={() => setPicking(true)}>
+        <Button size="sm" variant="outline" onClick={() => setPicking(true)} data-guide="keywords-attach">
           Attach to a theory
         </Button>
       ) : (

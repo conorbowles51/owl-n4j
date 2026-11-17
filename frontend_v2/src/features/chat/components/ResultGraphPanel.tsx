@@ -237,7 +237,7 @@ export function ResultGraphPanel() {
   // Collapsed state — just a rail with toggle button
   if (!isOpen) {
     return (
-      <div className="flex flex-col items-center border-l border-border py-2 px-1 gap-2">
+      <div className="flex flex-col items-center border-l border-border py-2 px-1 gap-2" data-guide="chat-result-graph">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -257,7 +257,7 @@ export function ResultGraphPanel() {
 
   // Expanded state — fills parent ResizablePanel
   return (
-    <div className="flex h-full flex-col border-l border-border">
+    <div className="flex h-full flex-col border-l border-border" data-guide="chat-result-graph">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-3 py-1">
         <div className="flex items-center gap-2">
@@ -287,7 +287,7 @@ export function ResultGraphPanel() {
           >
             <Maximize2 className="size-3" />
           </Button>
-          <Button
+          <Button aria-label="Close the graph panel"
             variant="ghost"
             size="icon-sm"
             onClick={() => setOpen(false)}

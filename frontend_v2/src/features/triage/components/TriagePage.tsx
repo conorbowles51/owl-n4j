@@ -1855,7 +1855,7 @@ function TemplateList({
               {applyingId === template.id ? <LoadingSpinner size="sm" /> : <Check className="size-3.5" />}
               Apply
             </Button>
-            <Button variant="ghost" size="icon-sm" disabled={deletingId === template.id} onClick={() => onDelete(template.id)}>
+            <Button aria-label="Delete this template" variant="ghost" size="icon-sm" disabled={deletingId === template.id} onClick={() => onDelete(template.id)}>
               <Trash2 className="size-3.5" />
             </Button>
           </div>
@@ -1911,7 +1911,7 @@ function TriageAdvisor({
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Sparkles className="size-4 text-amber-500" />
         <span className="text-sm font-semibold">Triage Advisor</span>
-        <Button className="ml-auto" variant="ghost" size="icon-sm" onClick={() => setOpen(false)}>
+        <Button aria-label="Close the advisor" className="ml-auto" variant="ghost" size="icon-sm" onClick={() => setOpen(false)}>
           <X className="size-4" />
         </Button>
       </div>
@@ -1967,7 +1967,7 @@ function TriageAdvisor({
           }}
           placeholder="Ask the advisor..."
         />
-        <Button size="icon" disabled={!input.trim() || chatMutation.isPending} onClick={send}>
+        <Button aria-label="Send message" size="icon" disabled={!input.trim() || chatMutation.isPending} onClick={send}>
           <Send className="size-4" />
         </Button>
       </div>

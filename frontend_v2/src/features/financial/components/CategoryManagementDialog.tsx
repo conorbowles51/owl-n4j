@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { FinancialCategory } from "../api"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const PRESET_COLORS = [
   "#b41624",
@@ -183,18 +184,22 @@ function CategoryManagementForm({
           </div>
           <div className="flex flex-wrap gap-1.5">
             {PRESET_COLORS.map((color) => (
-              <button
-                key={color}
-                onClick={() => setDraft((current) => ({ ...current, color }))}
-                aria-label={`Category colour ${color}`}
-                aria-pressed={newColor === color}
-                disabled={saving}
-                className="size-6 rounded-full border-2 transition"
-                style={{
-                  backgroundColor: color,
-                  borderColor: newColor === color ? "white" : "transparent",
-                }}
-              />
+              <Tooltip key={color}>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setDraft((current) => ({ ...current, color }))}
+                    aria-label={`Use colour ${color}`}
+                    aria-pressed={newColor === color}
+                    disabled={saving}
+                    className="size-6 rounded-full border-2 transition"
+                    style={{
+                      backgroundColor: color,
+                      borderColor: newColor === color ? "white" : "transparent",
+                    }}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{`Use colour ${color}`}</TooltipContent>
+              </Tooltip>
             ))}
           </div>
         </div>

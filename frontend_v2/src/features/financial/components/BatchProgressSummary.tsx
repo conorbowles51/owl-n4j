@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import type { BatchStatementSummary } from "../lib/batch-statement-summary"
 import { Button } from "@/components/ui/button"
 
@@ -72,7 +73,7 @@ export function BatchProgressSummary({
     >
       {summary && (
         <div className="space-y-2" aria-label="Your batch progress">
-          <h3 className="font-semibold">Your progress through this batch</h3>
+          <h3 className="font-semibold">Your progress through this batch<InfoTip text="A batch is a saved group of selected PDF readings, reviewed and imported together." term="Batch" /></h3>
           <p role="status">
             {summary.imported} saved to Financial ·{" "}
             {stillToFinish} prepared reviews still to finish

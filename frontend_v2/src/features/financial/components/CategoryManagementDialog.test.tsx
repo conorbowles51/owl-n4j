@@ -22,7 +22,7 @@ function enter() {
     target: { value: "Review, priority" },
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Category colour #5571c8" })
+    screen.getByRole("button", { name: "Use colour #5571c8" })
   )
 }
 it("retains an unsuccessful category name and colour through reopening while isolating cases", async () => {
@@ -41,7 +41,7 @@ it("retains an unsuccessful category name and colour through reopening while iso
   show()
   expect(screen.getByLabelText("Category name")).toHaveValue("Review, priority")
   expect(
-    screen.getByRole("button", { name: "Category colour #5571c8" })
+    screen.getByRole("button", { name: "Use colour #5571c8" })
   ).toHaveAttribute("aria-pressed", "true")
 })
 it("blocks repeated Enter and close while saving, then clears only the confirmed draft", async () => {

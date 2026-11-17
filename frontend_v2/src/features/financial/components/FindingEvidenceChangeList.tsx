@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { Button } from "@/components/ui/button"
 import type {
   CitedPaymentChange,
@@ -47,6 +48,7 @@ export function FindingEvidenceChangeList({
           <p>
             This {noun} still shows the values it cited. They are not updated
             here.
+            <LearnMore term="Changed since cited" />
           </p>
           <ul className="space-y-2">
             {evidence.changed.map((item) => (

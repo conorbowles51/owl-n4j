@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { Disclosure } from "./Disclosure"
 import { useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -504,7 +505,7 @@ export function StatementJudgements({
   const statementLevel = items.filter((j) => j.subject_type !== "transaction")
   const onRows = items.length - statementLevel.length
   return (
-    <div aria-label="Judgement calls in this statement" className="space-y-1 text-sm">
+    <div aria-label="Judgement calls in this statement" data-guide="financial-judgement-calls" className="space-y-1 text-sm">
       <p className="font-medium">{countLine(counts)}</p>
       <TieredList
         items={statementLevel}
@@ -796,6 +797,8 @@ export function ReadingJudgements({
             "the value read beside it, and only your value counts."
           : "Values the reader chose that the page does not print outright. Check any of them on the page before " +
             "you save; nothing is held for them. Once saved, each can be marked Looks right or corrected."}
+        <LearnMore term="Judgement calls" />
+        <LearnMore term="Looks right" label="About Looks right" />
       </p>
       <div className="mt-2">
         <TieredList

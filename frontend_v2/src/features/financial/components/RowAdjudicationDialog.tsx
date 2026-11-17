@@ -1,3 +1,5 @@
+import { InfoTip } from "@/components/ui/info-tip"
+import { LearnMore } from "@/components/ui/learn-more"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 /**
  * Setting one ledger row aside, or letting it back in, on a person's authority.
@@ -259,6 +261,9 @@ function RowIdentity({
               Unscaled
             </Badge>
           )}
+          {!amount.scaled && (
+            <InfoTip text="This figure is the stored count of minor units, not an amount. Read it against the source document before relying on it." term="Minor units" />
+          )}
         </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -480,6 +485,7 @@ function RowAdjudicationDialogForm({
           <DialogDescription>
             {copy?.blurb ??
               "The ledger describes this row's standing in a word this screen is too old to read, and which change applies depends on that word. Nothing has been sent."}
+            {copy ? <LearnMore term="Set aside" /> : null}
           </DialogDescription>
         </DialogHeader>
 

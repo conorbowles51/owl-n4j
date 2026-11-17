@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { useGuidance } from "./settings"
-import { findTarget, tourArea, TOURS, type TourArea } from "./tours"
+import { findTarget, stepsOnScreen, tourArea, TOURS, type TourArea, type TourStep } from "./tours"
+import { usePanelArea } from "./panel-area"
 
 /** Guide → "Take the tour of this screen" sends this, with the area in `detail`. */
 export const START_TOUR = "loupe:start-tour"
@@ -18,8 +19,12 @@ const W = 320
  */
 export function TourHost({ caseId }: { caseId: string }) {
   const { pathname } = useLocation()
-  const area = tourArea(pathname)
+  const routeArea = tourArea(pathname)
+  const panel = usePanelArea(pathname)
+  // a panel opened on this screen (Corroborate, a theory) has its own tour, which comes first while it is new
   const g = useGuidance(caseId)
+  const panelDue = !!panel && !g.settings?.tours[panel]?.state
+  const area = panelDue ? panel : routeArea
   const [open, setOpen] = useState<{ area: TourArea; step: number; auto: boolean } | null>(null)
   const [ready, setReady] = useState<string | null>(null)
 
@@ -46,10 +51,24 @@ export function TourHost({ caseId }: { caseId: string }) {
   const saved = area ? g.settings?.tours[area] : undefined
   const due = !!area && g.on && ready === pathname && !g.tipHidden(TOUR_TIP) && !saved?.state
   const resumeAt = saved?.step ?? 0
+  // while a tour is due but none of its controls are drawn yet, look again each second
+  const [tick, setTick] = useState(0)
   useEffect(() => {
-    if (!due || !area || document.querySelector("[role='dialog']")) return
-    setOpen((o) => o ?? { area, step: Math.min(resumeAt, TOURS[area].steps.length - 1), auto: true })
-  }, [due, area, resumeAt])
+    if (!due || open) return
+    const t = window.setInterval(() => setTick((n) => n + 1), 1000)
+    return () => window.clearInterval(t)
+  }, [due, open])
+  useEffect(() => {
+    if (!due || !area || document.querySelector("[role='dialog']:not([data-guide-panel])")) return
+    // nothing of the tour on screen yet (a page still loading, an empty case): wait, so the tour is not used up
+    if (stepsOnScreen(TOURS[area]).length === 0) return
+    setOpen((o) => o ?? { area, step: resumeAt, auto: true })
+  }, [due, area, resumeAt, tick])
+
+  // a panel tour that opened by itself ends with its panel (it resumes when the panel opens again)
+  useEffect(() => {
+    setOpen((o) => (o?.auto && TOURS[o.area].panel && o.area !== panel ? null : o))
+  }, [panel])
 
   if (!open || covered) return null
   return (
@@ -80,7 +99,9 @@ function useOtherDialog(watch: boolean): boolean {
   const [covered, setCovered] = useState(false)
   useEffect(() => {
     if (!watch) return
-    const look = () => setCovered(!!document.querySelector("[role='dialog']:not([data-testid='tour-popup']), [role='alertdialog']"))
+    // a panel with its own tour (data-guide-panel) is what the tour explains, so it never pushes the tour aside
+    const look = () =>
+      setCovered(!!document.querySelector("[role='dialog']:not([data-testid='tour-popup']):not([data-guide-panel]), [role='alertdialog']"))
     look()
     const t = window.setInterval(look, 500)
     return () => window.clearInterval(t)
@@ -126,21 +147,30 @@ export function TourPopup({
   guidanceOn: boolean
 }) {
   const tour = TOURS[area]
-  const [index, setIndex] = useState(first)
-  const step = tour.steps[index]
+  // only the steps whose control is on screen when the tour opens: a missing control is skipped, never pointed at
+  const [steps] = useState<TourStep[]>(() => {
+    const shown = stepsOnScreen(tour)
+    return shown.length ? shown : tour.steps.filter((s) => s.targets.includes("main"))
+  })
+  // `first` and the saved step count the tour's full list, so a resume lands on the same step whatever is on screen
+  const [index, setIndex] = useState(() => {
+    const at = steps.findIndex((s) => tour.steps.indexOf(s) >= first)
+    return at < 0 ? Math.max(0, steps.length - 1) : at
+  })
+  const step = steps[index] ?? tour.steps[0]
   const [where, setWhere] = useState<Place>(() => place(null))
   useLayoutEffect(() => {
-    const target = findTarget(step.targets)
+    const target = findTarget(step.targets.filter((t) => t !== "main"))
     target?.scrollIntoView?.({ block: "nearest" })
     const update = () => setWhere(place(target))
     update()
     window.addEventListener("resize", update)
     return () => window.removeEventListener("resize", update)
   }, [step])
-  const last = index === tour.steps.length - 1
+  const last = index >= steps.length - 1
   const move = (to: number) => {
     setIndex(to)
-    onStep(to)
+    onStep(Math.max(0, tour.steps.indexOf(steps[to])))
   }
   return (
     <>
@@ -154,13 +184,13 @@ export function TourPopup({
       <section
         role="dialog"
         aria-modal="false"
-        aria-label={`${tour.name} tour, step ${index + 1} of ${tour.steps.length}`}
+        aria-label={`${tour.name} tour, step ${index + 1} of ${steps.length}`}
         data-testid="tour-popup"
         className="fixed z-[46] rounded-lg border border-primary/50 bg-card p-3 text-sm shadow-xl"
         style={{ top: where.top, left: where.left, width: Math.min(W, window.innerWidth - 16) }}
       >
         <p className="text-[11px] font-medium uppercase tracking-wide text-primary">
-          {tour.name} · {index + 1} of {tour.steps.length}
+          {tour.name} · {index + 1} of {steps.length}
         </p>
         <h2 className="mt-1 font-semibold">{step.title}</h2>
         <p className="mt-1 text-muted-foreground">{step.body}</p>

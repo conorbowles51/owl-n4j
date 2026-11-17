@@ -170,7 +170,7 @@ export function CollaboratorsDialog({
                                 </Button>
                               </div>
                             ) : (
-                              <Button
+                              <Button aria-label="Remove this collaborator"
                                 variant="ghost"
                                 size="icon-sm"
                                 className="size-6"

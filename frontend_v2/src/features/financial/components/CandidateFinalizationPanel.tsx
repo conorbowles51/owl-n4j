@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { StatementDraftPanel } from "./StatementDraftPanel"
 import { StatementScopeEditor } from "./StatementScopeEditor"
@@ -210,6 +211,7 @@ function Finalization({ caseId, fileId }: { caseId: string; fileId: string }) {
         Selected rows stay outside verified totals (not fully checked). Finalizing
         seals this PDF reading: no later additions or candidate edits. Changes
         to written rows use ledger corrections.
+        <LearnMore term="Finalization" />
       </p>
       <Button
         variant="outline"

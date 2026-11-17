@@ -140,7 +140,7 @@ export function CaseExportsSection({ caseId }: { caseId: string }) {
   const hasActive = data?.exports.some((row) => (ACTIVE_EXPORT_STATUSES as readonly string[]).includes(row.status))
 
   return (
-    <Card className="mt-6 gap-4 p-5" aria-labelledby="case-exports-title">
+    <Card className="mt-6 gap-4 p-5" aria-labelledby="case-exports-title" data-guide="settings-export">
       <CardHeader className="grid-cols-[auto_1fr] grid-rows-[auto_auto] gap-x-3">
         <div className="row-span-2 flex size-9 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
           <Package className="size-4" />

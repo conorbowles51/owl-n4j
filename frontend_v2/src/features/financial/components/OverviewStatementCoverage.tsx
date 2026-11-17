@@ -16,6 +16,7 @@ import { InfoTip } from "./InfoTip"
 import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
 import { StatementSourceButton } from "./StatementSourceButton"
 import type { StatementCoverageAccount } from "../lib/statement-coverage"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Formatting a date is slow (about 0.8 s of d5b330d1's first Transactions load
 // went to month labels drawn again on every render); each text is formatted once.
@@ -211,28 +212,32 @@ export function OverviewStatementCoverage({
                         }`
                         return (
                           <li key={month.month} className="h-[22px]">
-                            <button
-                              type="button"
-                              title={`${text}. ${month.status === "missing" ? "Click to check these dates" : "Click to open the statement"}`}
-                              aria-label={text}
-                              className="block size-full rounded hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
-                              style={cell(month.status)}
-                              onClick={() =>
-                                openMonth({
-                                  account,
-                                  label:
-                                    [account.holder, account.identifier]
-                                      .filter(Boolean)
-                                      .join(" · ") ||
-                                    "Account details not recorded",
-                                  currency: group.currency,
-                                  month: month.month,
-                                  status: month.status,
-                                })
-                              }
-                            >
-                              <span className="sr-only">{text}</span>
-                            </button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  aria-label={text}
+                                  className="block size-full rounded hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+                                  style={cell(month.status)}
+                                  onClick={() =>
+                                    openMonth({
+                                      account,
+                                      label:
+                                        [account.holder, account.identifier]
+                                          .filter(Boolean)
+                                          .join(" · ") ||
+                                        "Account details not recorded",
+                                      currency: group.currency,
+                                      month: month.month,
+                                      status: month.status,
+                                    })
+                                  }
+                                >
+                                  <span className="sr-only">{text}</span>
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>{`${text}. ${month.status === "missing" ? "Click to check these dates" : "Click to open the statement"}`}</TooltipContent>
+                            </Tooltip>
                           </li>
                         )
                       })}

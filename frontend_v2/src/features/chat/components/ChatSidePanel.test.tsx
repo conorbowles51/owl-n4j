@@ -120,7 +120,7 @@ describe("ChatSidePanel", () => {
     expect(screen.getByText("Saved chat")).toBeInTheDocument()
     await waitFor(() => expect(panelMocks.getPolicy).toHaveBeenCalled())
 
-    fireEvent.click(screen.getByTitle("New chat"))
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
 
     expect(panelMocks.startNewConversation).toHaveBeenCalledTimes(1)
   })

@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -128,7 +129,7 @@ export default function MonitoringAppsPage() {
           )}
           {d.set_aside.length > 0 && (
             <section aria-label="Set aside" className="space-y-2">
-              <h2 className="text-sm font-medium">Set aside by a person</h2>
+              <h2 className="text-sm font-medium">Set aside by a person<InfoTip text="Items a person set aside, with the reason. They stay in the case and are listed here instead of above." term="Set aside" /></h2>
               <ul className="space-y-2">{d.set_aside.map((x) => <Item key={x.rec} caseId={caseId} item={x} />)}</ul>
             </section>
           )}

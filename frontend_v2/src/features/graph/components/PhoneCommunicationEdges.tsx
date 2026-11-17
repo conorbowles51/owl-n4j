@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { LearnMore } from "@/components/ui/learn-more"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
@@ -221,7 +222,7 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
   }
   const Chevron = open ? ChevronDown : ChevronRight
   return (
-    <section aria-label="People in contact" className="border-b border-border bg-card px-4 py-1.5 text-xs">
+    <section aria-label="People in contact" data-guide="graph-people-in-contact" className="border-b border-border bg-card px-4 py-1.5 text-xs">
       <button type="button" aria-expanded={open} aria-controls="people-in-contact-body" onClick={toggle}
         className="flex w-full items-start gap-1 text-left hover:text-foreground">
         <Chevron className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
@@ -232,6 +233,7 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
           <p className="text-muted-foreground">
             Each row is two people on the phones. The numbers count their messages, calls and emails, busiest first.
             Point at a row to see the two people on the graph; Show their messages opens the messages themselves.
+            <LearnMore term="People in contact" />
           </p>
           {presence.data && !presence.data.has_financial_evidence && presence.data.phone_sentence && (
             // 07 section 8, SA-3 and SA-4: the pairs carry no money words; the absence is said once

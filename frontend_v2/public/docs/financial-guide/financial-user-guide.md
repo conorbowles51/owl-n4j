@@ -28,10 +28,15 @@ Step-by-step instructions for reviewing financial records, investigating payment
 20. [Download reports and supporting records](#download-reports-and-supporting-records)
 21. [Compare and check saved packages](#compare-and-check-saved-packages)
 22. [Stop work and return later](#stop-work-and-return-later)
-23. [Solve common problems](#solve-common-problems)
-24. [Complete your case review](#complete-your-case-review)
-25. [Words used in Loupe](#words-used-in-loupe)
-26. [Advanced manual review](#advanced-manual-review)
+23. [Check judgement calls before import](#check-judgement-calls-before-import)
+24. [Compare two statements side by side](#compare-two-statements-side-by-side)
+25. [Decide on held copies in the review queue](#decide-on-held-copies-in-the-review-queue)
+26. [Reach the duplicate decision from Go to field](#reach-the-duplicate-decision-from-go-to-field)
+27. [Statements you leave unimported stay unimported in other batches](#statements-you-leave-unimported-stay-unimported-in-other-batches)
+28. [Solve common problems](#solve-common-problems)
+29. [Complete your case review](#complete-your-case-review)
+30. [Words used in Loupe](#words-used-in-loupe)
+31. [Advanced manual review](#advanced-manual-review)
 
 ## One investigation from start to finish
 
@@ -1747,6 +1752,64 @@ External timestamping is an administrator-operated process, not a button an inve
 Switching financial tabs keeps visited forms and analysis results during that page visit. Account/date filters, statement and document reviews, transaction corrections, notes, selected payments, report drafts, transfer choices and tracing/workpaper inputs also have browser-tab storage where the screen says so. After refresh, reopen the same form and source to continue. Transfer choices restore when you find the same candidate payments again; changed readings require new choices. Calculations must be run again before saving a result. Save your work to the case before closing the browser tab or sharing it with colleagues. Uploads or calculations still running can be interrupted.
 
 If a save's outcome is uncertain, reload the saved record first. A repeated click is not a reliable way to find out whether the first request succeeded.
+
+## Check judgement calls before import
+
+A statement waiting for import can hold values the reader chose that the page does not print outright, such as a year the page leaves out or a payment's direction. The panel **judgement calls in this reading** lists them, so you can check each one against the page before its payments count in Transactions.
+
+1. Open the statement from **Statements & accounts**. The panel sits in the statement review. Its title gives the number of calls, how many are inferred, how many you marked **Looks right** and how many are **to check first**.
+2. If any call is to check first, the panel opens by itself and is outlined in red. Each of those calls says **Look at this value on the page before you import.**
+3. Select **Show on page [number]**. The PDF opens at that page with the row highlighted.
+4. If the page shows the value, select **Looks right**. The call then reads **Looks right · [your name]. Recorded when the statement is imported.** Select **Undo** to withdraw it.
+5. If the value is wrong, select **Correct this**. Loupe moves you to that row's correction field, or to the statement detail the call is about. Enter the printed value.
+
+None of the calls stops the import. A call left unchecked is imported as read. A **Looks right** mark is kept with the review and is saved under your name when the statement is imported.
+
+After import, a payment corrected this way shows **Corrected before import. The corrected value comes first and is the one used.** The value read from the page stays beside it, struck through, with any reason you gave. Only your value counts.
+
+If you can view the case but not edit it, the buttons are disabled and the panel says **You can view this case. Checking a call needs edit access.**
+
+## Compare two statements side by side
+
+When a statement may repeat another one, **Compare side by side** opens both documents in one full-screen view, so you can decide whether to import it without switching windows.
+
+1. In the statement review, find the box that names the other statement, for example **Possible duplicate statement: import on hold** or **Another statement covers these dates**.
+2. Select **Compare side by side** beside the other file.
+3. Each document has its own header (file name, period, pages and whether it is **Already imported** or **Awaiting import**), its own scrolling and its own page buttons.
+4. Read the facts above the documents. Ten facts are compared: bank, account, holder, period, currency, opening balance, closing balance, money in, money out and number of payments. Each reads **Agrees**, **Differs** or **Cannot compare**. A value the statement does not hold reads **Not known** or **Not printed**, and is never counted as agreeing. The first line sums it up, for example **2 of 10 facts differ.**
+5. Make the decision inside the view. The duplicate decision and the box **I have compared these files and need to import this statement too** are in the same view. Ticking the box asks why both statements are needed.
+6. Select **Close** to return to the review.
+
+If the other statement is not imported yet, its figures are not stored, and the view says so. Compare the pages instead. On a narrow screen the two documents take turns: use **This statement** and **Matching statement** to switch.
+
+Matching facts do not delete either file. A revised statement can match the original on every fact and still hold different payments, so read the pages before you decide.
+
+## Decide on held copies in the review queue
+
+The **Review queue** counts a statement held as a possible copy as work that needs a person. It stays there until someone decides, rather than being counted as done.
+
+- The line at the top reads, for example, **32 of 36 statements are done. 4 need your eyes.**
+- A held statement says **Needs you: this may be a copy of another statement. Open it and compare it with the original; keep one.** If a colleague saved work on it, it names them instead, for example **Needs Sam**.
+- Under it, **May be a copy of:** names the original file, its dates and whether it is already imported. **Compare** opens both statements side by side.
+- A statement set aside on purpose is listed under **Copies set aside**, says **It counts nothing.** and shows **Kept instead:** with the statement kept in its place. **Compare** reopens the comparison.
+
+Use **Compare**, then either keep the copy out with **Don't import this duplicate** or record why both statements are needed. Until you decide, the copy adds nothing to Transactions.
+
+## Reach the duplicate decision from Go to field
+
+When a matching statement holds an import, the statement's list of problems says **A matching statement needs a duplicate decision before import. Compare the existing statement below.** When the dates only overlap, it says **Another statement covers these dates. You can compare the statements now or after importing.**
+
+Select **Go to field** beside either line. Loupe scrolls to the duplicate box, highlights it for a moment and places the cursor in **I have compared these files and need to import this statement too**, or in its reason once the box is ticked. From there, compare the files, then leave the copy unimported or record why both are needed.
+
+## Statements you leave unimported stay unimported in other batches
+
+When you choose **Leave unimported** for a file and give a reason, Loupe applies the same choice to that file where it waits in the case's other batches, as long as nobody has reviewed or decided it there. The file no longer returns as work in each new batch.
+
+- In the other batch, the statement reads **Left unimported in another batch by [name]: [reason]**.
+- **Open the batch where this was decided** takes you to the original choice.
+- Restoring the original choice with **Restore to review** restores the copies made from it.
+
+Only a choice a signed-in person made is carried this way. A choice made by Loupe's own checks or by a model is never carried to other batches.
 
 ## Solve common problems
 

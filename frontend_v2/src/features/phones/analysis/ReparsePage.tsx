@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { LearnMore } from "@/components/ui/learn-more"
 import { useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -56,7 +57,7 @@ export function ReparseRuns({ caseId }: { caseId: string }) {
           )
         })}
       </ul>
-      <p className="text-muted-foreground">When the phones are read, run the comparison below.</p>
+      <p className="text-muted-foreground">When the phones are read, run the comparison below.<LearnMore term="Read again by an independent tool" /></p>
     </section>
   )
 }

@@ -1,7 +1,10 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
+import { announce } from "@/features/guidance/announce"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
+import { InfoTip } from "@/components/ui/info-tip"
+import { LearnMore } from "@/components/ui/learn-more"
 import { Trail } from "@/features/corroborate/Trail"
 import { ResultView } from "@/features/corroborate/ResultView"
 import { ClaimResult } from "@/features/corroborate/ClaimResult"
@@ -30,7 +33,7 @@ function CandidateRow({ c, labels }: { c: Candidate; labels: Map<string, string>
         <Names refs={c.members} labels={labels} />
       </div>
       <p className="text-sm">{c.reasons.join(" ")}</p>
-      {c.chance.words && <p className="text-sm text-muted-foreground">Chance: {c.chance.words}</p>}
+      {c.chance.words && <p className="text-sm text-muted-foreground">Chance: {c.chance.words}<InfoTip text="How often this happens anyway, with its count and base. It sits beside the grade and never changes it." term="Chance" /></p>}
     </li>
   )
 }
@@ -145,6 +148,18 @@ export function RelationsPage() {
   const run = query.data?.run
   const result = run?.result ?? null
   const labels = new Map((result?.items ?? []).map((i) => [i.ref, i.label]))
+  // a run seen working that has now finished: the next steps follow (lx-guidecover E); an old result opened later does not
+  const sawWorking = useRef(false)
+  const working = runIsWorking(run)
+  const finishedLevel = !working && result ? (v2 && result.corroboration ? result.corroboration.level.name : "the report is ready") : null
+  const groupSize = query.data?.group.member_count ?? 0
+  useEffect(() => {
+    if (working) sawWorking.current = true
+    else if (sawWorking.current && finishedLevel) {
+      sawWorking.current = false
+      announce(caseId, { kind: "corroborate-done", level: finishedLevel, items: groupSize, selectionId })
+    }
+  }, [working, finishedLevel, caseId, selectionId, groupSize])
   const askAssistant = () => {
     const question = `The group ${selectionId} was marked as possibly related. State what the link analysis found, name the competing explanations, and say where no link was found and what was searched.`
     navigate(`/cases/${caseId}/agent?workflow=${RELATION_WORKFLOW}&question=${encodeURIComponent(question)}`)
@@ -160,8 +175,8 @@ export function RelationsPage() {
   }
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-4">
-      <header>
-        <h1 className="text-xl font-semibold">Corroborate</h1>
+      <header data-guide="relations-header">
+        <h1 className="text-xl font-semibold">Corroborate<InfoTip text="Saves the items you chose as one group and weighs how they could be linked." term="Corroborate" /></h1>
         <p className="text-sm text-muted-foreground">
           {query.data.group.member_count.toLocaleString("en-US")} items marked as possibly related
           {query.data.group.left_out > 0 && `, ${query.data.group.left_out} left out because they are not in this case`}. The records show what occurs together, never why.
@@ -185,7 +200,7 @@ export function RelationsPage() {
         <>
           {corro && <><Trail caseId={caseId} selectionId={selectionId} /><ResultView c={corro} onAsk={askAssistant} onFurther={further} caseId={caseId} runId={run.id} /></>}
           <Summary r={result} />
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2" data-guide="relations-actions">
             <Button size="sm" onClick={askAssistant}>Ask how they could be linked</Button>
             <Button size="sm" variant="outline" onClick={() => void downloadRelationReport(caseId, run.id).then(() => setReportError(null)).catch((e) => setReportError(e instanceof Error ? e.message : "The report failed"))}>Export report (PDF)</Button>
             <Button size="sm" variant="outline" onClick={() => void relationAPI.rerun(caseId, selectionId).then(() => qc.invalidateQueries({ queryKey: ["relation-query", caseId, selectionId] }))}>Run again</Button>
@@ -196,9 +211,9 @@ export function RelationsPage() {
             <h2 className="font-semibold">The items</h2>
             <ul className="text-sm">{result.items.map((i) => <li key={i.ref}>{i.label} <span className="text-muted-foreground">({i.type.replace(/_/g, " ")}{i.at ? `, ${i.at.slice(0, i.precision === "day" ? 10 : 16).replace("T", " ")}` : ", no date on record"})</span></li>)}</ul>
           </section>
-          <section aria-label="Candidate links">
+          <section aria-label="Candidate links" data-guide="relations-candidates">
             <h2 className="font-semibold">Candidate links ({result.counts.candidates.toLocaleString("en-US")})</h2>
-            <p className="text-sm text-muted-foreground">Strongest first. Weak links are listed as weak.</p>
+            <p className="text-sm text-muted-foreground">Strongest first. Weak links are listed as weak.<LearnMore term="Graded likelihood" /></p>
             <ul className="space-y-2">
               {result.candidates.map((c, i) => <CandidateRow key={i} c={c} labels={labels} />)}
               <MoreRows<Candidate> caseId={caseId} runId={run.id} section="candidates" total={result.paging?.candidates.total ?? result.candidates.length}
@@ -206,9 +221,9 @@ export function RelationsPage() {
             </ul>
             {result.candidates.length === 0 && <p className="text-sm">No candidate link was found.</p>}
           </section>
-          <section aria-label="No link found">
+          <section aria-label="No link found" data-guide="relations-no-links">
             <h2 className="font-semibold">Pairs with no link found ({result.counts.no_links.toLocaleString("en-US")})</h2>
-            <p className="text-sm text-muted-foreground">Each says what was searched. It is not proof that no link exists.</p>
+            <p className="text-sm text-muted-foreground">Each says what was searched. It is not proof that no link exists.<LearnMore term="No link found" /></p>
             <ul className="space-y-2">
               {result.no_links.map((n, i) => <NoLinkRow key={i} n={n} labels={labels} />)}
               <MoreRows<NoLink> caseId={caseId} runId={run.id} section="no_links" total={result.paging?.no_links.total ?? result.no_links.length}
@@ -220,11 +235,11 @@ export function RelationsPage() {
             <ul className="text-sm">{result.analyses.map((a) => <li key={a.id}>{a.title}: {a.pairs.toLocaleString("en-US")} pairs, {a.found.toLocaleString("en-US")} links{a.note ? `. ${a.note}` : ""}</li>)}</ul>
             {result.out_of_reach.map((o, i) => <p key={i} className="text-sm text-muted-foreground">Out of reach: {o.analysis}. {o.reason}</p>)}
           </section>
-          <section aria-label="How they could be linked">
+          <section aria-label="How they could be linked" data-guide="relations-explanations">
             <h2 className="font-semibold">How they could be linked</h2>
             {run.hypotheses ? (
               <>
-                <p className="text-sm text-muted-foreground">A model reading by {run.hypotheses.model}. {run.hypotheses.status}</p>
+                <p className="text-sm text-muted-foreground">A model reading by {run.hypotheses.model}. {run.hypotheses.status}<LearnMore term="Model reading" /></p>
                 <ul className="space-y-2">{run.hypotheses.items.map((h) => <HypothesisCard key={h.id} h={h} model={run.hypotheses!.model} caseId={caseId} runId={run.id} />)}</ul>
                 {run.hypotheses.no_links && <p className="text-sm">{run.hypotheses.no_links}</p>}
               </>

@@ -1,6 +1,7 @@
 import { X } from "lucide-react"
 import { useEffect, type ReactNode } from "react"
 import { cn } from "@/lib/cn"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * The docked record panel slot (07 4.1, 4.3): a non-modal aside beside the work area, built like the financial
@@ -44,9 +45,14 @@ export function DockedPanel({
     >
       <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <h2 className="text-sm font-semibold">{title}</h2>
-        <button type="button" onClick={onClose} aria-label={`Close ${title}`} className="rounded p-1 hover:bg-muted">
-          <X className="size-4" aria-hidden />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" onClick={onClose} aria-label={`Close ${title}`} className="rounded p-1 hover:bg-muted">
+              <X className="size-4" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{`Close ${title}`}</TooltipContent>
+        </Tooltip>
       </header>
       <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
     </aside>

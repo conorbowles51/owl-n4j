@@ -43,7 +43,11 @@ export type ActionFacts =
   | { kind: "correction-saved"; what: string; count: number; paymentId?: string | null }
   | { kind: "confirmation-saved"; count: number; paymentId?: string | null }
   | { kind: "import-done"; corrected: number; failed: number; total: number }
-  | { kind: "agent-run-done"; threadId?: string | null; payments: number; records: number }
+  | { kind: "agent-run-done"; threadId?: string | null; payments: number; records: number; deep?: boolean }
+  | { kind: "corroborate-done"; level: string; items: number; selectionId?: string | null; noLink?: boolean }
+  | { kind: "case-search-done"; query: string; hits: number; noun: string }
+  | { kind: "phones-compared"; title: string; differences: number }
+  | { kind: "layers-changed"; on: number; total: number }
   | { kind: "report-built"; fileName: string }
   | { kind: "theory-addition"; title: string; entryId: string; added: number; trail?: boolean }
   | { kind: "deleted"; count: number; noun: string; where: "evidence" | "graph" }
@@ -64,6 +68,10 @@ export const ACTION_WORDS: Record<ActionKind, string> = {
   "confirmation-saved": "Readings confirmed",
   "import-done": "Spreadsheet corrections imported",
   "agent-run-done": "Agent runs finished",
+  "corroborate-done": "Corroborate results",
+  "case-search-done": "Case searches",
+  "phones-compared": "Phone comparisons",
+  "layers-changed": "Phone layers changed",
   "report-built": "Reports built",
   "theory-addition": "Added to a theory",
   deleted: "Moved to Deleted items",
@@ -153,10 +161,43 @@ export function nextSteps(caseId: string, facts: ActionFacts): NextStepsCard | n
       ]
       break
     case "agent-run-done":
-      title = `The agent finished.${facts.payments + facts.records > 0 ? ` Its answer cites ${plural(facts.payments, "payment")} and ${plural(facts.records, "other record")}.` : ""}`
+      title = `${facts.deep ? "The deep investigation finished; its report is in the thread." : "The agent finished."}${facts.payments + facts.records > 0 ? ` ${facts.deep ? "The report" : "Its answer"} cites ${plural(facts.payments, "payment")} and ${plural(facts.records, "other record")}.` : ""}`
       steps = [
+        facts.deep && facts.threadId && { id: "report", text: "Read the report, then check the Source check line at its end.", label: "Read the report", to: `${base}/agent?thread=${encodeURIComponent(facts.threadId)}` },
         { id: "theory", text: "Keep what it found: add the answer to a theory or finding.", label: "Open theories", to: `${base}/workspace?view=casework&kind=theory` },
         facts.payments > 0 && { id: "payments", text: "Check the cited payments against their statements.", label: "See the payments", to: `${base}/financial?view=transactions` },
+      ]
+      break
+    case "corroborate-done":
+      title = facts.noLink
+        ? `${plural(facts.items, "item")} weighed: no link found. That is what was searched, not proof that no link exists.`
+        : `${plural(facts.items, "item")} weighed: ${facts.level}.`
+      steps = [
+        facts.selectionId && { id: "result", text: "Read why, with each check made and the records behind it.", label: "Read the result", to: `${base}/relations/${encodeURIComponent(facts.selectionId)}` },
+        facts.items > 0 && { id: "theory", text: "Keep the result with a theory, as evidence for or against it.", label: "Open theories", to: `${base}/workspace?view=casework&kind=theory` },
+        facts.items > 0 && { id: "timeline", text: "See the items in date order beside the rest of the case.", label: "See the timeline", to: `${base}/timeline` },
+      ]
+      break
+    case "case-search-done":
+      title = `${plural(facts.hits, facts.noun.replace(/s$/, ""), facts.noun)} match "${facts.query}". Tick hits to add them to a theory or dossier, or to Corroborate them.`
+      steps = [
+        facts.hits > 0 && { id: "agent", text: `Ask the assistant what the case says about "${facts.query}"; it cites each source.`, label: "Ask the assistant", to: `${base}/agent` },
+        facts.hits > 0 && { id: "keywords", text: "Keep the words in a keyword list, to count them on every phone.", label: "Open keyword lists", to: `${base}/keyword-lists` },
+      ]
+      break
+    case "phones-compared":
+      title = `${facts.title}: ${facts.differences ? `${plural(facts.differences, "result")} to read.` : "nothing found."}`
+      steps = [
+        facts.differences > 0 && { id: "conversations", text: "Read the messages and calls behind a result in their conversations.", label: "Read the conversations", to: `${base}/conversations` },
+        { id: "analyses", text: "Run another comparison or analysis across the phones.", label: "Open Analyses", to: `${base}/phone-analyses` },
+      ]
+      break
+    case "layers-changed":
+      title = `${n(facts.on)} of ${plural(facts.total, "phone")} on. Phones that are off are not drawn or counted on any phone screen.`
+      steps = [
+        facts.on > 0 && { id: "map", text: "See where the phones that are on were.", label: "Open the map", to: `${base}/map` },
+        facts.on > 0 && { id: "conversations", text: "Read the conversations of the phones that are on.", label: "Read the conversations", to: `${base}/conversations` },
+        facts.on > 0 && { id: "timeline", text: "See their events in date order.", label: "See the timeline", to: `${base}/timeline` },
       ]
       break
     case "report-built":

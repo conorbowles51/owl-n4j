@@ -53,7 +53,7 @@ export function TableToolbar({
   parentLabel,
 }: TableToolbarProps) {
   return (
-    <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
+    <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2" data-guide="table-toolbar">
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -97,7 +97,7 @@ export function TableToolbar({
         Add Entity
       </Button>
 
-      <Button variant="outline" size="sm" onClick={onExportCSV}>
+      <Button variant="outline" size="sm" onClick={onExportCSV} data-guide="table-export">
         <Download className="size-3.5" />
         Export CSV
       </Button>

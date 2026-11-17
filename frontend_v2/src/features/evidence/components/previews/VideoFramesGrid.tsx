@@ -4,6 +4,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { evidenceAPI } from "../../api"
 import { useVideoFrames } from "../../hooks/use-evidence-detail"
 import type { VideoFrame } from "@/types/evidence.types"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface VideoFramesGridProps {
   evidenceId: string
@@ -53,32 +54,50 @@ export function VideoFramesGrid({ evidenceId }: VideoFramesGridProps) {
               {selectedFrame.timestamp_str} — Frame {selectedFrame.frame_number}
             </span>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => {
-                  const idx = frames.findIndex((f) => f.frame_number === selectedFrame.frame_number)
-                  if (idx > 0) setSelectedFrame(frames[idx - 1])
-                }}
-                className="rounded p-1 text-white/80 hover:text-white disabled:text-white/30"
-                disabled={selectedFrame.frame_number === frames[0].frame_number}
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                onClick={() => {
-                  const idx = frames.findIndex((f) => f.frame_number === selectedFrame.frame_number)
-                  if (idx < frames.length - 1) setSelectedFrame(frames[idx + 1])
-                }}
-                className="rounded p-1 text-white/80 hover:text-white disabled:text-white/30"
-                disabled={selectedFrame.frame_number === frames[frames.length - 1].frame_number}
-              >
-                <ChevronRight className="size-4" />
-              </button>
-              <button
-                onClick={() => setSelectedFrame(null)}
-                className="ml-1 rounded p-1 text-white/80 hover:text-white"
-              >
-                <X className="size-3.5" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    aria-label="Show the previous frame"
+                    onClick={() => {
+                      const idx = frames.findIndex((f) => f.frame_number === selectedFrame.frame_number)
+                      if (idx > 0) setSelectedFrame(frames[idx - 1])
+                    }}
+                    className="rounded p-1 text-white/80 hover:text-white disabled:text-white/30"
+                    disabled={selectedFrame.frame_number === frames[0].frame_number}
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Show the previous frame</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    aria-label="Show the next frame"
+                    onClick={() => {
+                      const idx = frames.findIndex((f) => f.frame_number === selectedFrame.frame_number)
+                      if (idx < frames.length - 1) setSelectedFrame(frames[idx + 1])
+                    }}
+                    className="rounded p-1 text-white/80 hover:text-white disabled:text-white/30"
+                    disabled={selectedFrame.frame_number === frames[frames.length - 1].frame_number}
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Show the next frame</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    aria-label="Close the frame"
+                    onClick={() => setSelectedFrame(null)}
+                    className="ml-1 rounded p-1 text-white/80 hover:text-white"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Close the frame</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </div>

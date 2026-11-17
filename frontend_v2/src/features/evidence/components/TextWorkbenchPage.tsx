@@ -100,7 +100,7 @@ function Original({ data, evidenceId, page, rects, positionsNote }: {
 }) {
   const shown = data.pages_in_step ? page : Math.min(page, data.image_pages)
   return (
-    <section aria-label="Original" className="flex min-h-0 flex-col border-r border-border">
+    <section aria-label="Original" data-guide="text-original" className="flex min-h-0 flex-col border-r border-border">
       <h2 className="border-b border-border px-3 py-2 text-xs font-semibold">
         Original{data.image_pages > 0 ? `, page ${n(shown)} of ${n(data.image_pages)}` : ""}
       </h2>
@@ -121,7 +121,7 @@ function PageText({ page, marks, onSelect, textRef }: {
   const pieces = useMemo(() => markedPieces(page.text, marks), [page.text, marks])
   if (page.text_missing) return <p role="status" className="m-3 rounded border border-border bg-muted/30 p-3 text-sm" data-testid="text-missing">{page.text_missing}</p>
   return (
-    <div ref={textRef} onMouseUp={onSelect} onKeyUp={onSelect} data-testid="page-text"
+    <div ref={textRef} onMouseUp={onSelect} onKeyUp={onSelect} data-testid="page-text" data-guide="text-quote"
       className="whitespace-pre-wrap break-words p-3 font-mono text-xs leading-5 selection:bg-primary/25">
       {pieces.map((piece, index) => piece.kind === null ? <span key={index}>{piece.text}</span> : (
         <mark key={index} data-mark={piece.kind} className={cn("rounded-[2px] text-foreground",
@@ -312,7 +312,7 @@ export function TextWorkbenchPage() {
         <Button asChild size="sm" variant="ghost"><Link to={back}><ArrowLeft className="size-4" />Evidence</Link></Button>
         <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">{data?.document_name ?? "Document"}</h1>
         {data && data.page_count > 0 && (
-          <span className="flex items-center gap-1 text-xs">
+          <span className="flex items-center gap-1 text-xs" data-guide="text-pages">
             <Button size="icon-sm" variant="outline" aria-label="Previous page" disabled={page <= 1} onClick={() => goToPage(page - 1)}><ChevronLeft className="size-4" /></Button>
             <label className="flex items-center gap-1">
               Page
@@ -327,7 +327,7 @@ export function TextWorkbenchPage() {
             <Button size="icon-sm" variant="outline" aria-label="Next page" disabled={page >= data.page_count} onClick={() => goToPage(page + 1)}><ChevronRight className="size-4" /></Button>
           </span>
         )}
-        <form className="flex items-center gap-1" role="search" aria-label="Find in this document"
+        <form className="flex items-center gap-1" role="search" aria-label="Find in this document" data-guide="text-find"
           onSubmit={(event) => { event.preventDefault(); setMatchIndex(0); firstOpened.current = ""; setPlace({ q: draft.trim() || null }) }}>
           <Input aria-label="Find in this document" placeholder="Find in this document" value={draft} onChange={(event) => setDraft(event.target.value)} className="h-7 w-52 text-xs" />
           <Button type="submit" size="icon-sm" variant="outline" aria-label="Find"><Search className="size-4" /></Button>
@@ -348,7 +348,7 @@ export function TextWorkbenchPage() {
       {data && (
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
           <Original data={data} evidenceId={fileId} page={page} rects={positions.data?.rects ?? []} positionsNote={positionsNote} />
-          <section aria-label="Extracted text" className="flex min-h-0 flex-col">
+          <section aria-label="Extracted text" data-guide="text-extracted" className="flex min-h-0 flex-col">
             <div className="space-y-1 border-b border-border px-3 py-2">
               <h2 className="text-xs font-semibold">Extracted text{current ? `, ${current.label}` : ""}</h2>
               {current?.reader && <ReaderLine reader={current.reader} readAt={data.read_at} />}

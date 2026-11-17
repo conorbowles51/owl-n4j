@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Plus, X } from "lucide-react"
 import { toast } from "sonner"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface InstructionListEditorProps {
   label: string
@@ -58,14 +59,19 @@ export function InstructionListEditor({
               <span className="max-w-[420px] truncate" title={instruction}>
                 {instruction}
               </span>
-              <button
-                type="button"
-                onClick={() => removeInstruction(index)}
-                className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-muted/40"
-                aria-label={`Remove instruction ${index + 1}`}
-              >
-                <X className="size-2.5" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => removeInstruction(index)}
+                    className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-muted/40"
+                    aria-label={`Remove instruction ${index + 1}`}
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{`Remove instruction ${index + 1}`}</TooltipContent>
+              </Tooltip>
             </Badge>
           ))}
         </div>

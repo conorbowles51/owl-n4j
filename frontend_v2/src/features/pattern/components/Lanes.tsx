@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { zoneWords } from "@/features/phones/lib/time-words"
 import { hiddenWords } from "../lanes-lib"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
  * The one shared Lanes component (04 section 8.6; 07 J-5): the Case Timeline's window, the Day view and the incident
@@ -145,7 +146,7 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
               const left = pct(m.at, s, width)
               const cls = `absolute top-1 h-6 w-1.5 rounded ${TONE_CLASS[m.tone || "none"]}`
               const title = `${fmt(m.at)} · ${m.label}${m.detail ? ` · ${m.detail}` : ""}`
-              if (m.onClick) return <button key={m.key} type="button" onClick={m.onClick} className={cls} style={{ left: `${left}%` }} title={title} aria-label={title} />
+              if (m.onClick) return <Tooltip key={m.key}><TooltipTrigger asChild><button type="button" onClick={m.onClick} className={cls} style={{ left: `${left}%` }} aria-label={title} /></TooltipTrigger><TooltipContent>{title}</TooltipContent></Tooltip>
               return m.href
                 ? <a key={m.key} href={m.href} className={cls} style={{ left: `${left}%` }} title={title} aria-label={title} />
                 : <span key={m.key} className={cls} style={{ left: `${left}%` }} title={title} />

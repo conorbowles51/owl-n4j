@@ -898,6 +898,7 @@ export function DossierDetailSheet({
             <Tabs defaultValue="brief" className="shrink-0">
               <div className="sticky top-0 z-10 overflow-x-auto border-b border-border/75 bg-background/95 px-5 backdrop-blur sm:px-8">
                 <TabsList
+                  data-guide="dossiers-detail-tabs"
                   variant="line"
                   className="h-12 w-max min-w-full justify-start gap-3"
                 >

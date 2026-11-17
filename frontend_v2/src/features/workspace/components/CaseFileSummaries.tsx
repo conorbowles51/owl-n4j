@@ -8,6 +8,7 @@ import { MarkdownSummary } from "@/components/ui/markdown-summary"
 import { useEvidence } from "@/features/evidence/hooks/use-evidence"
 import type { EvidenceFile } from "@/types/evidence.types"
 import { filesWithSummaries } from "../lib/file-summaries"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const PAGE = 8
 
@@ -45,9 +46,14 @@ export function CaseFileSummaries({ caseId, onOpen }: { caseId: string; onOpen: 
           return (
             <div key={file.id} className="px-4 py-3">
               <div className="flex items-center gap-2">
-                <button type="button" aria-label={open ? "Show less" : "Show the full summary"} onClick={() => setExpanded(open ? null : file.id)}>
-                  {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label={open ? "Show less" : "Show the full summary"} onClick={() => setExpanded(open ? null : file.id)}>
+                      {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{open ? "Show less" : "Show the full summary"}</TooltipContent>
+                </Tooltip>
                 <FileText className="size-4 shrink-0 text-muted-foreground" />
                 <button type="button" className="min-w-0 flex-1 truncate text-left text-xs font-semibold hover:underline" onClick={() => onOpen(file)}>
                   {file.original_filename}

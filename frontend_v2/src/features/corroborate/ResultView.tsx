@@ -1,4 +1,6 @@
 import { useState } from "react"
+import { InfoTip } from "@/components/ui/info-tip"
+import { LearnMore } from "@/components/ui/learn-more"
 import { StoryLanes } from "./StoryLanes"
 import { Button } from "@/components/ui/button"
 import type { CellState, Check, Corroboration, GridRow } from "./result-types"
@@ -36,7 +38,7 @@ function Grid({ c, onOpen }: { c: Corroboration; onOpen?: (id: string) => void }
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm" data-testid="corroborate-grid">
-        <caption className="text-left text-muted-foreground">{c.comparison.words}</caption>
+        <caption className="text-left text-muted-foreground">{c.comparison.words}<LearnMore term="Incidents and ordinary days" /></caption>
         <thead>
           <tr>
             <th className="text-left">Signal</th>
@@ -66,7 +68,7 @@ function Grid({ c, onOpen }: { c: Corroboration; onOpen?: (id: string) => void }
           ))}
         </tbody>
       </table>
-      <p className="text-xs text-muted-foreground">● present · ○ checked and absent · ? no data (counts neither way)</p>
+      <p className="text-xs text-muted-foreground">● present · ○ checked and absent · ? no data (counts neither way)<LearnMore term="Grid marks" /></p>
     </div>
   )
 }
@@ -80,7 +82,7 @@ export function ResultView({ c, onAsk, onFurther, caseId, runId }: { c: Corrobor
         <p className="text-sm text-muted-foreground">{c.question.text}</p>
         <h2 className="text-lg font-semibold">{c.level.name}</h2>
         <p>{c.level.sentence}</p>
-        <p className="text-xs text-muted-foreground">Set by a stated rule from the signals below, not by a model.</p>
+        <p className="text-xs text-muted-foreground">Set by a stated rule from the signals below, not by a model.<LearnMore term="Corroborate levels" /></p>
       </section>
       <section aria-label="Comparison grid"><h2 className="font-semibold">What was present, and on which instances</h2><Grid c={c} onOpen={caseId && runId ? setLane : undefined} />
         {lane && caseId && runId && <StoryLanes caseId={caseId} runId={runId} instance={lane} onClose={() => setLane(null)} />}
@@ -88,7 +90,7 @@ export function ResultView({ c, onAsk, onFurther, caseId, runId }: { c: Corrobor
       <section aria-label="What raises and lowers the level">
         <h2 className="font-semibold">What raises it, and what lowers it</h2>
         <ul className="list-disc pl-5 text-sm">{c.level.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
-        <h3 className="mt-2 text-sm font-medium">Checks made ({lowers.length})</h3>
+        <h3 className="mt-2 text-sm font-medium">Checks made ({lowers.length})<InfoTip text="Other explanations tested on every result, such as routine contact, a shared workplace or a busy place, each with its outcome." term="Checks made" /></h3>
         <ul className="space-y-1 text-sm">
           {lowers.map((k, i) => (
             <li key={i}><strong>{CHECK_WORDS[k.check] ?? k.check}</strong>: {OUTCOME_WORDS[k.outcome]}. {k.words}{k.records?.length ? <> <Records refs={k.records} label={`${k.records.length} records`} /></> : null}</li>
@@ -96,7 +98,7 @@ export function ResultView({ c, onAsk, onFurther, caseId, runId }: { c: Corrobor
         </ul>
       </section>
       <section aria-label="Not in this pattern">
-        <h2 className="font-semibold">Not in this pattern</h2>
+        <h2 className="font-semibold">Not in this pattern<InfoTip text="People with no link to the pattern, each with what was searched for them." term="Not in this pattern" /></h2>
         {c.not_in_pattern.length === 0 && <p className="text-sm">No one else was searched.</p>}
         <ul className="space-y-1 text-sm">
           {c.not_in_pattern.map((n, i) => (
@@ -108,13 +110,13 @@ export function ResultView({ c, onAsk, onFurther, caseId, runId }: { c: Corrobor
         </ul>
       </section>
       <section aria-label="Gaps">
-        <h2 className="font-semibold">Records missing</h2>
+        <h2 className="font-semibold">Records missing<InfoTip text="Gaps in the records behind this result." term="Records missing" /></h2>
         {c.gaps.length === 0 ? <p className="text-sm">No gap was found in the records for these instances.</p>
           : <ul className="list-disc pl-5 text-sm">{c.gaps.map((g, i) => <li key={i}>{g.words}</li>)}</ul>}
       </section>
       {c.look_further.length > 0 && (
         <section aria-label="Look further">
-          <h2 className="font-semibold">Look further</h2>
+          <h2 className="font-semibold">Look further<InfoTip text="Next questions to ask. Each one runs as a new result." term="Look further" /></h2>
           <ul className="flex flex-wrap gap-2">
             {c.look_further.map((l, i) => (
               <li key={i}><Button size="sm" variant="outline" disabled={!onFurther} onClick={() => onFurther?.(l)}>{l.text} ({l.count.toLocaleString("en-US")})</Button></li>

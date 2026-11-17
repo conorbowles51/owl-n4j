@@ -35,7 +35,7 @@ export function ResultNodeDetail({ node, onClose }: ResultNodeDetailProps) {
           />
           <span className="truncate text-sm font-medium">{node.name}</span>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={onClose}>
+        <Button aria-label="Close details" variant="ghost" size="icon-sm" onClick={onClose}>
           <X className="size-3" />
         </Button>
       </div>

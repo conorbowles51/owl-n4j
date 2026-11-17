@@ -395,18 +395,23 @@ function TransactionRow({
 
         {/* Expand */}
         <TableCell className="py-1.5">
-          <button
-            aria-label={`${isExpanded ? "Close" : "Open"} record ${tx.name || tx.key}`}
-            aria-expanded={isExpanded}
-            onClick={onToggleExpand}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {isExpanded ? (
-              <ChevronDown className="size-3.5" />
-            ) : (
-              <ChevronRight className="size-3.5" />
-            )}
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                aria-label={`${isExpanded ? "Close" : "Open"} record ${tx.name || tx.key}`}
+                aria-expanded={isExpanded}
+                onClick={onToggleExpand}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{`${isExpanded ? "Close" : "Open"} record ${tx.name || tx.key}`}</TooltipContent>
+          </Tooltip>
         </TableCell>
 
         {/* Date */}
@@ -457,7 +462,7 @@ function TransactionRow({
               </span>
             )}
             {editable && (
-              <Button
+              <Button aria-label="Change who paid"
                 variant="ghost"
                 size="icon-sm"
                 className="size-5 opacity-0 group-hover/from:opacity-100"
@@ -494,7 +499,7 @@ function TransactionRow({
               </span>
             )}
             {editable && (
-              <Button
+              <Button aria-label="Change who was paid"
                 variant="ghost"
                 size="icon-sm"
                 className="size-5 opacity-0 group-hover/to:opacity-100"
@@ -642,7 +647,7 @@ function TransactionRow({
           <TableCell className="py-1.5">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
+                <Button aria-label="More actions for this transaction"
                   variant="ghost"
                   size="icon-sm"
                   className="size-6 opacity-0 group-hover:opacity-100"

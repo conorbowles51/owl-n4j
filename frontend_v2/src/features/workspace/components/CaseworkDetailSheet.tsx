@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { CaseworkHistory } from "./CaseworkHistory"
 import { TheoryKeywordLists } from "@/features/search/components/KeywordListsPage"
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -492,6 +493,9 @@ export function CaseworkDetailSheet({
       <Sheet open={open} onOpenChange={closeSheet}>
         <SheetContent
           guardTypedContent={false}
+          // the theory tour's panel: an open theory being read (not edited); other kinds of casework have no panel tour
+          data-guide={entry?.entry_type === "theory" && !editing ? "theory-panel" : undefined}
+          data-guide-panel={entry?.entry_type === "theory" && !editing ? "" : undefined}
           className="w-full gap-0 p-0 sm:w-[min(920px,96vw)] sm:max-w-[920px]"
           onClickCapture={(event) => {
             const anchor = (event.target as HTMLElement).closest?.("a[href]")
@@ -617,6 +621,7 @@ export function CaseworkDetailSheet({
                         variant="outline"
                         size="sm"
                         className="h-10"
+                        data-guide="theory-convert"
                         onClick={() => {
                           setMutationError(null)
                           setConversionTitle(entry.title ?? "")
@@ -831,7 +836,7 @@ export function CaseworkDetailSheet({
                   />
                 )}
                 {!!entry.links.length && (
-                  <section className="space-y-3 border-t border-border/70 pt-5">
+                  <section className="space-y-3 border-t border-border/70 pt-5" data-guide="theory-links">
                     <div>
                       <h3 className="text-sm font-semibold">Linked material</h3>
                       <p className="text-xs text-muted-foreground">
@@ -953,7 +958,7 @@ export function CaseworkDetailSheet({
 
                 {entry.links.length > 0 && (
                   <details className="space-y-3 border-t border-border pt-3">
-                    <summary className="cursor-pointer text-xs font-semibold">
+                    <summary className="cursor-pointer text-xs font-semibold" data-guide="theory-compare">
                       Compare what supports and contradicts it (
                       {evidenceGroups.supports.length} for,{" "}
                       {evidenceGroups.contradicts.length} against)
@@ -1013,6 +1018,7 @@ export function CaseworkDetailSheet({
                 {evidenceGroups.unclassified.length > 0 && (
                   <section
                     aria-label="Links to review"
+                    data-guide="theory-review"
                     className="space-y-2 border-t border-border pt-3"
                   >
                     <h3 className="text-xs font-semibold">
@@ -1028,6 +1034,7 @@ export function CaseworkDetailSheet({
                     </h3>
                     <p className="text-xs text-muted-foreground">
                       They stay as they are until you choose.
+                      <LearnMore term="Links to review" />
                     </p>
                     <div className="divide-y divide-border">
                       {evidenceGroups.unclassified.map((link) => (
@@ -1095,7 +1102,7 @@ export function CaseworkDetailSheet({
                       }
                       className="group border-t border-border/70 pt-5"
                     >
-                      <summary className="cursor-pointer py-1 text-sm font-semibold">
+                      <summary className="cursor-pointer py-1 text-sm font-semibold" data-guide="theory-reading">
                         Reading & analysis
                       </summary>
                       {analysisOpen && (

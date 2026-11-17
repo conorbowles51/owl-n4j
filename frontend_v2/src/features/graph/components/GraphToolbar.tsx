@@ -192,17 +192,22 @@ export function GraphToolbar({
             className="h-7 pl-8 pr-7 text-xs"
           />
           {searchDraft ? (
-            <button
-              type="button"
-              aria-label="Clear graph search"
-              onClick={() => {
-                clearSearch()
-                searchInputRef.current?.focus()
-              }}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Clear graph search"
+                  onClick={() => {
+                    clearSearch()
+                    searchInputRef.current?.focus()
+                  }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Clear graph search</TooltipContent>
+            </Tooltip>
           ) : null}
         </div>
         <select
@@ -291,7 +296,7 @@ export function GraphToolbar({
       <div className="flex items-center gap-0.5 border-l border-border pl-2">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
+            <Button aria-label="Select by clicking"
               variant={selectionMode === "click" ? "secondary" : "ghost"}
               size="icon-sm"
               onClick={() => setSelectionMode("click")}
@@ -344,7 +349,7 @@ export function GraphToolbar({
       <div className="flex items-center gap-0.5 border-l border-border pl-2">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={onOpenForceControls}>
+            <Button aria-label="Spacing of the picture" variant="ghost" size="icon-sm" onClick={onOpenForceControls}>
               <Settings2 className="size-3.5" />
             </Button>
           </TooltipTrigger>
@@ -352,7 +357,7 @@ export function GraphToolbar({
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={onOpenAnalysis}>
+            <Button aria-label="Find the most connected items and groups" variant="ghost" size="icon-sm" onClick={onOpenAnalysis}>
               <BarChart3 className="size-3.5" />
             </Button>
           </TooltipTrigger>
@@ -370,7 +375,7 @@ export function GraphToolbar({
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={onOpenCypher}>
+                <Button aria-label="Query the graph database (Cypher)" variant="ghost" size="icon-sm" onClick={onOpenCypher}>
                   <Terminal className="size-3.5" />
                 </Button>
               </TooltipTrigger>
@@ -403,7 +408,7 @@ export function GraphToolbar({
         {scope === "all" && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-sm" onClick={onOpenRecycleBin}>
+              <Button aria-label="Deleted items" variant="ghost" size="icon-sm" onClick={onOpenRecycleBin}>
                 <Trash2 className="size-3.5" />
               </Button>
             </TooltipTrigger>

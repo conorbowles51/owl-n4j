@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { Disclosure } from "./Disclosure"
 import {
   useFinancialDraft,
@@ -135,6 +136,7 @@ function CaseTracing({ caseId }: { caseId: string }) {
           <option value="verified">Verified payments only</option>
           <option value="working">All imported payments</option>
         </select>
+        <InfoTip text="The set of payments the tracing is built from." term="Population" />
       </label>
       <ScopedTracing
         key={JSON.stringify([params, population])}

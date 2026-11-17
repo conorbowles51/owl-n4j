@@ -48,14 +48,14 @@ export function CaseListPage() {
           />
         </div>
         <div className="flex gap-1">
-          <Button
+          <Button aria-label="Show cases as a grid"
             variant={viewMode === "grid" ? "outline" : "ghost"}
             size="icon"
             onClick={() => setViewMode("grid")}
           >
             <LayoutGrid className="size-4" />
           </Button>
-          <Button
+          <Button aria-label="Show cases as a list"
             variant={viewMode === "list" ? "outline" : "ghost"}
             size="icon"
             onClick={() => setViewMode("list")}

@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import {
   Dialog,
@@ -51,6 +52,7 @@ export function DeletedEvidenceDialog({ caseId, open, onOpenChange }: DeletedEvi
           Anything deleted in this case is kept here for {days} days, hidden from every screen, search and the
           agent, then removed for good. Restore brings it back exactly as it was, with everything that hung off it.
           {canManage ? "" : " Only the case owner or an admin can restore or remove items."}
+          <LearnMore term="Deleted items" />
         </p>
         <div className="max-h-[60vh] overflow-auto" data-testid="deleted-items">
           {deleted.isLoading ? (

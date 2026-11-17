@@ -141,7 +141,7 @@ export function GraphSidePanelContent({
           <span className="text-xs font-semibold">
             {TOOL_LABELS[toolOverlay] ?? toolOverlay}
           </span>
-          <Button
+          <Button aria-label="Close this tool"
             variant="ghost"
             size="icon-sm"
             onClick={() => setToolOverlay(null)}
@@ -194,7 +194,7 @@ export function GraphSidePanelContent({
           <div className="ml-auto pr-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
+                <Button aria-label="Collapse panel"
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setCollapsed(true)}

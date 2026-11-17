@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
@@ -488,6 +489,7 @@ export function CaseBriefPanel({
               No payment in this case is in the verified totals yet: all{" "}
               {plural(c.totals.working_rows ?? 0, "payment")} were accepted
               after review and count in the working totals only.
+              <LearnMore term="Verified period" />
             </p>
           ) : null}
           <p className="mt-1 text-[11px] text-muted-foreground">

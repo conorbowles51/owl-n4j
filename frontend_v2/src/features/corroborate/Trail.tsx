@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { InfoTip } from "@/components/ui/info-tip"
 import { Link } from "react-router-dom"
 import { relationAPI } from "@/features/relations/api"
 
@@ -10,7 +11,7 @@ export function Trail({ caseId, selectionId }: { caseId: string; selectionId: st
   if (!q.data || q.data.steps.length < 2) return null
   return (
     <section aria-label="Trail" data-testid="corroborate-trail">
-      <h2 className="font-semibold">Trail: how this was built</h2>
+      <h2 className="font-semibold">Trail: how this was built<InfoTip text="Each step of the selection. A step marked added nothing did not change the result." term="Trail" /></h2>
       <ol className="space-y-1 text-sm">
         {q.data.steps.map((s) => (
           <li key={s.selection_id} className={s.selection_id === q.data!.current ? "font-medium" : ""}>

@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { Disclosure } from "./Disclosure"
 import { Button } from "@/components/ui/button"
 import { useProofStanding } from "../hooks/use-proof-standing"
@@ -66,6 +67,7 @@ export function ProofStandingPanel({ caseId }: { caseId: string | undefined }) {
             </p>
             <p className="text-xs text-muted-foreground">
               These counts include held-out, superseded and rejected records.
+              <LearnMore term="Superseded" />
               They describe evidence classes, not reviews still waiting for a
               decision or rows currently included in totals.
             </p>

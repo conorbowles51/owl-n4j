@@ -528,7 +528,7 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
                       </SelectContent>
                     </Select>
                   </label>
-                  <Button
+                  <Button aria-label="Clear the date"
                     type="button"
                     variant="ghost"
                     size="icon"

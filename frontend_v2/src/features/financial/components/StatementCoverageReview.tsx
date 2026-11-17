@@ -149,7 +149,7 @@ export function StatementCoverageReview({
                 <RepeatedActivityDetail detail={other.repeated_activity} />
               )}
             </div>
-            <Button size="sm" variant="outline" onClick={() => onCompare(other)}>
+            <Button size="sm" variant="outline" onClick={() => onCompare(other)} data-guide="financial-compare">
               Compare side by side
             </Button>
           </li>

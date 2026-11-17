@@ -180,13 +180,18 @@ function CellRenderer({
             searchTerm={searchTerm}
           />
           {connCount > 0 && onExploreRelationships && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onExploreRelationships(node.key) }}
-              className="rounded p-0.5 text-muted-foreground/50 hover:text-amber-500 hover:bg-amber-500/10 transition-colors opacity-0 group-hover:opacity-100"
-              title={`Explore ${connCount} relationships`}
-            >
-              <Network className="size-3.5" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  aria-label={`Explore ${connCount} relationships`}
+                  onClick={(e) => { e.stopPropagation(); onExploreRelationships(node.key) }}
+                  className="rounded p-0.5 text-muted-foreground/50 hover:text-amber-500 hover:bg-amber-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <Network className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{`Explore ${connCount} relationships`}</TooltipContent>
+            </Tooltip>
           )}
         </span>
       )
@@ -282,13 +287,14 @@ export function TableGrid({
 
   return (
     <div ref={containerRef} className="flex-1 overflow-auto">
-      <Table aria-label="Entities">
+      <Table aria-label="Entities" data-guide="table-grid">
         <TableHeader className="sticky top-0 z-10 bg-card">
           <TableRow className="hover:bg-transparent">
             {visibleColumns.map((col) =>
               col.key === "_checkbox" ? (
                 <TableHead key={col.key} className="w-10 px-2">
                   <Checkbox
+                    data-guide="table-select"
                     checked={allChecked ? true : someChecked ? "indeterminate" : false}
                     onCheckedChange={onToggleAllChecked}
                   />

@@ -56,7 +56,7 @@ export function SystemLogsPage() {
             <SelectItem value="succeeded">Succeeded</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="ghost" size="sm" onClick={() => refetch()}>
+        <Button aria-label="Refresh the logs" variant="ghost" size="sm" onClick={() => refetch()}>
           <RefreshCw className="size-3.5" />
         </Button>
       </div>
