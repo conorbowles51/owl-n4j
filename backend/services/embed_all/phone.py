@@ -105,6 +105,11 @@ WHERE f.case_id = :c AND f.source_type = 'phone_text' AND f.deleted_at IS NULL O
 
 
 def signature(conn, case_id) -> str:
+    """Thread files and their text hashes, and the format the vectors are made in (a new format re-embeds every file)."""
+    return "%s|%s" % (FORMAT, _signature(conn, case_id))
+
+
+def _signature(conn, case_id) -> str:
     return str(conn.execute(text(
         "SELECT concat_ws('|', count(*), md5(coalesce(string_agg(t.content_sha256, ',' ORDER BY f.id), ''))) "
         "FROM evidence_files f JOIN evidence_document_texts t ON t.evidence_file_id = f.id JOIN phone_extractions e ON "

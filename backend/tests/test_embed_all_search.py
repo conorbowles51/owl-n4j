@@ -111,3 +111,12 @@ def test_the_vector_text_of_a_thread_line_is_its_parties_and_words_not_the_repea
     assert "Phone 2 | Message" not in wins[0]["embed_text"] and "Mon, Jan 1, 2024, 1:40:00 PM UTC" in wins[0]["embed_text"].splitlines()[0]
     assert "Phone 2 | Message" in wins[0]["text"] and wins[0]["text"].endswith("[rec://u1]")  # the passage keeps the line
     assert len(phone_area.stamp("abc")) == 64 and phone_area.stamp("abc") != phone_area.stamp("abd")  # fits the column
+
+
+def test_a_new_vector_format_changes_the_area_signature_so_every_file_is_embedded_again(monkeypatch):
+    class Conn:
+        def execute(self, *a, **k):
+            return type("R", (), {"scalar": lambda self: "3|abcdef"})()
+    before = phone_area.signature(Conn(), "c")
+    monkeypatch.setattr(phone_area, "FORMAT", "e3")
+    assert phone_area.signature(Conn(), "c") != before
