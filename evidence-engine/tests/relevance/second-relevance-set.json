@@ -1,7 +1,7 @@
 {
   "about": "Judged relevance set for the second invented case (lx-relevancetest A), derived from second-truths.json. Same form as demo-relevance-set.json. case_id is null until the case is loaded; the runner skips a set that is not loaded and says so. Scoring aid only: never given to the agent, never read by product code.",
   "case": "second",
-  "case_id": null,
+  "case_id": "3f3489a0-b8ee-4e1a-9ec4-83e8ca327d4c",
   "also_through": [
     {"kind": "meaning", "tool": "search_by_meaning", "arg": "query", "extra": {"limit": 50}, "from_kinds": ["phones", "documents", "ledger"]}
   ],
