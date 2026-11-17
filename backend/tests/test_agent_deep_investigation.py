@@ -191,3 +191,22 @@ def test_deep_run_adds_the_report_as_an_artifact():
     r, events = run_stream([None] * (D.MAX_GATES + 1))
     final = [e for e in events if e["type"] == "final"][0]["result"]
     assert any((a.get("metadata") or {}).get("origin") == "deep_investigation" for a in final["artifacts"])
+
+
+def test_every_document_is_a_unit_of_the_documents_item_up_to_a_cap():
+    docs = ["tow-invoice.pdf", "police-report.pdf"]
+    p = D.build_plan("phones", question="q", phone_labels=LABELS, document_labels=docs)
+    assert D.item_by_id(p, "documents")["target"] == docs
+    D.notebook_add(p, [{"item": "documents", "fact": "tow-invoice.pdf gives the clearing time", "cite": "doc://1"}])
+    got = D.mark(p, [{"item": "documents", "status": "done", "units": docs}])
+    assert got["applied"] == [] and "police-report.pdf" in got["refused"][0]["why"]
+    big = D.build_plan("phones", question="q", phone_labels=LABELS,
+                       document_labels=["d%d.pdf" % i for i in range(D.MAX_DOC_UNITS + 1)])
+    assert D.item_by_id(big, "documents")["target"] is None
+    assert D.build_plan("documents", question="q", document_labels=docs)["items"][0]["target"] == docs
+
+
+def test_method_tells_the_run_not_to_convert_times_and_to_check_names_against_history():
+    block = D.render_block(plan())
+    assert "never convert a time" in block and "local_day" in block
+    assert "history" in block

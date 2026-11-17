@@ -3747,8 +3747,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
              args_schema=DeepMarksArgs),
         wrap(deep_notebook_add, name="deep_notebook_add",
              description=("Deep investigation only: keep findings in the run notebook, each with its citation link. "
-                          "The notebook is outside your context and is given in full to the report writer. Free: not "
-                          "a tool step."), args_schema=DeepNotesArgs),
+                          "The notebook is outside your context and is given in full to the report writer. Cite the "
+                          "very record or page the fact came from (its own link); one link may support only what "
+                          "that record shows. Free: not a tool step."), args_schema=DeepNotesArgs),
         wrap(deep_notebook_read, name="deep_notebook_read",
              description=("Deep investigation only: read back the notebook's notes, all or one item's, in pages. Free."),
              args_schema=DeepNotebookReadArgs),

@@ -740,7 +740,12 @@ class AgentService:
                 labels = [str(p["label"]) for p in records.phones(conn, request.case_id)]
             except Exception:  # noqa: BLE001 - the checklist then has no per-phone units, and says so by its count
                 logger.warning("Deep investigation: phone labels not read", exc_info=True)
-        plan = D.build_plan(domain, question=request.message, counts=counts, phone_labels=labels)
+        docs: list[str] = []
+        try:
+            docs = AgentService._document_labels(conn, request.case_id)
+        except Exception:  # noqa: BLE001 - the item then has no per-document units, and says to triage
+            logger.warning("Deep investigation: document names not read", exc_info=True)
+        plan = D.build_plan(domain, question=request.message, counts=counts, phone_labels=labels, document_labels=docs)
         if domain == "phones" and labels:
             plan["analyses"] = AgentService._request_stored_analyses(db, request.case_id)
         storage.update_run_metadata(db, run=run, metadata={"deep_investigation": {
@@ -748,6 +753,18 @@ class AgentService:
             "deep_progress": D.progress(plan)})
         db.commit()
         return plan
+
+    @staticmethod
+    def _document_labels(conn, case_id) -> list[str]:
+        """The case's evidence documents (not statements and not phone files), by file name, for the checklist."""
+        from sqlalchemy import text
+        rows = conn.execute(text(
+            "SELECT e.original_filename FROM evidence_files e WHERE e.case_id = :c AND e.deleted_at IS NULL "
+            "AND e.cellebrite_file_id IS NULL AND e.cellebrite_report_key IS NULL AND (e.source_type IS NULL OR "
+            "e.source_type NOT IN ('phone_extraction', 'phone_file', 'phone_text', 'cellebrite')) AND NOT EXISTS "
+            "(SELECT 1 FROM financial_source_documents f WHERE f.case_id = e.case_id AND f.evidence_file_id = e.id) "
+            "ORDER BY e.original_filename LIMIT 200"), {"c": str(case_id)})
+        return [r[0] for r in rows if r[0]]
 
     DEEP_ANALYSES = ("relationships", "deletion_timeline", "message_reconciliation", "awareness")
 

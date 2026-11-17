@@ -77,7 +77,10 @@ def _item(id_, title, why, *, units=None, needs=()):
             "target": list(units) if units else None, "covered": [], "needs": list(needs)}
 
 
-def _phones_items(labels: list[str]) -> list[dict]:
+MAX_DOC_UNITS = 60
+
+
+def _phones_items(labels: list[str], docs: list[str]) -> list[dict]:
     n = len(labels)
     return [
         _item("incidents", "Dates and times of the incidents the case is about",
@@ -93,14 +96,19 @@ def _phones_items(labels: list[str]) -> list[dict]:
               "A gap or a missing position is stated as a finding, with where it was looked for.", units=labels),
         _item("network", "The contact network: who talks to whom, and the same person under different names or numbers",
               "Aliases and several numbers for one person change who the reader thinks was involved."),
-        _item("client", "For the client named in the case setup: alibi positions and any absence of contact",
-              "What the phones say for the client, and what they do not say, matters as much as what they say against."),
+        _item("client", "For the client named in the case setup: alibi positions in each incident window, and, for every "
+              "other person the case ties to the incidents and every number of theirs, whether the client's phone holds "
+              "any contact, call or message with them, and the reverse",
+              "What the phones say for the client, and what they do not say, matters as much as what they say against. "
+              "Check by number as well as by name, in both directions; an absence is stated with the numbers searched."),
         _item("deleted", "Deleted and recovered messages: who sent each, in which direction, and what remains",
               "A recovered copy on the sender's phone is the sent message, not a received one."),
         _item("analyses", "Stored analyses read; those not yet run were requested and read or the reason given",
               "A stored analysis that has not run is started, not reported as absent."),
-        _item("documents", "Cross-checks of the phones against the documents",
-              "Documents give times, places and names to hold the phones against."),
+        _item("documents", "Cross-checks of the phones against the documents: every document read in full",
+              "Documents give times, places and names to hold the phones against. List them with get_evidence_files "
+              "and read each with get_document_text; note what each gives, or that it gives nothing for this question.",
+              units=docs or None),
         _item("money", "Cross-checks of the phones against the ledger",
               "A payment, a withdrawal or an account named in a message is held against the ledger."),
         _item("media", "Photos and files: when created, when received, where from",
@@ -135,9 +143,9 @@ def _money_items() -> list[dict]:
     ]
 
 
-def _documents_items() -> list[dict]:
+def _documents_items(docs: list[str]) -> list[dict]:
     return [
-        _item("inventory", "Every document: kind, date, author, how far it was read", "Coverage first."),
+        _item("inventory", "Every document: kind, date, author, how far it was read", "Coverage first.", units=docs or None),
         _item("incidents", "Dates, places, people and amounts each document gives", "Read by document, in full."),
         _item("people", "Who is named, under which names, and who is the same person", "Aliases across documents."),
         _item("timeline", "What the documents say happened, in date order, each line cited", "One reconstruction."),
@@ -149,15 +157,19 @@ def _documents_items() -> list[dict]:
 
 
 def build_plan(domain: str, *, question: str, counts: dict[str, Any] | None = None,
-               phone_labels: Iterable[str] = ()) -> dict[str, Any]:
-    """The run's checklist. Built from code, so a run cannot skip an item by not writing it down."""
+               phone_labels: Iterable[str] = (), document_labels: Iterable[str] = ()) -> dict[str, Any]:
+    """The run's checklist. Built from code, so a run cannot skip an item by not writing it down. ``document_labels``:
+    the case's documents; each is a unit of the documents item when there are at most MAX_DOC_UNITS of them (a
+    larger case is triaged, and the item says so)."""
     labels = [str(x) for x in phone_labels]
+    docs = [str(x) for x in document_labels]
+    docs = docs if len(docs) <= MAX_DOC_UNITS else []
     if domain == "phones":
-        items = _phones_items(labels)
+        items = _phones_items(labels, docs)
     elif domain == "money":
         items = _money_items()
     elif domain == "documents":
-        items = _documents_items()
+        items = _documents_items(docs)
     else:
         raise ValueError("Unknown deep investigation domain %r" % domain)
     return {"schema": SCHEMA, "domain": domain, "question": question, "items": items, "notebook": [],
@@ -331,7 +343,8 @@ def not_done_block(plan: dict) -> str:
 
 METHOD = {
     "phones": ("How to read the phones: phone_coverage and get_person_phones for the inventory and owners; "
-               "phone_messages for each phone and each incident window, paging (offset) until has_more is false; "
+               "phone_messages for each phone on its own (phones=[its label], no search words), paging (offset) until "
+               "has_more is false, noting what each page shows before the next; then each incident window again; "
                "get_day_activity, get_together_apart and phone_places for positions and gaps in each window; "
                "get_analysis_results for each stored analysis kind; get_money_signal_matches and "
                "get_payment_conversation for the ledger; search_documents and get_document_text for the incident "
@@ -360,7 +373,8 @@ def render_block(plan: dict) -> str:
         "Use every relevant tool and stored analysis. A stored analysis that has not run was requested for you; "
         "read it when it has finished and say so when it has not.",
         "After each reading that gives facts the report will use, record them with deep_notebook_add, each with its "
-        "citation link (they are kept outside your context, so note freely and do not read a result again). Mark an "
+        "citation link, which is the link of the very record or page the fact came from (never one link reused for "
+        "facts it does not show). Notes are kept outside your context, so note freely and do not read a result again. Mark an "
         "item with deep_mark when it is covered (done, with the units covered) or cannot be done (not_done, with the "
         "reason). These calls do not count as tool steps.",
         "Hold every link against what chance explains: a busy place, a number that changed hands, the same first "
@@ -369,7 +383,11 @@ def render_block(plan: dict) -> str:
         "A message recovered from the sender's phone is a message that person sent; the copy on the other phone may "
         "be absent. Give the direction from the sender, never from which phone it was found on.",
         "Dates and times of events at night are given in the local time with the zone named, with the date the "
-        "people lived it; say UTC where UTC is used.",
+        "people lived it. Phone rows carry local_day, time and time_zone: use those, and never convert a time "
+        "yourself. Where a tool gives only a UTC instant, say UTC beside it and do not use its date as the local date.",
+        "Hold every name against its history: a name saved on one phone for a number, and the dates of the calls "
+        "and messages under that name, show whether the number had another holder earlier. A person who shares a "
+        "first name with another is a different person until a record joins them.",
         "Your readings are your readings: label them as such until a person confirms.",
         "Write the report as your final answer, in markdown. Do not build report, table or other artifacts: the "
         "finished answer is saved as a report the person exports to PDF.",
