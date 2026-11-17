@@ -111,3 +111,17 @@ it("A15: the number of visible rows grows with the window's height", async () =>
   await screen.findByText("synthetic row 0")
   await waitFor(() => expect(rowsShown()).toBeGreaterThan(small))
 })
+
+it("at 390x844 the messages can be reached by scrolling past the filters, and show rows (lx-corrorest 17 Nov)", async () => {
+  await page.viewport(390, 844)
+  show()
+  await screen.findByText("synthetic row 0")
+  const section = document.querySelector('section[aria-label="Conversation"]') as HTMLElement
+  const list = document.querySelector('[data-testid="stream-scroll"]') as HTMLElement
+  // the filters and actions above the list are taller than a phone screen; the list keeps a usable height of its own
+  expect(list.getBoundingClientRect().height).toBeGreaterThan(400)
+  section.scrollTop = section.scrollHeight
+  await waitFor(() => expect(list.getBoundingClientRect().top).toBeLessThan(844 - 300))
+  expect(list.getBoundingClientRect().bottom).toBeLessThanOrEqual(844 + 2)
+  await waitFor(() => expect(rowsShown()).toBeGreaterThan(3))
+})

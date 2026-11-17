@@ -688,7 +688,9 @@ export function ConversationsPage() {
             </ul>
           )}
         </nav>}
-        <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col" ref={listRoot}>
+        {/* Below 768 px the filters and actions fill a phone screen: the pane scrolls as one column and the messages keep
+            their own height, so a touch user scrolls past the filters to them (lx-corrorest 17 Nov, 390 wide). */}
+        <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col max-md:block max-md:overflow-y-auto" ref={listRoot}>
           {layersOn && (
             <PhoneLayers phones={phones.filter((p) => p.standing !== "superseded").map((p) => ({ id: p.extraction_id, label: p.label, index: phones.findIndex((x) => x.extraction_id === p.extraction_id) }))}
               chosen={view.phones} noun="records" counts={layerCounts}
@@ -891,6 +893,7 @@ export function ConversationsPage() {
             <StreamList
               // A new thread, person or filter starts with nothing selected (review of 03-3: Select all carried over).
               key={JSON.stringify(streamFilter)}
+              className="max-md:h-[75dvh] max-md:flex-none"
               stream={stream}
               caseId={caseId}
               caseName={caseQ.data?.title ?? "This case"}
