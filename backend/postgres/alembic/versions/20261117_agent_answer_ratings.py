@@ -3,14 +3,14 @@
 Append-only: a rating and its withdrawal are each a row.
 
 Revision ID: 20261117_agent_answer_ratings
-Revises: 20261116_embed_items
+Revises: 20261117_corroborate_facts
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "20261117_agent_answer_ratings"
-down_revision = "20261116_embed_items"
+down_revision = "20261117_corroborate_facts"
 branch_labels = None
 depends_on = None
 
