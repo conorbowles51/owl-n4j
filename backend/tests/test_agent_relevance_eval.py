@@ -287,3 +287,21 @@ def test_cross_area_records_count_only_for_tools_that_search_every_area():
         if x['kind'] == 'meaning'][0]
     assert [r['id'] for r in G.judged_relevant(meaning)] == ['doc', 'row']
     assert [r['id'] for r in G.judged_relevant(dict(q, tool='search_case'))] == ['doc', 'row']
+
+
+def test_model_calls_stop_at_the_cap():
+    used = [0]
+    call = G.capped_call(lambda prompt: 'ok', 2, used)
+    assert [call('a'), call('b')] == ['ok', 'ok']
+    with pytest.raises(RuntimeError, match='cap'):
+        call('c')
+    assert used == [2]
+
+
+def test_gate_refuses_model_calls_at_peak_price(monkeypatch):
+    real = G.time.gmtime
+    monkeypatch.setattr(G.time, 'gmtime', lambda *a: real(1794880800))  # 2026-11-17 02:00 UTC
+    monkeypatch.delenv(G.MODEL_CALLS_ENV, raising=False)
+    with pytest.raises(SystemExit, match='01:00 and 04:00'):
+        G.main(['gate', '--label', 't', '--model-calls', '10'])
+    assert G.MODEL_CALLS_ENV not in os.environ

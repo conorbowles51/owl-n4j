@@ -130,19 +130,63 @@ def rating_sets(export_path, out_dir, log=lambda *a: print(*a, flush=True)):
     return paths
 
 
+# Chat-model calls a tree may make for the case search's ranking and rephrasing (gate/run --model-calls; workers
+# inherit it). 0: none, the steps are off. Neil 12 Nov: any DeepSeek run has a hard cap, never at peak price.
+MODEL_CALLS_ENV = 'RELEVANCE_MODEL_CALLS'
+PEAK_UTC_HOURS = (1, 2, 3)  # 01:00-04:00 UTC, DeepSeek's double price
+_model_used = [0]
+
+
+def model_cap():
+    return max(0, int(os.environ.get(MODEL_CALLS_ENV) or 0))
+
+
+def capped_call(call, cap, used=_model_used):
+    """``call`` (prompt -> text) refused once ``cap`` calls have been made in this process."""
+    def c(prompt):
+        if used[0] >= cap:
+            raise RuntimeError('relevance run: the model call cap (%d) is reached' % cap)
+        used[0] += 1
+        return call(prompt)
+    c.model = getattr(call, 'model', None)
+    return c
+
+
+def _cap_case_search(cap):
+    try:
+        from services.case_search import rerank
+    except ImportError:
+        return
+    if getattr(rerank.default_model_call, '_relevance_cap', False):
+        return
+    inner = rerank.default_model_call
+
+    def default_model_call():
+        call = inner()
+        return capped_call(call, cap) if call is not None else None
+    default_model_call._relevance_cap = True
+    rerank.default_model_call = default_model_call
+    for mod in [m for name, m in list(sys.modules.items()) if name.startswith('services.case_search')]:
+        if getattr(mod, 'default_model_call', None) is inner:
+            mod.default_model_call = default_model_call
+
+
 def guard_process():
-    """Read-only Postgres and no chat model, as the replay scripts do (financial_agent_fit_replay.guard_process)."""
+    """Read-only Postgres and no chat model, as the replay scripts do (financial_agent_fit_replay.guard_process);
+    with a model cap, the case search's model steps run up to the cap."""
     os.environ.setdefault('LOUPE_FIT_ALLOW_EMBEDDINGS', '1')
-    # The case search's ranking and rephrasing steps call the chat model (DeepSeek), which this process refuses
-    # below; its own switch skips them cleanly instead of failing one call per batch. The gate says so.
-    os.environ['LOUPE_CASE_SEARCH_MODEL'] = 'off'
+    cap = model_cap()
+    if not cap:
+        # The case search's ranking and rephrasing steps call the chat model (DeepSeek), which this process refuses
+        # below; its own switch skips them cleanly instead of failing one call per batch. The gate says so.
+        os.environ['LOUPE_CASE_SEARCH_MODEL'] = 'off'
     fr = _load('fit_replay', os.path.join(_HERE, 'financial_agent_fit_replay.py'))
     fr.guard_process()
     import socket
     inner = socket.getaddrinfo
     if not getattr(inner, '_relevance_guard', False):
         def _no_chat(host, *a, **k):
-            if host and 'deepseek.com' in str(host):
+            if host and 'deepseek.com' in str(host) and not cap:
                 raise OSError('relevance run: no chat model may be called')
             return inner(host, *a, **k)
         _no_chat._relevance_guard = _no_chat._replay_guard = True
@@ -153,6 +197,8 @@ def guard_process():
     with _get_engine().connect() as c:
         if c.execute(text('SHOW default_transaction_read_only')).scalar() != 'on':
             raise SystemExit('refusing to run: sessions are not read-only')
+    if cap:
+        _cap_case_search(cap)
 
 
 def plan_queries(paths, kinds=None, repeat=None, only=None, log=lambda *a: print(*a, flush=True)):
@@ -222,6 +268,7 @@ def finish_runs(runs):
                                                               {'error': v.get('error')}))
                                       for v in r['queries'].values() if 'missing' not in v])
         r['missing'] = sorted({v['tool'] for v in r['queries'].values() if 'missing' in v})
+        r['model_calls_used'] = max([v.get('model_calls_used') or 0 for v in r['queries'].values()] or [0])
     return runs
 
 
@@ -257,7 +304,7 @@ def cmd_worker(args):
     for line in sys.stdin:
         i = int(json.loads(line)['i'])
         _, judged, q, _n = plan[i]
-        real_stdout.write(json.dumps(runner.run(judged, q), default=str) + '\n')
+        real_stdout.write(json.dumps(dict(runner.run(judged, q), model_calls_used=_model_used[0]), default=str) + '\n')
         real_stdout.flush()
     return 0
 
@@ -428,6 +475,14 @@ def cmd_gate(args):
     lines = ['relevance gate for %s at %s, %s UTC' % (args.label, sha[:12], time.strftime('%Y-%m-%d %H:%M',
                                                                                           time.gmtime()))]
     verdicts = []
+    cap = max(0, args.model_calls or 0)
+    if cap and not args.reports_only:
+        if time.gmtime().tm_hour in PEAK_UTC_HOURS:
+            raise SystemExit('refusing model calls between 01:00 and 04:00 UTC (double price); run later or without '
+                             '--model-calls')
+        os.environ[MODEL_CALLS_ENV] = str(cap)
+        if args.repeat is None:
+            args.repeat = 3  # a model step varies run to run: compare against the range of 3
     if not args.reports_only:
         subprocess.run(['git', '-C', LIVE, 'fetch', '-q', 'origin', 'integration/evidence-main-reunion'],
                        capture_output=True, timeout=300)
@@ -443,8 +498,13 @@ def cmd_gate(args):
         cmp = R.compare(base, cand)
         lines.append('baseline: origin %s; candidate: %s; each query asked of both, back to back' % (bsha[:12],
                                                                                                     csha[:12]))
-        lines.append('no chat model: the case search ranks in search order (its model ranking and rephrasing are '
-                     'off); meaning search embeds the question as the agent does')
+        if cap:
+            lines.append('chat model on for the case search, at most %d calls per tree: baseline used %s, candidate %s'
+                         ' (at the cap, later searches ran unranked); %d runs per query' % (
+                             cap, max(r['model_calls_used'] for r in base), max(r['model_calls_used'] for r in cand), len(cand)))
+        else:
+            lines.append('no chat model: the case search ranks in search order (its model ranking and rephrasing '
+                         'are off); meaning search embeds the question as the agent does')
         lines += R.verdict_lines(cmp, base[0]['aggregate'], cand[0]['aggregate'])
         if cand[0]['missing']:
             lines.append('tools not in the candidate (not scored): %s' % ', '.join(cand[0]['missing']))
@@ -505,6 +565,8 @@ def main(argv=None):
                                                 'DeepSeek answers); the candidate side alone is scored if no ":"')
     p.add_argument('--reports-only', action='store_true')
     p.add_argument('--base', help='baseline commit (default: origin head)')
+    p.add_argument('--model-calls', type=int, default=0, help='chat-model calls each tree may make for the case '
+                   "search's ranking (default 0: off); never 01:00-04:00 UTC; runs each query 3 times")
     p = sub.add_parser('worker')
     p.add_argument('--set', action='append', required=True)
     p.add_argument('--kinds', nargs='*')
