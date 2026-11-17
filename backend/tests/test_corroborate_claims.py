@@ -154,6 +154,19 @@ def test_mixed_positions_and_no_positions_are_cant_tell_with_the_reason():
     assert none["gaps"][0]["missing"].startswith("positions of")
 
 
+def test_mostly_elsewhere_contradicts_and_the_counts_are_stated():
+    recs = [_pos(0, "ann", 19, 51.5, -0.1), _pos(1, "ann", 20, 51.7, -0.5), _pos(2, "ann", 21, 51.7, -0.5)]
+    res = claim_weigh.run(Store(recs), _claim())
+    assert res["level"]["verdict"] == "contradicts" and "1 inside" in res["level"]["reasons"][0] and "2 outside" in res["level"]["reasons"][0]
+
+
+def test_a_place_with_no_position_is_named_in_the_cant_tell_reason():
+    claim = _claim(where=None)
+    claim.confirmed["where_text"] = "“Dale's Shop” is an address on a dossier with no position on a map"
+    res = claim_weigh.run(Store([_pos(0, "ann", 19, 51.5, -0.1)]), claim)
+    assert res["level"]["verdict"] == "cant_tell" and "Dale's Shop" in res["level"]["sentence"]
+
+
 def test_no_place_stays_cant_tell_and_names_the_missing_field():
     res = claim_weigh.run(Store([_pos(0, "ann", 19, 51.5, -0.1)]), _claim(where=None))
     assert res["level"]["verdict"] == "cant_tell" and "where" in res["level"]["sentence"]
@@ -166,7 +179,9 @@ def test_contact_claim_fits_with_a_message_and_is_cant_tell_without_phone_record
     what = {"action": "contact", "negated": False, "with": ["bob"], "mode": "called"}
     assert claim_weigh.run(Store([msg]), _claim(what=what, where=None))["level"]["verdict"] == "fits"
     res = claim_weigh.run(Store([]), _claim(what=what, where=None))
-    assert res["level"]["verdict"] == "cant_tell" and "says nothing" in res["level"]["sentence"]
+    assert res["level"]["verdict"] == "cant_tell" and "would leave none" in res["level"]["sentence"]
+    absent = claim_weigh.run(Store([dict(msg, ref="m2", parties=["dan"])]), _claim(what=what, where=None))
+    assert absent["level"]["verdict"] == "cant_tell"  # a contact not found is never a contradiction
 
 
 # ---- the confirm step ------------------------------------------------------------------------------------------

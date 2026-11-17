@@ -47,7 +47,7 @@ def run(store, claim, question: dict | None = None, started: float | None = None
     if not what:
         missing.append("what")
     if what.get("action") == "presence" and not where:
-        missing.append("where")
+        missing.append("where" + (f" ({c['where_text']})" if c.get("where_text") else ""))
     counter = [k for k in (what.get("with") or []) if k in everyone] if what.get("action") in ("contact", "with") else []
     if what.get("action") in ("contact", "with") and not counter:
         missing.append("who they were with" if what["action"] == "with" else "who was contacted")
@@ -57,7 +57,9 @@ def run(store, claim, question: dict | None = None, started: float | None = None
     if missing:
         return _result(out, store, people, "cant_tell", f"Can't tell: the claim does not say {', '.join(missing)}.",
                        [f"The claim has no {m}, so there is nothing to compare with the records." for m in missing],
-                       [{"missing": m, "words": f"{m}: not stated (or not confirmed)."} for m in missing], {}, [], started, zone)
+                       [{"missing": m, "words": (f"{m}: not stated." if m.startswith("who") or m in ("when", "what") else
+                                                  f"{m}: Loupe has no position for it, or the claim does not name one. Confirm a place "
+                                                  "with a position to weigh it.")} for m in missing], {}, [], started, zone)
     lo, hi = _dt(when["start"]), _dt(when["end"])
     pad = timedelta(minutes=5)
     recs, _ = M.dedupe(store.records(list(people.values()), [(lo - pad, hi + pad)], list(everyone.values())))
@@ -75,7 +77,8 @@ def run(store, claim, question: dict | None = None, started: float | None = None
     searched = {"records_read": kinds, "window": {"start": lo.isoformat(), "end": hi.isoformat(), "zone": zone,
                                                    "label": when.get("label")}, "people": len(people),
                 "phones": [e for p in people.values() for e in p["phones"]]}
-    head = {"fits": "Fits the records.", "contradicts": "Contradicts the records.",
+    head = {"fits": "Fits the records. " + (reasons[0] if reasons else ""),
+            "contradicts": "Contradicts the records. " + (reasons[0] if reasons else ""),
             "cant_tell": "Can't tell: " + (gaps[0]["words"] if gaps else "the records do not settle it") }[verdict]
     return _result(out, store, people, verdict, head, reasons, gaps, searched, cited, started, zone)
 
@@ -126,7 +129,7 @@ def _presence(people, who, where, recs, lo, hi, zone, neg, store):
         far = [x for x in outs if x[1] > OUTSIDE_MARGIN_M]
         if ins and not far:
             v = "fits"
-        elif far and not ins:
+        elif far and not ins or (len(far) >= 2 and len(far) >= 2 * len(ins)):
             v = "contradicts"
         elif ins and far:
             v = "cant_tell"
@@ -167,18 +170,15 @@ def _contact(people, a, others, recs, lo, hi, zone, neg, store):
             reasons.append(f"{len(hits)} contact{'' if len(hits) == 1 else 's'} between {la} and {lb} in the window, the first at {_local(hits[0]['at'], zone)}.")
             cited += [{"ref": r["ref"], "at": r["at"].isoformat(), "kind": r["kind"]} for r in hits[:6]]
         else:
-            # absence counts only when a phone of both sat in use around the window
+            # a contact not found is never a contradiction: other apps, calls on another phone and meeting in person
+            # leave nothing here. What was searched is said instead.
             act = store.activity([people[a], people[b]], [(lo, hi)])
-            near = {k: any(lo - timedelta(hours=1) <= t <= hi + timedelta(hours=1) for t in act.get(k, [])) for k in (a, b)}
-            if all(near.values()):
-                v = "contradicts"
-                reasons.append(f"No call or message between {la} and {lb} in the window, though both phones hold records "
-                               "within an hour of it.")
-            else:
-                v = "cant_tell"
-                lacking = [people[k]["label"] for k in (a, b) if not near[k]]
-                gaps.append({"missing": "phone records around the window", "words": f"no records of {', '.join(lacking)}'s phone "
-                             "within an hour of the window, so a missing contact says nothing."})
+            near = {k: sum(1 for t in act.get(k, []) if lo - timedelta(hours=1) <= t <= hi + timedelta(hours=1)) for k in (a, b)}
+            v = "cant_tell"
+            gaps.append({"missing": "a record of the contact",
+                         "words": f"no call, message or e-mail between {la} and {lb} in the window ({near[a]} records of "
+                                  f"{la}'s phone and {near[b]} of {lb}'s within an hour of it). Other apps, another phone or "
+                                  "meeting in person would leave none."})
         if neg and v in ("fits", "contradicts"):
             v = "contradicts" if v == "fits" else "fits"
         verdicts.append(v)

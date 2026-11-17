@@ -90,7 +90,8 @@ def _clean(chips: dict) -> dict:
             raise ClaimError("What was said is one of: was at a place, had contact with someone, was with someone.")
         what = {"action": what["action"], "negated": bool(what.get("negated")),
                 "with": [str(k) for k in (what.get("with") or [])][:10], "mode": what.get("mode")}
-    return {"who": who, "when": when, "where": where, "what": what}
+    text_ = str(chips.get("where_text") or "")[:300] or None
+    return {"who": who, "when": when, "where": where, "what": what, **({"where_text": text_} if text_ else {})}
 
 
 def confirm(db, case_id, claim_id, chips: dict, user) -> dict:
