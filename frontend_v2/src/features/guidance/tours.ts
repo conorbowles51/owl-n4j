@@ -70,7 +70,7 @@ export const TOURS: Record<TourArea, Tour> = {
     name: "Timeline",
     steps: [
       { title: "Everything in date order", body: "Events, payments, messages and documents from the case, one line per day.", targets: ["main"] },
-      { title: "Choose what to show", body: "Switch the view or narrow the dates to the period you are looking at.", targets: ['[aria-label="View"]'] },
+      { title: "Choose what to show", body: "Search the events, open the filters, or narrow the dates to the period you are looking at.", targets: ['[data-guide="timeline-toolbar"]'] },
       { title: "Events with no time", body: "Things with a date but no time sit apart, so the order you read is never guessed.", targets: ['[aria-label="Events with no time recorded"]'] },
       { title: "Photos with a date", body: "A dated photo shows as Photo taken, with a thumbnail. Its date comes from the photo's own data and has not been checked by a person.", targets: ["main"] },
       HISTORY,
@@ -80,9 +80,9 @@ export const TOURS: Record<TourArea, Tour> = {
     area: "map",
     name: "Map",
     steps: [
-      { title: "Where things happened", body: "Addresses from the evidence and phone positions, on one map.", targets: ['[aria-label="Places map"]'] },
+      { title: "Where things happened", body: "Addresses from the evidence and phone positions, on one map.", targets: ['[data-guide="map-canvas"]'] },
       { title: "Draw an area", body: "Areas, then Draw area: draw around a place to see what happened there and add it to a theory.", targets: ['[data-guide="map-areas"]'] },
-      { title: "Photos on the map", body: "A photo whose data holds a place shows as a pin. The place comes from the photo's own data and has not been checked by a person.", targets: ['[aria-label="Places map"]'] },
+      { title: "Photos on the map", body: "A photo whose data holds a place shows as a pin. The place comes from the photo's own data and has not been checked by a person.", targets: ['[data-guide="map-canvas"]'] },
       { title: "Each phone's route", body: "Show routes draws each phone's path in time order. Gaps of more than 2 hours are left out and counted.", targets: ['[data-guide="map-routes"]'] },
       HISTORY,
     ],

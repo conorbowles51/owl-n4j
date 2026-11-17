@@ -228,7 +228,7 @@ describe("first-visit tours", () => {
   it("turning guidance off stops popups for that person across sessions", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const s = server()
-    drawScreen('<div aria-label="Places map"></div><button>Draw</button><canvas></canvas><textarea></textarea>')
+    drawScreen('<div data-guide="map-canvas"></div><button>Draw</button><canvas></canvas><textarea></textarea>')
     const first = wrap(<TourHost caseId="c1" />, "/cases/c1/map")
     await act(async () => void vi.advanceTimersByTime(1500))
     fireEvent.click(await screen.findByRole("button", { name: "Turn guidance off" }))

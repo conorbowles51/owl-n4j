@@ -58,7 +58,7 @@ export const TimelineToolbar = forwardRef<HTMLInputElement, TimelineToolbarProps
     }
 
     return (
-      <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-2" data-guide="timeline-toolbar">
         {/* Filter sidebar toggle */}
         <Button
           variant="ghost"

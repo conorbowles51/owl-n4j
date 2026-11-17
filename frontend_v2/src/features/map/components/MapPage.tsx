@@ -245,7 +245,7 @@ export function MapPage() {
         areaPhonePositions={phones.on && lastShape ? (areaPhones.data ? areaPhones.data.points_total : "counting") : null}
       />
 
-      <div className="relative flex-1">
+      <div className="relative flex-1" data-guide="map-canvas">
         <MapCanvas
           locations={safeLocations}
           phoneItems={phones.on ? phones.points.data?.items : undefined}
