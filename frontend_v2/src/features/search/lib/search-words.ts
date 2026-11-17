@@ -40,21 +40,3 @@ export function rememberQuery(q: string) {
     /* storage refused: nothing is kept */
   }
 }
-
-/** The areas of the search by meaning, in the words a person uses. */
-export const MEANING_AREAS: Record<string, string> = {
-  phone_text: "Phone messages",
-  ledger: "Payments",
-  accounts: "Accounts",
-  judgements: "Judgement calls",
-  trails: "Saved money groups",
-  statement_pages: "Statement pages",
-  casework: "Notes, findings and theories",
-  timeline: "Timeline",
-  parties: "People and names on the phones",
-  transcripts: "Transcripts and image text",
-  relationships: "Connections in the graph",
-  entities: "People, companies and places in the graph",
-  documents: "Documents",
-}
-export const MEANING_WHY: Record<string, string> = { meaning: "by meaning", words: "by words", both: "by meaning and words" }

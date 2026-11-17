@@ -1,12 +1,15 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { failureText } from "@/features/phones/api"
 import { saveKeywordList, searchCase, searchMeaning, splitTerms, type MeaningResult, type PaymentTotals, type SearchGroup, type SearchHit } from "../api"
+
+// Loaded when a search has results by meaning: the main script is at its size limit (frontend_v2/scripts/bundle-budget.js).
+const MeaningGroup = lazy(() => import("./MeaningGroup"))
 import { formatLedgerAmount } from "@/features/financial/lib/ledger-format"
-import { GROUP_KINDS, GROUP_NAMES, MEANING_AREAS, MEANING_WHY, rememberQuery, recentQueries } from "../lib/search-words"
+import { GROUP_KINDS, GROUP_NAMES, rememberQuery, recentQueries } from "../lib/search-words"
 import { conversationsWithText, hitPath, meaningPath } from "../lib/open-hit"
 import { confirmUnsavedNavigation } from "@/hooks/use-unsaved-history-guard"
 
@@ -216,7 +219,9 @@ function SearchBody(props: {
           )}
         </CommandGroup>
       ))}
-      <MeaningGroup meaning={props.meaning} error={props.meaningError} onOpen={props.onOpenMeaning} />
+      <Suspense fallback={<p className="px-4 pt-3 text-xs text-muted-foreground">Searching by meaning</p>}>
+        <MeaningGroup meaning={props.meaning} error={props.meaningError} onOpen={props.onOpenMeaning} />
+      </Suspense>
       <div className="border-t px-4 py-2 text-xs text-muted-foreground">
         {empty.length > 0 && <p>No matches in: {empty.join(", ")}.</p>}
         {data.groups.filter((g) => g.searched).map((g) => (
@@ -227,31 +232,6 @@ function SearchBody(props: {
         ))}
       </div>
     </>
-  )
-}
-
-/** The hits found by meaning and words together, each saying which found it, and what was not searched. */
-function MeaningGroup({ meaning, error, onOpen }: { meaning: MeaningResult | undefined; error: string | null; onOpen: (cite: string) => void }) {
-  if (error) return <p role="alert" className="px-4 pt-3 text-xs">{error}</p>
-  if (!meaning) return <p className="px-4 pt-3 text-xs text-muted-foreground">Searching by meaning</p>
-  return (
-    <CommandGroup heading={`By meaning (${meaning.hits.length.toLocaleString("en-US")})`}>
-      {meaning.hits.map((h) => (
-        <CommandItem key={`meaning:${h.area}:${h.key}`} value={`meaning:${h.area}:${h.key}`} onSelect={() => onOpen(h.cite)}>
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="truncate text-xs text-muted-foreground">
-              {[MEANING_AREAS[h.area] ?? h.area, MEANING_WHY[h.matched], h.as_read ? "read by a model, not confirmed" : null, h.title].filter(Boolean).join(" · ")}
-            </span>
-            <span className="line-clamp-2 text-sm">{h.snippet.replace(/ \[rec:\/\/[0-9a-f-]{36}\]/g, "")}</span>
-          </span>
-        </CommandItem>
-      ))}
-      {meaning.hits.length === 0 && <p className="px-2 pb-1 text-xs">Nothing found by meaning.</p>}
-      {meaning.notes.map((n) => (
-        <p key={n} role="note" className="px-2 pb-1 text-xs">{n}</p>
-      ))}
-      {meaning.not_searched.length > 0 && <p className="px-2 pb-1 text-xs text-muted-foreground">Not searched: {meaning.not_searched.join("; ")}.</p>}
-    </CommandGroup>
   )
 }
 
