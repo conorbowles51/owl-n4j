@@ -83,10 +83,59 @@ def shared_ids(conn, case_id, q, kinds, prefix):
         off = r['next_offset']
 
 
+def ledger_words(conn, case_id, n=8):
+    """Words that name payees in the case's ledger: the commonest long words of counterparty names."""
+    rows = conn.execute(text("SELECT lower(w) FROM (SELECT regexp_split_to_table(counterparty_raw, '[^[:alpha:]]+') w "
+                             "FROM (SELECT counterparty_raw FROM financial_transactions WHERE case_id = :c AND "
+                             "counterparty_raw IS NOT NULL LIMIT 20000) x) y WHERE length(w) >= 5 "
+                             "GROUP BY 1 ORDER BY count(*) DESC LIMIT :n"), {'c': case_id, 'n': n})
+    return [r[0] for r in rows]
+
+
+def ledger_pass(conn, name, cid, rec_out):
+    """category_breakdown / link_suggestions word filter (description, counterparty, reference) against the shared
+    ledger search: the transactions the filter returns that the shared search does not."""
+    import time
+    from services import case_search
+    for w in ledger_words(conn, cid):
+        old = {str(r[0]) for r in conn.execute(text(
+            "SELECT id FROM financial_transactions WHERE case_id = :c AND (description ILIKE :p OR "
+            "counterparty_raw ILIKE :p OR bank_reference ILIKE :p)"), {'c': cid, 'p': '%' + w + '%'})}
+        t0 = time.time()
+        new, off = set(), 0
+        while True:
+            r = case_search.search(conn, cid, w, kinds=('ledger',), rank=False, phrase=False, limit=50, offset=off,
+                                   use_cache=False)
+            for h in r['hits']:
+                m = re.search(r'txn://([0-9a-f-]{36})', h.get('cite') or '')
+                if m:
+                    new.add(m.group(1))
+            if r.get('next_offset') is None:
+                break
+            off = r['next_offset']
+        rec_out[w] = {'old': len(old), 'new': len(new), 'lost': len(old - new), 'seconds': round(time.time() - t0, 1)}
+
+
+def timing(db, case_id, q):
+    """Seconds: the notebook filter, the casework words filter and the shared search, same words."""
+    import time
+    import uuid
+    from services import notebook_service
+    t = {}
+    t0 = time.time()
+    notebook_service.list_notes(db, case_id=uuid.UUID(case_id), current_user=None, query_text=q, limit=200)
+    t['notebook_filter_s'] = round(time.time() - t0, 3)
+    t0 = time.time()
+    shared_ids(db.connection(), case_id, q, ('casework',), 'view=casework')
+    t['shared_search_s'] = round(time.time() - t0, 3)
+    return t
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default='/mnt/owl-data/tmp/shared-search-harness.json')
     ap.add_argument('--cases', default=','.join(CASES))
+    ap.add_argument('--ledger', action='store_true', help='compare the ledger word filter with the shared search')
     a = ap.parse_args()
     import uuid
     from postgres.session import _get_session_local
@@ -96,16 +145,31 @@ def main():
     with _get_session_local()() as db:
         conn = db.connection()
         read_only(conn)
+        if a.ledger:
+            for name in a.cases.split(','):
+                res[name] = {'ledger': {}, 'timing': timing(db, CASES[name], 'payment')}
+                ledger_pass(conn, name, CASES[name], res[name]['ledger'])
+                print(name, res[name], flush=True)
+            json.dump(res, open(a.out, 'w'), indent=1)
+            print('wrote', a.out)
+            return
         for name in a.cases.split(','):
             cid = CASES[name]
             res[name] = {}
             for q, src in queries(conn, cid, name).items():
                 u = uuid.UUID(cid)
                 rec = {'source': src}
-                old = casework_tools.casework(db, u, search=q, limit=50)
-                rec['casework_old'] = sorted(i['id'] for i in old['items'])
-                rec['casework_old_total'] = old['total_matching']
+                pat = '%' + q + '%'  # the filter the tool had before it moved (title or body)
+                rec['casework_old'] = sorted(str(r[0]) for r in conn.execute(text(
+                    "SELECT id FROM workspace_entries WHERE case_id = :c AND deleted_at IS NULL AND "
+                    "(title ILIKE :p OR body ILIKE :p)"), {'c': cid, 'p': pat}))
                 rec['casework_new'] = sorted(set(shared_ids(conn, cid, q, ('casework',), 'view=casework')))
+                try:  # the tool as it is in this tree (needs PostgreSQL arrays for link states; ids only)
+                    tool = casework_tools.casework(db, u, search=q, limit=50)
+                    rec['casework_tool'] = sorted(i['id'] for i in tool['items'])
+                    rec['casework_tool_total'] = tool['total_matching']
+                except Exception as exc:  # noqa: BLE001
+                    rec['casework_tool_error'] = str(exc)[:200]
                 nb = notebook_service.list_notes(db, case_id=u, current_user=None, query_text=q, limit=200)
                 rec['notebook_old'] = sorted(str(n['id']) for n in nb['notes'])
                 rec['notebook_old_total'] = nb['total']

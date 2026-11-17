@@ -278,6 +278,53 @@ class CaseMaterialToolTests(DuplicateTestCase):
         self.assertEqual(data["items"][0]["entity_key"], "person:ann")
         self.assertIn("could not be read", data["names_note"])
 
+    # -- casework words go through the shared case search (lx-sharedsearch) -----------------------------------------
+
+    def casework_search(self, found_titles, **args):
+        """get_casework with ``search``, the case search stubbed to find the entries titled ``found_titles``."""
+        calls = []
+
+        def fake(conn, case_id, question, **kw):
+            calls.append((question, kw))
+            hits = [{"cite": "/cases/%s/workspace?view=casework&entry=%s" % (case_id, e.id)}
+                    for e in self.db.query(WorkspaceEntry).all() if e.title in found_titles]
+            return {"hits": hits, "next_offset": None}
+        with mock.patch("services.case_search.search", side_effect=fake):
+            return self.call("get_casework", **args)["data"], calls
+
+    def test_casework_search_reads_the_shared_search_and_keeps_its_other_filters(self):
+        create_entry(self.db, case_id=self.case.id, current_user=self.user, entry_type="note", title="Boat sale",
+                     body="the vessel changed hands")
+        create_entry(self.db, case_id=self.case.id, current_user=self.user, entry_type="theory", title="Hull payment",
+                     body="no shared word")
+        data, calls = self.casework_search({"Boat sale", "Hull payment"}, search="ship purchase")
+        self.assertEqual(sorted(i["title"] for i in data["items"]), ["Boat sale", "Hull payment"])
+        self.assertEqual(data["total_matching"], 2)
+        # no model call and no other phrasings: a list filter
+        self.assertEqual(calls[0][1]["kinds"], ("casework",))
+        self.assertFalse(calls[0][1]["rank"])
+        self.assertFalse(calls[0][1]["phrase"])
+        data, _ = self.casework_search({"Boat sale", "Hull payment"}, search="ship purchase", kinds=["theory"])
+        self.assertEqual([i["title"] for i in data["items"]], ["Hull payment"])
+        self.assertIn("found by the case search", data["coverage"])
+
+    def test_casework_search_finds_the_shared_searchs_match_the_word_filter_missed_and_the_shape_holds(self):
+        from services.case_search import shape
+        create_entry(self.db, case_id=self.case.id, current_user=self.user, entry_type="note", title="Boat sale",
+                     body="the vessel changed hands")
+        data, _ = self.casework_search({"Boat sale"}, search="ship")  # no entry holds the word "ship"
+        self.assertEqual((data["total_matching"], data["returned"]), (1, 1))
+        shape.conform(data, searched="casework entries by the case search")  # the shared keys from its own
+        self.assertEqual(shape.check(data), [])
+        self.assertEqual((data["total"], data["shown"]), (1, 1))
+
+    def test_casework_search_that_fails_says_so_and_returns_nothing_partial(self):
+        create_entry(self.db, case_id=self.case.id, current_user=self.user, entry_type="note", title="Boat sale",
+                     body="x")
+        with mock.patch("services.case_search.search", side_effect=RuntimeError("down")):
+            out = self.call("get_casework", search="boat")
+        self.assertEqual(out["status"], "error")
+
     # -- reports, casework by tag ------------------------------------------------------------------------------------
 
     def test_reports_lists_saved_financial_reports_and_the_casework_report_sections(self):

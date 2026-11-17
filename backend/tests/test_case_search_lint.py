@@ -70,19 +70,33 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/agent/phone_cross_tools.py": (1, "a fixed one-time-code pattern, not a person's words"),
     "services/pattern_of_life/places.py": (2, "a fixed camera-folder pattern on media paths"),
     "services/phone/media_spread.py": (2, "a fixed camera-folder pattern on media paths"),
-    # a tool's own narrower filter (its list, then the words); the agent's case-wide search is the case search
-    "services/agent/case_material_tools.py": (6, FREE),
-    "services/agent/casework_tools.py": (4, FREE),
-    "services/dossier_service.py": (1, FREE),
-    "services/notebook_service.py": (3, FREE),
-    "services/workspace_entry_service.py": (14, FREE),
-    "services/workspace_ai_service.py": (1, FREE),
-    "services/financial/link_suggestions.py": (2, FREE),
-    "services/financial/category_breakdown.py": (2, FREE),
-    "services/financial/brokerage_ledger.py": (1, FREE),
-    "services/phone/streams.py": (2, FREE),
-    "services/phone/timeline_lens.py": (1, FREE),
-    "services/phone/link_edges.py": (2, FREE),
+    # lx-sharedsearch: the twelve modules that matched free text outside the case search. Moved: get_casework's words
+    # (casework_tools, 4 -> 3). The rest are identifiers, or filters that the shared search cannot replace without
+    # losing records; each reason is measured in headless/LX-SHAREDSEARCH-STATUS.md.
+    "services/agent/casework_tools.py": (3, "tags, and a dossier found by its name: " + IDENT),
+    "services/agent/case_material_tools.py": (6, "file, dossier and entry names and tags as typed (IDENT), and the "
+                                                 "dossier list's own words over names and summaries: dossiers are not "
+                                                 "an area of the case search, so a move would lose every match"),
+    "services/dossier_service.py": (1, "the dossier list's words over names and summaries: dossiers are not an area "
+                                       "of the case search, so a move would lose every match"),
+    "services/notebook_service.py": (3, "the Notebook screen's type-ahead filter (title, body and link labels): a "
+                                        "list filter that answers in milliseconds; the shared search takes seconds "
+                                        "and does not read link labels"),
+    "services/workspace_entry_service.py": (14, "the link picker's names and titles as typed, tags (IDENT), and the "
+                                                "Workspace list's type-ahead filter over title and body, as in the "
+                                                "Notebook's"),
+    "services/workspace_ai_service.py": (1, "the fallback used only when the case search raises while a theory is "
+                                            "tested; the search itself is the case search"),
+    "services/financial/link_suggestions.py": (2, "the payment picker's word filter, one of its amount and date "
+                                                  "filters: every matching row, not a ranked page"),
+    "services/financial/category_breakdown.py": (2, "a ledger filter whose rows are summed into totals: a ranked page "
+                                                    "would drop rows from the sum"),
+    "services/financial/brokerage_ledger.py": (1, "an instrument's ticker or name as typed: " + IDENT),
+    "services/phone/streams.py": (2, "the stream's text facet beside its other filters (exact-characters mode "
+                                     "included), and the fixed 'sync' label: " + IDENT),
+    "services/phone/timeline_lens.py": (1, "the timeline's text facet, the same facet as the streams'"),
+    "services/phone/link_edges.py": (2, "every payment between two people's accounts that names the other person: "
+                                        "an exhaustive evidence count, like Corroborate's"),
 }
 
 

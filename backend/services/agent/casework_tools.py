@@ -14,11 +14,12 @@ whether or not it exists elsewhere.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import select, text
 
 NOT_IN_CASE = "Not in this case."
 LINK_STATE_NOTE = ("Links with link_state here: %d. What they collected was corrected, read differently or set aside "
@@ -143,6 +144,27 @@ def _phone_link_count(links: list[dict]) -> int:
     return sum(1 for l in links if str(l["target_type"]).startswith("phone_") or l["target_type"] == "statement_check")
 
 
+ENTRY_ID = re.compile(r"[?&]entry=([0-9a-fA-F-]{36})")
+
+
+def case_search_entry_ids(conn, case_id, words: str) -> list[uuid.UUID]:
+    """The casework entries the shared case search finds for ``words``, every page of it. Model ranking and other
+    phrasings are off: a list filter calls no chat model."""
+    from services import case_search
+    ids: list[uuid.UUID] = []
+    offset = 0
+    while True:
+        page = case_search.search(conn, case_id, words, kinds=("casework",), rank=False, phrase=False, limit=50,
+                                  offset=offset, use_cache=False)
+        for hit in page["hits"]:
+            found = ENTRY_ID.search(hit.get("cite") or "")
+            if found and uuid.UUID(found.group(1)) not in ids:
+                ids.append(uuid.UUID(found.group(1)))
+        if page.get("next_offset") is None:
+            return ids
+        offset = page["next_offset"]
+
+
 def casework(db, case_id, *, kinds=(), search=None, tag=None, offset=0, limit=20) -> dict[str, Any]:
     """Notes, findings and theories, newest first, each with its links cited."""
     from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
@@ -152,8 +174,9 @@ def casework(db, case_id, *, kinds=(), search=None, tag=None, offset=0, limit=20
     if kinds:
         cond.append(WorkspaceEntry.entry_type.in_(list(kinds)))
     if search and search.strip():
-        pattern = "%%%s%%" % search.strip()
-        cond.append(or_(WorkspaceEntry.title.ilike(pattern), WorkspaceEntry.body.ilike(pattern)))
+        # lx-sharedsearch: the words are searched by the shared case search (words and meaning, every page read),
+        # then the other filters apply to the entries it found; a failure raises, no partial list is returned
+        cond.append(WorkspaceEntry.id.in_(case_search_entry_ids(conn, case_id, search.strip())))
     if tag and tag.strip():
         t = tag.strip()
         cond.append(WorkspaceEntry.tags.contains([t]) if db.get_bind().dialect.name == "postgresql"
@@ -181,9 +204,11 @@ def casework(db, case_id, *, kinds=(), search=None, tag=None, offset=0, limit=20
     nxt = offset + len(items) if offset + len(items) < total else None
     return {"schema": _schema("casework"), "case_id": str(case_id), "available": True, "total_matching": total,
             "returned": len(items), "has_more": nxt is not None, "next_offset": nxt, "items": items,
-            "coverage": "Read %d of %d casework entries%s%s." % (
+            "coverage": "Read %d of %d casework entries%s%s%s." % (
                 len(items), total, " (%s)" % ", ".join(kinds) if kinds else "",
-                " tagged %s" % tag.strip() if tag and tag.strip() else ""),
+                " tagged %s" % tag.strip() if tag and tag.strip() else "",
+                " found by the case search for %r (the words, and entries close in meaning)" % search.strip()
+                if search and search.strip() else ""),
             "limitation": ("Only %d of %d are in this result; read on with offset %d." % (len(items), total, nxt))
             if nxt is not None else None, "link_states": _link_state_note(marked)}
 
