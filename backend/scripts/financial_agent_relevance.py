@@ -89,6 +89,34 @@ def expand(judged: dict) -> list[dict]:
     return out
 
 
+def rating_sets(export_path, out_dir, log=lambda *a: print(*a, flush=True)):
+    """Judged sets from people's answer ratings (lx-agenttools: scripts/export_answer_rating_cases.py), one per case,
+    written to ``out_dir`` (private; real questions never enter the repo). A rated question with picked records is
+    a judged query through meaning search, the records picked as relevant; one with none picked is counted only."""
+    doc = json.load(open(export_path))
+    items = doc.get('items') if isinstance(doc, dict) else doc
+    by_case, unpicked = {}, 0
+    for it in items or []:
+        rel = [r for r in it.get('relevant') or [] if r.get('any') or r.get('all')]
+        if not rel or not it.get('case_id') or not (it.get('question') or '').strip():
+            unpicked += 1
+            continue
+        by_case.setdefault(it['case_id'], []).append(dict(
+            id=str(it['id']), kind='rating', tool='search_by_meaning',
+            args=dict(query=it['question'].strip(), limit=50), relevant=rel, decoys=it.get('decoys') or [],
+            complaint=it.get('complaint')))
+    os.makedirs(out_dir, mode=0o700, exist_ok=True)
+    paths = []
+    for case_id, qs in sorted(by_case.items()):
+        path = os.path.join(out_dir, 'ratings-%s.json' % case_id[:8])
+        with open(path, 'w') as f:
+            json.dump(dict(case='ratings-%s' % case_id[:8], case_id=case_id, queries=qs), f, indent=1)
+        paths.append(path)
+    log('answer ratings: %d rated questions with picked records in %d cases are judged; %d with none picked are '
+        'counted, not scored' % (sum(len(q) for q in by_case.values()), len(by_case), unpicked))
+    return paths
+
+
 def guard_process():
     """Read-only Postgres and no chat model, as the replay scripts do (financial_agent_fit_replay.guard_process)."""
     os.environ.setdefault('LOUPE_FIT_ALLOW_EMBEDDINGS', '1')
@@ -236,6 +264,8 @@ def table(agg):
 
 def cmd_run(args):
     paths = existing_sets(args.set)
+    if getattr(args, 'ratings', None):
+        paths += rating_sets(args.ratings, os.path.join(GATE_DIR, 'ratings'))
     runs = run_sets(paths, kinds=args.kinds, repeat=args.repeat, only=args.only, dump=args.dump)
     write_runs(args.out, runs, paths)
     for line in table(runs[0]['aggregate']):
@@ -379,6 +409,8 @@ def interleaved(paths, kinds, repeat, base_backend, cand_backend, log_path, log=
 
 def cmd_gate(args):
     paths = existing_sets(args.set)
+    if getattr(args, 'ratings', None):
+        paths += rating_sets(args.ratings, os.path.join(GATE_DIR, 'ratings'))
     sha = _sha('.')
     lines = ['relevance gate for %s at %s, %s UTC' % (args.label, sha[:12], time.strftime('%Y-%m-%d %H:%M',
                                                                                           time.gmtime()))]
@@ -436,6 +468,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
     p = sub.add_parser('run')
     p.add_argument('--set', action='append')
+    p.add_argument('--ratings', help='answer ratings export (scripts/export_answer_rating_cases.py); judged too')
     p.add_argument('--out', required=True)
     p.add_argument('--repeat', type=int, default=None, help='runs per query; default: as its kind asks')
     p.add_argument('--kinds', nargs='*')
@@ -449,6 +482,7 @@ def main(argv=None):
     p.add_argument('--json')
     p.add_argument('files', nargs='+')
     p = sub.add_parser('gate')
+    p.add_argument('--ratings', help='answer ratings export (scripts/export_answer_rating_cases.py); judged too')
     p.add_argument('--label', required=True, help='your job name')
     p.add_argument('--set', action='append')
     p.add_argument('--kinds', nargs='*')

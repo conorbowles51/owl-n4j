@@ -253,3 +253,26 @@ def test_a_fuller_report_that_cites_a_smaller_share_is_not_a_loss():
     assert R.compare_reports([thin, thin], [full])['verdict'] == 'PASS'
     bare = R.score_report(re.sub(R.CITATION, '', open(SAMPLE).read()), rb)
     assert R.compare_reports([full], [bare])['verdict'] == 'FAIL'
+
+
+def test_answer_ratings_become_judged_sets_per_case(tmp_path):
+    """lx-agenttools' rating export: a rated question with picked records is judged through meaning search; one
+    with none picked is counted, not scored; sets are written outside the repo, one per case."""
+    items = [dict(id='rating-1', kind='rating', complaint='missed', question='who paid the rent', case_id='c1' * 8,
+                  relevant=[dict(id='picked', any=['rec://aaaa'])], decoys=[]),
+             dict(id='rating-2', kind='rating', complaint='thin', question='anything odd', case_id='c1' * 8,
+                  relevant=[], decoys=[]),
+             dict(id='rating-3', kind='rating', complaint='not relevant', question='the April transfer',
+                  case_id='d2' * 8, relevant=[dict(id='picked', any=['txn://bbbb'])], decoys=[])]
+    export = tmp_path / 'ratings.json'
+    export.write_text(json.dumps(dict(items=items)))
+    said = []
+    paths = G.rating_sets(str(export), str(tmp_path / 'out'), log=said.append)
+    assert len(paths) == 2
+    sets = [json.load(open(p)) for p in paths]
+    assert [len(s['queries']) for s in sets] == [1, 1]
+    q = sets[0]['queries'][0]
+    assert (q['tool'], q['kind'], q['args']) == ('search_by_meaning', 'rating', dict(query='who paid the rent', limit=50))
+    assert '2 rated questions' in said[0] and '1 with none picked' in said[0]
+    plan = G.plan_queries(paths, log=lambda *a: None)
+    assert [p[2]['id'] for p in plan] == ['rating-1', 'rating-3']
