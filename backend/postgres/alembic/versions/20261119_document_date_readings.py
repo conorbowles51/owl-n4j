@@ -1,14 +1,14 @@
 """Dates read from document text, one row per reading, with the words and page they came from (lx-docdates B).
 
 Revision ID: 20261119_document_date_readings
-Revises: 20261118_answer_ratings_chat
+Revises: 20261118_corroborate_claims
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "20261119_document_date_readings"
-down_revision = "20261118_answer_ratings_chat"
+down_revision = "20261118_corroborate_claims"
 branch_labels = None
 depends_on = None
 
