@@ -888,7 +888,8 @@ def _named_money(named: dict) -> str:
 
 
 def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, person_b=None, identity_b=None,
-                              start=None, end=None, with_records=False, offset=0, limit=DEFAULT_LIMIT) -> dict:
+                              start=None, end=None, with_records=False, offset=0, limit=DEFAULT_LIMIT,
+                              suggestions=None) -> dict:
     """One edge between two people (02 11.2): messages, calls and emails between them on every phone, and the money
     between them from the ledger (verified p0-p2 summed per currency, p3 stated beside it, never summed across
     currencies), with the payments behind the money listed and cited."""
@@ -913,7 +914,8 @@ def contact_and_money_between(conn, case_id, *, person_a=None, identity_a=None, 
                 if not side["keys"]:
                     # The count over no identity is never given as no contact (always on); counting through the
                     # suggested identities is item D's.
-                    found = suggested_identities(conn, case_id, subject["dossier_id"]) if fit.on("D") else []
+                    use_suggested = fit.on("D") if suggestions is None else suggestions  # chat always counts them
+                    found = suggested_identities(conn, case_id, subject["dossier_id"]) if use_suggested else []
                     if not found:
                         # The phone's own owner record naming them (phone_coverage's owner), read as theirs with
                         # that basis stated: never "no identity" for a person phone_coverage names as an owner.

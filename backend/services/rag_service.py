@@ -2210,6 +2210,9 @@ Only include candidates with score >= 5."""
             # Phone text is not embedded (02 section 9.8): it is found by the folded search, read in full.
             phone_windows = self._phone_windows(question, case_id, debug_log)
             chunk_results = list(chunk_results) + phone_windows
+            # Who contacted whom: the calls and messages between the people the question names, counted through the
+            # identities Loupe suggests when no person has linked them (lx-agentquick D10, chat).
+            chunk_results = self._phone_contact_passages(question, case_id, debug_log) + list(chunk_results)
         if selected_phone:
             chunk_results = selected_phone + list(chunk_results)
         chunk_search_info = debug_log.get("chunk_search") or {}
@@ -2710,6 +2713,22 @@ Only include candidates with score >= 5."""
         if debug_log is not None:
             debug_log["phone_selected"] = {"asked": len(phone_context.get("record_ids") or []), "read": read}
         return found, read
+
+    def _phone_contact_passages(self, question: str, case_id: str,
+                                debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
+        """One passage per pair of people the question names: their calls, messages and emails, same count as the agent."""
+        try:
+            from postgres.session import _get_engine
+            from services.phone import chat_identity
+            with _get_engine().connect() as conn:
+                found = chat_identity.passages(conn, case_id, question)
+        except Exception as exc:  # the answer goes on without it, and the debug log says why
+            if debug_log is not None:
+                debug_log["phone_contact"] = {"error": str(exc)[:300]}
+            return []
+        if debug_log is not None:
+            debug_log["phone_contact"] = {"pairs": len(found)}
+        return found
 
     def _phone_windows(self, question: str, case_id: str, debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """Up to 8 phone message windows found lexically for the question's terms (02 section 9.8)."""
