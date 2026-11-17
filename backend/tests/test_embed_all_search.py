@@ -167,3 +167,18 @@ def test_the_queries_of_one_search_go_side_by_side_and_read_back_the_same_hits()
     serial = S.meaning_hits("c", [0.1], Coll(rows), None, ["ledger", "accounts", "parties"])
     assert [(h["area"], h["key"], h["distance"]) for h in hits] == [(h["area"], h["key"], h["distance"]) for h in serial]
     assert [h["area"] for h in hits] == ["ledger", "accounts", "parties"]
+
+
+def test_connections_of_one_subject_and_source_are_one_hit_and_rank_after_source_records():
+    def rel(key, b, dist):
+        title = "storage agreement unit 212 mentioned in %s" % b
+        return ("%s. read from: %s" % (title, b),
+                meta("relationships", key, title=title, person="storage agreement unit 212 " + b, cite="/cases/c/graph"), dist)
+    rows = [rel("r%d" % i, "place %d" % i, 0.5 + i * 0.01) for i in range(5)]
+    rows += [("rental agreement page", meta("ledger", "t1", cite="txn://t1"), 0.9),
+             ("storage message", meta("ledger", "t2", cite="txn://t2"), 0.95)]
+    hits = S.meaning_hits("c", [0.1], Coll(rows), None, ["relationships", "ledger"])
+    assert [h["key"] for h in hits if h["area"] == "relationships"] == ["r0"]
+    assert [h for h in hits if h["area"] == "relationships"][0]["also"] == 4
+    fused = S.fuse(hits, [], 10)
+    assert [h["key"] for h in fused][:2] == ["t1", "t2"]  # the source records come before the derived graph text

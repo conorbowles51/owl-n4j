@@ -26,6 +26,8 @@ ALL_AREAS = tuple(AREAS) + ("phone_text", "documents", "entities")
 MAX_DISTANCE = 1.44  # squared L2 of unit vectors: cosine 0.28 and above. Measured on the demo case, 17 Nov: relevant hits
 # score cosine 0.31 to 0.50, a query with no answer ("burner") scores 0.22 to 0.24 against the nearest unrelated text
 SNIPPET = 400
+DERIVED_AREAS = frozenset({"relationships"})  # graph text the engine wrote from a source; the source record ranks first
+DERIVED_OFFSET = 3  # a derived hit ranks as if this many places further down its own area's list
 FETCH = 60
 
 
@@ -122,7 +124,7 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
     if person:
         who = person.casefold()
         hits = [h for h in hits if who in (h["person"] + " " + h["text"]).casefold()]
-    kept, seen = [], set()
+    kept, seen, subjects = [], set(), {}
     # Each area's own order: the best hit of every area comes before the second hit of any. Measured on the demo case,
     # one list by raw similarity let phone call lines ("Phone 4 | Phone") crowd out a voice-note transcript that says
     # "do not call the other phone" for the query "the other phone".
@@ -131,13 +133,31 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
         one = (h["area"], h["cite"] or h["key"], h["title"])  # two passages of one page are one hit: the nearer stays
         if h["area"] in ("documents",) and one in seen:
             continue
+        if h["area"] in DERIVED_AREAS:  # connections of one subject and one source are one fact told five ways
+            who = _subject(h)
+            first = subjects.setdefault((h["area"], h["cite"], who), h)
+            if first is not h:
+                first["also"] = first.get("also", 0) + 1
+                continue
         seen.add(one)
         kept.append(h)
     counts: dict[str, int] = {}
     for h in kept:  # kept is in distance order: the count so far in the area is its rank there
         counts[h["area"]] = counts.get(h["area"], 0) + 1
-        h["area_rank"] = counts[h["area"]]
+        h["area_rank"] = counts[h["area"]] + (DERIVED_OFFSET if h["area"] in DERIVED_AREAS else 0)
     return kept
+
+
+def _subject(h: dict) -> str:
+    """The first node of a connection: its title is ``<a> <kind> <b>`` and its person field is ``<a> <b>``."""
+    title, person = (h.get("title") or "").casefold(), (h.get("person") or "").casefold()
+    n = 0
+    while n < min(len(title), len(person)) and title[n] == person[n]:
+        n += 1
+    cut = title[:n]
+    if n < len(title) and title[n] != " " and " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.strip() or title
 
 
 def word_hits(conn, case_id, terms: list[str], areas, *, phone=None, person=None, date_from=None, date_to=None) -> list[dict]:
