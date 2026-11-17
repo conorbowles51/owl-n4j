@@ -79,7 +79,7 @@ export function QuestionMenu({ caseId, onClose, initialScope }: { caseId: string
               </ul>
               {d.left_out.count > 0 && <p role="status">{d.left_out.count.toLocaleString("en-US")} chosen items are not in this case and are left out.</p>}
             </div>
-            <ScopeBar scope={scope} onChange={(next) => { setScope(next); setPicked(null) }} preview={d} />
+            <ScopeBar caseId={caseId} scope={scope} onChange={(next) => { setScope(next); setPicked(null) }} preview={d} />
             <div role="radiogroup" aria-label="Questions" className="flex flex-col gap-1">
               {d.questions.map((q) => (
                 <label key={q.kind} className="flex cursor-pointer items-start gap-2 rounded border px-2 py-1 has-[:checked]:border-primary has-[:checked]:bg-primary/10">

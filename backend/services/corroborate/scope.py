@@ -41,12 +41,20 @@ def in_scope(item: dict[str, Any], scope: dict[str, Any], zone: ZoneInfo) -> tup
         names = {rules.name_key(n) for n in (item.get("names") or []) + [item.get("label") or ""]}
         if not any(p and any(p in n for n in names) for p in people):
             return False, False
-    needs_time = any(scope.get(k) for k in ("from", "to", "recurring"))  # a relative window is applied in apply()
+    needs_time = any(scope.get(k) for k in ("from", "to", "recurring", "window"))  # a relative window is applied in apply()
     if not needs_time:
         return True, False
     when = rules.parse_when(item.get("at"))
     if when is None:
         return True, True
+    win = scope.get("window")
+    if win:
+        # An exact window of instants (an incident time plus or minus hours). A day-only item cannot be placed in it.
+        lo, hi = rules.parse_when(win.get("from_at")), rules.parse_when(win.get("to_at"))
+        if item.get("precision") == "day":
+            return True, True
+        if (lo and when < lo) or (hi and when > hi):
+            return False, False
     local = when.astimezone(zone)
     if scope.get("from") and local.date() < datetime.fromisoformat(scope["from"]).date():
         return False, False
@@ -90,6 +98,9 @@ def words(scope: dict[str, Any]) -> list[str]:
     out = []
     if scope.get("from") or scope.get("to"):
         out.append(f"{scope.get('from') or 'start'} to {scope.get('to') or 'end'} ({zone})")
+    if scope.get("window"):
+        w = scope["window"]
+        out.append(f"{w.get('from_at') or 'start'} to {w.get('to_at') or 'end'}" + (f" ({w['label']})" if w.get("label") else ""))
     rec = scope.get("recurring")
     if rec:
         day = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][int(rec["weekday"])] if rec.get("weekday") is not None else "every day"
@@ -109,7 +120,7 @@ def words(scope: dict[str, Any]) -> list[str]:
 def apply(items: list[dict[str, Any]], scope: dict[str, Any] | None) -> dict[str, Any]:
     """What is in scope, and what is outside it by kind, so nothing is hidden silently."""
     scope = dict(scope or {})
-    if not any(scope.get(k) for k in ("from", "to", "recurring", "relative", "kinds", "people")):
+    if not any(scope.get(k) for k in ("from", "to", "recurring", "window", "relative", "kinds", "people")):
         return {"active": False, "kept": items, "outside": {}, "outside_total": 0, "no_time": 0, "words": []}
     zone = _zone(scope.get("zone"))
     rel = scope.get("relative")

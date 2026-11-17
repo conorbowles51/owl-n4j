@@ -17,7 +17,7 @@ from postgres.session import get_db
 from routers.case_access import require_case_edit, require_case_view
 from routers.users import get_current_db_user
 from services import case_selections
-from services.corroborate import area, claims as saved_claims, facts, pasted, preview, questions, subsets
+from services.corroborate import area, claims as saved_claims, facts, incidents, pasted, preview, questions, subsets
 from services.corroborate import scope as scope_rules
 from services.relations import runs
 
@@ -46,6 +46,12 @@ def read_preview(case_id: UUID, request: PreviewRequest, db: Session = Depends(g
         raise HTTPException(status_code=422, detail=str(exc))
     kept = (composed.get("scope") or {}).get("kept")
     return questions.enrich(CaseStore(db, case_id), kept if kept is not None else members, composed)
+
+
+@router.get("/{case_id}/corroborate/incidents", dependencies=[Depends(require_case_view)])
+def list_incidents(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Dates the case's theories and findings state, for the preset windows round an incident."""
+    return {"incidents": incidents.incident_dates(db, case_id)}
 
 
 class ListRequest(BaseModel):

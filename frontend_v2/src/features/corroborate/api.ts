@@ -26,13 +26,15 @@ export interface Scope {
   to?: string
   zone?: string
   recurring?: { weekday: number | null; from_hour: number; to_hour: number }
+  /** An exact window of instants, set by a preset round an incident time. */
+  window?: { from_at: string; to_at: string; label?: string }
   relative?: { anchor_kind: string; person?: string; before_min: number; after_min: number }
   kinds?: string[]
   people?: string[]
 }
 
 export function scopeIsEmpty(s: Scope): boolean {
-  return !s.from && !s.to && !s.recurring && !s.relative && !(s.kinds?.length) && !(s.people?.length)
+  return !s.from && !s.to && !s.window && !s.recurring && !s.relative && !(s.kinds?.length) && !(s.people?.length)
 }
 
 export interface Preview {
@@ -62,6 +64,15 @@ export interface AreaSelection {
   places: number
   by_kind: Record<string, number>
   total: number
+}
+
+export interface Incident {
+  date: string
+  time: string | null
+  words: string
+  entry_id: string
+  entry_type: string
+  title: string
 }
 
 export interface Subset {
@@ -103,6 +114,7 @@ export const corroborateAPI = {
   run: (caseId: string, body: { members: RelationMember[]; question: Record<string, unknown>; surface: string }) =>
     fetchAPI<{ group: { id: string; member_count: number; left_out: number } }>(`${base(caseId)}/run`, { method: "POST", body }),
   area: (caseId: string, areas: number[][][]) => fetchAPI<AreaSelection>(`${base(caseId)}/area`, { method: "POST", body: { areas } }),
+  incidents: (caseId: string) => fetchAPI<{ incidents: Incident[] }>(`${base(caseId)}/incidents`),
   subsets: (caseId: string) => fetchAPI<{ subsets: Subset[] }>(`${base(caseId)}/subsets`),
   saveSubset: (caseId: string, name: string, members: RelationMember[]) =>
     fetchAPI<{ id: string; member_count: number }>(`${base(caseId)}/subsets`, { method: "POST", body: { name, members } }),

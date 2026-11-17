@@ -1,3 +1,4 @@
+import { IncidentPresets } from "./IncidentPresets"
 import { scopeIsEmpty, type Preview, type Scope } from "./api"
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -11,7 +12,7 @@ const KIND_WORDS: Record<string, string> = {
  * live count, and always a sentence on what is outside the scope, per kind. The zone is named. Nothing is removed from
  * the selection; the scope only chooses what the question is asked of.
  */
-export function ScopeBar({ scope, onChange, preview }: { scope: Scope; onChange: (s: Scope) => void; preview: Preview }) {
+export function ScopeBar({ scope, onChange, preview, caseId }: { scope: Scope; onChange: (s: Scope) => void; preview: Preview; caseId?: string }) {
   const zone = scope.zone ?? "UTC"
   const kinds = preview.taken.items.map((i) => i.type)
   const set = (patch: Partial<Scope>) => onChange({ ...scope, ...patch })
@@ -79,6 +80,7 @@ export function ScopeBar({ scope, onChange, preview }: { scope: Scope; onChange:
           {preview.scope.anchors_date_only > 0 && ` ${preview.scope.anchors_date_only.toLocaleString("en-US")} ${preview.scope.anchors_date_only === 1 ? "has" : "have"} only a date, so a window of minutes cannot be placed round ${preview.scope.anchors_date_only === 1 ? "it" : "them"}.`}
         </p>
       )}
+      {caseId && <IncidentPresets caseId={caseId} onPick={(s) => onChange({ ...scope, from: undefined, to: undefined, window: undefined, ...s })} />}
       <fieldset className="mt-1 flex flex-wrap gap-2 text-xs">
         <legend className="text-muted-foreground">Record kinds</legend>
         {kinds.map((k) => (
