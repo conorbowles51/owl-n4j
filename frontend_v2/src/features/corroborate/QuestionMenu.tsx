@@ -70,7 +70,7 @@ export function QuestionMenu({ caseId, onClose }: { caseId: string; onClose: () 
         {d && (
           <div className="flex flex-col gap-3 text-sm">
             <div>
-              <p className="font-medium">What Loupe takes from your {d.members.toLocaleString("en-US")} items</p>
+              <p className="font-medium">What Loupe takes from your {d.members.toLocaleString("en-US")} {d.members === 1 ? "item" : "items"}</p>
               <ul className="list-disc pl-5">
                 <li>People: {d.taken.people.length ? d.taken.people.slice(0, 6).map((p) => p.label).join(", ") + (d.taken.people.length > 6 ? ` and ${d.taken.people.length - 6} more` : "") : "none named"}</li>
                 <li>Times: {d.taken.times.from ? `${d.taken.times.from} to ${d.taken.times.to} (${d.taken.times.dated} dated${d.taken.times.undated ? `, ${d.taken.times.undated} undated` : ""})` : "no dates in the selection"}</li>

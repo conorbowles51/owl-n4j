@@ -33,7 +33,7 @@ export function GraphLasso({ caseId, data, graphRef }: { caseId: string; data: G
     const fg = graphRef.current
     if (!fg || shape.length < 3) return setNote("Draw a closed shape round the items to corroborate.")
     // Positions live in the drawing engine's own nodes, not in the case data.
-    const drawn = fg.graphData() as unknown as { nodes: DrawnNode[]; links: DrawnLink[] }
+    const drawn = (fg as unknown as { graphData: () => { nodes: DrawnNode[]; links: DrawnLink[] } }).graphData()
     const { hits, unplaced, links } = lassoGraph(drawn.nodes, drawn.links, (x, y) => fg.graph2ScreenCoords(x, y), shape)
     if (!hits.length) return setNote(`Nothing is inside the shape${unplaced.length ? `; ${unplaced.length} items have no position yet` : ""}.`)
     selectNodes(hits.map((n) => n.key))

@@ -11,7 +11,7 @@ import { memberFromElement, isTyping } from "./item-target"
 
 const preview: Preview = {
   members: 3, selected: 3,
-  scope: { active: false, words: [], outside: {}, outside_total: 0, no_time: 0, kept: null },
+  scope: { active: false, words: [], outside: {}, outside_total: 0, no_time: 0, anchors: null, anchors_date_only: 0, kept: null },
   left_out: { count: 1, examples: ["x"] },
   taken: { people: [{ key: "kell", label: "Kell", count: 2 }, { key: "okafor", label: "Okafor", count: 1 }], times: { from: "2026-05-18", to: "2026-05-19", dated: 3, days: 2, undated: 0 }, places: [], items: [{ type: "financial_transaction", count: 3, words: "3 payments" }] },
   questions: [
