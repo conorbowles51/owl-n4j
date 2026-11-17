@@ -29,14 +29,14 @@ if (!["folder", "zip"].includes(kind) || !path || !shots) {
 }
 mkdirSync(shots, { recursive: true })
 const name = basename(path)
-const SYNTHETIC_CASES = { training: CASES.training, phonesOnly: CASES.phonesOnly, demo: CASES.demo }
+const SYNTHETIC_CASES = { training: CASES.training, phonesOnly: CASES.phonesOnly, demo: CASES.demo, second: CASES.second }
 const isSyntheticReport = () => {
   const report = join(path, "Report.xml")
   return kind === "folder" && existsSync(report) && readFileSync(report, "utf8").slice(0, 20000).includes("SYNTHETIC")
 }
 const caseId = PHONE_REFERENCE_CASES[arg("case")] ?? (SYNTHETIC_CASES[arg("case")] && isSyntheticReport() ? SYNTHETIC_CASES[arg("case")] : undefined)
 if (!caseId) {
-  console.error("--case must be phoneRef1, phoneRef2 or phoneRef3, or training, phonesOnly or demo for a synthetic report folder")
+  console.error("--case must be phoneRef1, phoneRef2 or phoneRef3, or training, phonesOnly, demo or second for a synthetic report folder")
   process.exit(2)
 }
 const login = readLogin()

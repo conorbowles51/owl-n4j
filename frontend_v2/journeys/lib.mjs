@@ -9,6 +9,9 @@ export const CASES = {
   verification: "cded78d0-e659-44cc-940d-d8f8c8012760",
   // "Demo: State v. Mateo Ruiz (synthetic)": the invented defence case, the primary test environment (docs/demo-case.md)
   demo: "b75f3f2c-ffa1-4260-8fe9-6f5db4e9d4df",
+  // "Demo 2: State v. Priya Halloran (synthetic)": the second invented case of the relevance and report tests
+  // (evidence-engine/tests/relevance/second_case.py), so nothing is tuned to the demo case alone
+  second: "3f3489a0-b8ee-4e1a-9ec4-83e8ca327d4c",
 }
 /** Writes and screenshots happen only in these cases (CB-INDEX rule 6). */
 export const SYNTHETIC = new Set(Object.values(CASES))

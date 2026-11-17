@@ -1,0 +1,74 @@
+{
+ "checked": "2026-11-17 (lx-relevancetest)",
+ "how": "Live cases: case-insensitive substring count over financial_transactions.counterparty_raw, phone_participations.name_in_record, phone_identity_names.name, financial_accounts holder and institution names, users.name, evidence_files.original_filename (owl_db, read-only), and every Neo4j node name; counts only, no value printed. No map search: an invented address that geocodes to a real place only misplaces a pin in this invented case.",
+ "names": [
+  {
+   "name": "Birchmoor Lane",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Corwen Street Dental",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Dorian Pell",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Fennick Market",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Halbrook Federal Bank",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Lake Orrin",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Lake Orrin Cabins",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Marisol Teague",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Nell Ashgrove",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Nettlefield Savings",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Owen Brackley",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Paul Halloran",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Pell Hardware",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Priya Halloran",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Quarrow Dental Supply",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Tamsworth County",
+   "live_case_hits": 0
+  },
+  {
+   "name": "Teague Practice Services",
+   "live_case_hits": 0
+  }
+ ]
+}

@@ -2,7 +2,7 @@
 // Upload a folder of the demo case's documents or statements through the live Evidence page (lx-demo D), as a person
 // does it: signed in once with the jobs login over plain http, Upload > Folder, into the demo case only. Waits for the
 // page's receipt ("Uploaded n files.") and prints each distinct progress line. Prints counts and page lines only.
-//   node journeys/live-demo-upload.mjs --path <folder> --out <file.json> [--minutes 60]
+//   node journeys/live-demo-upload.mjs --path <folder> --out <file.json> [--minutes 60] [--case demo|second]
 // The folder must come from `fixture_builder.py demo` (its PDFs carry the SYNTHETIC banner), or nothing is uploaded.
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -20,7 +20,12 @@ if (!path || !out) {
   process.exit(2)
 }
 const minutes = Number(arg("minutes", "60"))
-const caseId = CASES.demo
+const which = arg("case", "demo")
+if (!["demo", "second"].includes(which)) {
+  console.error("--case must be demo or second (the invented cases)")
+  process.exit(2)
+}
+const caseId = CASES[which]
 const files = (dir) => readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? files(join(dir, n)) : [join(dir, n)]))
 const pdfs = files(path).filter((f) => f.endsWith(".pdf"))
 if (!pdfs.length || !pdfs.every((f) => readFileSync(f).includes("SYNTHETIC"))) {
