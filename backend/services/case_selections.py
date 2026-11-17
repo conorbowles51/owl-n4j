@@ -45,7 +45,7 @@ GROUP_MEMBER_TYPES: dict[str, tuple[str, ...]] = {
     "map_selection": ("graph_entity", "phone_record"),
     "step_trail": ("history_step",),
     "relation_query": ("graph_entity", "financial_transaction", "financial_account", "financial_party", "evidence",
-                       "timeline_event", "phone_record", "entry", "place"),
+                       "timeline_event", "phone_record", "entry", "place", "person", "phone", "document_row"),
 }
 
 
@@ -202,6 +202,34 @@ def _is_place(value: str) -> bool:
     return -90 <= lat <= 90 and -180 <= lon <= 180 and 0 <= radius <= 100_000
 
 
+def _people(db, case_id, ids):
+    """A person is a dossier (case profile) of the case."""
+    from sqlalchemy import text as _text
+    wanted = [str(u) for u in (_uuid(i) for i in ids) if u]
+    if not wanted:
+        return set()
+    return {str(r[0]) for r in db.execute(_text(
+        "SELECT id FROM case_profiles WHERE case_id = :c AND id = ANY(CAST(:i AS uuid[]))"), {"c": str(case_id), "i": wanted})}
+
+
+def _phones(db, case_id, ids):
+    """A phone is an active extraction of the case."""
+    from sqlalchemy import text as _text
+    wanted = [str(u) for u in (_uuid(i) for i in ids) if u]
+    if not wanted:
+        return set()
+    return {str(r[0]) for r in db.execute(_text(
+        "SELECT id FROM phone_extractions WHERE case_id = :c AND standing = 'active' AND id = ANY(CAST(:i AS uuid[]))"),
+        {"c": str(case_id), "i": wanted})}
+
+
+def _document_rows(db, case_id, ids):
+    """A row of a document is ``<evidence file id>:<row number>``; the file must be in the case."""
+    files = {i: i.split(":", 1)[0] for i in ids if ":" in i and i.split(":", 1)[1].isdigit()}
+    found = _evidence(db, case_id, list(set(files.values())))
+    return {i for i, f in files.items() if str(_uuid(f)) in found}
+
+
 MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "graph_entity": _graph,
     "financial_transaction": _transactions,
@@ -213,6 +241,9 @@ MEMBER_CHECKS: dict[str, Callable[[Any, uuid.UUID, list[str]], set[str]]] = {
     "place": lambda db, case_id, ids: {i for i in ids if _is_place(i)},
     "entry": _entries,
     "history_step": _steps,
+    "person": _people,
+    "phone": _phones,
+    "document_row": _document_rows,
 }
 
 
