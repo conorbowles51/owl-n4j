@@ -534,8 +534,9 @@ def shared_silence(streams: dict[str, list[datetime]] | None, minimum: timedelta
                 if not both or both[1] - both[0] < minimum:
                     continue
                 hours = _hours_of(*both)
-                ok_a = _usual(hist[pa], len(gaps[pa]), hours)
-                ok_b = _usual(hist[pb], len(gaps[pb]), hours)
+                longer_than_a_night = both[1] - both[0] >= timedelta(hours=24)
+                ok_a = not longer_than_a_night and _usual(hist[pa], len(gaps[pa]), hours)
+                ok_b = not longer_than_a_night and _usual(hist[pb], len(gaps[pb]), hours)
                 row = {"start": both[0].isoformat(), "end": both[1].isoformat(),
                        "hours": round((both[1] - both[0]).total_seconds() / 3600, 1), "usual_a": ok_a, "usual_b": ok_b}
                 (usual if ok_a and ok_b else unusual).append(row)
@@ -543,9 +544,10 @@ def shared_silence(streams: dict[str, list[datetime]] | None, minimum: timedelta
                  f"in the period; phone {pb[:8]} has {_n(len(gaps[pb]))}.")
         for row in unusual:
             who = "either phone's" if not (row["usual_a"] or row["usual_b"]) else "one phone's"
+            where = ("longer than a night" if row["hours"] >= 24 else f"outside {who} usual quiet hours")
             out.append(candidate("shared_silence", [pa, pb], "time", "moderate" if row["hours"] >= 24 else "weak",
                                  [f"Both phones were silent for {row['hours']} hours from {row['start'][:16].replace('T', ' ')} "
-                                  f"to {row['end'][11:16]}, outside {who} usual quiet hours."],
+                                  f"to {row['end'][5:16].replace('T', ' ')}, {where}."],
                                  chance={"words": words, "reading": "uncommon", "share_of_days": None}, extra=row))
         if usual:
             longest = max(usual, key=lambda r: r["hours"])

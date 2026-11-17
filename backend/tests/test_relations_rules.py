@@ -156,3 +156,11 @@ def test_a_silence_outside_both_phones_usual_hours_is_its_own_candidate():
     c, _ = rules.shared_silence(None, gaps=usual)
     kinds = sorted(x["strength"] for x in c)
     assert "faint" in kinds and any(k in ("weak", "moderate") for k in kinds)
+
+
+def test_a_silence_of_a_day_or_more_is_longer_than_a_night_never_the_usual_quiet_hours():
+    long = (T0, T0 + timedelta(days=40))
+    nights = [(T0 - timedelta(days=d, hours=-10), T0 - timedelta(days=d, hours=-20)) for d in range(-300, -200)]
+    c, _ = rules.shared_silence(None, gaps={"A": [long] + nights, "B": [long] + nights})
+    big = [x for x in c if x["detail"].get("hours", 0) >= 24]
+    assert big and "longer than a night" in big[0]["reasons"][0] and big[0]["strength"] == "moderate"
