@@ -66,3 +66,52 @@ def test_board_shows_each_day_and_the_alert():
     lines = W.board_lines(m, {'search_case': dict(calls=10, empty=5)}, W.worsened(m, TODAY), TODAY)
     assert lines[0].startswith('| Day (UTC) |') and len([x for x in lines if x.startswith('| 2026-')]) == 5
     assert any('search_case 5 of 10' in x for x in lines) and any('sent to lx-casesearch' in x for x in lines)
+
+
+def _score(rank):
+    found = ['R'] if rank and rank <= 10 else []
+    return dict(units=10, zero=False, relevant=1, ranks={'R': rank}, first_relevant=rank, rr=1.0 / rank if rank else 0,
+                decoy_ranks={}, decoys_top10=[], found_at_10=found, recall_at_10=len(found), found_at_50=found,
+                recall_at_50=len(found))
+
+
+def _origin(at, sha, ranks, kind='meaning', set_hash='s1'):
+    return dict(meta=dict(at=at, sha=sha, set_hash=set_hash), runs=[dict(queries={
+        'demo:q%d' % i: dict(kind=kind, tool='search_by_meaning', case='demo', score=_score(r))
+        for i, r in enumerate(ranks)})])
+
+
+def test_origin_drift_from_data_alone_goes_to_the_owner():
+    # Same code, the data moved: 17 Nov 07:35 to 09:31 meaning MRR fell 0.58 to 0.44 and the gate (both sides on the
+    # same data) never saw it.
+    before = _origin('2026-11-17T07:35:00Z', 'd9dadc843704', [1, 1, 2, 4, 1, 3])
+    after = _origin('2026-11-17T09:31:00Z', '97dba47b113c', [2, 2, 4, 16, 2, 11])
+    out = W.origin_drift([after, before])
+    assert [d['kind'] for d in out] == ['meaning']
+    d = out[0]
+    assert d['owner'] == 'lx-embedall' and d['prev_sha'] == 'd9dadc843704' and d['sha'] == '97dba47b113c'
+    assert set(d['fell']) == {'mrr', 'recall_at_10'}
+    assert d['out_of_top10'] == ['demo:q3 R', 'demo:q5 R']
+    text = W.drift_text(d)
+    assert 'mrr 0.68 to 0.32' in text and 'recall@10 1.00 to 0.67' in text and 'd9dadc843704..97dba47b113c' in text
+    lines = W.board_lines({}, {}, [], TODAY, out)
+    assert any('Origin meaning search fell' in x and 'lx-embedall' in x for x in lines)
+
+
+def test_origin_drift_ignores_noise_small_kinds_other_sets_and_queries_one_side_lacks():
+    base = _origin('2026-11-17T07:00:00Z', 'a', [1, 1, 2, 4, 1, 3])
+    assert W.origin_drift([base, _origin('2026-11-17T08:00:00Z', 'a', [1, 1, 2, 4, 1, 3])]) == []
+    assert W.origin_drift([base, _origin('2026-11-17T08:00:00Z', 'b', [1, 1, 2, 5, 1, 3])]) == []  # 0.01 is noise
+    small = _origin('2026-11-17T07:00:00Z', 'a', [1, 1, 1], kind='exact')
+    assert W.origin_drift([small, _origin('2026-11-17T08:00:00Z', 'b', [9, 9, 9], kind='exact')]) == []
+    assert W.origin_drift([base, _origin('2026-11-17T08:00:00Z', 'b', [9] * 6, set_hash='s2')]) == []
+    grown = _origin('2026-11-17T08:00:00Z', 'b', [1, 1, 2, 4, 1, 3])
+    grown['runs'][0]['queries']['demo:new'] = dict(kind='meaning', score=_score(None))
+    assert W.origin_drift([base, grown]) == []
+    rejudged = _origin('2026-11-17T08:00:00Z', 'b', [9] * 6)
+    for q in rejudged['runs'][0]['queries'].values():
+        q['score']['ranks']['F-other-area'] = None  # more records judged (cross-area carriers), not a worse search
+    assert W.origin_drift([base, rejudged]) == []
+    phones = W.origin_drift([_origin('2026-11-17T07:00:00Z', 'a', [1] * 6, kind='phones'),
+                             _origin('2026-11-17T08:00:00Z', 'b', [3] * 6, kind='phones')])
+    assert [d['owner'] for d in phones] == ['lx-casesearch']

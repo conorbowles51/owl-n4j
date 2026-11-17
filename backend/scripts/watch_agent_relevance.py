@@ -10,11 +10,19 @@ days of the week before (at least MIN_DAYS of them): same-settings days differ b
 number is sent once, as a work message, to the job that owns it (OWNERS), with the numbers.
     set -a; . <app>/.env; set +a; PYTHONPATH=. python scripts/watch_agent_relevance.py --board <md> --state <json>
 Reads through a read-only session; writes only the board file and the state file.
+
+Origin drift: every relevance gate keeps its origin side (GATE_DIR/*.base.json, live data, read-only). Two origin
+runs of the same judged set are compared over the queries both ran, judged on the same records; a kind with DRIFT_MIN_QUERIES+ judged queries whose
+MRR or recall at 10 fell by more than DRIFT is sent to its owner (DRIFT_OWNERS). The gate itself cannot see such a
+fall: it asks origin and the candidate on the same data, so a change in the data (new vectors from the embedding
+sweep) moves both sides. Measured 17 Nov: the same code 35 minutes apart moved recall at 10 by 0.008; the sweep's
+graph connection vectors moved meaning MRR 0.58 to 0.44 and phone search MRR 0.58 to 0.41 between 07:35 and 09:31.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import statistics
 import subprocess
@@ -40,6 +48,11 @@ OWNERS = {
     "refused_share": ("graph queries refused", "up", "lx-agentquick", "the graph query forms the prompt teaches (D8)"),
     "lookups_median": ("lookups per answer (median)", "down", "lx-deepinvest", "the plan and completeness check (D18)"),
 }
+GATE_DIR = "/mnt/owl-data/tmp/relevance-gate"
+DRIFT = 0.05
+DRIFT_MIN_QUERIES = 5
+DRIFT_OWNERS = {"meaning": ("lx-embedall", "meaning search and the vectors it reads (D3)")}
+DRIFT_DEFAULT_OWNER = ("lx-casesearch", "the case search service and the agent's search tools (D1/D12/D19)")
 
 
 def _empty(call: dict) -> bool:
@@ -115,7 +128,65 @@ def worsened(metrics: dict, today: date) -> list[dict]:
     return out
 
 
-def board_lines(metrics: dict, tools: dict, alerts: list[dict], today: date) -> list[str]:
+def _origin_rows(doc: dict, only: set) -> list[dict]:
+    qs = (doc.get("runs") or [{}])[0].get("queries") or {}
+    return [dict(kind=q["kind"], score=q["score"], id=k) if "score" in q else dict(kind=q["kind"], error=1, id=k)
+            for k, q in qs.items() if k in only]
+
+
+def origin_drift(docs: list[dict]) -> list[dict]:
+    """Pure: the kinds whose numbers fell between the last two origin runs of one judged set (gate .base.json)."""
+    from services.agent.relevance_eval import aggregate
+    by_set = defaultdict(list)
+    for d in docs:
+        m = d.get("meta") or {}
+        if m.get("at") and m.get("set_hash") and d.get("runs"):
+            by_set[m["set_hash"]].append(d)
+    out = []
+    for docs_ in by_set.values():
+        if len(docs_) < 2:
+            continue
+        prev, last = sorted(docs_, key=lambda d: d["meta"]["at"])[-2:]
+        pq, lq = prev["runs"][0]["queries"], last["runs"][0]["queries"]
+        # Only queries judged on the same records: a change in the judging is not a change in the search.
+        common = {k for k in set(pq) & set(lq) if set((pq[k].get("score") or {}).get("ranks") or {})
+                  == set((lq[k].get("score") or {}).get("ranks") or {})}
+        pr, lr = _origin_rows(prev, common), _origin_rows(last, common)
+        a, b = aggregate(pr), aggregate(lr)
+        for kind in sorted(b):
+            if kind == "all":
+                continue
+            judged = sum(1 for r in lr if r["kind"] == kind and r.get("score", {}).get("relevant"))
+            if judged < DRIFT_MIN_QUERIES:
+                continue
+            fell = {m: (a[kind][m], b[kind][m]) for m in ("mrr", "recall_at_10")
+                    if a[kind][m] is not None and b[kind][m] is not None and a[kind][m] - b[kind][m] > DRIFT}
+            if not fell:
+                continue
+            found = lambda rows: {(r["id"], x) for r in rows if r["kind"] == kind and "score" in r
+                                  for x in r["score"]["found_at_10"]}
+            owner, owns = DRIFT_OWNERS.get(kind, DRIFT_DEFAULT_OWNER)
+            out.append(dict(kind=kind, owner=owner, owns=owns, fell=fell, queries=judged,
+                            prev_sha=prev["meta"].get("sha", "")[:12], prev_at=prev["meta"]["at"],
+                            sha=last["meta"].get("sha", "")[:12], at=last["meta"]["at"],
+                            out_of_top10=sorted("%s %s" % k for k in found(pr) - found(lr))))
+    return out
+
+
+def drift_text(d: dict) -> str:
+    nums = "; ".join("%s %.2f to %.2f" % (m.replace("_at_", "@"), a, b) for m, (a, b) in d["fell"].items())
+    lost = ", ".join(d["out_of_top10"][:8]) + (" and %d more" % (len(d["out_of_top10"]) - 8)
+                                               if len(d["out_of_top10"]) > 8 else "")
+    return ("Agent relevance watch: origin's %s search fell between two gate runs of the same judged set (%d judged "
+            "queries; a fall over %.2f counts): %s. Origin %s at %s to %s at %s, both read the live data at the time. "
+            "Out of the top 10: %s. Files: %s/*-vs-<origin>.base.json. If no search code changed between the two "
+            "(git log %s..%s), the data moved (new vectors from the embedding sweep). You own %s: find the cause and "
+            "fix it with a test that fails on the old code."
+            % (d["kind"], d["queries"], DRIFT, nums, d["prev_sha"], d["prev_at"], d["sha"], d["at"], lost or "none",
+               GATE_DIR, d["prev_sha"], d["sha"], d["owns"]))
+
+
+def board_lines(metrics: dict, tools: dict, alerts: list[dict], today: date, drift: list[dict] = ()) -> list[str]:
     def f(v, pct=True):
         return "-" if v is None else ("%.0f%%" % (100 * v) if pct else ("%g" % v))
     lines = ["| Day (UTC) | Answers | Search calls | Empty searches | Results used | Graph queries refused | "
@@ -132,6 +203,10 @@ def board_lines(metrics: dict, tools: dict, alerts: list[dict], today: date) -> 
     for a in alerts:
         lines.append("- **%s worsened on %s: %s (the week before: %s to %s over %d days); sent to %s**" % (
             a["label"], a["day"], a["value"], a["low"], a["high"], a["days"], a["owner"]))
+    for d in drift:
+        lines.append("- **Origin %s search fell, %s to %s: %s; sent to %s**" % (
+            d["kind"], d["prev_at"], d["at"], "; ".join("%s %.2f to %.2f" % (m.replace("_at_", "@"), a, b)
+                                                       for m, (a, b) in d["fell"].items()), d["owner"]))
     lines.append("- A day counts with %d+ answers; a number worsens outside the range of the week before. "
                  "Gate for releases: scripts/financial_agent_relevance.py gate." % MIN_RUNS)
     return lines
@@ -150,6 +225,7 @@ def main(argv=None) -> int:
     ap.add_argument("--state", required=True)
     ap.add_argument("--days", type=int, default=15)
     ap.add_argument("--no-tell", action="store_true")
+    ap.add_argument("--gate-dir", default=GATE_DIR)
     args = ap.parse_args(argv)
     from sqlalchemy import text
     from services.agent.tools import _financial_session
@@ -185,9 +261,26 @@ def main(argv=None) -> int:
             sent.add(key)
         else:
             print("tell failed: exit %s %s" % (res.returncode, res.stderr[-200:]), file=sys.stderr)
+    import glob
+    docs = []
+    for path in glob.glob(os.path.join(args.gate_dir, "*.base.json")):
+        try:
+            docs.append(json.load(open(path)))
+        except (OSError, ValueError):
+            print("unreadable gate file %s" % path, file=sys.stderr)
+    drift = origin_drift(docs)
+    for d in drift:
+        key = "drift:%s:%s:%s" % (d["kind"], d["prev_at"], d["at"])
+        if key in sent or args.no_tell:
+            continue
+        res = subprocess.run([TELL, d["owner"], "relevance-watch", drift_text(d)], capture_output=True, text=True,
+                             timeout=60)
+        if res.returncode == 0:
+            sent.add(key)
+        else:
+            print("tell failed: exit %s %s" % (res.returncode, res.stderr[-200:]), file=sys.stderr)
     with open(args.board + ".tmp", "w") as f:
-        f.write("\n".join(board_lines(metrics, tools, alerts, today)) + "\n")
-    import os
+        f.write("\n".join(board_lines(metrics, tools, alerts, today, drift)) + "\n")
     os.replace(args.board + ".tmp", args.board)
     with open(args.state, "w") as f:
         json.dump(dict(sent=sorted(sent)[-200:], at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())), f)
