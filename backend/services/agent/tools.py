@@ -267,6 +267,11 @@ class TimelineArgs(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     limit: int = Field(25, ge=1, le=100)
+    people: list[str] | None = Field(None, max_length=10, description=(
+        "Only events of these people or other entities: a name, alias or exact entity key each. An event counts "
+        "when it is that entity or is connected to it. Names that match no entity are listed in the result."))
+    text: str | None = Field(None, max_length=200, description=(
+        "Only events whose name, summary or notes hold every one of these words, in any order."))
     cursor: str | None = Field(None, description="next_cursor from the previous page of graph events.")
     additions_offset: int = Field(0, ge=0, description="additions.next_offset from the previous page of investigator additions.")
 
@@ -2486,8 +2491,39 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         limit: int = 25,
         cursor: str | None = None,
         additions_offset: int = 0,
+        people: list[str] | None = None,
+        text: str | None = None,
     ) -> dict[str, Any]:
+        words = list(dict.fromkeys((text or "").lower().split()))[:12]
+        person_keys: list[str] | None = None
+        filters: dict[str, Any] = {}
+        if people:
+            person_keys, unmatched, matched = [], [], []
+            for asked in dict.fromkeys(p.strip() for p in people if p and p.strip()):
+                rows = graph_service.search_nodes(query=asked, limit=5, case_id=context.case_id)
+                exact = [r for r in rows if r.get("key") == asked]
+                rows = exact or rows
+                if context.allowed_entity_keys is not None:
+                    rows = [r for r in rows if r.get("key") in context.allowed_entity_keys]
+                if not rows:
+                    unmatched.append(asked)
+                    continue
+                matched.append({"asked": asked, "entities": [{"key": r.get("key"), "name": r.get("name")}
+                                                             for r in rows]})
+                person_keys.extend(r["key"] for r in rows if r.get("key"))
+            filters["people"] = {"matched": matched, "unmatched": unmatched}
+            if not person_keys:
+                return context.result(
+                    "get_timeline_events",
+                    {"events": [], "count": 0, "total": 0, "next_cursor": None, "filters": filters,
+                     "investigator_additions": None},
+                    summary="No entity in this case matches %s, so no timeline events were read. Check the spelling "
+                            "or search_graph_entities for the name." % ", ".join("'%s'" % u for u in unmatched))
+        if words:
+            filters["text_words"] = words
         page = timeline_service.get_timeline_page(
+            person_keys=person_keys,
+            text_words=words or None,
             event_types=event_types,
             start_date=start_date,
             end_date=end_date,
@@ -2501,6 +2537,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             ),
         )
         page = {**page, "events": [{**e, "source": "graph event"} for e in page.get("events") or []]}
+        if filters:
+            page["filters"] = filters
         # Investigator additions (timeline_entries: ledger payments, money trails, findings, phone records),
         # labelled by source, with their own total and page (agent-ledger D).
         additions = None
@@ -3557,7 +3595,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             get_timeline_events,
             name="get_timeline_events",
-            description=("Retrieve chronological events from the current case: graph events (source 'graph event', "
+            description=("Retrieve chronological events from the current case, filtered by type, date window, people (names, "
+                "aliases or keys) and words in the event's text: graph events (source 'graph event', "
                 "paged by next_cursor, with total) and the investigator's own Timeline additions (ledger payments, "
                 "money trails, findings, phone records; source 'investigator addition: ...', paged by "
                 "additions.next_offset, with total)."),

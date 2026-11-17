@@ -232,6 +232,8 @@ class TimelineService:
         case_id: str,
         entity_keys: Optional[List[str]] = None,
         hidden_keys: Optional[List[str]] = None,
+        person_keys: Optional[List[str]] = None,
+        text_words: Optional[List[str]] = None,
     ) -> tuple[str, Dict]:
         conditions = [
             "sort_date IS NOT NULL",
@@ -248,6 +250,20 @@ class TimelineService:
             conditions.append("NOT n.key IN $ledger_repeat_keys")
             params["ledger_repeat_keys"] = hidden_keys
 
+        if person_keys:
+            # lx-agenttools D9: an event is the person's when it is that entity or is connected to it.
+            conditions.append(
+                "(n.key IN $person_keys OR size([(n)--(p) WHERE p.key IN $person_keys "
+                "AND p.case_id = $case_id | 1]) > 0)"
+            )
+            params["person_keys"] = list(dict.fromkeys(person_keys))
+        if text_words:
+            # Every word, in any order, in the event's name, summary or notes.
+            conditions.append(
+                "ALL(w IN $text_words WHERE toLower(coalesce(n.name, '') + ' ' + coalesce(n.summary, '') "
+                "+ ' ' + coalesce(toString(n.notes), '')) CONTAINS w)"
+            )
+            params["text_words"] = list(dict.fromkeys(text_words))
         if event_types:
             conditions.append("labels(n)[0] IN $types")
             params["types"] = event_types
@@ -352,6 +368,8 @@ class TimelineService:
         cursor: str | None = None,
         entity_keys: Optional[List[str]] = None,
         _whole_max: int | None = None,
+        person_keys: Optional[List[str]] = None,
+        text_words: Optional[List[str]] = None,
     ) -> Dict:
         """Get timeline events using stable keyset pagination."""
         whole = _whole_max is not None
@@ -371,6 +389,8 @@ class TimelineService:
             case_id,
             entity_keys,
             hidden_keys,
+            person_keys,
+            text_words,
         )
         connected_scope_filter = (
             "AND connected.key IN $entity_keys" if entity_keys is not None else ""
@@ -454,6 +474,8 @@ class TimelineService:
             case_id,
             entity_keys,
             hidden_keys,
+            person_keys,
+            text_words,
         )
         count_query = f"""
             MATCH (n)
