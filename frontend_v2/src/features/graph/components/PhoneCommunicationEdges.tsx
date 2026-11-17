@@ -72,7 +72,7 @@ function PairRow({ caseId, a, b, aName, bName, picked, onPick, missing }: {
       </td>
       <td className="hidden py-0.5 pr-2 whitespace-nowrap sm:table-cell" role={q.isError ? "alert" : undefined}>{words}</td>
       <td className="py-0.5 text-right">
-        <Button size="sm" variant="outline" className="h-5 px-2 text-xs" disabled={q.isError}
+        <Button size="sm" variant="outline" className="h-auto min-h-5 whitespace-normal px-2 text-xs" disabled={q.isError}
           aria-label={`Show the messages between ${A} and ${B}`}
           onClick={() => navigate(pairConversationsHref(caseId, a, b, win))}>
           Show their messages
@@ -130,7 +130,7 @@ function ChosenPairs({ caseId, pairs }: { caseId: string; pairs: Pair[] }) {
   return (
     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" aria-label="Add the chosen pairs">
       {!current && (
-        <Button size="sm" variant="outline" disabled={!!busy || !settings.isSuccess} onClick={keep}>
+        <Button size="sm" variant="outline" className="h-auto min-h-7 min-w-0 shrink whitespace-normal text-left" disabled={!!busy || !settings.isSuccess} onClick={keep}>
           {busy ? `Saving ${fmt(busy.done)} of ${fmt(busy.total)}…` : `Add the ${n === 1 ? "chosen pair's" : `${fmt(n)} chosen pairs'`} messages to a dossier, theory or note`}
         </Button>
       )}
@@ -239,7 +239,7 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
           )}
           <div className="flex flex-wrap items-center gap-x-4">
             <DateRange />
-            <Button size="sm" variant="outline" className="mt-1.5 h-auto min-h-6 whitespace-normal px-2 text-left text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
+            <Button size="sm" variant="outline" className="mt-1.5 h-auto min-h-6 min-w-0 shrink whitespace-normal px-2 text-left text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
               {flow ? "Show the list of pairs" : "Show one person's contacts, each direction apart"}
             </Button>
           </div>
