@@ -116,7 +116,11 @@ class ErrorsForTheModelTests(unittest.TestCase):
         self.assertEqual(len(out["data"]["items"]), 4)
         with on(""):
             out = page.invoke({"result_id": "res_9", "path": ["not_in_digest", "items"]})
-        self.assertEqual(out["status"], "error")
+        # Off, the path is not mended: it is said to be wrong and the largest part's first page (read above) is not
+        # sent again. Since 17 Nov a wrong path is not an error in either mode (run defb0282 stopped on three).
+        self.assertEqual(out["status"], "success")
+        self.assertEqual(out["data"]["wrong_path"], ["not_in_digest", "items"])
+        self.assertIn("already read", out["summary"])
 
 
 class PromptTests(unittest.TestCase):

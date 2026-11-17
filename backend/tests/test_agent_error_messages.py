@@ -60,15 +60,38 @@ def test_a_document_read_says_where_the_file_id_comes_from_and_which_argument_ca
     assert "expected_revision" in str(revision.value) and "next_offset" in str(revision.value)
 
 
-def test_a_wrong_result_path_is_answered_with_the_paths_the_result_has_not_a_bare_key():
+def _page_tool(views):
     ctx = AgentToolContext(case_id="00000000-0000-0000-0000-0000000000d1")
-    ctx.model_views["res_one"] = {"data": {"items": [{"a": i} for i in range(5)], "total": 5}}
-    tool = {t.name: t for t in make_agent_tools(ctx)}["read_tool_result_page"]
+    ctx.model_views.update(views)
+    return ctx, {t.name: t for t in make_agent_tools(ctx)}["read_tool_result_page"]
+
+
+@pytest.mark.parametrize("switches", [None, ""])   # fit items on by default, and every item off (live 17 Nov)
+def test_a_wrong_result_path_reads_the_largest_part_and_lists_the_paths_not_an_error(switches, monkeypatch):
+    # lx-deepinvest 17 Nov: live run defb0282 (switches B and T off) asked paths items, events, items; each was an
+    # error, and the stall guard stopped the run with no answer after the third.
+    if switches is None:
+        monkeypatch.delenv("LOUPE_AGENT_FIT", raising=False)
+    else:
+        monkeypatch.setenv("LOUPE_AGENT_FIT", switches)
+    _ctx, tool = _page_tool({"res_one": {"data": {"items": [{"a": i} for i in range(5)], "total": 5}}})
     out = tool.invoke({"result_id": "res_one", "path": ["data", "results"]})
-    assert out["status"] == "error"
-    assert out["error"] != "'results'" and "no part at data/results" in out["error"]
+    assert out["status"] == "success"
+    assert out["data"]["path_used"] == ["data", "items"] and out["data"]["items"][0] == {"a": 0}
     assert {"path": ["data", "items"], "items": 5} in out["data"]["paths"]
-    assert "paths" in out["summary"]
+    assert "no part at data/results" in out["summary"] and "'results'" != out["summary"]
+    # the path without its root is read at that root
+    root = tool.invoke({"result_id": "res_one", "path": ["items"], "offset": 2})
+    assert root["status"] == "success" and root["data"]["items"][0] == {"a": 2}
+    # a second wrong path does not read the same first page again
+    again = tool.invoke({"result_id": "res_one", "path": ["events"]})
+    assert again["status"] == "success" and "already read" in again["summary"] and "items" not in again["data"]
+
+
+def test_a_right_path_with_an_offset_outside_it_is_still_said_as_an_error():
+    _ctx, tool = _page_tool({"res_one": {"data": {"items": [{"a": i} for i in range(5)], "total": 5}}})
+    out = tool.invoke({"result_id": "res_one", "path": ["data", "items"], "offset": 9})
+    assert out["status"] == "error" and "0 to 5" in out["error"]
 
 
 def test_a_refused_ledger_read_puts_the_reason_in_the_summary_line_the_model_reads_first():

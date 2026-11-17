@@ -2872,23 +2872,12 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                     'next_read': {'tool': 'read_artifact', **details['read_full_metadata']}},
                     summary='Use the exact read_artifact arguments in next_read to retrieve the full metadata. '
                             'This is an explicit continuation, not missing source material.')
+            # A wrong path is answered with the right one, whatever the fit switches (lx-agentfit B: 4 demo page reads
+            # named a path the result does not have; lx-deepinvest 17 Nov: run defb0282 on live, switches B and T
+            # off, stopped with no answer after three wrong-path errors tripped the stall guard). The path without its
+            # "data" or "artifact" root is read at that root; otherwise the first page of the result's largest part
+            # is read, with the parts that can be read by page listed.
             fixed = None
-            if not (fit.on("B") or fit.on("T")):
-                original_id = (view.get('data') or {}).get('page_of') if isinstance(view.get('data'), dict) else None
-                original_id = original_id if original_id in context.model_views else result_id
-                recovery = page_for_model(context.model_views[original_id], budget_chars=4_000, result_id=original_id)
-                # lx-agenttools: the bare KeyError text ('items') said nothing; 49 recorded calls ended on it.
-                said = (f"The result has no part at {'/'.join(map(str, path))} (nothing named {exc})."
-                        if isinstance(exc, KeyError) else (str(exc) or "That path is not in the result."))
-                return context.result("read_tool_result_page", {"error": said,
-                    "wrong_path": path, "paths": [dict(path=p, items=n) for p, n in sequence_paths(view)[:20]],
-                    "_paging": recovery.get('_paging') or [], "original_result_id": original_id},
-                    summary=said + " The parts that can be read by page are in paths; use one of them, or the "
-                    "unchanged result_id, path and offset in _paging. Do not guess a new offset.",
-                    status="error", error=said)
-            # A wrong path is answered with the right one (lx-agentfit B: 4 demo page reads named a path the result
-            # does not have). The path without its "data" or "artifact" root is read at that root; otherwise the
-            # result's pageable parts are listed with their lengths.
             options = sequence_paths(view)
             for root in ("data", "artifact"):
                 candidate = [root, *path]
@@ -2896,11 +2885,33 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                     fixed = candidate
                     break
             if fixed is None:
-                return context.result("read_tool_result_page", {"wrong_path": path,
-                    "reason": str(exc) or "That path is not in the result.",
-                    "paths": [dict(path=p, items=n) for p, n in options[:20]]},
-                    summary=("That path is not in result %s. Its parts that can be read by page are listed in "
-                             "paths; call again with one of them." % source))
+                said = (f"The result has no part at {'/'.join(map(str, path))} (nothing named {exc})."
+                        if isinstance(exc, KeyError) else (str(exc) or "That path is not in the result."))
+                if not options or any(p == path for p, _ in options):
+                    # Nothing to page, or the path is right and the offset is not: said as it is.
+                    return context.result("read_tool_result_page", {"error": said, "wrong_path": path,
+                        "paths": [dict(path=p, items=n) for p, n in options[:20]]},
+                        summary=said + (" Use one of the parts listed in paths with an offset inside it." if options
+                                        else " Nothing in this result is read by page; read it whole without a path."),
+                        status="error", error=said)
+                fixed, offset = options[0][0], 0
+                paths = [dict(path=p, items=n) for p, n in options[:20]]
+                page = page_for_model(view, budget_chars=budget, result_id=source, offset=0, path=fixed)
+                note = page["_paging"][0]
+                key = (source, tuple(note["path"]), 0)
+                if key in context.page_reads:
+                    return context.result("read_tool_result_page", {"wrong_path": path, "reason": said,
+                        "paths": paths}, summary=(f"{said} Its first page at {'/'.join(map(str, fixed))} was already "
+                        "read in this run. The parts that can be read by page are listed in paths; call again with "
+                        "one of them and the offset after what you have read."))
+                context.page_reads.add(key)
+                out = context.result("read_tool_result_page", {"page_of": source, **page, "wrong_path": path,
+                    "path_used": fixed, "paths": paths},
+                    summary=(f"{said} Read instead {note.get('unit', 'items')} 0 to {note['returned'] - 1} of "
+                             f"{note['total']} at {'/'.join(map(str, fixed))}, its largest part; {note['remaining']} "
+                             "remain. Other parts that can be read by page are listed in paths."))
+                context.reread_source[out["result_id"]] = source
+                return out
             page = page_for_model(view, budget_chars=budget, result_id=source, offset=offset, path=fixed)
         note = page["_paging"][0]
         where = "/".join(map(str, note["path"]))
