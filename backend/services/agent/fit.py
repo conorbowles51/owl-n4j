@@ -27,6 +27,32 @@ ITEMS = ("B", "C", "D", "F", "W", "R", "T", "P", "M", "G", "X", "N", "K", "S", "
 # W (round 2, R3): the answer at the tool limit keeps its sources. A fix, not an experiment: on once its tests pass
 # (lx-agentfit round 2). Reverse: a measured limit answer that is worse with it.
 ON_BY_DEFAULT: tuple[str, ...] = ("W",)
+# lx-agentquick G (16 Nov 2026): every item that is off has an owner, a reason and the date of its next measurement
+# (tests/test_agent_fit_off_items.py fails on an item that has none, or whose date has passed). The measurement of
+# S, QP, BN and DC against a base is in progress: results with their numbers are recorded here as each lands.
+# MEASURED holds the result of a finished measurement: item -> (date, verdict, numbers); an item with a result
+# that passed is in ON_BY_DEFAULT, one that did not stays off with the numbers kept here.
+_UNMEASURED = "off since 11 Nov: the release gate failed on what could be measured before the DeepSeek balance ran out"
+OFF_ITEMS: dict[str, tuple[str, str, str]] = {
+    # item: (owner, reason, next measurement date)
+    "S": ("lx-agentquick", _UNMEASURED + "; case briefing, measured alone from 17 Nov", "2026-11-24"),
+    "Q": ("lx-agentquick", _UNMEASURED + "; planning, measured with P from 17 Nov", "2026-11-24"),
+    "P": ("lx-agentquick", _UNMEASURED + "; planning, measured with Q from 17 Nov", "2026-11-24"),
+    "B": ("lx-agentquick", _UNMEASURED + "; working notes, measured with N from 17 Nov", "2026-11-24"),
+    "N": ("lx-agentquick", _UNMEASURED + "; free re-reads, measured with B from 17 Nov", "2026-11-24"),
+    "D": ("lx-agentquick", _UNMEASURED + "; hidden tools check_statements, get_period_activity, measured with C", "2026-11-24"),
+    "C": ("lx-agentquick", _UNMEASURED + "; hidden tool get_phone_company, measured with D", "2026-11-24"),
+    "F": ("lx-deepinvest", _UNMEASURED + "; other-side test of fact questions", "2026-12-01"),
+    "R": ("lx-deepinvest", _UNMEASURED + "; compact tool results for the model", "2026-12-01"),
+    "T": ("lx-deepinvest", "its Cypher parts are on for everyone since 17 Nov (lx-agentquick D); the tool error and page-path "
+                           "parts stay off, never measured alone", "2026-12-01"),
+    "M": ("lx-deepinvest", _UNMEASURED + "; several names or searches in one call", "2026-12-01"),
+    "G": ("lx-deepinvest", _UNMEASURED + "; graph tools for several entities", "2026-12-01"),
+    "X": ("lx-deepinvest", _UNMEASURED + "; a step's tool calls side by side", "2026-12-01"),
+    "K": ("lx-deepinvest", _UNMEASURED + "; cache-stable history", "2026-12-01"),
+    "A": ("lx-deepinvest", _UNMEASURED + "; answer requirements in the final request", "2026-12-01"),
+    "V": ("lx-deepinvest", _UNMEASURED + "; figure check before the answer is stored", "2026-12-01"),
+}
 # The tools each item adds; not offered to the model while the item is off.
 TOOLS = {"B": ("record_working_notes",), "C": ("get_phone_company",), "D": ("check_statements", "get_period_activity")}
 
