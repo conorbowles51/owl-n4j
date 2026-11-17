@@ -20,11 +20,11 @@ import type { GraphData } from "@/types/graph.types"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
 const TOOL_LABELS: Record<string, string> = {
-  "force-controls": "Force Controls",
-  analysis: "Graph Analysis",
-  similar: "Similar Entities",
-  cypher: "Cypher Query",
-  recycle: "Recycle Bin",
+  "force-controls": "Spacing of the picture",
+  analysis: "Most connected items and groups",
+  similar: "Items that may be the same",
+  cypher: "Query the graph database (Cypher)",
+  recycle: "Deleted items",
 }
 
 interface GraphSidePanelProps {

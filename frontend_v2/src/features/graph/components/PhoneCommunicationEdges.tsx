@@ -57,10 +57,10 @@ function PairRow({ caseId, a, b, aName, bName, picked, onPick, missing }: {
     <tr className="border-t border-border align-top hover:bg-muted/50" data-testid="contact-pair"
       onMouseEnter={() => setHover(k)} onMouseLeave={() => setHover(null)}
       onFocus={() => setHover(k)} onBlur={() => setHover(null)}>
-      <td className="py-1 pr-2">
+      <td className="w-12 py-0.5 pr-2">
         <input type="checkbox" checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label={`Choose ${A} and ${B}`} />
       </td>
-      <td className="py-1 pr-2">
+      <td className="py-0.5 pr-2">
         <span className="font-medium">{A}</span> and <span className="font-medium">{B}</span>
         {missing.length > 0 && (
           <span className="block text-muted-foreground">
@@ -68,9 +68,9 @@ function PairRow({ caseId, a, b, aName, bName, picked, onPick, missing }: {
           </span>
         )}
       </td>
-      <td className="py-1 pr-2 whitespace-nowrap" role={q.isError ? "alert" : undefined}>{words}</td>
-      <td className="py-1 text-right">
-        <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={q.isError}
+      <td className="py-0.5 pr-2 whitespace-nowrap" role={q.isError ? "alert" : undefined}>{words}</td>
+      <td className="py-0.5 text-right">
+        <Button size="sm" variant="outline" className="h-5 px-2 text-xs" disabled={q.isError}
           aria-label={`Show the messages between ${A} and ${B}`}
           onClick={() => navigate(pairConversationsHref(caseId, a, b, win))}>
           Show their messages
@@ -226,7 +226,7 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
         <span><span className="font-medium">People in contact:</span> {contactSummary(pairs.length)}</span>
       </button>
       {open && (
-        <div id="people-in-contact-body" className="mt-1 max-h-[45vh] overflow-auto pl-4.5">
+        <div id="people-in-contact-body" className="mt-1 max-h-[32vh] overflow-auto pl-4.5">
           <p className="text-muted-foreground">
             Each row is two people on the phones. The numbers count their messages, calls and emails, busiest first.
             Point at a row to see the two people on the graph; Show their messages opens the messages themselves.
@@ -235,15 +235,17 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges, shownKeys }: {
             // 07 section 8, SA-3 and SA-4: the pairs carry no money words; the absence is said once
             <p className="text-muted-foreground">{presence.data.phone_sentence}</p>
           )}
-          <DateRange />
-          <Button size="sm" variant="outline" className="mt-1.5 h-6 px-2 text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
-            {flow ? "Show the list of pairs" : "Show one person's contacts, each direction apart"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-x-4">
+            <DateRange />
+            <Button size="sm" variant="outline" className="mt-1.5 h-6 px-2 text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
+              {flow ? "Show the list of pairs" : "Show one person's contacts, each direction apart"}
+            </Button>
+          </div>
           {flow ? (
             <PhoneFlowView caseId={caseId} pairs={pairs.map(asPair)} />
           ) : (
             <>
-              <table className="mt-1.5 w-full border-collapse">
+              <table className="mt-1.5 w-full max-w-4xl border-collapse">
                 <thead>
                   <tr className="text-left text-muted-foreground">
                     <th scope="col" className="pr-2 font-normal">Choose</th>
