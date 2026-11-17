@@ -103,6 +103,24 @@ def graph_event_dates(case_id: str, keys: list[str]) -> dict[str, dict[str, Any]
     return out
 
 
+def graph_places(case_id: str, keys: list[str]) -> dict[str, dict[str, float]]:
+    """The coordinates a graph node of this case carries (a location the documents name, placed on the map), by key."""
+    from services.neo4j.driver import driver
+    out: dict[str, dict[str, float]] = {}
+    for start in range(0, len(keys), 1000):
+        with driver.session() as session:
+            rows = session.run(
+                "MATCH (n) WHERE n.case_id = $case_id AND n.key IN $keys AND n.latitude IS NOT NULL "
+                "AND n.longitude IS NOT NULL RETURN n.key AS key, n.latitude AS lat, n.longitude AS lon",
+                case_id=str(case_id), keys=keys[start:start + 1000])
+            for row in rows:
+                try:
+                    out[row["key"]] = {"lat": float(row["lat"]), "lon": float(row["lon"])}
+                except (TypeError, ValueError):
+                    continue
+    return out
+
+
 def _graph(db, case_id, ids):
     return graph_keys_in_case(str(case_id), ids)
 

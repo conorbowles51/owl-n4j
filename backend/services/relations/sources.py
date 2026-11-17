@@ -40,6 +40,8 @@ class DbSources:
         """Each member as an item: ref, type, label, at, precision, place, identifiers, names, amount, phone."""
         from services import theory_additions
         facts = {f["ref"]: f for f in theory_additions.member_facts(self.db, self.case, members)}
+        self._graph_coords = self._graph_places([m["id"] for m in members
+                                                 if m["type"] in ("graph_entity", "timeline_event")])
         items = []
         for m in members:
             ref = f"{m['type']}:{m['id']}"
@@ -62,7 +64,26 @@ class DbSources:
             item["precision"] = "day"
         item["names"] = [item["label"]]
 
-    _graph_entity = _timeline_event = _entry = _plain
+    _entry = _plain
+
+    def _graph_places(self, keys: list[str]) -> dict[str, dict[str, float]]:
+        if not keys:
+            return {}
+        try:
+            from services.case_selections import graph_places
+            return graph_places(str(self.case), keys)
+        except Exception:  # noqa: BLE001 - without the graph the members are read undated and unplaced, as before
+            return {}
+
+    def _graph_entity(self, item, m, fact):
+        """A graph node or timeline event: its date, and the place it carries (a location the documents name, placed
+        on the map), so place_overlap can pair it with a phone position or a payment's attached place."""
+        self._plain(item, m, fact)
+        at = getattr(self, "_graph_coords", {}).get(str(m["id"]))
+        if at:
+            item["place"] = {"lat": at["lat"], "lon": at["lon"], "radius_m": 0.0, "source": "placed from the documents"}
+
+    _timeline_event = _graph_entity
 
     def _financial_transaction(self, item, m, fact):
         row = self.db.execute(text(
