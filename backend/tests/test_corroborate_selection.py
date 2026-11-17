@@ -102,3 +102,41 @@ def test_a_paste_over_the_limit_is_refused_with_the_number():
     import pytest
     with pytest.raises(ValueError, match="2,001"):
         pasted.match(None, "c", "\n".join(str(1000000 + i) for i in range(2001)), finders=())
+
+
+class _Rows(list):
+    def execution_options(self, **kw):
+        return self
+
+
+class _Conn:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def execute(self, *a, **k):
+        return _Rows(self.rows)
+
+
+def _row(uid, ext, model, lon, lat):
+    from types import SimpleNamespace
+    return SimpleNamespace(record_uid=uid, extraction_id=ext, model_type=model, lon=lon, lat=lat)
+
+
+def test_a_drawn_area_takes_every_position_inside_it_and_the_places_and_counts_photos_apart():
+    from services.corroborate import area
+    square = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]
+    rows = [_row("u1", "e1", "Location", 0.5, 0.5), _row("u2", "e1", "Location", 0.5001, 0.5001),  # share one cluster
+            _row("u3", "e2", "Image", 0.2, 0.2), _row("u4", "e2", "Location", 5, 5),  # outside, same bbox query
+            _row("u1", "e1", "Location", 0.5, 0.5)]  # the same record twice counts once
+    places = lambda case, bbox: [{"key": "wh", "name": "Warehouse", "lat": 0.4, "lon": 0.4}, {"key": "far", "name": "Far", "lat": 3, "lon": 3}]
+    out = area.members_in_areas(_Conn(rows), "c", [square], places=places)
+    ids = [m["id"] for m in out["members"]]
+    assert ids == ["u1", "u2", "u3", "wh"]
+    assert out["phones"] == 2 and out["places"] == 1 and out["by_kind"] == {"positions": 2, "photos": 1}
+
+
+def test_an_area_with_fewer_than_three_corners_is_refused():
+    import pytest
+    from services.corroborate import area
+    with pytest.raises(ValueError, match="three corners"):
+        area.members_in_areas(_Conn([]), "c", [[[0, 0], [1, 1]]], places=lambda *a: [])

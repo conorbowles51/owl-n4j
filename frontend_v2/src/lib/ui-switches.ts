@@ -6,8 +6,8 @@ import { useSyncExternalStore } from "react"
  * ?<name>=off). It needs no release to flip, so a moderated session can turn it on for one participant's browser
  * only. Storage failures leave every switch off (07 4.2 item 13).
  */
-export type SwitchName = "phone-prototype"
-const KNOWN: SwitchName[] = ["phone-prototype"]
+export type SwitchName = "phone-prototype" | "corroborate-v2"
+const KNOWN: SwitchName[] = ["phone-prototype", "corroborate-v2"]
 const key = (name: SwitchName) => `loupe.switch.${name}`
 const listeners = new Set<() => void>()
 

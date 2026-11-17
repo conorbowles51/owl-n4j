@@ -2,7 +2,10 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import type { GroupInput, ItemInput, Surface } from "@/features/theory/api"
+import { SURFACE_WORDS, type GroupInput, type ItemInput, type Surface } from "@/features/theory/api"
+import { useSwitch } from "@/lib/ui-switches"
+import { addPart } from "@/features/corroborate/selection-store"
+import { QuestionMenu } from "@/features/corroborate/QuestionMenu"
 import { currentQuery, relationAPI, setCurrentQuery, toMembers } from "./api"
 
 const TYPE_WORDS: Record<string, string> = {
@@ -27,7 +30,38 @@ export interface LookIntoProps {
  * passage, a phone meeting and a graph entity from different screens form one group. Items the analysis cannot read are
  * named, never dropped without a word.
  */
-export function LookIntoButton({ caseId, surface, items, group, size = "sm", label = "Look into how these relate" }: LookIntoProps) {
+export function LookIntoButton(props: LookIntoProps) {
+  const v2 = useSwitch("corroborate-v2")
+  return v2 ? <CorroborateButton {...props} /> : <LookIntoClassic {...props} />
+}
+
+/** Corroborate v2 (lx-corroselect): the choice joins the case-wide selection, and the question menu opens on all of it. */
+function CorroborateButton({ caseId, surface, items, group, size = "sm" }: LookIntoProps) {
+  const [open, setOpen] = useState(false)
+  const converted = toMembers(items, group)
+  const total = group ? group.members.length : (items?.length ?? 0)
+  const first = items?.[0]?.target_label
+  const go = () => {
+    addPart(caseId, {
+      screen: SURFACE_WORDS[surface],
+      label: group ? group.words : total === 1 && first ? first : `${total.toLocaleString("en-US")} items`,
+      members: converted.members,
+      skipped: converted.skipped,
+    })
+    setOpen(true)
+  }
+  return (
+    <>
+      <Button size={size} variant="outline" disabled={total === 0} onClick={go}
+        title={total === 0 ? "Nothing is selected" : "Add this to your selection and choose a question to corroborate"}>
+        Corroborate
+      </Button>
+      {open && <QuestionMenu caseId={caseId} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function LookIntoClassic({ caseId, surface, items, group, size = "sm", label = "Look into how these relate" }: LookIntoProps) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

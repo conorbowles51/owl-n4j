@@ -43,7 +43,15 @@ def normalise(db, case_id, members: list[dict]) -> list[dict]:
     return out
 
 
-def save_group(db, *, case_id, members: list[dict], user=None, extends: str | None = None, surface: str = "relation") -> dict:
+def _question(raw: dict) -> dict:
+    """The question as the person left it: its kind and the chips (when, nights, who, what, compare with), as text."""
+    chips = raw.get("chips") if isinstance(raw.get("chips"), dict) else {}
+    return {"kind": str(raw.get("kind") or "")[:40], "text": str(raw.get("text") or "")[:500],
+            "chips": {k: str(v)[:300] for k, v in chips.items() if k in ("when", "nights", "who", "what", "compare_with")}}
+
+
+def save_group(db, *, case_id, members: list[dict], user=None, extends: str | None = None, surface: str = "relation",
+               question: dict | None = None) -> dict:
     """Save the group. ``extends`` is a group of this case whose members are kept and added to."""
     held: list[dict] = []
     if extends:
@@ -52,7 +60,8 @@ def save_group(db, *, case_id, members: list[dict], user=None, extends: str | No
             raise case_selections.SelectionError("The query to add to is not in this case.")
         held = [{k: v for k, v in m.items() if k in ("type", "id", "label", "quote")} for m in base["members"]]
     return case_selections.freeze(db, case_id=case_id, group_type="relation_query", members=held + normalise(db, case_id, list(members)),
-                                  how={"surface": surface, **({"extends": extends} if extends else {})},
+                                  how={"surface": surface, **({"extends": extends} if extends else {}),
+                                       **({"question": _question(question)} if question else {})},
                                   words=WORDS, user=user)
 
 

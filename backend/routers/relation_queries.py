@@ -32,6 +32,7 @@ class QueryRequest(BaseModel):
     extends: UUID | None = None
     surface: str = Field(default="relation", max_length=40)
     run: bool = True
+    question: dict[str, Any] | None = None
 
 
 @router.post("/{case_id}/relation-queries", dependencies=[Depends(require_case_edit)])
@@ -39,7 +40,8 @@ def create_query(case_id: UUID, request: QueryRequest, db: Session = Depends(get
                  user: User = Depends(get_current_db_user)) -> dict[str, Any]:
     try:
         group = runs.save_group(db, case_id=case_id, members=[m.model_dump(exclude_none=True) for m in request.members],
-                                user=user, extends=str(request.extends) if request.extends else None, surface=request.surface)
+                                user=user, extends=str(request.extends) if request.extends else None, surface=request.surface,
+                                question=request.question)
         run = runs.start(db, case_id=case_id, selection_id=group["id"], user=user) if request.run else None
     except case_selections.SelectionError as exc:
         db.rollback()

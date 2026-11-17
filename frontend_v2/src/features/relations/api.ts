@@ -83,7 +83,7 @@ export interface RelationQuery {
 const base = (caseId: string) => `/api/cases/${encodeURIComponent(caseId)}`
 
 export const relationAPI = {
-  create: (caseId: string, body: { members: RelationMember[]; extends?: string; surface?: string }) =>
+  create: (caseId: string, body: { members: RelationMember[]; extends?: string; surface?: string; question?: Record<string, unknown> }) =>
     fetchAPI<{ group: { id: string; member_count: number; left_out: number }; run: RelationRun | null }>(
       `${base(caseId)}/relation-queries`,
       { method: "POST", body: { ...body, run: true } },

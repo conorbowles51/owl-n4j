@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react"
 import { Outlet, useLocation, useMatch, useParams } from "react-router-dom"
-import { RelationTray } from "@/features/relations/RelationTray"
+import { TraySwitch } from "@/features/corroborate/TraySwitch"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import {
   ResizablePanelGroup,
@@ -167,7 +167,7 @@ export function CaseLayout() {
           )}
 
           {/* The look in progress follows the investigator on every case screen (fixed position) */}
-          <RelationTray />
+          <TraySwitch />
 
           {/* Collapsed rail for non-graph views */}
           {showCaseSidePanel && !narrowViewport && graphPanelCollapsed && (

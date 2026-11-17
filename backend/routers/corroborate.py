@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from postgres.session import get_db
 from routers.case_access import require_case_view
 from services import case_selections
-from services.corroborate import pasted, preview
+from services.corroborate import area, pasted, preview
 
 router = APIRouter(prefix="/api/cases", tags=["corroborate"])
 
@@ -44,5 +44,18 @@ class ListRequest(BaseModel):
 def match_list(case_id: UUID, request: ListRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         return pasted.match(db, case_id, request.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+class AreaRequest(BaseModel):
+    areas: list[list[list[float]]] = Field(min_length=1, max_length=50)
+
+
+@router.post("/{case_id}/corroborate/area", dependencies=[Depends(require_case_view)])
+def read_area(case_id: UUID, request: AreaRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Every phone position, photo and place inside the drawn areas, as members of a selection."""
+    try:
+        return area.members_in_areas(db.connection(), case_id, request.areas)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
