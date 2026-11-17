@@ -305,3 +305,22 @@ def test_gate_refuses_model_calls_at_peak_price(monkeypatch):
     with pytest.raises(SystemExit, match='01:00 and 04:00'):
         G.main(['gate', '--label', 't', '--model-calls', '10'])
     assert G.MODEL_CALLS_ENV not in os.environ
+
+
+def test_a_decoy_counts_only_in_the_record_a_whole_unit_cites():
+    month = {'cite': 'txn://t2', 'month': '2024-03', 'rows': [
+        {'txn': 'txn://t1', 'payee': 'Decoy Hardware'},
+        {'txn': 'txn://t2', 'payee': 'Acme Tools'},
+        {'txn': 'txn://t3', 'payee': 'Other Decoy'}]}
+    units = [month]
+    texts = [R.unit_text(u) for u in units]
+    decoys = [{'id': 'd1', 'any': ['decoy hardware']}, {'id': 'd2', 'any': ['acme tools']}]
+    s = R.score_query(texts, [{'id': 'a', 'any': ['acme tools']}], decoys, decoy_texts=[R.cited_text(u) for u in units])
+    assert s['found_at_10'] == ['a']
+    assert s['decoys_top10'] == ['d2']  # the neighbour row's decoy text is not the cited record
+
+
+def test_the_runner_scores_decoys_on_the_cited_record():
+    import inspect
+    import scripts.financial_agent_relevance as F
+    assert 'decoy_texts=[R.cited_text(u) for u in units]' in inspect.getsource(F.Runner.run)

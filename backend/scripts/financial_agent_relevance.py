@@ -243,8 +243,10 @@ class Runner:
             return row
         t0 = time.time()
         try:
-            texts = [R.unit_text(u) for u in R.result_units(tool.invoke(q['args']))]
-            row['score'] = R.score_query(texts, judged_relevant(q), q.get('decoys') or [])
+            units = R.result_units(tool.invoke(q['args']))
+            texts = [R.unit_text(u) for u in units]
+            row['score'] = R.score_query(texts, judged_relevant(q), q.get('decoys') or [],
+                                         decoy_texts=[R.cited_text(u) for u in units])
             if dump:
                 dump.write(json.dumps(dict(query='%s:%s' % (judged['case'], q['id']), args=q['args'],
                                            units=[t[:400] for t in texts[:50]]), ensure_ascii=False) + '\n')

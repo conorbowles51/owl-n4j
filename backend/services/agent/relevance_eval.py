@@ -63,6 +63,34 @@ def unit_text(unit: Any) -> str:
     return norm(unit if isinstance(unit, str) else json.dumps(unit, ensure_ascii=False, default=str))
 
 
+CITE_KEYS = ("cite", "url", "rec", "txn", "record_uid", "doc", "source")
+
+
+def cited_text(unit: Any) -> str:
+    """The text of the record a unit cites, for decoy scoring: the unit's own fields (not its nested lists) and any
+    nested record that carries the cited id. A whole unit (a month of statement rows, a message window) holds more
+    text than its cited record, so matching decoys over all of it counted a decoy for every neighbour row
+    (lx-casesearch 17 Nov: 4 -> 17 decoys in the top 10 for whole units with the cited record right)."""
+    if not isinstance(unit, dict):
+        return unit_text(unit)
+    parts: list[Any] = [{k: v for k, v in unit.items() if not isinstance(v, (list, dict))}]
+    cite = next((str(unit[k]) for k in CITE_KEYS if isinstance(unit.get(k), str) and unit.get(k)), "")
+    ident = cite.split("://", 1)[-1].split("#", 1)[0].strip()
+    if ident:
+        def walk(node: Any) -> None:
+            if isinstance(node, dict):
+                if node is not unit and any(isinstance(v, str) and ident in v for v in node.values()):
+                    parts.append(node)
+                    return
+                for v in node.values():
+                    walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v)
+        walk(unit)
+    return norm(json.dumps(parts, ensure_ascii=False, default=str))
+
+
 def matches(text: str, judged: dict) -> bool:
     """A unit (normalised text) is this judged record when it holds one of ``any`` and every one of ``all``."""
     anys = [norm(p) for p in judged.get("any") or []]
@@ -72,13 +100,16 @@ def matches(text: str, judged: dict) -> bool:
     return (not anys or any(p in text for p in anys)) and all(p in text for p in alls)
 
 
-def score_query(texts: list[str], relevant: list[dict], decoys: list[dict] | None = None) -> dict:
-    """One query's scores from its units' texts (rank order). Ranks are 1-based; None: not returned."""
+def score_query(texts: list[str], relevant: list[dict], decoys: list[dict] | None = None,
+                decoy_texts: list[str] | None = None) -> dict:
+    """One query's scores from its units' texts (rank order). Ranks are 1-based; None: not returned. Decoys are
+    matched on ``decoy_texts`` (each unit's cited record, ``cited_text``) when given, else on the whole unit."""
     decoys = decoys or []
+    dtexts = texts if decoy_texts is None else decoy_texts
     ranks = {}
     for item in relevant:
         ranks[item["id"]] = next((i + 1 for i, t in enumerate(texts) if matches(t, item)), None)
-    decoy_ranks = {d["id"]: next((i + 1 for i, t in enumerate(texts) if matches(t, d)), None) for d in decoys}
+    decoy_ranks = {d["id"]: next((i + 1 for i, t in enumerate(dtexts) if matches(t, d)), None) for d in decoys}
     first = min((r for r in ranks.values() if r), default=None)
     out = dict(units=len(texts), zero=len(texts) == 0, relevant=len(relevant), ranks=ranks,
                first_relevant=first, rr=(1.0 / first) if first else 0.0, decoy_ranks=decoy_ranks,
