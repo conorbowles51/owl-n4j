@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 const getAnswerRatings = vi.fn()
 const rateAnswer = vi.fn()
-vi.mock("../api", () => ({ agentAPI: { getAnswerRatings: (...a: unknown[]) => getAnswerRatings(...a), rateAnswer: (...a: unknown[]) => rateAnswer(...a) } }))
+vi.mock("../answer-ratings-api", () => ({
+  answerRatingsAPI: { list: (...a: unknown[]) => getAnswerRatings(...a), rate: (...a: unknown[]) => rateAnswer(...a) },
+}))
 
 import { AnswerRating } from "./AnswerRating"
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { agentAPI, type AnswerRating as Rating, type AnswerRatingKind, type AnswerSource } from "../api"
+import { answerRatingsAPI, type AnswerRating as Rating, type AnswerRatingKind, type AnswerSource } from "../answer-ratings-api"
 
 const KINDS: { kind: AnswerRatingKind; label: string; hint: string }[] = [
   { kind: "missed_something", label: "Missed something", hint: "The answer left out something the case holds." },
@@ -28,8 +28,8 @@ export function AnswerRating({
 
   useEffect(() => {
     let live = true
-    agentAPI
-      .getAnswerRatings(messageId, source)
+    answerRatingsAPI
+      .list(messageId, source)
       .then((r) => live && setActive(r.ratings))
       .catch(() => undefined)
     return () => {
@@ -41,7 +41,7 @@ export function AnswerRating({
     setBusy(true)
     setError(null)
     try {
-      const r = await agentAPI.rateAnswer(caseId, messageId, {
+      const r = await answerRatingsAPI.rate(caseId, messageId, {
         kind,
         note: withdraw ? "" : note,
         recordRef: withdraw || kind !== "missed_something" ? undefined : record,

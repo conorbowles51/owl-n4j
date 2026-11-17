@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import {
   User,
   Bot,
@@ -16,8 +16,12 @@ import { cn } from "@/lib/cn"
 import { Markdown } from "@/components/ui/markdown"
 import { CitationLink, CitationScope } from "@/components/citations/citations"
 import { docHrefByName, parseCitation } from "@/lib/citations"
-import { AnswerRating } from "@/features/agent/components/AnswerRating"
 import type { ChatMessageData } from "../types"
+
+// Loaded when an answer is shown: the ratings code belongs to the answer, not to the first screen (bundle budget).
+const AnswerRating = lazy(() =>
+  import("@/features/agent/components/AnswerRating").then((m) => ({ default: m.AnswerRating })),
+)
 
 const SAVED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -144,7 +148,9 @@ export function ChatMessage({ message, caseId }: ChatMessageProps) {
 
           {/* Rating: missed something, not relevant, too thin (lx-agenttools D20) */}
           {!isUser && caseId && message.id && SAVED_ID.test(message.id) && message.content.trim() && (
-            <AnswerRating caseId={caseId} messageId={message.id} source="chat" />
+            <Suspense fallback={null}>
+              <AnswerRating caseId={caseId} messageId={message.id} source="chat" />
+            </Suspense>
           )}
 
           {/* Copy button */}

@@ -9,8 +9,6 @@ import type {
 } from "./types"
 import type { CaseLayer } from "@/features/significant/types"
 
-/** An agent answer, or an answer in Chat. */
-export type AnswerSource = "agent" | "chat"
 export type AnswerRatingKind = "missed_something" | "not_relevant" | "too_thin"
 export interface AnswerRating {
   id: string
@@ -209,7 +207,7 @@ export const agentAPI = {
   rateAnswer: (
     caseId: string,
     messageId: string,
-    rating: { kind: AnswerRatingKind; note?: string; recordRef?: string; withdraw?: boolean; source?: AnswerSource },
+    rating: { kind: AnswerRatingKind; note?: string; recordRef?: string; withdraw?: boolean },
   ) =>
     fetchAPI<{ ratings: AnswerRating[] }>(`/api/agent/messages/${encodeURIComponent(messageId)}/rating`, {
       method: "PUT",
@@ -219,12 +217,11 @@ export const agentAPI = {
         note: rating.note ?? "",
         record_ref: rating.recordRef?.trim() || null,
         withdraw: rating.withdraw ?? false,
-        source: rating.source ?? "agent",
       },
     }),
 
-  getAnswerRatings: (messageId: string, source: AnswerSource = "agent") =>
-    fetchAPI<{ ratings: AnswerRating[] }>(`/api/agent/messages/${encodeURIComponent(messageId)}/ratings?source=${source}`),
+  getAnswerRatings: (messageId: string) =>
+    fetchAPI<{ ratings: AnswerRating[] }>(`/api/agent/messages/${encodeURIComponent(messageId)}/ratings`),
 
   getRunRecord: (runId: string) =>
     fetchAPI<import("./types").AgentRunRecord>(`/api/agent/runs/${encodeURIComponent(runId)}/record`),
