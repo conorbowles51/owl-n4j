@@ -27,6 +27,7 @@ MAX_DISTANCE = 1.44  # squared L2 of unit vectors: cosine 0.28 and above. Measur
 # score cosine 0.31 to 0.50, a query with no answer ("burner") scores 0.22 to 0.24 against the nearest unrelated text
 SNIPPET = 400
 DERIVED_AREAS = frozenset({"relationships"})  # graph text the engine wrote from a source; the source record ranks first
+DERIVED_WEIGHT = 0.6  # a derived hit's fused score is scaled by this, so source records outrank it at equal evidence
 DERIVED_OFFSET = 3  # a derived hit ranks as if this many places further down its own area's list
 FETCH = 60
 
@@ -83,12 +84,17 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
                                                          where=_where(case_id, [area], date_from, date_to))))
     chunk_areas = [a for a in areas if a in ("phone_text", "documents")]
     if chunk_areas and chunks_collection is not None and (date_from is None and date_to is None):
-        conds = [{"case_id": str(case_id)}, {"ingestion_state": "active"}]
-        if chunk_areas == ["phone_text"]:
-            conds.append({"source_kind": "phone_text"})
-        if phone:
-            conds.append({"extraction_id": str(phone)})
-        jobs.append(("chunks", chunks_collection, dict(n_results=over, where={"$and": conds})))
+        # One query per kind: 169,000 phone windows in the collection pushed document passages out of one shared
+        # candidate list (lx-embedall 17 Nov: the gate lost a police-interview passage that sat at rank 36).
+        for kind_area in chunk_areas:
+            conds = [{"case_id": str(case_id)}, {"ingestion_state": "active"}]
+            if kind_area == "phone_text":
+                conds.append({"source_kind": "phone_text"})
+                if phone:
+                    conds.append({"extraction_id": str(phone)})
+            else:
+                conds.append({"source_kind": {"$ne": "phone_text"}})
+            jobs.append(("chunks", chunks_collection, dict(n_results=over, where={"$and": conds})))
 
     def run(job):
         return job[1].query(query_embeddings=[query_vector], include=include, **job[2])
@@ -124,12 +130,15 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
     if person:
         who = person.casefold()
         hits = [h for h in hits if who in (h["person"] + " " + h["text"]).casefold()]
-    kept, seen, subjects = [], set(), {}
+    kept, seen, subjects, keys = [], set(), {}, set()
     # Each area's own order: the best hit of every area comes before the second hit of any. Measured on the demo case,
     # one list by raw similarity let phone call lines ("Phone 4 | Phone") crowd out a voice-note transcript that says
     # "do not call the other phone" for the query "the other phone".
     for h in sorted((h for h in hits if h["distance"] is not None and h["distance"] <= MAX_DISTANCE),
                     key=lambda h: h["distance"]):
+        if (h["area"], h["key"]) in keys:
+            continue
+        keys.add((h["area"], h["key"]))
         one = (h["area"], h["cite"] or h["key"], h["title"])  # two passages of one page are one hit: the nearer stays
         if h["area"] in ("documents",) and one in seen:
             continue
@@ -218,6 +227,9 @@ def fuse(meaning: list[dict], words: list[dict], limit: int) -> list[dict]:
         else:
             byk[k] = dict(h, matched="words")
         scores[k] = scores.get(k, 0) + 1.0 / (K + rank)
+    for k in scores:
+        if k[0] in DERIVED_AREAS or k[0] == "entities":
+            scores[k] *= DERIVED_WEIGHT
     out = []
     for k in sorted(scores, key=lambda k: -scores[k])[:limit]:
         h = byk[k]

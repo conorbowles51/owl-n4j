@@ -182,3 +182,27 @@ def test_connections_of_one_subject_and_source_are_one_hit_and_rank_after_source
     assert [h for h in hits if h["area"] == "relationships"][0]["also"] == 4
     fused = S.fuse(hits, [], 10)
     assert [h["key"] for h in fused][:2] == ["t1", "t2"]  # the source records come before the derived graph text
+
+
+def test_phone_windows_and_document_passages_are_asked_for_in_separate_queries():
+    asked = []
+
+    class Spy(Coll):
+        def query(self, query_embeddings, n_results, where, include):
+            asked.append(where["$and"])
+            return super().query(query_embeddings, n_results, where, include)
+    chunks = Spy([("a document passage", {"evidence_file_id": "d", "chunk_index": 2, "doc_name": "d.pdf", "page_start": 4}, 0.4),
+                  ("[rec://u1] hello", {"source_kind": "phone_text", "evidence_file_id": "f", "chunk_index": 0,
+                                        "url": "rec://u1", "extraction_id": "e1"}, 0.5)])
+    hits = S.meaning_hits("c", [0.1], None, chunks, ["phone_text", "documents"])
+    assert len(asked) == 2
+    assert any({"source_kind": "phone_text"} in a for a in asked)
+    assert any({"source_kind": {"$ne": "phone_text"}} in a for a in asked)
+    assert sorted(h["area"] for h in hits) == ["documents", "phone_text"]  # no hit twice
+
+
+def test_derived_graph_text_scores_below_a_source_record_with_the_same_evidence():
+    meaning = [{"area": "relationships", "key": "r", "distance": 0.4, "text": "x", "person": "", "area_rank": 1},
+               {"area": "entities", "key": "e", "distance": 0.4, "text": "x", "person": "", "area_rank": 1},
+               {"area": "documents", "key": "d", "distance": 0.4, "text": "y", "person": "", "area_rank": 1}]
+    assert [h["key"] for h in S.fuse(meaning, [], 10)][0] == "d"
