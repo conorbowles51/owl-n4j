@@ -476,7 +476,7 @@ class TheoryConversionCarriesItsRecordTests(TheoryAdditionTests):
         out = H.accept(self.db, case_id=self.case.id, run_id=run.id, number=1, entry_id=self.theory["id"],
                        relationship="supports", user=self.user)
         link = self.db.get(WorkspaceEntryLink, uuid.UUID(out["added_link_ids"][0]))
-        self.assertEqual((link.target_type, link.relationship), ("relation_query", "supports"))
+        self.assertEqual((link.target_type, link.relationship_type), ("relation_query", "supports"))
         addition = link.link_metadata["addition"]
         self.assertEqual((addition["origin"], addition["model"], addition["accepted_by_name"]),
                          ("agent", "stub-model-1", self.user.name))
