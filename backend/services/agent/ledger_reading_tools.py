@@ -484,10 +484,32 @@ def get_account_mentions(session, *, case_id, search="", show="missing", offset=
                                         if g["examples"] else accounts_href(case_id))))
     total = found["total"]
     nxt = offset + limit if offset + limit < total else None
+    scanned, in_case = found["scanned_payments"], found["missing_count"] + found["possible_match_count"]
+    why_empty = None
+    if total == 0:
+        if not scanned:
+            why_empty = ("The case has no admitted ledger payment to scan, so no account number was looked for. "
+                         "Statements not yet admitted are not read here.")
+        elif not in_case:
+            why_empty = ("%d admitted payments were scanned; none prints an account number after a label (IBAN, "
+                         "account, acct, a/c, card, share) or in a bank-transfer description. A bare number with "
+                         "no label is not read as an account." % scanned)
+        elif search:
+            why_empty = ("%d account numbers are printed on payments (%d with no statement, %d with a possible "
+                         "statement); none of those listed by show=%s contains '%s'. Try fewer characters, or no "
+                         "search, or show=all." % (in_case, found["missing_count"], found["possible_match_count"],
+                                                   show, search))
+        else:
+            why_empty = ("%d account numbers are printed on payments, and all have a possible statement in the "
+                         "case, so show=missing lists none. Use show=all to list them." % in_case)
     return dict(schema=MENTIONS_SCHEMA, case_id=str(case_id), available=True, reason=None,
                 revision=found["revision"], total=total, returned=len(items), offset=offset,
                 has_more=nxt is not None, next_offset=nxt, items=items, scanned_payments=found["scanned_payments"],
                 missing_count=found["missing_count"], possible_match_count=found["possible_match_count"],
+                why_empty=why_empty,
+                searched="The description and counterparty text of %d admitted ledger payments." % scanned,
+                not_searched="Statement text, phone messages and documents; payments not admitted to the ledger; "
+                             "numbers printed without a label.",
                 limitation="A mention is an account number printed on a payment; 'no_statement_found' means no "
                            "statement for a matching account is in this case, not that the account does not exist.")
 

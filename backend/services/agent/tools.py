@@ -2598,6 +2598,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             return context.result(tool_name, data, summary=str(data.get("reason")), status="error",
                                   error=str(data.get("reason")))
         summary = f"Read {data['returned']} of {data['total']}."
+        if data.get("why_empty"):
+            summary += " " + str(data["why_empty"])
         behind = data.get("open_judgement_calls")
         if behind:
             summary += " " + behind["sentence"]

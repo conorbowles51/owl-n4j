@@ -208,6 +208,22 @@ class LedgerReadingToolTests(DuplicateTestCase):
         none = self.call('get_statement_continuity', account=str(uuid.uuid4()))
         assert none['data']['reason'] == 'That account is not in this case.'
 
+    def test_get_account_mentions_zero_says_why_in_the_result_and_the_summary(self):
+        """lx-agenttools D11: 12 of 13 live calls read 'Read 0 of 0.' with no reason."""
+        empty = self.call('get_account_mentions', show='all')
+        assert empty['data']['total'] == 0 and 'no admitted ledger payment' in empty['data']['why_empty']
+        assert 'no admitted ledger payment' in empty['summary']
+        self.row(10_00, link=False, description='COFFEE SHOP 12 MAIN STREET', raw=None)
+        none = self.call('get_account_mentions', show='all')
+        assert none['data']['total'] == 0 and none['data']['scanned_payments'] == 1
+        assert 'none prints an account number' in none['data']['why_empty']
+        assert 'not_searched' in none['data'] and 'phone messages' in none['data']['not_searched']
+        self.row(11_00, link=False, description='TRANSFER TO ACCT 99887766 REF X', raw=None)
+        hidden = self.call('get_account_mentions', show='all', search='555')
+        assert hidden['data']['total'] == 0 and "contains '555'" in hidden['data']['why_empty']
+        found = self.call('get_account_mentions', show='all')
+        assert found['data']['total'] == 1 and found['data']['why_empty'] is None
+
     def test_get_account_mentions_lists_printed_account_numbers_with_no_statement(self):
         self.row(10_00, link=False, description='TRANSFER TO ACCT 99887766 REF X', raw=None)
         out = self.call('get_account_mentions', show='all')
