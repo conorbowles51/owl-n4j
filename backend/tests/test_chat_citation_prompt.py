@@ -32,3 +32,15 @@ def test_the_chat_prompt_says_a_shared_name_is_not_an_identity_link():
     _, prompt = ctx.answer_question_with_prompt("Is the contact Mateo the same person as Mateo Ruiz?", "x")
     assert "SAME PERSON: a shared name is not a link" in prompt
     assert "only when the context links them" in prompt
+
+
+def test_the_chat_prompt_makes_the_phone_contact_count_the_answer():
+    """lx-agentquick, 17 Nov: with the count of 0 calls and messages between Mateo Ruiz's and Desmond Okafor's numbers in
+    the context, chat still opened 'Yes' in 2 of 3 live runs from the contact saved as 'Mateo' at another number."""
+    ctx = object.__new__(LLMExecutionContext)
+    ctx.system_context, ctx.analysis_guidance = "synthetic system", "synthetic guidance"
+    ctx.call = lambda prompt, temperature=0.0: "synthetic answer"
+    _, prompt = ctx.answer_question_with_prompt("Did Mateo Ruiz ever call or message Desmond Okafor?", "x")
+    assert 'CONTACT COUNT: a passage headed "Phone contact between X and Y"' in prompt
+    assert 'open with "No"' in prompt
+    assert "rec://" not in prompt
