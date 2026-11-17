@@ -115,6 +115,10 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None,
         if db_rec.status != "processed":
             db_rec.status = "processed"
             changed = True
+            if db is not None and getattr(db_rec, "id", None) is not None:
+                # Dates the document states about itself (lx-docdates); a failure costs the dates, not the sync.
+                from services.document_date_store import store_for_file_safe
+                store_for_file_safe(db, db_rec.id)
             if getattr(db_rec, "case_id", None):
                 _schedule_summary_check(db_rec.case_id)
         if db_rec.last_error is not None:
