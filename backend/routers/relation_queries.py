@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,7 @@ from postgres.session import get_db
 from routers.case_access import require_case_edit, require_case_view
 from routers.users import get_current_db_user
 from services import case_selections
-from services.relations import matrix, runs
+from services.relations import matrix, runs, together
 
 router = APIRouter(prefix="/api/cases", tags=["relation-queries"])
 
@@ -47,6 +47,16 @@ def create_query(case_id: UUID, request: QueryRequest, db: Session = Depends(get
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc))
     return {"group": group, "run": run}
+
+
+@router.get("/{case_id}/relation-overlaps", dependencies=[Depends(require_case_view)])
+def read_overlaps(case_id: UUID, phones: str = Query(..., max_length=2000), from_: str | None = Query(None, alias="from"),
+                  to: str | None = Query(None), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Where two or more phones were together, the people they share and relay chains (lx-phonetogether B)."""
+    try:
+        return together.read(db, case_id, [p.strip() for p in phones.split(",")], from_, to)
+    except together.TogetherError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/{case_id}/relation-queries/matrix", dependencies=[Depends(require_case_view)])
