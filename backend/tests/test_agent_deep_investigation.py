@@ -143,7 +143,7 @@ def run_stream(script, deep=True):
 
 def test_loop_returns_to_work_until_checklist_is_closed_then_writes():
     marks = [{"id": "c2", "name": "deep_notebook_add", "args": {"notes": [
-        {"item": i["id"], "fact": "%s: %s" % (i["id"], " ".join(LABELS)), "cite": "rec://9"} for i in plan()["items"]]}},
+        {"item": i["id"], "fact": "%s: %s" % (i["id"], " ".join(LABELS)), "cite": "rec://%s" % i["id"]} for i in plan()["items"]]}},
         {"id": "c1", "name": "deep_mark", "args": {"updates": [
             {"item": i["id"], "status": "done", "units": LABELS} for i in plan()["items"]]}}]
     # First the model writes at once (no tool call): the gate sends it back; then it closes every item.
@@ -153,7 +153,7 @@ def test_loop_returns_to_work_until_checklist_is_closed_then_writes():
     assert prog and prog[-1]["progress"]["open"] == 0 and prog[-1]["progress"]["notes"] == len(plan()["items"])
     assert final["answer"]
     system = " ".join(str(getattr(m, "content", "")) for m in r.base_model.final_messages)
-    assert "rec://9" in system  # the notebook reaches the writer
+    assert "rec://windows" in system  # the notebook reaches the writer
     assert "Completeness check" in json.dumps([str(m.content) for m in r.base_model.seen])
 
 
@@ -210,3 +210,12 @@ def test_method_tells_the_run_not_to_convert_times_and_to_check_names_against_hi
     block = D.render_block(plan())
     assert "never convert a time" in block and "local_day" in block
     assert "history" in block
+
+
+def test_one_record_cannot_back_a_run_of_different_facts():
+    p = plan()
+    notes = [{"item": "windows", "fact": "fact %d" % i, "cite": "rec://same"} for i in range(D.MAX_NOTES_PER_RECORD + 2)]
+    got = D.notebook_add(p, notes)
+    assert got["added"] == D.MAX_NOTES_PER_RECORD and len(got["refused"]) == 2
+    assert "cite the link of the record" in got["refused"][0]["why"]
+    assert D.notebook_add(p, [{"fact": "doc fact", "cite": "doc://x/1"}] * 5)["added"] == 5

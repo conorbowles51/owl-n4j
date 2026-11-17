@@ -34,6 +34,9 @@ DEEP_WINDOWS = 32
 DEEP_TOOLS = ("deep_checklist", "deep_mark", "deep_notebook_add", "deep_notebook_read")
 NOTEBOOK_MAX_NOTES = 600
 NOTE_MAX_CHARS = 700
+# A live run cited one search-result record for 20 different facts and a fifth of its cited sentences were marked
+# unsupported (agent runs of the citation check: 5 %). One record carries a few notes at most.
+MAX_NOTES_PER_RECORD = 3
 
 DOMAINS = ("phones", "money", "documents")
 
@@ -275,6 +278,10 @@ def notebook_add(plan: dict, notes: list[dict]) -> dict[str, Any]:
             continue
         if not cite:
             refused.append({"fact": fact[:80], "why": "No citation. Give the link the result carried."})
+            continue
+        if cite.startswith("rec://") and sum(1 for x in plan["notebook"] if x["cite"] == cite[:300]) >= MAX_NOTES_PER_RECORD:
+            refused.append({"fact": fact[:80], "why": "That record already carries %d notes. A record shows one thing: "
+                            "cite the link of the record this fact came from." % MAX_NOTES_PER_RECORD})
             continue
         if len(plan["notebook"]) >= NOTEBOOK_MAX_NOTES:
             refused.append({"fact": fact[:80], "why": "The notebook holds %d notes." % NOTEBOOK_MAX_NOTES})
