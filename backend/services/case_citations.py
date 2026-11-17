@@ -8,6 +8,7 @@ Three schemes name the object a claim rests on:
   has that name, and offers the files to choose from when several do. It is never resolved by guessing one of them.
 - ``txn://<transaction_id>`` a ledger row; it opens the Financial page on that row, at its statement page.
 - ``rec://<record_uid>[#<field>]`` a phone record (03 section 11.5).
+- ``entity://<graph key>`` a graph entity; it opens the Graph page with that entity selected.
 
 The Financial page links agent answers wrote before ``txn://`` (``/cases/<case>/financial?...&payment=<id>``) are
 read as ``txn://`` citations, so they keep working and are checked the same way.
@@ -26,19 +27,19 @@ from urllib.parse import quote, unquote
 UUID_TEXT = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 _UUID = re.compile(rf"^{UUID_TEXT}$")
 # A Markdown link target: ](target) or ](<target>); the target may carry an optional "title".
-_LINK = re.compile(r"\]\(\s*<?((?:doc|txn|rec|evidence)://[^)>\s]*|(?:https?://[^)\s>]*?)?/?cases/[^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\)")
+_LINK = re.compile(r"\]\(\s*<?((?:doc|txn|rec|entity|evidence)://[^)>\s]*|(?:https?://[^)\s>]*?)?/?cases/[^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\)")
 # a Loupe page written with a host: https://<any host>/cases/<id>/... or https://cases/<id>/... (the host dropped)
 # or with a citation scheme put in front of it (doc://cases/<id>/conversations?..., 17 Nov: the chat's contact passage
 # cites the Conversations page and a model wrote doc:// before it, so the link opened nothing)
-_APP_URL = re.compile(rf"^(?:https?://(?:[^/\s]+/)*?|(?:doc|evidence|rec|txn)://+)(cases/{UUID_TEXT}(?:[/?#]\S*)?)$")
-_HOSTED_LINK = re.compile(r"(\]\(\s*<?)((?:https?|doc|evidence|rec|txn)://[^)\s>]+)")
+_APP_URL = re.compile(rf"^(?:https?://(?:[^/\s]+/)*?|(?:doc|evidence|rec|txn|entity)://+)(cases/{UUID_TEXT}(?:[/?#]\S*)?)$")
+_HOSTED_LINK = re.compile(r"(\]\(\s*<?)((?:https?|doc|evidence|rec|txn|entity)://[^)\s>]+)")
 _FINANCIAL_PATH = re.compile(rf"^(?:https?://[^/]+)?/cases/({UUID_TEXT})/financial\?(\S*)$")
 _PAYMENT_PARAM = re.compile(rf"(?:^|&)payment=({UUID_TEXT})(?:&|$)")
 
 NOT_IN_CASE = "Not in this case."
 OTHER_CASE = "A payment of another case: it opens in that case, where that case's own access applies."
 PAGE_NOT_GIVEN = "Page not given."
-SCHEMES = ("doc", "txn", "rec")
+SCHEMES = ("doc", "txn", "rec", "entity")
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,9 @@ def parse_citation(href: str | None) -> Citation | None:
     if href.startswith("txn://"):
         target = href[6:].strip("/")
         return Citation(href, "txn", target.lower()) if _UUID.match(target) else None
+    if href.startswith("entity://"):
+        key = unquote(href[9:].strip("/")).strip()
+        return Citation(href, "entity", key) if key and len(key) <= 512 else None
     if href.startswith("rec://"):
         rest = href[6:]
         uid, _, field_path = rest.partition("#")
@@ -148,6 +152,7 @@ class Resolution:
     candidates: list[dict[str, Any]] = _field(default_factory=list)
     transaction_id: str | None = None
     record_uid: str | None = None
+    entity_key: str | None = None
     field: str | None = None
     legacy: bool = False
     detail: dict[str, Any] = _field(default_factory=dict)
@@ -244,6 +249,24 @@ def _records(session, case_id, ids: Iterable[str]) -> set[str] | None:
     return {str(row[0]).lower() for row in rows}
 
 
+def _entities(case_id, keys: Iterable[str]) -> dict[str, str]:
+    """Graph entities of the case among ``keys``: key -> name. One lookup per key, at most ``MAX_ENTITY_CHECKS``; a
+    key past that is not looked up and is reported as not checked (it is never called missing)."""
+    out: dict[str, str] = {}
+    wanted = sorted(set(keys))[:MAX_ENTITY_CHECKS]
+    if not wanted:
+        return out
+    from services.neo4j.graph_service import graph_service
+    for key in wanted:
+        detail = graph_service.get_node_details(key, case_id=str(case_id))
+        if detail:
+            out[key] = str(detail.get("name") or key)
+    return out
+
+
+MAX_ENTITY_CHECKS = 60
+
+
 def resolve_citations(session, case_id, citations: Iterable[Citation]) -> list[Resolution]:
     """Check each citation against the case, in a bounded number of queries (one per kind)."""
     case_uuid = _as_uuid(case_id)
@@ -252,6 +275,11 @@ def resolve_citations(session, case_id, citations: Iterable[Citation]) -> list[R
     by_name = _files_by_name(session, case_uuid, [c.target for c in citations if c.scheme == "doc" and c.by_name])
     txns = _transactions(session, case_uuid, [c.target for c in citations if c.scheme == "txn"])
     records = _records(session, case_uuid, [c.target for c in citations if c.scheme == "rec"])
+    entity_keys = [c.target for c in citations if c.scheme == "entity"]
+    try:
+        entities = _entities(case_uuid, entity_keys)
+    except Exception:  # noqa: BLE001 - the graph could not be read: its citations are not called missing
+        entities = None
     out = []
     for c in citations:
         r = Resolution(href=c.href, scheme=c.scheme, status="ok", legacy=c.legacy or c.by_name)
@@ -292,6 +320,14 @@ def resolve_citations(session, case_id, citations: Iterable[Citation]) -> list[R
             r.record_uid, r.field = c.target, c.field
             if records is None or c.target not in records:
                 r.status, r.reason = "not_in_case", NOT_IN_CASE
+        elif c.scheme == "entity":
+            r.entity_key = c.target
+            if entities is None or c.target not in sorted(set(entity_keys))[:MAX_ENTITY_CHECKS]:
+                r.status, r.reason = "unchecked", "This entity could not be checked against the case just now."
+            elif c.target in entities:
+                r.filename = entities[c.target]
+            else:
+                r.status, r.reason = "not_in_case", NOT_IN_CASE
         out.append(r)
     return _with_production_numbers(session, case_uuid, out)
 
@@ -313,7 +349,7 @@ def _with_production_numbers(session, case_id, resolutions: list[Resolution]) ->
 def check_text(session, case_id, text: str | None) -> dict[str, Any]:
     """The answer check: every citation in ``text`` against the case. Counts and the citations that failed."""
     resolutions = resolve_citations(session, case_id, citations_in(text))
-    counts = {"total": len(resolutions), "ok": 0, "not_in_case": 0, "ambiguous": 0, "other_case": 0}
+    counts = {"total": len(resolutions), "ok": 0, "not_in_case": 0, "ambiguous": 0, "other_case": 0, "unchecked": 0}
     for r in resolutions:
         counts[r.status] += 1
     by_scheme: dict[str, int] = {}
@@ -353,11 +389,11 @@ def canonicalize(session, case_id, text: str | None) -> str:
     return _LINK.sub(replace, text)
 
 
-_BARE = re.compile(r"\[\s*((?:doc|txn|rec)://[^\]\s()]+)\s*\](?![(\]])")
-_BARE_LABEL = {"doc": "document", "txn": "payment", "rec": "record"}
+_BARE = re.compile(r"\[\s*((?:doc|txn|rec|entity)://[^\]\s()]+)\s*\](?![(\]])")
+_BARE_LABEL = {"doc": "document", "txn": "payment", "rec": "record", "entity": "entity"}
 # the scheme written twice (``rec://rec://<id>``, live 10 Nov 2026): such a link parses as nothing, so the check
 # neither counted nor flagged it; the repeated scheme is dropped
-_DOUBLED = re.compile(r"\b(doc|txn|rec)://(?:\1://)+")
+_DOUBLED = re.compile(r"\b(doc|txn|rec|entity)://(?:\1://)+")
 
 
 def link_bare_citations(text: str) -> str:
@@ -408,3 +444,29 @@ def chunk_cite(metadata: dict[str, Any]) -> str | None:
         return None
     encoded = quote(name, safe="")
     return f"doc://{encoded}/{page}" if page else f"doc://{encoded}"
+
+
+_ANY_LINK = re.compile(r"\[([^\]]*)\]\(\s*<?((?:doc|txn|rec|entity|evidence)://[^)>\s]*)>?(?:\s+\"[^\"]*\")?\s*\)")
+
+
+def drop_unresolved(session, case_id, text: str | None) -> tuple[str, int]:
+    """An answer with every citation that names nothing in the case taken out: ``(text, dropped)``. A link whose
+    target is not in the case (``not_in_case``) loses its link and keeps its words, so no reader gets a link that
+    opens nothing and the claim stays visible without a source. One that could not be checked (``unchecked``) and
+    one that needs a choice (``ambiguous``) stay as written. ``dropped`` counts each removed link."""
+    text = text or ""
+    citations = citations_in(text)
+    if not citations:
+        return text, 0
+    gone = {r.href for r in resolve_citations(session, case_id, citations) if r.status == "not_in_case"}
+    if not gone:
+        return text, 0
+    count = 0
+
+    def replace(match: re.Match) -> str:
+        nonlocal count
+        if match.group(2) not in gone:
+            return match.group(0)
+        count += 1
+        return match.group(1)
+    return _ANY_LINK.sub(replace, text), count
