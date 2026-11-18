@@ -26,6 +26,8 @@ import { useDeletedItemsEnabled } from "@/features/cases/hooks/use-deleted-items
 import { FolderContextDialog } from "./FolderContextDialog"
 import { CaseProcessingProfileDialog } from "./CaseProcessingProfileDialog"
 import { toast } from "sonner"
+import { usePanelRef } from "react-resizable-panels"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import type { EvidenceFile } from "@/types/evidence.types"
 
 export function EvidenceExplorer() {
@@ -33,6 +35,8 @@ export function EvidenceExplorer() {
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const queryClient = useQueryClient()
+  const narrow = useMediaQuery("(max-width: 767px)")
+  const folderPanel = usePanelRef()
   const {
     currentFolderId,
     selectedFileIds,
@@ -240,16 +244,20 @@ export function EvidenceExplorer() {
             <span className="ml-3 text-muted-foreground">Review this source and its processing status. Your Financial selection is saved.</span>
           </div>
         )}
-        <ResizablePanelGroup orientation="horizontal" className="flex-1">
-          {/* Left sidebar: Folder tree */}
+        {/* Below 768 px the folders sit above the files at full width: a fifth of a 390 px screen is 55 px, and the
+            folder header needs 116 px (lx-guidecover, 17 Nov). */}
+        <ResizablePanelGroup key={narrow ? "narrow" : "wide"} orientation={narrow ? "vertical" : "horizontal"} className="flex-1">
+          {/* Left sidebar (top on a phone): Folder tree */}
           <ResizablePanel
-            defaultSize="20"
+            panelRef={folderPanel}
+            defaultSize={narrow ? "35" : "20"}
             minSize="15"
-            maxSize="35"
+            maxSize={narrow ? "70" : "35"}
             collapsible
             collapsedSize="0"
           >
             <FolderTreeSidebar
+              onCollapse={() => folderPanel.current?.collapse()}
               caseId={caseId!}
               onCreateFolder={handleOpenCreateFolder}
               onDeleteFolder={handleOpenDeleteFolder}
@@ -262,7 +270,7 @@ export function EvidenceExplorer() {
           <ResizableHandle withHandle />
 
           {/* Center: File list */}
-          <ResizablePanel defaultSize="80" minSize="30">
+          <ResizablePanel defaultSize={narrow ? "65" : "80"} minSize="30">
             <FileListPanel
               caseId={caseId!}
               onCreateFolder={() => handleOpenCreateFolder(currentFolderId)}

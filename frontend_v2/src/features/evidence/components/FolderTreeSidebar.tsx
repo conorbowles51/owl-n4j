@@ -26,6 +26,8 @@ interface FolderTreeSidebarProps {
   onEditFolderProfile: (folderId: string) => void
   onEditCaseProfile: () => void
   onOpenDeleted?: () => void
+  /** folds the panel away; dragging its edge brings it back */
+  onCollapse?: () => void
 }
 
 export function FolderTreeSidebar({
@@ -35,6 +37,7 @@ export function FolderTreeSidebar({
   onEditFolderProfile,
   onEditCaseProfile,
   onOpenDeleted,
+  onCollapse,
 }: FolderTreeSidebarProps) {
   const rootDrop = useEvidenceDropTarget(null)
   const { data: tree, isLoading } = useFolderTree(caseId)
@@ -92,6 +95,7 @@ export function FolderTreeSidebar({
                 size="icon-sm"
                 className="size-6"
                 aria-label="Collapse sidebar"
+                onClick={onCollapse}
               >
                 <PanelLeftClose className="size-3.5" />
               </Button>
