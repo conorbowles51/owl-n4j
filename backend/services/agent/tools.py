@@ -3930,7 +3930,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             description=("Calculate exact totals across ALL matching imported payments, grouped by account, month, counterparty or category. "
                 "Groups are paged; calculations are not limited to the returned page. Currencies and account types stay separate. "
                 "Start here for a full financial analysis, use get_financial_coverage for known sources/accounts, and inspect payments for evidence. "
-                "Net postings are not an account balance; internal transfers are not automatically eliminated."),
+                "Net postings are not an account balance; internal transfers are not automatically eliminated. "
+                "Its search keeps only rows holding every word as written, and statements abbreviate (CHK, DEP, BR): "
+                "find the rows with get_financial_transactions first, then sum them here by the words they print."),
             args_schema=FinancialAnalysisArgsMany if _fit_on("M") else FinancialAnalysisArgs,
         ),
         wrap(
