@@ -142,3 +142,36 @@ def test_the_agent_graph_tool_goes_through_the_case_search(monkeypatch):
     assert seen["kinds"] == ("graph",)
     assert data["entities"][0]["name"] == "Desmond Okafor" and data["entities"][0]["found_by"]
     assert data["total"] == 1 and data["connections_found"] == 1
+
+
+def test_another_entity_sharing_a_word_of_the_name_found_comes_after_the_rest(monkeypatch):
+    """Gate 18 Nov, second case: "Dorian Pell" listed Pell Hardware, found by meaning alone, at rank 6 of 25."""
+    from services.agent import tools as T
+    from services.case_search import service as CS
+    meaning = [{"area": "graph", "key": "h1", "title": "PELL HARDWARE", "distance": 0.3, "area_rank": 1,
+                "cite": "entity://h1", "sources": ["graph meaning"]},
+               {"area": "graph", "key": "a1", "title": "Birchwood Terrace", "distance": 0.4, "area_rank": 2,
+                "cite": "entity://a1", "sources": ["graph meaning"]}]
+    net._tag_other_names(meaning, {"p1": {}}, {"Dorian Pell"})
+    assert meaning[0]["other_name"] == "holds Pell of the name Dorian Pell, not the name"
+    assert "other_name" not in meaning[1]
+
+    def ranked(conn, case_id, question, **kw):
+        return {"candidates": [dict(meaning[0]), {"area": "graph", "cite": "entity://p1", "title": "Dorian Pell"},
+                               dict(meaning[1])],
+                "notes": [], "searched": ["graph"], "not_searched": [], "meaning_search": True}
+    monkeypatch.setattr(CS, "ranked", ranked)
+    monkeypatch.setattr(T.graph_service, "nodes_by_keys",
+                        lambda keys, case_id: [{"key": k, "name": k} for k in keys])
+
+    @contextlib.contextmanager
+    def session():
+        class S:
+            def connection(self):
+                return None
+        yield S()
+    ctx = T.AgentToolContext(case_id="00000000-0000-0000-0000-0000000000aa", ledger_session_factory=session)
+    tool = {t.name: t for t in T.make_agent_tools(ctx)}["search_graph_entities"]
+    ents = tool.invoke({"query": "Dorian Pell"})["data"]["entities"]
+    assert [e["key"] for e in ents] == ["p1", "a1", "h1"]
+    assert ents[-1]["other_name"].startswith("holds Pell")

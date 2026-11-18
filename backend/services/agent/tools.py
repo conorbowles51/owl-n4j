@@ -2174,6 +2174,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                     ents.append(c)
             elif c.get("area") == "relationships":
                 links.append(c)
+        # another entity sharing a word of the name asked ("Pell Hardware" for "Dorian Pell") after the rest
+        ents = [c for c in ents if not c.get("other_name")] + [c for c in ents if c.get("other_name")]
         page = ents[offset:offset + limit]
         nodes = {n["key"]: n for n in graph_service.nodes_by_keys(
             [c["cite"][len("entity://"):] for c in page], case_id=context.case_id)}
@@ -2182,7 +2184,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             key = c["cite"][len("entity://"):]
             node = dict(nodes.get(key) or c.get("node") or {"key": key, "name": c.get("title")})
             node["matched"] = c.get("sources") or []
-            for k in ("found_by", "score", "reason"):
+            for k in ("found_by", "other_name", "score", "reason"):
                 if c.get(k) is not None:
                     node[k] = c[k]
             rows.append(node)

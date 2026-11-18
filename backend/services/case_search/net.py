@@ -222,6 +222,7 @@ def _graph(case_id, query, names, terms, *, embed_query, expansions=(), only_gra
     notes: list[str] = []
     by_words: list[dict] = []
     seen: dict[str, dict] = {}
+    found_runs: set[str] = set()
     try:
         from services.case_search.understand import initials, name_initials
         from services.neo4j.graph_service import graph_service
@@ -257,7 +258,6 @@ def _graph(case_id, query, names, terms, *, embed_query, expansions=(), only_gra
                     probes.insert(0, n["name"])
                     weight[n["name"]] = 2
                     why[n["name"]] = "shares the surname %s" % words[-1].title()
-        found_runs = set()
         for p in probes:
             # the graph search alone (search_graph_entities) asks for whom the name names: a part of a full name that
             # was found is not looked up (gate 18 Nov: "Priya Halloran" listed Paul Halloran in the top 10)
@@ -300,7 +300,28 @@ def _graph(case_id, query, names, terms, *, embed_query, expansions=(), only_gra
                                "text": r.get("text") or "", "sources": ["graph meaning"]})
     except Exception as exc:  # noqa: BLE001
         notes.append("Graph entities could not be searched by meaning (%s)." % str(exc)[:160])
+    if only_graph and found_runs:
+        _tag_other_names(by_meaning, seen, found_runs)
     return by_words, by_meaning, notes
+
+
+def _tag_other_names(by_meaning: list[dict], seen: dict, found_runs: set) -> None:
+    """In the graph search alone, a full name the question gives was found: a hit by meaning alone whose name holds a
+    word of that name but not the name is another entity sharing the word ("Pell Hardware" for "Dorian Pell"; gate
+    18 Nov, rank 6 of 25). It says so in ``other_name``, and the graph tool lists it after the rest."""
+    from services.phone import fold as F
+    runs = [(r, F.fold(r)) for r in found_runs]
+    for h in by_meaning:
+        if h["key"] in seen:
+            continue
+        title = " %s " % F.fold(h.get("title") or "")
+        for run, folded in runs:
+            if " %s " % folded in title:
+                break
+            shared = [w for w in folded.split() if " %s " % w in title]
+            if shared:
+                h["other_name"] = "holds %s of the name %s, not the name" % (" ".join(shared).title(), run)
+                break
 
 
 def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...], *, areas=None, phone=None,
