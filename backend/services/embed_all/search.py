@@ -186,14 +186,29 @@ def _subject(h: dict) -> str:
 
 
 def word_hits(conn, case_id, terms: list[str], areas, *, phone=None, person=None, date_from=None, date_to=None) -> list[dict]:
+    """Records holding the terms, most terms first. A term is a folded string, or a loose group
+    (``case_search.loose.groups``: ``inside`` forms found anywhere, ``whole`` forms as whole words only); a record
+    holds a group when it holds any of its forms."""
     hits: list[dict] = []
     item_areas = [a for a in areas if a not in ("phone_text", "documents")]
+    groups = [t if isinstance(t, dict) else {"term": t, "inside": [t], "whole": []} for t in terms or []]
+    terms = [g["term"] for g in groups]
     if terms and item_areas:
         params: dict[str, Any] = {"c": str(case_id), "areas": item_areas}
         conds = []
-        for i, t in enumerate(terms):
-            params["t%d" % i] = "%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-            conds.append("(body_folded LIKE :t%d)::int" % i)
+
+        def esc(s):
+            return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        for i, g in enumerate(groups):
+            ors = []
+            for j, f in enumerate(g["inside"]):
+                params["t%d_%d" % (i, j)] = "%" + esc(f) + "%"
+                ors.append(":t%d_%d" % (i, j))
+            for j, f in enumerate(g["whole"]):
+                params["w%d_%d" % (i, j)] = "% " + esc(f) + " %"
+                ors.append("w:w%d_%d" % (i, j))
+            # whole-word forms are matched with the text padded by a space on each side (folded text has single spaces)
+            conds.append("(%s)::int" % " OR ".join("(' ' || body_folded || ' ') LIKE %s" % o[1:] if o.startswith("w:") else "body_folded LIKE %s" % o for o in ors))
         extra = ""
         if person:
             params["p"] = "%" + person.replace("%", "\\%").replace("_", "\\_") + "%"

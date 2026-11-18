@@ -124,17 +124,17 @@ def order(cands: list[dict]) -> list[dict]:
     return out + rest
 
 
-def _key(case_id, question, kinds, areas, phone, person, date_from, date_to, rank, phrase) -> str:
+def _key(case_id, question, kinds, areas, phone, person, date_from, date_to, rank, phrase, exact=False) -> str:
     return "|".join(str(x) for x in (case_id, question.strip(), ",".join(kinds), ",".join(areas or ()), phone, person,
-                                     date_from, date_to, rank, phrase))
+                                     date_from, date_to, rank, phrase, exact))
 
 
 def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], areas=None, phone=None, person=None,
            date_from=None,
            date_to=None, rank: bool = True, phrase: bool = True, model_call: Callable[[str], str] | None = None,
-           embed_query=None, collections=None, use_cache: bool = True) -> dict[str, Any]:
-    """The whole ranked list (no units yet), cached for paging."""
-    key = _key(case_id, question, kinds, areas, phone, person, date_from, date_to, rank, phrase)
+           embed_query=None, collections=None, use_cache: bool = True, exact: bool = False) -> dict[str, Any]:
+    """The whole ranked list (no units yet), cached for paging. ``exact``: words as typed (no loose forms)."""
+    key = _key(case_id, question, kinds, areas, phone, person, date_from, date_to, rank, phrase, exact)
     now = time.time()
     if use_cache:
         with _lock:
@@ -146,6 +146,13 @@ def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], areas=None, 
     u = understand(conn, case_id, question)
     clock["understand"] = round(time.time() - t0, 2)
     notes = list(u["notes"])
+    if not exact:
+        from services.case_search import loose
+        from services.phone import chat_retrieval
+        gs = loose.groups(chat_retrieval.terms(question))
+        if any(len(g["inside"]) + len(g["whole"]) > 1 for g in gs) or len(gs) < len(chat_retrieval.terms(question)):
+            notes.append("Words were matched loosely, in the forms records use: %s. Pass exact=true for the words "
+                         "as typed." % loose.described(gs))
     call = model_call
     if (rank or phrase) and call is None:
         call = R.default_model_call()
@@ -157,7 +164,7 @@ def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], areas=None, 
             notes.append(why)
     t0 = time.time()
     got = net.gather(conn, case_id, question, u, kinds, areas=areas, phone=phone, person=person, date_from=date_from,
-                     date_to=date_to, embed_query=embed_query, collections=collections)
+                     date_to=date_to, embed_query=embed_query, collections=collections, exact=exact)
     clock["gather"] = round(time.time() - t0, 2)
     clock.update(got.get("clock") or {})
     notes += got["notes"]
@@ -206,7 +213,7 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
            person: str | None = None, date_from=None, date_to=None, offset: int = 0, limit: int = DEFAULT_LIMIT,
            min_grade: str | None = None, rank: bool = True, phrase: bool = True,
            model_call: Callable[[str], str] | None = None, embed_query=None, collections=None,
-           use_cache: bool = True, page_chars: int = PAGE_CHARS) -> dict[str, Any]:
+           use_cache: bool = True, page_chars: int = PAGE_CHARS, exact: bool = False) -> dict[str, Any]:
     """One page of the case search, in the shared result shape (``shape.RESULT_KEYS``).
 
     ``kinds``: any of ``KINDS`` (default all); ``areas``: only these embedded areas (and ``graph``) inside them.
@@ -225,7 +232,7 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
         return {**{k: None for k in RESULT_KEYS}, **res}
     r = ranked(conn, case_id, question, kinds=wanted, areas=tuple(areas) if areas else None, phone=phone, person=person, date_from=date_from,
                date_to=date_to, rank=rank, phrase=phrase, model_call=model_call, embed_query=embed_query,
-               collections=collections, use_cache=use_cache)
+               collections=collections, use_cache=use_cache, exact=exact)
     cands = r["candidates"]
     grades = {g: sum(1 for c in cands if c["grade"] == g) for g in ("strong", "moderate", "weak", "ungraded")}
     pool = cands

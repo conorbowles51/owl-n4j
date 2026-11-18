@@ -130,8 +130,11 @@ def _meaning(case_id, query, areas, *, embed_query, collections, phone=None, per
 
 
 def _embedded(conn, case_id, query, areas, *, embed_query, collections, words=True, meaning=True, phone=None,
-              person=None, date_from=None, date_to=None, tag="", ready=None) -> tuple[list[dict], list[dict], list[str]]:
-    """Meaning and words for one query; ``ready`` is the meaning search's future when it already runs elsewhere."""
+              person=None, date_from=None, date_to=None, tag="", ready=None, exact=False
+              ) -> tuple[list[dict], list[dict], list[str]]:
+    """Meaning and words for one query; ``ready`` is the meaning search's future when it already runs elsewhere.
+    Words are loose (``loose.groups``: stems, statement abbreviations, generic money words dropped) unless
+    ``exact``."""
     from services.embed_all import search as ES
     from services.phone import chat_retrieval
     notes: list[str] = []
@@ -146,6 +149,9 @@ def _embedded(conn, case_id, query, areas, *, embed_query, collections, words=Tr
         notes = list(notes)
     if words:
         terms = chat_retrieval.terms(query)
+        if not exact:
+            from services.case_search import loose
+            terms = loose.groups(terms)
         try:
             w = ES.word_hits(conn, case_id, terms, list(areas), phone=phone, person=person, date_from=date_from,
                              date_to=date_to)
@@ -235,7 +241,7 @@ def _graph(case_id, query, names, terms, *, embed_query) -> tuple[list[dict], li
 def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...], *, areas=None, phone=None,
            person=None,
            date_from=None, date_to=None, embed_query: Callable[[str], list[float]] | None = None,
-           collections=None) -> dict[str, Any]:
+           collections=None, exact: bool = False) -> dict[str, Any]:
     """Every candidate, fused, with ``searched``/``not_searched``/``notes`` for the result."""
     notes: list[str] = []
     searched: list[str] = []
@@ -308,14 +314,14 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
     try:
         return _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated, undated, phone, person,
                              date_from, date_to, embed, collections, meaning_ok, entities, notes, searched,
-                             not_searched, clock, t0, f_undated, f_dated, f_phrasings, f_graph)
+                             not_searched, clock, t0, f_undated, f_dated, f_phrasings, f_graph, exact)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated, undated, phone, person, date_from,
                   date_to, embed, collections, meaning_ok, entities, notes, searched, not_searched, clock, t0,
-                  f_undated, f_dated, f_phrasings, f_graph) -> dict[str, Any]:
+                  f_undated, f_dated, f_phrasings, f_graph, exact=False) -> dict[str, Any]:
     lists: list[list[dict]] = []
     meaning_all: list[dict] = []
     words_all: list[dict] = []
@@ -323,10 +329,10 @@ def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated
         # the question itself: meaning and words; dated records inside the dates asked for, messages and passages not
         m, w, n = _embedded(conn, case_id, question, undated, embed_query=embed, collections=collections, phone=phone,
                             person=person, date_from=date_from, date_to=date_to, ready=f_undated,
-                            meaning=f_undated is not None)
+                            meaning=f_undated is not None, exact=exact)
         m2, w2, n2 = _embedded(conn, case_id, question, dated, embed_query=embed, collections=collections,
                                phone=phone, person=person, ready=f_dated,
-                               meaning=f_dated is not None) if dated else ([], [], [])
+                               meaning=f_dated is not None, exact=exact) if dated else ([], [], [])
         meaning_all += m + m2
         words_all += w + w2
         for x in n + n2:
@@ -345,7 +351,7 @@ def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated
         for e in understood.get("expansions") or []:
             _, ew, _ = _embedded(conn, case_id, '"%s"' % e["term"] if " " in e["term"] else e["term"], areas,
                                  embed_query=embed, collections=None, meaning=False, phone=phone, person=person,
-                                 tag=" (name tie: %s)" % e["term"])
+                                 tag=" (name tie: %s)" % e["term"], exact=True)
             tied.append(ew)
         lists.append(_take_turns(tied))
         searched += ["%s (%s)" % (k, "meaning and words" if meaning_ok else "words only") for k in kinds

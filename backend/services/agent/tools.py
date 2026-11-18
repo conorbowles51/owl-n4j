@@ -202,6 +202,9 @@ class SearchGraphEntitiesArgs(BaseModel):
 # search_graph_entities calls in a row, another 15 get_financial_transactions calls). Offered only with the item on,
 # so the tool definitions are unchanged while it is off.
 MAX_MANY = 10
+# The ledger search ranks its rows with the case search's ranking model (the "search ranking" setting), as
+# search_case does; without a configured model, or when it fails, rows stay in search order and say so.
+LEDGER_RANK = True
 
 
 class SearchGraphEntitiesManyArgs(BaseModel):
@@ -394,6 +397,11 @@ class FinancialQueryArgs(FinancialPageArgs):
 
 
 class FinancialArgs(FinancialQueryArgs):
+    exact: bool = Field(False, description=(
+        "false (default): search finds rows by meaning and by loose words (other forms of a word and the "
+        "abbreviations statements print, such as CHK, DEP, BR, PMT, TFR), best first; it is not a filter and gives "
+        "no totals, and exact_words gives the totals of the rows holding every word as written. true: only rows "
+        "holding every word as written (search_mode), with complete totals."))
     records: Literal["transactions", "excluded", "incomplete"] = "transactions"
     entity_keys: list[str] | None = Field(None, max_length=200,
         description="Graph keys apply only to intelligence mode. For imported payments use ledger account_ids from coverage.")
@@ -2637,6 +2645,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                     filters[key] = str(value)
             if "search" not in filters:
                 filters.pop("search_mode", None)
+            for key in ("payment_ids", "sort"):
+                value = kwargs.pop(key, None)
+                if value:
+                    filters[key] = value
             categories = kwargs.pop("categories", None)
             if categories:
                 filters["analysis_categories"] = categories
@@ -2724,7 +2736,80 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             return context.result("get_financial_transactions", {"available": False},
                 summary="Choose ledger accounts to filter imported payments.", status="error",
                 error="Graph entity keys cannot filter the imported ledger. Get account_ids from get_financial_coverage, then retry.")
+        exact = bool(kwargs.pop("exact", False))
+        if (records == "transactions" and not exact and (kwargs.get("search") or "").strip()
+                and (kwargs.get("search_mode") or "terms") == "terms"):
+            return ranked_ledger(kwargs.pop("search").strip(), **kwargs)
         return read_ledger("get_financial_transactions", view=records, **kwargs)
+
+    def ranked_ledger(search: str, **kwargs) -> dict[str, Any]:
+        """A ledger search by meaning and loose words (lx-searchfix A): the case search ranks the case's ledger rows
+        for the words; the ledger read returns those rows, best first, with the other filters applied, their
+        corrected values and citations. Ranked rows are not a filter, so no totals are given for them; the rows
+        holding every word as written are counted and totalled beside them (``exact_words``)."""
+        tool = "get_financial_transactions"
+        kwargs.pop("search_mode", None)
+        kwargs.pop("sort", None)
+        from services.case_search import service as CS
+        notes: list[str] = []
+        ids: list[str] = []
+        ranking: dict[str, Any] = {}
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                r = CS.ranked(db.connection(), context.case_id, search, kinds=("ledger",), areas=("ledger",),
+                              date_from=kwargs.get("start_date"), date_to=kwargs.get("end_date"),
+                              rank=LEDGER_RANK)
+            for c in r["candidates"]:
+                cite = c.get("cite") or ""
+                if c.get("area") == "ledger" and cite.startswith("txn://"):
+                    ids.append(cite[len("txn://"):].split("#", 1)[0])
+            notes += [n for n in r["notes"] if n]
+            ranking = {"reranked": bool(r["ranking"].get("reranked")), "model": r["ranking"].get("model"),
+                       "meaning_search": r["meaning_search"], "searched": r["searched"]}
+        except Exception as exc:  # noqa: BLE001 - the words as written still answer, and the result says so
+            logger.warning("Ranked ledger search failed for case %s", context.case_id, exc_info=True)
+            notes.append("The search by meaning and loose words failed (%s); only rows holding every word as "
+                         "written are listed." % str(exc)[:160])
+            return read_ledger(tool, view="transactions", search=search, search_mode="terms", **kwargs)
+        ids = list(dict.fromkeys(ids))
+        exact_kwargs = dict(kwargs, offset=0, limit=1, expected_revision=None)
+        exact_part = read_ledger(tool, view="transactions", search=search, search_mode="terms", **exact_kwargs)
+        ed = exact_part.get("data") or {}
+        exact_words = {"search": search, "total_matching": ed.get("total_matching"), "totals": ed.get("totals"),
+                       "revision": ed.get("revision"),
+                       "note": "Rows holding every word as written; read them with exact=true. These totals cover "
+                               "those rows only." if ed.get("available") else ed.get("reason")}
+        if not ids:
+            data = {"available": True, "search": {"text": search, "how": "meaning and loose words", **ranking},
+                    "total_matching": 0, "returned": 0, "offset": 0, "next_offset": None, "has_more": False,
+                    "items": [], "exact_words": exact_words, "notes": notes,
+                    "why_empty": "No ledger row matched '%s' by meaning or by its words in any form%s." % (
+                        search, " (meaning search was unavailable)" if not ranking.get("meaning_search") else "")}
+            return context.result(tool, data, summary=data["why_empty"])
+        part = read_ledger(tool, view="transactions", payment_ids=ids, sort="given", **kwargs)
+        data = dict(part.get("data") or {})
+        if part.get("status") != "success" or not data.get("available"):
+            return part
+        rows = data.get("items") or []
+        found = data.get("total_matching") or 0
+        data.update({
+            "search": {"text": search, "how": "meaning and loose words, best first", "candidates": len(ids), **ranking},
+            "totals": None, "exact_words": exact_words,
+            "totals_note": ("A ranked search is not a filter: it gives no totals. The rows holding every word as "
+                            "written total %s (exact_words). For other sums, filter exactly: exact=true, or "
+                            "search_mode boolean." % ("nothing" if not exact_words["total_matching"] else
+                                                      "as exact_words shows")),
+            "notes": notes + ["%d ledger rows found by meaning or by their words, %d of them inside the other "
+                              "filters, best first. Read the next page (next_offset, revision) before concluding a "
+                              "row is absent." % (len(ids), found)],
+        })
+        filters = dict(data.get("filters") or {})
+        filters.pop("payment_ids", None)
+        data["filters"] = dict(filters, search=search, search_how="meaning and loose words")
+        summary = "Found %d ledger rows for '%s' by meaning and loose words, best first; showing %d from %d. %d rows " \
+                  "hold every word as written (exact_words)." % (found, search, len(rows), data.get("offset") or 0,
+                                                                 exact_words["total_matching"] or 0)
+        return context.result(tool, data, summary=summary)
 
     def analyze_financial_transactions(group_by="account", **kwargs) -> dict[str, Any]:
         return read_ledger("analyze_financial_transactions", view="groups", group_by=group_by, **kwargs)

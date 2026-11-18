@@ -35,7 +35,9 @@ class LedgerTableView(BaseModel):
     flow_kind: Literal['', 'incoming', 'outgoing', 'internal'] = ''
     sort: Literal['ledger', 'oldest', 'newest', 'amount-asc', 'amount-desc',
                   'description-asc', 'description-desc', 'from-asc', 'from-desc',
-                  'to-asc', 'to-desc', 'category-asc', 'category-desc'] = 'ledger'
+                  'to-asc', 'to-desc', 'category-asc', 'category-desc', 'given'] = 'ledger'
+    # Only these payments (ledger row keys), e.g. the rows a ranked search found; with sort 'given', in this order.
+    payment_ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=5000)
 
 
     @model_validator(mode='after')
@@ -146,6 +148,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
         matches_search = transaction_search(view.search, view.search_mode)
     except ValueError as exc:
         raise LedgerSummaryError(str(exc)) from exc
+    wanted = {key: i for i, key in reversed(list(enumerate(view.payment_ids)))} if view.payment_ids else None
     selections = {key: set(getattr(view, key)) for key in ('from_names', 'to_names', 'perspective_names', 'analysis_categories')}
     if view.import_batch_id and (not batch_scope or batch_scope['batch_id'] != view.import_batch_id or batch_scope['revision'] != view.import_batch_revision):
         raise LedgerSummaryError('The imported batch changed. Reopen its transactions before downloading.')
@@ -177,8 +180,12 @@ def capture_table_view(ledger, request, *, batch_scope=None):
             continue
         if not matches_search(row):
             continue
+        if wanted is not None and row['key'] not in wanted:
+            continue
         rows.append(row)
     rows.sort(key=lambda r: (r['ordering_date'], r['row_index'], r['key']))
+    if view.sort == 'given' and wanted is not None:
+        rows.sort(key=lambda r: wanted[r['key']])
     if view.sort == 'newest':
         rows.sort(key=lambda r: r['ordering_date'], reverse=True)
     if view.sort.startswith('amount'):
@@ -193,7 +200,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
                 return (unquote(key.split(':', 3)[3]) if key.startswith('identity:') else key[5:] if key.startswith('name:') else 'Not identified').lower()
             return (row.get(field) or ('Uncategorized' if field == 'category' else '')).lower()
         rows.sort(key=lambda row: label(row).encode('utf-16-be', errors='surrogatepass'), reverse=direction == 'desc')
-    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'profile_scope', 'category', 'categories', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
+    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'profile_scope', 'category', 'categories', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind', 'payment_ids') if not getattr(view, key)}),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')
     if batch_sources is not None:
