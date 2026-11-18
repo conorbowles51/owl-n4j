@@ -211,7 +211,10 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
     queryFn: () => lensIndex({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy, ...scoped }),
     enabled: significant,
   })
-  const stream = useStream(filter, { source: LENS_SOURCE })
+  // The day bounds of a carried window are read in the case's zone: until the zone is known, asking would read UTC
+  // days, and every window asked under that answer comes back stale when the zone arrives (lx-leads live check: 9 of
+  // the first windows refused on each arrival from a link with a window).
+  const stream = useStream(settings.isPending ? null : filter, { source: LENS_SOURCE })
   // Phone layers (behind the phone_layers setting): each phone's entries under the other filters, one read per phone
   // so a phone switched off still states its number.
   const layersOn = phoneLayersEnabled()

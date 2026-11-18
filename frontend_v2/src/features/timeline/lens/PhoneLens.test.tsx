@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { rowText } from "@/features/phones/lib/copy-rows"
 import type { StreamRow } from "@/features/phones/schemas"
 
-const net = vi.hoisted(() => ({ calls: [] as { url: string; body: Record<string, unknown> }[], total: 6, hidden: 4, lastDay: null as string | null }))
+const net = vi.hoisted(() => ({ calls: [] as { url: string; body: Record<string, unknown> }[], total: 6, hidden: 4, lastDay: null as string | null,
+  settings: null as null | Promise<unknown> }))
 vi.mock("@/lib/api-client", async (orig) => ({
   ...(await orig<object>()),
   fetchAPI: vi.fn(async (url: string, opts: { body: Record<string, unknown> }) => {
-    net.calls.push({ url, body: opts.body })
+    net.calls.push({ url, body: opts?.body })
+    if (url.startsWith("/api/phones/settings") && net.settings) return net.settings
     if (url.endsWith("/timeline/index")) {
       const kinds = (opts.body.lens_kinds as string[]) ?? []
       const shown = kinds.includes("device")
@@ -82,6 +84,22 @@ describe("Timeline phone lens (03 section 9)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show" }))
     await waitFor(() => expect(net.calls.at(-1)!.body.lens_kinds).toEqual(["messages", "calls", "emails", "media", "locations", "device", "sensor"]))
     expect(await screen.findByText("Device events and sensor readings are shown.")).toBeInTheDocument()
+  })
+
+  it("lx-leads: a carried window waits for the case's zone, so the first index is asked in that zone and no window goes stale", async () => {
+    let answer: (v: unknown) => void = () => {}
+    net.settings = new Promise((r) => { answer = r })
+    try {
+      wrap(<PhoneLens caseId="c" caseName="Synthetic case" />, "/cases/c/timeline?from=2024-03-15&to=2024-06-04")
+      await new Promise((r) => setTimeout(r, 50))
+      expect(net.calls.filter((c) => c.url.endsWith("/timeline/index"))).toHaveLength(0)
+      await act(async () => { answer({ effective: { name: "America/New_York" } }) })
+      await waitFor(() => expect(net.calls.some((c) => c.url.endsWith("/timeline/index"))).toBe(true))
+      const asked = net.calls.filter((c) => c.url.endsWith("/timeline/index")).map((c) => c.body.from_instant)
+      expect(asked).toEqual(["2024-03-15T04:00:00.000Z"])
+    } finally {
+      net.settings = null
+    }
   })
 
   it("07 4.5: a scope carried in the address filters the lens and shows the same chips", async () => {
