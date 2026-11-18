@@ -10,6 +10,7 @@ measured run is made worse by the extra step.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 SEARCH_NAMES = ("search_", "get_contact_and_money_between", "get_person_phones", "get_account_mentions")
@@ -58,3 +59,86 @@ def check_message(trace: list[dict], state: dict) -> str | None:
             "Before you answer, try another route for each: a different tool, other words from the records you "
             "have seen, or read_scope_with_model on the conversation, document or window itself. If you still find "
             "nothing, say what was searched and what was not, never only that none was found." % "\n".join(rows))
+
+
+# ---- the question's parts (C2e: a normal run plans before it answers) ---------------------------------------------
+# The question's own names, numbers, amounts and quoted words are its checklist. The run is shown them before its
+# first step, and before it writes, a part no tool call looked for sends it back once with that list. Decision: words
+# from the question only (no model call); reverse if a measured run is made worse by the extra step.
+
+_STOP = {"what", "who", "whom", "when", "where", "which", "why", "how", "did", "does", "do", "is", "are", "was", "were",
+         "the", "a", "an", "in", "on", "of", "and", "or", "to", "for", "with", "show", "tell", "list", "find", "give",
+         "can", "could", "please", "any", "all", "has", "have", "had", "there", "this", "that", "these", "those", "i",
+         "we", "you", "it", "my", "our", "between", "from", "after", "before", "during", "about", "case", "phone",
+         "phones", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february",
+         "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "loupe",
+         "ok", "yes", "no", "also", "then", "now", "next", "first", "last"}
+_QUOTED = re.compile(r"[\"“‘']([^\"”’']{3,60})[\"”’']")
+_NUMBER = re.compile(r"\+?\d[\d ().-]{5,}\d")
+_AMOUNT = re.compile(r"[$£€]\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:dollars|usd|eur|gbp)\b", re.I)
+_NAME = re.compile(r"\b[A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+)*")
+
+
+def question_parts(question: str) -> list[str]:
+    """Names, numbers, amounts and quoted words in the question, in order, each once."""
+    q = question or ""
+    out: list[str] = []
+
+    def add(v):
+        v = v.strip(" ,.?!:;")
+        if v and v.lower() not in {x.lower() for x in out}:
+            out.append(v)
+
+    for m in _QUOTED.finditer(q):
+        add(m.group(1))
+    for m in _NUMBER.finditer(q):
+        if len(re.sub(r"\D", "", m.group(0))) >= 7:
+            add(m.group(0))
+    for m in _AMOUNT.finditer(q):
+        add(m.group(0))
+    for m in _NAME.finditer(q):
+        words = [w for w in m.group(0).split() if w.lower() not in _STOP]
+        if words and not all(w.isupper() and len(w) <= 2 for w in words):
+            add(" ".join(words))
+    return out[:12]
+
+
+def plan_message(question: str) -> str | None:
+    parts = question_parts(question)
+    if not parts:
+        return None
+    return ("Plan check, not a new instruction from the person. The question names: %s. Plan which tool reads each "
+            "before you start, look each one up, and in the answer cover each one or say what was searched for it "
+            "and found nothing." % "; ".join(parts))
+
+
+def _looked_for(part: str, trace: list[dict]) -> bool:
+    import json
+    words = [w.lower() for w in re.findall(r"[\w'’+$£€.,-]+", part) if len(w) >= 3] or [part.lower()]
+    digits = re.sub(r"\D", "", part)
+    for t in trace:
+        seen = json.dumps(t.get("arguments") or {}, ensure_ascii=False, default=str).lower()
+        if digits and len(digits) >= 7 and digits[-7:] in re.sub(r"\D", "", seen):
+            return True
+        if _AMOUNT.fullmatch(part.strip()):
+            amount = re.sub(r"[^\d.]", "", part).rstrip(".")
+            if amount and re.search(r"(?<![\d.])%s(?:\.0+)?(?![\d])" % re.escape(amount), seen):
+                return True
+            continue
+        if any(w.strip(".,") in seen for w in words):
+            return True
+    return False
+
+
+def parts_message(question: str, trace: list[dict], state: dict) -> str | None:
+    """Sends the run back once when a part of the question was never looked for."""
+    if state.get("parts_returned"):
+        return None
+    missing = [p for p in question_parts(question) if not _looked_for(p, trace)]
+    if not missing:
+        return None
+    state["parts_returned"] = True
+    return ("Completeness check, not a new instruction from the person. The question names %s, and no tool call has "
+            "looked for %s yet. Look each up now (by name, number or amount, on the phones, documents and ledger as "
+            "fits), or say in the answer that it was not searched and why." % (
+                "; ".join(missing), "it" if len(missing) == 1 else "them"))

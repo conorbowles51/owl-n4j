@@ -226,6 +226,13 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
     # Deep investigation: the checklist and notebook live in the checkpoint, never in the model's context.
     from services.agent import deep_investigation as D
     context.deep_plan = deepcopy(checkpoint.get('deep_plan') or deep_plan)
+    question_text = next((str(m.content) for m in reversed(messages) if isinstance(m, HumanMessage)), "")
+    if not checkpoint and context.deep_plan is None:
+        # C2e: a normal run is shown the question's own parts and plans before its first step (answer_check)
+        from services.agent import answer_check as _plan_check
+        plan_note = _plan_check.plan_message(question_text)
+        if plan_note:
+            state_messages.append(HumanMessage(content=plan_note))
     context.free_calls = int(checkpoint.get('free_calls', 0))
     context.reread_calls = int(checkpoint.get('reread_calls', 0))
     for artifact in context.artifact_store.values():
@@ -253,7 +260,8 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
     contract = checkpoint.get('delivery_contract') or delivery_contract or completion_checks.delivery_contract(
         [m.content for m in messages if isinstance(m, HumanMessage)])
     repair_attempts = int(checkpoint.get('repair_attempts', 0))
-    answer_check_state = {'returned': bool(checkpoint.get('answer_check_returned'))}
+    answer_check_state = {'returned': bool(checkpoint.get('answer_check_returned')),
+                          'parts_returned': bool(checkpoint.get('answer_check_parts_returned'))}
     if (checkpoint and phase != 'done'
             and checkpoint.get('completion_check_version') != completion_checks.COMPLETION_CHECK_VERSION):
         # An upgraded checker gets a bounded fresh repair window; previous false
@@ -505,11 +513,15 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
             # Completeness check of a normal run (answer_check): searches that found nothing get one more route.
             from services.agent import answer_check
             check = answer_check.check_message(trace, answer_check_state)
+            words = "Searches found nothing: trying another route"
+            if not check:
+                check = answer_check.parts_message(question_text, trace, answer_check_state)
+                words = "Looking up the parts of the question not searched yet"
             if check:
                 state_messages.append(HumanMessage(content=check))
                 phase = "agent"
                 save()
-                yield {"type": "status", "stage": "reasoning", "message": "Searches found nothing: trying another route"}
+                yield {"type": "status", "stage": "reasoning", "message": words}
                 continue
         if phase == "finalize":
             note(live_runs.progress_writing(step=used))
@@ -570,6 +582,7 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                 note(live_runs.progress_writing(step=used))
                 if context.deep_plan is not None:
                     final_answer_rules = "\n\n".join(x for x in (final_answer_rules, D.not_done_block(context.deep_plan),
+                                                                  D.absence_block(context.deep_plan),
                                                                   D.notebook_block(context.deep_plan)) if x)
                 checked_final_rules = final_answer_rules + ('\nThe saved work still needs revision. State the remaining '
                         'issues and do not claim the request is complete: ' + json.dumps(completion_issues, ensure_ascii=False)
@@ -630,5 +643,6 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
            'completion_issues': completion_issues, 'render_receipts': render_receipts, 'repair_attempts': repair_attempts,
            'source_coverage_receipts': source_receipts,
            'answer_check_returned': answer_check_state['returned'],
+           'answer_check_parts_returned': answer_check_state['parts_returned'],
            'evidence_review_receipts': {key: value for key, value in evidence_review_receipts.items() if value.get('active')},
            "tool_trace": trace, "messages": spent, "steering": steer_applied, "usage": runner._extract_usage(spent[billed_count:]), **g._cross_case_result(context, case_id)}}
