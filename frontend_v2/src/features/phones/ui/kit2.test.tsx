@@ -222,6 +222,21 @@ describe("record panel and docked slot (07 4.3, 5)", () => {
   })
 })
 
+describe("docked panel on a phone-width screen", () => {
+  it("is a sheet over the page below 768 px, so Close is on screen, and keeps its docked width above", () => {
+    const closed = vi.fn()
+    render(<DockedPanel title="Record" open onClose={closed} width={420}><p>body</p></DockedPanel>)
+    const panel = screen.getByRole("complementary", { name: "Record" })
+    // jsdom applies no media queries: the classes and the width variable are what the browser reads
+    expect(panel.className).toMatch(/max-md:fixed/)
+    expect(panel.className).toMatch(/max-md:w-full/)
+    expect(panel.style.width).toBe("")
+    expect(panel.style.getPropertyValue("--docked-w")).toBe("420px")
+    fireEvent.click(screen.getByRole("button", { name: "Close Record" }))
+    expect(closed).toHaveBeenCalled()
+  })
+})
+
 describe("Add to… (07 J-12, 6.2)", () => {
   const links: CollectLink[] = Array.from({ length: 12345 }, (_, i) => ({ target_type: "phone_record", target_id: `r${i}`, source_anchor: {} }))
   it("sends in parts of 5,000 and sums added and already-there counts", async () => {

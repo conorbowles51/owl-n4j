@@ -1,5 +1,5 @@
 import { X } from "lucide-react"
-import { useEffect, type ReactNode } from "react"
+import { useEffect, type CSSProperties, type ReactNode } from "react"
 import { cn } from "@/lib/cn"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -33,8 +33,11 @@ export function DockedPanel({
   return (
     <aside
       aria-label={title}
-      className={cn("flex h-full shrink-0 flex-col border-l bg-card text-foreground", className)}
-      style={{ width }}
+      // Below 768 px a docked width leaves the page beside it no room and pushes Close off the screen: the panel
+      // becomes a sheet over the page, and Close returns to the page (lx-leads live check, 390 wide).
+      className={cn("flex h-full shrink-0 flex-col border-l bg-card text-foreground w-[var(--docked-w)]",
+        "max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full max-md:border-l-0", className)}
+      style={{ "--docked-w": `${width}px` } as CSSProperties}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation()
