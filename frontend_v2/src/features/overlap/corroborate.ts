@@ -1,21 +1,11 @@
-import type { RelationMember } from "@/features/relations/api"
-import { addPart } from "@/features/corroborate/selection-store"
+import { openCorroborate, type CorroborateRequest } from "@/features/leads/open"
 
-export interface CorroborateAsk {
-  caseId: string
-  screen: string
-  label: string
-  members: RelationMember[]
-  people?: string[]
-  period?: { from: string; to: string }
-}
+export type CorroborateAsk = CorroborateRequest
 
 /**
- * "Corroborate this" from an overlap view: the records join the Corroborate selection (the tray every screen
- * shares), and the Leads panel is asked to open over the page with them (lx-leads' "loupe-corroborate-open"
- * event, the same one its openCorroborate sends). Nothing is saved until a question is asked there.
+ * "Corroborate this" from an overlap view: lx-leads' Corroborate panel opens over the page with these records (they
+ * also join the case-wide Corroborate selection). Nothing is saved until a question is asked there.
  */
 export function askCorroborate(ask: CorroborateAsk) {
-  addPart(ask.caseId, { screen: ask.screen, label: ask.label, members: ask.members, skipped: [] })
-  window.dispatchEvent(new CustomEvent("loupe-corroborate-open", { detail: ask }))
+  openCorroborate(ask)
 }
