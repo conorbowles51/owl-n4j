@@ -623,5 +623,8 @@ def shared_content(store) -> dict | None:
     except ImportError:
         return None
     out = shared_words.shared_content(store)
+    # the same-bytes files are read apart from the words; every one is listed here, because each pair is counted
+    files = shared_words.same_files(store, listed=None)
+    out["files_common"], out["files_shared"] = files["files_common"], files["files_shared"]
     out["phone_of_label"] = {label: ext for ext, label in shared_words._labels(store).items()}
     return out

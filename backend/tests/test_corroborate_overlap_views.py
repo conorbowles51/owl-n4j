@@ -281,3 +281,34 @@ def test_overlap_view_routes_need_case_view():
                 ("POST", "/api/cases/{case_id}/corroborate/around-event"),
                 ("GET", "/api/cases/{case_id}/corroborate/around-event/choices")]:
         assert require_case_view in {d.dependency for d in got[key].dependencies}, key
+
+
+# ---- same-bytes files ----------------------------------------------------------------------------------------------
+
+class FileStore:
+    """Three active phones; 250 files on two of them and one file on all three."""
+    def q(self, sql, **_k):
+        if "pv_file" in sql:
+            return [("all", 3, ["e1", "e2", "e3"], "x/IMG_0.jpg")] + [(f"m{i}", 2, ["e1", "e2"], f"a\\IMG_{i}.jpg") for i in range(250)]
+        raise AssertionError(sql)
+
+
+def test_same_files_lists_up_to_the_cap_with_full_counts_and_all_when_asked(monkeypatch):
+    monkeypatch.setattr(SW, "_labels", lambda store: {"e1": "Ann's phone", "e2": "Bob's phone", "e3": "Cy's phone"})
+    monkeypatch.setattr(SW, "_active_phones", lambda store: ["e1", "e2", "e3"])
+    capped = SW.same_files(FileStore())
+    assert len(capped["files_shared"]) == SW.LISTED and capped["counts"] == {"files_common": 1, "files_shared": 250}
+    assert capped["files_common"][0]["name"] == "IMG_0.jpg" and capped["files_shared"][0]["name"] == "IMG_0.jpg"
+    every = SW.same_files(FileStore(), listed=None)
+    assert len(every["files_shared"]) == 250 and every["files_shared"][0]["phones"] == ["Ann's phone", "Bob's phone"]
+
+
+def test_who_overlaps_still_reads_every_shared_file(monkeypatch):
+    """shared_content no longer carries the files (they are slow on a big case); Who overlaps with whom must still see
+    each one, or a file on both people's phones silently stops counting."""
+    from services.corroborate import overlaps
+    monkeypatch.setattr(SW, "shared_content", lambda store: {"also": [], "stock": [], "deletions": []})
+    monkeypatch.setattr(SW, "_labels", lambda store: {"e1": "Ann's phone", "e2": "Bob's phone", "e3": "Cy's phone"})
+    monkeypatch.setattr(SW, "_active_phones", lambda store: ["e1", "e2", "e3"])
+    out = overlaps.shared_content(FileStore())
+    assert len(out["files_shared"]) == 250 and len(out["files_common"]) == 1
