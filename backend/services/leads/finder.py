@@ -75,6 +75,16 @@ class FinderStore(CaseStore):
                 self.photo_refs.add(f"phone_record:{uid}")
 
         self._held: dict | None = None
+        self._phrase_n: dict[str, int] = {}
+
+    def phrase_counts(self, phrases: list[str]) -> dict[str, int]:
+        """The case-wide count of each phrase, asked of the database once per finder run: on Phone reference 1 one
+        count reads 847 MB of text (5.4 s, 18 Nov) and the weighings of one run ask many of the same phrases."""
+        want = phrases[:200]
+        new = [ph for ph in want if ph not in self._phrase_n]
+        if new:
+            self._phrase_n.update(super().phrase_counts(new))
+        return {ph: self._phrase_n[ph] for ph in want}
 
     def records(self, people, windows, everyone):
         return photo_places_as_media(super().records(people, windows, everyone), self.photo_refs)
@@ -481,15 +491,23 @@ def stock_phrases(case: Case) -> list[dict]:
         "SELECT lower(regexp_replace(btrim(body), '\\s+', ' ', 'g')) AS b, count(DISTINCT extraction_id), count(*) "
         "FROM phone_comm_events WHERE case_id = :c AND length(btrim(body)) >= :n GROUP BY 1 HAVING "
         "count(DISTINCT extraction_id) >= 3", n=LONG_TEXT).all()
+    kept = [(body, phones, copies) for body, phones, copies in sorted(rows, key=lambda r: -r[2])
+            if phones / n_phones >= STOCK_SHARE]
+    # one pass over the records for every stock phrase (was one pass per phrase: phrases x records on a large case)
+    refs: dict[str, list] = {body: [] for body, _, _ in kept}
+    if refs:
+        for r in case.recs:
+            if r.get("body"):
+                hit = refs.get(_norm(r["body"]))
+                if hit is not None and len(hit) < 200:
+                    hit.append(r["ref"])
     out = []
-    for body, phones, copies in sorted(rows, key=lambda r: -r[2]):
-        if phones / n_phones < STOCK_SHARE:
-            continue
+    for body, phones, copies in kept:
         case.stock.add(body)
         out.append({"key": f"stock:{body[:150]}", "title": _quote(body),
                     "summary": f"{_quote(body)} is on {phones} of the {n_phones} phones, {copies} times: a stock "
                                "phrase, not shared wording.", "kinds": ["shared_content"],
-                    "refs": [r["ref"] for r in case.recs if r.get("body") and _norm(r["body"]) == body][:200]})
+                    "refs": refs[body]})
     return out
 
 

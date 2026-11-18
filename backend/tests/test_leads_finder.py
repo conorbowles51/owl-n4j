@@ -269,3 +269,46 @@ def test_a_records_key_holds_no_copy_of_its_text():
     assert sum(sys.getsizeof(x) for x in key) < 1000
     assert key == contact_dup_key("email", when.replace(second=30), "  " + body.upper() + " ", ["b", "a"])
     assert key != contact_dup_key("email", when, body + "!", ["a", "b"])
+
+
+def test_stock_phrases_read_the_records_once_and_keep_each_phrases_records(monkeypatch):
+    """Phone reference 1, 18 Nov: one pass over every record per stock phrase (phrases x 251,780 records) held the
+    finder past 10 minutes. One pass now; each phrase still lists its own records, at most 200."""
+    phrases = ["running about ten minutes behind", "sent from my phone please excuse typos", "call me back"]
+    recs = [msg(f"r{i}", "abz"[i % 3], "h", at(NIGHTS[0], 12), "  " + phrases[i % 3].upper() + " ")
+            for i in range(900)] + [msg("x", "a", "b", at(NIGHTS[0], 13), "something else")]
+    c = case(recs)
+
+    class Q:
+        def all(self):
+            return [(p, 3, 300) for p in phrases]
+
+    c.store = SimpleNamespace(q=lambda *a, **k: Q())
+    calls = Counter()
+    real = F._norm
+    monkeypatch.setattr(F, "_norm", lambda b: (calls.update(["n"]), real(b))[1])
+    out = F.stock_phrases(c)
+    assert calls["n"] <= len(recs)
+    assert c.stock == set(phrases)
+    by = {o["key"]: o["refs"] for o in out}
+    assert by["stock:call me back"] == [f"r{i}" for i in range(2, 900, 3)][:200]
+    assert all(len(v) == 200 for v in by.values())
+
+
+def test_a_phrase_is_counted_in_the_database_once_per_finder_run():
+    """Phone reference 1, 18 Nov: each count reads 847 MB of text (5.4 s) and every weighing asked its phrases again."""
+    asked = []
+
+    class Q:
+        def __init__(self, p):
+            self.p = p
+
+        def scalar(self):
+            return len(self.p)
+
+    st = object.__new__(F.FinderStore)
+    st._phrase_n = {}
+    st.q = lambda sql, **k: (asked.append(k["p"]), Q(k["p"]))[1]
+    assert st.phrase_counts(["dock 3", "same as before"]) == {"dock 3": 8, "same as before": 16}
+    assert st.phrase_counts(["same as before", "tonight"]) == {"same as before": 16, "tonight": 9}
+    assert asked == ["%dock 3%", "%same as before%", "%tonight%"]
