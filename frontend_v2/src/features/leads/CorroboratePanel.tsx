@@ -170,7 +170,12 @@ function firstPhoneRecord(refs: Set<string>): Record<string, string> {
 function leadWindow(period?: { from?: string; to?: string }): { from: string; to: string } | null {
   const from = period?.from ?? period?.to
   const to = period?.to ?? period?.from
-  return from && to ? { from: from.slice(0, 10), to: to.slice(0, 10) } : null
+  if (!from || !to) return null
+  // A lead's days are UTC dates and the pages read days in the case's zone: a night at 22:00 in New York is the next
+  // day in UTC, so the window opens a day earlier to hold the first night whole.
+  const d = new Date(`${from.slice(0, 10)}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return { from: d.toISOString().slice(0, 10), to: to.slice(0, 10) }
 }
 
 /** While a lead's records are shown, a bar says so on every page, with links to the lead's days on Conversations,
