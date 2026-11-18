@@ -134,3 +134,16 @@ def test_a_person_nothing_links_is_no_link_found_when_asked_if_they_are_connecte
     # the same records asked "does this happen every time?" keep the rule they had: the overlap is what was picked
     every = levels.decide(grid, instances, comparison, [], question_kind="every_time", missing=[])
     assert every["key"] == "coincidence" and every["rule"] == "overlap_only"
+
+
+def test_cash_just_under_the_threshold_is_weighed_against_the_key_nights_it_follows():
+    deposits = [{"ref": f"d{i}", "kind": "payment", "at": at(d + timedelta(days=3), 10), "owner": "a", "parties": [],
+                 "amount_minor": 990000 - i * 100, "cash_deposit": True} for i, d in enumerate(NIGHTS[:3])]
+    keys = {d: f"k{i}" for i, d in enumerate(NIGHTS)}
+    found = F.cash_splits(case(deposits), keys)
+    assert len(found) == 1
+    # the three key nights each followed by a deposit are in the question; the fourth, with none after it, is not
+    assert found[0]["refs"][:3] == ["k0", "k1", "k2"] and "k3" not in found[0]["refs"]
+    assert "each within 4 days after a key night" in found[0]["title"]
+    late = [dict(r, at=r["at"] + timedelta(days=2)) for r in deposits]  # 5 days after each night
+    assert not any(r.startswith("k") for r in F.cash_splits(case(late), keys)[0]["refs"])

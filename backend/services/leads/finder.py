@@ -320,6 +320,9 @@ def payments_after(case: Case, keys: dict[date, str]) -> list[dict]:
     return out
 
 
+CASH_AFTER_DAYS = 4  # a deposit on the Monday after a Friday key night is 3 days on
+
+
 def cash_splits(case: Case, keys: dict[date, str]) -> list[dict]:
     """Cash deposits just under the $10,000 reporting threshold (model.STRUCTURING_*), two or more by one person."""
     by = defaultdict(list)
@@ -334,10 +337,15 @@ def cash_splits(case: Case, keys: dict[date, str]) -> list[dict]:
         if not who or len({case.night(r["at"]) for r in rs}) < 2:
             continue
         days = sorted({r["at"].date() for r in rs})
-        title = (f"{len(days)} cash deposits just under $10,000 by {case.label(who)} ({_days_words(days)})")
+        # the key nights each followed by one of these deposits within CASH_AFTER_DAYS, so the engine weighs the
+        # deposits against those nights (as payments_after does) and not on their own
+        after = sorted(n for n in keys if any(0 <= (d - n).days <= CASH_AFTER_DAYS for d in days))
+        title = (f"{len(days)} cash deposits just under $10,000 by {case.label(who)} ({_days_words(days)})"
+                 + (f", each within {CASH_AFTER_DAYS} days after a key night" if len(after) >= len(days) else ""))
         out.append(_cand(f"cash:{who}", "cash", title, [r["ref"] for r in rs], {"kind": "every_time",
                                                                                  "chips": {"people": [who]}},
-                         kinds=["money"], people=[who], detail={"days": [d.isoformat() for d in days]}))
+                         kinds=["money"], people=[who], anchors=[keys[n] for n in after] if len(after) >= MIN_REPEAT else [],
+                         detail={"days": [d.isoformat() for d in days], "after_key_nights": [n.isoformat() for n in after]}))
     return out
 
 
