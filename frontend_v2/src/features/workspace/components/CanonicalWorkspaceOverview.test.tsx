@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -174,10 +175,11 @@ describe("Workspace orientation", () => {
     const dismiss = screen.getByRole("button", {
       name: /dismiss review account statement/i,
     })
-    expect(dismiss).toHaveAttribute(
-      "title",
-      expect.stringContaining("does not complete")
-    )
+    // the title became the button's tooltip (lx-guidecover C): its words show on keyboard focus
+    await act(async () => void fireEvent.focus(dismiss))
+    expect(
+      (await screen.findAllByText(/does not complete the work/)).length
+    ).toBeGreaterThan(0)
     fireEvent.click(dismiss)
     await waitFor(() =>
       expect(mocks.setAttention).toHaveBeenCalledWith({

@@ -40,8 +40,8 @@ const buttonVariants = cva(
 )
 
 /**
- * The app's button. An icon-only button (no words inside) shows its name, the `tooltip` prop or else its aria-label
- * or title, as a tooltip that opens on hover and on keyboard focus (lx-guidecover C). A disabled button given a
+ * The app's button. An icon-only button (no words inside) shows the `tooltip` prop, else its title, else its
+ * aria-label, as a tooltip that opens on hover and on keyboard focus (lx-guidecover C). A disabled button given a
  * `disabledReason` says why it is disabled and what enables it, in the same tooltip, reachable by keyboard.
  */
 type ButtonProps = React.ComponentProps<"button"> &
@@ -59,7 +59,9 @@ function Button(all: ButtonProps) {
   // already the trigger of a Tooltip the caller drew: never a second one
   const own = (props as Record<string, unknown>)["data-slot"] !== "tooltip-trigger"
   const iconOnly = !hasWords(props.children)
-  const label = props["aria-label"] ?? (typeof props.title === "string" ? props.title : undefined)
+  // the title is the longer explanation when both are given ("Hide this reminder until it changes. This does not
+  // complete the work." beside the name "Dismiss ..."): the tooltip shows it, the name stays the aria-label
+  const label = (typeof props.title === "string" && props.title ? props.title : undefined) ?? props["aria-label"]
   const off = !!props.disabled && !!disabledReason
   const tip = off ? disabledReason : (tooltip ?? (iconOnly ? label : undefined))
   // The tree keeps one shape across renders (a button that turns enabled, or whose words become a spinner, stays the

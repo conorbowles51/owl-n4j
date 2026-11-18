@@ -39,7 +39,7 @@ it("says Claude changed the details, not saved the payments, and a person confir
   expect(screen.queryByText(/Saved by Claude/)).toBeNull()
   fireEvent.click(screen.getByText("What was done"))
   expect(screen.getByText(/moved the statement to another account/)).toBeTruthy()
-  fireEvent.click(screen.getByRole("button", { name: /confirm/ }))
+  fireEvent.click(screen.getByRole("button", { name: /: confirm$/ }))
   await waitFor(() => expect(onConfirmed).toHaveBeenCalled())
   expect(vi.mocked(fetchAPI).mock.calls[0][0]).toBe("/api/financial/judgements/statements/s1/confirm?case_id=c1")
 })

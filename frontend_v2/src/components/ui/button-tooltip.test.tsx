@@ -16,6 +16,15 @@ describe("Button tooltips", () => {
     expect((await screen.findAllByText("Close the panel")).length).toBeGreaterThan(0)
   })
 
+  it("an icon-only button with a name and a title shows the title's words, keeping the name", async () => {
+    render(<Button size="icon" aria-label="Dismiss the reminder"
+      title="Hide this reminder until it changes. This does not complete the work."><X /></Button>)
+    const button = screen.getByRole("button", { name: "Dismiss the reminder" })
+    expect(button.getAttribute("title")).toBeNull()
+    await act(async () => void fireEvent.focus(button))
+    expect((await screen.findAllByText(/This does not complete the work\./)).length).toBeGreaterThan(0)
+  })
+
   it("a button with words gets no tooltip of its own", async () => {
     render(<Button aria-label="Save the note">Save</Button>)
     const button = screen.getByRole("button", { name: "Save the note" })
