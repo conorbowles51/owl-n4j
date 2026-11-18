@@ -1,6 +1,7 @@
 """Corroborate (lx-corroengine B-H) on an invented case: levels come from the rules, every check is returned, copies
 count once, missing data is Can't tell, and the rules never name the demo case's people."""
 import json
+from datetime import datetime, timedelta, timezone
 import re
 from pathlib import Path
 
@@ -306,3 +307,48 @@ def test_an_unnamed_phone_inside_the_area_every_evening_is_a_place_row_not_a_sec
     device = next(c for c in res["checks"] if c["check"] == "shared_device")
     assert device["outcome"] == "checked", device
     assert res["level"]["key"] in ("strong", "probable"), res["level"]
+
+
+def _old_activity_row(people, activity, instances, window=timedelta(minutes=30)):
+    """The row as it was computed before 18 Nov (every list sorted per instance, every pair compared)."""
+    from services.corroborate import signals as S
+    keys = sorted(people)
+    row = S._row("activity:all", "activity", "x", keys, instances, context=True)
+    for inst in instances:
+        per = {k: S._between(sorted(activity[k]), inst["start"], inst["end"]) for k in keys}
+        if any(not v for v in per.values()):
+            covered = all(S._between(sorted(activity[k]), inst["start"] - timedelta(hours=24),
+                                     inst["end"] + timedelta(hours=24)) for k in keys)
+            S._set(row, inst, False, covered=covered)
+            continue
+        hit = None
+        for t in sorted(x for v in per.values() for x in v):
+            if all(any(t <= x <= t + window for x in v) for v in per.values()):
+                hit = t
+                break
+        S._set(row, inst, hit is not None, [], hit, True)
+    return row
+
+
+def test_activity_row_reads_each_phone_once_and_finds_the_same_bursts():
+    """Phone reference 1, 18 Nov: the row sorted every phone's whole activity once per instance (83% of a weighing)."""
+    import random
+    from services.corroborate import signals as S
+    rnd = random.Random(5)
+    t0 = datetime(2024, 3, 1, tzinfo=timezone.utc)
+    reads = {"n": 0}
+
+    class Times(list):
+        def __iter__(self):
+            reads["n"] += 1
+            return super().__iter__()
+    activity = {k: Times(sorted(t0 + timedelta(minutes=rnd.randint(0, 60 * 24 * 60)) for _ in range(rnd.randint(50, 900))))
+                for k in ("ann", "bob", "pre")}
+    people = {k: {"key": k} for k in activity}
+    instances = [{"id": f"i{d}", "start": t0 + timedelta(days=d, hours=18), "end": t0 + timedelta(days=d, hours=23)}
+                 for d in range(0, 62)]
+    new = S.activity_row(people, activity, instances)
+    assert reads["n"] <= len(activity)
+    old = _old_activity_row(people, {k: list(v) for k, v in activity.items()}, instances)
+    assert new["cells"] == old["cells"] and new["times"] == old["times"]
+    assert "present" in new["cells"].values() and "absent" in new["cells"].values()

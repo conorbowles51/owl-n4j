@@ -332,16 +332,20 @@ def activity_row(people: dict, activity: dict, instances: list[dict], window=tim
         return None
     row = _row("activity:all", "activity", f"all {len(keys)} phones active within the same "
                f"{int(window.total_seconds() // 60)} minutes", keys, instances, context=True)
+    # each list sorted once, not once per instance; a burst found by bisection, not every pair (Phone reference 1,
+    # 18 Nov: this row was 83% of a lead finder weighing)
+    from bisect import bisect_left
+    times = {k: sorted(activity[k]) for k in keys}
     for inst in instances:
-        per = {k: _between(sorted(activity[k]), inst["start"], inst["end"]) for k in keys}
+        per = {k: _between(times[k], inst["start"], inst["end"]) for k in keys}
         if any(not v for v in per.values()):
-            covered = all(_between(sorted(activity[k]), inst["start"] - timedelta(hours=24),
+            covered = all(_between(times[k], inst["start"] - timedelta(hours=24),
                                    inst["end"] + timedelta(hours=24)) for k in keys)
             _set(row, inst, False, covered=covered)
             continue
         hit = None
         for t in sorted(x for v in per.values() for x in v):
-            if all(any(t <= x <= t + window for x in v) for v in per.values()):
+            if all((i := bisect_left(v, t)) < len(v) and v[i] <= t + window for v in per.values()):
                 hit = t
                 break
         _set(row, inst, hit is not None, [], hit, True)
