@@ -72,7 +72,13 @@ _STOP = {"what", "who", "whom", "when", "where", "which", "why", "how", "did", "
          "we", "you", "it", "my", "our", "between", "from", "after", "before", "during", "about", "case", "phone",
          "phones", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february",
          "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "loupe",
-         "ok", "yes", "no", "also", "then", "now", "next", "first", "last"}
+         "ok", "yes", "no", "also", "then", "now", "next", "first", "last",
+         # a request's own verbs open its sentences capitalised; they are instructions, not names to look up
+         "create", "write", "build", "make", "draft", "prepare", "produce", "generate", "summarise", "summarize",
+         "compare", "explain", "describe", "check", "look", "search", "read", "review", "analyse", "analyze",
+         "identify", "trace", "map", "count", "sum", "total", "chart", "plot", "export", "open", "help", "provide",
+         "include", "use", "add", "revise", "update", "rewrite", "edit", "keep", "put", "set", "get", "go", "see",
+         "note", "say", "state", "cover", "outline", "break", "group", "sort", "rank", "work", "focus", "start"}
 _QUOTED = re.compile(r"[\"“‘']([^\"”’']{3,60})[\"”’']")
 _NUMBER = re.compile(r"\+?\d[\d ().-]{5,}\d")
 _AMOUNT = re.compile(r"[$£€]\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:dollars|usd|eur|gbp)\b", re.I)

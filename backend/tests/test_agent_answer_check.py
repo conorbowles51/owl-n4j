@@ -55,3 +55,13 @@ def test_a_question_with_no_names_has_no_plan_note():
     from services.agent import answer_check as A
     assert A.question_parts("what happened on the nights of the thefts?") == []
     assert A.plan_message("what happened on the nights of the thefts?") is None
+
+
+def test_a_request_verb_opening_a_sentence_is_not_a_part_to_look_up():
+    # head 8a8e0740: "Create" was a part, so a report run was sent back to search for it and its repair never ran
+    assert A.question_parts("Create a 40–60 page report.") == []
+    assert A.question_parts("Build a timeline of calls with +44 7700 900123") == ["+44 7700 900123"]
+    assert A.question_parts("Summarise the case. Write a report on Narcotics.") == ["Narcotics"]
+    assert A.question_parts("Who is Dee?") == ["Dee"]
+    trace = [{"name": "artifact", "status": "success", "arguments": {"title": "report"}, "result_preview": {}}]
+    assert A.parts_message("Create a sourced report.", trace, {}) is None
