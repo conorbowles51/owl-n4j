@@ -63,6 +63,8 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/triage/profiler_service.py": (1, IDENT),
     "services/triage/triage_service.py": (1, IDENT),
     "services/corroborate/pasted.py": (1, IDENT),
+    "services/corroborate/around_event.py": (1, "the statement files holding an account number's digits, to name the "
+                                                "pages to ask for: " + IDENT),
     "services/corroborate/store.py": (4, "counts how often a phrase occurs in the case's messages, to weigh it; "
                                          "and finds every document, name and payment naming the chosen people: "
                                          "Corroborate counts all of their records in the windows, so a ranked page "
