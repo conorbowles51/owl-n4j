@@ -8,7 +8,7 @@ to look further. The level comes from ``levels`` only. Nothing here calls a mode
 from __future__ import annotations
 
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from itertools import combinations
 from typing import Any, Callable
@@ -504,6 +504,8 @@ def _not_in_pattern(store, everyone, people, instances, focus) -> list[dict]:
             if x["where"] == "saved on a phone":
                 alike.append(f"“{x['name']}” saved on a phone for {x['value']} shares a name with {o['label']} but is "
                              "another number, so it is not joined to them")
+    # how many records each person is on (as owner or party), counted in one pass, not once per person
+    on = Counter(k for r in raw for k in {r.get("owner"), *(r.get("parties") or ())} if k)
     for o in others:
         sub = {**people, o["key"]: o}
         hits = []
@@ -514,7 +516,7 @@ def _not_in_pattern(store, everyone, people, instances, focus) -> list[dict]:
             n = sum(1 for v in r["cells"].values() if v == "present")
             if n:
                 hits.append({"signal": r["label"], "instances": n})
-        read = sum(1 for r in raw if r.get("owner") == o["key"] or o["key"] in (r.get("parties") or ()))
+        read = on[o["key"]]
         searched = [f"contact with {', '.join(p['label'] for p in people.values())} on {len(incidents)} instance(s)",
                     "the same place within 15 minutes" + ("" if o["phones"] else " (no phone of theirs in the case)"),
                     "money to or from them up to 3 days after"]

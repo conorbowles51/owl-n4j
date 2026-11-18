@@ -352,3 +352,44 @@ def test_activity_row_reads_each_phone_once_and_finds_the_same_bursts():
     old = _old_activity_row(people, {k: list(v) for k, v in activity.items()}, instances)
     assert new["cells"] == old["cells"] and new["times"] == old["times"]
     assert "present" in new["cells"].values() and "absent" in new["cells"].values()
+
+
+def test_not_in_pattern_counts_each_persons_records_in_one_pass():
+    """Phone reference 1, 18 Nov: every other person re-counted every record of the weighing (12 x 250,000)."""
+    import random
+    rnd = random.Random(11)
+    keys = ["p0", "p1", "o1", "o2", "o3", "o4", "o5"]
+    everyone = {k: {"key": k, "label": k.upper(), "phones": [f"ph{k}"], "accounts": [], "numbers": [], "names": []}
+                for k in keys}
+    people = {k: everyone[k] for k in ("p0", "p1")}
+    t0 = datetime(2024, 5, 3, 20, tzinfo=timezone.utc)
+    inst = [{"id": "i0", "side": "incident", "start": t0, "end": t0 + timedelta(hours=4),
+             "money_end": t0 + timedelta(days=3), "day": "2024-05-03"}]
+    raw_list = []
+    for n in range(400):
+        owner = rnd.choice(keys)
+        raw_list.append({"ref": f"phone_record:{n}", "kind": "message", "at": t0 + timedelta(minutes=rnd.randint(0, 200)),
+                         "phone": f"ph{owner}", "owner": owner, "parties": rnd.sample(keys, rnd.randint(0, 2)),
+                         "body": f"b{n}", "sender": owner, "deleted": False})
+    passes = {"n": 0}
+
+    class Recs(list):
+        def __iter__(self):
+            passes["n"] += 1
+            return super().__iter__()
+
+    class Store:
+        def records(self, people, windows, everyone):
+            return Recs(raw_list)
+
+        def coverage(self, people, doc_ids):
+            return {}
+
+        def lookalike_names(self, person):
+            return []
+    out, _, _ = engine._not_in_pattern(Store(), everyone, people, inst, None)
+    assert len(out) == 5
+    assert passes["n"] <= 3  # dedupe, the photos, the count: not once more per person
+    for o in out:
+        want = sum(1 for r in raw_list if r["owner"] == o["key"] or o["key"] in r["parties"])
+        assert o["counts"]["records_read"] == want
