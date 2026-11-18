@@ -48,9 +48,9 @@ export function AreaCompare({ caseId, areas }: { caseId: string; areas: number[]
     >
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
         <h2 className="text-sm font-semibold">Compare the drawn areas</h2>
-        <button type="button" aria-label="Close the comparison" className="ml-auto rounded p-1 hover:bg-muted" onClick={close}>
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close the comparison" className="ml-auto" onClick={close}>
           <X className="size-4" />
-        </button>
+        </Button>
       </header>
       <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
         <fieldset className="flex flex-wrap items-end gap-2">

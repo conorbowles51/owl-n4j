@@ -76,7 +76,7 @@ function Chooser({ dates, setDates, choices }: { dates: string[]; setDates: (d: 
       </p>
       <form className="flex flex-wrap items-center gap-1" onSubmit={(e) => { e.preventDefault(); if (ISO.test(typed)) { setDates([...dates, typed]); setTyped("") } }}>
         <label className="flex items-center gap-1">Add a date <input type="date" className="h-7 rounded border border-border bg-background px-1" value={typed} onChange={(e) => setTyped(e.target.value)} /></label>
-        <Button size="sm" variant="outline" type="submit" disabled={!ISO.test(typed)}>Add</Button>
+        <Button size="sm" variant="outline" type="submit" disabled={!ISO.test(typed)} disabledReason="Pick a whole date first">Add</Button>
       </form>
       {choices.length > 0 && (
         <details>

@@ -7,6 +7,8 @@ import { corroborateAPI, type Preview } from "./api"
 import { getSelection } from "./selection-store"
 import { rangeScope } from "./range-scope"
 import { TimelineCorroborate } from "./TimelineCorroborate"
+import { CorroboratePanel } from "@/features/leads/CorroboratePanel"
+import { leadsAPI } from "@/features/leads/api"
 
 const preview: Preview = {
   members: 2, selected: 2,
@@ -29,8 +31,13 @@ describe("Timeline range as a selection", () => {
     render(<QueryClientProvider client={qc}><MemoryRouter>
       <TimelineCorroborate caseId="c1" range={{ from: "2026-05-18T09:30:00Z", to: "2026-05-19T01:00:00Z" }}
         members={[{ type: "timeline_event", id: "timeline-entry:a" }, { type: "timeline_event", id: "timeline-entry:b" }]} />
+      {/* the button opens the Corroborate panel over the page (lx-leads C), mounted app-wide by TraySwitch */}
+      <CorroboratePanel />
     </MemoryRouter></QueryClientProvider>)
+    vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } })
     fireEvent.click(screen.getByRole("button", { name: /Corroborate 2/ }))
+    fireEvent.click(await screen.findByRole("tab", { name: /Ask a new question/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Choose the question yourself/ }))
     await screen.findByText(/What Loupe takes from your 2 items/)
     expect(getSelection("c1")[0].screen).toBe("the timeline")
     expect(getSelection("c1")[0].members).toHaveLength(2)

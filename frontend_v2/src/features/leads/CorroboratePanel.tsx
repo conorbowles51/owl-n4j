@@ -84,7 +84,7 @@ function Panel({ req, onClose }: { req: CorroborateRequest; onClose: () => void 
 
 function Ask({ req }: { req: CorroborateRequest }) {
   const qc = useQueryClient()
-  const preview = useQuery({ queryKey: ["corroborate-preview", req.caseId, req.members.map((m) => `${m.type}:${m.id}`).join("|")], queryFn: () => corroborateAPI.preview(req.caseId, req.members), enabled: req.members.length > 0 })
+  const preview = useQuery({ queryKey: ["corroborate-preview", req.caseId, req.members.map((m) => `${m.type}:${m.id}`).join("|"), JSON.stringify(req.scope ?? {})], queryFn: () => corroborateAPI.preview(req.caseId, req.members, req.scope && Object.keys(req.scope).length ? req.scope : undefined), enabled: req.members.length > 0 })
   const [group, setGroup] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

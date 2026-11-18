@@ -5,6 +5,7 @@ import { CONVERSATIONS_TOUR } from "./conversations"
 import { CORROBORATE_TOUR } from "./corroborate"
 import { DOSSIERS_TOUR } from "./dossiers"
 import { KEYWORDS_TOUR } from "./keywords"
+import { LEADS_TOUR } from "./leads"
 import { PATTERN_TOUR } from "./pattern"
 import { RELATIONS_TOUR } from "./relations"
 import { REPORTS_TOUR } from "./reports"
@@ -19,7 +20,7 @@ import { THEORY_TOUR } from "./theory"
  * (Corroborate, a theory) carry `panel`, the selector of their open panel.
  */
 export type MoreArea =
-  | "analyses" | "chat" | "conversations" | "corroborate" | "dossiers" | "keywords" | "pattern" | "relations"
+  | "analyses" | "chat" | "conversations" | "corroborate" | "dossiers" | "keywords" | "leads" | "pattern" | "relations"
   | "reports" | "search" | "settings" | "table" | "text" | "theory"
 
 export const MORE_TOURS: Record<MoreArea, Tour> = {
@@ -29,6 +30,7 @@ export const MORE_TOURS: Record<MoreArea, Tour> = {
   corroborate: CORROBORATE_TOUR,
   dossiers: DOSSIERS_TOUR,
   keywords: KEYWORDS_TOUR,
+  leads: LEADS_TOUR,
   pattern: PATTERN_TOUR,
   relations: RELATIONS_TOUR,
   reports: REPORTS_TOUR,

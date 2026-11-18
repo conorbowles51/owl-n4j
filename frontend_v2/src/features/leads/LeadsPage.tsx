@@ -51,7 +51,7 @@ export function LeadsPage() {
       <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">Leads</h1>
-          <Button size="sm" variant="outline" disabled={!!busy || find.isPending} onClick={() => find.mutate()}>
+          <Button size="sm" variant="outline" data-guide="leads-find" disabled={!!busy || find.isPending} onClick={() => find.mutate()}>
             {busy ? (finder?.step || "Looking for leads…") : "Look for leads now"}
           </Button>
         </div>
@@ -63,7 +63,7 @@ export function LeadsPage() {
         {finder?.new_material && !busy && <p className="text-xs font-medium" role="status">New material has arrived since Loupe last looked. Look again to bring the leads up to date.</p>}
         {finder?.status === "failed" && <p className="text-xs text-red-700" role="alert">The last search for leads stopped: {finder.error}</p>}
       </header>
-      <div className="flex flex-wrap gap-2" role="toolbar" aria-label="Filter leads by kind">
+      <div className="flex flex-wrap gap-2" role="toolbar" aria-label="Filter leads by kind" data-guide="leads-filters">
         <FilterChip active={!kind} onClick={() => setKind(null)}>All {all}</FilterChip>
         {KIND_FILTERS.map((f) => <FilterChip key={f.key} active={kind === f.key} onClick={() => setKind(f.key)}>{f.label} {counts[f.key] ?? 0}</FilterChip>)}
       </div>
@@ -74,7 +74,7 @@ export function LeadsPage() {
           {finder?.status === "never" ? "Loupe has not looked for leads in this case yet. Press Look for leads now, or Corroborate any selection: each answer is saved here." : "No leads yet."}
         </p>
       )}
-      <section className="space-y-3" aria-label="Leads, strongest first">
+      <section className="space-y-3" aria-label="Leads, strongest first" data-guide="leads-list">
         {main.map((l) => <LeadCard key={l.id} caseId={caseId} lead={l} />)}
       </section>
       {coincidence.length > 0 && (
