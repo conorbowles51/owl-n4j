@@ -1,7 +1,7 @@
 import { announce } from "@/features/guidance/announce"
 import { OPEN_DELETED_ITEMS } from "@/features/guidance/next-steps"
 import { EvidenceMoveProvider } from "./EvidenceMoveProvider"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom"
 import { foldersAPI } from "../folders.api"
 import { useQueryClient } from "@tanstack/react-query"
@@ -26,7 +26,7 @@ import { useDeletedItemsEnabled } from "@/features/cases/hooks/use-deleted-items
 import { FolderContextDialog } from "./FolderContextDialog"
 import { CaseProcessingProfileDialog } from "./CaseProcessingProfileDialog"
 import { toast } from "sonner"
-import { usePanelRef } from "react-resizable-panels"
+import type { PanelImperativeHandle } from "react-resizable-panels"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import type { EvidenceFile } from "@/types/evidence.types"
 
@@ -36,7 +36,7 @@ export function EvidenceExplorer() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const narrow = useMediaQuery("(max-width: 767px)")
-  const folderPanel = usePanelRef()
+  const folderPanel = useRef<PanelImperativeHandle | null>(null)
   const {
     currentFolderId,
     selectedFileIds,

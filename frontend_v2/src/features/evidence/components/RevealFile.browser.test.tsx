@@ -56,6 +56,7 @@ vi.mock("./InlineDropZone", () => ({ InlineDropZone: () => null }))
 vi.mock("./CreateFolderDialog", () => ({ CreateFolderDialog: () => null }))
 vi.mock("./DeleteFolderDialog", () => ({ DeleteFolderDialog: () => null }))
 vi.mock("./DeleteEvidenceDialog", () => ({ DeleteEvidenceDialog: () => null }))
+vi.mock("./DeletedEvidenceDialog", () => ({ DeletedEvidenceDialog: () => null }))
 vi.mock("./FolderContextDialog", () => ({ FolderContextDialog: () => null }))
 vi.mock("./CaseProcessingProfileDialog", () => ({
   CaseProcessingProfileDialog: () => null,
