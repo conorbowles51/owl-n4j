@@ -181,7 +181,10 @@ def test_connections_of_one_subject_and_source_are_one_hit_and_rank_after_source
     assert [h["key"] for h in hits if h["area"] == "relationships"] == ["r0"]
     assert [h for h in hits if h["area"] == "relationships"][0]["also"] == 4
     fused = S.fuse(hits, [], 10)
-    assert [h["key"] for h in fused][:2] == ["t1", "t2"]  # the source records come before the derived graph text
+    # Offset 0 (measured 17 Nov): the five connections are one hit, so the two source records sit beside it in the
+    # first three instead of behind five copies of the same graph text.
+    assert sorted(h["key"] for h in fused[:3]) == ["r0", "t1", "t2"]
+    assert [h["key"] for h in fused if h["area"] == "relationships"] == ["r0"]
 
 
 def test_phone_windows_and_document_passages_are_asked_for_in_separate_queries():
