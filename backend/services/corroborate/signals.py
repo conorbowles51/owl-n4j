@@ -24,14 +24,24 @@ MAX_REFS = 25             # records listed per cell; the count is always the who
 def bucket(recs: list[dict], instances: list[dict], kinds=None, *, money: bool = False) -> dict[str, list[dict]]:
     """{instance id: records inside it}, read once (records sorted by time, each instance found by bisection)."""
     from bisect import bisect_left, bisect_right
+    from heapq import merge
     pool = sorted((r for r in recs if kinds is None or r["kind"] in kinds), key=lambda r: r["at"])
-    times = [r["at"] for r in pool]
+    # a timed record is inside when start <= at <= end: a slice of the timed records, no test per record. Only a
+    # day-only record is tested (by its date), and the two are put back in the pool's order.
+    timed = [k for k, r in enumerate(pool) if not r.get("day_only")]
+    timed_at = [pool[k]["at"] for k in timed]
+    days = [k for k, r in enumerate(pool) if r.get("day_only")]
+    days_at = [pool[k]["at"] for k in days]
     out = {}
     for inst in instances:
         end = inst["money_end"] if money else inst["end"]
         lo, hi = inst["start"], end
-        cand = pool[bisect_left(times, lo - timedelta(days=1)):bisect_right(times, hi + timedelta(days=1))]
-        out[inst["id"]] = [r for r in cand if M.in_window(r, inst, money=money)]
+        inside = timed[bisect_left(timed_at, lo):bisect_right(timed_at, hi)]
+        if days:
+            near = days[bisect_left(days_at, lo - timedelta(days=1)):bisect_right(days_at, hi + timedelta(days=1))]
+            day_in = [k for k in near if M.in_window(pool[k], inst, money=money)]
+            inside = list(merge(inside, day_in)) if day_in else inside
+        out[inst["id"]] = [pool[k] for k in inside]
     return out
 
 

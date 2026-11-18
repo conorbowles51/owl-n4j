@@ -523,3 +523,39 @@ def test_held_offsets_answer_as_the_database_does():
             ws.append((lo, lo + timedelta(hours=rnd.randrange(0, 50))))
         assert st.offsets(phones, ws) == db_rule(phones, ws)
     assert st.offsets(["e1"], [(rows[0][1], rows[0][1])]) == db_rule(["e1"], [(rows[0][1], rows[0][1])])
+
+
+def test_bucket_slices_timed_records_and_tests_only_day_only_ones(monkeypatch):
+    """Phone reference 1, 18 Nov: bucket tested every record a day either side of each instance (18% of a weighing).
+    Timed records are a slice now; the result is the same records in the same order."""
+    import random
+    from bisect import bisect_left, bisect_right
+    from services.corroborate import signals as S
+    rnd = random.Random(6)
+    base = at(NIGHTS[0], 0)
+    recs = [{"ref": f"r{i}", "kind": rnd.choice(["message", "call", "bank_row"]),
+             "at": base + timedelta(minutes=rnd.randrange(0, 60 * 24 * 10)), "day_only": rnd.random() < 0.2}
+            for i in range(2000)]
+    recs += [dict(recs[5], ref="same-time")]
+    insts = []
+    for i in range(15):
+        lo = base + timedelta(hours=rnd.randrange(0, 24 * 10))
+        insts.append({"id": f"i{i}", "start": lo, "end": lo + timedelta(hours=rnd.randrange(0, 20)),
+                      "money_end": lo + timedelta(hours=rnd.randrange(20, 80))})
+
+    def old(recs, instances, kinds=None, *, money=False):
+        pool = sorted((r for r in recs if kinds is None or r["kind"] in kinds), key=lambda r: r["at"])
+        times = [r["at"] for r in pool]
+        out = {}
+        for inst in instances:
+            end = inst["money_end"] if money else inst["end"]
+            cand = pool[bisect_left(times, inst["start"] - timedelta(days=1)):bisect_right(times, end + timedelta(days=1))]
+            out[inst["id"]] = [r for r in cand if M.in_window(r, inst, money=money)]
+        return out
+    for kinds, money in ((None, False), ({"message", "call"}, False), ({"bank_row"}, True), (None, True)):
+        assert S.bucket(recs, insts, kinds, money=money) == old(recs, insts, kinds, money=money)
+    tested = Counter()
+    real = M.in_window
+    monkeypatch.setattr(M, "in_window", lambda r, i, money=False: (tested.update([r.get("day_only")]), real(r, i, money=money))[1])
+    S.bucket(recs, insts)
+    assert not tested[False] and tested[True]
