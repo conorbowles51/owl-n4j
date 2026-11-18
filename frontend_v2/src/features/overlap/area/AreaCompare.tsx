@@ -44,7 +44,7 @@ export function AreaCompare({ caseId, areas }: { caseId: string; areas: number[]
     <section
       aria-label="Compare areas"
       data-testid="area-compare"
-      className="absolute inset-x-2 bottom-2 top-14 z-20 flex flex-col overflow-hidden rounded-lg border border-border bg-card/95 text-xs shadow-lg backdrop-blur md:left-auto md:right-3 md:w-[44rem]"
+      className="z-20 flex flex-col overflow-hidden rounded-lg border border-border bg-card/95 text-xs shadow-lg backdrop-blur max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:top-14 max-md:z-40 md:absolute md:bottom-2 md:right-3 md:top-14 md:w-[44rem]"
     >
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
         <h2 className="text-sm font-semibold">Compare the drawn areas</h2>

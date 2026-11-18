@@ -24,8 +24,11 @@ export function RowMarks({ data, recordUid }: { data: ThreadMarks | undefined; r
       {m && !m.stock && (
         <p>
           <span className="rounded bg-amber-100 px-1 font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">Also elsewhere</span>{" "}
-          The same words in {m.messages} messages on {m.phones} phones on {m.dates} {m.dates === 1 ? "date" : "dates"}
-          {m.other_phones.length ? `, also on ${m.other_phones.join(", ")}` : ""}. A message held on two phones is counted once.
+          <span className="md:hidden">{m.messages} messages, {m.phones} phones, {m.dates} {m.dates === 1 ? "date" : "dates"}</span>
+          <span className="max-md:hidden">
+            The same words in {m.messages} messages on {m.phones} phones on {m.dates} {m.dates === 1 ? "date" : "dates"}
+            {m.other_phones.length ? `, also on ${m.other_phones.join(", ")}` : ""}. A message held on two phones is counted once.
+          </span>
         </p>
       )}
       {m && m.stock && <p className="text-muted-foreground">A stock phrase, counted for nothing: {m.why}</p>}
