@@ -82,9 +82,28 @@ class FinderStore(CaseStore):
         count reads 847 MB of text (5.4 s, 18 Nov) and the weighings of one run ask many of the same phrases."""
         want = phrases[:200]
         new = [ph for ph in want if ph not in self._phrase_n]
-        if new:
+        if len(new) >= STREAM_PHRASES_FROM:
+            self._phrase_n.update(self._streamed_counts(new))
+        elif new:
             self._phrase_n.update(super().phrase_counts(new))
         return {ph: self._phrase_n[ph] for ph in want}
+
+    def _streamed_counts(self, phrases: list[str]) -> dict[str, int]:
+        """CaseStore's phrase count (ILIKE with the phrase between wildcards) for many phrases in one read. The
+        database lower-cases each text once (ILIKE is ``lower(body) LIKE lower(pattern)``) and the matching is done
+        here: on Phone reference 1 the database took 4.7-5.4 s per phrase (18 Nov), most of it matching long e-mails;
+        here it is about 0.5 s per phrase."""
+        lows = [str(x) for (x,) in self.q("SELECT lower(p) FROM unnest(CAST(:ps AS text[])) WITH ORDINALITY AS u(p, i) "
+                                         "ORDER BY i", ps=list(phrases))]
+        tests = [_like_test(lo) for lo in lows]
+        n = [0] * len(phrases)
+        rows = self.db.execute(text("SELECT lower(body) FROM phone_comm_events WHERE case_id = :c AND body IS NOT NULL"),
+                               self.c, execution_options={"stream_results": True, "yield_per": 2000})
+        for (body,) in rows:
+            for i, hit in enumerate(tests):
+                if hit(body):
+                    n[i] += 1
+        return dict(zip(phrases, n))
 
     def records(self, people, windows, everyone):
         return photo_places_as_media(super().records(people, windows, everyone), self.photo_refs)
@@ -114,6 +133,26 @@ class FinderStore(CaseStore):
                     pick.add(k)
         # the held records themselves, not copies: every reader of records() only reads them or copies them (dedupe)
         return [recs[k] for k in sorted(pick)]
+
+
+STREAM_PHRASES_FROM = 4          # this many new phrases in one weighing are counted in one read of the case's texts
+
+
+def _like_test(low: str) -> Callable[[str], bool]:
+    """LIKE with ``low`` between wildcards, as a test on a lower-cased text: ``_`` matches any one character, ``%`` any run, ``\\`` escapes."""
+    if not any(ch in low for ch in "_%\\"):
+        return lambda body: low in body
+    out, i = [], 0
+    while i < len(low):
+        ch = low[i]
+        if ch == "\\" and i + 1 < len(low):
+            out.append(re.escape(low[i + 1]))
+            i += 2
+            continue
+        out.append("." if ch == "_" else ".*" if ch == "%" else re.escape(ch))
+        i += 1
+    rx = re.compile("".join(out), re.DOTALL)
+    return lambda body: rx.search(body) is not None
 
 
 ALERT_AFTER = timedelta(days=3)   # a payment alert is read up to this long after a window's end (CaseStore.phone_records)

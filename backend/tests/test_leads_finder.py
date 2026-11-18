@@ -312,3 +312,40 @@ def test_a_phrase_is_counted_in_the_database_once_per_finder_run():
     assert st.phrase_counts(["dock 3", "same as before"]) == {"dock 3": 8, "same as before": 16}
     assert st.phrase_counts(["same as before", "tonight"]) == {"same as before": 16, "tonight": 9}
     assert asked == ["%dock 3%", "%same as before%", "%tonight%"]
+
+
+def test_many_phrases_are_counted_in_one_read_as_ilike_counts_them():
+    """Phone reference 1, 18 Nov: 200 phrases of one weighing were 200 database scans of 847 MB (27 min). One read now,
+    the same counts: ILIKE lower-cases both sides, ``_`` is any one character."""
+    import re as _re
+    bodies = ["Running ABOUT ten minutes behind", "see you at Dock_3", "see you at dock 3", None, "nothing", "on my way!"]
+    phrases = ["about ten minutes", "at dock_3", "on my way", "not here", "you at"]
+    reads = []
+
+    class R:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    st = object.__new__(F.FinderStore)
+    st._phrase_n, st.c = {}, {"c": "case"}
+    st.q = lambda sql, **k: (reads.append("lower"), R([(p.lower(),) for p in k["ps"]]))[1]
+    st.db = SimpleNamespace(execute=lambda sql, params, execution_options=None: (
+        reads.append("bodies"), R([(b.lower(),) for b in bodies if b is not None]))[1])
+
+    def ilike(b, ph):
+        return b is not None and _re.search(".*".join([""]) + "".join("." if c == "_" else _re.escape(c) for c in ph),
+                                            b.lower(), _re.DOTALL) is not None
+    want = {ph: sum(ilike(b, ph) for b in bodies) for ph in phrases}
+    assert want == {"about ten minutes": 1, "at dock_3": 2, "on my way": 1, "not here": 0, "you at": 2}
+    assert st.phrase_counts(phrases) == want
+    assert reads == ["lower", "bodies"]
+    assert st.phrase_counts(["on my way"]) == {"on my way": 1} and reads == ["lower", "bodies"]
+
+
+def test_like_test_is_like():
+    assert F._like_test("a_c")("xxabcx") and not F._like_test("a_c")("ac")
+    assert F._like_test("50% off")("save 50 percent off") and F._like_test("a\\_b")("a_b") and not F._like_test("a\\_b")("axb")
+    assert F._like_test("dock 3")("at dock 3.") and not F._like_test("dock 3")("dock  3")
