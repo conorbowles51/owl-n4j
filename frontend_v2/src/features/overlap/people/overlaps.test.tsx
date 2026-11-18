@@ -90,6 +90,19 @@ describe("Who overlaps with whom", () => {
   })
 })
 
+describe("A group lead and a pair with nothing between them", () => {
+  it("lists the group lead but never shows its level as the pair's", async () => {
+    const grouped = { ...DATA, pairs: DATA.pairs.map((p, i) => i !== 2 ? p :
+      { ...p, leads: [{ id: "g", title: "Ann, Bob and the user of Phone P: phones in the same place", level: { key: "strong", name: "Strong link" } }] }) }
+    vi.spyOn(overlapsAPI, "get").mockResolvedValue(grouped)
+    wrap(<OverlapsView caseId="c1" />)
+    fireEvent.click(await screen.findByRole("button", { name: /Bob Brook and the user of Phone P: Nothing in the records/ }))
+    const detail = screen.getByTestId("pair-detail")
+    expect(within(detail).getByText(/Named with others in the lead/)).toBeTruthy()
+    expect(within(detail).queryByText(/Level from the lead/)).toBeNull()
+  })
+})
+
 describe("People, go-betweens and documents", () => {
   it("draws width by records, dashes routes, and opens the unnamed phone's go-between panel with its order", async () => {
     expect(lineWidth(191, 191)).toBe(12)

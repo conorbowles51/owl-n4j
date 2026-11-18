@@ -225,6 +225,25 @@ def test_levels_come_only_from_saved_leads_naming_both(monkeypatch):
     assert "level" not in _pair(out, "ann", "hub")
 
 
+def test_a_group_lead_gives_no_level_to_a_pair_with_nothing_between_them(monkeypatch):
+    # demo case 18 Nov: "Brianna Cole, Travis Kell, Desmond Okafor and the user of Phone 3: phones in the same place"
+    # (Strong) made Cole and the prepaid phone read "Strong, nothing found"
+    g = _grid()
+    nothing = next(p for p in g["pairs"] if p["state"] == "nothing")
+    others = [x for x in (p["a"] for p in g["pairs"]) if x not in (nothing["a"], nothing["b"])][:1]
+    group = {"id": "g", "people": [nothing["a"], nothing["b"], *others], "level": {"key": "strong", "name": "Strong link"}}
+    gone = {"id": "n", "people": [nothing["a"], nothing["b"], *others], "searched": ["calls"],
+            "level": {"key": "no_link_found", "name": "No link found"}}
+    for leads, state, level in (([group], "nothing", None), ([group, gone], "no_link", "no_link_found")):
+        mod = types.ModuleType("services.leads.store")
+        mod.list_leads = lambda db, case_id, _l=leads, **kw: _l
+        monkeypatch.setitem(sys.modules, "services.leads", types.ModuleType("services.leads"))
+        monkeypatch.setitem(sys.modules, "services.leads.store", mod)
+        p = _pair(O.attach_levels(None, "c", _grid()), nothing["a"], nothing["b"])
+        assert p["state"] == state and (p.get("level") or {}).get("key") == level
+        assert "g" in [l["id"] for l in p["leads"]]  # the group lead stays listed
+
+
 def test_a_pair_with_nothing_says_so_and_what_was_searched():
     g = _grid()
     p = _pair(g, "bob", "hub")

@@ -573,7 +573,12 @@ def attach_levels(db, case_id, grid: dict) -> dict:
         p["leads"] = [{"id": l["id"], "title": l.get("title"), "level": l.get("level"), "origin": l.get("origin"),
                        "state": l.get("state"), "searched": l.get("searched"), "raises": l.get("raises"),
                        "lowers": l.get("lowers")} for l in mine[:6]]
-        top = next((l for l in mine if (l.get("level") or {}).get("key") in LEVEL_ORDER), None)
+        # A lead naming a group can join two people who never met: the finder chains phones near each other (Cole near
+        # Kell, Kell near the prepaid phone), so a pair whose own records hold nothing takes no level from it. Only a
+        # search that found no link may label such a pair. The lead stays listed under the pair.
+        weighable = mine if p["state"] != "nothing" else [
+            l for l in mine if (l.get("level") or {}).get("key") == "no_link_found"]
+        top = next((l for l in weighable if (l.get("level") or {}).get("key") in LEVEL_ORDER), None)
         if top:
             p["level"] = top.get("level")
             p["state"] = "no_link" if (top.get("level") or {}).get("key") == "no_link_found" else "weighed"

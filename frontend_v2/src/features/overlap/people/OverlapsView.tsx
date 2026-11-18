@@ -204,7 +204,9 @@ export function PairDetail({ caseId, data, pair }: { caseId: string; data: Overl
           pair.state === "nothing" ? "Nothing in the records links them." :
             "Not weighed yet: Corroborate this pair to weigh it against ordinary days and save it to Leads."}
       </p>
-      {lead && <p className="text-xs text-muted-foreground">Level from the lead “{lead.title ?? "untitled"}”, set by Loupe's rules.</p>}
+      {lead && (pair.level ?
+        <p className="text-xs text-muted-foreground">Level from the lead “{lead.title ?? "untitled"}”, set by Loupe's rules.</p> :
+        <p className="text-xs text-muted-foreground">Named with others in the lead “{lead.title ?? "untitled"}”. That lead gives these two no level: nothing in the records links them directly.</p>)}
       <dl className="mt-3 flex flex-col gap-3 text-sm">
         {KIND_ORDER.filter((k) => pair.kinds[k]?.count).map((k) => {
           const r = pair.kinds[k]
