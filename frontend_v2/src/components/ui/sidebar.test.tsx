@@ -6,9 +6,17 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppSidebar } from "./sidebar"
 import { preloadRouteIntent } from "@/lib/route-preload"
 
+const shell = vi.hoisted(() => ({ expanded: true }))
 vi.mock("@/stores/app.store", () => ({
-  useAppStore: () => ({ sidebarExpanded: true, toggleSidebar: vi.fn() }),
+  useAppStore: () => ({ sidebarExpanded: shell.expanded, toggleSidebar: vi.fn() }),
 }))
+
+// the Leads count (lx-leads B); every other call goes to the real client
+vi.mock("@/lib/api-client", async (orig) => {
+  const real = await orig<typeof import("@/lib/api-client")>()
+  return { ...real, fetchAPI: (url: string, ...rest: unknown[]) =>
+    url.endsWith("/leads/count") ? Promise.resolve({ count: 24, new: 3 }) : (real.fetchAPI as (...a: unknown[]) => unknown)(url, ...rest) }
+})
 
 vi.mock("@/features/auth/hooks/use-auth", () => ({
   useAuthStore: () => ({ user: { global_role: "user" } }),
@@ -58,6 +66,23 @@ function sidebar() {
 }
 
 describe("AppSidebar case navigation", () => {
+  it("lx-leads B: Leads sits in the menu with its count only when the switch is on, and keeps the count when collapsed", async () => {
+    const { setSwitch } = await import("@/lib/ui-switches")
+    setSwitch("corroborate-v2", false)
+    const off = sidebar()
+    expect(screen.queryByRole("link", { name: /Leads/ })).toBeNull()
+    off.unmount()
+    setSwitch("corroborate-v2", true)
+    const on = sidebar()
+    expect(await within(await screen.findByRole("link", { name: /Leads/ })).findByText("24")).toBeInTheDocument()
+    on.unmount()
+    shell.expanded = false
+    sidebar()
+    expect(await screen.findByLabelText("24 leads")).toBeInTheDocument()
+    shell.expanded = true
+    setSwitch("corroborate-v2", false)
+  })
+
   it("places Workspace, Dossiers, and Reports above case views and removes case Profiles", () => {
     sidebar()
 

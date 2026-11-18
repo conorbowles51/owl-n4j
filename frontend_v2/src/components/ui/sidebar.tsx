@@ -196,6 +196,11 @@ function SidebarLink({
       {!expanded && item.isNew && (
         <span className="absolute right-1 top-1 size-1.5 rounded-full bg-brand-600 dark:bg-brand-400" aria-hidden="true" />
       )}
+      {/* collapsed (a narrow screen): the count rides on the icon, since it is the only sign of leads off their page */}
+      {!expanded && item.count !== undefined && item.count > 0 && (
+        <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-slate-700 px-1 text-center text-[10px] font-semibold leading-4 tabular-nums text-white dark:bg-slate-200 dark:text-slate-900"
+          aria-label={`${item.count} ${item.label.toLowerCase()}`}>{item.count > 99 ? "99+" : item.count}</span>
+      )}
       {/* the mark takes the hint's room for its 7 days, so the name is not cut; the hint stays in the tooltip */}
       {expanded && item.shortcut && !item.isNew && (
         <ShortcutHint value={item.shortcut} active={active} />
