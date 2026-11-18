@@ -27,9 +27,17 @@ def local_text(value: str, zone: str) -> str | None:
     return "%s %s" % (local.strftime("%a %Y-%m-%d %H:%M"), local.tzname() or zone)
 
 
-def annotate(data: Any, zone: str | None) -> Any:
-    """``data`` with ``<key>_local`` beside each UTC instant string; unchanged when ``zone`` is None or UTC."""
+def annotate(data: Any, zone: Any) -> Any:
+    """``data`` with ``<key>_local`` beside each UTC instant string; unchanged when ``zone`` is None or UTC.
+
+    ``zone`` may be a function giving the zone: it is called once, at the first UTC instant, so a result with no UTC
+    time never reads the case's zone (each read opens a database session)."""
     from services.phone import time_display as T
+    if callable(zone):
+        getter, zone = zone, None
+        if not _has_utc(data, 0):
+            return data
+        zone = getter()
     if not zone or T.is_utc(zone):
         return data
     budget = [MAX_ANNOTATIONS]
@@ -54,6 +62,16 @@ def annotate(data: Any, zone: str | None) -> Any:
         return out
 
     return walk(data, 0)
+
+
+def _has_utc(v, depth) -> bool:
+    if depth > 12:
+        return False
+    if isinstance(v, list):
+        return any(_has_utc(x, depth + 1) for x in v)
+    if isinstance(v, dict):
+        return any((isinstance(x, str) and _ISO_UTC.match(x)) or _has_utc(x, depth + 1) for x in v.values())
+    return False
 
 
 def case_zone_name(case_id: str) -> str | None:

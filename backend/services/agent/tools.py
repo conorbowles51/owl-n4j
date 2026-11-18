@@ -132,9 +132,12 @@ class AgentToolContext:
             search_shape.apply(tool_name, safe_data)
         if status == "success":
             from services.agent import local_times
-            if self.local_zone is None:
-                self.local_zone = local_times.case_zone_name(self.case_id) or ""
-            safe_data = local_times.annotate(safe_data, self.local_zone or None)
+            def zone():
+                # Read once per run, and only for a result that holds a UTC time.
+                if self.local_zone is None:
+                    self.local_zone = local_times.case_zone_name(self.case_id) or ""
+                return self.local_zone or None
+            safe_data = local_times.annotate(safe_data, zone)
         self.result_store[result_id] = safe_data
         payload = {
             "result_id": result_id,

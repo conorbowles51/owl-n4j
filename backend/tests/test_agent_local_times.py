@@ -29,3 +29,18 @@ def test_a_utc_case_adds_nothing():
 def test_winter_times_name_standard_time():
     assert local_times.local_text("2024-03-16T06:05:00+00:00", "America/New_York") == "Sat 2024-03-16 02:05 EDT"
     assert local_times.local_text("2024-01-16T06:05:00Z", "America/New_York") == "Tue 2024-01-16 01:05 EST"
+
+
+def test_the_zone_is_read_only_for_a_result_holding_a_utc_time():
+    # The zone read opens a session: a ledger read with dates only must not open one (journey test, 18 Nov 5 != 4).
+    from services.agent import local_times as LT
+    calls = []
+
+    def zone():
+        calls.append(1)
+        return "America/New_York"
+    assert LT.annotate({"rows": [{"date": "2024-05-03", "amount": "12.00"}]}, zone) == {
+        "rows": [{"date": "2024-05-03", "amount": "12.00"}]}
+    assert calls == []
+    out = LT.annotate({"rows": [{"at": "2024-05-04T03:10:00Z"}]}, zone)
+    assert calls == [1] and out["rows"][0]["at_local"] == "Fri 2024-05-03 23:10 EDT"
