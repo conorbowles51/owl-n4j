@@ -43,7 +43,12 @@ class CorroborateWatch(Base):
     """A saved Corroborate result that re-checks itself when the case's material changes, and keeps every level
     change with its reason (``history``). Alerts show in Loupe only."""
     __tablename__ = "corroborate_watches"
-    __table_args__ = (Index("ix_corroborate_watches_case", "case_id", "active"),)
+    __table_args__ = (
+        Index("ix_corroborate_watches_case", "case_id", "active"),
+        Index("ix_corroborate_watches_case_state", "case_id", "state"),
+        CheckConstraint("origin IN ('found_by_loupe', 'asked', 'agent')", name="ck_corroborate_watches_origin"),
+        CheckConstraint("state IN ('new', 'looking', 'in_theory', 'not_relevant')", name="ck_corroborate_watches_state"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
@@ -57,6 +62,28 @@ class CorroborateWatch(Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # A lead (lx-leads A, migration 20261120_leads): the same row, grown up. See services/leads/store.py.
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, default="asked")
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="new")
+    state_history: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    title: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    people: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    period: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    kinds: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    record_refs: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    raises: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    lowers: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    searched: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    detail: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    corrections: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    read_by: Mapped[str] = mapped_column(String(120), nullable=False, default="Corroborate")
+    finder_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    finding_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    confirmed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    confirmed_by_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class CorroborateClaim(Base):
@@ -84,3 +111,25 @@ class CorroborateClaim(Base):
     confirmed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     confirmed_by_name: Mapped[str | None] = mapped_column(String(300))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LeadFinderRun(Base):
+    """One run of the lead finder over a case (lx-leads D): when, how long, what it saved. See migration
+    20261120_leads."""
+    __tablename__ = "lead_finder_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('queued', 'running', 'done', 'failed')", name="ck_lead_finder_runs_status"),
+        Index("ix_lead_finder_runs_case", "case_id", "started_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    step: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False, default="button")
+    counts: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    material: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

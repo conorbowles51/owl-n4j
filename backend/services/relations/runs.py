@@ -214,6 +214,7 @@ def work(run_id: str, case_id: str, *, session_factory) -> None:
             row.result = {"corroboration": corroboration, "partial": True}
             row.progress = {**(row.progress or {}), "level": corroboration["level"]["name"]}
             session.commit()
+            _save_lead(session, case_id, row, members, corroboration)
         if corroboration is not None and corroboration.get("claim"):
             # a claim is weighed against the phones only; there are no records to pair
             row.result = claim_only_result(corroboration, len(members))
@@ -251,6 +252,19 @@ def work(run_id: str, case_id: str, *, session_factory) -> None:
         # a sessionmaker has no __name__: reading it raised here, after the run was saved, and the session stayed open
         if own and getattr(session, "bind", None) is not None and getattr(session_factory, "__name__", "") != "<lambda>":
             session.close()
+
+
+def _save_lead(session, case_id, row, members, corroboration) -> None:
+    """Each answer saves to Leads as asked by the person who asked (lx-leads C). A failure to save the lead is logged
+    and leaves the run as it is: the answer is still shown."""
+    from types import SimpleNamespace
+    from services.leads import store as leads
+    try:
+        leads.save_asked(session, case_id, selection_id=row.selection_id, run_id=row.id, result=corroboration,
+                         members=members, user=SimpleNamespace(id=row.requested_by))
+    except Exception:  # noqa: BLE001 - logged; the run's answer stands
+        log.exception("saving run %s as a lead failed", row.id)
+        session.rollback()
 
 
 def view(db, case_id, run_id, *, with_result: bool = True) -> dict[str, Any]:
