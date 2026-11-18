@@ -46,10 +46,11 @@ vi.mock("@/features/phones/api", async (orig) => ({
   ...(await orig<object>()),
   getPhones: vi.fn().mockResolvedValue({ case_id: "c", total: 3, phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }, { extraction_id: "e3", label: "C3" }], case_zone: { name: "UTC", basis: "default", note: null } }),
 }))
-const lists = vi.hoisted(() => ({ filters: [] as unknown[] }))
+const lists = vi.hoisted(() => ({ filters: [] as unknown[], classes: [] as (string | undefined)[] }))
 vi.mock("@/features/phones/components/StreamList", () => ({
-  StreamList: (p: { stream: { index: unknown; total: number }; filterWords: string; rowExtra?: (row: { record_uid: string }) => React.ReactNode }) => {
+  StreamList: (p: { stream: { index: unknown; total: number }; filterWords: string; className?: string; rowExtra?: (row: { record_uid: string }) => React.ReactNode }) => {
     lists.filters.push(p.filterWords)
+    lists.classes.push(p.className)
     return <div data-testid="phone-list">{p.filterWords}{p.rowExtra?.({ record_uid: "rec-lead" })}</div>
   },
 }))
@@ -100,6 +101,13 @@ describe("Timeline phone lens (03 section 9)", () => {
     } finally {
       net.settings = null
     }
+  })
+
+  it("lx-leads: on a phone-width screen the phone entries keep a height, as Conversations' list does", async () => {
+    lists.classes = []
+    wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
+    await screen.findByTestId("phone-list")
+    expect(lists.classes.at(-1)).toContain("max-md:h-[75dvh] max-md:flex-none")
   })
 
   it("07 4.5: a scope carried in the address filters the lens and shows the same chips", async () => {

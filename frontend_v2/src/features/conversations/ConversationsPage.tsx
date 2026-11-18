@@ -1,4 +1,5 @@
 import { CorroborateRows } from "@/features/corroborate/CorroborateRows"
+import { PHONE_LIST_NARROW } from "@/features/phones/lib/phone-list-narrow"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
@@ -902,7 +903,7 @@ export function ConversationsPage() {
             <StreamList
               // A new thread, person or filter starts with nothing selected (review of 03-3: Select all carried over).
               key={JSON.stringify(streamFilter)}
-              className="max-md:h-[75dvh] max-md:flex-none"
+              className={PHONE_LIST_NARROW}
               stream={stream}
               caseId={caseId}
               caseName={caseQ.data?.title ?? "This case"}

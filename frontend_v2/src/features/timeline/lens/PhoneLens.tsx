@@ -7,6 +7,8 @@ import { ExportDialog } from "@/features/conversations/ExportDialog"
 import { Lanes, type LaneRow } from "@/features/pattern/components/Lanes"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useStream } from "@/features/phones/hooks/use-stream"
+import { PHONE_LIST_NARROW } from "@/features/phones/lib/phone-list-narrow"
+import { cn } from "@/lib/cn"
 import { instantWords } from "@/features/phones/lib/time-words"
 import { recordPath } from "@/lib/record-links"
 import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, lensIndex, lensLocateRecord, lensMoney, lensMoneyItems, type LaneBy, type LensMoney, type LensFilter, type LensKind } from "./lens-api"
@@ -176,7 +178,7 @@ export function LensList({ caseId, caseName, filter, filterWords }: { caseId: st
       zone={stream.index?.zone.name ?? "UTC"}
       zoneBasis={stream.index?.zone.basis}
       noun={{ one: "phone entry", many: "phone entries" }}
-      className="min-h-0 flex-1"
+      className={cn("min-h-0 flex-1", PHONE_LIST_NARROW)}
       rowExtra={(row) => <LeadMark recordUid={row.record_uid} />}
     />
   )
@@ -333,7 +335,7 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
           zone={stream.index?.zone.name ?? "UTC"}
           zoneBasis={stream.index?.zone.basis}
           noun={{ one: "phone entry", many: "phone entries" }}
-          className="min-h-0 flex-1"
+          className={cn("min-h-0 flex-1", PHONE_LIST_NARROW)}
           jumpTo={jump}
           rowExtra={(row) => <LeadMark recordUid={row.record_uid} />}
         />
