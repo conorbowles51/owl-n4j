@@ -8,6 +8,7 @@ import { overlapAPI, type AreaCompare as AreaResult, type AroundEvent, type Thre
 import { RowMarks, SavedNames } from "./conversations/marks"
 import { AreaCompare } from "./area/AreaCompare"
 import AroundEventPage from "./money/AroundEventPage"
+import { AlsoElsewherePanel } from "./conversations/AlsoElsewherePanel"
 
 afterEach(() => { setSwitch("corroborate-v2", false); vi.restoreAllMocks() })
 
@@ -75,6 +76,35 @@ const area: AreaResult = {
   members: [{ type: "phone_record", id: "x" }],
   documents_available: [{ id: "d1", name: "badge-log.csv" }],
 }
+
+describe("Conversations: the list of what also appears elsewhere", () => {
+  it("lists phrases and deletions, and compares files and pictures only when asked, with full counts", async () => {
+    setSwitch("corroborate-v2", true)
+    vi.spyOn(overlapAPI, "sharedWords").mockResolvedValue({
+      zone: "UTC", phones_in_case: 6, rule: "The rule.",
+      also: [{ text: "bay 4 is clear", words: "bay 4 is clear", copies: 10, messages: 5, phones: ["a", "b"], phone_labels: ["Phone 3", "Desmond Okafor's phone"], dates: ["1", "2", "3", "4", "5"], stock: false, why: null, records: ["r1"] }],
+      stock: [{ text: "let me check and come back to you", words: "x", copies: 26, messages: 26, phones: ["1", "2", "3", "4", "5", "6"], phone_labels: [], dates: [], stock: true, why: "On all 6 phones.", records: [] }],
+      deletions: [{ text: "left something in the tow truck", at: "2024-06-09T23:42:00Z", deleted_on: ["Travis Kell's phone"], kept_on: ["Desmond Okafor's phone"], records: [] }],
+    })
+    const files = vi.spyOn(overlapAPI, "sharedFiles").mockResolvedValue({
+      phones_in_case: 6, listed: 1, counts: { files_common: 2, files_shared: 0, lookalikes: 3 },
+      files_common: [{ md5: "m", name: "IMG_00000.jpg", phones: [] }], files_shared: [],
+      lookalikes: [{ a: { name: "IMG_4410.JPG", phone: "Mateo Ruiz's phone", file_uid: "a" }, b: { name: "IMG_2107.JPG", phone: "Brianna Cole's phone", file_uid: "b" }, bits_apart: 4, level: "moderate" }],
+      lookalike_note: null,
+    })
+    wrap(<AlsoElsewherePanel caseId="c1" />)
+    const panel = await screen.findByTestId("also-elsewhere-panel")
+    await within(panel).findByText(/“bay 4 is clear”: 10 copies, 5 messages counted once, on 2 phones/)
+    expect(panel.textContent).toContain("deleted on Travis Kell's phone, still on Desmond Okafor's phone")
+    expect(panel.textContent).toContain("“let me check and come back to you”: 26 copies on 6 phones. On all 6 phones.")
+    expect(files).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId("also-elsewhere-files"))
+    const got = await screen.findByTestId("also-elsewhere-files-result")
+    expect(got.textContent).toContain("The first 1 of 2 are listed.")
+    expect(got.textContent).toContain("IMG_4410.JPG on Mateo Ruiz's phone and IMG_2107.JPG on Brianna Cole's phone: 4 of 64 bits apart")
+    expect(got.textContent).toContain("The first 1 of 3 are listed.")
+  })
+})
 
 describe("Map: drawn areas compared", () => {
   it("shows who is in each area, a photo place never as being there, the baseline, and hands the nights to Financial", async () => {

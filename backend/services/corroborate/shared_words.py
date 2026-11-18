@@ -51,71 +51,101 @@ def _active_phones(store) -> list[str]:
     return [str(e) for (e,) in store.q("SELECT id FROM phone_extractions WHERE case_id = :c AND standing = 'active'")]
 
 
-def _copies(store, texts: list[str] | None = None) -> dict[str, list[dict]]:
-    """Every message copy whose words are on two or more phones, by its compared words."""
+_W = "lower(rtrim(regexp_replace(btrim(c.body), '\\s+', ' ', 'g'), '.!?…, '))"
+_BASE = ("FROM phone_comm_events c JOIN phone_extractions e ON e.id = c.extraction_id AND e.standing = 'active' "
+         "WHERE c.case_id = :c AND c.kind = 'message' AND c.body IS NOT NULL AND c.sort_instant IS NOT NULL")
+LISTED = 200   # files and picture pairs listed by name; the full count is always given and the list says it is clipped
+
+
+def _phrases(store, zone_name: str, texts: list[str] | None = None) -> list[dict]:
+    """Words on two or more phones, grouped in the database: copies, phones, local dates, and messages counted once
+    (the Corroborate rule: the same words in the same minute are one message), with the copies' deletion states."""
     rows = store.q(
-        "WITH m AS (SELECT c.record_uid, c.extraction_id, c.sort_instant, c.body, c.direction, c.deleted_state, "
-        "c.thread_key, lower(rtrim(regexp_replace(btrim(c.body), '\\s+', ' ', 'g'), '.!?…, ')) AS w FROM "
-        "phone_comm_events c JOIN phone_extractions e ON e.id = c.extraction_id AND e.standing = 'active' WHERE "
-        "c.case_id = :c AND c.kind = 'message' AND c.body IS NOT NULL AND c.sort_instant IS NOT NULL) "
-        "SELECT m.* FROM m WHERE m.w IN (SELECT w FROM m WHERE array_length(regexp_split_to_array(w, ' '), 1) >= :n "
-        "GROUP BY w HAVING count(DISTINCT extraction_id) >= 2) AND (CAST(:t AS text[]) IS NULL OR m.w = ANY(CAST(:t AS text[])))",
-        n=MIN_WORDS, t=texts).fetchall()
-    out: dict[str, list[dict]] = defaultdict(list)
-    for uid, ext, at, body, direction, deleted, thread, w in rows:
-        out[w].append({"record_uid": str(uid), "phone": str(ext), "at": M.as_utc(at), "body": body,
-                       "direction": direction, "thread": thread,
-                       "deleted": bool(deleted and str(deleted).lower() != "intact")})
+        f"WITH m AS (SELECT c.extraction_id, c.sort_instant, c.body, c.deleted_state, {_W} AS w {_BASE} "
+        "AND (CAST(:t AS text[]) IS NULL OR " + _W + " = ANY(CAST(:t AS text[])))) "
+        "SELECT w, min(body), count(*), array_agg(DISTINCT extraction_id::text), "
+        "array_agg(DISTINCT ((sort_instant AT TIME ZONE :z)::date)::text), count(DISTINCT date_trunc('minute', sort_instant)) "
+        "FROM m WHERE array_length(regexp_split_to_array(w, ' '), 1) >= :n GROUP BY w "
+        "HAVING count(DISTINCT extraction_id) >= 2", n=MIN_WORDS, t=texts, z=zone_name).fetchall()
+    return [{"words": w, "text": (body or "").strip(), "copies": n, "phones": sorted(ph), "dates": sorted(ds), "messages": msgs}
+            for w, body, n, ph, ds, msgs in rows]
+
+
+def _records(store, words: list[str]) -> dict[str, list[str]]:
+    if not words:
+        return {}
+    out: dict[str, list[str]] = defaultdict(list)
+    for w, uid in store.q(f"SELECT {_W}, c.record_uid {_BASE} AND {_W} = ANY(CAST(:t AS text[]))", t=words):
+        out[w].append(str(uid))
     return out
 
 
-def _messages(copies: list[dict]) -> list[list[dict]]:
-    """Copies folded into messages by the Corroborate rule: the same words in the same minute."""
-    recs = [{"ref": c["record_uid"], "dup_key": ("msg", c["at"].replace(second=0, microsecond=0), norm(c["body"])), **c}
-            for c in copies]
-    kept, _ = M.dedupe(recs)
-    by_ref = {c["record_uid"]: c for c in copies}
-    return [[by_ref[r] for r in k["copies"]] for k in kept]
+def classify(p: dict, phones_in_case: int) -> dict:
+    repeated = p["messages"] >= 2
+    every = phones_in_case >= 3 and len(p["phones"]) >= phones_in_case
+    stock = every or len(p["dates"]) > RARE_DATES
+    why = (f"On all {phones_in_case} phones." if every else f"On {len(p['dates'])} dates.") if stock else None
+    return {**p, "stock": stock, "why": why, "repeated": repeated}
 
 
-def classify(w: str, copies: list[dict], phones_in_case: int, zone) -> dict:
-    msgs = _messages(copies)
-    phones = sorted({c["phone"] for c in copies})
-    dates = sorted({c["at"].astimezone(zone).date().isoformat() for c in copies})
-    repeated = len(msgs) >= 2
-    every = phones_in_case >= 3 and len(phones) >= phones_in_case
-    stock = every or len(dates) > RARE_DATES
-    why = (f"On all {phones_in_case} phones." if every else f"On {len(dates)} dates.") if stock else None
-    return {"text": copies[0]["body"].strip(), "words": w, "copies": len(copies), "messages": len(msgs),
-            "phones": phones, "dates": dates, "stock": stock, "why": why,
-            "repeated": repeated, "records": [c["record_uid"] for c in copies]}
+def _deletions(store, labels) -> list[dict]:
+    """Messages (the same words in the same minute) deleted on one phone and intact on another."""
+    rows = store.q(
+        f"WITH m AS (SELECT c.record_uid, c.extraction_id, date_trunc('minute', c.sort_instant) AS at, c.body, "
+        f"COALESCE(lower(c.deleted_state), 'intact') <> 'intact' AS gone, {_W} AS w {_BASE}) "
+        "SELECT w, at, min(body), array_agg(DISTINCT extraction_id::text) FILTER (WHERE gone), "
+        "array_agg(DISTINCT extraction_id::text) FILTER (WHERE NOT gone), array_agg(record_uid::text) FROM m "
+        "GROUP BY w, at HAVING bool_or(gone) AND bool_or(NOT gone) AND count(DISTINCT extraction_id) >= 2 ORDER BY at").fetchall()
+    out = []
+    for _w, at, body, gone, kept, uids in rows:
+        if set(gone or []) == set(kept or []):
+            continue
+        out.append({"text": (body or "").strip(), "at": M.iso(M.as_utc(at)),
+                    "deleted_on": sorted({labels.get(e, "a phone") for e in gone or []}),
+                    "kept_on": sorted({labels.get(e, "a phone") for e in kept or []}), "records": uids})
+    return out
 
 
 def shared_content(store) -> dict[str, Any]:
-    zone = M.tz(store.zone())
     labels = _labels(store)
     active = _active_phones(store)
-    groups = _copies(store)
-    phrases = [classify(w, cs, len(active), zone) for w, cs in groups.items()]
+    phrases = [classify(p, len(active)) for p in _phrases(store, store.zone())]
     also = sorted((p for p in phrases if p["repeated"] and not p["stock"]), key=lambda p: (-len(p["phones"]), len(p["dates"]), p["words"]))
     stock = sorted((p for p in phrases if p["stock"]), key=lambda p: -p["copies"])
-    deletions = []
-    for w, cs in groups.items():
-        for msg in _messages(cs):
-            gone = [c for c in msg if c["deleted"]]
-            kept = [c for c in msg if not c["deleted"]]
-            if gone and kept and {c["phone"] for c in gone} != {c["phone"] for c in kept}:
-                deletions.append({"text": msg[0]["body"].strip(), "at": M.iso(msg[0]["at"]),
-                                  "deleted_on": sorted({labels.get(c["phone"], "a phone") for c in gone}),
-                                  "kept_on": sorted({labels.get(c["phone"], "a phone") for c in kept}),
-                                  "records": [c["record_uid"] for c in msg]})
+    recs = _records(store, [p["words"] for p in also])
+    for p in also:
+        p["records"] = recs.get(p["words"], [])
+    for p in stock:
+        p["records"] = []
+    deletions = _deletions(store, labels)
+    for p in phrases:
+        p["phone_labels"] = [labels.get(e, "a phone") for e in p["phones"]]
+    return {"zone": store.zone(), "phones_in_case": len(active),
+            "rule": (f"The same words (a whole message of {MIN_WORDS} words or more) on two or more phones, on at most "
+                     f"{RARE_DATES} dates and not on every phone, in two or more separate messages. A message held on two "
+                     "phones is counted once."),
+            "also": also, "stock": stock, "deletions": sorted(deletions, key=lambda d: d["at"])}
+
+
+def shared_files(store) -> dict[str, Any]:
+    """Files with the same bytes on two or more phones (on every phone: common files, counted for nothing) and
+    pictures that only look alike (for a person to check, never counted as the same photo). Read apart from the words:
+    on a 14-phone case the picture comparison alone takes minutes. Lists name at most ``LISTED`` items each and give
+    the full counts."""
+    labels = _labels(store)
+    active = _active_phones(store)
     files_common, files_shared = [], []
+    counts = {"files_common": 0, "files_shared": 0}
     for md5, n_phones, phones, name in store.q(
             "SELECT f.md5, count(DISTINCT f.extraction_id), array_agg(DISTINCT f.extraction_id::text), "
             "min(f.local_path) FROM pv_file f JOIN phone_extractions e ON e.id = f.extraction_id AND e.standing = 'active' "
-            "WHERE f.case_id = :c AND f.md5 IS NOT NULL AND f.md5 <> '' GROUP BY f.md5 HAVING count(DISTINCT f.extraction_id) >= 2"):
-        item = {"md5": md5, "name": re.split(r"[\\/]", name or "")[-1], "phones": sorted(labels.get(p, "a phone") for p in phones)}
-        (files_common if len(active) >= 3 and n_phones >= len(active) else files_shared).append(item)
+            "WHERE f.case_id = :c AND f.md5 IS NOT NULL AND f.md5 <> '' GROUP BY f.md5 HAVING count(DISTINCT f.extraction_id) >= 2 "
+            "ORDER BY count(DISTINCT f.extraction_id) DESC, f.md5"):
+        kind = "files_common" if len(active) >= 3 and n_phones >= len(active) else "files_shared"
+        counts[kind] += 1
+        if counts[kind] <= LISTED:
+            (files_common if kind == "files_common" else files_shared).append(
+                {"md5": md5, "name": re.split(r"[\\/]", name or "")[-1], "phones": sorted(labels.get(p, "a phone") for p in phones)})
     try:
         from services.phone.media_spread import perceptual_pairs_all
         pairs = perceptual_pairs_all(store.db.connection(), store.case)
@@ -123,19 +153,14 @@ def shared_content(store) -> dict[str, Any]:
                              "file_uid": it["a"]["file_uid"]},
                        "b": {"name": it["b"]["filename"], "phone": labels.get(it["b"]["extraction_id"], "a phone"),
                              "file_uid": it["b"]["file_uid"]},
-                       "bits_apart": it["distance"], "level": it["level"]} for it in pairs["items"]]
+                       "bits_apart": it["distance"], "level": it["level"]} for it in pairs["items"][:LISTED]]
+        counts["lookalikes"] = len(pairs["items"])
         lookalike_note = pairs.get("stopped_words")
     except Exception as exc:  # noqa: BLE001 - the pictures' hashes may not be read yet; said so, never hidden
         lookalikes, lookalike_note = [], f"The picture comparison could not be read: {exc.__class__.__name__}."
-    for p in phrases:
-        p["phone_labels"] = [labels.get(e, "a phone") for e in p["phones"]]
-    return {"zone": store.zone(), "phones_in_case": len(active),
-            "rule": (f"The same words (a whole message of {MIN_WORDS} words or more) on two or more phones, on at most "
-                     f"{RARE_DATES} dates and not on every phone, in two or more separate messages. A message held on two "
-                     "phones is counted once."),
-            "also": also, "stock": stock, "deletions": sorted(deletions, key=lambda d: d["at"]),
-            "files_common": files_common, "files_shared": files_shared,
-            "lookalikes": lookalikes, "lookalike_note": lookalike_note}
+        counts["lookalikes"] = 0
+    return {"files_common": files_common, "files_shared": files_shared, "counts": counts, "listed": LISTED,
+            "phones_in_case": len(active), "lookalikes": lookalikes, "lookalike_note": lookalike_note}
 
 
 def saved_names(store, values: list[str]) -> list[dict]:
@@ -174,18 +199,16 @@ def thread_marks(store, extraction_id: str, thread_key: str) -> dict[str, Any]:
         "SELECT c.record_uid, c.sort_instant, c.body FROM phone_comm_events c WHERE c.case_id = :c AND "
         "c.extraction_id = :e AND c.thread_key = :t AND c.sort_instant IS NOT NULL", e=extraction_id, t=thread_key).fetchall()
     words = sorted({norm(b) for _, _, b in msgs if b and len(norm(b).split(" ")) >= MIN_WORDS})
-    groups = _copies(store, words) if words else {}
+    groups = {p["words"]: classify(p, len(active)) for p in _phrases(store, store.zone(), words)} if words else {}
     marks: dict[str, dict] = {}
     for uid, at, body in msgs:
-        w = norm(body)
-        if w in groups:
-            c = classify(w, groups[w], len(active), zone)
-            if not c["repeated"]:
-                continue  # one message held on two phones: not words that also appear elsewhere
-            others = sorted({labels.get(p, "a phone") for p in c["phones"] if p != extraction_id})
-            marks[str(uid)] = {"shared": {"stock": c["stock"], "why": c["why"], "copies": c["copies"],
-                                          "messages": c["messages"], "dates": len(c["dates"]), "phones": len(c["phones"]),
-                                          "other_phones": others}}
+        c = groups.get(norm(body))
+        if c is None or not c["repeated"]:
+            continue  # one message held on two phones: not words that also appear elsewhere
+        others = sorted({labels.get(p, "a phone") for p in c["phones"] if p != extraction_id})
+        marks[str(uid)] = {"shared": {"stock": c["stock"], "why": c["why"], "copies": c["copies"],
+                                      "messages": c["messages"], "dates": len(c["dates"]), "phones": len(c["phones"]),
+                                      "other_phones": others}}
     values = sorted({str(r) for (r,) in store.q(
         "SELECT DISTINCT p.identifier_raw FROM phone_participations p JOIN phone_comm_events c ON c.record_uid = "
         "p.record_uid AND c.case_id = p.case_id WHERE p.case_id = :c AND c.extraction_id = :e AND c.thread_key = :t "

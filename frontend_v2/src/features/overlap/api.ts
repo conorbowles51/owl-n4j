@@ -48,6 +48,11 @@ export interface SharedContent {
   also: SharedPhrase[]
   stock: SharedPhrase[]
   deletions: { text: string; at: string; deleted_on: string[]; kept_on: string[]; records: string[] }[]
+}
+export interface SharedFiles {
+  phones_in_case: number
+  listed: number
+  counts: { files_common: number; files_shared: number; lookalikes: number }
   files_common: { md5: string; name: string; phones: string[] }[]
   files_shared: { md5: string; name: string; phones: string[] }[]
   lookalikes: { a: { name: string; phone: string; file_uid: string }; b: { name: string; phone: string; file_uid: string }; bits_apart: number; level: string }[]
@@ -88,6 +93,7 @@ export const overlapAPI = {
   areaCompare: (caseId: string, body: AreaCompareRequest) =>
     fetchAPI<AreaCompare>(`${base(caseId)}/area-compare`, { method: "POST", body }),
   sharedWords: (caseId: string) => fetchAPI<SharedContent>(`${base(caseId)}/shared-words`),
+  sharedFiles: (caseId: string) => fetchAPI<SharedFiles>(`${base(caseId)}/shared-words/files`, { timeout: 900_000 }),
   threadMarks: (caseId: string, extractionId: string, threadKey: string) =>
     fetchAPI<ThreadMarks>(`${base(caseId)}/shared-words/thread?extraction_id=${encodeURIComponent(extractionId)}&thread_key=${encodeURIComponent(threadKey)}`),
   aroundEvent: (caseId: string, events: { date: string; label?: string }[]) =>

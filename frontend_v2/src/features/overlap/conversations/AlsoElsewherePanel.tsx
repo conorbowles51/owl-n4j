@@ -65,30 +65,13 @@ export function AlsoElsewherePanel({ caseId }: { caseId: string }) {
               )} />
             )}
           </section>
-          {r.files_shared.length > 0 && (
-            <section aria-label="Files on some phones">
-              <h3 className="font-semibold">The same file on some phones</h3>
-              <Clipped items={r.files_shared} noun="files" render={(f) => <li key={f.md5}>{f.name}: {f.phones.join(", ")}.</li>} />
-            </section>
-          )}
           <section aria-label="Shown, but counted for nothing" className="rounded bg-muted/50 p-2">
             <h3 className="font-semibold">Shown, but counted for nothing</h3>
             <p className="text-muted-foreground">Stock phrases ({r.stock.length}): on every phone or on many dates.</p>
             <Clipped items={r.stock} noun="stock phrases" render={(p) => (
               <li key={p.words}>“{p.text}”: {p.copies} copies on {p.phones.length} phones. {p.why}</li>
             )} />
-            {r.files_common.length > 0 && (
-              <p className="pt-1">Common files, the same bytes on all {r.phones_in_case} phones: {r.files_common.map((f) => f.name).join(", ")}.</p>
-            )}
-            {r.lookalikes.length > 0 && (
-              <>
-                <p className="pt-1">Pictures that look alike, for a person to check; never counted as the same photo:</p>
-                <Clipped items={r.lookalikes} noun="pairs" render={(l) => (
-                  <li key={`${l.a.file_uid}-${l.b.file_uid}`}>{l.a.name} on {l.a.phone} and {l.b.name} on {l.b.phone}: {l.bits_apart} of 64 bits apart ({l.level}).</li>
-                )} />
-              </>
-            )}
-            {r.lookalike_note && <p>{r.lookalike_note}</p>}
+            <FilesAndPictures caseId={caseId} />
           </section>
         </div>
       )}
@@ -97,3 +80,38 @@ export function AlsoElsewherePanel({ caseId }: { caseId: string }) {
 }
 
 export default AlsoElsewherePanel
+
+/** Files with the same bytes and pictures that only look alike: read when asked, since on a large case the picture
+ * comparison takes minutes (measured 9 minutes on a 14-phone case). Full counts; lists name the first ones and say so. */
+function FilesAndPictures({ caseId }: { caseId: string }) {
+  const [asked, setAsked] = useState(false)
+  const q = useQuery({ queryKey: ["overlap-shared-files", caseId], queryFn: () => overlapAPI.sharedFiles(caseId), enabled: asked, staleTime: 600_000 })
+  const f = q.data
+  if (!asked) {
+    return (
+      <Button size="sm" variant="outline" className="mt-1" onClick={() => setAsked(true)} data-testid="also-elsewhere-files">
+        Compare files and pictures across the phones
+      </Button>
+    )
+  }
+  if (q.isLoading) return <p role="status">Comparing files and pictures across the phones. On a large case this takes minutes.</p>
+  if (q.isError || !f) return <p role="alert">Files and pictures could not be compared. <Button size="sm" variant="link" onClick={() => void q.refetch()}>Try again</Button></p>
+  const clip = (shown: number, total: number) => (total > shown ? ` The first ${shown.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} are listed.` : "")
+  return (
+    <div className="space-y-1 pt-1" data-testid="also-elsewhere-files-result">
+      <p>
+        Common files, the same bytes on all {f.phones_in_case} phones ({f.counts.files_common.toLocaleString("en-US")})
+        {f.files_common.length ? `: ${f.files_common.map((x) => x.name).join(", ")}.` : "."}{clip(f.files_common.length, f.counts.files_common)}
+      </p>
+      <p>The same file on some phones, not all: {f.counts.files_shared.toLocaleString("en-US")}.{clip(f.files_shared.length, f.counts.files_shared)}</p>
+      {f.files_shared.length > 0 && <Clipped items={f.files_shared} noun="files" render={(x) => <li key={x.md5}>{x.name}: {x.phones.join(", ")}.</li>} />}
+      <p className="pt-1">Pictures that look alike, for a person to check; never counted as the same photo: {f.counts.lookalikes.toLocaleString("en-US")}.{clip(f.lookalikes.length, f.counts.lookalikes)}</p>
+      {f.lookalikes.length > 0 && (
+        <Clipped items={f.lookalikes} noun="pairs" render={(l) => (
+          <li key={`${l.a.file_uid}-${l.b.file_uid}`}>{l.a.name} on {l.a.phone} and {l.b.name} on {l.b.phone}: {l.bits_apart} of 64 bits apart ({l.level}).</li>
+        )} />
+      )}
+      {f.lookalike_note && <p>{f.lookalike_note}</p>}
+    </div>
+  )
+}

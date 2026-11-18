@@ -52,11 +52,19 @@ def area_compare(case_id: UUID, request: AreaCompareRequest, db: Session = Depen
 
 @router.get("/{case_id}/corroborate/shared-words", dependencies=[Depends(require_case_view)])
 def shared_words(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Words on two or more phones on few dates, deletions kept on another phone, common files and look-alike
-    pictures, for the Conversations side panel."""
+    """Words on two or more phones on few dates and deletions kept on another phone, for the Conversations side
+    panel (files and pictures are read apart: ``shared-words/files``)."""
     from services.corroborate.shared_words import shared_content
     from services.corroborate.store import CaseStore
     return shared_content(CaseStore(db, case_id))
+
+
+@router.get("/{case_id}/corroborate/shared-words/files", dependencies=[Depends(require_case_view)])
+def shared_words_files(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Files with the same bytes on two or more phones and pictures that only look alike, with full counts."""
+    from services.corroborate.shared_words import shared_files
+    from services.corroborate.store import CaseStore
+    return shared_files(CaseStore(db, case_id))
 
 
 @router.get("/{case_id}/corroborate/shared-words/thread", dependencies=[Depends(require_case_view)])

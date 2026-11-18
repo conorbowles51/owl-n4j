@@ -184,28 +184,24 @@ def test_name_words_leave_out_generic_place_words():
 
 # ---- B: words that also appear elsewhere -------------------------------------------------------------------------
 
-def copy(phone, at, body, deleted=False):
-    return {"record_uid": f"{phone}-{at.isoformat()}", "phone": phone, "at": at, "body": body, "direction": "outgoing",
-            "thread": "t", "deleted": deleted}
+def agg(words, copies, phones, dates, messages):
+    return {"words": words, "text": words, "copies": copies, "phones": phones, "dates": dates, "messages": messages}
 
 
 def test_one_message_held_on_two_phones_is_one_message_not_words_shared_elsewhere():
-    t = utc(FRIDAYS[0], 22, 5)
-    c = SW.classify("bay is clear", [copy("phA", t, "bay is clear"), copy("phB", t, "Bay is clear.")], 6, UTC)
-    assert c["messages"] == 1 and c["copies"] == 2 and c["repeated"] is False
+    c = SW.classify(agg("bay is clear", 2, ["phA", "phB"], ["2025-01-03"], 1), 6)
+    assert c["repeated"] is False and c["stock"] is False
 
 
 def test_rare_words_on_two_phones_count_once_per_message_and_stock_words_are_set_aside():
-    rare = []
-    for d in NIGHTS:
-        rare += [copy("phA", utc(d, 22, 5), "bay is clear"), copy("phB", utc(d, 22, 5), "bay is clear")]
-    c = SW.classify("bay is clear", rare, 6, UTC)
-    assert (c["copies"], c["messages"], len(c["phones"]), len(c["dates"]), c["stock"]) == (6, 3, 2, 3, False)
-    every = [copy(f"ph{i}", utc(FRIDAYS[i], 9), "see you at 7") for i in range(6)]
-    s = SW.classify("see you at 7", every, 6, UTC)
+    c = SW.classify(agg("bay is clear", 6, ["phA", "phB"], ["2025-01-10", "2025-01-31", "2025-02-14"], 3), 6)
+    assert (c["repeated"], c["stock"], c["why"]) == (True, False, None)
+    s = SW.classify(agg("see you at 7", 6, [f"ph{i}" for i in range(6)], ["2025-01-03"], 6), 6)
     assert s["stock"] is True and s["why"] == "On all 6 phones."
-    many = [copy("phA" if i % 2 else "phB", utc(date(2025, 2, 1) + timedelta(days=i), 9), "on the way") for i in range(12)]
-    assert SW.classify("on the way", many, 6, UTC)["why"] == "On 12 dates."
+    many = SW.classify(agg("on the way", 12, ["phA", "phB"], [f"2025-02-{d:02d}" for d in range(1, 13)], 12), 6)
+    assert many["why"] == "On 12 dates."
+    two_phone_case = SW.classify(agg("on the way", 4, ["phA", "phB"], ["2025-02-01", "2025-02-02"], 2), 2)
+    assert two_phone_case["stock"] is False  # with two phones in the case, "on every phone" sets nothing aside
 
 
 def test_compared_words_ignore_case_spacing_and_end_punctuation():
@@ -281,6 +277,7 @@ def test_overlap_view_routes_need_case_view():
     for key in [("POST", "/api/cases/{case_id}/corroborate/area-compare"),
                 ("GET", "/api/cases/{case_id}/corroborate/shared-words"),
                 ("GET", "/api/cases/{case_id}/corroborate/shared-words/thread"),
+                ("GET", "/api/cases/{case_id}/corroborate/shared-words/files"),
                 ("POST", "/api/cases/{case_id}/corroborate/around-event"),
                 ("GET", "/api/cases/{case_id}/corroborate/around-event/choices")]:
         assert require_case_view in {d.dependency for d in got[key].dependencies}, key
