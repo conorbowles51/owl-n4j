@@ -7,29 +7,30 @@
 import { queryOptions } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** The read takes at most this many phones; more phones on is stated, never cut without a word. */
 export const MAX_TOGETHER_PHONES = 8
 
-const Meeting = z.object({
+const Meeting = lazySchema(() => z.object({
   id: z.string(), phones: z.array(z.string()), start: z.string(), end: z.string(), cells: z.number(), readings: z.number(),
   days: z.array(z.string()),
   place: z.object({ lat: z.number(), lon: z.number(), square_m: z.number() }),
   precision: z.object({ best_accuracy_m: z.number().nullable(), accuracy_stated: z.boolean(), sources: z.array(z.string()), level: z.string() }),
   records: z.record(z.string(), z.array(z.string())), records_total: z.record(z.string(), z.number()),
   busy: z.object({ other_phones: z.number(), phones_total: z.number(), is_busy: z.boolean(), words: z.string() }).optional(),
-})
-const PhoneSide = z.object({ records: z.number(), first: z.string().nullable(), last: z.string().nullable(), record_ids: z.array(z.string()) })
-const Contact = z.object({ id: z.string(), label: z.string(), basis: z.string(), phones: z.record(z.string(), PhoneSide), records: z.number(), first: z.string().nullable(), last: z.string().nullable() })
-const Relay = z.object({ id: z.string(), first: z.string(), second: z.string(), via: z.string(), via_label: z.string(), first_at: z.string(), second_at: z.string(), gap_s: z.number(), records: z.array(z.string()) })
+}))
+const PhoneSide = lazySchema(() => z.object({ records: z.number(), first: z.string().nullable(), last: z.string().nullable(), record_ids: z.array(z.string()) }))
+const Contact = lazySchema(() => z.object({ id: z.string(), label: z.string(), basis: z.string(), phones: z.record(z.string(), PhoneSide), records: z.number(), first: z.string().nullable(), last: z.string().nullable() }))
+const Relay = lazySchema(() => z.object({ id: z.string(), first: z.string(), second: z.string(), via: z.string(), via_label: z.string(), first_at: z.string(), second_at: z.string(), gap_s: z.number(), records: z.array(z.string()) }))
 
-export const OverlapsSchema = z.object({
+export const OverlapsSchema = lazySchema(() => z.object({
   case_id: z.string(), phones: z.array(z.object({ id: z.string(), label: z.string() })),
   together: z.array(Meeting), cells: z.number(), shared_contacts: z.array(Contact), relay_chains: z.array(Relay),
   pairs: z.array(z.object({ phones: z.array(z.string()), meetings: z.number(), days_together: z.number().nullable(), days_both_active: z.number().nullable() })),
   parts: z.array(z.string()).optional(), message: z.string().nullable(), contacts_message: z.string().nullable(), relay_message: z.string().nullable(),
   searched: z.array(z.string()), out_of_reach: z.array(z.string()),
-})
+}))
 export type Overlaps = z.infer<typeof OverlapsSchema>
 export type Meeting = z.infer<typeof Meeting>
 
