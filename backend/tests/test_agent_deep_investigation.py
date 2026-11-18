@@ -267,3 +267,17 @@ def test_a_file_name_held_twice_is_one_unit_and_the_item_can_close():
                        {"item": "documents", "fact": "tow-invoice.pdf: an invoice", "cite": "doc://b"}])
     out = D.mark(p, [{"item": "documents", "status": "done", "units": ["kell-2024-04.pdf", "tow-invoice.pdf"]}])
     assert out["refused"] == [] and D.is_closed(item)
+
+
+def test_a_noted_absence_of_contact_is_given_to_the_writer_as_a_finding_to_state():
+    """followups m11180017126956 item 3: deep runs noted that the client's phone holds no contact with a person tied
+    to the incidents, and the report left it out (demo F05). The writer's rules now list each noted absence."""
+    from services.agent import deep_investigation as D
+    plan = D.build_plan("phones", question="q", phone_labels=["PH1"])
+    D.notebook_add(plan, [
+        {"item": "client", "fact": "No call or message between PH1 and +1 410 555 0101 or +1 410 555 0102 in either "
+                                  "direction, numbers searched on all phones", "cite": "rec://a"},
+        {"item": "windows", "fact": "PH1 at the hospital 23:10", "cite": "rec://b"}])
+    block = D.absence_block(plan)
+    assert "No call or message between PH1" in block and "rec://a" in block and "hospital" not in block
+    assert D.absence_block(D.build_plan("phones", question="q", phone_labels=["PH1"])) == ""

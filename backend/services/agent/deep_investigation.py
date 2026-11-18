@@ -321,6 +321,24 @@ def notebook_block(plan: dict) -> str:
     return "\n".join(lines)
 
 
+# An absence the run found and noted ("no call or message between A and B, numbers searched ...") was dropped
+# from the report in deep runs 5 and 6 of the demo case (F05). The writer is told to state each one as a finding.
+_ABSENCE = re.compile(r"\b(no (?:direct )?(?:contact|calls?|messages?|communications?|record of contact)|never "
+                      r"(?:called|messaged|contacted|spoke)|did not (?:call|message|contact)|nothing between|"
+                      r"not (?:once )?in contact)\b", re.I)
+
+
+def absence_block(plan: dict) -> str:
+    """The noted absences of contact the report must state as findings, each with what was searched."""
+    notes = [n for n in plan.get("notebook") or [] if _ABSENCE.search(n.get("fact") or "")]
+    if not notes:
+        return ""
+    return ("These absences of contact were found and noted. State each one as a finding in the report (in the "
+            "client's section and the contact network), with the numbers and phones searched and its citation, in "
+            "plain words such as 'no call or message between':\n"
+            + "\n".join("- %s (%s)" % (n["fact"], n["cite"]) for n in notes))
+
+
 # ---- the gate ----------------------------------------------------------------------------------------------------
 
 def gate_message(plan: dict) -> str | None:
@@ -405,8 +423,9 @@ def render_block(plan: dict) -> str:
         "A message recovered from the sender's phone is a message that person sent; the copy on the other phone may "
         "be absent. Give the direction from the sender, never from which phone it was found on.",
         "Dates and times of events at night are given in the local time with the zone named, with the date the "
-        "people lived it. Phone rows carry local_day, time and time_zone: use those, and never convert a time "
-        "yourself. Where a tool gives only a UTC instant, say UTC beside it and do not use its date as the local date.",
+        "people lived it. Phone rows carry local_day, time and time_zone; every other UTC time a tool gives has "
+        "a <name>_local beside it in the case's zone: use those, and never convert a time yourself. Where a tool "
+        "gives only a UTC instant, say UTC beside it and do not use its date as the local date.",
         "Hold every name against its history: a name saved on one phone for a number, and the dates of the calls "
         "and messages under that name, show whether the number had another holder earlier. A person who shares a "
         "first name with another is a different person until a record joins them.",
