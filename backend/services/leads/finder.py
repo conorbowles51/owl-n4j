@@ -723,7 +723,7 @@ def find(db, case_id, *, user=None, progress: Callable[[str], None] | None = Non
         level = levels.records_missing(g["missing"])
         # nothing is weighed: the result only names who and when, for the lists that filter by them
         shape = {"people": [{"key": k, "label": case.label(k)} for k in g["people"]],
-                 "comparison": {"incident": [{"start": d, "end": d} for d in g["days"]]}}
+                 "comparison": {"incident": [{"id": d, "start": d, "end": d} for d in g["days"]]}}
         lead = leads.save(db, case_id, origin="found_by_loupe", selection_id=sel, result=shape, members=members,
                           title=g["title"], summary=g["summary"], finder_key=g["key"], kinds=g["kinds"], level=level,
                           raises=[], lowers=[m["words"] for m in g["missing"]], user=user,

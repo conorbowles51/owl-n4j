@@ -113,7 +113,7 @@ def refs_of(result: dict, members: Iterable[dict]) -> list[str]:
     """Every record the lead rests on: the members asked about, then the records of each row present on an incident
     instance. Kept whole up to MAX_REFS; the view says when more were left out (``refs_total``)."""
     refs: list[str] = [f"{m['type']}:{m['id']}" for m in members if m.get("type") and m.get("id")]
-    incident_ids = {i["id"] for i in (result.get("comparison") or {}).get("incident") or []}
+    incident_ids = {i.get("id") for i in (result.get("comparison") or {}).get("incident") or []} - {None}
     for g in result.get("grid") or []:
         if g.get("picked_by") is None and g.get("weight") != "full":
             continue

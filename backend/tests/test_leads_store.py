@@ -245,3 +245,16 @@ class LeadStoreTests(DuplicateTestCase):
             got = F.start(self.db, self.case.id, user=self.user)
         self.assertEqual(got["status"], "failed")
         self.assertIn("no threads left", got["error"])
+
+    def test_a_lead_with_nothing_weighed_saves_with_its_people_days_and_the_level_given(self):
+        from services.corroborate import levels
+        missing = [{"missing": "A's bank rows for 4 May", "words": "A's May statement is not in the case."}]
+        # the shape the finder gives a statement gap: who and when only, the dates without instance ids
+        shape = {"people": [{"key": "person:a", "label": "A"}],
+                 "comparison": {"incident": [{"start": "2024-05-04", "end": "2024-05-04"}]}}
+        lead = self.save(result=shape, level=levels.records_missing(missing), finder_key="gap:a:2024-05",
+                         title="May payments", summary=missing[0]["words"], lowers=[missing[0]["words"]], raises=[])
+        self.assertEqual(lead["level"]["key"], "cant_tell")
+        self.assertEqual([p["key"] for p in lead["people"]], ["person:a"])
+        self.assertEqual(lead["period"], {"from": "2024-05-04", "to": "2024-05-04"})
+        self.assertEqual(lead["record_refs"], ["phone_record:m1"])
