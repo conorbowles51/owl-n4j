@@ -129,7 +129,9 @@ def test_a_call_held_on_both_phones_is_one_call_but_calls_to_unknown_numbers_sta
 
 
 def test_a_message_on_both_phones_counts_once_and_a_group_message_is_contact():
-    g = _grid(threads=[("phB", "T-group", "Signal", "night shift", 1, ["phone:+15550002", "phone:+15550003", "phone:+15550005"])])
+    members = ["phone:+15550002", "phone:+15550003", "phone:+15550005"]
+    g = _grid(threads=[("phB", "T-group", "Signal", "night shift", 1, members),
+                       ("phC", "T-group", "Signal", "night shift", 1, members)])  # the same group on two phones
     ann_pre = _pair(g, "ann", "phone:phP")["kinds"]["contact"]
     assert ann_pre["count"] == 8  # 4 nights x ("bay is clear" held twice, counted once, + "ok")
     bc = _pair(g, "bob", "cat")
@@ -199,6 +201,8 @@ def test_the_graph_draws_direct_lines_by_records_and_dashes_a_route_through_a_na
     assert lines[("ann", "hub")] == 4
     dashed = {(x["a"], x["b"]): x for x in g["graph"]["dashed"]}
     assert dashed[("ann", "cat")]["via"] == "phone:phP" and dashed[("ann", "cat")]["money"] == 4
+    money = _pair(g, "ann", "cat")["kinds"]["money"]["records"]
+    assert money and all(r["from"] is None for r in money)  # a payment has no writer
 
 
 def test_levels_come_only_from_saved_leads_naming_both(monkeypatch):

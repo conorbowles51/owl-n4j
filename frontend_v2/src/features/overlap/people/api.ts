@@ -105,7 +105,7 @@ export interface Overlaps {
   graph: {
     nodes: OverlapPerson[]
     lines: { a: string; b: string; records: number }[]
-    dashed: { a: string; b: string; via: string; via_label: string; money: number }[]
+    dashed: { a: string; b: string; via: string | null; via_label: string | null; money: number }[]
     squares: GraphSquare[]
     documents: { read: number; naming_two_phone_owners: number }
   }

@@ -75,7 +75,9 @@ def _ends(rec: dict) -> set[str]:
 
 def _brief(rec: dict, labels: dict[str, str]) -> dict:
     return {"ref": rec["ref"], "kind": rec["kind"], "at": M.iso(rec.get("at")), "day_only": bool(rec.get("day_only")),
-            "phone": rec.get("phone"), "from": labels.get(rec.get("sender") or rec.get("owner") or "", None),
+            "phone": rec.get("phone"),
+            # who wrote it: only a message, call or e-mail has a writer; a payment alert is the bank's text
+            "from": labels.get(rec.get("sender") or rec.get("owner") or "", None) if rec["kind"] in M.CONTACT_KINDS else None,
             "body": (rec.get("body") or "")[:200] or None, "copies": len(rec.get("copies") or [rec["ref"]]),
             "deleted": bool(rec.get("deleted")), "amount_minor": rec.get("amount_minor"), "app": rec.get("app")}
 
@@ -305,7 +307,12 @@ def _pair(a, b, everyone, labels, contact, money, access, place, docs, groups, r
     kinds["through_others"] = {"count": len(gb), "go_betweens": gb[:12], "words": (
         "; ".join(f"{g['label']}: {g['with_a']:,} with {labels[a]}, {g['with_b']:,} with {labels[b]}" for g in gb[:3])
         + (f"; {len(gb) - 3:,} more" if len(gb) > 3 else "") + ".") if gb else "No number or person in contact with both."}
-    gs = [g for g in groups if a in g["members"] and b in g["members"]]
+    gs, seen = [], set()
+    for g in groups:   # a group held on two members' phones is one group
+        key = (g["title"], g["app"], tuple(g["members"]))
+        if a in g["members"] and b in g["members"] and key not in seen:
+            seen.add(key)
+            gs.append(g)
     kinds["groups"] = {"count": len(gs), "groups": gs, "words": "; ".join(
         f"“{g['title']}” on {g['app'] or 'a messaging app'}, {g['records']:,} records, {len(g['members'])} members" for g in gs) + "."
         if gs else "No group chat with both of them."}
@@ -522,9 +529,10 @@ def graph(pairs: list[dict], people: list[dict], docs: list[dict], reaches: dict
             lines.append({"a": p["a"], "b": p["b"], "records": n})
             continue
         via = [g for g in p["kinds"]["through_others"]["go_betweens"] if reaches.get(g["key"], 99) <= NARROW_REACH]
-        if via:
-            dashed.append({"a": p["a"], "b": p["b"], "via": via[0]["key"], "via_label": via[0]["label"],
-                           "money": p["kinds"]["money"]["count"]})
+        money = p["kinds"]["money"]["count"]
+        if via or money:   # no direct contact, yet a narrow go-between or money between them
+            dashed.append({"a": p["a"], "b": p["b"], "via": via[0]["key"] if via else None,
+                           "via_label": via[0]["label"] if via else None, "money": money})
     sets: dict[tuple, list[dict]] = defaultdict(list)
     for d in docs:
         who = tuple(sorted({x["key"] for x in d["people"]} & set(labels)))

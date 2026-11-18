@@ -34,7 +34,11 @@ export function OverlapGraph({ caseId }: { caseId: string }) {
             return (
               <g key={`d:${d.a}:${d.b}`}>
                 <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="currentColor" strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="6 5" />
-                <title>{`${label.get(d.a)} and ${label.get(d.b)}: no direct contact; route through ${d.via_label}${d.money ? `; ${d.money} payments` : ""}`}</title>
+                <title>{`${label.get(d.a)} and ${label.get(d.b)}: no direct contact${d.via_label ? `; route through ${d.via_label}` : ""}${d.money ? `; ${d.money} payment${d.money === 1 ? "" : "s"}` : ""}`}</title>
+                {d.money > 0 && (
+                  <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 + 12} textAnchor="middle" paintOrder="stroke" style={{ stroke: "hsl(var(--background))" }} strokeWidth={4}
+                    className="fill-muted-foreground text-[10px]">no direct contact; {d.money} payment{d.money === 1 ? "" : "s"}</text>
+                )}
               </g>
             )
           })}
@@ -44,7 +48,8 @@ export function OverlapGraph({ caseId }: { caseId: string }) {
             return (
               <g key={`l:${l.a}:${l.b}`}>
                 <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="hsl(215 60% 45%)" strokeOpacity={0.7} strokeWidth={lineWidth(l.records, most)} />
-                <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} textAnchor="middle" className="fill-foreground text-[11px]">{l.records}</text>
+                <text x={a.x + (b.x - a.x) * 0.42} y={a.y + (b.y - a.y) * 0.42 - 4} textAnchor="middle" paintOrder="stroke"
+                  style={{ stroke: "hsl(var(--background))" }} strokeWidth={4} className="fill-foreground text-[11px]">{l.records}</text>
               </g>
             )
           })}
@@ -68,7 +73,8 @@ export function OverlapGraph({ caseId }: { caseId: string }) {
               <g key={n.key} role="button" tabIndex={0} aria-pressed={on} aria-label={`${n.label}: show who it reaches`}
                 onClick={() => setPicked(n.key)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setPicked(n.key)} className="cursor-pointer">
                 <circle cx={p.x} cy={p.y} r={on ? 26 : 22} className={on ? "fill-brand-500 stroke-brand-700" : "fill-card stroke-foreground/50"} strokeWidth={2} />
-                <text x={p.x} y={p.y + 40} textAnchor="middle" className="fill-foreground text-[12px] font-medium">{n.label}</text>
+                <text x={p.x} y={p.y + 40} textAnchor="middle" paintOrder="stroke" style={{ stroke: "hsl(var(--background))" }} strokeWidth={4}
+                  className="fill-foreground text-[12px] font-medium">{n.label}</text>
                 {!n.phones && <text x={p.x} y={p.y + 54} textAnchor="middle" className="fill-muted-foreground text-[10px]">no phone</text>}
               </g>
             )
