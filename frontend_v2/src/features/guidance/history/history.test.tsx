@@ -19,7 +19,7 @@ const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
 })
 
 describe("step names", () => {
-  const label = (id: string) => ({ "acct-1": "BBVA 0110280038", "person:jose": "Jose Alejandro Reyes Zeind", f6: "x.pdf" } as Record<string, string>)[id] ?? null
+  const label = (id: string) => ({ "acct-1": "BBVA 0110280038", "person:jose": "Jose Alejandro Reyes Zeind", f6: "x.pdf", "11111111-2222-3333-4444-555555555555": "Phone 2" } as Record<string, string>)[id] ?? null
   it("are plain words from what is on screen", () => {
     expect(stepName({ pathname: "/cases/c1/financial", search: "?view=transactions", label, state: { financial: { drafts: {}, scope: { accountId: "acct-1", startDate: "2022-11-01", endDate: "2022-11-30" } } } }))
       .toBe("Transactions · BBVA 0110280038 · Nov 2022")
@@ -30,6 +30,9 @@ describe("step names", () => {
     expect(stepName({ pathname: "/cases/c1/evidence", search: "?file=f6", label, state: {} })).toBe("Evidence · x.pdf")
     expect(stepName({ pathname: "/cases/c1/financial", search: "?view=transactions", label, state: { financial: { drafts: { "payment-table:x": { search: "ORDEN DE PAGO" } }, scope: {} } } }))
       .toBe('Transactions · "ORDEN DE PAGO"')
+    // an id in the address is named, or left out; the screen has its own name
+    expect(stepName({ pathname: "/cases/c1/relations/2dd48de2-a733-4aa9-a695-23f5f75d96d0", search: "", label, state: {} })).toBe("Corroborate")
+    expect(stepName({ pathname: "/cases/c1/phones/11111111-2222-3333-4444-555555555555/records/calls", search: "", label, state: {} })).toBe("Phones · Phone 2 · records · calls")
     expect(rangeWords("2022-11-01", "2023-02-28")).toBe("Nov 2022 to Feb 2023")
   })
 })

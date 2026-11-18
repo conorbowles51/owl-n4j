@@ -50,7 +50,12 @@ const SCREENS: Record<string, string> = {
   "phone-patterns": "Phone patterns",
   "phone-money": "Money in messages",
   records: "Record",
+  relations: "Corroborate",
+  corroborate: "Corroborate",
 }
+
+/** An id in an address (a selection, a file, a record): shown by its name when known, never as itself. */
+const ID_LIKE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|[a-z]+:[^\s]+)$/i
 
 const FINANCIAL_VIEWS: Record<string, string> = {
   overview: "Financial overview",
@@ -146,7 +151,13 @@ export function stepName(parts: {
     if (entry) out.push(label(entry) ?? "one entry")
   } else {
     out.push(screenLabel)
-    const tail = decodeURIComponent(pathname.split("/").slice(4).join(" · ")).replace(/-/g, " ")
+    const tail = pathname
+      .split("/")
+      .slice(4)
+      .map((part) => decodeURIComponent(part))
+      .map((part) => (ID_LIKE.test(part) ? label(part) : part.replace(/-/g, " ")))
+      .filter((part): part is string => !!part)
+      .join(" · ")
     if (tail) out.push(tail.slice(0, 80))
   }
   return out.join(" · ")
