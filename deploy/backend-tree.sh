@@ -177,12 +177,18 @@ backend_venv_stage() {
 # Removes every venv neither tree links to. A process started from one keeps both trees' links until its tree moves,
 # and backend_tree_free never moves a tree in use.
 backend_venv_prune() {
-    local dir keep
+    local dir keep real k
     [ -d "${BACKEND_TREES}/venvs" ] || return 0
     keep="$(readlink -f "${BACKEND_TREES}/blue/.venv" "${BACKEND_TREES}/green/.venv" 2>/dev/null || true)"
+    # Compared in the shell, never "echo | grep -q" (under pipefail a broken pipe reads as "not kept": the served
+    # frontend build was deleted that way, 18 Nov 22:44).
     for dir in "${BACKEND_TREES}"/venvs/*; do
         [ -d "${dir}" ] || continue
-        echo "${keep}" | grep -qxF "$(readlink -f "${dir}")" || $RUN_AS rm -rf -- "${dir}"
+        real="$(readlink -f "${dir}")"
+        while IFS= read -r k; do
+            [ -n "${k}" ] && [ "${k}" = "${real}" ] && continue 2
+        done <<< "${keep}"
+        $RUN_AS rm -rf -- "${dir}"
     done
 }
 

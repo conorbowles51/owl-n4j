@@ -143,6 +143,7 @@ frontend_switch() {
 # with nothing deleted: a pool emptied against a misread kept set would 404 every open tab.
 frontend_prune() {
     local current keep=() b kept_names doomed
+    local -A kept_set=()
     current="$(frontend_current_build)"
     [ -n "${current}" ] || return 0
     keep+=("${current}")
@@ -156,8 +157,11 @@ frontend_prune() {
         return 1
     fi
     kept_names="$(for b in "${keep[@]}"; do ls -1A "$(frontend_build_dir "${b}")/assets" 2>/dev/null; done | LC_ALL=C sort -u)"
+    # Membership in the shell, never "printf | grep -q": under pipefail grep's early exit gives printf a broken pipe,
+    # the test reads as "not kept" and the build being served was deleted (release of 12ae9dac, 18 Nov 22:44).
+    for b in "${keep[@]}"; do kept_set["${b}"]=1; done
     for b in $(cd "${FRONTEND_RELEASES}/builds" && ls -1A); do
-        printf '%s\n' "${keep[@]}" | grep -qxF "${b}" && continue
+        [ -n "${kept_set[${b}]+x}" ] && continue
         $RUN_AS chmod -R u+w "$(frontend_build_dir "${b}")" && $RUN_AS rm -rf "$(frontend_build_dir "${b}")"
     done
     doomed="$(cd "${FRONTEND_RELEASES}/assets" && ls -1A 2>/dev/null | LC_ALL=C sort |

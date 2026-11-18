@@ -55,4 +55,22 @@ rc=0; frontend_prune || rc=$?
 after="$(ls -1A "${FRONTEND_RELEASES}/assets" | LC_ALL=C sort)"
 [ "${before}" = "${after}" ] || { echo "prune with an unreadable serving build deleted pool files"; exit 1; }
 
+# A kept list longer than a pipe buffer: the old "printf | grep -q" membership test got a broken pipe under pipefail
+# when grep matched early, read "not kept" and deleted the build being served (release of 12ae9dac, 18 Nov 22:44).
+rm -rf "${FRONTEND_RELEASES}"
+mkdir -p "${FRONTEND_RELEASES}/assets"
+pad="$(printf 'b%.0s' $(seq 1 230))"
+for n in $(seq 100 399); do
+    b="${pad}${n}"
+    mkdir -p "${FRONTEND_RELEASES}/builds/${b}/assets"
+    echo "commit=${b}" > "${FRONTEND_RELEASES}/builds/${b}/.loupe-build-complete"
+    echo "${b}" > "${FRONTEND_RELEASES}/builds/${b}/assets/only-${n}.js"
+    cp "${FRONTEND_RELEASES}/builds/${b}/assets/only-${n}.js" "${FRONTEND_RELEASES}/assets/"
+done
+ln -sfn "builds/${pad}100" "${FRONTEND_RELEASES}/current"
+FRONTEND_KEEP_BUILDS=400
+frontend_prune
+[ "$(ls -1A "${FRONTEND_RELEASES}/builds" | wc -l)" -eq 300 ] || { echo "a kept build was removed (long kept list)"; exit 1; }
+[ -d "${FRONTEND_RELEASES}/builds/${pad}100" ] || { echo "the serving build was removed (long kept list)"; exit 1; }
+
 echo "test-frontend-prune: passed"
