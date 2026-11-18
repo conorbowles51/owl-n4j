@@ -370,6 +370,11 @@ def test_a_numbers_history_is_asked_once_per_finder_run():
     assert asked == [("15551230000", when), ("15551239999", when)]
 
 
+def _grouped(rows):
+    """``SELECT extraction_id, instant_utc, offset_status FROM pol_activity_event`` over (phone, instant[, status])."""
+    return [(r[0], r[1], r[2] if len(r) > 2 else "explicit") for r in rows]
+
+
 def test_held_activity_answers_as_the_database_does():
     """Phone reference 1, 18 Nov: every weighing asked each person's activity of the database (25% of a weighing)."""
     import random
@@ -388,7 +393,7 @@ def test_held_activity_answers_as_the_database_does():
 
     st = object.__new__(F.FinderStore)
     st._activity, st.c = None, {"c": "case"}
-    st.db = SimpleNamespace(execute=lambda sql, params, execution_options=None: (reads.append(1), R(rows))[1])
+    st.db = SimpleNamespace(execute=lambda sql, params, execution_options=None: (reads.append(1), R(_grouped(rows)))[1])
     people = [{"key": "a", "phones": ["e1", "e2"]}, {"key": "b", "phones": ["e3"]}, {"key": "c", "phones": []}]
 
     def db_rule(ps, windows):
@@ -459,3 +464,62 @@ def test_the_detectors_reuse_each_records_body_key(monkeypatch):
     F.deletions(c)
     assert calls["n"] == 0
     assert out[0]["refs"] == [r["ref"] for r in recs]
+
+
+def test_a_weighings_held_records_are_found_by_phone_not_by_reading_every_phone():
+    """Phone reference 1, 18 Nov: choosing a weighing's held records read every phone's records in each window (27% of
+    a weighing after the database reads were held). Other phones' records are not read at all now."""
+    touched = Counter()
+
+    class Watched(dict):
+        def __getitem__(self, k):
+            if getattr(self, "held", False):
+                touched[k] += 1
+            return dict.__getitem__(self, k)
+
+    t0 = at(NIGHTS[0], 0)
+    recs = [{"ref": f"phone_record:a{i}", "kind": "message", "at": t0 + timedelta(minutes=i), "phone": "pha", "owner": "a"}
+            for i in range(50)]
+    others = [Watched(ref=f"phone_record:h{i}", kind="message", at=t0 + timedelta(minutes=i), phone="phh", owner="h")
+              for i in range(500)]
+    st = _Held(recs + others)
+    everyone = list(PEOPLE.values())
+    st.hold(recs + others, t0 - timedelta(days=1), t0 + timedelta(days=2), everyone)
+    for r in others:
+        r.held = True
+    got = st.phone_records([PEOPLE["a"]], [(t0, t0 + timedelta(minutes=20))], everyone)
+    assert [r["ref"] for r in got] == [f"phone_record:a{i}" for i in range(21)]
+    assert not touched
+
+
+def test_held_offsets_answer_as_the_database_does():
+    """Phone reference 1, 18 Nov: every weighing counted the people's activity rows by offset status (11%)."""
+    import random
+    rnd = random.Random(5)
+    base = at(NIGHTS[0], 0)
+    rows = [(e, base + timedelta(minutes=rnd.randrange(0, 60 * 24 * 20)), rnd.choice(["explicit"] * 8 + ["absent", None]))
+            for e in ("e1", "e2", "e3") for _ in range(300)]
+    rows += [rows[0], rows[0], ("e1", rows[0][1], "absent")]  # the same instant held twice, and with another status
+
+    class R:
+        def __init__(self, rs):
+            self.rs = rs
+
+        def __iter__(self):
+            return iter(self.rs)
+
+    st = object.__new__(F.FinderStore)
+    st._activity, st.c = None, {"c": "case"}
+    st.db = SimpleNamespace(execute=lambda sql, params, execution_options=None: R(_grouped(rows)))
+
+    def db_rule(phones, windows):
+        lo, hi = min(w[0] for w in windows), max(w[1] for w in windows)
+        return Counter(s_ for e, t, s_ in rows if e in phones and lo <= t <= hi)
+    for _ in range(20):
+        phones = rnd.sample(["e1", "e2", "e3", "e9"], rnd.randint(1, 3))
+        ws = []
+        for _ in range(rnd.randint(1, 3)):
+            lo = base + timedelta(hours=rnd.randrange(0, 24 * 20))
+            ws.append((lo, lo + timedelta(hours=rnd.randrange(0, 50))))
+        assert st.offsets(phones, ws) == db_rule(phones, ws)
+    assert st.offsets(["e1"], [(rows[0][1], rows[0][1])]) == db_rule(["e1"], [(rows[0][1], rows[0][1])])

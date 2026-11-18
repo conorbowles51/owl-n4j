@@ -41,6 +41,7 @@ import time
 import uuid
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
+from array import array
 from bisect import bisect_left, bisect_right
 from itertools import combinations
 from typing import Any, Callable
@@ -77,7 +78,7 @@ class FinderStore(CaseStore):
         self._held: dict | None = None
         self._phrase_n: dict[str, int] = {}
         self._number_hist: dict[tuple, list[dict]] = {}
-        self._activity: dict[str, list[datetime]] | None = None
+        self._activity: dict[str, tuple] | None = None
         self._contact: dict[tuple, int] = {}
         self._cov: dict[tuple, dict] = {}
 
@@ -114,23 +115,65 @@ class FinderStore(CaseStore):
         if not windows or any(lo.tzinfo is None or hi.tzinfo is None or lo - DAY < EARLIEST or hi + DAY > LATEST
                               for lo, hi in windows):
             return super().activity(people, windows)
-        if self._activity is None:
-            held: dict[str, set] = defaultdict(set)
-            rows = self.db.execute(text("SELECT extraction_id, instant_utc FROM pol_activity_event WHERE case_id = :c"),
-                                   self.c, execution_options={"stream_results": True, "yield_per": 20000})
-            for e, t in rows:
-                held[str(e)].add(M.as_utc(t))
-            self._activity = {e: sorted(v) for e, v in held.items()}
+        self._hold_activity()
         out: dict[str, list[datetime]] = {}
         for p in people:
             if not p["phones"]:
                 continue
             got: set = set()
             for e in p["phones"]:
-                ts = self._activity.get(str(e), [])
+                ts = self._activity.get(str(e), ([],))[0]
                 for lo, hi in windows:
                     got.update(ts[bisect_left(ts, lo - DAY):bisect_right(ts, hi + DAY)])
             out[p["key"]] = sorted(got)
+        return out
+
+    def _hold_activity(self) -> None:
+        """Per phone: each activity instant once, in order, with the running count of the rows up to it, and the
+        instants of rows whose offset is not written in the record, by their offset status (5,696 of 1,712,749 on
+        Phone reference 1)."""
+        if self._activity is not None:
+            return
+        held: dict[str, dict] = defaultdict(lambda: defaultdict(int))
+        other: dict[str, dict] = defaultdict(lambda: defaultdict(list))
+        rows = self.db.execute(text("SELECT extraction_id, instant_utc, offset_status FROM pol_activity_event "
+                                    "WHERE case_id = :c"),
+                               self.c, execution_options={"stream_results": True, "yield_per": 20000})
+        for e, t, status in rows:
+            t = M.as_utc(t)
+            held[str(e)][t] += 1
+            if status != "explicit":
+                other[str(e)][status].append(t)
+        self._activity = {}
+        for e, cnt in held.items():
+            ts = sorted(cnt)
+            cum = array("q", [0])
+            for t in ts:
+                cum.append(cum[-1] + cnt[t])
+            self._activity[e] = (ts, cum, {st: sorted(v) for st, v in other[e].items()})
+
+    def offsets(self, phones: list[str], windows) -> Counter:
+        """CaseStore.offsets answered from the held activity (Phone reference 1, 18 Nov: 11% of a weighing): the rows
+        of the phones from the earliest window's start to the latest window's end, by offset status."""
+        if not phones or not windows:
+            return Counter()
+        lo, hi = min(w[0] for w in windows), max(w[1] for w in windows)
+        if lo.tzinfo is None or hi.tzinfo is None:
+            return super().offsets(phones, windows)
+        self._hold_activity()
+        total, out = 0, Counter()
+        for e in {str(x) for x in phones}:
+            if e not in self._activity:
+                continue
+            ts, cum, other = self._activity[e]
+            total += cum[bisect_right(ts, hi)] - cum[bisect_left(ts, lo)]
+            for status, at_ in other.items():
+                n = bisect_right(at_, hi) - bisect_left(at_, lo)
+                if n:
+                    out[status] += n
+        explicit = total - sum(out.values())
+        if explicit:
+            out["explicit"] = explicit
         return out
 
     def number_history(self, value: str, before: datetime) -> list[dict]:
@@ -177,7 +220,16 @@ class FinderStore(CaseStore):
         weighing reads its windows from them instead of the database. On Phone reference 1 one weighing re-read
         251,780 records in 339 s (18 Nov); a finder run weighs dozens of leads."""
         phone = sorted((r for r in recs if r["ref"].startswith("phone_record:")), key=lambda r: r["at"])
-        self._held = {"lo": lo, "hi": hi, "sig": _people_sig(everyone), "recs": phone, "at": [r["at"] for r in phone],
+        # per phone, in time order: every record (place in ``recs``, instant), and its payment alerts alone
+        by_phone: dict[str, tuple[list, list, list, list]] = {}
+        for k, r in enumerate(phone):
+            ix, ats, aix, aats = by_phone.setdefault(r["phone"], ([], [], [], []))
+            ix.append(k)
+            ats.append(r["at"])
+            if r["kind"] == "payment_alert":
+                aix.append(k)
+                aats.append(r["at"])
+        self._held = {"lo": lo, "hi": hi, "sig": _people_sig(everyone), "recs": phone, "by_phone": by_phone,
                       "phones": {e for p in everyone for e in p["phones"]}}
 
     def phone_records(self, people, windows, everyone):
@@ -189,12 +241,14 @@ class FinderStore(CaseStore):
                 or any(lo.tzinfo is None or hi.tzinfo is None or lo < h["lo"] or hi > h["hi"] for lo, hi in windows)):
             return super().phone_records(people, windows, everyone)
         pick: set[int] = set()
-        recs, at = h["recs"], h["at"]
-        for lo, hi in windows:
-            for k in range(bisect_left(at, lo), bisect_right(at, hi + ALERT_AFTER)):
-                r = recs[k]
-                if r["phone"] in phones and (r["at"] <= hi or r["kind"] == "payment_alert"):
-                    pick.add(k)
+        recs = h["recs"]
+        for e in phones:
+            if e not in h["by_phone"]:
+                continue
+            ix, ats, aix, aats = h["by_phone"][e]
+            for lo, hi in windows:
+                pick.update(ix[bisect_left(ats, lo):bisect_right(ats, hi)])
+                pick.update(aix[bisect_right(aats, hi):bisect_right(aats, hi + ALERT_AFTER)])
         # the held records themselves, not copies: every reader of records() only reads them or copies them (dedupe)
         return [recs[k] for k in sorted(pick)]
 
