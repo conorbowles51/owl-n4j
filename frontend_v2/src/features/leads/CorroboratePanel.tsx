@@ -12,6 +12,7 @@ import { leadsAPI } from "./api"
 import { LeadCard } from "./LeadCard"
 import { CORROBORATE_OPEN, takePendingCorroborate, type CorroborateRequest } from "./open"
 import { clearLeadRecords, showLeadRecords, useShownLead } from "./highlight-store"
+import { EMPTY_SCOPE, scopeHref } from "@/features/phones/ui/scope"
 
 /**
  * Corroborate from anywhere (lx-leads C, screen 7): the panel over the current page. "Leads already here" is the one
@@ -44,7 +45,7 @@ function Panel({ req, onClose }: { req: CorroborateRequest; onClose: () => void 
   const refs = req.members.map((m) => `${m.type}:${m.id}`)
   const here = useQuery({
     queryKey: ["leads", req.caseId, "here", refs.join(","), (req.people ?? []).join(","), req.period?.from, req.period?.to],
-    queryFn: () => leadsAPI.list(req.caseId, { records: refs, people: req.people, from: req.period?.from, to: req.period?.to }),
+    queryFn: () => leadsAPI.here(req.caseId, { records: refs, people: req.people, from: req.period?.from, to: req.period?.to }),
   })
   const n = here.data?.leads.length
   return (
@@ -99,7 +100,7 @@ function Ask({ req }: { req: CorroborateRequest }) {
   const corro = r?.result?.corroboration
   const lead = useQuery({
     queryKey: ["leads", req.caseId, "run", r?.id],
-    queryFn: () => leadsAPI.list(req.caseId, { records: req.members.map((m) => `${m.type}:${m.id}`) }),
+    queryFn: () => leadsAPI.here(req.caseId, { records: req.members.map((m) => `${m.type}:${m.id}`) }),
     enabled: !!corro && !!r?.id,
     select: (d) => d.leads.find((l) => l.run_id === r?.id) ?? null,
   })
@@ -128,7 +129,7 @@ function Ask({ req }: { req: CorroborateRequest }) {
             <p>✓ Saved to Leads as <strong>Asked by you</strong>, a reading by Loupe until you confirm it.</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" asChild><Link to={`/cases/${req.caseId}/leads`}>Open in Leads</Link></Button>
-              {lead.data && <Button size="sm" variant="outline" onClick={() => showLeadRecords(lead.data!.id, lead.data!.title, lead.data!.record_refs)}>Show these records</Button>}
+              {lead.data && <Button size="sm" variant="outline" onClick={() => showLeadRecords(lead.data!.id, lead.data!.title, lead.data!.record_refs, { caseId: req.caseId, period: lead.data!.period })}>Show these records</Button>}
             </div>
             {lead.data && <div className="mt-3"><LeadCard caseId={req.caseId} lead={lead.data} compact /></div>}
           </div>
@@ -156,13 +157,30 @@ function Ask({ req }: { req: CorroborateRequest }) {
   )
 }
 
-/** While a lead's records are shown, a bar says so on every page, with the way to stop. */
+const LEAD_PAGES: [string, string][] = [["conversations", "Conversations"], ["timeline", "Timeline"], ["map", "Map"]]
+
+/** The lead's days as a phone scope window (null when the lead has no dates: the page then opens on everything). */
+function leadWindow(period?: { from?: string; to?: string }): { from: string; to: string } | null {
+  const from = period?.from ?? period?.to
+  const to = period?.to ?? period?.from
+  return from && to ? { from: from.slice(0, 10), to: to.slice(0, 10) } : null
+}
+
+/** While a lead's records are shown, a bar says so on every page, with links to the lead's days on Conversations,
+ * the timeline and the map (in-page links, so the marks stay), and the way to stop. */
 function ShownLeadBar() {
   const shown = useShownLead()
   if (!shown) return null
   return (
-    <div className="fixed bottom-3 left-1/2 z-50 flex max-w-[95vw] -translate-x-1/2 items-center gap-3 rounded-full border bg-background px-4 py-2 text-xs shadow-lg" role="status">
-      <span className="truncate">Showing {shown.refs.size.toLocaleString()} records of the lead “{shown.title}” in Conversations, the map and the timeline</span>
+    <div className="fixed bottom-3 left-1/2 z-50 flex max-w-[95vw] -translate-x-1/2 flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border bg-background px-4 py-2 text-xs shadow-lg sm:flex-nowrap sm:rounded-full" role="status">
+      <span className="min-w-0 truncate">Showing {shown.refs.size.toLocaleString()} records of the lead “{shown.title}”</span>
+      {shown.caseId && (
+        <span className="flex shrink-0 gap-2" aria-label="Open the lead's days">
+          {LEAD_PAGES.map(([path, words]) => (
+            <Link key={path} className="underline" to={scopeHref(`/cases/${shown.caseId}/${path}`, { ...EMPTY_SCOPE, window: leadWindow(shown.period) })}>{words}</Link>
+          ))}
+        </span>
+      )}
       <Button size="sm" variant="ghost" onClick={() => clearLeadRecords()}>Close</Button>
     </div>
   )

@@ -258,3 +258,14 @@ class LeadStoreTests(DuplicateTestCase):
         self.assertEqual([p["key"] for p in lead["people"]], ["person:a"])
         self.assertEqual(lead["period"], {"from": "2024-05-04", "to": "2024-05-04"})
         self.assertEqual(lead["record_refs"], ["phone_record:m1"])
+
+    def test_leads_already_here_takes_a_whole_threads_records_in_the_body(self):
+        from routers.leads import HereRequest, leads_here
+        self.save(finder_key="relay:1")
+        many = [f"phone_record:x{i}" for i in range(5000)] + ["phone_record:r1"]   # far past any address length
+        got = leads_here(self.case.id, HereRequest(records=many), db=self.db, user=self.user)
+        self.assertEqual([x["title"] for x in got["leads"]], ["Relay"])
+        none = leads_here(self.case.id, HereRequest(records=["phone_record:nope"]), db=self.db, user=self.user)
+        self.assertEqual(none["leads"], [])
+        dated = leads_here(self.case.id, HereRequest.model_validate({"from": "2024-03-16"}), db=self.db, user=self.user)
+        self.assertEqual(len(dated["leads"]), 1)

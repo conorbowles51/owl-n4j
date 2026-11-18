@@ -68,6 +68,12 @@ function query(f?: LeadFilter): string {
 
 export const leadsAPI = {
   list: (caseId: string, f?: LeadFilter) => fetchAPI<{ leads: Lead[]; total: number; finder: FinderState }>(`${base(caseId)}${query(f)}`),
+  /** "Leads already here": the filter in the body, since a thread's records do not fit in an address. */
+  here: (caseId: string, f: LeadFilter) =>
+    fetchAPI<{ leads: Lead[]; total: number; finder: FinderState }>(`${base(caseId)}:here`, {
+      method: "POST",
+      body: { records: f.records ?? [], people: f.people ?? [], ...(f.from ? { from: f.from } : {}), ...(f.to ? { to: f.to } : {}) },
+    }),
   count: (caseId: string) => fetchAPI<{ count: number; new: number }>(`${base(caseId)}/count`),
   seen: (caseId: string, id: string) => fetchAPI<Lead>(`${base(caseId)}/${encodeURIComponent(id)}:seen`, { method: "POST" }),
   state: (caseId: string, id: string, state: "new" | "looking" | "not_relevant", why?: string) =>

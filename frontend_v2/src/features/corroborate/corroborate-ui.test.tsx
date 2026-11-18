@@ -29,7 +29,7 @@ function wrap(ui: React.ReactNode) {
   </MemoryRouter></QueryClientProvider>)
 }
 
-beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); setSwitch("corroborate-v2", true); vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } }) })
+beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); setSwitch("corroborate-v2", true); vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } }) })
 
 describe("Corroborate from a selection", () => {
   it("adds the choice to the selection, shows the whole count, drafts the question and hands off the whole set", async () => {

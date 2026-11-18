@@ -42,6 +42,25 @@ def list_leads(case_id: UUID, records: str | None = Query(default=None, max_leng
     return {"leads": leads, "total": len(leads), "finder": _finder_state(db, case_id)}
 
 
+class HereRequest(BaseModel):
+    """The leads touching a selection: its records, people and days. Sent in the body, because a whole thread or a
+    lead's own records do not fit in an address (a GET with them came back 414)."""
+    records: list[str] = Field(default_factory=list, max_length=200_000)
+    people: list[str] = Field(default_factory=list, max_length=2_000)
+    date_from: str | None = Field(default=None, alias="from", max_length=10)
+    date_to: str | None = Field(default=None, alias="to", max_length=10)
+
+
+@router.post("/{case_id}/leads:here", dependencies=[Depends(require_case_view)])
+def leads_here(case_id: UUID, body: HereRequest, db: Session = Depends(get_db),
+               user: User = Depends(get_current_db_user)) -> dict[str, Any]:
+    """Read only, like the list: "Leads already here" in the Corroborate panel."""
+    period = (body.date_from, body.date_to or body.date_from) if body.date_from else None
+    leads = store.list_leads(db, case_id, records=body.records or None, people=body.people or None, period=period,
+                             kinds=None, me=user.id)
+    return {"leads": leads, "total": len(leads), "finder": _finder_state(db, case_id)}
+
+
 def _finder_state(db, case_id) -> dict[str, Any]:
     from services.leads import finder
     return finder.last_run(db, case_id)

@@ -8,14 +8,18 @@ interface Shown {
   leadId: string
   title: string
   refs: Set<string>
+  /** Where the bar's links go: the lead's case and its days, so the marked records are on screen. */
+  caseId?: string
+  period?: { from?: string; to?: string }
 }
 
 let shown: Shown | null = null
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 
-export function showLeadRecords(leadId: string, title: string, refs: string[]): void {
-  shown = { leadId, title, refs: new Set(refs) }
+export function showLeadRecords(leadId: string, title: string, refs: string[],
+                                where: { caseId?: string; period?: { from?: string; to?: string } } = {}): void {
+  shown = { leadId, title, refs: new Set(refs), ...where }
   emit()
 }
 

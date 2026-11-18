@@ -85,7 +85,7 @@ describe("the Leads page", () => {
 
 describe("Corroborate from anywhere", () => {
   it("opens over the page with the leads already here, filtered to the chosen records, and joins the selection", async () => {
-    const list = vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [LEADS[0]], total: 1, finder: { status: "done" } })
+    const list = vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [LEADS[0]], total: 1, finder: { status: "done" } })
     wrap(<><p>page under</p><CorroboratePanel /></>)
     act(() => openCorroborate({ caseId: "c1", screen: "Conversations", label: "1 message", members: [{ type: "phone_record", id: "a" }] }))
     expect(await screen.findByRole("dialog", { name: "Corroborate" })).toBeTruthy()
@@ -100,7 +100,7 @@ describe("Corroborate from anywhere", () => {
   })
 
   it("asks the question on the chosen records and the answer is saved to Leads as Asked by you", async () => {
-    vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } })
+    vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } })
     vi.spyOn(corroborateAPI, "preview").mockResolvedValue({ questions: [{ kind: "in_contact", text: "Were Kell and Okafor in contact?", count: 2, count_words: "2 people", chips: {} }] } as never)
     const run = vi.spyOn(corroborateAPI, "run").mockResolvedValue({ group: { id: "g9", member_count: 1, left_out: 0 } })
     wrap(<CorroboratePanel />)
@@ -125,6 +125,9 @@ describe("Show these records", () => {
     expect(isShownRef(getShownLead(), "phone_record:b")).toBe(true)
     expect(isShownRef(getShownLead(), "phone_record:z")).toBe(false)
     expect(screen.getByText(/Showing 2 records of the lead/)).toBeTruthy()
+    // the bar opens the lead's days, so the marked records are on screen
+    expect(screen.getByRole("link", { name: "Conversations" }).getAttribute("href")).toBe("/cases/c1/conversations?from=2024-05-01&to=2024-06-01")
+    expect(screen.getByRole("link", { name: "Map" }).getAttribute("href")).toBe("/cases/c1/map?from=2024-05-01&to=2024-06-01")
     fireEvent.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!)
     expect(getShownLead()).toBeNull()
   })
