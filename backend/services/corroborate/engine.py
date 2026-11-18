@@ -205,7 +205,7 @@ def run(store, members: list[dict], question: dict | None = None,
     # records
     windows = [(i["start"], i["money_end"]) for i in instances]
     raw = store.records(list(people.values()), windows, list(everyone.values()))
-    recs, folded = M.dedupe(raw)
+    recs, folded = M.dedupe(raw, getattr(store, "dedupe_memo", None))
     activity = store.activity(list(people.values()), [(i["start"], i["end"]) for i in instances])
     doc_ids = sorted({r["source"] for r in recs if r["kind"] == "doc_row"})
     cov = store.coverage(list(people.values()), doc_ids)
@@ -494,7 +494,7 @@ def _not_in_pattern(store, everyone, people, instances, focus) -> list[dict]:
     windows = [(i["start"], i["money_end"]) for i in incidents]
     group = {**{k: v for k, v in people.items()}, **{p["key"]: p for p in others}}
     raw = store.records(list(group.values()), windows, list(everyone.values()))
-    recs, _ = M.dedupe(raw)
+    recs, _ = M.dedupe(raw, getattr(store, "dedupe_memo", None))
     cov = store.coverage(others, [])
     out = []
     media = [r for r in raw if r["kind"] == "media_position" and r.get("owner") not in people]

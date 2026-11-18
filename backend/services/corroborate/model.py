@@ -270,10 +270,18 @@ def pair_key(a: str, b: str) -> tuple[str, str]:
     return (a, b) if a <= b else (b, a)
 
 
-def dedupe(records: Iterable[dict]) -> tuple[list[dict], int]:
+DEDUPE_MEMO_MAX = 200_000  # kept records a run's memo holds before it starts again (memory, not results)
+
+
+def dedupe(records: Iterable[dict], memo: dict | None = None) -> tuple[list[dict], int]:
     """Copies of one record count once: the same message held on two phones (same text, same minute), the same
     payment as a ledger row and as alerts on the phones (same amount, same day, same people). Returns the kept
-    records (each with ``copies``: the refs folded into it) and how many copies were folded."""
+    records (each with ``copies``: the refs folded into it) and how many copies were folded.
+
+    ``memo`` (a dict a run keeps, e.g. the lead finder's held store): a kept record made from exactly the same
+    record objects as before is reused, not copied again. Callers never change a kept record."""
+    if memo is not None:
+        return _dedupe_memo(records, memo)
     kept: dict[tuple, dict] = {}
     folded = 0
     for r in records:
@@ -292,6 +300,32 @@ def dedupe(records: Iterable[dict]) -> tuple[list[dict], int]:
             if r["owner"] not in kept[key].setdefault(side, []):
                 kept[key][side].append(r["owner"])
     return list(kept.values()), folded
+
+
+def _dedupe_memo(records: Iterable[dict], memo: dict) -> tuple[list[dict], int]:
+    groups: dict[tuple, list[dict]] = {}
+    folded = 0
+    for r in records:
+        key = r.get("dup_key")
+        if key is None:
+            groups[("ref", r["ref"])] = [r]  # the last record with a ref wins, as in the plain loop
+        elif key in groups:
+            groups[key].append(r)
+            folded += 1
+        else:
+            groups[key] = [r]
+    if len(memo) > DEDUPE_MEMO_MAX:
+        memo.clear()
+    out = []
+    for key, members in groups.items():
+        hit = memo.get(key)
+        if hit is not None and len(hit[0]) == len(members) and all(a is b for a, b in zip(hit[0], members)):
+            out.append(hit[1])
+            continue
+        one = dedupe(members)[0][0]
+        memo[key] = (members, one)
+        out.append(one)
+    return out, folded
 
 
 _WORD = re.compile(r"[\w'$.,]+", re.UNICODE)

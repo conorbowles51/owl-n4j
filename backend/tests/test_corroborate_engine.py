@@ -393,3 +393,29 @@ def test_not_in_pattern_counts_each_persons_records_in_one_pass():
     for o in out:
         want = sum(1 for r in raw_list if r["owner"] == o["key"] or o["key"] in r["parties"])
         assert o["counts"]["records_read"] == want
+
+
+def test_dedupe_with_a_run_memo_keeps_the_same_records_and_reuses_them():
+    t = datetime(2025, 6, 6, 20, tzinfo=timezone.utc)
+    recs = [{"ref": "a1", "kind": "message", "at": t, "dup_key": ("m", 1), "owner": "a", "deleted": True},
+            {"ref": "b1", "kind": "message", "at": t, "dup_key": ("m", 1), "owner": "b"},
+            {"ref": "p1", "kind": "payment", "at": t},
+            {"ref": "p1", "kind": "payment", "at": t, "amount_minor": 5},
+            {"ref": "c1", "kind": "call", "at": t, "dup_key": ("c", 2)}]
+    memo: dict = {}
+    plain = M.dedupe(recs)
+    first = M.dedupe(recs, memo)
+    assert first == plain  # same kept records, copies, deleted_by/kept_by and folded count
+    again = M.dedupe(recs, memo)
+    assert again == plain and all(x is y for x, y in zip(again[0], first[0]))  # reused, not copied again
+    fewer = M.dedupe([recs[1], recs[4]], memo)  # a key with fewer copies this time is made again
+    assert fewer == M.dedupe([recs[1], recs[4]]) and fewer[0][0]["copies"] == ["b1"]
+
+
+def test_a_weighing_with_the_run_memo_matches_one_without_it():
+    plain = _run(_seed(), {"kind": "every_time"})
+    store = FakeStore()
+    store.dedupe_memo = {}
+    for _ in range(2):  # the second weighing reuses the first one's kept records
+        assert engine.run(store, _seed(), {"kind": "every_time"}) == plain
+    assert store.dedupe_memo

@@ -79,6 +79,7 @@ class FinderStore(CaseStore):
         self._phrase_n: dict[str, int] = {}
         self._number_hist: dict[tuple, list[dict]] = {}
         self._activity: dict[str, tuple] | None = None
+        self.dedupe_memo: dict = {}  # kept records made from the same held records, reused across weighings
         self._contact: dict[tuple, int] = {}
         self._cov: dict[tuple, dict] = {}
 
