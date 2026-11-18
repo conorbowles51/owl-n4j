@@ -115,7 +115,24 @@ def participant_role(parent_type, container, role_value, is_owner, direction):
     return "party:%s" % container, "container", flags
 
 
-def source_kind(parent_type, parent_origin):
+# A Location record a photos app wrote ("Media Locations", Google Photos' "Media Probably Captured") says where a
+# photo or video was taken, never where this phone was: a received photo keeps the sender's place (demo Phone 5's two
+# warehouse "positions", 17 Nov). Such a point is a ``media_place``; pattern of life decides from the photo's file
+# whether this phone took it (places.media_origin), and the together, area and map readers keep it apart from
+# positions. The categories are the two photo ones measured on live (17 Nov: 622 + 1,204 records); "Snapchat Gallery
+# Upload" (2,740) is not shown to be a photo's place and stays as it was. *Reverse if* a production is shown to write a
+# device fix under one of these categories; *extend* when another photo category is measured.
+MEDIA_PLACE_KIND = "media_place"
+MEDIA_CATEGORIES = frozenset({"media locations", "media probably captured"})
+
+
+def is_media_category(category):
+    return bool(category) and str(category).strip().lower() in MEDIA_CATEGORIES
+
+
+def source_kind(parent_type, parent_origin, category=None):
+    if parent_type == "Location" and is_media_category(category):
+        return MEDIA_PLACE_KIND
     if parent_type == "Location" and parent_origin in (None, "Device"):
         return "device_location"
     if parent_type == "WirelessNetwork":
@@ -191,7 +208,7 @@ class Writer:
 class _Ctx:
     """What a descendant needs from an ancestor."""
     __slots__ = ("type", "uid", "ordinal", "doc", "prefix", "container", "first_time", "accuracy", "precision",
-                 "origin", "affiliation", "direction", "summary", "has_point", "point_problem", "positionable", "deleted_state",
+                 "origin", "category", "affiliation", "direction", "summary", "has_point", "point_problem", "positionable", "deleted_state",
                  "decoding_confidence", "locator", "root_uid", "source", "facts")
 
 
@@ -305,6 +322,7 @@ class Interpreter:
         c.accuracy = _first_text(fmap, "GpsHorizontalAccuracy")
         c.precision = _first_text(fmap, "Precision")
         c.origin = _first_text(fmap, "Origin")
+        c.category = _first_text(fmap, "Category")
         c.source = pctx.source if pctx is not None else _first_text(fmap, "Source")  # 8.2 A1: the top-level Source
         c.affiliation = _first_text(fmap, "DeviceLocationAffiliation") or _first_text(fmap, "AccountLocationAffiliation")
         c.direction = None
@@ -436,7 +454,8 @@ class Interpreter:
             lat_text=_first_text(fmap, "Latitude"), lon_text=_first_text(fmap, "Longitude"),
             elevation_m=p["elevation_m"], accuracy_m=p["accuracy_m"], accuracy_basis=p["accuracy_basis"],
             precision_text=p["precision_text"], source_kind=source_kind(owner.type if owner else None,
-                                                                        owner.origin if owner else None),
+                                                                        owner.origin if owner else None,
+                                                                        owner.category if owner else None),
             affiliation=owner.affiliation if owner else None, instant=instant, end_instant=None,
             time_field=time_field))
         self.stats["points"] += 1
@@ -610,3 +629,30 @@ def purge_generations_before(engine, extraction_id, generation, batch=PURGE_BATC
         deleted[t] = n
     return deleted
 
+
+
+# ---- existing points: photo places stored before MEDIA_PLACE_KIND (followups m111723091510458) ----------------------
+
+def reclassify_media_places(conn, case_id=None, apply=False) -> dict:
+    """Points already written as a device position or app record whose Location says a photos app wrote it get the
+    kind the writer gives them now (``source_kind`` above, the same category rule), and each changed phone's place
+    observations are rebuilt by pattern of life. Dry run unless ``apply``; returns counts per case and kind."""
+    cond = ("p.model_type = 'Location' AND p.source_kind <> :k AND t.extraction_id = p.extraction_id AND "
+            "t.generation = p.generation AND t.record_uid = p.record_uid AND t.field_name = 'Category' AND "
+            "t.value_index = 0 AND lower(btrim(t.value)) = ANY(:cats)" + (" AND p.case_id = CAST(:c AS uuid)" if case_id else ""))
+    params = {"k": MEDIA_PLACE_KIND, "cats": sorted(MEDIA_CATEGORIES), "c": str(case_id) if case_id else None}
+    rows = conn.execute(text(
+        "SELECT p.case_id, p.extraction_id, p.source_kind, count(*) FROM phone_location_points p, phone_texts t WHERE "
+        + cond + " GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"), params).fetchall()
+    out = {"points": sum(int(r[3]) for r in rows), "by_case": {}, "applied": bool(apply), "rebuilt": {}}
+    for r in rows:
+        out["by_case"].setdefault(str(r[0]), {}).setdefault(r[2], 0)
+        out["by_case"][str(r[0])][r[2]] += int(r[3])
+    if not apply or not rows:
+        return out
+    conn.execute(text("UPDATE phone_location_points p SET source_kind = :k FROM phone_texts t WHERE " + cond), params)
+    from services.pattern_of_life import places
+    for ext in sorted({str(r[1]) for r in rows}):
+        st = places.build(conn, ext)
+        out["rebuilt"][ext] = {k: v for k, v in st.items() if k.startswith(("media:", "observations:"))}
+    return out

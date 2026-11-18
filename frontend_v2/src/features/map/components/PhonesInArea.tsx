@@ -35,6 +35,11 @@ export function PhonesInArea({ caseId, shape }: { caseId: string; shape: Boundin
               </li>
             ))}
           </ul>
+          {(q.data.photo_places_total ?? 0) > 0 && (
+            <p>
+              {`${n(q.data.photo_places_total ?? 0)} ${q.data.photo_places_total === 1 ? "photo was" : "photos were"} taken inside the area (${(q.data.photo_places ?? []).map((d) => `${d.phone_label}: ${n(d.photos)}`).join(", ")}). A photo's place is where it was taken, not where the phone was, so these phones are not counted above.`}
+            </p>
+          )}
           <p className="font-medium">{PLACE_LABEL}.</p>
         </>
       )}

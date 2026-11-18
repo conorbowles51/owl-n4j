@@ -155,8 +155,9 @@ class DbSources:
             item["phone"] = str(pt[0])
             item["at"] = item["at"] or (pt[5].isoformat() if pt[5] else None)
             item["place"] = {"lat": pt[1], "lon": pt[2], "radius_m": float(pt[3] or 0), "source": pt[4]}
-            item.setdefault("time_kind", "phone_location")
-        kind_word = {"phone_call": "Call", "phone_message": "Message", "phone_location": "Position"}.get(item.get("time_kind"), "Phone record")
+            item.setdefault("time_kind", "phone_photo_place" if pt[4] == "media_place" else "phone_location")
+        kind_word = {"phone_call": "Call", "phone_message": "Message", "phone_location": "Position",
+                     "phone_photo_place": "Photo place"}.get(item.get("time_kind"), "Phone record")
         if item.get("at"):
             when = rules.parse_when(item["at"])
             item["label"] = f"{kind_word} {when:%Y-%m-%d %H:%M} on phone {item.get('phone', '')[:8]}".strip()
@@ -232,7 +233,7 @@ class DbSources:
         dlon = radius_m / (111_000.0 * max(0.2, abs(__import__("math").cos(__import__("math").radians(lat)))))
         rows = self.db.execute(text(
             "SELECT extraction_id, instant::date AS d, lat, lon FROM phone_location_points WHERE case_id = :c AND "
-            "instant IS NOT NULL AND lat BETWEEN :a AND :b AND lon BETWEEN :x AND :y"),
+            "instant IS NOT NULL AND source_kind <> 'media_place' AND lat BETWEEN :a AND :b AND lon BETWEEN :x AND :y"),
             {"c": self.case, "a": lat - dlat, "b": lat + dlat, "x": lon - dlon, "y": lon + dlon}).fetchall()
         near = {}
         for ext, d, la, lo in rows:
@@ -253,10 +254,12 @@ class DbSources:
         row = self.db.execute(text("""
             WITH a AS (SELECT floor(extract(epoch FROM instant) / 900) AS bin, round(lat / 0.002) AS la, round(lon / 0.002) AS lo,
                               instant::date AS d FROM phone_location_points
-                       WHERE case_id = :c AND extraction_id = CAST(:a AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL),
+                       WHERE case_id = :c AND extraction_id = CAST(:a AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL
+                         AND source_kind <> 'media_place'),
                  b AS (SELECT DISTINCT floor(extract(epoch FROM instant) / 900) AS bin, round(lat / 0.002) AS la, round(lon / 0.002) AS lo,
                               instant::date AS d FROM phone_location_points
-                       WHERE case_id = :c AND extraction_id = CAST(:b AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL),
+                       WHERE case_id = :c AND extraction_id = CAST(:b AS uuid) AND instant IS NOT NULL AND lat IS NOT NULL
+                         AND source_kind <> 'media_place'),
                  bx AS (SELECT DISTINCT b.bin + k1 AS bin, b.la + k2 AS la, b.lo + k3 AS lo
                         FROM b CROSS JOIN generate_series(-1, 1) k1 CROSS JOIN generate_series(-1, 1) k2 CROSS JOIN generate_series(-1, 1) k3)
             SELECT (SELECT count(DISTINCT a.d) FROM a JOIN bx ON bx.bin = a.bin AND bx.la = a.la AND bx.lo = a.lo),

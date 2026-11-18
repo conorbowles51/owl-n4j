@@ -56,9 +56,11 @@ def members_in_areas(conn, case_id, areas: list[list[list[float]]], *, places=gr
     bbox = (min(xs), min(ys), max(xs), max(ys))
     seen: dict[str, str] = {}
     phones: set[str] = set()
+    photo_uids: set[str] = set()
     kinds: dict[str, int] = {}
     statement = text(
-        "SELECT t.record_uid, t.extraction_id, t.model_type, t.lat, t.lon FROM pv_location_point t WHERE t.case_id = :c "
+        "SELECT t.record_uid, t.extraction_id, t.model_type, t.lat, t.lon, t.source_kind FROM pv_location_point t "
+        "WHERE t.case_id = :c "
         "AND t.lat IS NOT NULL AND t.lon IS NOT NULL AND t.lat BETWEEN :s AND :n AND t.lon BETWEEN :w AND :e"
     ).execution_options(stream_results=True, yield_per=5000)
     rows = conn.execute(statement, {"c": str(case_id), "w": bbox[0], "s": bbox[1], "e": bbox[2], "n": bbox[3]})
@@ -66,11 +68,18 @@ def members_in_areas(conn, case_id, areas: list[list[list[float]]], *, places=gr
         if r.record_uid is None or not inside_any(r.lon, r.lat, rings):
             continue
         uid = str(r.record_uid)
+        photo_place = r.source_kind == "media_place"
         if uid not in seen:
             seen[uid] = str(r.model_type or "")
-            kinds[MODEL_WORDS.get(seen[uid], "positions")] = kinds.get(MODEL_WORDS.get(seen[uid], "positions"), 0) + 1
-        phones.add(str(r.extraction_id))
-    members = [{"type": "phone_record", "id": uid, "label": "Position inside the area"} for uid in seen]
+            word = "photos" if photo_place else MODEL_WORDS.get(seen[uid], "positions")
+            kinds[word] = kinds.get(word, 0) + 1
+            if photo_place:
+                photo_uids.add(uid)
+        if not photo_place:  # where a photo was taken does not put the phone there (a received photo)
+            phones.add(str(r.extraction_id))
+    members = [{"type": "phone_record", "id": uid,
+                "label": "Photo place inside the area" if uid in photo_uids else "Position inside the area"}
+               for uid in seen]
     found = [p for p in places(str(case_id), bbox) if inside_any(p["lon"], p["lat"], rings)]
     members += [{"type": "graph_entity", "id": p["key"], "label": p["name"]} for p in found]
     if len(members) > case_selections.MAX_MEMBERS:

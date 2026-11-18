@@ -28,7 +28,8 @@ DAY_WORDS = "dates only, no time of day"
 PLACE_TIERS = ((timedelta(minutes=15), "strong"), (timedelta(hours=1), "moderate"),
                (timedelta(hours=6), "weak"))
 # A location source no finer than this caps the strength of a place link.
-SOURCE_FINENESS = {"gps": 0, "device_location": 0, "wifi": 1, "cell": 2, "celltower": 2, "other": 2}
+SOURCE_FINENESS = {"gps": 0, "device_location": 0, "wifi": 1, "cell": 2, "celltower": 2, "other": 2,
+                   "media_place": 2}  # where a photo was taken: the weakest, never a fix of the phone
 SOURCE_CAP = {0: "strong", 1: "moderate", 2: "weak"}
 
 RELAY_WINDOW = timedelta(minutes=10)

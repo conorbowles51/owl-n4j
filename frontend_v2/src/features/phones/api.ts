@@ -610,6 +610,9 @@ export interface PhoneMapArea {
   phones_total: number
   points_total: number
   points_without_time: number
+  /** where photos inside the area were taken: never the phone's position (a received photo keeps the sender's place) */
+  photo_places?: { extraction_id: string; phone_label: string; photos: number }[]
+  photo_places_total?: number
   window: { from_instant: string | null; to_instant: string | null }
   label: string
 }

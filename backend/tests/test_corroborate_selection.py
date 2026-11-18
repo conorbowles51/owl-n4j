@@ -121,9 +121,9 @@ class _Conn:
         return iter(self.rows)
 
 
-def _row(uid, ext, model, lon, lat):
+def _row(uid, ext, model, lon, lat, source_kind="device_location"):
     from types import SimpleNamespace
-    return SimpleNamespace(record_uid=uid, extraction_id=ext, model_type=model, lon=lon, lat=lat)
+    return SimpleNamespace(record_uid=uid, extraction_id=ext, model_type=model, lon=lon, lat=lat, source_kind=source_kind)
 
 
 def test_a_drawn_area_takes_every_position_inside_it_and_the_places_and_counts_photos_apart():
@@ -137,6 +137,16 @@ def test_a_drawn_area_takes_every_position_inside_it_and_the_places_and_counts_p
     ids = [m["id"] for m in out["members"]]
     assert ids == ["u1", "u2", "u3", "wh"]
     assert out["phones"] == 2 and out["places"] == 1 and out["by_kind"] == {"positions": 2, "photos": 1}
+
+
+def test_a_photo_place_in_the_area_is_a_member_but_never_puts_its_phone_there():
+    """followups m111723091510458: demo Phone 5's received warehouse photos made her a phone seen at the warehouse."""
+    from services.corroborate import area
+    square = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]
+    rows = [_row("u1", "e1", "Location", 0.5, 0.5), _row("p5", "e5", "Location", 0.4, 0.4, "media_place")]
+    out = area.members_in_areas(_Conn(rows), "c", [square], places=lambda *a: [])
+    assert out["phones"] == 1 and out["by_kind"] == {"positions": 1, "photos": 1}
+    assert [m["label"] for m in out["members"]] == ["Position inside the area", "Photo place inside the area"]
 
 
 def test_an_area_with_fewer_than_three_corners_is_refused():

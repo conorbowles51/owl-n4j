@@ -95,7 +95,7 @@ def classify_point(model_type, p_source_kind, accuracy_basis, facts, flags):
             # where a network or tower the phone heard is, never where the phone was (04 decision 53). The source
             # keeps it out of the GPS fixes that anchor WiFi networks too
             return "harvested", "harvested", None, extra
-        if cat == "Media Locations":
+        if cat == "Media Locations" or p_source_kind == "media_place":
             extra.append("media_device_not_established")
             return "media", "media_exif", None, extra
         return "presence", source, "location_record", extra

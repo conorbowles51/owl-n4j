@@ -70,7 +70,7 @@ def cells(conn, case_id: str, phones: list[str], start, end) -> tuple[list[dict]
                           array_agg(DISTINCT source_kind) AS src, array_agg(DISTINCT record_uid::text) AS uids
                    FROM phone_location_points
                    WHERE case_id = CAST(:c AS uuid) AND extraction_id = ANY(CAST(:e AS uuid[]))
-                     AND instant IS NOT NULL AND lat IS NOT NULL
+                     AND instant IS NOT NULL AND lat IS NOT NULL AND source_kind <> 'media_place'
                      AND (CAST(:s AS timestamptz) IS NULL OR instant >= CAST(:s AS timestamptz))
                      AND (CAST(:t AS timestamptz) IS NULL OR instant <= CAST(:t AS timestamptz))
                    GROUP BY 1, 2, 3, 4)
@@ -80,7 +80,8 @@ def cells(conn, case_id: str, phones: list[str], start, end) -> tuple[list[dict]
         ORDER BY a.e, b.e, a.la, a.lo, a.bin"""), {"c": case_id, "e": phones, "s": start, "t": end}).fetchall()
     read = conn.execute(text(
         "SELECT count(*), count(instant) FROM phone_location_points WHERE case_id = CAST(:c AS uuid) "
-        "AND extraction_id = ANY(CAST(:e AS uuid[])) AND lat IS NOT NULL"), {"c": case_id, "e": phones}).first()
+        "AND extraction_id = ANY(CAST(:e AS uuid[])) AND lat IS NOT NULL AND source_kind <> 'media_place'"),
+        {"c": case_id, "e": phones}).first()
     out = []
     for r in rows:
         out.append({"a": str(r[0]), "b": str(r[1]), "bin": int(r[2]), "sq": (int(r[3]), int(r[4])),

@@ -15,6 +15,7 @@ from datetime import timedelta
 from sqlalchemy import text
 
 from services.phone import time_display as T
+from services.phone.generic import MEDIA_PLACE_KIND
 
 MAP_POINTS_MAX = 5_000
 # record types that describe a place but may carry no coordinates, and the words for them (03 13.2)
@@ -24,7 +25,8 @@ NOT_POSITIONABLE = {
     "Location": "Location records with no coordinates",
 }
 SOURCE_WORDS = {"device_location": "Location services", "wifi": "WiFi network", "cell": "Cell tower",
-                "media": "Photo or video", "app": "App record"}
+                "media": "Photo or video", "app": "App record",
+                "media_place": "Where a photo or video was taken (not shown to be the phone's position)"}
 
 
 def _where(f: dict, p: dict) -> str:
@@ -300,11 +302,17 @@ def area(conn, case_id, ring, f: dict | None = None) -> dict:
     labels = phone_labels(conn, case_id)
     per = {}
     no_time = 0
-    for r in conn.execute(text("SELECT t.extraction_id, t.lat, t.lon, t.instant FROM pv_location_point t WHERE " +
-                               where).execution_options(stream_results=True, yield_per=5000), p):
+    photo = {}
+    for r in conn.execute(text("SELECT t.extraction_id, t.lat, t.lon, t.instant, t.source_kind FROM pv_location_point t "
+                               "WHERE " + where).execution_options(stream_results=True, yield_per=5000), p):
         if not _inside(r.lon, r.lat, pts):
             continue
         ext = str(r.extraction_id)
+        if r.source_kind == MEDIA_PLACE_KIND:
+            # where a photo was taken, never where the phone was: a received photo keeps the sender's place
+            ph = photo.setdefault(ext, {"extraction_id": ext, "phone_label": labels.get(ext, "A phone"), "photos": 0})
+            ph["photos"] += 1
+            continue
         d = per.setdefault(ext, {"extraction_id": ext, "phone_label": labels.get(ext, "A phone"), "points": 0,
                                  "points_without_time": 0, "first": None, "last": None})
         d["points"] += 1
@@ -319,5 +327,7 @@ def area(conn, case_id, ring, f: dict | None = None) -> dict:
         d["first"], d["last"] = T.iso(d["first"]), T.iso(d["last"])
     return {"case_id": str(case_id), "phones": phones, "phones_total": len(phones),
             "points_total": sum(d["points"] for d in phones), "points_without_time": no_time,
+            "photo_places": sorted(photo.values(), key=lambda d: (-d["photos"], d["phone_label"])),
+            "photo_places_total": sum(d["photos"] for d in photo.values()),
             "window": {"from_instant": f.get("from_instant"), "to_instant": f.get("to_instant")},
             "label": PLACE_LABEL_WORDS}
