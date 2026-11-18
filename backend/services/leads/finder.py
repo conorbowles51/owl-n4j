@@ -909,15 +909,44 @@ def start(db, case_id, *, user=None, trigger: str = "button", session_factory=No
 
 STALE_WORDS = "Stopped before it finished (the server restarted, or the run could not start). Look again."
 QUEUED_STALE = timedelta(minutes=10)   # a run starts at once, so one still queued after this never started
-RUNNING_STALE = timedelta(hours=3)     # far longer than the slowest case measured; a release restart ends runs
+RUNNING_STALE = timedelta(hours=3)     # a running row with no beat at all (written before the heartbeat existed)
+BEAT_EVERY = 60                        # seconds between beats while the run's thread is alive
+BEAT_STALE = timedelta(minutes=15)     # no beat for this long: the thread ended with its server (a release restart)
+
+
+def _utc(t: datetime) -> datetime:
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
 def _stale(row) -> bool:
     if row.status not in ("queued", "running") or row.started_at is None:
         return False
-    started = row.started_at if row.started_at.tzinfo else row.started_at.replace(tzinfo=timezone.utc)
-    age = datetime.now(timezone.utc) - started
-    return age > (QUEUED_STALE if row.status == "queued" else RUNNING_STALE)
+    now = datetime.now(timezone.utc)
+    if row.status == "queued":
+        return now - _utc(row.started_at) > QUEUED_STALE
+    beat = getattr(row, "beat_at", None)
+    if beat is not None:
+        return now - _utc(beat) > BEAT_STALE
+    return now - _utc(row.started_at) > RUNNING_STALE
+
+
+def _beat(run_id: str, session_factory, stop: threading.Event, every: float = BEAT_EVERY) -> None:
+    """Stamp the run's beat until it stops. Its own session, so a long step never delays it; it ends with the process,
+    which is the point: a restart leaves an old beat behind, and the next press starts a new run."""
+    from postgres.models.corroborate import LeadFinderRun
+    while not stop.wait(every):
+        session = session_factory()
+        try:
+            row = session.get(LeadFinderRun, uuid.UUID(run_id))
+            if row is None or row.status != "running":
+                return
+            row.beat_at = datetime.now(timezone.utc)
+            session.commit()
+        except Exception:  # noqa: BLE001 - a missed beat is retried next minute; 15 missed ones end the run's claim
+            log.warning("lead finder run %s: beat failed", run_id, exc_info=True)
+            session.rollback()
+        finally:
+            session.close()
 
 
 def _fail(db, row, words: str) -> None:
@@ -930,13 +959,17 @@ def _work(run_id: str, case_id: str, session_factory, own: bool = True) -> None:
     from types import SimpleNamespace
     from postgres.models.corroborate import LeadFinderRun
     session = session_factory()
+    stop = threading.Event()
     try:
         row = session.get(LeadFinderRun, uuid.UUID(run_id))
-        row.status, row.step = "running", "Reading the case"
+        row.status, row.step, row.beat_at = "running", "Reading the case", datetime.now(timezone.utc)
         session.commit()
+        if own:  # a background run beats on its own thread; an inline run (tests, scripts) beats with each step
+            threading.Thread(target=_beat, args=(run_id, session_factory, stop), daemon=True,
+                             name=f"lead-finder-beat-{run_id}").start()
 
         def progress(words):
-            row.step = words
+            row.step, row.beat_at = words, datetime.now(timezone.utc)
             session.commit()
         counts = find(session, case_id, user=SimpleNamespace(id=row.requested_by), progress=progress)
         row = session.get(LeadFinderRun, uuid.UUID(run_id))
@@ -952,5 +985,6 @@ def _work(run_id: str, case_id: str, session_factory, own: bool = True) -> None:
             row.finished_at = datetime.now(timezone.utc)
             session.commit()
     finally:
+        stop.set()
         if own:
             session.close()

@@ -234,6 +234,60 @@ class LeadStoreTests(DuplicateTestCase):
         self.assertNotEqual(again["id"], got["id"])
         self.assertEqual(self.db.get(LeadFinderRun, uuid.UUID(got["id"])).status, "failed")
 
+    def test_a_run_whose_beat_stopped_is_shown_stopped_and_a_long_run_that_still_beats_is_not(self):
+        from datetime import datetime, timedelta, timezone
+        from services.leads import finder as F
+        now = datetime.now(timezone.utc)
+
+        class FakeThread:
+            def __init__(self, *a, **k):
+                pass
+
+            def start(self):
+                pass
+        import postgres.session as PS
+        fac = mock.patch.object(PS, "_get_background_session_local", lambda: (lambda: self.db))
+        fac.start()
+        self.addCleanup(fac.stop)
+        # a release restart 20 minutes into a run: its last beat is 20 minutes old (followups, 18 Nov: Phone reference 1)
+        dead = LeadFinderRun(id=uuid.uuid4(), case_id=self.case.id, status="running", step="Weighing lead 34 of about 110",
+                             trigger="button", counts={}, material={}, started_at=now - timedelta(minutes=30),
+                             beat_at=now - timedelta(minutes=20))
+        self.db.add(dead)
+        self.db.commit()
+        shown = F.last_run(self.db, self.case.id)
+        self.assertEqual((shown["status"], shown["error"]), ("failed", F.STALE_WORDS))
+        with mock.patch.object(F.threading, "Thread", FakeThread):
+            again = F.start(self.db, self.case.id, user=self.user)
+        self.assertNotEqual(again["id"], str(dead.id))
+        self.assertEqual(self.db.get(LeadFinderRun, dead.id).status, "failed")
+        # a run four hours in that still beats is running, and a press returns it rather than starting another
+        live = self.db.get(LeadFinderRun, uuid.UUID(again["id"]))
+        live.status, live.started_at, live.beat_at = "running", now - timedelta(hours=4), now - timedelta(minutes=1)
+        self.db.get(LeadFinderRun, dead.id).started_at = now - timedelta(hours=5)  # runs follow one another
+        self.db.commit()
+        with mock.patch.object(F.threading, "Thread", FakeThread):
+            self.assertEqual(F.start(self.db, self.case.id, user=self.user)["id"], again["id"])
+        self.assertEqual(F.last_run(self.db, self.case.id)["status"], "running")
+
+    def test_the_beat_stamps_a_running_run_until_it_stops(self):
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy.orm import Session
+        from services.leads import finder as F
+        old = datetime.now(timezone.utc) - timedelta(minutes=30)
+        row = LeadFinderRun(id=uuid.uuid4(), case_id=self.case.id, status="running", step="s", trigger="button",
+                            counts={}, material={}, started_at=old, beat_at=old)
+        self.db.add(row)
+        self.db.commit()
+        stop = mock.Mock()
+        stop.wait.side_effect = [False, True]  # one beat, then the run ends
+        F._beat(str(row.id), lambda: Session(self.engine), stop, every=0)
+        self.db.expire_all()
+        beat = self.db.get(LeadFinderRun, row.id).beat_at
+        beat = beat if beat.tzinfo else beat.replace(tzinfo=timezone.utc)
+        self.assertGreater(beat, old + timedelta(minutes=29))
+        self.assertFalse(F._stale(self.db.get(LeadFinderRun, row.id)))
+
     def test_a_run_whose_thread_cannot_start_fails_with_the_reason(self):
         from services.leads import finder as F
 

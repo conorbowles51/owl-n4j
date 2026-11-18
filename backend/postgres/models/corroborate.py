@@ -133,3 +133,5 @@ class LeadFinderRun(Base):
     requested_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # stamped every minute while the run's thread is alive; a running row with an old beat died with its server
+    beat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
