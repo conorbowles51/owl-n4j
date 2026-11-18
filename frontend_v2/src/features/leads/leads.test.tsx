@@ -126,7 +126,7 @@ describe("Show these records", () => {
     expect(isShownRef(getShownLead(), "phone_record:z")).toBe(false)
     expect(screen.getByText(/Showing 2 records of the lead/)).toBeTruthy()
     // the bar opens the lead's days, so the marked records are on screen
-    expect(screen.getByRole("link", { name: "Conversations" }).getAttribute("href")).toBe("/cases/c1/conversations?from=2024-05-01&to=2024-06-01")
+    expect(screen.getByRole("link", { name: "Conversations" }).getAttribute("href")).toBe("/cases/c1/conversations?record=a&from=2024-05-01&to=2024-06-01")
     expect(screen.getByRole("link", { name: "Map" }).getAttribute("href")).toBe("/cases/c1/map?from=2024-05-01&to=2024-06-01")
     fireEvent.click(screen.getAllByRole("button", { name: "Close" }).at(-1)!)
     expect(getShownLead()).toBeNull()

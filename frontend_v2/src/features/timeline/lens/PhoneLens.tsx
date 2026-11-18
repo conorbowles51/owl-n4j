@@ -177,6 +177,7 @@ export function LensList({ caseId, caseName, filter, filterWords }: { caseId: st
       zoneBasis={stream.index?.zone.basis}
       noun={{ one: "phone entry", many: "phone entries" }}
       className="min-h-0 flex-1"
+      rowExtra={(row) => <LeadMark recordUid={row.record_uid} />}
     />
   )
 }
@@ -331,6 +332,7 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
           noun={{ one: "phone entry", many: "phone entries" }}
           className="min-h-0 flex-1"
           jumpTo={jump}
+          rowExtra={(row) => <LeadMark recordUid={row.record_uid} />}
         />
       ) : stream.index && days.length ? (
         <LensLanes caseId={caseId} caseName={caseName} filter={filter} snapshot={stream.index.snapshot} firstDay={days[0].day < days[days.length - 1].day ? days[0].day : days[days.length - 1].day}

@@ -159,6 +159,13 @@ function Ask({ req }: { req: CorroborateRequest }) {
 
 const LEAD_PAGES: [string, string][] = [["conversations", "Conversations"], ["timeline", "Timeline"], ["map", "Map"]]
 
+/** Conversations opens its first thread unless a record is named; naming the lead's first phone record opens every
+ * message on the lead's days instead, with that record beside them. */
+function firstPhoneRecord(refs: Set<string>): Record<string, string> {
+  for (const r of refs) if (r.startsWith("phone_record:")) return { record: r.slice("phone_record:".length) }
+  return {}
+}
+
 /** The lead's days as a phone scope window (null when the lead has no dates: the page then opens on everything). */
 function leadWindow(period?: { from?: string; to?: string }): { from: string; to: string } | null {
   const from = period?.from ?? period?.to
@@ -177,7 +184,8 @@ function ShownLeadBar() {
       {shown.caseId && (
         <span className="flex shrink-0 gap-2" aria-label="Open the lead's days">
           {LEAD_PAGES.map(([path, words]) => (
-            <Link key={path} className="underline" to={scopeHref(`/cases/${shown.caseId}/${path}`, { ...EMPTY_SCOPE, window: leadWindow(shown.period) })}>{words}</Link>
+            <Link key={path} className="underline" to={scopeHref(`/cases/${shown.caseId}/${path}`, { ...EMPTY_SCOPE, window: leadWindow(shown.period) },
+                                                                 path === "conversations" ? firstPhoneRecord(shown.refs) : {})}>{words}</Link>
           ))}
         </span>
       )}

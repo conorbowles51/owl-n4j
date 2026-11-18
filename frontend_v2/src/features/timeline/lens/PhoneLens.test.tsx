@@ -46,9 +46,9 @@ vi.mock("@/features/phones/api", async (orig) => ({
 }))
 const lists = vi.hoisted(() => ({ filters: [] as unknown[] }))
 vi.mock("@/features/phones/components/StreamList", () => ({
-  StreamList: (p: { stream: { index: unknown; total: number }; filterWords: string }) => {
+  StreamList: (p: { stream: { index: unknown; total: number }; filterWords: string; rowExtra?: (row: { record_uid: string }) => React.ReactNode }) => {
     lists.filters.push(p.filterWords)
-    return <div data-testid="phone-list">{p.filterWords}</div>
+    return <div data-testid="phone-list">{p.filterWords}{p.rowExtra?.({ record_uid: "rec-lead" })}</div>
   },
 }))
 import { PhoneLens } from "./PhoneLens"
@@ -66,6 +66,15 @@ beforeEach(() => {
 })
 
 describe("Timeline phone lens (03 section 9)", () => {
+  it("lx-leads C: a row of the lead whose records are shown is marked, and unmarked when the lead closes", async () => {
+    const { showLeadRecords, clearLeadRecords } = await import("@/features/leads/highlight-store")
+    showLeadRecords("l1", "Relay", ["phone_record:rec-lead"])
+    wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
+    expect(await screen.findByText("In the open lead")).toBeInTheDocument()
+    act(() => clearLeadRecords())
+    expect(screen.queryByText("In the open lead")).toBeNull()
+  })
+
   it("T-7: asks for messages, calls, emails, media and locations by default and states the hidden device events, one click away", async () => {
     wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
     expect(await screen.findByText("4 device events and sensor readings hidden.")).toBeInTheDocument()
