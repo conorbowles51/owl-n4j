@@ -813,7 +813,8 @@ def _read_alert(body: str, phone_owner: str | None, everyone: list[dict]) -> dic
         k = M.person_for_name(everyone, fragment)
         if k:
             return k, False
-        w = M.name_words(fragment)
+        # an initial is one letter, which ``M.name_words`` leaves out: read the words with initials kept
+        w = re.sub(r"[^\w\s]", " ", fragment.casefold()).split()
         if len(w) >= 2 and len(w[-1]) == 1:
             fits = [p["key"] for p in everyone for n in p["names"] if n and M.name_words(n)[:1] == w[:1] and
                     M.name_words(n)[-1].startswith(w[-1])]
@@ -826,6 +827,10 @@ def _read_alert(body: str, phone_owner: str | None, everyone: list[dict]) -> dic
     if "received" in low and " from " in low:
         k, partial = who(body.rsplit(" from ", 1)[1])
         return {"owner": k, "parties": [phone_owner], "amount_minor": amount, "partial_name": partial}
-    if "deposit" in low and "check" not in low:
+    # "posted to checking" names the account, not a check: only the word "check" (or "cheque") makes it one
+    if "deposit" in low and re.search(r"\bcheck\b|\bcheque\b", low):
+        # a check paid in on this phone's account; the payer is not in the alert's words
+        return {"owner": None, "parties": [phone_owner], "amount_minor": amount, "check_deposit": True}
+    if "deposit" in low:
         return {"owner": phone_owner, "parties": [], "amount_minor": amount, "cash_deposit": True}
     return None

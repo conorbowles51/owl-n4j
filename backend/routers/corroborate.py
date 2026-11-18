@@ -319,3 +319,9 @@ def read_claim(case_id: UUID, claim_id: UUID, db: Session = Depends(get_db)) -> 
         return {"claim": saved_claims.view(saved_claims.get(db, case_id, claim_id))}
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+# The overlap views (lx-overlapviews-b) share this router's prefix and access rules.
+from routers.overlap_views import router as _overlap_views  # noqa: E402
+
+router.include_router(_overlap_views)
