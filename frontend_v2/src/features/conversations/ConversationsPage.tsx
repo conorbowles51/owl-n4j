@@ -1,5 +1,5 @@
 import { CorroborateRows } from "@/features/corroborate/CorroborateRows"
-import { PHONE_LIST_NARROW } from "@/features/phones/lib/phone-list-narrow"
+import { PHONE_LIST_COLUMN, PHONE_LIST_SIZE } from "@/features/phones/lib/phone-list-size"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
@@ -697,7 +697,7 @@ export function ConversationsPage() {
         </nav>}
         {/* Below 768 px the filters and actions fill a phone screen: the pane scrolls as one column and the messages keep
             their own height, so a touch user scrolls past the filters to them (lx-corrorest 17 Nov, 390 wide). */}
-        <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col max-md:block max-md:overflow-y-auto" ref={listRoot}>
+        <section aria-label="Conversation" className={`flex min-w-0 flex-1 flex-col max-md:block ${PHONE_LIST_COLUMN}`} ref={listRoot}>
           {layersOn && (
             <PhoneLayers phones={phones.filter((p) => p.standing !== "superseded").map((p) => ({ id: p.extraction_id, label: p.label, index: phones.findIndex((x) => x.extraction_id === p.extraction_id) }))}
               chosen={view.phones} noun="records" counts={layerCounts}
@@ -903,7 +903,7 @@ export function ConversationsPage() {
             <StreamList
               // A new thread, person or filter starts with nothing selected (review of 03-3: Select all carried over).
               key={JSON.stringify(streamFilter)}
-              className={PHONE_LIST_NARROW}
+              className={PHONE_LIST_SIZE}
               stream={stream}
               caseId={caseId}
               caseName={caseQ.data?.title ?? "This case"}

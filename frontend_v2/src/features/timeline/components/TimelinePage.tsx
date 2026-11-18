@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useCallback, useRef, useState } from "react"
+import { PHONE_LIST_COLUMN } from "@/features/phones/lib/phone-list-size"
 import { TimelineWindowBar } from "@/features/pattern/components/WindowPanel"
 import { toWindowEvent } from "../lib/timeline-utils"
 import { useParams, useLocation, useNavigate } from "react-router-dom"
@@ -537,7 +538,7 @@ export function TimelinePage() {
               <div className="min-h-0 flex-1 overflow-hidden">{eventStream}</div>
               {undatedEvents.length > 0 && <UndatedEvents events={undatedEvents} />}
               {lensOn && caseId && (
-                <div className="flex min-h-0 flex-1 flex-col border-t">
+                <div className={`flex min-h-0 flex-1 flex-col border-t ${PHONE_LIST_COLUMN}`}>
                   <PhoneLens caseId={caseId} caseName={caseName} note={lens.note} focusRecord={phoneRecord} />
                 </div>
               )}

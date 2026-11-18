@@ -103,11 +103,11 @@ describe("Timeline phone lens (03 section 9)", () => {
     }
   })
 
-  it("lx-leads: on a phone-width screen the phone entries keep a height, as Conversations' list does", async () => {
+  it("lx-leads: the phone entries keep a height on a phone (75dvh) and never drop under 24rem wider, as Conversations' list", async () => {
     lists.classes = []
     wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
     await screen.findByTestId("phone-list")
-    expect(lists.classes.at(-1)).toContain("max-md:h-[75dvh] max-md:flex-none")
+    expect(lists.classes.at(-1)).toContain("max-md:h-[75dvh] max-md:flex-none md:min-h-[24rem]")
   })
 
   it("07 4.5: a scope carried in the address filters the lens and shows the same chips", async () => {
