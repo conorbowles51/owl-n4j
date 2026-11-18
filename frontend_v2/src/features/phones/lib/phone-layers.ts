@@ -4,8 +4,9 @@
  * a list names the phones that are on. The last phone on cannot be switched off: nothing on would read as "all".
  */
 
-/** The `phone_layers` setting. Off until Neil approves the mock-up; a build sets VITE_PHONE_LAYERS=on, and a person
- * can see it ahead of that with `?phone_layers=on` in the address (kept in this browser) or `=off` to clear it. */
+/** The `phone_layers` setting. Neil approved it on 18 Nov 2026 and the live build sets VITE_PHONE_LAYERS=on. A build
+ * without it is off; there a person can see it with `?phone_layers=on` in the address (kept in this browser) or
+ * `=off` to clear it. */
 export function phoneLayersEnabled(): boolean {
   try {
     const q = new URLSearchParams(window.location.search).get("phone_layers")
