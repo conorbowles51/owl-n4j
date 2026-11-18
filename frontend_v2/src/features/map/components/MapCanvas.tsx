@@ -37,7 +37,8 @@ import { EntityPopup } from "./EntityPopup"
 import { BasemapNote } from "./BasemapNote"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 import type { PhoneMapItem } from "@/features/phones/api"
-import { accuracyPixelsAtZoom20 } from "./map-accuracy"
+import { phoneGeoJSON } from "../lib/phone-geojson"
+import { isShownRef, useShownLead } from "@/features/leads/highlight-store"
 
 interface MapCanvasProps {
   locations: MapLocation[]
@@ -95,6 +96,7 @@ function getPointDistance(a: ScreenPoint, b: ScreenPoint) {
 }
 
 export function MapCanvas({ locations, phoneItems, phoneColours, children, onView, fitTo, focusPoint, focusBox }: MapCanvasProps) {
+  const shownLead = useShownLead()
   const mapRef = useRef<MapRef>(null)
   // a focus that arrives or changes after the map loaded moves it too (onLoad covers the first one)
   const focusKey = focusPoint ? focusPoint.join(",") : ""
@@ -645,7 +647,7 @@ export function MapCanvas({ locations, phoneItems, phoneColours, children, onVie
         const pc: never = (phoneColours && Object.keys(phoneColours).length
           ? ["match", ["get", "phone"], ...Object.entries(phoneColours).flatMap(([k, v]) => [k, v]), blue] : blue) as never
         return (
-        <Source id="phone-points" type="geojson" data={phoneGeoJSON(phoneItems)}>
+        <Source id="phone-points" type="geojson" data={phoneGeoJSON(phoneItems, (uid) => isShownRef(shownLead, uid))}>
           <Layer id="phone-accuracy" type="circle" filter={["==", ["get", "has_accuracy"], true]} paint={{
             // the reported accuracy in screen pixels: metres per pixel on 512-pixel tiles, corrected for latitude
             "circle-radius": ["interpolate", ["exponential", 2], ["zoom"], 0, ["/", ["get", "r20"], 1048576], 20, ["get", "r20"]],
@@ -656,6 +658,10 @@ export function MapCanvas({ locations, phoneItems, phoneColours, children, onVie
             "circle-color": ["case", ["get", "has_accuracy"], pc, "rgba(0,0,0,0)"],
             "circle-stroke-color": pc, "circle-stroke-width": ["case", ["get", "has_accuracy"], 1, 2],
             "circle-stroke-opacity": ["case", ["get", "has_accuracy"], 1, 0.7],
+          }} />
+          {/* "Show these records": the lead's points get an amber ring, drawn above the plain point */}
+          <Layer id="phone-point-shown" type="circle" filter={["all", ["==", ["get", "kind"], "point"], ["==", ["get", "shown"], true]]} paint={{
+            "circle-radius": 9, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#fbbf24", "circle-stroke-width": 3,
           }} />
           <Layer id="phone-cluster" type="circle" filter={["==", ["get", "kind"], "cluster"]} paint={{
             "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 10, 1000, 24],
@@ -691,17 +697,4 @@ export function MapCanvas({ locations, phoneItems, phoneColours, children, onVie
       {basemapNote && <BasemapNote text={basemapNote} />}
     </Map>
   )
-}
-
-function phoneGeoJSON(items: PhoneMapItem[]): GeoJSON.FeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: items.map((i) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [i.lon, i.lat] },
-      properties: i.type === "point"
-        ? { kind: "point", has_accuracy: i.accuracy_m !== null, accuracy_m: i.accuracy_m ?? 0, r20: accuracyPixelsAtZoom20(i.accuracy_m ?? 0, i.lat), label: i.phone_label, phone: i.extraction_id }
-        : { kind: "cluster", has_accuracy: false, count: i.count, label: i.count.toLocaleString("en-US") },
-    })),
-  }
 }
