@@ -285,7 +285,7 @@ export function MapPage() {
           <NeedsReviewPanel caseId={caseId!} locations={safeLocations} />
         )}
         {proximityAnchorKey && (
-          <div className="absolute bottom-3 right-3 z-10 w-72 rounded-lg border border-border bg-card/95 p-3 shadow-md backdrop-blur">
+          <div className="absolute bottom-3 right-3 z-10 w-72 max-w-[calc(100%-1.5rem)] rounded-lg border border-border bg-card/95 p-3 shadow-md backdrop-blur">
             <ProximityAnalysisPanel
               anchor={anchor}
               radius={proximityRadius}

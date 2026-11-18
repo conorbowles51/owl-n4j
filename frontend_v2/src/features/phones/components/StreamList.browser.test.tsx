@@ -123,14 +123,27 @@ function Harness({ filter, jumpTo, onFocusRow }: { filter: StreamFilter; jumpTo?
   )
 }
 
-function mount() {
+function mount(width?: number) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <Harness filter={{ case_id: "c" }} />
+      <div style={width ? { width } : undefined}>
+        <Harness filter={{ case_id: "c" }} />
+      </div>
     </QueryClientProvider>,
   )
 }
+
+it("in a 230 px column (a 390-wide phone with a thread open) the message takes the row's width, the time above it", async () => {
+  await page.viewport(390, 800)
+  serve(index(20, 20))
+  mount(230)
+  const text = await screen.findByText("row 0", undefined, { timeout: 8_000 })
+  const row = text.closest("[data-density]") as HTMLElement
+  const body = Array.from(row.children).find((c) => c.contains(text)) as HTMLElement
+  const inner = row.clientWidth - parseFloat(getComputedStyle(row).paddingLeft) - parseFloat(getComputedStyle(row).paddingRight)
+  expect(body.getBoundingClientRect().width).toBeGreaterThanOrEqual(inner - 1)
+})
 
 it("A4 / C-1: a 200,000-row index sizes the list to every row, End reaches the last row, and there is no load-more control", async () => {
   serve(index(200_000, 2_000))

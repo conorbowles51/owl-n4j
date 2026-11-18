@@ -344,7 +344,7 @@ export function StreamList({
   }
 
   return (
-    <div data-stream-root className={cn("flex min-h-0 flex-1 flex-col", className)} onKeyDown={onKeyDown}>
+    <div data-stream-root className={cn("@container flex min-h-0 flex-1 flex-col", className)} onKeyDown={onKeyDown}>
       <div className="flex flex-wrap items-center gap-3 border-b px-3 py-2 text-sm" data-testid="stream-toolbar">
         <span data-testid="stream-total" className="font-medium">
           {stream.index ? totalWords(stream, noun) : ""}
@@ -454,7 +454,7 @@ export function StreamList({
                 {...corroAttrs("phone_record", row.record_uid, row.body ? row.body.slice(0, 120) : undefined)}
                 style={style}
                 data-density={density}
-                className={cn("flex border-b px-3 select-text", density === "compact" ? "gap-2 py-0.5 text-xs" : "gap-3 py-2 text-sm", focusIndex === v.index && "outline outline-2 outline-ring", isSel && "bg-accent/40")}
+                className={cn("flex flex-wrap border-b px-3 select-text @md:flex-nowrap", density === "compact" ? "gap-2 py-0.5 text-xs" : "gap-3 py-2 text-sm", focusIndex === v.index && "outline outline-2 outline-ring", isSel && "bg-accent/40")}
                 onClick={() => setFocusIndex(v.index)}
               >
                 <input
@@ -468,7 +468,8 @@ export function StreamList({
                   }}
                 />
                 <TimeCell caseId={caseId} recordUid={row.record_uid} time={row.time} zone={zone} zoneBasis={zoneBasis} />
-                <div className="min-w-0 flex-1">
+                {/* Under 28rem (a phone, or a column squeezed by the menus) the time sits above the message, which takes the row. */}
+                <div className="min-w-0 flex-1 basis-full @md:basis-0" data-testid="message-body">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <span>
                       {row.kind === "record" ? row.phone.label : `${row.phone.label} · ${row.app ?? "app not recorded"}`}

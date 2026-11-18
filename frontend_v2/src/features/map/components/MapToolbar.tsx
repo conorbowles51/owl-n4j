@@ -141,7 +141,7 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
 
   return (
     <>
-      <div className="flex items-center gap-1.5 border-b border-border bg-card px-3 py-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-card px-3 py-1.5" data-testid="map-toolbar">
         {/* Layer toggles */}
         <Popover>
           <PopoverTrigger asChild>
