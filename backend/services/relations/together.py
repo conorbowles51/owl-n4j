@@ -162,21 +162,29 @@ def _busy(conn, case_id: str, meetings: list[dict], start, end) -> int:
 def shared_contacts(conn, case_id: str, phones: list[str], start, end) -> tuple[list[dict], dict]:
     """People (a confirmed person, else one identity) with records on at least two of the chosen phones. A copy of a
     record on one phone (same duplicate group) counts once."""
+    # The participations are narrowed to the chosen phones before the join, and names are joined after it: on Phone
+    # reference 1 (two phones) this reads 16.7k pages instead of 50k (a 326 MB seq scan of every case's
+    # participations), with the same rows (followups 18 Nov).
     rows = conn.execute(text("""
-        WITH x AS (SELECT e.extraction_id AS ext, coalesce('person:' || l.dossier_id::text, p.identity_key) AS g,
-                          min(e.record_uid::text) AS uid, min(e.sort_instant) AS t, min(i.value_display) AS shown
+        WITH ep AS MATERIALIZED (
+                   SELECT e.extraction_id AS ext, p.identity_key AS k, e.record_uid, e.sort_instant AS t,
+                          coalesce(e.dup_group_uid, e.record_uid::text) AS d
                    FROM phone_comm_events e
                    JOIN phone_participations p ON p.record_uid = e.record_uid AND p.generation = e.generation
                    JOIN phone_interpretation_state st ON st.extraction_id = e.extraction_id AND st.generation = e.generation
                    JOIN phone_extractions x_ ON x_.id = e.extraction_id AND x_.standing = 'active'
-                   LEFT JOIN phone_identities i ON i.case_id = e.case_id AND i.identity_key = p.identity_key
-                   LEFT JOIN phone_identity_links l ON l.identity_id = i.id
                    WHERE e.case_id = CAST(:c AS uuid) AND e.extraction_id = ANY(CAST(:e AS uuid[]))
+                     AND p.case_id = CAST(:c AS uuid) AND p.extraction_id = ANY(CAST(:e AS uuid[]))
                      AND e.kind IN ('message', 'call', 'email') AND p.identity_key IS NOT NULL
                      AND NOT coalesce(p.is_phone_owner, false)
                      AND (CAST(:s AS timestamptz) IS NULL OR e.sort_instant >= CAST(:s AS timestamptz))
-                     AND (CAST(:t AS timestamptz) IS NULL OR e.sort_instant <= CAST(:t AS timestamptz))
-                   GROUP BY e.extraction_id, 2, coalesce(e.dup_group_uid, e.record_uid::text)),
+                     AND (CAST(:t AS timestamptz) IS NULL OR e.sort_instant <= CAST(:t AS timestamptz))),
+             x AS (SELECT ep.ext, coalesce('person:' || l.dossier_id::text, ep.k) AS g,
+                          min(ep.record_uid::text) AS uid, min(ep.t) AS t, min(i.value_display) AS shown
+                   FROM ep
+                   LEFT JOIN phone_identities i ON i.case_id = CAST(:c AS uuid) AND i.identity_key = ep.k
+                   LEFT JOIN phone_identity_links l ON l.identity_id = i.id
+                   GROUP BY ep.ext, 2, ep.d),
              shared AS (SELECT g FROM x GROUP BY g HAVING count(DISTINCT ext) >= 2)
         SELECT ext, uid, t, g, shown FROM x WHERE g IN (SELECT g FROM shared)"""),
         {"c": case_id, "e": phones, "s": start, "t": end}).fetchall()

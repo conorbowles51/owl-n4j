@@ -94,5 +94,44 @@ class Read(unittest.TestCase):
         self.assertIn("/api/cases/{case_id}/relation-overlaps", [r.path for r in relation_queries.router.routes])
 
 
+
+class ReadsOnlyTheChosenPhones(unittest.TestCase):
+    """Phone reference 1, 18 Nov: the contacts read seq-scanned every case's participations (326 MB) and the relay
+    reads fetched 22.7k pages of the 1.5 GB activity table (14.7 s uncached); p95 of the screen's read was 47 s."""
+
+    def _sql(self, fn, *args):
+        seen = []
+
+        class Conn:
+            def execute(self, stmt, params=None):
+                seen.append(str(stmt))
+                return mock.MagicMock(fetchall=lambda: [], scalar=lambda: 0)
+        fn(Conn(), "c" * 8 + "-0000-0000-0000-000000000000", [A, B], None, None, *args)
+        return seen
+
+    def test_contacts_narrow_participations_to_the_chosen_phones(self):
+        sql = self._sql(T.shared_contacts)[0]
+        self.assertIn("p.extraction_id = ANY(CAST(:e AS uuid[]))", sql)
+        self.assertIn("p.case_id = CAST(:c AS uuid)", sql)
+
+    def test_relay_reads_have_an_index_that_covers_them(self):
+        import pathlib
+        import re
+        versions = pathlib.Path(__file__).resolve().parents[1] / "postgres" / "alembic" / "versions"
+        made = "\n".join(f.read_text() for f in versions.glob("*.py"))
+        m = re.search(r"CREATE INDEX IF NOT EXISTS ix_pol_activity_event_relay ON pol_activity_event \"\s*\"(.*?)\"\)",
+                      made, re.S)
+        self.assertIsNotNone(m, "no covering index for the relay reads")
+        index = m.group(1)
+        for col in ("extraction_id", "instant_utc", "counterpart_identity_id", "record_uid", "case_id"):
+            self.assertIn(col, index)
+        for sql in self._sql(T.relay_chains):
+            # each read implies the index's WHERE, so the planner may answer it from the index alone
+            self.assertIn("activity_class = 'interaction'", sql)
+            self.assertIn("counterpart_identity_id IS NOT NULL", sql)
+            self.assertIn("instant_utc IS NOT NULL", sql)
+            used = set(re.findall(r"\b([a-z_]+)\b", sql.split("FROM pol_activity_event")[0].rsplit("SELECT", 1)[-1]))
+            self.assertLessEqual(used & {"end_utc", "time_field", "end_field", "id"}, set())
+
 if __name__ == "__main__":
     unittest.main()
