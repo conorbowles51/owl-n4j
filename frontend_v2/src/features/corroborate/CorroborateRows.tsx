@@ -2,9 +2,8 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useSwitch } from "@/lib/ui-switches"
 type Member = { type: string; id: string; label?: string }
-import { QuestionMenu } from "./QuestionMenu"
 import type { Scope } from "./api"
-import { addPart } from "./selection-store"
+import { openCorroborate } from "@/features/leads/open"
 
 /**
  * "Corroborate these" for a list that can hold more rows than it shows (lx-corroselect C): ``read`` returns every row of
@@ -24,7 +23,6 @@ export function CorroborateRows({ caseId, screen, words, count, read, disabled, 
   const on = useSwitch("corroborate-v2")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [menu, setMenu] = useState(false)
   if (!on) return null
   const go = async () => {
     setBusy(true)
@@ -32,8 +30,10 @@ export function CorroborateRows({ caseId, screen, words, count, read, disabled, 
     try {
       const got = await read()
       const members = Array.isArray(got) ? got : got.members
-      addPart(caseId, { screen, label: `${words} (${members.length.toLocaleString("en-US")})`, members, skipped: Array.isArray(got) ? [] : got.skipped })
-      setMenu(true)
+      // lx-leads C: the Corroborate panel opens over this page, on every row read
+      openCorroborate({ caseId, screen, label: `${words} (${members.length.toLocaleString("en-US")})`, members,
+                        skipped: Array.isArray(got) ? [] : got.skipped, scope,
+                        ...(scope?.from ? { period: { from: scope.from.slice(0, 10), to: (scope.to ?? scope.from).slice(0, 10) } } : {}) })
     } catch (e) {
       setError(`Not every row could be read, so nothing was selected: ${e instanceof Error ? e.message : "it failed"}`)
     } finally {
@@ -47,7 +47,6 @@ export function CorroborateRows({ caseId, screen, words, count, read, disabled, 
         {busy ? "Reading every row…" : `Corroborate ${count.toLocaleString("en-US")}`}
       </Button>
       {error && <span role="alert" className="text-xs">{error}</span>}
-      {menu && <QuestionMenu caseId={caseId} initialScope={scope} onClose={() => setMenu(false)} />}
     </>
   )
 }

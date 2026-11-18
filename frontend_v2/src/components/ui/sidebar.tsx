@@ -33,8 +33,10 @@ import {
   Search as SearchIcon,
   ListChecks,
   CircleHelp,
+  Lightbulb,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
+import { fetchAPI } from "@/lib/api-client"
 import { LoupeLogo } from "@/components/brand/LoupeLogo"
 import { useAppStore } from "@/stores/app.store"
 import { Button } from "@/components/ui/button"
@@ -56,6 +58,12 @@ interface NavItem {
   shortcut?: string
   /** Carries the "New" mark (07 section 9). */
   isNew?: boolean
+  /** A count beside the name (Leads). */
+  count?: number
+}
+
+function leadCountOf(caseId: string) {
+  return fetchAPI<{ count: number; new: number }>(`/api/cases/${encodeURIComponent(caseId)}/leads/count`)
 }
 
 const mainNav: NavItem[] = [
@@ -182,6 +190,9 @@ function SidebarLink({
         <span className={cn("min-w-0 flex-1", item.isNew ? "leading-tight [overflow-wrap:anywhere]" : "truncate")}>{item.label}</span>
       )}
       {expanded && item.isNew && <NewMark />}
+      {expanded && item.count !== undefined && (
+        <span className="ml-auto rounded-full bg-slate-100 px-1.5 text-[11px] font-semibold tabular-nums text-slate-700 dark:bg-white/10 dark:text-slate-200">{item.count}</span>
+      )}
       {!expanded && item.isNew && (
         <span className="absolute right-1 top-1 size-1.5 rounded-full bg-brand-600 dark:bg-brand-400" aria-hidden="true" />
       )}
@@ -296,6 +307,10 @@ export function AppSidebar() {
   // ?phone-prototype=on|off turns the prototype switch on or off for this browser (07 12.1 item D).
   useEffect(() => applySwitchesFromSearch(search), [search])
   const phonePrototype = useSwitch("phone-prototype")
+  // Leads (lx-leads B): the count in the side menu is the only sign of leads outside the Leads page
+  const leadsOn = useSwitch("corroborate-v2")
+  const leadCount = useQuery({ queryKey: ["leads", caseId, "count"], queryFn: () => leadCountOf(caseId as string),
+                               enabled: !!caseId && leadsOn, staleTime: 30_000 })
   const { sidebarExpanded: storedSidebarExpanded, toggleSidebar } = useAppStore()
   const narrowViewport = useMediaQuery("(max-width: 767px)")
   const sidebarExpanded = storedSidebarExpanded && !narrowViewport
@@ -367,6 +382,13 @@ export function AppSidebar() {
               active={isItemActive(pathname, item)}
             />
           ))}
+          {caseId && leadsOn && (
+            <SidebarLink
+              item={{ label: "Leads", icon: Lightbulb, to: `/cases/${caseId}/leads`, count: leadCount.data?.count }}
+              expanded={sidebarExpanded}
+              active={pathname.startsWith(`/cases/${caseId}/leads`)}
+            />
+          )}
         </SidebarSection>
 
         {caseId && (

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import { CorroborateAction } from "@/features/leads/CorroborateAction"
 import { SignificantRelationshipButton } from "@/features/significant/components/SignificantRelationshipButton"
 
 export interface EdgeMenuState {
@@ -59,6 +60,11 @@ export function GraphEdgeMenu({ caseId, menu, onClose }: GraphEdgeMenuProps) {
         className="w-full justify-start"
         onChanged={onClose}
       />
+      <div className="mt-1" onClick={onClose}>
+        <CorroborateAction caseId={caseId} screen="the graph" label={`${menu.sourceLabel} and ${menu.targetLabel}`}
+          members={[{ type: "graph_entity", id: menu.sourceKey, label: menu.sourceLabel },
+                    { type: "graph_entity", id: menu.targetKey, label: menu.targetLabel }]} />
+      </div>
     </div>
   )
 }

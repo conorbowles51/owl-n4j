@@ -27,6 +27,7 @@ import {
 } from "@/features/phones/api"
 import { liveCollectClient, undoCollect, type CollectLink, type CollectResult, type CollectTarget } from "@/features/phones/collect.api"
 import { MessageTranslation } from "@/features/phones/components/MessageTranslation"
+import { LeadMark } from "@/features/leads/LeadMark"
 import { AcrossBadges, AcrossBadgesSource } from "@/features/phones/AcrossBadges"
 import { useAcrossBadges } from "@/features/phones/across-badges"
 import { FindInResults } from "@/features/phones/components/FindInResults"
@@ -922,6 +923,7 @@ export function ConversationsPage() {
                 <>
                 <MessageTranslation caseId={caseId} row={row} />
                 <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <LeadMark recordUid={row.record_uid} />
                   {usedIn[row.record_uid] && <span className="text-muted-foreground">{usedIn[row.record_uid]}</span>}
                   <AcrossBadges caseId={caseId} badges={across.forRow(row)} />
                   {alsoOn && <RowMarks data={alsoMarks.data} recordUid={row.record_uid} />}

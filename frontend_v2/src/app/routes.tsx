@@ -181,6 +181,11 @@ const SecurityPage = lazy(() =>
     default: m.SecurityPage,
   }))
 )
+const LeadsPage = lazy(() =>
+  import("@/features/leads/LeadsPage").then((m) => ({
+    default: m.LeadsPage,
+  }))
+)
 const AISettingsPage = lazy(() =>
   import("@/features/settings/components/AISettingsPage").then((m) => ({
     default: m.AISettingsPage,
@@ -253,6 +258,7 @@ export function AppRoutes() {
             <Route path="phone-analyses" element={<LazyPage><AnalysesPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
+            <Route path="leads" element={<LazyPage><LeadsPage /></LazyPage>} />
             <Route path="evidence" element={<LazyPage><EvidenceExplorer /></LazyPage>} />
             <Route path="evidence/:fileId/text" element={<LazyPage><TextWorkbenchPage /></LazyPage>} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />

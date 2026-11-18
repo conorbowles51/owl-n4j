@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SURFACE_WORDS, type GroupInput, type ItemInput, type Surface } from "@/features/theory/api"
 import { useSwitch } from "@/lib/ui-switches"
-import { addPart } from "@/features/corroborate/selection-store"
-import { QuestionMenu } from "@/features/corroborate/QuestionMenu"
+import { openCorroborate } from "@/features/leads/open"
 import { currentQuery, relationAPI, setCurrentQuery, toMembers } from "./api"
 
 const TYPE_WORDS: Record<string, string> = {
@@ -40,27 +39,22 @@ export function LookIntoButton(props: LookIntoProps) {
 
 /** Corroborate v2 (lx-corroselect): the choice joins the case-wide selection, and the question menu opens on all of it. */
 function CorroborateButton({ caseId, surface, items, group, size = "sm" }: LookIntoProps) {
-  const [open, setOpen] = useState(false)
   const converted = toMembers(items, group)
   const total = group ? group.members.length : (items?.length ?? 0)
   const first = items?.[0]?.target_label
-  const go = () => {
-    addPart(caseId, {
-      screen: SURFACE_WORDS[surface],
-      label: group ? group.words : total === 1 && first ? first : `${total.toLocaleString("en-US")} items`,
-      members: converted.members,
-      skipped: converted.skipped,
-    })
-    setOpen(true)
-  }
+  // lx-leads C: one action on any selection; the Corroborate panel opens over this page
+  const go = () => openCorroborate({
+    caseId,
+    screen: SURFACE_WORDS[surface],
+    label: group ? group.words : total === 1 && first ? first : `${total.toLocaleString("en-US")} items`,
+    members: converted.members,
+    skipped: converted.skipped,
+  })
   return (
-    <>
-      <Button size={size} variant="outline" disabled={total === 0} onClick={go}
-        title={total === 0 ? "Nothing is selected" : "Add this to your selection and choose a question to corroborate"}>
-        Corroborate
-      </Button>
-      {open && <QuestionMenu caseId={caseId} onClose={() => setOpen(false)} />}
-    </>
+    <Button size={size} variant="outline" disabled={total === 0} onClick={go}
+      title={total === 0 ? "Nothing is selected" : "Corroborate this: the leads already here, or a new question"}>
+      Corroborate
+    </Button>
   )
 }
 

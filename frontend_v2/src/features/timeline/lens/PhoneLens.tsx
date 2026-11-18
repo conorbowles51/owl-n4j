@@ -1,4 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query"
+import { LeadMark } from "@/features/leads/LeadMark"
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -151,6 +152,7 @@ function MoneyReadings({ caseId, filter, start, end }: { caseId: string; filter:
         {d.items.map((r) => (
           <li key={r.result_id} className="flex flex-wrap items-baseline gap-2">
             <span className="rounded bg-muted px-1 text-xs">p4 · from the phone</span>
+            <LeadMark recordUid={r.record_uid} />
             <Link className="underline" to={recordPath(caseId, r.record_uid)}>{r.amount_text ?? "Amount not read"}{r.direction ? ` · ${r.direction}` : ""}{r.institution ? ` · ${r.institution}` : ""}</Link>
             <span className="text-xs text-muted-foreground">{[r.source, r.phone_label, r.instant ? instantWords(r.instant, "UTC") : null].filter(Boolean).join(" · ")}</span>
           </li>

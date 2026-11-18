@@ -24,7 +24,9 @@ How it works, in order:
    nights, so "No link found" is shown with what was searched.
 
 Nothing here calls a model. A run re-checks on new material: leads keep their identity (``finder_key``), state and
-corrections; a level change is recorded with its reason.
+corrections; a level change is recorded with its reason. Runs start from the Leads page's button, never on their own:
+measured 18 Nov on the loaded box, the demo case took 31-70 s and Phone reference 1 more than 10 minutes, so by the
+brief's rule (over 10 minutes) automatic runs stay off; the page says when new material arrived since the last run.
 
 Together rule: only the Corroborate engine's (``model.TOGETHER_GAP`` 15 minutes, accuracy radii plus
 ``TOGETHER_SLACK_M``) for "at the same time"; "same place the same night" uses the same distance rule over a
@@ -694,9 +696,11 @@ def last_run(db, case_id) -> dict[str, Any]:
                    .order_by(LeadFinderRun.started_at.desc())).first()
     if r is None:
         return {"status": "never", "words": "Loupe has not looked for leads in this case yet."}
+    from services.corroborate import facts
+    changed = r.status in ("done", "failed") and (r.material or {}) != facts.material(db, case_id)
     return {"id": str(r.id), "status": r.status, "step": r.step, "trigger": r.trigger, "counts": r.counts or {},
             "error": r.error, "started_at": r.started_at.isoformat() if r.started_at else None,
-            "finished_at": r.finished_at.isoformat() if r.finished_at else None}
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None, "new_material": changed}
 
 
 def start(db, case_id, *, user=None, trigger: str = "button", session_factory=None, inline: bool = False) -> dict:

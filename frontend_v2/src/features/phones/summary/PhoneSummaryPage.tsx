@@ -1,4 +1,5 @@
 import { InfoTip } from "@/components/ui/info-tip"
+import { CorroborateAction } from "@/features/leads/CorroborateAction"
 import { AddOtherPhones } from "../ui/AddOtherPhones"
 import { useQuery } from "@tanstack/react-query"
 import { ReviewCoverage } from "./ReviewCoverage"
@@ -82,6 +83,7 @@ export function PhoneSummaryPage() {
         <span className="ml-auto flex gap-2">
           <CopyButton rows={1} noun="profile" label="Copy profile as text" build={() => ({ text: profileText(p) })} />
           <ExportProfile caseId={caseId} extraction={extraction} label={p.phone.label} />
+          <CorroborateAction caseId={caseId} screen="the phone summary" label={p.phone.label} members={[{ type: "phone", id: extraction, label: p.phone.label }]} />
           <Button asChild size="sm" variant="outline">
             <Link to={conv}>Conversations</Link>
           </Button>

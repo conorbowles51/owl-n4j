@@ -9,6 +9,7 @@ import { TypedDossierAdd } from "@/features/phones/ui/TypedDossierAdd"
 import { phoneSummaryWords } from "./phone-summary-words"
 import { PLACE_LABEL } from "../lib/place-label"
 import { cn } from "@/lib/cn"
+import { isShownRef, SHOWN_CLASS, useShownLead } from "@/features/leads/highlight-store"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -17,6 +18,7 @@ const n = (v: number) => v.toLocaleString("en-US")
  * every point in view as a keyboard-steppable list with its accuracy and the record behind it (03 section 13.3).
  */
 export function PhoneLayerPanel({ caseId, summary, points, addDisabled }: { caseId: string; summary: PhoneMapSummary; points?: PhoneMapPoints; addDisabled?: string }) {
+  const shownLead = useShownLead()
   const [why, setWhy] = useState(false)
   const shown = points?.total ?? 0
   const words = phoneSummaryWords(summary, shown)
@@ -92,7 +94,8 @@ export function PhoneLayerPanel({ caseId, summary, points, addDisabled }: { case
         <ul ref={listRef} aria-label="Positions in view" className="flex flex-col gap-1 overflow-auto">
           {items.map((p) => (
             <li key={p.point_uid} data-point={p.point_uid} aria-current={p.point_uid === current ? "true" : undefined}
-              className={cn("rounded border border-border/60 px-2 py-1", p.point_uid === current && "border-primary bg-muted")}>
+              data-lead-shown={isShownRef(shownLead, p.record_uid) ? "true" : undefined}
+              className={cn("rounded border border-border/60 px-2 py-1", p.point_uid === current && "border-primary bg-muted", isShownRef(shownLead, p.record_uid) && SHOWN_CLASS)}>
               <div className="font-medium">{p.phone_label} · {p.time?.full ?? "No time recorded"}</div>
               <div>
                 {p.source_words} · <span className={p.accuracy_m === null ? "italic" : undefined}>{p.accuracy_words}</span>

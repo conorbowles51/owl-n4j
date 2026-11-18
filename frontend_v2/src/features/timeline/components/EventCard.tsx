@@ -1,4 +1,5 @@
 import { memo, useCallback } from "react"
+import { isShownRef, SHOWN_CLASS, useShownLead } from "@/features/leads/highlight-store"
 import { cn } from "@/lib/cn"
 import { Checkbox } from "@/components/ui/checkbox"
 import { NodeBadge } from "@/components/ui/node-badge"
@@ -88,16 +89,21 @@ export const EventCard = memo(function EventCard({
   const stopCurationClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
   }, [])
+  // "Show these records" (lx-leads C): marked while the open lead holds this event
+  const shownLead = useShownLead()
+  const inLead = isShownRef(shownLead, `timeline_event:${event.key}`) || isShownRef(shownLead, event.key)
 
   return (
     <article
       data-corro={`timeline_event:${event.key}`}
+      data-lead-shown={inLead ? "true" : undefined}
       data-corro-label={event.name}
       role="button"
       tabIndex={0}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
+        inLead && SHOWN_CLASS,
         "group w-full cursor-pointer rounded-lg border border-l-4 bg-card px-3 py-3 text-left transition-colors duration-150",
         "hover:bg-muted/40",
         active

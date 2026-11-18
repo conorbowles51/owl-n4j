@@ -94,6 +94,7 @@ import { DossierEvidencePicker } from "./DossierEvidencePicker"
 import { EvidenceImage } from "./EvidenceImage"
 import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAIPanel"
 import { AddToTheory } from "@/features/theory/AddToTheory"
+import { CorroborateAction } from "@/features/leads/CorroborateAction"
 
 const CaseworkDetailSheet = lazy(() =>
   import("@/features/workspace/components/CaseworkDetailSheet").then(
@@ -831,6 +832,10 @@ export function DossierDetailSheet({
                       {dossier.importance}
                     </p>
                   )}
+                  <div className="mt-2">
+                    <CorroborateAction caseId={caseId} screen="Dossiers" label={dossier.display_name}
+                      members={[{ type: "person", id: dossier.id, label: dossier.display_name }]} people={[`person:${dossier.id}`]} />
+                  </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {dossier.roles.map((role) => (
                       <Badge key={role.id} variant="outline">
