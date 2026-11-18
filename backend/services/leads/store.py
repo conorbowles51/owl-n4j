@@ -172,7 +172,10 @@ def save(db, case_id, *, origin: str, selection_id, result: dict | None, members
     else:
         row = CorroborateWatch(
             id=uuid.uuid4(), case_id=_uuid(case_id), selection_id=_uuid(selection_id), question=q, level=lv,
-            material=facts.material(db, case_id), active=True, unseen=True, origin=origin, state="new",
+            # watched (re-checked on new material): the finder's own leads, by the finder; an asked lead only when
+            # a person chooses Keep watching
+            material=facts.material(db, case_id), active=origin == "found_by_loupe", unseen=True, origin=origin,
+            state="new",
             state_history=[{"at": now.isoformat(), "from": None, "to": "new", "by": None,
                             "by_name": fields["read_by"], "why": f"{ORIGINS[origin]}."}],
             history=[{"at": now.isoformat(), "from": None, "to": lv, "reason": f"{ORIGINS[origin]}."}],

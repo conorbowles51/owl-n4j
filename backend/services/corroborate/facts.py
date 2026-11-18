@@ -122,10 +122,27 @@ def _change_reason(old: dict, new: dict) -> str:
     return "New or changed " + (" and ".join(changed) if len(changed) <= 2 else ", ".join(changed[:-1]) + " and " + changed[-1])
 
 
-def watch(db, *, case_id, selection_id, question: dict, level: dict, user) -> dict:
+def watch(db, *, case_id, selection_id, question: dict, level: dict, user, run_id=None) -> dict:
     from postgres.models.corroborate import CorroborateWatch
+    if run_id:  # the answer is already a lead (saved when the run finished): watch that lead, never a second row
+        lead = db.scalars(select(CorroborateWatch).where(CorroborateWatch.case_id == uuid.UUID(str(case_id)),
+                                                         CorroborateWatch.run_id == uuid.UUID(str(run_id)))).first()
+        if lead is not None:
+            if not lead.active:
+                lead.active = True
+                lead.history = list(lead.history or []) + [{"at": datetime.now(timezone.utc).isoformat(),
+                                                            "from": lead.level, "to": lead.level,
+                                                            "reason": "Started watching."}]
+                db.commit()
+            return watch_view(lead)
+    from services.corroborate import questions as Q
+    title = (question or {}).get("text") or Q.KINDS.get(Q.canonical((question or {}).get("kind")) or "", "Corroborate")
     w = CorroborateWatch(id=uuid.uuid4(), case_id=uuid.UUID(str(case_id)), selection_id=uuid.UUID(str(selection_id)),
                          question=question or {}, level=_level(level), material=material(db, case_id),
+                         origin="asked", state="new", title=title, summary=(level or {}).get("sentence") or "",
+                         state_history=[{"at": datetime.now(timezone.utc).isoformat(), "from": None, "to": "new",
+                                         "by": str(getattr(user, "id", "") or "") or None,
+                                         "by_name": getattr(user, "name", None), "why": "Kept watching."}],
                          history=[{"at": datetime.now(timezone.utc).isoformat(), "from": None, "to": _level(level),
                                    "reason": "Started watching."}], created_by=getattr(user, "id", None),
                          checked_at=datetime.now(timezone.utc))
@@ -151,8 +168,10 @@ def recheck(db, case_id, *, runner=None) -> list[dict]:
     from services import case_selections
     now_material = material(db, case_id)
     out = []
+    # the lead finder re-checks its own leads (services/leads/finder.py); a watch here is one a person kept
     for w in db.scalars(select(CorroborateWatch).where(CorroborateWatch.case_id == uuid.UUID(str(case_id)),
-                                                      CorroborateWatch.active.is_(True))):
+                                                      CorroborateWatch.active.is_(True),
+                                                      CorroborateWatch.origin != "found_by_loupe")):
         if w.material == now_material:
             out.append(watch_view(w))
             continue

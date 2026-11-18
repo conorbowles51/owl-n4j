@@ -125,6 +125,12 @@ def decide(grid: list[dict], instances: list[dict], comparison: dict, checks: li
 
     if not incidents or not with_data:
         return out("cant_tell", "no_data", [m["words"] for m in missing] or ["No records cover the instances asked about."])
+    if question_kind == "connected" and not present_rows and len(with_data) >= 2:
+        # "Is this person connected at all?": records of the others may overlap in time (context rows), but no row
+        # that links the person to anyone is present. That is the search finding nothing, not a coincidence.
+        return out("no_link_found", "nothing_links_the_person",
+                   [f"{r['label']}: checked on {_n(r['incident']['of'])} {comparison['incident_noun']}, not found."
+                    for r in with_data])
     seed_rows = [r for r in grid if (r.get("picked_by") or r.get("context")) and r["incident"]["present"]]
     distinctive = [r for r in present_rows if r.get("weight") == "full" and not as_often_ordinary(r)]
     if not distinctive and seed_rows:

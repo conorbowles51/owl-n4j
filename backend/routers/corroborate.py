@@ -215,7 +215,7 @@ def keep_watching(case_id: UUID, request: WatchRequest, db: Session = Depends(ge
     return facts.watch(db, case_id=case_id, selection_id=run_view["selection_id"],
                        question={"kind": q.get("kind"), "chips": {k: v for k, v in (q.get("chips") or {}).items()
                                                                    if k not in ("when",)}},
-                       level=corro.get("level") or {}, user=user)
+                       level=corro.get("level") or {}, user=user, run_id=str(request.run_id))
 
 
 @router.get("/{case_id}/corroborate/watches", dependencies=[Depends(require_case_view)])

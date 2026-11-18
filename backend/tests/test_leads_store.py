@@ -181,3 +181,20 @@ class LeadStoreTests(DuplicateTestCase):
         with self.assertRaises(L.LeadError) as cm:
             L.get(self.db, self.other_case.id, lead["id"])
         self.assertEqual(cm.exception.status, 404)
+
+    def test_keep_watching_an_asked_answer_watches_its_lead_and_the_watch_recheck_leaves_finder_leads(self):
+        run = uuid.uuid4()
+        lead = L.save_asked(self.db, self.case.id, selection_id=self.sel, run_id=run, result=result(),
+                            members=[], user=self.user)
+        self.assertFalse(lead["watching"])
+        w = facts.watch(self.db, case_id=self.case.id, selection_id=self.sel, question={}, level={"key": "strong"},
+                        user=self.user, run_id=run)
+        self.assertEqual(w["id"], lead["id"])
+        self.assertEqual(self.db.query(CorroborateWatch).count(), 1)
+        self.assertTrue(L.get(self.db, self.case.id, lead["id"])["watching"])
+        self.save(finder_key="relay:x")
+        calls = []
+        with mock.patch.object(case_selections, "describe", lambda *a, **k: {"members": []}), \
+                mock.patch.object(facts, "material", lambda db, case_id: {"phone_records": 2}):
+            facts.recheck(self.db, self.case.id, runner=lambda m, q: calls.append(q) or {"level": {"key": "strong"}})
+        self.assertEqual(len(calls), 1)  # the kept watch only; the finder re-checks its own leads
