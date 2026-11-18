@@ -59,7 +59,7 @@ export function PhoneLayerPanel({ caseId, summary, points, addDisabled }: { case
     ])
   }, [hasItems])
   return (
-    <section aria-label="Phone positions" className="absolute bottom-3 left-3 z-10 flex max-h-[45%] w-80 flex-col gap-1 overflow-hidden rounded-lg border border-border bg-card/95 p-3 text-xs shadow-md backdrop-blur">
+    <section aria-label="Phone positions" className="absolute bottom-3 left-3 z-10 flex max-h-[45%] w-80 max-w-[calc(100%-1.5rem)] flex-col gap-1 overflow-hidden rounded-lg border border-border bg-card/95 p-3 text-xs shadow-md backdrop-blur">
       <h2 className="text-sm font-semibold">Phone positions</h2>
       <p className="font-medium">{PLACE_LABEL}.</p>
       <p role="status">
