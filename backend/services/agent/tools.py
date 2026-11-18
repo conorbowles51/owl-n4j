@@ -103,6 +103,8 @@ class AgentToolContext:
     # Other cases this run read (case id -> title) and the citations their results carried (href -> (id, title)).
     cases_read: dict[str, str | None] = field(default_factory=dict)
     other_case_citations: dict[str, tuple[str, str | None]] = field(default_factory=dict)
+    # The case's time zone for local times beside UTC ones (services.agent.local_times); "" once read as UTC.
+    local_zone: str | None = None
 
     @property
     def significant_scope(self) -> bool:
@@ -128,6 +130,11 @@ class AgentToolContext:
             # not_searched, why_empty), filled from the tool's own keys
             from services.case_search import shape as search_shape
             search_shape.apply(tool_name, safe_data)
+        if status == "success":
+            from services.agent import local_times
+            if self.local_zone is None:
+                self.local_zone = local_times.case_zone_name(self.case_id) or ""
+            safe_data = local_times.annotate(safe_data, self.local_zone or None)
         self.result_store[result_id] = safe_data
         payload = {
             "result_id": result_id,
