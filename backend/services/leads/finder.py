@@ -705,9 +705,12 @@ def last_run(db, case_id) -> dict[str, Any]:
     if r is None:
         return {"status": "never", "words": "Loupe has not looked for leads in this case yet."}
     from services.corroborate import facts
-    changed = r.status in ("done", "failed") and (r.material or {}) != facts.material(db, case_id)
-    return {"id": str(r.id), "status": r.status, "step": r.step, "trigger": r.trigger, "counts": r.counts or {},
-            "error": r.error, "started_at": r.started_at.isoformat() if r.started_at else None,
+    status, error = r.status, r.error
+    if _stale(r):
+        status, error = "failed", STALE_WORDS
+    changed = status in ("done", "failed") and (r.material or {}) != facts.material(db, case_id)
+    return {"id": str(r.id), "status": status, "step": r.step, "trigger": r.trigger, "counts": r.counts or {},
+            "error": error, "started_at": r.started_at.isoformat() if r.started_at else None,
             "finished_at": r.finished_at.isoformat() if r.finished_at else None, "new_material": changed}
 
 
@@ -717,8 +720,10 @@ def start(db, case_id, *, user=None, trigger: str = "button", session_factory=No
     from services.corroborate import facts
     busy = db.scalars(select(LeadFinderRun).where(LeadFinderRun.case_id == uuid.UUID(str(case_id)),
                                                   LeadFinderRun.status.in_(("queued", "running")))).first()
-    if busy is not None:
+    if busy is not None and not _stale(busy):
         return last_run(db, case_id)
+    if busy is not None:
+        _fail(db, busy, STALE_WORDS)
     row = LeadFinderRun(id=uuid.uuid4(), case_id=uuid.UUID(str(case_id)), status="queued", step="Waiting to start",
                         trigger=trigger, requested_by=getattr(user, "id", None), material=facts.material(db, case_id))
     db.add(row)
@@ -726,11 +731,35 @@ def start(db, case_id, *, user=None, trigger: str = "button", session_factory=No
     if inline:
         _work(str(row.id), str(case_id), lambda: db, own=False)
     else:
-        if session_factory is None:
-            from postgres.session import SessionLocal as session_factory  # noqa: N813
-        threading.Thread(target=_work, args=(str(row.id), str(case_id), session_factory), daemon=True,
-                         name=f"lead-finder-{row.id}").start()
+        try:
+            if session_factory is None:
+                from postgres.session import _get_background_session_local
+                session_factory = _get_background_session_local()
+            threading.Thread(target=_work, args=(str(row.id), str(case_id), session_factory), daemon=True,
+                             name=f"lead-finder-{row.id}").start()
+        except Exception as exc:  # noqa: BLE001 - a run that cannot start says so, and never blocks the next one
+            log.exception("lead finder run %s could not start", row.id)
+            _fail(db, row, f"Could not start: {type(exc).__name__}: {exc}"[:2000])
     return last_run(db, case_id)
+
+
+STALE_WORDS = "Stopped before it finished (the server restarted, or the run could not start). Look again."
+QUEUED_STALE = timedelta(minutes=10)   # a run starts at once, so one still queued after this never started
+RUNNING_STALE = timedelta(hours=3)     # far longer than the slowest case measured; a release restart ends runs
+
+
+def _stale(row) -> bool:
+    if row.status not in ("queued", "running") or row.started_at is None:
+        return False
+    started = row.started_at if row.started_at.tzinfo else row.started_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - started
+    return age > (QUEUED_STALE if row.status == "queued" else RUNNING_STALE)
+
+
+def _fail(db, row, words: str) -> None:
+    row.status, row.error, row.step = "failed", words, "Stopped"
+    row.finished_at = datetime.now(timezone.utc)
+    db.commit()
 
 
 def _work(run_id: str, case_id: str, session_factory, own: bool = True) -> None:

@@ -198,3 +198,50 @@ class LeadStoreTests(DuplicateTestCase):
                 mock.patch.object(facts, "material", lambda db, case_id: {"phone_records": 2}):
             facts.recheck(self.db, self.case.id, runner=lambda m, q: calls.append(q) or {"level": {"key": "strong"}})
         self.assertEqual(len(calls), 1)  # the kept watch only; the finder re-checks its own leads
+
+    def test_looking_for_leads_starts_in_the_background_and_a_run_that_never_started_never_blocks_the_next(self):
+        from datetime import datetime, timedelta, timezone
+        from services.leads import finder as F
+        started = []
+
+        class FakeThread:
+            def __init__(self, target, args, daemon, name):
+                started.append((target, args))
+
+            def start(self):
+                pass
+        import postgres.session as PS
+        fac = mock.patch.object(PS, "_get_background_session_local", lambda: (lambda: self.db))
+        fac.start()
+        self.addCleanup(fac.stop)
+        with mock.patch.object(F.threading, "Thread", FakeThread):
+            got = F.start(self.db, self.case.id, user=self.user)
+        self.assertEqual(got["status"], "queued")
+        self.assertEqual(len(started), 1)
+        self.assertTrue(callable(started[0][1][2]))  # a real session factory, read from postgres.session
+        # a second press while it is queued is the same run
+        with mock.patch.object(F.threading, "Thread", FakeThread):
+            self.assertEqual(F.start(self.db, self.case.id, user=self.user)["id"], got["id"])
+        self.assertEqual(len(started), 1)
+        # left queued for 20 minutes (the server restarted): shown as stopped, and the next press starts a new run
+        row = self.db.get(LeadFinderRun, uuid.UUID(got["id"]))
+        row.started_at = datetime.now(timezone.utc) - timedelta(minutes=20)
+        self.db.commit()
+        shown = F.last_run(self.db, self.case.id)
+        self.assertEqual((shown["status"], shown["error"]), ("failed", F.STALE_WORDS))
+        with mock.patch.object(F.threading, "Thread", FakeThread):
+            again = F.start(self.db, self.case.id, user=self.user)
+        self.assertNotEqual(again["id"], got["id"])
+        self.assertEqual(self.db.get(LeadFinderRun, uuid.UUID(got["id"])).status, "failed")
+
+    def test_a_run_whose_thread_cannot_start_fails_with_the_reason(self):
+        from services.leads import finder as F
+
+        def broken(*a, **k):
+            raise RuntimeError("no threads left")
+        import postgres.session as PS
+        with mock.patch.object(PS, "_get_background_session_local", lambda: (lambda: self.db)), \
+                mock.patch.object(F.threading, "Thread", broken):
+            got = F.start(self.db, self.case.id, user=self.user)
+        self.assertEqual(got["status"], "failed")
+        self.assertIn("no threads left", got["error"])
