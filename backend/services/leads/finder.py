@@ -78,6 +78,34 @@ class FinderStore(CaseStore):
         self._phrase_n: dict[str, int] = {}
         self._number_hist: dict[tuple, list[dict]] = {}
         self._activity: dict[str, list[datetime]] | None = None
+        self._contact: dict[tuple, int] = {}
+        self._cov: dict[tuple, dict] = {}
+
+    def contact_ever(self, a: dict, b: dict) -> int:
+        """Asked of the database once per pair in a finder run (Phone reference 1, 18 Nov: every weighing asked its
+        pairs again, 11% of a weighing). The pair is told by each side's phones and identifiers, what the count reads."""
+        def side(p):
+            return (tuple(p["phones"]), tuple(sorted(p.get("numbers") or ())), tuple(sorted(p.get("handles") or ())),
+                    tuple(sorted(p.get("emails") or ())))
+        key = (side(a), side(b))
+        if key not in self._contact:
+            self._contact[key] = super().contact_ever(a, b)
+        return self._contact[key]
+
+    def coverage(self, people: list[dict], doc_ids: list[str]) -> dict:
+        """A person's coverage asked of the database once per finder run (Phone reference 1, 18 Nov: 8% of a weighing);
+        documents as before. Callers get copies."""
+        if len({p["key"] for p in people}) != len(people):
+            return super().coverage(people, doc_ids)
+        out: dict[str, dict] = {}
+        for p in people:
+            key = (p["key"], tuple(p["phones"]), tuple(p["accounts"]))
+            if key not in self._cov:
+                self._cov[key] = super().coverage([p], [])[p["key"]]
+            out[p["key"]] = {n: list(v) for n, v in self._cov[key].items()}
+        if doc_ids:
+            out.update(super().coverage([], doc_ids))
+        return out
 
     def activity(self, people: list[dict], windows) -> dict[str, list[datetime]]:
         """CaseStore.activity answered from the case's activity instants, read once per finder run (Phone reference 1,
@@ -235,11 +263,18 @@ class Case:
         self.phones = sorted(phones)
         self.body_phones: dict[str, set] = defaultdict(set)
         self.body_copies: Counter = Counter()
+        self._bkey: dict[int, str] = {}  # id(record) -> its body's key, made once (the detectors asked it again)
         for r in self.recs:
             if r["kind"] in M.CONTACT_KINDS and r.get("body"):
                 b = _body_key(r["body"])
+                self._bkey[id(r)] = b
                 self.body_phones[b].add(r["phone"])
                 self.body_copies[b] += 1
+
+    def body_key(self, r: dict) -> str:
+        """``_body_key(r["body"])``, made once per record while the case is read."""
+        k = getattr(self, "_bkey", {}).get(id(r))
+        return k if k is not None else _body_key(r["body"])
 
     def label(self, key) -> str:
         return (self.people.get(key) or {}).get("label") or "someone"
@@ -573,10 +608,11 @@ def stock_phrases(case: Case) -> list[dict]:
             if phones / n_phones >= STOCK_SHARE]
     # one pass over the records for every stock phrase (was one pass per phrase: phrases x records on a large case)
     refs: dict[str, list] = {body: [] for body, _, _ in kept}
+    by_key = {text_key(body): refs[body] for body in refs}
     if refs:
         for r in case.recs:
             if r.get("body"):
-                hit = refs.get(_norm(r["body"]))
+                hit = by_key.get(case.body_key(r))
                 if hit is not None and len(hit) < 200:
                     hit.append(r["ref"])
     out = []
@@ -632,11 +668,11 @@ def deletions(case: Case) -> list[dict]:
     kept = defaultdict(list)
     for r in case.recs:
         if r["kind"] in M.CONTACT_KINDS and r.get("body") and not r.get("deleted"):
-            kept[(_body_key(r["body"]), r["at"].replace(second=0, microsecond=0))].append(r)
+            kept[(case.body_key(r), r["at"].replace(second=0, microsecond=0))].append(r)
     for r in case.recs:
         if r["kind"] not in M.CONTACT_KINDS or not r.get("deleted") or not r.get("body"):
             continue
-        b = _body_key(r["body"])
+        b = case.body_key(r)
         if case.body_copies[b] > RARE_COPIES:
             continue
         copies = [x for x in kept.get((b, r["at"].replace(second=0, microsecond=0)), []) if x["phone"] != r["phone"]]

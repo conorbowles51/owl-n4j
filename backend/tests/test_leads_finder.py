@@ -406,3 +406,56 @@ def test_held_activity_answers_as_the_database_does():
         ws.append((base + timedelta(days=6), base + timedelta(days=6)))  # exactly a day after a held instant
         assert st.activity(people, ws) == db_rule(people, ws)
     assert reads == [1]
+
+
+def test_a_pairs_contact_and_a_persons_coverage_are_asked_once_per_finder_run():
+    """Phone reference 1, 18 Nov: every weighing asked its pairs' contact (11%) and its people's coverage (8%) again."""
+    from services.corroborate.store import CaseStore
+    asked = []
+
+    class R:
+        def scalar(self):
+            return 2
+
+        def __iter__(self):
+            return iter([])
+
+    st = object.__new__(F.FinderStore)
+    st._contact, st._cov, st.c, st._phone_days, st.set_aside = {}, {}, {"c": "case"}, {}, {}
+    st.q = lambda sql, **k: (asked.append(sql[:30]), R())[1]
+    st.phone_spans = lambda e: ([(at(NIGHTS[0], 0), at(NIGHTS[1], 0))], 0)
+    st.document_rows = lambda fid: [{"at": at(NIGHTS[2], 5)}]
+    a = {"key": "a", "phones": ["e1"], "numbers": ["1555"], "handles": [], "emails": [], "accounts": ["acc1"]}
+    b = {"key": "b", "phones": ["e2"], "numbers": ["1666", "1777"], "handles": [], "emails": [], "accounts": []}
+    assert st.contact_ever(a, b) == 4
+    n = len(asked)
+    assert st.contact_ever(a, dict(b, numbers=["1777", "1666"])) == 4 and len(asked) == n
+    assert st.contact_ever(b, a) == 4 and len(asked) == 2 * n
+    want = CaseStore.coverage(st, [a, b], ["d1"])
+    asked.clear()
+    first = st.coverage([a, b], ["d1"])
+    assert first == want and list(first) == list(want)
+    first["a"]["phone"].append("changed by a caller")
+    n = len(asked)
+    assert st.coverage([b, a], ["d1"]) == want and len(asked) == n
+
+
+def test_the_detectors_reuse_each_records_body_key(monkeypatch):
+    """Phone reference 1, 18 Nov: deletions and stock phrases normalised every body again (about 40 s a run)."""
+    recs = [msg(f"r{i}", "abz"[i % 3], "h", at(NIGHTS[0], 12, i % 50), "Call me back  NOW", deleted=(i == 4))
+            for i in range(30)]
+    c = case(recs)
+    c._bkey = {id(r): F._body_key(r["body"]) for r in recs}
+
+    class Q:
+        def all(self):
+            return [("call me back now", 3, 30)]
+
+    c.store = SimpleNamespace(q=lambda *a, **k: Q())
+    calls = Counter()
+    real = F._norm
+    monkeypatch.setattr(F, "_norm", lambda b: (calls.update(["n"]), real(b))[1])
+    out = F.stock_phrases(c)
+    F.deletions(c)
+    assert calls["n"] == 0
+    assert out[0]["refs"] == [r["ref"] for r in recs]
