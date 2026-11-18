@@ -160,7 +160,8 @@ def run(store, members: list[dict], question: dict | None = None,
         period = store.period(list(people.values()))
         if not after or not period:
             return _cant(question, kind, zone, people, unread, notes, started,
-                         "a date to compare before and after" if not after else "records for these people")
+                         *(("a date to compare before and after", "The question has no date to compare before and after.")
+                           if not after else ("records for these people", "The case holds no records for these people.")))
         hours = {"start": "00:00", "length_h": 24}
         days = [period[0] + timedelta(days=n) for n in range((period[1] - period[0]).days + 1)]
         tzz = M.tz(zone)
@@ -178,7 +179,8 @@ def run(store, members: list[dict], question: dict | None = None,
             incidents = [M.make_instance(date.fromisoformat(i["day"]), datetime.min.time().replace(hour=h, minute=m),
                                          timedelta(hours=hours["length_h"]), tzz, "incident", zone) for i in incidents]
         if not incidents:
-            return _cant(question, kind, zone, people, unread, notes, started, "a date or time in the selection")
+            return _cant(question, kind, zone, people, unread, notes, started, "a date or time in the selection",
+                         "The selection holds no date or time.")
         period = store.period(list(people.values()))
         comp_kind = chips.get("compare_with") if chips.get("compare_with") in M.COMPARISON_KINDS else \
             Q.default_comparison(kind)
@@ -186,7 +188,8 @@ def run(store, members: list[dict], question: dict | None = None,
         if comparison["kind"] == "group_vs_group":
             other = _other_group(chips, people, everyone)
             if not other:
-                return _cant(question, kind, zone, people, unread, notes, started, "another group to compare with")
+                return _cant(question, kind, zone, people, unread, notes, started, "another group to compare with",
+                             "The selection names no other group to compare with.")
             comparison["words"] = (f"Compared with the same kinds of link between {_names(other)} on the same "
                                    f"{len(incidents)} instance{'' if len(incidents) == 1 else 's'} ({zone}).")
             group_a = set(people)
@@ -596,11 +599,13 @@ def _who_used(store, points, everyone, zone, unread, notes, started, question) -
     The rule is ``levels.who_used``."""
     phone_key = next((k for p in points if p.get("kind") == "phone" for k in p["people"]), None)
     if not phone_key:
-        return _cant(question, "who_used", zone, {}, unread, notes, started, "a phone")
+        return _cant(question, "who_used", zone, {}, unread, notes, started, "a phone",
+                     "The selection holds no phone.")
     subject = everyone[phone_key]
     period = store.period([subject])
     if not period:
-        return _cant(question, "who_used", zone, {phone_key: subject}, unread, notes, started, "records on the phone")
+        return _cant(question, "who_used", zone, {phone_key: subject}, unread, notes, started, "records on the phone",
+                     "The case holds no records on this phone.")
     tzz = M.tz(zone)
     days = [period[0] + timedelta(days=n) for n in range((period[1] - period[0]).days + 1)]
     instances = [M.make_instance(d, datetime.min.time(), timedelta(hours=24), tzz, "incident", zone) for d in days]
@@ -640,13 +645,14 @@ def questions_text_who_used(subject) -> str:
     return f"Who used {subject['label']}?"
 
 
-def _cant(question, kind, zone, people, unread, notes, started, missing_words) -> dict:
+def _cant(question, kind, zone, people, unread, notes, started, missing_words, reason) -> dict:
+    """``missing_words`` completes "Missing: ..."; ``reason`` is the whole sentence shown as the reason."""
     level = {"key": "cant_tell", "name": L.LEVELS["cant_tell"], "rule": "no_data",
-             "reasons": [f"The selection holds no {missing_words}."], "comparison": "", "separating_kinds": [],
+             "reasons": [reason], "comparison": "", "separating_kinds": [],
              "repeated": False, "sentence": f"Can't tell: too little data. Missing: {missing_words}."}
     return {"schema": SCHEMA, "question": {"kind": kind, "text": "", "chips": question.get("chips") or {}},
             "level": level, "comparison": {"kind": None, "words": "", "zone": zone, "incident": [], "ordinary": []},
             "grid": [], "checks": [], "people": [_person(p) for p in people.values()], "not_in_pattern": [],
-            "searched": {}, "gaps": [{"missing": missing_words, "words": f"The selection holds no {missing_words}."}],
+            "searched": {}, "gaps": [{"missing": missing_words, "words": reason}],
             "look_further": [], "unread": unread, "notes": notes, "case_facts_used": [],
             "seconds": round(time.time() - started, 2)}

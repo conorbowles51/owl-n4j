@@ -86,6 +86,18 @@ def test_no_dated_item_is_cant_tell_naming_what_is_missing():
     res = _run([{"type": "person", "id": "dan"}], {"kind": "in_contact"})
     assert res["level"]["key"] == "cant_tell"
     assert res["gaps"] and "date" in res["level"]["sentence"]
+    assert res["level"]["reasons"] == ["The selection holds no date or time."]
+    assert res["gaps"][0]["words"] == "The selection holds no date or time."
+
+
+def test_cant_tell_reasons_read_as_sentences():
+    """Each reason is its own sentence: never "holds no a ..." or "holds no another ..."."""
+    import re
+    src = open(engine.__file__).read()
+    assert not re.search(r"holds no \{", src)
+    res = _run([{"type": "person", "id": "dan"}], {"kind": "in_contact"})
+    for r in res["level"]["reasons"] + [g["words"] for g in res["gaps"]]:
+        assert not re.search(r"\bno (a|an|another)\b", r), r
 
 
 def test_case_fact_weighs_a_signal_low_and_is_named():
@@ -189,6 +201,7 @@ def test_group_vs_group_with_no_other_group_is_cant_tell():
     res = engine.run(store, [{"type": "record", "id": f"m2:{INCIDENTS[0]}"}],
                      {"kind": "in_contact", "chips": {"compare_with": "group_vs_group"}})
     assert res["level"]["key"] == "cant_tell" and "another group" in res["level"]["sentence"]
+    assert res["level"]["reasons"] == ["The selection names no other group to compare with."]
 
 
 def test_the_composers_kind_names_reach_the_same_rules_and_an_unknown_kind_is_said():
