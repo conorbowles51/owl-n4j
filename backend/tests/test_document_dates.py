@@ -86,6 +86,13 @@ class PoliceAndLabForms(unittest.TestCase):
     def test_dates_of_birth_and_offence_dates_stay_unread(self):
         self.assertEqual(kinds("Thomas Lee Keyes, having the date of birth of 10/31/1964"), {})
 
+    def test_an_incident_report_is_dated_the_day_it_was_reported(self):
+        # 18 Nov, demo case b75f3f2c: the five police reports had no document date (lx-overlapviews-b)
+        r = kinds("Incident report CCPD-24-1100. Offense: theft from a commercial building, over $1,500. Reported "
+                  "Saturday 16 March 2024 at 06:10 by the day manager.")
+        self.assertEqual((r["written"]["date_from"], r["written"]["rule"]), (date(2024, 3, 16), "cue-written+2"))
+        self.assertEqual(kinds("Reported on 4 May 2024")["written"]["date_from"], date(2024, 5, 4))
+
 
 class Store(unittest.TestCase):
     def setUp(self):

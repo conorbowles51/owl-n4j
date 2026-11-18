@@ -50,6 +50,8 @@ _CUES2 = [
         r"(dated?|invoice date|date of issue|issued|fecha de (?:corte|expedici[oó]n|emisi[oó]n|elaboraci[oó]n)|"
         r"fecha|sent|date|emitido|statement date|date of (?:report|letter)|report date)\s*(?:on|[:=-])?\s*=?\s*$",
         re.I)),
+    # an incident report's own date: "Reported Saturday 16 March 2024 at 06:10" (the demo case's police reports, 18 Nov)
+    ("written", re.compile(r"\breported\s+(?:on\s+)?(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s+)?$", re.I)),
 ]
 _PERIOD_TO = re.compile(r"^\s*(?:al|to|through|thru|-|–|a|hasta)\s+$", re.I)
 _EMAIL_STAMP = re.compile(r"^\s*(?:at\s+)?\d{1,2}:\d{2}\s*[AP]M", re.I)
