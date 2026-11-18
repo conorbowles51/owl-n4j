@@ -566,8 +566,8 @@ def attach_levels(db, case_id, grid: dict) -> dict:
     def keys(lead):
         return {x.get("key") if isinstance(x, dict) else x for x in lead.get("people") or ()}
     def focal_ok(lead, p):
-        # "Mateo Ruiz: no link found" names everyone it searched against, but it is a finding about Ruiz alone: it says
-        # nothing of Marsh and Cole. A lead with one person in focus speaks only for pairs that include that person.
+        # A no-link lead about one person names everyone it searched against, but it is a finding about that person
+        # alone: it says nothing of two others it names. A lead with one person in focus speaks only for their pairs.
         focal = (lead.get("detail") or {}).get("person") or ((lead.get("question") or {}).get("chips") or {}).get("person")
         return not focal or focal in (p["a"], p["b"])
     for p in grid["pairs"]:
@@ -578,8 +578,8 @@ def attach_levels(db, case_id, grid: dict) -> dict:
         p["leads"] = [{"id": l["id"], "title": l.get("title"), "level": l.get("level"), "origin": l.get("origin"),
                        "state": l.get("state"), "searched": l.get("searched"), "raises": l.get("raises"),
                        "lowers": l.get("lowers")} for l in mine[:6]]
-        # A lead naming a group can join two people who never met: the finder chains phones near each other (Cole near
-        # Kell, Kell near the prepaid phone), so a pair whose own records hold nothing takes no level from it. Only a
+        # A lead naming a group can join two people who never met: the finder chains phones near each other (A near B,
+        # B near C), so a pair whose own records hold nothing takes no level from it. Only a
         # search that found no link may label such a pair. The lead stays listed under the pair.
         weighable = mine if p["state"] != "nothing" else [
             l for l in mine if (l.get("level") or {}).get("key") == "no_link_found"]
