@@ -270,7 +270,7 @@ def pair_key(a: str, b: str) -> tuple[str, str]:
     return (a, b) if a <= b else (b, a)
 
 
-DEDUPE_MEMO_MAX = 200_000  # kept records a run's memo holds before it starts again (memory, not results)
+DEDUPE_MEMO_MAX = 1_000_000  # kept records a run's memo holds before it starts again (a whole large case: 520,203 records)
 
 
 def dedupe(records: Iterable[dict], memo: dict | None = None) -> tuple[list[dict], int]:

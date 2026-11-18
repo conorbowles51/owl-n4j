@@ -64,6 +64,33 @@ NAMES = {"relay": 10, "place": 20, "money": 30, "silence": 40, "words": 50, "cas
          "documents": 80, "once": 90, "missing": 95}
 
 
+STOCK_SQL = ("SELECT lower(regexp_replace(btrim(body), '\\s+', ' ', 'g')) AS b, count(DISTINCT extraction_id), count(*) "
+             "FROM phone_comm_events WHERE case_id = :c AND length(btrim(body)) >= :n GROUP BY 1 HAVING "
+             "count(DISTINCT extraction_id) >= 3")
+
+
+def _read_activity(conn, params: dict) -> dict[str, tuple]:
+    """The case's activity instants per phone, for FinderStore._hold_activity (``conn``: a session or connection)."""
+    held: dict[str, dict] = defaultdict(lambda: defaultdict(int))
+    other: dict[str, dict] = defaultdict(lambda: defaultdict(list))
+    rows = conn.execute(text("SELECT extraction_id, instant_utc, offset_status FROM pol_activity_event "
+                             "WHERE case_id = :c"),
+                        params, execution_options={"stream_results": True, "yield_per": 20000})
+    for e, t, status in rows:
+        t = M.as_utc(t)
+        held[str(e)][t] += 1
+        if status != "explicit":
+            other[str(e)][status].append(t)
+    out = {}
+    for e, cnt in held.items():
+        ts = sorted(cnt)
+        cum = array("q", [0])
+        for t in ts:
+            cum.append(cum[-1] + cnt[t])
+        out[e] = (ts, cum, {st: sorted(v) for st, v in other[e].items()})
+    return out
+
+
 class FinderStore(CaseStore):
     """Corroborate's store, with photo places read as media places (where the photo was taken), never positions."""
 
@@ -135,23 +162,44 @@ class FinderStore(CaseStore):
         Phone reference 1)."""
         if self._activity is not None:
             return
-        held: dict[str, dict] = defaultdict(lambda: defaultdict(int))
-        other: dict[str, dict] = defaultdict(lambda: defaultdict(list))
-        rows = self.db.execute(text("SELECT extraction_id, instant_utc, offset_status FROM pol_activity_event "
-                                    "WHERE case_id = :c"),
-                               self.c, execution_options={"stream_results": True, "yield_per": 20000})
-        for e, t, status in rows:
-            t = M.as_utc(t)
-            held[str(e)][t] += 1
-            if status != "explicit":
-                other[str(e)][status].append(t)
-        self._activity = {}
-        for e, cnt in held.items():
-            ts = sorted(cnt)
-            cum = array("q", [0])
-            for t in ts:
-                cum.append(cum[-1] + cnt[t])
-            self._activity[e] = (ts, cum, {st: sorted(v) for st, v in other[e].items()})
+        got = self._background_result("activity")
+        self._activity = got if got is not None else _read_activity(self.db, self.c)
+
+    def start_reads(self) -> None:
+        """Start the case-wide reads that only wait on the database (the activity instants, then the stock phrases'
+        counts) on a connection of their own, while the case is read and the first leads are weighed. Phone
+        reference 1, 18 Nov: 27 s and 70 s of a 20-minute run spent waiting for these alone. Each answer is the same
+        read the finder makes inline; if the background read fails, the finder makes it inline."""
+        if getattr(self, "_bg", None) is not None or not hasattr(self.db, "get_bind"):
+            return
+        bind, params = self.db.get_bind(), dict(self.c)
+
+        def reads():
+            with bind.connect() as conn:
+                self._bg_out["activity"] = _read_activity(conn, params)
+                self._bg_out["stock"] = [tuple(r) for r in conn.execute(text(STOCK_SQL), {**params, "n": LONG_TEXT})]
+
+        def run():
+            try:
+                reads()
+            except Exception:  # the finder reads inline instead: slower, same answer
+                log.exception("lead finder: background read failed; reading inline")
+
+        self._bg_out: dict[str, Any] = {}
+        self._bg = threading.Thread(target=run, name="lead-finder-read", daemon=True)
+        self._bg.start()
+
+    def _background_result(self, name: str):
+        bg = getattr(self, "_bg", None)
+        if bg is None:
+            return None
+        bg.join()
+        return self._bg_out.pop(name, None)
+
+    def stock_rows(self) -> list[tuple]:
+        """The stock-phrase counts (``STOCK_SQL``): from the background read when it ran, else read now."""
+        got = self._background_result("stock")
+        return got if got is not None else [tuple(r) for r in self.q(STOCK_SQL, n=LONG_TEXT)]
 
     def offsets(self, phones: list[str], windows) -> Counter:
         """CaseStore.offsets answered from the held activity (Phone reference 1, 18 Nov: 11% of a weighing): the rows
@@ -299,6 +347,8 @@ def photo_places_as_media(recs: list[dict], photo_refs: set[str]) -> list[dict]:
 class Case:
     def __init__(self, store: FinderStore):
         self.store = store
+        if hasattr(store, "start_reads"):
+            store.start_reads()
         self.zone = M.tz(store.zone())
         self.people = {p["key"]: p for p in store.people()}
         period = store.period(list(self.people.values()))
@@ -655,10 +705,7 @@ def stock_phrases(case: Case) -> list[dict]:
     """Words at least LONG_TEXT long on most of the case's phones (the whole case, every date): a stock phrase, set
     aside, never shared wording."""
     n_phones = max(len(case.phones), 1)
-    rows = case.store.q(
-        "SELECT lower(regexp_replace(btrim(body), '\\s+', ' ', 'g')) AS b, count(DISTINCT extraction_id), count(*) "
-        "FROM phone_comm_events WHERE case_id = :c AND length(btrim(body)) >= :n GROUP BY 1 HAVING "
-        "count(DISTINCT extraction_id) >= 3", n=LONG_TEXT).all()
+    rows = case.store.stock_rows() if hasattr(case.store, "stock_rows") else case.store.q(STOCK_SQL, n=LONG_TEXT).all()
     kept = [(body, phones, copies) for body, phones, copies in sorted(rows, key=lambda r: -r[2])
             if phones / n_phones >= STOCK_SHARE]
     # one pass over the records for every stock phrase (was one pass per phrase: phrases x records on a large case)

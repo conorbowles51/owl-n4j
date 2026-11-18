@@ -559,3 +559,55 @@ def test_bucket_slices_timed_records_and_tests_only_day_only_ones(monkeypatch):
     monkeypatch.setattr(M, "in_window", lambda r, i, money=False: (tested.update([r.get("day_only")]), real(r, i, money=money))[1])
     S.bucket(recs, insts)
     assert not tested[False] and tested[True]
+
+
+class _Conn:
+    """A connection that answers the activity and stock-phrase reads, and names who asked."""
+    def __init__(self, who, asked, fail=False):
+        self.who, self.asked, self.fail = who, asked, fail
+
+    def execute(self, sql, params=None, execution_options=None):
+        q = str(sql)
+        self.asked.append((self.who, "activity" if "pol_activity_event" in q else "stock" if "phone_comm_events" in q else q))
+        if self.fail:
+            raise RuntimeError("connection dropped")
+        t = datetime(2025, 3, 7, 21, tzinfo=timezone.utc)
+        if "pol_activity_event" in q:
+            return iter([("e1", t, "explicit"), ("e1", t, "explicit"), ("e1", t + timedelta(minutes=5), "assumed")])
+        return iter([("sent from my phone", 3, 40)])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _bg_store(fail):
+    asked: list = []
+    st = F.FinderStore.__new__(F.FinderStore)
+    st.c, st._activity, st._bg = {"c": "case-1"}, None, None
+    session = _Conn("session", asked)
+    session.get_bind = lambda: SimpleNamespace(connect=lambda: _Conn("background", asked, fail))
+    st.db = session
+    st.q = lambda sql, **k: session.execute(sql, {**st.c, **k})
+    return st, asked
+
+
+def test_the_case_wide_reads_run_on_their_own_connection_and_give_the_inline_answer():
+    """Phone reference 1, 18 Nov: the activity read (27 s) and the stock-phrase count (70 s) only wait on the
+    database; they now run beside the case read. A failed background read is made inline, with the same answer."""
+    st, asked = _bg_store(fail=False)
+    st.start_reads()
+    st._hold_activity()
+    rows = st.stock_rows()
+    assert asked == [("background", "activity"), ("background", "stock")]  # the session was never asked
+    ts, cum, other = st._activity["e1"]
+    assert len(ts) == 2 and list(cum) == [0, 2, 3] and list(other) == ["assumed"]
+    assert rows == [("sent from my phone", 3, 40)]
+
+    inline, asked2 = _bg_store(fail=True)
+    inline.start_reads()
+    inline._hold_activity()
+    assert inline.stock_rows() == rows and inline._activity == st._activity
+    assert [w for w, _ in asked2] == ["background", "session", "session"]
