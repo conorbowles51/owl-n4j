@@ -2,7 +2,8 @@
 # What a release has to do, decided from its inputs (sourced by deploy.sh and deploy-now.sh).
 #
 # Each component of a release is identified by a hash of exactly the inputs that change its output:
-#   frontend  the frontend_v2 tree, the VITE_* settings and the node version (the built bundle)
+#   frontend  the frontend_v2 tree, the build recipe (deploy/frontend-release.sh), the VITE_* settings and the node
+#             version (the built bundle)
 #   npm       frontend_v2/package-lock.json and the node version (node_modules)
 #   pip       backend/requirements.txt (the backend virtualenv)
 #   backend   the backend tree, the scripts that configure its unit, and .env (the running backend)
@@ -40,7 +41,7 @@ release_component_hashes() {
     node_version="$(node --version 2>/dev/null || echo no-node)"
     backend_tree="$(_release_object "${rev}" backend)"
     env_rest="$(_release_env_part "${env_file}" rest | _release_digest)"
-    echo "frontend=$( { _release_object "${rev}" frontend_v2; _release_env_part "${env_file}" vite; echo "${node_version}"; } | _release_digest)"
+    echo "frontend=$( { _release_object "${rev}" frontend_v2; _release_object "${rev}" deploy/frontend-release.sh; _release_env_part "${env_file}" vite; echo "${node_version}"; } | _release_digest)"
     echo "npm=$( { _release_object "${rev}" frontend_v2/package-lock.json; echo "${node_version}"; } | _release_digest)"
     echo "pip=$(_release_object "${rev}" backend/requirements.txt)"
     # The backend reads files of evidence-engine (the reader's source digest, the graph schema, phone_media.py) from

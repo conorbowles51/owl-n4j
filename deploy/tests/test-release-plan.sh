@@ -131,4 +131,13 @@ frontend_prune
 [ ! -e "${FRONTEND_RELEASES}/assets/chunk-b1.js" ] || { echo "pruned build's asset left in the pool"; exit 1; }
 [ -f "${FRONTEND_RELEASES}/assets/chunk-b2.js" ] || { echo "kept build's asset pruned"; exit 1; }
 chmod -R u+w "${FRONTEND_RELEASES}"
+
+# The build gets the VITE_ lines of .env, and nothing else (a VITE_ setting built off on 18 Nov).
+printf 'SECRET_KEY=abc\nVITE_PHONE_LAYERS=on\n  export VITE_B=2\nDATABASE_URL=x\n' > "${scratch}/env-build"
+mkdir -p "${scratch}/fe"
+RUN_AS="" frontend_build_env "${scratch}/env-build" "${scratch}/fe"
+expect "build env" "$(cat "${scratch}/fe/.env.production.local")" "$(printf 'VITE_PHONE_LAYERS=on\nexport VITE_B=2')"
+grep -q 'frontend_build_env "${ENV_FILE}"' "${here}/frontend-release.sh" || { echo "the build does not write its VITE_ settings"; exit 1; }
+RUN_AS="" frontend_build_env "${scratch}/no-such-env" "${scratch}/fe"
+[ ! -s "${scratch}/fe/.env.production.local" ] || { echo "no .env must give an empty build env"; exit 1; }
 echo 'Release plan regression checks passed'

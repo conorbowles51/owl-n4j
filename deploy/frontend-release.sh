@@ -59,6 +59,20 @@ frontend_reclaim_worktree() {
     find "${wt}" ! -user "${DEPLOY_USER}" -prune -exec chown -R "${DEPLOY_USER}:" {} + 2>/dev/null || true
 }
 
+# The VITE_* lines of .env, and only those, as the build's .env.production.local. The build runs as the deploy user in
+# its own worktree (sudo drops the exported settings and the worktree has no .env), so without this file a VITE_
+# setting changed the frontend's hash but never reached the bundle (followups 18 Nov: VITE_PHONE_LAYERS=on built off).
+# VITE_ values are public: vite writes them into the bundle. No other .env line is copied.
+frontend_build_env() {
+    local env_file="$1" dir="$2" lines
+    lines="$(_release_env_part "${env_file}" vite | grep -E '^(export[[:space:]]+)?VITE_' || true)"
+    if [ -n "${lines}" ]; then
+        printf '%s\n' "${lines}" | $RUN_AS tee "${dir}/.env.production.local" >/dev/null
+    else
+        $RUN_AS rm -f "${dir}/.env.production.local"
+    fi
+}
+
 frontend_build_aside() {
     local rev="$1" id="$2" npm_hash="$3" wt out tmp marker scope
     scope="$(release_build_scope)"
@@ -83,6 +97,7 @@ frontend_build_aside() {
     else
         success "Frontend dependencies unchanged; node_modules kept"
     fi
+    frontend_build_env "${ENV_FILE}" "${wt}/frontend_v2" || return 1
     tmp="${FRONTEND_RELEASES}/builds/.building-${id}"
     $RUN_AS rm -rf "${tmp}"
     (cd "${wt}/frontend_v2" && $RUN_AS rm -rf node_modules/.vite &&
