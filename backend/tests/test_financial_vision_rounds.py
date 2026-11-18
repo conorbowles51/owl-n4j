@@ -132,6 +132,27 @@ def test_a_child_that_cannot_be_started_is_tried_again(lock_dir, monkeypatch):
     assert len(tries) >= 2
 
 
+def _tree_cpu_seconds(pid):
+    """User plus system CPU seconds of ``pid`` and every live descendant (Linux /proc)."""
+
+    tick = os.sysconf('SC_CLK_TCK')
+    stats = {}
+    for d in os.listdir('/proc'):
+        if d.isdigit():
+            try:
+                with open('/proc/%s/stat' % d) as f:
+                    rest = f.read().rsplit(')', 1)[1].split()
+                stats[int(d)] = (int(rest[1]), (int(rest[11]) + int(rest[12])) / tick)
+            except (OSError, IndexError, ValueError):
+                pass
+    tree, todo = set(), [pid]
+    while todo:
+        p = todo.pop()
+        tree.add(p)
+        todo.extend(c for c, (ppid, _) in stats.items() if ppid == p and c not in tree)
+    return sum(stats[p][1] for p in tree if p in stats)
+
+
 def test_the_real_child_runs_its_rounds_and_ends_with_its_worker(tmp_path):
     """The child command itself (python -m ... --lock-held), with the sweep stubbed, and PR_SET_PDEATHSIG."""
     import pathlib
@@ -150,8 +171,11 @@ def test_the_real_child_runs_its_rounds_and_ends_with_its_worker(tmp_path):
               "r._child_command = lambda: [sys.executable, '-c', stub, sys.argv[2]]\n"
               "asyncio.run(r._run_child())")
     process = subprocess.Popen([sys.executable, '-c', worker, backend, str(marker)], cwd=backend)
-    for _ in range(1200):
-        if marker.exists() and len(marker.read_text().split()) >= 2:
+    # The child imports the routers before its first round: 120 s of wall clock ran out at suite load (head 6b38fd83,
+    # 18 Nov) and the test passed in 54 s at load 7. Wait on the CPU the worker and child use, not the clock.
+    started = time.monotonic()
+    while not (marker.exists() and len(marker.read_text().split()) >= 2):
+        if _tree_cpu_seconds(process.pid) > 300 or time.monotonic() - started > 1800 or process.poll() is not None:
             break
         time.sleep(0.1)
     pids = set(marker.read_text().split())
