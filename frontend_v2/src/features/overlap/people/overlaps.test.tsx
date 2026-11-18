@@ -108,3 +108,15 @@ describe("People, go-betweens and documents", () => {
     expect(screen.queryByTestId("go-between-panel")).toBeNull() // Bob has no panel in this data
   })
 })
+
+describe("A case too large to read at once", () => {
+  it("says so with its size on both screens, never an empty grid", async () => {
+    const words = "This case holds 434,708 phone records and positions. Who overlaps with whom reads a whole case at once, and only up to 10,000, so it is not shown here."
+    vi.spyOn(overlapsAPI, "get").mockResolvedValue({ schema: "loupe.overlaps/1", refused: true, records: 434708, limit: 10000, words })
+    const one = wrap(<OverlapsView caseId="c1" />)
+    expect(await screen.findByText(words)).toBeTruthy()
+    one.unmount()
+    wrap(<OverlapGraph caseId="c1" />)
+    expect(await screen.findByText(words)).toBeTruthy()
+  })
+})

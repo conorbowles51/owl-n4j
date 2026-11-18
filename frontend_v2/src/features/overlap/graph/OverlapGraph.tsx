@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { memberOf, openCorroborate, overlapsAPI, type GoBetweenPanel, type Overlaps } from "../people/api"
+import { isRefused, memberOf, openCorroborate, overlapsAPI, type GoBetweenPanel, type Overlaps } from "../people/api"
 import { H, W, layout, lineWidth } from "./layout"
 
 export function OverlapGraph({ caseId }: { caseId: string }) {
@@ -12,6 +12,7 @@ export function OverlapGraph({ caseId }: { caseId: string }) {
     return <div role="status" className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><LoadingSpinner /> Reading who reaches whom…</div>
   }
   if (q.isError || !q.data) return <p role="alert" className="p-6 text-sm">The people graph could not be read. Try again in a minute.</p>
+  if (isRefused(q.data)) return <p role="status" className="p-6 text-sm">{q.data.words}</p>
   const data = q.data
   const g = data.graph
   const pos = layout(g.nodes.map((n) => n.key))

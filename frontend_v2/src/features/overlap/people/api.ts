@@ -114,9 +114,16 @@ export interface Overlaps {
   seconds: number
 }
 
+/** A case too large to read at once: said so, with its size and the limit, never shown as an empty grid. */
+export interface OverlapsRefused { schema: string; refused: true; records: number; limit: number; words: string }
+
+export function isRefused(x: Overlaps | OverlapsRefused): x is OverlapsRefused {
+  return (x as OverlapsRefused).refused === true
+}
+
 export const overlapsAPI = {
   get: (caseId: string, fresh = false) =>
-    fetchAPI<Overlaps>(`/api/cases/${caseId}/corroborate/overlaps${fresh ? "?fresh=true" : ""}`),
+    fetchAPI<Overlaps | OverlapsRefused>(`/api/cases/${caseId}/corroborate/overlaps${fresh ? "?fresh=true" : ""}`),
 }
 
 /** A person of the grid as a Corroborate member: a dossier, or the phone of a number with no owner name. */

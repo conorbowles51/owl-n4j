@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { cn } from "@/lib/cn"
-import { memberOf, openCorroborate, overlapsAPI, type OverlapKind, type OverlapRecord, type Overlaps, type Pair } from "./api"
+import { isRefused, memberOf, openCorroborate, overlapsAPI, type OverlapKind, type OverlapRecord, type Overlaps, type Pair } from "./api"
 import { TONE, squareWords } from "./square"
 
 const LEGEND: [string, string][] = [
@@ -36,6 +36,7 @@ export function OverlapsView({ caseId }: { caseId: string }) {
   if (q.isError || !q.data) {
     return <p role="alert" className="px-5 py-6 text-sm sm:px-8">Who overlaps with whom could not be read. Try again in a minute.</p>
   }
+  if (isRefused(q.data)) return <p role="status" className="px-5 py-6 text-sm sm:px-8">{q.data.words}</p>
   const data = q.data
   const pair = data.pairs.find((p) => `${p.a}|${p.b}` === picked) ?? null
   return (

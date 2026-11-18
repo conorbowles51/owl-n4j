@@ -264,3 +264,11 @@ def test_same_words_come_from_shared_words_with_deletions_and_files_between_the_
     assert "“left it in the truck” deleted on Phone A, kept on Phone P" in s["words"]
     assert _pair(g, "ann", "bob")["kinds"]["shared"]["count"] == 0
     assert not any("not searched" in n for n in g["notes"])
+
+
+def test_a_case_over_the_limit_is_refused_with_its_size_and_never_read(monkeypatch):
+    monkeypatch.setattr(O, "case_size", lambda db, case_id: O.MAX_RECORDS + 1)
+    monkeypatch.setattr(O, "build", lambda *a, **k: (_ for _ in ()).throw(AssertionError("read")))
+    out = O.cached_build(None, "c-big", fresh=True)
+    assert out["refused"] and out["records"] == O.MAX_RECORDS + 1
+    assert f"{O.MAX_RECORDS + 1:,} phone records" in out["words"] and f"only up to {O.MAX_RECORDS:,}" in out["words"]

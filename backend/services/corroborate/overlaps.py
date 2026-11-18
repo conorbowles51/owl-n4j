@@ -571,6 +571,20 @@ def attach_levels(db, case_id, grid: dict) -> dict:
 
 # ---- cache ---------------------------------------------------------------------------------------------------------
 
+# Measured 18 Nov on the server (load 16-52, nice 15): the demo case (2,126 records) reads in 4-9 s, Phone reference 2
+# (7,417) in 15.6 s; Phone reference 1 (527,856) took 810 s for shared words alone and was still reading the grid at
+# 2.5 GB after 25 minutes. A request never reads more than this.
+MAX_RECORDS = 10_000
+
+
+def case_size(db, case_id) -> int:
+    from sqlalchemy import text as _text
+    c = {"c": str(case_id)}
+    n = db.execute(_text("SELECT count(*) FROM phone_comm_events WHERE case_id = :c"), c).scalar() or 0
+    n += db.execute(_text("SELECT count(*) FROM pol_place_observation WHERE case_id = :c"), c).scalar() or 0
+    return int(n)
+
+
 _cache: dict[str, tuple[float, dict]] = {}
 _lock = threading.Lock()
 
@@ -579,6 +593,12 @@ def cached_build(db, case_id, *, fresh: bool = False) -> dict:
     """The grid for a case, read at most every CACHE_SECONDS (its time is in ``read_at``); levels are always current."""
     from services.corroborate.store import CaseStore
     key = str(case_id)
+    size = case_size(db, case_id)
+    if size > MAX_RECORDS:
+        return {"schema": SCHEMA, "refused": True, "records": size, "limit": MAX_RECORDS,
+                "words": (f"This case holds {size:,} phone records and positions. Who overlaps with whom reads a whole case "
+                          f"at once, and only up to {MAX_RECORDS:,}, so it is not shown here. Corroborate chosen people or "
+                          "records instead: that reads only what they hold.")}
     with _lock:
         hit = _cache.get(key)
     if hit and not fresh and time.time() - hit[0] < CACHE_SECONDS:
