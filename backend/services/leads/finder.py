@@ -246,36 +246,49 @@ def _near(x, y) -> bool:
     return d <= (x["place"].get("radius_m") or 0) + (y["place"].get("radius_m") or 0) + M.TOGETHER_SLACK_M
 
 
+NEAR_TIERS = (100.0, 500.0, M.TOGETHER_MAX_RADIUS_M)   # radius bands for pairing positions (``_near_pairs``)
+
+
 def _near_pairs(rs: list[dict]):
-    """The pairs of ``combinations(rs, 2)``, in its order, that can be near (``_near``) and belong to two owners: only
-    positions in the same or a neighbouring grid cell are paired. A cell is at least the farthest two positions can be apart and still be near,
-    so no near pair is left out. On Phone reference 1 every pair of a night's positions took 171 s (18 Nov)."""
+    """The pairs of ``combinations(rs, 2)``, in its order, that can be near (``_near``) and belong to two owners. Each
+    position is in a radius band; two positions are compared only when they lie in the same or a neighbouring cell of
+    a grid sized for their two bands (the farthest two positions of those bands can be apart and still be near), so no
+    near pair is left out. On Phone reference 1 every pair of a night's positions took 171 s (18 Nov)."""
     from math import cos, pi, radians
     if len(rs) < 2:
         return
-    reach = 2 * max((r["place"].get("radius_m") or 0) for r in rs) + M.TOGETHER_SLACK_M
-    lats = [r["place"]["lat"] for r in rs]
-    c = min(cos(radians(la)) for la in lats)
+    c = min(cos(radians(r["place"]["lat"])) for r in rs)
     if c < 0.05 or any(abs(r["place"]["lon"]) > 179 for r in rs):
         yield from combinations(rs, 2)  # near a pole or the date line: every pair, as before
         return
-    # haversine: d >= R |dlat| and d >= (2/pi) R c |dlon| (c the smallest cos(lat)), so a cell this size holds any
-    # pair within ``reach`` in the same or the next cell
     earth = 6_371_000
-    dlat = reach / earth * 180 / pi
-    dlon = reach / ((2 / pi) * earth * c) * 180 / pi
-    cells: dict[tuple[int, int], list[int]] = defaultdict(list)
-    where = []
+    tier = [next(t for t, top in enumerate(NEAR_TIERS) if (r["place"].get("radius_m") or 0) <= top) for r in rs]
+    # haversine: d >= R |dlat| and d >= (2/pi) R c |dlon| (c the smallest cos(lat)), so with cells this size two
+    # positions within ``reach`` are in the same or the next cell
+    size = {}
+    for a in range(len(NEAR_TIERS)):
+        for b in range(len(NEAR_TIERS)):
+            reach = NEAR_TIERS[a] + NEAR_TIERS[b] + M.TOGETHER_SLACK_M
+            size[a, b] = (reach / earth * 180 / pi, reach / ((2 / pi) * earth * c) * 180 / pi)
+    grids: dict[tuple, dict[tuple[int, int], list[int]]] = {}
+    for j, r in enumerate(rs):
+        for a in range(len(NEAR_TIERS)):
+            dlat, dlon = size[a, tier[j]]
+            k = (int(r["place"]["lat"] // dlat), int(r["place"]["lon"] // dlon))
+            grids.setdefault((a, tier[j]), defaultdict(list))[k].append(j)
     for i, r in enumerate(rs):
-        k = (int(r["place"]["lat"] // dlat), int(r["place"]["lon"] // dlon))
-        cells[k].append(i)
-        where.append(k)
-    for i, (a, b) in enumerate(where):
-        own = rs[i]["owner"]
-        js = sorted(j for da in (-1, 0, 1) for db in (-1, 0, 1) for j in cells.get((a + da, b + db), ())
-                    if j > i and rs[j]["owner"] != own)
-        for j in js:
-            yield rs[i], rs[j]
+        own, a = r["owner"], tier[i]
+        js = []
+        for b in range(len(NEAR_TIERS)):
+            grid = grids.get((a, b))
+            if not grid:
+                continue
+            dlat, dlon = size[a, b]
+            ci, cj = int(r["place"]["lat"] // dlat), int(r["place"]["lon"] // dlon)
+            js += [j for da in (-1, 0, 1) for db in (-1, 0, 1) for j in grid.get((ci + da, cj + db), ())
+                   if j > i and rs[j]["owner"] != own]
+        for j in sorted(js):
+            yield r, rs[j]
 
 
 def places(case: Case) -> list[dict]:
