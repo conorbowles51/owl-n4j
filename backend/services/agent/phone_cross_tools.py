@@ -381,10 +381,12 @@ def search_case(conn, case_id, query, *, group=None, exact=False, phones=(), sta
     return out
 
 
-# Hits shown whole per call, as on origin: search_case's ranked list 10, search_by_meaning 15 by default (fewer lost
-# records the gate had found before, 17 Nov).
-CASE_SEARCH_LIMIT = 10
-MEANING_LIMIT = 15
+# Hits per page (lx-searchfix B): 25. At 10 and 15 a search's recall at 50 equalled its recall at 10 (relevance gate,
+# 17 Nov: phones 25 of 38 judged records at 10, 26 at 50), because the rest were never returned. The best hits come
+# whole and the rest as excerpts cut around the match, inside the agent's page budget (AGENT_PAGE_CHARS); every hit
+# past the page is counted and pageable with offset.
+CASE_SEARCH_LIMIT = 25
+MEANING_LIMIT = 25
 RANKED_KEYS = ("total", "shown", "offset", "next_offset", "grades", "grade_rule", "below_grade", "items", "searched",
                "not_searched", "why_empty", "notes", "meaning_search", "reranked", "understood", "available", "reason")
 _AREA_KIND = {"phone_text": "phones", "parties": "phones", "transcripts": "phones", "documents": "documents",
@@ -2244,7 +2246,7 @@ class MeaningSearchArgs(BaseModel):
     start: str | None = Field(None, description="First day, YYYY-MM-DD (not applied to phone messages or documents).")
     end: str | None = None
     offset: int = Field(0, ge=0, description="Pass the result's next_offset for the next page.")
-    limit: int = Field(15, ge=1, le=50)
+    limit: int = Field(MEANING_LIMIT, ge=1, le=50)
     min_grade: Literal["strong", "moderate"] | None = Field(
         None, description="Only results of this grade or better; the others are still counted.")
 

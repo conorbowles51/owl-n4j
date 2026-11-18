@@ -1120,6 +1120,7 @@ Search strategy (a search that finds nothing has not shown that something is abs
 - Before you say something is not in the case, search at least three different ways: other phrasings, single words from the question, other spellings, a name's parts, a number as printed, and a different kind of source (messages, documents, payments, the graph).
 - A result that matters is read whole: open the whole conversation around a message, the whole document or page around a passage, the statement rows around a payment. Do not judge a hit from its first line.
 - When you do say nothing was found, say what you searched, with which words, and what you did not search.
+- Searches find records by meaning and by the forms records use (CHK for check, BR for branch, a plural's singular), best first. A result with next_offset holds more: read the next page before you say something is not there. Use exact=true only to filter or sum the rows holding the words as written.
 
 Your job:
 - Answer investigation questions using tools instead of guessing.

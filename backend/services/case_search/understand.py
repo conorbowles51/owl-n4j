@@ -135,10 +135,25 @@ def windows(conn, case_id, question: str) -> dict[str, Any]:
     return {"zone": zone_name, "zone_basis": basis, "windows": out, "notes": notes}
 
 
+INITIALS = re.compile(r"(?<![A-Za-z])((?:[A-Z]\.\s?){2,3})(?![A-Za-z])")
+
+
+def initials(text_: str) -> str:
+    """The letters of initials as written ("D.O." -> "do"), or "" when the text is not initials."""
+    m = INITIALS.fullmatch((text_ or "").strip())
+    return re.sub(r"[^A-Za-z]", "", m.group(1)).lower() if m else ""
+
+
+def name_initials(name: str) -> str:
+    """A name's initials ("Desmond Okafor" -> "do")."""
+    return "".join(w[0] for w in re.findall(r"[^\W\d_]+", name or "")).lower()
+
+
 def names(question: str) -> list[str]:
-    """Capitalised words and runs of them that may be names (``Harold Vint``, ``Harold``, ``Vint``), the run first.
-    Question words and calendar words split a run (``Did Harold Vint`` gives ``Harold Vint``)."""
-    found: list[str] = []
+    """Capitalised words and runs of them that may be names (``Harold Vint``, ``Harold``, ``Vint``), the run first;
+    initials as written (``D.O.``). Question words and calendar words split a run (``Did Harold Vint`` gives
+    ``Harold Vint``). A short name a phone may save ("Dee") counts: three letters or more."""
+    found: list[str] = [m.group(1).strip() for m in INITIALS.finditer(question or "")]
     for m in NAME.finditer(question or ""):
         run: list[str] = []
         for w in m.group(1).split() + [None]:
@@ -186,6 +201,26 @@ def expansions(conn, case_id, question: str) -> list[dict[str, Any]]:
             if r.name and r.name.casefold() != name.casefold():
                 add(name, r.name, "contact_name", "another name a phone gives the same identity (%s)" % (
                     r.value_display or "no number"))
+        # the other names the phones save for the same identity ("Dee" on one phone is "Desmond Okafor" on another),
+        # and the person a person linked it to
+        try:
+            with conn.begin_nested():
+                others = conn.execute(text(
+                    "SELECT DISTINCT o.name, i.value_display, p.display_name FROM pv_identity_name n JOIN pv_identity i "
+                    "ON i.identity_id = n.identity_id AND i.case_id = n.case_id JOIN pv_identity j ON j.case_id = "
+                    "i.case_id AND j.identity_key = i.identity_key JOIN pv_identity_name o ON o.identity_id = "
+                    "j.identity_id AND o.case_id = j.case_id LEFT JOIN case_profiles p ON p.id = i.person_id AND "
+                    "p.archived_at IS NULL WHERE n.case_id = :c AND n.name ILIKE :p ORDER BY 1 LIMIT 20"),
+                    {"c": str(case_id), "p": like}).fetchall()
+        except Exception:  # noqa: BLE001 - a case without phone views
+            others = []
+        for o in others:
+            if o.display_name and o.display_name.casefold() != name.casefold():
+                add(name, o.display_name, "person", "the person a person linked the identity %s to" % (
+                    o.value_display or ""))
+            if o.name and o.name.casefold() != name.casefold():
+                add(name, o.name, "contact_name", "another name a phone saves for the identity %s (suggested, not "
+                    "confirmed by a person)" % (o.value_display or "no number"))
         try:
             with conn.begin_nested():
                 accts = conn.execute(text(

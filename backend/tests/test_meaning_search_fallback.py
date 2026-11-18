@@ -117,7 +117,7 @@ class AgentSearchDocumentsTests(Fixture):
         with patch("services.agent.tools.get_vector_db_service", return_value=object()), patch(
                 "services.vector_db_service.get_vector_db_health", return_value={"available": True}), patch(
                 "services.embedding_service.embedding_service", QuotaEmbeddings()):
-            result = tools["search_documents"].invoke({"query": "the tender and award dates", "limit": 5})
+            result = tools["search_documents"].invoke({"query": "the tender and award dates", "limit": 5, "exact": True})
         self.assertEqual(result["status"], "success")
         data = result["data"]
         self.assertEqual(data["search"], "word")
@@ -172,7 +172,7 @@ class AgentSearchDocumentsTests(Fixture):
         with patch("services.agent.tools.get_vector_db_service", return_value=Vectors()), patch(
                 "services.vector_db_service.get_vector_db_health", return_value={"available": True}), patch(
                 "services.embedding_service.embedding_service", Embeddings()):
-            result = tools["search_documents"].invoke({"query": "tender"})
+            result = tools["search_documents"].invoke({"query": "tender", "exact": True})
         self.assertEqual(result["data"]["search"], "meaning")
         self.assertEqual(result["data"]["vector_gap"]["documents_without_vector"], 1)  # the draft is not searched
         self.assertIn("1 of 2 documents with text in this case have no meaning-search vector", result["summary"])

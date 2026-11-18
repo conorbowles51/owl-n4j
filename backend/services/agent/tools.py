@@ -193,9 +193,20 @@ def _cypher_description() -> str:
             + CYPHER_EXAMPLE)
 
 
+# Entities per page of a graph search (lx-searchfix B): the tool returned 10, so a name shared by many entities or a
+# phrase found by meaning lost the rest without a word. 25 keeps a page whole and small (an entity is a name, a type
+# and a summary); the rest are counted and paged with offset.
+GRAPH_PAGE = 25
+
+
 class SearchGraphEntitiesArgs(BaseModel):
-    query: str = Field(..., min_length=1, description="Name, alias, key, or phrase to search for.")
-    limit: int = Field(10, ge=1, le=25)
+    query: str = Field(..., min_length=1, description=(
+        "A name, nickname, initials (D.O.), alias, key, surname (Ruiz family) or phrase. Found by name, by the names "
+        "phones save for the same person, by initials and by meaning."))
+    limit: int = Field(GRAPH_PAGE, ge=1, le=50)
+    offset: int = Field(0, ge=0, description="Read the next page: next_offset from the last result.")
+    exact: bool = Field(False, description="true: only entities whose name, key, summary, notes or alias hold the "
+                        "words as typed.")
 
 
 # lx-agentfit M and G: several names, keys or searches in one call (a recorded BNB2 run made 7
@@ -205,13 +216,19 @@ MAX_MANY = 10
 # The ledger search ranks its rows with the case search's ranking model (the "search ranking" setting), as
 # search_case does; without a configured model, or when it fails, rows stay in search order and say so.
 LEDGER_RANK = True
+GRAPH_RANK = True
+DOC_RANK = True
+GRAPH_LINKS = 10
 
 
 class SearchGraphEntitiesManyArgs(BaseModel):
     query: str | None = Field(None, min_length=1, description="One name, alias, key, or phrase to search for.")
     queries: list[str] | None = Field(None, max_length=MAX_MANY, description=(
         "Several names to search for in one call, e.g. ['Acme Ltd', 'J. Smith']; each is answered on its own."))
-    limit: int = Field(10, ge=1, le=25, description="Entities per name.")
+    limit: int = Field(GRAPH_PAGE, ge=1, le=50, description="Entities per name.")
+    offset: int = Field(0, ge=0, description="Read the next page: next_offset from the last result.")
+    exact: bool = Field(False, description="true: only entities whose name, key, summary, notes or alias hold the "
+                        "words as typed.")
 
 
 class EntityKeysArgs(BaseModel):
@@ -261,12 +278,20 @@ class PathArgs(BaseModel):
     max_depth: int = Field(4, ge=1, le=6)
 
 
+# Passages per page of a document search (lx-searchfix B): the tool returned 8, so recall at 50 equalled recall at 8
+# (relevance gate 17 Nov: 19 of 27 judged document records either way, 8 never returned). 25 passages, the best whole
+# and the rest as excerpts cut around the match inside the agent's page budget (about 20,000 characters).
+DOC_PAGE = 25
+
+
 class SearchDocumentsArgs(BaseModel):
     query: str = Field(..., min_length=1)
-    limit: int = Field(8, ge=1, le=20)
+    limit: int = Field(DOC_PAGE, ge=1, le=50)
     offset: int = Field(0, ge=0, description="Next page of documents (the result's next_offset).")
     include_below_floor: bool = Field(False, description="Also return the passages that fell below the relevance "
                                       "floor chat uses (each marked below_floor); the result says how many there are.")
+    exact: bool = Field(False, description="true: the vector passages only, as before the case search (no words, no "
+                        "statement pages).")
 
 
 class SearchExactWordsArgs(BaseModel):
@@ -2123,31 +2148,83 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             ),
         )
 
-    def search_graph_entities(query: str | None = None, limit: int = 10, queries: list[str] | None = None
-                              ) -> dict[str, Any]:
+    def graph_search(one: str, limit: int, offset: int, exact: bool) -> dict[str, Any]:
+        """One graph search (lx-searchfix A, D): the case search's graph kind (names, the names phones save for the
+        same person, initials, meaning), as entities with their name and type, best first, then the connections
+        found. ``exact``: the graph's name lookup with the words as typed."""
+        if exact:
+            rows = graph_service.search_nodes(query=one, limit=offset + limit + 1, case_id=context.case_id)
+            if context.allowed_entity_keys is not None:
+                rows = [row for row in rows if row.get("key") in context.allowed_entity_keys]
+            page = rows[offset:offset + limit]
+            more = len(rows) > offset + limit
+            return {"query": one, "how": "the words as typed, in names, keys, summaries, notes and aliases",
+                    "entities": page, "count": len(page), "total": None if more else len(rows),
+                    "next_offset": offset + limit if more else None,
+                    "note": "More entities hold these words; read the next page." if more else None}
+        from services.case_search import service as CS
+        with (context.ledger_session_factory or _financial_session)() as db:
+            r = CS.ranked(db.connection(), context.case_id, one, kinds=("graph",), rank=GRAPH_RANK)
+        ents, links = [], []
+        for c in r["candidates"]:
+            cite = c.get("cite") or ""
+            if c.get("area") == "graph" and cite.startswith("entity://"):
+                key = cite[len("entity://"):]
+                if context.allowed_entity_keys is None or key in context.allowed_entity_keys:
+                    ents.append(c)
+            elif c.get("area") == "relationships":
+                links.append(c)
+        page = ents[offset:offset + limit]
+        nodes = {n["key"]: n for n in graph_service.nodes_by_keys(
+            [c["cite"][len("entity://"):] for c in page], case_id=context.case_id)}
+        rows = []
+        for c in page:
+            key = c["cite"][len("entity://"):]
+            node = dict(nodes.get(key) or c.get("node") or {"key": key, "name": c.get("title")})
+            node["matched"] = c.get("sources") or []
+            for k in ("found_by", "score", "reason"):
+                if c.get(k) is not None:
+                    node[k] = c[k]
+            rows.append(node)
+        nxt = offset + len(page) if offset + len(page) < len(ents) else None
+        shown_links = links[:GRAPH_LINKS] if offset == 0 else []
+        out = {"query": one, "how": "names, the names phones save for the same person, initials, and meaning; "
+               "best first", "entities": rows, "count": len(rows), "total": len(ents), "next_offset": nxt,
+               "connections": [{"title": l.get("title") or "", "cite": l.get("cite") or "",
+                                "text": sanitize_text((l.get("text") or "")[:600])} for l in shown_links],
+               "connections_found": len(links), "searched": r["searched"], "not_searched": r["not_searched"],
+               "meaning_search": r["meaning_search"], "notes": [n for n in r["notes"] if n]}
+        if len(links) > len(shown_links):
+            out["notes"].append("%d connections found; %d shown. search_case reads them all." % (
+                len(links), len(shown_links)))
+        if nxt is not None:
+            out["notes"].append("%d entities found; read the next page (offset=%d) before concluding one is absent."
+                                % (len(ents), nxt))
+        if not ents:
+            out["why_empty"] = ("No graph entity matched '%s' by name, by a name a phone saves, by initials or by "
+                                "meaning%s." % (one, "" if r["meaning_search"] else " (meaning search was unavailable)"))
+        return out
+
+    def search_graph_entities(query: str | None = None, limit: int = GRAPH_PAGE, queries: list[str] | None = None,
+                              offset: int = 0, exact: bool = False) -> dict[str, Any]:
         if queries:
             asked = list(dict.fromkeys(q for q in ([query] if query else []) + list(queries) if q and q.strip()))
             if len(asked) > MAX_MANY:
                 raise ValueError("At most %d names in one call; this call gave %d." % (MAX_MANY, len(asked)))
-            searches = []
-            for one in asked:
-                rows = graph_service.search_nodes(query=one, limit=limit, case_id=context.case_id)
-                if context.allowed_entity_keys is not None:
-                    rows = [row for row in rows if row.get("key") in context.allowed_entity_keys]
-                searches.append({"query": one, "entities": rows, "count": len(rows)})
+            searches = [graph_search(one, limit, offset, exact) for one in asked]
             return context.result(
                 "search_graph_entities", {"searches": searches, "count": sum(x["count"] for x in searches)},
                 summary="Searched %d names: %s." % (len(searches), "; ".join(
-                    "'%s' %d" % (x["query"], x["count"]) for x in searches)))
+                    "'%s' %d of %s" % (x["query"], x["count"], x["total"] if x["total"] is not None else "more")
+                    for x in searches)))
         if not query:
             raise ValueError("Give query, or queries with up to %d names." % MAX_MANY)
-        rows = graph_service.search_nodes(query=query, limit=limit, case_id=context.case_id)
-        if context.allowed_entity_keys is not None:
-            rows = [row for row in rows if row.get("key") in context.allowed_entity_keys]
+        out = graph_search(query, limit, offset, exact)
         return context.result(
-            "search_graph_entities",
-            {"entities": rows, "count": len(rows)},
-            summary=f"Found {len(rows)} graph entities matching '{query}'.",
+            "search_graph_entities", out,
+            summary="Found %s graph entities for '%s', showing %d from %d%s." % (
+                out["total"] if out["total"] is not None else "more than %d" % out["count"], query, out["count"],
+                offset, "; next page offset=%d" % out["next_offset"] if out["next_offset"] is not None else ""),
         )
 
     def inspect_graph_schema(
@@ -2294,8 +2371,51 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             logger.exception("Graph passages could not be added for case %s", context.case_id)
             return sorted(kept, key=lambda c: c.get("distance") if c.get("distance") is not None else 9.0), len(below)
 
-    def search_documents(query: str, limit: int = 8, offset: int = 0, include_below_floor: bool = False
-                         ) -> dict[str, Any]:
+    def case_documents(query: str, limit: int, offset: int) -> dict[str, Any]:
+        """Documents through the case search (lx-searchfix A): passages by meaning and documents by their words,
+        fused, best first, whole passages cut around the match."""
+        from services.agent.phone_cross_tools import AGENT_PAGE_CHARS
+        from services.case_search import service as CS
+        with (context.ledger_session_factory or _financial_session)() as db:
+            # passages, not statement pages: a statement's page holds every row of a month, so 13 of them ranked
+            # above a tow invoice for "tow invoice on the night of 12 April" (18 Nov); the ledger and search_case
+            # read statements
+            res = CS.search(db.connection(), context.case_id, query, kinds=("documents",), areas=("documents",),
+                            offset=offset,
+                            limit=limit, page_chars=AGENT_PAGE_CHARS, rank=DOC_RANK)
+        chunks = []
+        for h in res["hits"]:
+            chunks.append({k: v for k, v in {
+                "n": h["n"], "filename": h.get("title"), "kind": h.get("kind_label"), "cite": h.get("cite"),
+                "text": sanitize_text(h.get("text")), "unit": h.get("unit"),
+                "chars_not_shown": h.get("chars_not_shown") or None, "matched": h.get("matched"),
+                "grade": h.get("grade"), "score": h.get("score"), "reason": h.get("reason"),
+                "also_at": h.get("also_at") or None, "read_by_a_model": h.get("read_by_a_model") or None}.items()
+                if v is not None})
+        notes = list(res.get("notes") or [])
+        if res.get("next_offset") is not None:
+            notes.append("%d passages found, %d shown; read the next page (offset=%d) before concluding a document "
+                         "says nothing about it." % (res["total"], res["shown"], res["next_offset"]))
+        data = {"available": True, "search": "meaning and words" if res.get("meaning_search") else "words",
+                "chunks": chunks, "count": len(chunks), "offset": offset, "total_matching": res["total"],
+                "returned": len(chunks), "next_offset": res["next_offset"], "has_more": res["next_offset"] is not None,
+                "grades": res.get("grades"), "grade_rule": res.get("grade_rule"), "reranked": res.get("reranked"),
+                "meaning_search": res.get("meaning_search"), "searched": res.get("searched"),
+                "not_searched": res.get("not_searched"), "why_empty": res.get("why_empty"), "notes": notes,
+                "understood": res.get("understood")}
+        return context.result("search_documents", data, summary="Found %d document passages for '%s' by "
+                              "%s, best first; showing %d from %d.%s" % (
+                                  res["total"], query, data["search"], len(chunks), offset,
+                                  (" Next page offset=%d." % res["next_offset"]) if res["next_offset"] is not None
+                                  else ""))
+
+    def search_documents(query: str, limit: int = DOC_PAGE, offset: int = 0, include_below_floor: bool = False,
+                         exact: bool = False) -> dict[str, Any]:
+        if not exact and not include_below_floor and not context.significant_scope:
+            try:
+                return case_documents(query, limit, offset)
+            except Exception:  # noqa: BLE001 - the passage search below still answers, and says how it searched
+                logger.exception("Case search of documents failed for case %s", context.case_id)
         nonlocal scope_documents
         scope_documents = None
         below_floor_count = 0
@@ -3650,7 +3770,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             search_graph_entities,
             name="search_graph_entities",
-            description=("Search graph entities by display name, key, summary, notes, or alias-like text."
+            description=("Find graph entities (people, companies, places, accounts) by name, alias, the names phones "
+                         "save for the same person (Dee), initials (D.O.), a surname for a family (Ruiz family), key "
+                         "or meaning, best first, with the connections found. A page holds 25; read next_offset "
+                         "before concluding someone is absent. exact=true: the words as typed."
                          + (" Several names in one call with queries (each answered apart); use that instead of one "
                             "call per name." if _fit_on("M") else "")),
             args_schema=SearchGraphEntitiesManyArgs if _fit_on("M") else SearchGraphEntitiesArgs,
@@ -3690,12 +3813,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             search_documents,
             name="search_documents",
-            description=("Search the current case's documents: by meaning when the meaning-search service answers, "
-                         "otherwise by the query's words (the result's 'search' and 'note' say which ran; word hits "
-                         "are literal matches, never meaning matches; say so when you use them). Meaning results "
-                         "are above the relevance floor and carry total_matching and next_offset: pass "
-                         "next_offset for more. below_floor counts the weaker passages left out; "
-                         "include_below_floor returns them marked."),
+            description=("Search the current case's documents by meaning and by their words "
+                         "(other forms of a word included), best first, 25 a page: the best whole, the rest as "
+                         "excerpts around the match. total_matching counts every passage found; read next_offset "
+                         "before concluding a document is silent. 'search' says whether meaning search ran. "
+                         "include_below_floor or exact=true: the older passage search with its relevance floor."),
             args_schema=SearchDocumentsArgs,
         ),
         wrap(
@@ -3795,7 +3917,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             get_financial_transactions,
             name="get_financial_transactions",
             description=("Read saved imported payments directly from the current case ledger, with corrected values, source references, "
-                "complete-scope totals and explicit pagination. Use next_offset and revision for every subsequent page. "
+                "complete-scope totals and explicit pagination. search finds rows by meaning and by the forms statements "
+                "print (CHK, DEP, BR, PMT, TFR), best first, with no totals; exact=true filters the words as written, with totals. "
+                "Use next_offset and revision for every subsequent page. "
                 "A page is not the full dataset. records=excluded or incomplete inspects records outside totals. "
                 "Intelligence mode is a separate contextual graph reader and cannot establish complete imported coverage."),
             args_schema=FinancialArgsMany if _fit_on("M") else FinancialArgs,

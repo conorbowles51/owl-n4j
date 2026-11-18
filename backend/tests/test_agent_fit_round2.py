@@ -144,12 +144,12 @@ class ManyAtOnceTests(unittest.TestCase):
         with on("M"), patch("services.agent.tools.graph_service.search_nodes",
                             side_effect=lambda query, limit, case_id: [{"key": query.lower()}]):
             search = next(t for t in make_agent_tools(context) if t.name == "search_graph_entities")
-            out = search.invoke({"queries": ["Ann", "Bob", "Ann"]})
+            out = search.invoke({"queries": ["Ann", "Bob", "Ann"], "exact": True})
         self.assertEqual([x["query"] for x in out["data"]["searches"]], ["Ann", "Bob"])
         self.assertEqual(out["data"]["count"], 2)
         with on(""):
             search = next(t for t in make_agent_tools(context) if t.name == "search_graph_entities")
-        self.assertEqual(set(search.args_schema.model_fields), {"query", "limit"})
+        self.assertEqual(set(search.args_schema.model_fields), {"query", "limit", "offset", "exact"})
 
     def test_m_groups_ledger_totals_by_counterparty_and_month(self):
         from services.agent.financial_ledger_tools import _totals

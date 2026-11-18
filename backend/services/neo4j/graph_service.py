@@ -756,6 +756,37 @@ class GraphService:
     # Search
     # -------------------------------------------------------------------------
 
+    def person_names(self, case_id: str, limit: int = 20000) -> List[Dict]:
+        """Key and name of every active person in the case (for initials: "D.O." is Desmond Okafor)."""
+        with driver.session() as session:
+            result = session.run(
+                f"""
+                MATCH (n:Person)
+                WHERE {active_node_predicate("n")} AND n.name IS NOT NULL
+                RETURN n.key AS key, n.name AS name
+                ORDER BY n.key LIMIT $limit
+                """,
+                case_id=case_id, limit=limit,
+            )
+            return [dict(r) for r in result]
+
+    def nodes_by_keys(self, keys: List[str], case_id: str) -> List[Dict]:
+        """Key, name, type and summary of the given active nodes of the case, in the given order."""
+        if not keys:
+            return []
+        with driver.session() as session:
+            result = session.run(
+                f"""
+                MATCH (n)
+                WHERE n.key IN $keys AND {active_node_predicate("n")}
+                RETURN n.id AS id, n.key AS key, n.name AS name, labels(n)[0] AS type, n.summary AS summary,
+                       n.notes AS notes
+                """,
+                keys=list(keys), case_id=case_id,
+            )
+            got = {r["key"]: dict(r) for r in result}
+        return [got[k] for k in keys if k in got]
+
     def search_nodes(self, query: str, limit: int = 20, case_id: str = None) -> List[Dict]:
         """
         Search nodes by name, key, summary, or notes.
@@ -803,7 +834,8 @@ class GraphService:
                     n.name AS name,
                     labels(n)[0] AS type,
                     n.summary AS summary,
-                    n.notes AS notes
+                    n.notes AS notes,
+                    {_ALIASES} AS aliases
                 ORDER BY CASE
                     WHEN toLower(coalesce(n.name, '')) = $search_lower THEN 0
                     WHEN toLower(coalesce(n.name, '')) STARTS WITH $search_lower THEN 1

@@ -16,6 +16,7 @@ returned in full (``text``); ``units`` makes it a whole unit and ``rerank`` read
 from __future__ import annotations
 
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
@@ -46,6 +47,27 @@ KIND_LABEL = {"phone_text": "phone messages", "parties": "phone contact", "trans
               "relationships": "graph connection"}
 FETCH = 60
 GRAPH_TERMS = 4
+# entities read per name: a surname such as "Ruiz" names companies, places and events too (demo case: 10 a name left
+# Lucia Ruiz out, lx-searchfix 18 Nov)
+GRAPH_FETCH = 25
+FAMILY = re.compile(r"\b(famil(y|ies)|household|relatives|relations|siblings|brothers|sisters|parents|kids|children|"
+                    r"cousins|in-laws)\b", re.I)
+
+
+def _names_it(node: dict, probe: str) -> bool:
+    """Whether a graph name lookup's hit holds the name as words, not inside another word or an id: the graph's
+    lookup matches any part of the text, so "Dee" found entities whose id holds "7ae67dee63ee" (demo, 18 Nov)."""
+    from services.phone import fold as F
+    want = F.fold(probe)
+    if not want:
+        return False
+    if (node.get("key") or "") == probe:
+        return True
+    aliases = node.get("aliases") or []
+    hay = " %s " % F.fold(" ".join(str(x) for x in [node.get("name"), node.get("summary"), node.get("notes")]
+                                    + (aliases if isinstance(aliases, list) else [aliases]) if x))
+    # a word, a phrase, or the start of a word ("Dee" in "dee_o28")
+    return (" %s" % want) in hay
 
 
 def _rrf(lists: list[list[dict]]) -> list[dict]:
@@ -193,27 +215,70 @@ def _documents_by_words(conn, case_id, query) -> tuple[list[dict], dict]:
                  "not_searched": found.get("terms_not_searched")}
 
 
-def _graph(case_id, query, names, terms, *, embed_query) -> tuple[list[dict], list[dict], list[str]]:
+def _graph(case_id, query, names, terms, *, embed_query, expansions=(), only_graph=False
+           ) -> tuple[list[dict], list[dict], list[str]]:
+    """Graph entities by name (the question's names and identifiers, the other names phones save for them, people
+    whose initials the question gives) and by meaning."""
     notes: list[str] = []
     by_words: list[dict] = []
     seen: dict[str, dict] = {}
     try:
+        from services.case_search.understand import initials, name_initials
         from services.neo4j.graph_service import graph_service
         # names and identifiers only (a plate, a check number): an ordinary word such as "patients" names every
-        # entity holding it (demo second case, 17 Nov: 18 of a question's first 64 places), and meaning covers it
-        probes = list(dict.fromkeys(list(names) + [t for t in terms if any(ch.isdigit() for ch in t)]))[:GRAPH_TERMS]
+        # entity holding it (demo second case, 17 Nov: 18 of a question's first 64 places), and meaning covers it.
+        # A name's other names (lx-searchfix D: "Dee" is saved as "Desmond Okafor" on another phone) come after the
+        # names themselves.
+        own = [n for n in names if not initials(n)]
+        tied = [e["term"] for e in expansions or () if e.get("kind") in ("contact_name", "person")]
+        probes = list(dict.fromkeys(own + [t for t in terms if any(ch.isdigit() for ch in t)]))[:GRAPH_TERMS]
+        probes += [t for t in dict.fromkeys(tied) if t not in probes][:GRAPH_TERMS]
+        why: dict[str, str] = {e["term"]: "%s: %s" % (e["name"], e["basis"]) for e in expansions or ()
+                               if e.get("kind") in ("contact_name", "person")}
+        wanted = [initials(n) for n in names if initials(n)]
+        if wanted:
+            for n in graph_service.person_names(str(case_id)):
+                if name_initials(n.get("name") or "") in wanted:
+                    probes.append(n["name"])
+                    why[n["name"]] = "the initials %s are this person's" % ", ".join(
+                        x for x in names if initials(x))
+        # a single word of a full name the question gives ("Halloran" of "Priya Halloran") also finds other people of
+        # that name: its hits come after the full name's, never in place of them
+        runs = [p for p in probes if " " in p]
+        weight = {p: (0 if " " not in p and any(p in r.split() for r in runs) else 1) for p in probes}
+        family = bool(FAMILY.search(query or ""))
+        if family:
+            # "Ruiz family": the people who share the surname first, each saying so (lx-searchfix D)
+            from services.phone import fold as F
+            surnames = {F.fold(n) for n in own if " " not in n}
+            for n in graph_service.person_names(str(case_id)):
+                words = F.fold(n.get("name") or "").split()
+                if words and words[-1] in surnames and n["name"] not in probes:
+                    probes.insert(0, n["name"])
+                    weight[n["name"]] = 2
+                    why[n["name"]] = "shares the surname %s" % words[-1].title()
+        found_runs = set()
         for p in probes:
-            for n in graph_service.search_nodes(p, limit=10, case_id=str(case_id)):
+            # the graph search alone (search_graph_entities) asks for whom the name names: a part of a full name that
+            # was found is not looked up (gate 18 Nov: "Priya Halloran" listed Paul Halloran in the top 10)
+            if only_graph and weight.get(p) == 0 and any(p in r.split() for r in found_runs):
+                continue
+            for n in graph_service.search_nodes(p, limit=GRAPH_FETCH, case_id=str(case_id)):
                 key = n.get("key")
-                if not key:
+                if not key or not _names_it(n, p):
                     continue
+                if " " in p:
+                    found_runs.add(p)
+                w = weight.get(p, 1)
                 if key in seen:
-                    seen[key]["words"] += 1
+                    seen[key]["words"] += w
                     continue
                 h = {"area": "graph", "key": key, "title": "%s (%s)" % (n.get("name") or key, n.get("type") or "entity"),
                      "cite": "entity://%s" % key, "person": n.get("name") or "", "as_read": True,
-                     "text": " ".join(x for x in (n.get("name"), n.get("summary")) if x), "words": 1,
-                     "sources": ["graph names"]}
+                     "text": " ".join(x for x in (n.get("name"), n.get("summary")) if x), "words": w,
+                     "sources": ["graph names"], "node": dict(n)}
+                if p in why:
+                    h["found_by"] = why[p]
                 seen[key] = h
                 by_words.append(h)
         by_words.sort(key=lambda h: -h["words"])
@@ -310,7 +375,8 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
     f_dated = soon(question, dated)
     f_phrasings = [soon(p, areas, tag=" (other phrasing)") for p in (understood.get("phrasings") or [])] if areas else []
     f_graph = pool.submit(_graph, case_id, question, understood.get("names") or [], understood.get("terms") or [],
-                          embed_query=embed) if entities else None
+                          embed_query=embed, expansions=understood.get("expansions") or [],
+                          only_graph=tuple(kinds) == ("graph",)) if entities else None
     try:
         return _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated, undated, phone, person,
                              date_from, date_to, embed, collections, meaning_ok, entities, notes, searched,
