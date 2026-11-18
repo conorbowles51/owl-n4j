@@ -23,6 +23,18 @@ function TooltipProvider({
   )
 }
 
+/**
+ * Whether the last thing the person did was press a pointer rather than a key. A dialog opened by a click moves
+ * focus to its first control; a tooltip opened by that focus would take the first Escape away from the dialog.
+ * Focus opens a tooltip only when it came from the keyboard (or from code before any pointer press).
+ */
+let pointerLast = false
+if (typeof document !== "undefined") {
+  document.addEventListener("pointerdown", () => void (pointerLast = true), { capture: true })
+  document.addEventListener("mousedown", () => void (pointerLast = true), { capture: true })
+  document.addEventListener("keydown", () => void (pointerLast = false), { capture: true })
+}
+
 /** When keyboard focus last reached this tooltip's control, and which control. */
 type Mark = { at: number; el: Element | null; scrolled: boolean }
 const FocusMark = React.createContext<React.RefObject<Mark> | null>(null)
@@ -66,6 +78,8 @@ function TooltipTrigger({
           setTimeout(() => window.removeEventListener("scroll", scrolled, { capture: true }), 400)
         }
         onFocus?.(event)
+        // the primitive skips its own open when the event is marked handled
+        if (pointerLast) event.preventDefault()
       }}
       {...props}
     />

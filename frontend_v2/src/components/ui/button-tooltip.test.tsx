@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./dialog"
 import { describe, expect, it } from "vitest"
 import { X } from "lucide-react"
 import { Button } from "./button"
@@ -34,6 +36,37 @@ describe("Button tooltips", () => {
     expect(hasWords(<span className="sr-only">Close</span>)).toBe(false)
     expect(hasWords(["Save", <X key="x" />])).toBe(true)
     expect(hasWords(3)).toBe(true)
+  })
+})
+
+describe("Tooltips and dialogs", () => {
+  const draw = () => render(
+    <Dialog>
+      <DialogTrigger>Open source</DialogTrigger>
+      <DialogContent showCloseButton={false}>
+        <DialogTitle>gate-log.pdf</DialogTitle>
+        <Button size="icon" title="Download the file"><X /></Button>
+      </DialogContent>
+    </Dialog>,
+  )
+
+  it("a dialog opened by a click shows no tooltip on its first control, and one Escape closes it", async () => {
+    const user = userEvent.setup()
+    draw()
+    await user.click(screen.getByRole("button", { name: "Open source" }))
+    expect(screen.getByRole("dialog")).toBeVisible()
+    expect(screen.queryByRole("tooltip")).toBeNull()
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("a dialog opened from the keyboard still shows the focused control's tooltip", async () => {
+    const user = userEvent.setup()
+    draw()
+    await user.tab()
+    await user.keyboard("{Enter}")
+    expect(screen.getByRole("dialog")).toBeVisible()
+    expect((await screen.findAllByText("Download the file")).length).toBeGreaterThan(0)
   })
 })
 
@@ -78,6 +111,8 @@ describe("Tooltip on keyboard focus in a narrow panel", () => {
       </div>
     )
     const button = screen.getByRole("button", { name: "Edit case processing profile" })
+    // keyboard focus: a key press, not a pointer press, came last
+    fireEvent.keyDown(document.body, { key: "Tab" })
     await act(async () => void button.focus())
     expect(button).toHaveAttribute("data-state", expect.stringMatching(/open/))
     // the browser then scrolls the panel to bring the focused control into view
