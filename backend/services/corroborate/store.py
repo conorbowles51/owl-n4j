@@ -379,8 +379,7 @@ class CaseStore:
                              "parties": list(dict.fromkeys(ps)), "counterpart_values": [_norm_value(v) for v in vals],
                              "thread": thread, "app": app, "body": body, "sender": sender,
                              "deleted": bool(deleted and deleted.lower() != "intact"),
-                             "dup_key": ("msg", at.replace(second=0, microsecond=0), (body or "").strip().casefold(),
-                                         frozenset([o] + ps)) if body else None})
+                             "dup_key": contact_dup_key(kind, at, body, [o] + ps)})
             for ext, uid, at, lat, lon, rad, kind, src in self.db.execute(text(
                     f"WITH w(lo, hi) AS (VALUES {rng}) SELECT DISTINCT o.extraction_id, o.record_uid, o.start_utc, o.lat, "
                     "o.lon, o.radius_m, o.kind, o.source_kind FROM pol_place_observation o JOIN w ON o.start_utc BETWEEN "
@@ -740,6 +739,22 @@ class CaseStore:
     def facts(self) -> list[dict]:
         from services.corroborate import facts
         return facts.list_facts(self.db, self.case)
+
+
+def contact_dup_key(kind, at, body, ends) -> tuple | None:
+    """What makes two phone records one contact held on two phones: a message with the same text in the same minute
+    between the same people; a call or a message with no text in the same minute between the same two known people
+    (a call has no text, so without this a call held on both phones counted twice). Records with only one known end
+    are never folded: two calls in one minute to two unknown numbers are two calls."""
+    if at is None:
+        return None
+    who = frozenset(e for e in ends if e)
+    minute = at.replace(second=0, microsecond=0)
+    if body:
+        return ("msg", minute, body.strip().casefold(), frozenset(ends))
+    if len(who) >= 2:
+        return ("bare", kind, minute, who)
+    return None
 
 
 def _period_key(name: str):
