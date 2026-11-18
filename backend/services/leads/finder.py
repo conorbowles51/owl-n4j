@@ -76,6 +76,42 @@ class FinderStore(CaseStore):
 
         self._held: dict | None = None
         self._phrase_n: dict[str, int] = {}
+        self._number_hist: dict[tuple, list[dict]] = {}
+        self._activity: dict[str, list[datetime]] | None = None
+
+    def activity(self, people: list[dict], windows) -> dict[str, list[datetime]]:
+        """CaseStore.activity answered from the case's activity instants, read once per finder run (Phone reference 1,
+        18 Nov: one query per person per weighing, 25% of a weighing). Same rule: every instant of a person's phones
+        from a day before a window to a day after it, each instant once, in order."""
+        if not windows or any(lo.tzinfo is None or hi.tzinfo is None or lo - DAY < EARLIEST or hi + DAY > LATEST
+                              for lo, hi in windows):
+            return super().activity(people, windows)
+        if self._activity is None:
+            held: dict[str, set] = defaultdict(set)
+            rows = self.db.execute(text("SELECT extraction_id, instant_utc FROM pol_activity_event WHERE case_id = :c"),
+                                   self.c, execution_options={"stream_results": True, "yield_per": 20000})
+            for e, t in rows:
+                held[str(e)].add(M.as_utc(t))
+            self._activity = {e: sorted(v) for e, v in held.items()}
+        out: dict[str, list[datetime]] = {}
+        for p in people:
+            if not p["phones"]:
+                continue
+            got: set = set()
+            for e in p["phones"]:
+                ts = self._activity.get(str(e), [])
+                for lo, hi in windows:
+                    got.update(ts[bisect_left(ts, lo - DAY):bisect_right(ts, hi + DAY)])
+            out[p["key"]] = sorted(got)
+        return out
+
+    def number_history(self, value: str, before: datetime) -> list[dict]:
+        """Asked of the database once per number and date in a finder run: every weighing asks it again for each
+        person's numbers, with the same date (Phone reference 1, 18 Nov: 34% of a weighing)."""
+        key = (value, before)
+        if key not in self._number_hist:
+            self._number_hist[key] = super().number_history(value, before)
+        return [dict(r) for r in self._number_hist[key]]
 
     def phrase_counts(self, phrases: list[str]) -> dict[str, int]:
         """The case-wide count of each phrase, asked of the database once per finder run: on Phone reference 1 one
@@ -155,6 +191,9 @@ def _like_test(low: str) -> Callable[[str], bool]:
     return lambda body: rx.search(body) is not None
 
 
+EARLIEST = datetime(1, 1, 3, tzinfo=timezone.utc)   # windows this near the calendar's ends go to the database
+LATEST = datetime(9999, 12, 29, tzinfo=timezone.utc)
+DAY = timedelta(hours=24)        # activity is read from a day before a window to a day after it (CaseStore.activity)
 ALERT_AFTER = timedelta(days=3)   # a payment alert is read up to this long after a window's end (CaseStore.phone_records)
 
 

@@ -349,3 +349,60 @@ def test_like_test_is_like():
     assert F._like_test("a_c")("xxabcx") and not F._like_test("a_c")("ac")
     assert F._like_test("50% off")("save 50 percent off") and F._like_test("a\\_b")("a_b") and not F._like_test("a\\_b")("axb")
     assert F._like_test("dock 3")("at dock 3.") and not F._like_test("dock 3")("dock  3")
+
+
+def test_a_numbers_history_is_asked_once_per_finder_run():
+    """Phone reference 1, 18 Nov: every weighing asked each person's number history again (34% of a weighing)."""
+    asked = []
+    when = at(NIGHTS[0], 9)
+
+    class R:
+        def fetchall(self):
+            return [("u1", when, "e1")]
+
+    st = object.__new__(F.FinderStore)
+    st._number_hist, st.c = {}, {"c": "case"}
+    st.q = lambda sql, **k: (asked.append((k["v"], k["b"])), R())[1]
+    first = st.number_history("15551230000", when)
+    first[0]["ref"] = "changed by a caller"
+    assert st.number_history("15551230000", when) == [{"ref": "phone_record:u1", "at": when, "phone": "e1"}]
+    st.number_history("15551239999", when)
+    assert asked == [("15551230000", when), ("15551239999", when)]
+
+
+def test_held_activity_answers_as_the_database_does():
+    """Phone reference 1, 18 Nov: every weighing asked each person's activity of the database (25% of a weighing)."""
+    import random
+    rnd = random.Random(4)
+    base = at(NIGHTS[0], 0)
+    rows = [(e, base + timedelta(minutes=rnd.randrange(0, 60 * 24 * 40))) for e in ("e1", "e2", "e3") for _ in range(400)]
+    rows += [("e1", base + timedelta(days=5)), ("e2", base + timedelta(days=5))]  # the same instant on two phones
+    reads = []
+
+    class R:
+        def __init__(self, rs):
+            self.rs = rs
+
+        def __iter__(self):
+            return iter(self.rs)
+
+    st = object.__new__(F.FinderStore)
+    st._activity, st.c = None, {"c": "case"}
+    st.db = SimpleNamespace(execute=lambda sql, params, execution_options=None: (reads.append(1), R(rows))[1])
+    people = [{"key": "a", "phones": ["e1", "e2"]}, {"key": "b", "phones": ["e3"]}, {"key": "c", "phones": []}]
+
+    def db_rule(ps, windows):
+        out = {}
+        for p in ps:
+            if p["phones"]:
+                out[p["key"]] = sorted({t for e, t in rows if e in p["phones"] and any(
+                    lo - timedelta(hours=24) <= t <= hi + timedelta(hours=24) for lo, hi in windows)})
+        return out
+    for _ in range(5):
+        ws = []
+        for _ in range(rnd.randrange(1, 4)):
+            lo = base + timedelta(hours=rnd.randrange(0, 24 * 40))
+            ws.append((lo, lo + timedelta(hours=rnd.randrange(1, 30))))
+        ws.append((base + timedelta(days=6), base + timedelta(days=6)))  # exactly a day after a held instant
+        assert st.activity(people, ws) == db_rule(people, ws)
+    assert reads == [1]
