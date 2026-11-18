@@ -4,7 +4,8 @@ import { OPEN_RECYCLE_BIN } from "@/features/guidance/next-steps"
 import { lazy, Suspense, useRef, useState, useCallback, useMemo, useEffect } from "react"
 import { PhoneCommunicationEdges } from "./PhoneCommunicationEdges"
 import { GraphPhoneScope } from "./GraphPhoneScope"
-import { useLocation, useParams } from "react-router-dom"
+import { useLocation, useParams, useSearchParams } from "react-router-dom"
+import { useSwitch } from "@/lib/ui-switches"
 import type { ForceGraphMethods } from "react-force-graph-2d"
 import type { ForceGraphMethods as ForceGraph3DMethods } from "react-force-graph-3d"
 import {
@@ -54,7 +55,45 @@ const GraphCanvas3D = lazy(() =>
 
 export const PHONE_GRAPH_CAP_ON = false
 
+// Behind the switch corroborate-v2 (lx-overlapviews-a): the people, go-betweens and documents mode; lazy so it stays
+// out of the main script budget.
+const OverlapGraph = lazy(() => import("@/features/overlap/graph/OverlapGraph").then((m) => ({ default: m.OverlapGraph })))
+
+const GRAPH_MODES = [["case", "Case graph"], ["people", "People, go-betweens and documents"]] as const
+
+/** The Graph page: the case graph, or (switch corroborate-v2 on) who reaches whom with go-betweens and documents. */
 export function GraphPage() {
+  const on = useSwitch("corroborate-v2")
+  const { id: caseId } = useParams()
+  const [params, setParams] = useSearchParams()
+  if (!on) return <CaseGraphPage />
+  const mode = params.get("graph-mode") === "people" ? "people" : "case"
+  const pick = (m: string) => {
+    const next = new URLSearchParams(params)
+    if (m === "people") next.set("graph-mode", m)
+    else next.delete("graph-mode")
+    setParams(next, { replace: true })
+  }
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <nav aria-label="Graph modes" className="flex shrink-0 gap-4 border-b border-border px-4">
+        {GRAPH_MODES.map(([m, words]) => (
+          <button key={m} type="button" aria-current={mode === m ? "page" : undefined} onClick={() => pick(m)}
+            className={mode === m ? "min-h-10 border-b-2 border-brand-500 text-sm font-medium" : "min-h-10 border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground"}>
+            {words}
+          </button>
+        ))}
+      </nav>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {mode === "people" && caseId ? (
+          <Suspense fallback={null}><OverlapGraph caseId={caseId} /></Suspense>
+        ) : <CaseGraphPage />}
+      </div>
+    </div>
+  )
+}
+
+function CaseGraphPage() {
   const { id: caseId } = useParams()
   const location = useLocation()
   const queryClient = useQueryClient()

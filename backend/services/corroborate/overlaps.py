@@ -542,7 +542,8 @@ def attach_levels(db, case_id, grid: dict) -> dict:
         mine.sort(key=lambda l: LEVEL_ORDER.index((l.get("level") or {}).get("key")) if (l.get("level") or {}).get("key")
                   in LEVEL_ORDER else len(LEVEL_ORDER))
         p["leads"] = [{"id": l["id"], "title": l.get("title"), "level": l.get("level"), "origin": l.get("origin"),
-                       "state": l.get("state"), "searched": l.get("searched")} for l in mine[:6]]
+                       "state": l.get("state"), "searched": l.get("searched"), "raises": l.get("raises"),
+                       "lowers": l.get("lowers")} for l in mine[:6]]
         if mine:
             top = mine[0]
             p["level"] = top.get("level")

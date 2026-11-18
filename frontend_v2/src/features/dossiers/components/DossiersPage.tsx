@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import {
   AlertTriangle,
@@ -33,6 +33,10 @@ import { DossierDetailSheet } from "./DossierDetailSheet"
 import { DossierIcon } from "./DossierIcon"
 import { dossierTypeLabel } from "../dossier-type"
 import { PhoneIdentitiesTab } from "./PhoneIdentitiesTab"
+import { useSwitch } from "@/lib/ui-switches"
+
+// Behind the switch corroborate-v2; lazy so it stays out of the main script budget.
+const OverlapsView = lazy(() => import("@/features/overlap/people/OverlapsView").then((m) => ({ default: m.OverlapsView })))
 
 const TYPES = [
   "person",
@@ -76,10 +80,13 @@ export function DossiersPage() {
   const setOffset = (value: number) =>
     updateFilters({ offset: value ? String(value) : null })
   const selected = searchParams.get("dossier")
+  const overlapsOn = useSwitch("corroborate-v2")
   const tab =
     searchParams.get("tab") === "phone-identities"
       ? "phone-identities"
-      : "dossiers"
+      : searchParams.get("tab") === "overlaps" && overlapsOn
+        ? "overlaps"
+        : "dossiers"
   const [createOpen, setCreateOpen] = useState(false)
   const caseQuery = useCase(caseId)
   const { canEdit } = useCasePermissions(caseQuery.data)
@@ -99,9 +106,9 @@ export function DossiersPage() {
     else next.delete("dossier")
     setSearchParams(next, { replace: true })
   }
-  const setTab = (value: "dossiers" | "phone-identities") => {
+  const setTab = (value: "dossiers" | "phone-identities" | "overlaps") => {
     const next = new URLSearchParams(searchParams)
-    if (value === "phone-identities") next.set("tab", value)
+    if (value !== "dossiers") next.set("tab", value)
     else next.delete("tab")
     setSearchParams(next, { replace: true })
   }
@@ -151,6 +158,7 @@ export function DossiersPage() {
           [
             ["dossiers", "Dossiers"],
             ["phone-identities", "Phone identities"],
+            ...(overlapsOn ? [["overlaps", "Who overlaps with whom"] as const] : []),
           ] as const
         ).map(([value, words]) => (
           <button
@@ -169,7 +177,11 @@ export function DossiersPage() {
           </button>
         ))}
       </nav>
-      {tab === "phone-identities" ? (
+      {tab === "overlaps" ? (
+        <Suspense fallback={null}>
+          <OverlapsView caseId={caseId} />
+        </Suspense>
+      ) : tab === "phone-identities" ? (
         <PhoneIdentitiesTab
           caseId={caseId}
           canEdit={canEdit}
