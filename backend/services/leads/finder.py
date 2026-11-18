@@ -102,7 +102,8 @@ class FinderStore(CaseStore):
                 r = recs[k]
                 if r["phone"] in phones and (r["at"] <= hi or r["kind"] == "payment_alert"):
                     pick.add(k)
-        return [dict(recs[k]) for k in sorted(pick)]
+        # the held records themselves, not copies: every reader of records() only reads them or copies them (dedupe)
+        return [recs[k] for k in sorted(pick)]
 
 
 ALERT_AFTER = timedelta(days=3)   # a payment alert is read up to this long after a window's end (CaseStore.phone_records)
