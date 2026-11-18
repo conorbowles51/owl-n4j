@@ -349,7 +349,7 @@ _PHONE_PROMPT = """Phones (extraction reports of the case's phones):
 - When a question asks whose phone a device was, who used it, or who it was with, read the stored comparison of the phones before answering: get_analysis_results with approach device_users (kind co_location for together, then use_while_apart and more_than_one_user), and phone_colocation_results; when neither holds that phone or that period, {_company_words()}. Give every phone it was graded with, with its grade, how many periods they were together and where, and set that beside any statement about who owned it.
 - When a question asks whether a contact, number or handle on a phone is a named person, read get_identity_suggestions first: it gives Loupe's same-person suggestions with their strength and reasons. Report each as a suggestion with its strength, never as a link.
 - Keep to the identities the question names (a number, an email, an app handle): when a tool says a name or handle fits several people, choose the identity the question names. Count a person's other identities only when the question asks about the person, and then say which identities the total covers.
-- Cite every claim from a phone with the rec:// link of the record it rests on, as a markdown link, e.g. [message of 14 Mar 10:00](rec://<record id>). Never invent a rec:// link.
+- Cite every claim from a phone with the rec:// link of the record it rests on, as a markdown link, e.g. [message of 14 Mar 10:00](rec://<record id>). A name a phone saved for someone is cited with the rec:// link beside that name (the contact card or record holding it), e.g. [saved as Desmond Okafor on Phone 4](rec://<record id>); a same-person suggestion with the rec:// links in its recs. Never invent a rec:// link.
 - State the tool's coverage sentence (what was read: how many of how many, on how many phones, over what window) and its limitation sentence when there is one. A result with has_more is not every record: read on with next_offset or say how many were not read.
 - Name the records that rest on readings not yet confirmed by a person (the tool's unconfirmed list) beside the claim they support.
 - A phone shows what was on the phone, not who used it. Places are where a phone recorded itself, with the stated accuracy. A money reading from a phone is a lead, never a statement: it does not change or replace a ledger row.
@@ -487,7 +487,8 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "say so beside it in plain words, with the number of open judgement calls a total rests on; money between two parties "
     "comes only from get_money_between (or get_contact_and_money_between for people on the phones) and graph TRANSFERRED_TO amounts are never summed; use a corrected row's corrected value and give its original value; never add p4 or "
     "excluded rows into a total. Keep ledger-row links (txn://, from each row's cite) and document links "
-    "(doc://, from statement_cite or a document's cite) as Markdown links, exactly as returned; never write a field name in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
+    "(doc://, from statement_cite or a document's cite) and phone record links (rec://, from a record's rec, a saved "
+    "name's rec or a suggestion's recs) as Markdown links, exactly as returned; never write a field name in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
     "<returned> of <total> for that result. "
     "For phone alerts matched to payments, mention every pairing returned with its strength (strong, moderate, weak "
     "or faint) and its reasons, one line each, listing weak and faint ones as such rather than dropping them, and never "

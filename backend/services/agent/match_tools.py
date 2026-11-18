@@ -148,7 +148,10 @@ def identity_suggestions(db, case_id, *, strength=None, offset=0, limit=DEFAULT_
                                       for i in r["ids"]],
                           person=names.get(r["dossier"]) if r["dossier"] else None,
                           how_well_matched=words["match"], how_substantiated=words["substantiation"],
-                          reasons=[x["reason"] for x in r["reasons"]]))
+                          reasons=[x["reason"] for x in r["reasons"]],
+                          # The cards and records each reason rests on, cited beside the suggestion.
+                          recs=list(dict.fromkeys("rec://%s" % rec for x in r["reasons"]
+                                                  for rec in x.get("records") or []))))
     in_case = counts(items, key="strength")
     if strength:
         items = [x for x in items if x["strength"] == strength]

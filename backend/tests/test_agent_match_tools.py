@@ -46,3 +46,27 @@ def test_the_tools_are_registered_and_the_final_answer_lists_weak_matches_as_wea
     from services.agent.run_record import CATEGORY_BY_TOOL
     assert {n: CATEGORY_BY_TOOL[n] for n in names} == {'get_transfer_pairs': 'ledger', 'get_payment_other_legs': 'ledger',
                                                         'get_identity_suggestions': 'phones'}
+
+
+def test_identity_suggestions_carry_the_records_their_reasons_rest_on():
+    # 'Who is Dee?' (18 Nov) had no citable link from the suggestions: each now carries rec:// of its cards.
+    class Conn:
+        def execute(self, *a, **k):
+            return []
+
+    class Db:
+        def connection(self):
+            return Conn()
+    card = '01bf80b5-cd32-514d-9636-873fb5679180'
+    rows = [{'ids': ['i1', 'i2'], 'dossier': None, 'score': 0.9,
+             'reasons': [{'reason': 'same_card', 'weight': 1, 'records': [card, card], 'record_count': 1,
+                          'phones': ['Phone 4']}, {'reason': 'owner_accounts', 'records': []}]}]
+    with patch('services.phone.identity_decisions.candidate_rows', return_value=rows):
+        out = M.identity_suggestions(Db(), 'case')
+    assert out['items'][0]['recs'] == ['rec://' + card]
+
+
+def test_the_final_answer_keeps_phone_record_links():
+    final = graph._final_answer_system_prompt()
+    assert "phone record links (rec://" in final and "a saved name's rec" in final
+    assert "saved as Desmond Okafor on Phone 4](rec://" in graph._PHONE_PROMPT

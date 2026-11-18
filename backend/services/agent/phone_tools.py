@@ -99,7 +99,8 @@ def _people_hits(conn, case_id, q):
         "SELECT i.identity_id, i.identity_key, i.kind, i.value_display, i.value_normalised FROM pv_identity i "
         "WHERE i.case_id = :c"), {"c": str(case_id)}).fetchall()
     names = {}
-    for n in conn.execute(text("SELECT identity_id, extraction_id, name, is_phone_name FROM pv_identity_name WHERE "
+    for n in conn.execute(text("SELECT identity_id, extraction_id, name, is_phone_name, first_record_uid FROM "
+                               "pv_identity_name WHERE "
                                "case_id = :c ORDER BY extraction_id"), {"c": str(case_id)}):
         names.setdefault(n.identity_id, []).append(n)
 
@@ -137,7 +138,10 @@ def find_people(conn, case_id, query, limit=20) -> dict:
     labels = phone_labels(conn, case_id)
     lim = _limit(limit)
     items = [{"identity_key": r.identity_key, "kind": r.kind, "value": r.value_display,
-              "names": [{"phone": labels.get(str(n.extraction_id)), "name": n.name}
+              # The record the phone holds the name in (its contact card or the message that names them): the
+              # answer cites "saved as ..." with it.
+              "names": [{"phone": labels.get(str(n.extraction_id)), "name": n.name,
+                         "rec": _rec(n.first_record_uid) if n.first_record_uid else None}
                         for n in names.get(r.identity_id, []) if n.is_phone_name],
               "events": counts.get(r.identity_key, 0), "exact": r.identity_key in exact} for r in hits[:lim]]
     return _base("find_people", case_id, total_matching=len(hits), returned=len(items),

@@ -169,3 +169,15 @@ def test_whose_phone_questions_read_the_stored_phone_comparison_first():
     names = set(registered_tool_names())
     assert {"get_analysis_results", "phone_colocation_results", "get_together_apart",
             "get_phone_company"} <= names
+
+
+def test_a_name_a_phone_saved_is_cited_with_the_record_holding_it(world):
+    # 'Who is Dee?' (18 Nov): "saved as Desmond Okafor on Phones 4 and 5" had no link to cite.
+    uid = world["evs"][0]["record_uid"]
+    with world["engine"].begin() as c:
+        c.execute(text("UPDATE phone_identity_names SET first_record_uid = :u WHERE name = 'Maria Lopez'"),
+                  {"u": str(uid)})
+    with _conn(world) as c:
+        out = PT.find_people(c, world["case"], "Maria Lopez")
+    names = out["items"][0]["names"]
+    assert names == [{"phone": names[0]["phone"], "name": "Maria Lopez", "rec": "rec://%s" % uid}]
