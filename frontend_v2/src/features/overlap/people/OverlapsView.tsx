@@ -1,9 +1,10 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { openCorroborate } from "@/features/leads/open"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { cn } from "@/lib/cn"
-import { isRefused, memberOf, openCorroborate, overlapsAPI, type OverlapKind, type OverlapRecord, type Overlaps, type Pair } from "./api"
+import { isRefused, memberOf, overlapsAPI, type OverlapKind, type OverlapRecord, type Overlaps, type Pair } from "./api"
 import { TONE, squareWords } from "./square"
 
 const LEGEND: [string, string][] = [

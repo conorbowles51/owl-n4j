@@ -58,7 +58,7 @@ PHOTO_PLACE = re.compile(r"photo|media|exif", re.I)
 MAX_PEOPLE = 16          # people in the grid, most records first; the rest are counted and named, never dropped silently
 MAX_LISTED = 40          # records listed per kind in a pair's detail; the count is always the full count
 CACHE_SECONDS = 600
-LEVEL_ORDER = ("strong", "probable", "possible", "coincidence", "cant_tell", "no_link_found")
+LEVEL_ORDER = ("strong", "probable", "possible", "cant_tell", "coincidence", "no_link_found")  # the Leads list's order
 
 
 def _short(label: str) -> str:
@@ -555,15 +555,18 @@ def attach_levels(db, case_id, grid: dict) -> dict:
             grid["notes"].append("Leads could not be read, so no pair shows a level.")
     if list_leads is None:
         grid["notes"].append("Levels come from the Leads list, which is not in this release yet.")
+    def keys(lead):
+        return {x.get("key") if isinstance(x, dict) else x for x in lead.get("people") or ()}
     for p in grid["pairs"]:
-        mine = [l for l in leads if {p["a"], p["b"]} <= set(l.get("people") or ())]
+        # the Leads list's own order (strongest first); a lead set aside is listed but never gives the level
+        mine = [l for l in leads if {p["a"], p["b"]} <= keys(l)]
         mine.sort(key=lambda l: LEVEL_ORDER.index((l.get("level") or {}).get("key")) if (l.get("level") or {}).get("key")
                   in LEVEL_ORDER else len(LEVEL_ORDER))
         p["leads"] = [{"id": l["id"], "title": l.get("title"), "level": l.get("level"), "origin": l.get("origin"),
                        "state": l.get("state"), "searched": l.get("searched"), "raises": l.get("raises"),
                        "lowers": l.get("lowers")} for l in mine[:6]]
-        if mine:
-            top = mine[0]
+        top = next((l for l in mine if (l.get("level") or {}).get("key") in LEVEL_ORDER), None)
+        if top:
             p["level"] = top.get("level")
             p["state"] = "no_link" if (top.get("level") or {}).get("key") == "no_link_found" else "weighed"
     return grid

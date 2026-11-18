@@ -204,7 +204,9 @@ def test_the_graph_draws_direct_lines_by_records_and_dashes_a_route_through_a_na
 def test_levels_come_only_from_saved_leads_naming_both(monkeypatch):
     g = _grid()
     assert {p["state"] for p in g["pairs"]} <= {"not_weighed", "nothing"} and not any("level" in p for p in g["pairs"])
-    leads = [{"id": "l1", "people": ["ann", "cat", "bob"], "level": {"key": "possible", "name": "Possible link"}},
+    leads = [{"id": "l0", "people": [{"key": "ann"}, {"key": "cat"}], "level": {"key": "set_aside", "name": "Set aside"}},
+             {"id": "l1", "people": [{"key": "ann", "label": "Ann"}, {"key": "cat"}, {"key": "bob"}],
+              "level": {"key": "possible", "name": "Possible link"}},
              {"id": "l2", "people": ["ann", "cat"], "level": {"key": "strong", "name": "Strong link"}},
              {"id": "l3", "people": ["bob", "hub"], "level": {"key": "no_link_found", "name": "No link found"},
               "searched": ["calls"]}]
@@ -214,7 +216,7 @@ def test_levels_come_only_from_saved_leads_naming_both(monkeypatch):
     monkeypatch.setitem(sys.modules, "services.leads.store", mod)
     out = O.attach_levels(None, "c", g)
     ac = _pair(out, "ann", "cat")
-    assert ac["level"]["key"] == "strong" and [l["id"] for l in ac["leads"]] == ["l2", "l1"]
+    assert ac["level"]["key"] == "strong" and [l["id"] for l in ac["leads"]] == ["l2", "l1", "l0"]
     assert _pair(out, "bob", "hub")["state"] == "no_link"
     assert "level" not in _pair(out, "ann", "hub")
 

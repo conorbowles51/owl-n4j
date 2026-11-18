@@ -1,8 +1,9 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { openCorroborate } from "@/features/leads/open"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { isRefused, memberOf, openCorroborate, overlapsAPI, type GoBetweenPanel, type Overlaps } from "../people/api"
+import { isRefused, memberOf, overlapsAPI, type GoBetweenPanel, type Overlaps } from "../people/api"
 import { H, W, layout, lineWidth } from "./layout"
 
 export function OverlapGraph({ caseId }: { caseId: string }) {

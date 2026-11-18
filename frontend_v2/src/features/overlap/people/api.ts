@@ -131,11 +131,3 @@ export function memberOf(p: OverlapPerson): RelationMember {
   if (p.dossier_id) return { type: "person", id: p.dossier_id, label: p.label }
   return { type: "phone", id: p.key.replace(/^phone:/, ""), label: p.label }
 }
-
-/**
- * Opens lx-leads' Corroborate panel over the page (tabs "Leads already here" and "Ask a new question"). The panel
- * listens for this window event; this is the same event its openCorroborate() sends.
- */
-export function openCorroborate(detail: { caseId: string; screen: string; label: string; members: RelationMember[]; people?: string[] }) {
-  window.dispatchEvent(new CustomEvent("loupe-corroborate-open", { detail }))
-}
