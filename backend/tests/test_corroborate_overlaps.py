@@ -244,3 +244,23 @@ def test_the_route_needs_case_view():
     finally:
         O.cached_build = orig
     assert r.status_code == 200 and called["fresh"] is True
+
+
+def test_same_words_come_from_shared_words_with_deletions_and_files_between_the_two_people():
+    for p in PEOPLE:
+        p["phone_labels"] = {ph: f"Phone {ph[-1]}" for ph in p["phones"]}
+    shared = {"also": [{"text": "bay is clear", "phones": ["phA", "phP"], "messages": 4, "dates": ["a", "b", "c", "d"]},
+                       {"text": "elsewhere", "phones": ["phB", "phC"], "messages": 2, "dates": ["a"]}],
+              "deletions": [{"text": "left it in the truck", "deleted_on": ["Phone A"], "kept_on": ["Phone P"], "at": "x"}],
+              "files_shared": [{"name": "IMG_1.jpg", "phones": ["Phone A", "Phone P"]}]}
+    try:
+        g = O.build(Store(world()), shared)
+    finally:
+        for p in PEOPLE:
+            p.pop("phone_labels", None)
+    s = _pair(g, "ann", "phone:phP")["kinds"]["shared"]
+    assert s["count"] == 3 and s["searched"]
+    assert "“bay is clear” (4 messages on 4 dates)" in s["words"]
+    assert "“left it in the truck” deleted on Phone A, kept on Phone P" in s["words"]
+    assert _pair(g, "ann", "bob")["kinds"]["shared"]["count"] == 0
+    assert not any("not searched" in n for n in g["notes"])

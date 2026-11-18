@@ -340,13 +340,31 @@ def _pair(a, b, everyone, labels, contact, money, access, place, docs, groups, r
 
 
 def _shared_kind(a, b, everyone, shared) -> dict:
+    """lx-overlapviews-b's shared content between two people: uncommon words on both people's phones (stock phrases
+    already set aside there), a message deleted on one person's phone and kept on the other's, the same file on both."""
     if shared is None:
         return {"count": 0, "searched": False, "words": "Not searched yet."}
     pa, pb = set(everyone[a]["phones"]), set(everyone[b]["phones"])
-    hits = [x for x in shared.get("phrases", []) if pa & set(x.get("phones") or ()) and pb & set(x.get("phones") or ())]
-    return {"count": len(hits), "searched": True, "phrases": hits[:12], "words": (
-        "; ".join(f"“{x['text']}”" for x in hits[:3]) + (f" and {len(hits) - 3} more" if len(hits) > 3 else "")
-        + " on both people's phones.") if hits else "No uncommon words on both people's phones."}
+    # shared_words names phones by its own labels ("<name>'s phone"); read them back to the phones
+    by_label = shared.get("phone_of_label") or {}
+    la = {lab for lab, e in by_label.items() if e in pa} | set((everyone[a].get("phone_labels") or {}).values())
+    lb = {lab for lab, e in by_label.items() if e in pb} | set((everyone[b].get("phone_labels") or {}).values())
+    phrases = [x for x in shared.get("also", []) if pa & set(x.get("phones") or ()) and pb & set(x.get("phones") or ())]
+    deleted = [d for d in shared.get("deletions", []) if (set(d["deleted_on"]) & la and set(d["kept_on"]) & lb)
+               or (set(d["deleted_on"]) & lb and set(d["kept_on"]) & la)]
+    files = [f for f in shared.get("files_shared", []) if set(f["phones"]) & la and set(f["phones"]) & lb]
+    bits = []
+    if phrases:
+        bits.append("; ".join(f"“{x['text']}” ({x['messages']:,} message{'' if x['messages'] == 1 else 's'} on "
+                              f"{len(x['dates'])} date{'' if len(x['dates']) == 1 else 's'})" for x in phrases[:3])
+                    + (f" and {len(phrases) - 3} more" if len(phrases) > 3 else "") + " on both people's phones")
+    for d in deleted[:2]:
+        bits.append(f"“{d['text']}” deleted on {', '.join(d['deleted_on'])}, kept on {', '.join(d['kept_on'])}")
+    if files:
+        bits.append(f"{len(files):,} file{'' if len(files) == 1 else 's'} on both people's phones")
+    return {"count": len(phrases) + len(deleted) + len(files), "searched": True, "phrases": phrases[:12],
+            "deletions": deleted[:12], "files": files[:12],
+            "words": ("; ".join(bits) + ".") if bits else "No uncommon words or files on both people's phones."}
 
 
 NARROW_REACH = 3      # a go-between that reaches at most this many people of the case is a narrow route, not a hub
@@ -567,7 +585,7 @@ def cached_build(db, case_id, *, fresh: bool = False) -> dict:
         grid = hit[1]
     else:
         store = CaseStore(db, case_id)
-        grid = build(store, shared_content(db, case_id))
+        grid = build(store, shared_content(store))
         grid["read_at"] = datetime.now(timezone.utc).isoformat()
         with _lock:
             _cache[key] = (time.time(), grid)
@@ -575,10 +593,12 @@ def cached_build(db, case_id, *, fresh: bool = False) -> dict:
     return attach_levels(db, case_id, copy.deepcopy(grid))
 
 
-def shared_content(db, case_id) -> dict | None:
+def shared_content(store) -> dict | None:
     """lx-overlapviews-b's shared words, when that module is in this release; None says "not searched"."""
     try:
         from services.corroborate import shared_words
     except ImportError:
         return None
-    return shared_words.shared_content(db.connection(), case_id)
+    out = shared_words.shared_content(store)
+    out["phone_of_label"] = {label: ext for ext, label in shared_words._labels(store).items()}
+    return out
