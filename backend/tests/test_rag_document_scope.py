@@ -88,7 +88,7 @@ class SignificantScopeTests(unittest.TestCase):
                 patch.object(rag, "embedding_service", Embeddings()), \
                 patch.object(rag, "get_confidence_threshold", lambda: 2.0), \
                 patch.object(rag.RAGService, "_retrieve_entities", lambda self, *a, **k: []), \
-                patch.object(rag.RAGService, "_pin_citations", lambda self, case_id, answer: answer), \
+                patch.object(rag.RAGService, "_pin_citations", lambda self, case_id, answer: (answer, 0)), \
                 patch.object(rag.RAGService, "_build_result_graph", lambda self, **k: {"nodes": [], "links": []}):
             result = service.answer_question("What is the rent for bay 4?", case_id=CASE, llm_context=LLM(),
                                              scope_entity_keys=["kell"])

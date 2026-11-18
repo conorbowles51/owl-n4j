@@ -160,7 +160,7 @@ class AnswerContextTests(unittest.TestCase):
                 patch.object(rag.RAGService, "_retrieve_chunks", lambda self, *a, **k: []), \
                 patch.object(rag.RAGService, "_phone_windows", lambda self, *a, **k: []), \
                 patch.object(rag.RAGService, "_retrieve_entities", lambda self, *a, **k: [dict(e) for e in entities]), \
-                patch.object(rag.RAGService, "_pin_citations", lambda self, case_id, answer: answer), \
+                patch.object(rag.RAGService, "_pin_citations", lambda self, case_id, answer: (answer, 0)), \
                 patch.object(rag.RAGService, "_build_result_graph", lambda self, **k: {"nodes": [], "links": []}):
             service.answer_question("What did Travis Kell pay Lena Marsh?", case_id=CASE, llm_context=LLM())
         context = sent["context"]
