@@ -127,11 +127,9 @@ def shared_content(store) -> dict[str, Any]:
             "also": also, "stock": stock, "deletions": sorted(deletions, key=lambda d: d["at"])}
 
 
-def shared_files(store) -> dict[str, Any]:
-    """Files with the same bytes on two or more phones (on every phone: common files, counted for nothing) and
-    pictures that only look alike (for a person to check, never counted as the same photo). Read apart from the words:
-    on a 14-phone case the picture comparison alone takes minutes. Lists name at most ``LISTED`` items each and give
-    the full counts."""
+def same_files(store, listed: int | None = LISTED) -> dict[str, Any]:
+    """Files with the same bytes on two or more phones: on every phone (when there are three or more) they are common
+    files, counted for nothing; otherwise shared. ``listed`` caps each list (None lists all); the counts are full."""
     labels = _labels(store)
     active = _active_phones(store)
     files_common, files_shared = [], []
@@ -143,9 +141,19 @@ def shared_files(store) -> dict[str, Any]:
             "ORDER BY count(DISTINCT f.extraction_id) DESC, f.md5"):
         kind = "files_common" if len(active) >= 3 and n_phones >= len(active) else "files_shared"
         counts[kind] += 1
-        if counts[kind] <= LISTED:
+        if listed is None or counts[kind] <= listed:
             (files_common if kind == "files_common" else files_shared).append(
                 {"md5": md5, "name": re.split(r"[\\/]", name or "")[-1], "phones": sorted(labels.get(p, "a phone") for p in phones)})
+    return {"files_common": files_common, "files_shared": files_shared, "counts": counts, "phones_in_case": len(active)}
+
+
+def shared_files(store) -> dict[str, Any]:
+    """Same-bytes files (``same_files``) and pictures that only look alike (for a person to check, never counted as
+    the same photo). Read apart from the words: on a 14-phone case the picture comparison alone takes minutes. Lists
+    name at most ``LISTED`` items each and give the full counts."""
+    labels = _labels(store)
+    files = same_files(store)
+    files_common, files_shared, counts, active_n = files["files_common"], files["files_shared"], files["counts"], files["phones_in_case"]
     try:
         from services.phone.media_spread import perceptual_pairs_all
         pairs = perceptual_pairs_all(store.db.connection(), store.case)
@@ -160,7 +168,7 @@ def shared_files(store) -> dict[str, Any]:
         lookalikes, lookalike_note = [], f"The picture comparison could not be read: {exc.__class__.__name__}."
         counts["lookalikes"] = 0
     return {"files_common": files_common, "files_shared": files_shared, "counts": counts, "listed": LISTED,
-            "phones_in_case": len(active), "lookalikes": lookalikes, "lookalike_note": lookalike_note}
+            "phones_in_case": active_n, "lookalikes": lookalikes, "lookalike_note": lookalike_note}
 
 
 def saved_names(store, values: list[str]) -> list[dict]:

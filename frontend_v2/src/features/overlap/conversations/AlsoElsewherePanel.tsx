@@ -32,11 +32,12 @@ function Clipped<T>({ items, render, noun }: { items: T[]; render: (t: T, i: num
 
 /** The case's "Also elsewhere" and "Shown, but counted for nothing" lists (lx-overlapviews-b B, design screen 4). */
 export function AlsoElsewherePanel({ caseId }: { caseId: string }) {
-  const [open, setOpen] = useState(true)
+  // Folded on a narrow screen, and never taller than a quarter of the window, so the messages stay in view.
+  const [open, setOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768)
   const q = useQuery({ queryKey: ["overlap-shared-words", caseId], queryFn: () => overlapAPI.sharedWords(caseId), staleTime: 120_000 })
   const r = q.data
   return (
-    <aside aria-label="Also elsewhere" data-testid="also-elsewhere-panel" className="max-h-[40dvh] overflow-auto border-b bg-card px-3 py-2 text-xs">
+    <aside aria-label="Also elsewhere" data-testid="also-elsewhere-panel" className="max-h-[25dvh] shrink-0 overflow-auto border-b bg-card px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
         <h2 className="text-sm font-semibold">Also elsewhere</h2>
         {r && <span className="text-muted-foreground">{r.also.length} phrases, {r.deletions.length} deleted on one phone and kept on another</span>}
