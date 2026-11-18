@@ -8,6 +8,7 @@ documents' extracted text, and the phones' labels.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from collections import Counter, defaultdict
@@ -346,6 +347,39 @@ class CaseStore:
         windows. ``everyone`` resolves the other end of a record to a person."""
         if not windows:
             return []
+        recs = self.phone_records(people, windows, everyone)
+        accounts = {a: p["key"] for p in everyone for a in p["accounts"]}
+        lo, hi = min(w[0] for w in windows), max(w[1] for w in windows) + M.MONEY_SPREAD
+        names = [n for p in people for n in p["names"] if n]
+        for tid, acc, day, amount, direction, words, desc in self.q(
+                "SELECT id, account_id, COALESCE(transaction_date, posted_date), amount_minor, direction, "
+                "COALESCE(counterparty_raw, '') || ' ' || COALESCE(description, ''), description FROM financial_transactions "
+                "WHERE case_id = :c AND superseded_by_id IS NULL AND COALESCE(transaction_date, posted_date) BETWEEN "
+                ":lo AND :hi", lo=lo.date(), hi=hi.date()):
+            holder = accounts.get(str(acc))
+            if holder not in {p["key"] for p in people} and not any(M.names_match(n, words) for n in names):
+                continue
+            payer, payee = self._payment_parties(holder, direction, words, everyone)
+            cash = "cash deposit" in (desc or "").casefold() and direction == "credit"
+            if cash:
+                payer, payee = holder, None
+            recs.append({"ref": f"financial_transaction:{tid}", "kind": "payment", "at": M.as_utc(day), "day_only": True,
+                         "owner": payer, "parties": [payee] if payee else [], "amount_minor": amount, "body": words.strip(),
+                         "cash_deposit": cash,
+                         "dup_key": ("pay", payer, (payee,) if payee else (), abs(amount or 0), day)})
+        for fid in self.documents_naming(people):
+            for r in self.document_rows(fid):
+                if any(lo_ <= r["at"] <= hi_ for lo_, hi_ in windows):
+                    recs.append({"ref": f"document_row:{fid}:{r['index']}", "kind": "doc_row", "at": r["at"],
+                                 "parties": r["parties"], "body": r["text"], "source": fid,
+                                 "source_label": r["source_label"]})
+        recs.extend(self.dated_documents(people, windows))
+        return recs
+
+    def phone_records(self, people: list[dict], windows: list[tuple[datetime, datetime]],
+                      everyone: list[dict]) -> list[dict]:
+        """The people's phone records in the windows: messages, calls, e-mails, positions and payment alerts (an alert
+        up to three days after a window's end). Every one has a time and a ``phone_record:`` ref."""
         phones = [e for p in people for e in p["phones"]]
         owner = {e: p["key"] for p in everyone for e in p["phones"]}
         recs: list[dict] = []
@@ -401,32 +435,6 @@ class CaseStore:
                                  "body": body, **alert,
                                  "dup_key": ("pay", alert["owner"], tuple(alert["parties"]), abs(alert["amount_minor"]),
                                              at.astimezone(M.tz(self.zone())).date())})
-        accounts = {a: p["key"] for p in everyone for a in p["accounts"]}
-        lo, hi = min(w[0] for w in windows), max(w[1] for w in windows) + M.MONEY_SPREAD
-        names = [n for p in people for n in p["names"] if n]
-        for tid, acc, day, amount, direction, words, desc in self.q(
-                "SELECT id, account_id, COALESCE(transaction_date, posted_date), amount_minor, direction, "
-                "COALESCE(counterparty_raw, '') || ' ' || COALESCE(description, ''), description FROM financial_transactions "
-                "WHERE case_id = :c AND superseded_by_id IS NULL AND COALESCE(transaction_date, posted_date) BETWEEN "
-                ":lo AND :hi", lo=lo.date(), hi=hi.date()):
-            holder = accounts.get(str(acc))
-            if holder not in {p["key"] for p in people} and not any(M.names_match(n, words) for n in names):
-                continue
-            payer, payee = self._payment_parties(holder, direction, words, everyone)
-            cash = "cash deposit" in (desc or "").casefold() and direction == "credit"
-            if cash:
-                payer, payee = holder, None
-            recs.append({"ref": f"financial_transaction:{tid}", "kind": "payment", "at": M.as_utc(day), "day_only": True,
-                         "owner": payer, "parties": [payee] if payee else [], "amount_minor": amount, "body": words.strip(),
-                         "cash_deposit": cash,
-                         "dup_key": ("pay", payer, (payee,) if payee else (), abs(amount or 0), day)})
-        for fid in self.documents_naming(people):
-            for r in self.document_rows(fid):
-                if any(lo_ <= r["at"] <= hi_ for lo_, hi_ in windows):
-                    recs.append({"ref": f"document_row:{fid}:{r['index']}", "kind": "doc_row", "at": r["at"],
-                                 "parties": r["parties"], "body": r["text"], "source": fid,
-                                 "source_label": r["source_label"]})
-        recs.extend(self.dated_documents(people, windows))
         return recs
 
     def activity(self, people: list[dict], windows) -> dict[str, list[datetime]]:
@@ -741,6 +749,12 @@ class CaseStore:
         return facts.list_facts(self.db, self.case)
 
 
+def text_key(words: str) -> str:
+    """A fixed-size stand-in for a text, equal exactly when the texts are equal (128-bit digest). A record's key held
+    a second copy of its whole body: on Phone reference 1 that was half of a 6 GB read (18 Nov)."""
+    return hashlib.blake2b(words.encode("utf-8", "surrogatepass"), digest_size=16).hexdigest()
+
+
 def contact_dup_key(kind, at, body, ends) -> tuple | None:
     """What makes two phone records one contact held on two phones: a message with the same text in the same minute
     between the same people; a call or a message with no text in the same minute between the same two known people
@@ -751,7 +765,7 @@ def contact_dup_key(kind, at, body, ends) -> tuple | None:
     who = frozenset(e for e in ends if e)
     minute = at.replace(second=0, microsecond=0)
     if body:
-        return ("msg", minute, body.strip().casefold(), frozenset(ends))
+        return ("msg", minute, text_key(body.strip().casefold()), frozenset(ends))
     if len(who) >= 2:
         return ("bare", kind, minute, who)
     return None

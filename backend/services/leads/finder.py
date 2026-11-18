@@ -41,13 +41,14 @@ import time
 import uuid
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
+from bisect import bisect_left, bisect_right
 from itertools import combinations
 from typing import Any, Callable
 
 from sqlalchemy import select, text
 
 from services.corroborate import model as M
-from services.corroborate.store import CaseStore
+from services.corroborate.store import CaseStore, text_key
 
 log = logging.getLogger(__name__)
 
@@ -73,8 +74,43 @@ class FinderStore(CaseStore):
             if src == "media_exif" or (app and PHOTO_APPS.search(app)):
                 self.photo_refs.add(f"phone_record:{uid}")
 
+        self._held: dict | None = None
+
     def records(self, people, windows, everyone):
         return photo_places_as_media(super().records(people, windows, everyone), self.photo_refs)
+
+    def hold(self, recs: list[dict], lo: datetime, hi: datetime, everyone: list[dict]) -> None:
+        """Keep the phone records the finder has read for the whole case (``lo`` to ``hi``, everyone's phones), so each
+        weighing reads its windows from them instead of the database. On Phone reference 1 one weighing re-read
+        251,780 records in 339 s (18 Nov); a finder run weighs dozens of leads."""
+        phone = sorted((r for r in recs if r["ref"].startswith("phone_record:")), key=lambda r: r["at"])
+        self._held = {"lo": lo, "hi": hi, "sig": _people_sig(everyone), "recs": phone, "at": [r["at"] for r in phone],
+                      "phones": {e for p in everyone for e in p["phones"]}}
+
+    def phone_records(self, people, windows, everyone):
+        """The held records in the windows, chosen by the same rules as the database read (a payment alert up to three
+        days after a window's end). Anything the held read does not cover goes to the database."""
+        h = self._held
+        phones = {e for p in people for e in p["phones"]}
+        if (h is None or _people_sig(everyone) != h["sig"] or not phones <= h["phones"]
+                or any(lo.tzinfo is None or hi.tzinfo is None or lo < h["lo"] or hi > h["hi"] for lo, hi in windows)):
+            return super().phone_records(people, windows, everyone)
+        pick: set[int] = set()
+        recs, at = h["recs"], h["at"]
+        for lo, hi in windows:
+            for k in range(bisect_left(at, lo), bisect_right(at, hi + ALERT_AFTER)):
+                r = recs[k]
+                if r["phone"] in phones and (r["at"] <= hi or r["kind"] == "payment_alert"):
+                    pick.add(k)
+        return [dict(recs[k]) for k in sorted(pick)]
+
+
+ALERT_AFTER = timedelta(days=3)   # a payment alert is read up to this long after a window's end (CaseStore.phone_records)
+
+
+def _people_sig(everyone: list[dict]) -> tuple:
+    return tuple((p["key"], tuple(p["phones"]), tuple(sorted(p.get("numbers") or ())), tuple(sorted(p.get("handles") or ())),
+                  tuple(sorted(p.get("emails") or ())), tuple(p.get("names") or ())) for p in everyone)
 
 
 def photo_places_as_media(recs: list[dict], photo_refs: set[str]) -> list[dict]:
@@ -99,6 +135,8 @@ class Case:
             lo = datetime.combine(period[0], datetime.min.time(), timezone.utc) - timedelta(days=1)
             hi = datetime.combine(period[1], datetime.min.time(), timezone.utc) + timedelta(days=2)
             raw = store.records(list(self.people.values()), [(lo, hi)], list(self.people.values()))
+            if hasattr(store, "hold"):
+                store.hold(raw, lo, hi, list(self.people.values()))
         else:
             raw = []
         self.recs = [r for r in raw if r.get("at")]
@@ -110,7 +148,7 @@ class Case:
         self.body_copies: Counter = Counter()
         for r in self.recs:
             if r["kind"] in M.CONTACT_KINDS and r.get("body"):
-                b = _norm(r["body"])
+                b = _body_key(r["body"])
                 self.body_phones[b].add(r["phone"])
                 self.body_copies[b] += 1
 
@@ -126,6 +164,11 @@ class Case:
 
 def _norm(body: str) -> str:
     return " ".join(str(body or "").split()).casefold()
+
+
+def _body_key(body: str) -> str:
+    """``_norm(body)`` as a fixed-size key: the case-wide counts keep no third copy of every body."""
+    return text_key(_norm(body))
 
 
 def _member(ref: str) -> dict:
@@ -203,6 +246,38 @@ def _near(x, y) -> bool:
     return d <= (x["place"].get("radius_m") or 0) + (y["place"].get("radius_m") or 0) + M.TOGETHER_SLACK_M
 
 
+def _near_pairs(rs: list[dict]):
+    """The pairs of ``combinations(rs, 2)``, in its order, that can be near (``_near``) and belong to two owners: only
+    positions in the same or a neighbouring grid cell are paired. A cell is at least the farthest two positions can be apart and still be near,
+    so no near pair is left out. On Phone reference 1 every pair of a night's positions took 171 s (18 Nov)."""
+    from math import cos, pi, radians
+    if len(rs) < 2:
+        return
+    reach = 2 * max((r["place"].get("radius_m") or 0) for r in rs) + M.TOGETHER_SLACK_M
+    lats = [r["place"]["lat"] for r in rs]
+    c = min(cos(radians(la)) for la in lats)
+    if c < 0.05 or any(abs(r["place"]["lon"]) > 179 for r in rs):
+        yield from combinations(rs, 2)  # near a pole or the date line: every pair, as before
+        return
+    # haversine: d >= R |dlat| and d >= (2/pi) R c |dlon| (c the smallest cos(lat)), so a cell this size holds any
+    # pair within ``reach`` in the same or the next cell
+    earth = 6_371_000
+    dlat = reach / earth * 180 / pi
+    dlon = reach / ((2 / pi) * earth * c) * 180 / pi
+    cells: dict[tuple[int, int], list[int]] = defaultdict(list)
+    where = []
+    for i, r in enumerate(rs):
+        k = (int(r["place"]["lat"] // dlat), int(r["place"]["lon"] // dlon))
+        cells[k].append(i)
+        where.append(k)
+    for i, (a, b) in enumerate(where):
+        own = rs[i]["owner"]
+        js = sorted(j for da in (-1, 0, 1) for db in (-1, 0, 1) for j in cells.get((a + da, b + db), ())
+                    if j > i and rs[j]["owner"] != own)
+        for j in js:
+            yield rs[i], rs[j]
+
+
 def places(case: Case) -> list[dict]:
     """Phones of different people in the same place (the engine's distance rule) on the same night. Repeated on
     MIN_REPEAT nights: one lead per place with everyone there. Once, with the two within TOGETHER_GAP: one lead per
@@ -214,7 +289,7 @@ def places(case: Case) -> list[dict]:
     # anchor places: one representative point per ~200 m cell
     groups: dict[tuple, dict] = {}
     for night, rs in by_night.items():
-        for x, y in combinations(rs, 2):
+        for x, y in _near_pairs(rs):
             if x["owner"] == y["owner"] or not _near(x, y):
                 continue
             cell = (round(x["place"]["lat"] / 0.002), round(x["place"]["lon"] / 0.002))
@@ -447,11 +522,11 @@ def deletions(case: Case) -> list[dict]:
     kept = defaultdict(list)
     for r in case.recs:
         if r["kind"] in M.CONTACT_KINDS and r.get("body") and not r.get("deleted"):
-            kept[(_norm(r["body"]), r["at"].replace(second=0, microsecond=0))].append(r)
+            kept[(_body_key(r["body"]), r["at"].replace(second=0, microsecond=0))].append(r)
     for r in case.recs:
         if r["kind"] not in M.CONTACT_KINDS or not r.get("deleted") or not r.get("body"):
             continue
-        b = _norm(r["body"])
+        b = _body_key(r["body"])
         if case.body_copies[b] > RARE_COPIES:
             continue
         copies = [x for x in kept.get((b, r["at"].replace(second=0, microsecond=0)), []) if x["phone"] != r["phone"]]

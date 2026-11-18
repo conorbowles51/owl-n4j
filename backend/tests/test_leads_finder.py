@@ -39,8 +39,8 @@ def case(recs):
     c.body_phones, c.body_copies = defaultdict(set), Counter()
     for r in recs:
         if r.get("body"):
-            c.body_phones[F._norm(r["body"])].add(r["phone"])
-            c.body_copies[F._norm(r["body"])] += 1
+            c.body_phones[F._body_key(r["body"])].add(r["phone"])
+            c.body_copies[F._body_key(r["body"])] += 1
     return c
 
 
@@ -194,3 +194,78 @@ def test_payments_the_alerts_show_and_the_bank_rows_do_not_are_cant_tell_with_wh
     assert lv["key"] == "cant_tell" and lv["sentence"].startswith("Can't tell: too little data. Missing: Ann's bank rows")
     c.people = PEOPLE  # a payer with no account in the case: nothing is missing from a statement
     assert F.statement_gaps(c, ledger_months={}) == []
+
+
+# ---- speed on a large case (followups 18 Nov: a dry run on Phone reference 1 ran 50 minutes without finishing) ----
+
+def test_near_pairs_are_the_near_pairs_of_every_pair_in_the_same_order():
+    import random
+    from itertools import combinations
+    rnd = random.Random(7)
+    for lat0 in (0.0, 39.3, 64.1):
+        rs = [{"ref": f"p{i}", "owner": rnd.choice("abc"),
+               "place": {"lat": lat0 + rnd.uniform(-0.2, 0.2), "lon": -76.6 + rnd.uniform(-0.3, 0.3),
+                         "radius_m": rnd.choice([5, 50, 400, 2000, None])}} for i in range(400)]
+        old = [(x["ref"], y["ref"]) for x, y in combinations(rs, 2) if x["owner"] != y["owner"] and F._near(x, y)]
+        new = [(x["ref"], y["ref"]) for x, y in F._near_pairs(rs) if x["owner"] != y["owner"] and F._near(x, y)]
+        assert old and new == old
+
+
+class _Held(F.FinderStore):
+    """A FinderStore without a database: its database read is the same rules applied to a list."""
+    def __init__(self, recs):
+        self.photo_refs, self._held, self.reads, self.all = set(), None, 0, recs
+
+    def phone_records(self, people, windows, everyone):
+        return super().phone_records(people, windows, everyone)
+
+
+def _db_read(store, people, windows):
+    store.reads += 1
+    phones = {e for p in people for e in p["phones"]}
+    out = []
+    for r in store.all:
+        hi_extra = timedelta(days=3) if r["kind"] == "payment_alert" else timedelta(0)
+        if r["phone"] in phones and any(lo <= r["at"] <= hi + hi_extra for lo, hi in windows):
+            out.append(dict(r))
+    return out
+
+
+def test_held_records_answer_a_weighing_as_the_database_does(monkeypatch):
+    import random
+    rnd = random.Random(3)
+    t0 = at(NIGHTS[0], 0)
+    kinds = ["message", "call", "position", "payment_alert"]
+    recs = [{"ref": f"phone_record:{i}", "kind": rnd.choice(kinds), "at": t0 + timedelta(minutes=rnd.randint(0, 60 * 24 * 40)),
+             "phone": rnd.choice(["pha", "phb", "phh"]), "owner": "a"} for i in range(3000)]
+    st = _Held(recs)
+    monkeypatch.setattr(F.CaseStore, "phone_records", lambda self, p, w, e: _db_read(self, p, w))
+    everyone = list(PEOPLE.values())
+    st.hold(recs, t0 - timedelta(days=1), t0 + timedelta(days=42), everyone)
+    for _ in range(30):
+        people = rnd.sample(everyone, rnd.randint(1, 3))
+        windows = []
+        for _ in range(rnd.randint(1, 6)):
+            lo = t0 + timedelta(hours=rnd.randint(0, 24 * 38))
+            windows.append((lo, lo + timedelta(hours=rnd.randint(1, 30))))
+        reads = st.reads
+        got = sorted(r["ref"] for r in st.phone_records(people, windows, everyone))
+        assert st.reads == reads, "a window inside the held read went to the database"
+        assert got == sorted(r["ref"] for r in _db_read(st, people, windows))
+    # a window outside the held read, or other people, goes to the database
+    reads = st.reads
+    st.phone_records(everyone, [(t0 - timedelta(days=5), t0)], everyone)
+    st.phone_records(everyone, [(t0, t0 + timedelta(hours=1))], everyone[:2])
+    assert st.reads == reads + 2
+
+
+def test_a_records_key_holds_no_copy_of_its_text():
+    """Phone reference 1: the key held the whole body a second time (half of a 6 GB read). Same words still fold."""
+    import sys
+    from services.corroborate.store import contact_dup_key
+    when = at(NIGHTS[0], 21)
+    body = "Long e-mail text. " * 800
+    key = contact_dup_key("email", when, body, ["a", "b"])
+    assert sum(sys.getsizeof(x) for x in key) < 1000
+    assert key == contact_dup_key("email", when.replace(second=30), "  " + body.upper() + " ", ["b", "a"])
+    assert key != contact_dup_key("email", when, body + "!", ["a", "b"])
