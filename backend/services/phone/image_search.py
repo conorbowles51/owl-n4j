@@ -62,10 +62,16 @@ NO_MODEL = "The image search model is not installed on this server. Nothing was 
 NO_PROGRAM = "The image search program is not installed on this server. Nothing was sent anywhere."
 POINTER_WORDS = "a result points to an image, it does not describe it."
 
-# Approach 8's population (05 11.3 step 1), one statement in media_spread: carried by a message (``c`` is
-# media._CARRIED: resolved, unambiguous attachment links), in a camera or screenshot folder, or EXIF names a camera
+# Approach 8's population (05 11.3 step 1), one statement in media_spread: carried by a message (a resolved,
+# unambiguous attachment link, the rows of media._CARRIED), in a camera or screenshot folder, or EXIF names a camera.
+# "Carried" is a set test the database builds once per statement (a hashed subplan). Until 18 Nov it was a LEFT JOIN
+# of media._CARRIED, which also times every carrying message; on 88e01b57 the planner took that join as a nested loop
+# over the materialised aggregate and the sweep's waiting-pictures query ran for hours, three copies at once.
 CAMERA_DIRS, CAMERA_RE, EXIF_CAMERA_ITEMS = S.CAMERA_DIRS, S.CAMERA_RE, S.EXIF_CAMERA_ITEMS
-POPULATION_SQL = "(c.file_uid IS NOT NULL OR %s OR %s)" % (S.CAMERA_PATH_SQL, S.EXIF_CAMERA_SQL)
+CARRIED_SQL = ("EXISTS (SELECT 1 FROM pv_attachment_link l JOIN phone_record_summaries s ON s.record_uid = "
+               "l.record_uid WHERE l.file_uid = f.file_uid AND l.case_id = :c AND l.resolved AND NOT "
+               "coalesce(l.ambiguous, false))")
+POPULATION_SQL = "(%s OR %s OR %s)" % (CARRIED_SQL, S.CAMERA_PATH_SQL, S.EXIF_CAMERA_SQL)
 IMAGE_SQL = "coalesce(f.category, '') = 'Image'"
 PRESENT_SQL = "(f.disk_relpath IS NOT NULL AND coalesce(f.verification, '') <> 'missing')"
 # "unreadable" is no longer given: until 3 Nov it also covered a picture the model failed on after the library had
@@ -155,9 +161,7 @@ def label(ident: dict) -> str:
 # ---- the population and its counts ----------------------------------------------------------------------------------
 
 def _base() -> str:
-    from services.phone import media
-    return ("FROM pv_file f JOIN phone_files pf ON pf.file_uid = f.file_uid LEFT JOIN (%s) c ON c.file_uid = "
-            "f.file_uid WHERE f.case_id = :c" % media._CARRIED)
+    return "FROM pv_file f JOIN phone_files pf ON pf.file_uid = f.file_uid WHERE f.case_id = :c"
 
 
 def _params(case_id, **extra) -> dict:

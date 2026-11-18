@@ -156,6 +156,28 @@ def test_11_8_4_recompressed_copy_is_near_identical_not_exact(world):
     assert solo["case_phones"] == 1 and solo["waiting"] == 0 and solo["not_hashed_words"]
 
 
+def test_waiting_pictures_query_needs_no_message_times():
+    """18 Nov: the sweep's waiting-pictures query joined media._CARRIED (every carried file's first message time and
+    message count); on 88e01b57 the planner ran that join as a nested loop and each copy ran for hours. Being carried
+    is a set test now."""
+    sql = PH._eligible_sql().lower()
+    assert "group by" not in sql and "phone_comm_events" not in sql
+
+
+def test_a_slow_waiting_pictures_query_is_stopped_and_the_case_rests(world, monkeypatch):
+    """Postgres goes on running a query after the sweep that sent it restarts; without a limit the copies stack (18
+    Nov: three at once). A query over the limit is stopped, the turn goes on, and the case is looked at later."""
+    import time
+    monkeypatch.setattr(PH, "ELIGIBLE_TIMEOUT_MS", 300, raising=False)
+    monkeypatch.setattr(PH, "_eligible_sql", lambda: (
+        "SELECT f.* FROM (SELECT NULL::uuid AS file_uid, NULL::uuid AS case_id, NULL::uuid AS extraction_id "
+        "FROM pg_sleep(3)) f WHERE CAST(:c AS text) <> ''"))
+    t0 = time.monotonic()
+    assert PH.run_pending(world.engine) == []
+    assert time.monotonic() - t0 < 2.5
+    assert str(world.case) in {str(k) for k in PH._idle_until}
+
+
 def test_grading_rule():
     from services.phone import media_spread as S
     assert [S._level_of(d, False) for d in (0, 2, 3, 4, 5, 6, 7, 10)] == [

@@ -28,6 +28,7 @@ import time
 
 import numpy as np
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,11 @@ RETRY_REASONS = ("read_error",)
 # a case found with nothing waiting is looked at again after this long (new phones and files arrive by interpretation)
 RESCAN_SECONDS = 600
 _idle_until: dict = {}
+# The longest one case's waiting-pictures query may run inside the sweep. Postgres goes on running a query after the
+# sweep that sent it restarts, so without a limit a slow plan stacks: 18 Nov, three copies for 88e01b57 at once
+# (1 h 46 m, 53 m, 18 m, about 85 % of a CPU each). A case whose query is stopped is looked at again after
+# RESCAN_SECONDS.
+ELIGIBLE_TIMEOUT_MS = 300_000
 REASON_WORDS = {
     "not_in_production": "The file is not in the production.",
     "too_large": "The file is larger than 40 MB, so it is not decoded here.",
@@ -190,8 +196,18 @@ def run_pending(engine, limit=BATCH) -> list:
         for case in cases_to_hash(c):
             if _idle_until.get(case, 0) > now:
                 continue  # found complete a moment ago: looked at again after RESCAN_SECONDS
-            got = c.execute(text(_eligible_sql() + " ORDER BY f.extraction_id, f.file_uid LIMIT :l"),
-                            _params(c=case, l=limit - len(todo))).fetchall()
+            try:
+                with engine.connect() as q, q.begin():
+                    q.execute(text("SET LOCAL statement_timeout = %d" % int(ELIGIBLE_TIMEOUT_MS)))
+                    got = q.execute(text(_eligible_sql() + " ORDER BY f.extraction_id, f.file_uid LIMIT :l"),
+                                    _params(c=case, l=limit - len(todo))).fetchall()
+            except OperationalError as e:
+                if getattr(getattr(e, "orig", None), "sqlstate", None) != "57014":  # query_canceled
+                    raise
+                log.warning("perceptual hash: waiting pictures of case %s took over %d ms; looked at again in %d s",
+                            case, ELIGIBLE_TIMEOUT_MS, RESCAN_SECONDS)
+                _idle_until[case] = now + RESCAN_SECONDS
+                continue
             if not got:
                 _idle_until[case] = now + RESCAN_SECONDS
             todo += got
