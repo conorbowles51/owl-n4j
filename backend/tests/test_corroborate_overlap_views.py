@@ -257,6 +257,14 @@ def test_checks_are_one_column_with_their_numbers_and_total():
     assert col["total_minor"] == 900003 and col["usual_day"] == 7
 
 
+def test_a_payment_on_an_events_last_day_is_not_counted_again_in_every_other_week():
+    """A check paid seven days after each event lies on the first day of the next Friday's week too; it belongs to the
+    event's row and must not also make "every other week" read as having the same payments."""
+    r = AE.around_events(money_world(), [{"date": d.isoformat()} for d in NIGHTS])
+    col = next(c for c in r["columns"] if c["kind"] == "check")
+    assert r["other_weeks"]["weeks"] >= 1 and col["other_weeks_found"] == 0 and col["ordinary"] is False
+
+
 def test_money_as_common_in_ordinary_weeks_is_folded_with_its_count_not_dropped():
     r = AE.around_events(money_world(), [{"date": d.isoformat()} for d in NIGHTS])
     col = next(c for c in r["columns"] if c["payer"] == "Ann Arden" and c["payee"] is None)

@@ -185,10 +185,18 @@ def _other_weeks(store, evs, patterns, columns, zone) -> dict:
         d += timedelta(days=7)
     pays = _payments(store, weeks) if weeks else []
     counts = {c["id"]: [] for c in columns}
+    seen: set[str] = set()
     for r in pays:
         day = _local_day(r, zone)
         if not any(w <= day <= w + SPAN for w in weeks):
             continue
+        # a payment inside an event's week is in that event's row; the day a week touches is never counted twice
+        if any(a <= day <= b for a, b in taken):
+            continue
+        ref = ",".join(sorted(r.get("copies") or [])) or str(id(r))
+        if ref in seen:
+            continue
+        seen.add(ref)
         key = (r.get("owner"), (r.get("parties") or [None])[0], kind_of(r))
         for c, p in zip(columns, patterns):
             if p["key"] == key:
