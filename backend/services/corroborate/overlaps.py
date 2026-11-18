@@ -565,9 +565,14 @@ def attach_levels(db, case_id, grid: dict) -> dict:
         grid["notes"].append("Levels come from the Leads list, which is not in this release yet.")
     def keys(lead):
         return {x.get("key") if isinstance(x, dict) else x for x in lead.get("people") or ()}
+    def focal_ok(lead, p):
+        # "Mateo Ruiz: no link found" names everyone it searched against, but it is a finding about Ruiz alone: it says
+        # nothing of Marsh and Cole. A lead with one person in focus speaks only for pairs that include that person.
+        focal = (lead.get("detail") or {}).get("person") or ((lead.get("question") or {}).get("chips") or {}).get("person")
+        return not focal or focal in (p["a"], p["b"])
     for p in grid["pairs"]:
         # the Leads list's own order (strongest first); a lead set aside is listed but never gives the level
-        mine = [l for l in leads if {p["a"], p["b"]} <= keys(l)]
+        mine = [l for l in leads if {p["a"], p["b"]} <= keys(l) and focal_ok(l, p)]
         mine.sort(key=lambda l: LEVEL_ORDER.index((l.get("level") or {}).get("key")) if (l.get("level") or {}).get("key")
                   in LEVEL_ORDER else len(LEVEL_ORDER))
         p["leads"] = [{"id": l["id"], "title": l.get("title"), "level": l.get("level"), "origin": l.get("origin"),

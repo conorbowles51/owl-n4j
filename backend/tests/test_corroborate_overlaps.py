@@ -244,6 +244,22 @@ def test_a_group_lead_gives_no_level_to_a_pair_with_nothing_between_them(monkeyp
         assert "g" in [l["id"] for l in p["leads"]]  # the group lead stays listed
 
 
+def test_a_no_link_lead_about_one_person_speaks_only_for_pairs_with_that_person(monkeypatch):
+    # demo case 18 Nov: "Mateo Ruiz: no link found" names all 7 people and made Marsh-Cole read "No link found"
+    g = _grid()
+    a, b = g["pairs"][0]["a"], g["pairs"][0]["b"]
+    other = next(x for q in g["pairs"] for x in (q["a"], q["b"]) if x not in (a, b))
+    lead = {"id": "n", "people": [other, a, b], "level": {"key": "no_link_found", "name": "No link found"},
+            "searched": ["calls"], "detail": {"family": "nolink", "person": other}}
+    mod = types.ModuleType("services.leads.store")
+    mod.list_leads = lambda db, case_id, **kw: [lead]
+    monkeypatch.setitem(sys.modules, "services.leads", types.ModuleType("services.leads"))
+    monkeypatch.setitem(sys.modules, "services.leads.store", mod)
+    out = O.attach_levels(None, "c", g)
+    assert "level" not in _pair(out, a, b) and not _pair(out, a, b)["leads"]
+    assert _pair(out, other, a)["state"] == "no_link"
+
+
 def test_a_pair_with_nothing_says_so_and_what_was_searched():
     g = _grid()
     p = _pair(g, "bob", "hub")
