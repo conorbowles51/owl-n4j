@@ -286,6 +286,11 @@ def dedupe(records: Iterable[dict]) -> tuple[list[dict], int]:
             folded += 1
         else:
             kept[key] = {**r, "copies": [r["ref"]]}
+        # whose phone deleted its copy and whose kept it (a deletion another phone kept is a signal, lx-leads D)
+        if r.get("owner"):
+            side = "deleted_by" if r.get("deleted") else "kept_by"
+            if r["owner"] not in kept[key].setdefault(side, []):
+                kept[key][side].append(r["owner"])
     return list(kept.values()), folded
 
 

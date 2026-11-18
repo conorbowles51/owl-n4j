@@ -221,6 +221,32 @@ def access_rows(people: dict, recs: list[dict], instances: list[dict], cov: dict
     return rows
 
 
+def deletion_rows(people: dict, recs: list[dict], instances: list[dict]) -> list[dict]:
+    """A message or call one person's phone deleted while another person's phone kept its copy (the copies folded by
+    ``model.dedupe``), inside the instance: one row per pair, since the deletion is between the two of them.
+    Deleting is an act, so it is compared with the ordinary days like any other signal, and kept apart from how
+    often the two are in contact."""
+    rows = []
+    for p in sorted(people):
+        for q in sorted(people):
+            if q == p:
+                continue
+            mine = [r for r in recs if r["kind"] in M.CONTACT_KINDS and p in (r.get("deleted_by") or ())
+                    and q in (r.get("kept_by") or ())]
+            if not mine:
+                continue
+            row = _row(f"deleted:{p}:{q}", "absence",
+                       f"{_label(people, p)}'s phone deleted a message {_label(people, q)}'s phone kept", (p, q),
+                       instances)
+            by_inst = bucket(mine, instances)
+            for inst in instances:
+                hits = sorted(by_inst[inst["id"]], key=lambda r: r["at"])
+                _set(row, inst, bool(hits), [x for r in hits for x in r.get("copies") or [r["ref"]]],
+                     hits[0]["at"] if hits else None)
+            rows.append(row)
+    return rows
+
+
 def absence_rows(people: dict, activity: dict, instances: list[dict], cov: dict) -> list[dict]:
     """A phone with nothing at all (no message, call, position, network or app record) for SILENCE_MIN or longer
     inside the hours asked about, while it holds records before and after them. ``activity`` is

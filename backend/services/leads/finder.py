@@ -467,6 +467,64 @@ def deletions(case: Case) -> list[dict]:
     return out
 
 
+GAP_MATCH_DAYS = 3  # a bank row within this many days of an alert, same payer and amount, is the same payment
+
+
+def statement_gaps(case: Case, ledger_months: dict[str, set[str]] | None = None) -> list[dict]:
+    """Payments the phones' alerts show and the payer's bank rows do not, for an amount the payer's bank rows do
+    confirm in other months: part of a statement (the month holds other rows) or all of it is missing. Nothing is
+    weighed on such a payment until the rows arrive, so the lead is Can't tell. ``ledger_months`` is
+    ``{person key: {"YYYY-MM", ...}}``, the months each payer's accounts hold any row (read from the store)."""
+    alerts, rows = {}, defaultdict(list)
+    for r in case.recs:
+        if r["kind"] == "payment_alert" and r.get("owner") and r.get("amount_minor"):
+            alerts.setdefault(r.get("dup_key") or r["ref"], []).append(r)
+        elif r["kind"] == "payment" and r.get("owner"):
+            rows[r["owner"]].append(r)
+    found, matched = defaultdict(list), set()
+    for copies in alerts.values():
+        a = copies[0]
+        payer, amt = a["owner"], abs(a["amount_minor"])
+        day = case.local(a["at"]).date()
+        hit = any(abs(x.get("amount_minor") or 0) == amt and abs((x["at"].date() - day).days) <= GAP_MATCH_DAYS
+                  for x in rows[payer])
+        if hit:
+            matched.add((payer, amt, f"{day:%Y-%m}"))
+        elif (case.people.get(payer) or {}).get("accounts"):
+            found[(payer, f"{day:%Y-%m}")].append(copies)
+    if ledger_months is None:
+        ledger_months = {}
+        for payer in {p for p, _ in found}:
+            got = case.store.ledger_months([case.people[payer]]) if case.store is not None else {}
+            ledger_months[payer] = {m for ms in got.values() for m in ms}
+    out = []
+    for (payer, month), groups in found.items():
+        # only amounts the payer's bank rows confirm in another month: those rows are known to reach the ledger
+        groups = [g for g in groups if any(p == payer and a == abs(g[0]["amount_minor"]) and m != month
+                                           for p, a, m in matched)]
+        if not groups:
+            continue
+        amounts = {abs(g[0]["amount_minor"]) for g in groups}
+        days = sorted({case.local(g[0]["at"]).date() for g in groups})
+        holders = sorted({c.get("phone_owner") or c.get("owner") for g in groups for c in g} - {None})
+        mon = datetime.strptime(month, "%Y-%m").strftime("%B")
+        amount_words = " and ".join(M.fmt_money(a) for a in sorted(amounts))
+        title = (f"{mon} payments: the alerts show {amount_words} from {case.label(payer)} on "
+                 f"{_days_words(days)}, but the bank rows are missing")
+        part = month in ledger_months.get(payer, set())
+        missing = [{"missing": f"{case.label(payer)}'s bank rows for {_days_words(days)}",
+                    "words": (f"{case.label(payer)}'s {mon} statement holds other rows, but none for these "
+                              if part else f"{case.label(payer)}'s {mon} statement is not in the case, so nothing "
+                              "confirms these ") +
+                             f"{len(groups)} payments, which the alerts show and the bank rows confirm in other "
+                             "months. " + ("Part of the statement is missing" if part else "Ask for the statement") +
+                             ": it would settle these payments."}]
+        out.append({"key": f"gap:{payer}:{month}", "title": title, "summary": missing[0]["words"],
+                    "refs": [c["ref"] for g in groups for c in g], "kinds": ["money"], "people": [payer],
+                    "missing": missing, "days": [d.isoformat() for d in days]})
+    return out
+
+
 def set_aside_names(case: Case) -> list[dict]:
     """A name saved on a phone, or in the ledger, that shares a name with a person but is another number."""
     out = []
@@ -569,7 +627,7 @@ def find(db, case_id, *, user=None, progress: Callable[[str], None] | None = Non
          runner: Callable | None = None) -> dict[str, Any]:
     """Run every detector, weigh every candidate, save every lead. Returns counts and seconds."""
     from services import case_selections
-    from services.corroborate import engine
+    from services.corroborate import engine, levels
     from services.leads import store as leads
     step = progress or (lambda *_: None)
     started = time.time()
@@ -656,6 +714,23 @@ def find(db, case_id, *, user=None, progress: Callable[[str], None] | None = Non
         saved.append(lead)
         keys_seen.add(a["key"])
         by_level["set_aside"] += 1
+    for g in statement_gaps(case):
+        members = [_member(r) for r in g["refs"]][:case_selections.MAX_MEMBERS]
+        sel = _selection(db, case_id, members, {"key": g["key"]}, user)
+        if sel is None:
+            by_level["not_saved"] += 1
+            continue
+        level = levels.records_missing(g["missing"])
+        # nothing is weighed: the result only names who and when, for the lists that filter by them
+        shape = {"people": [{"key": k, "label": case.label(k)} for k in g["people"]],
+                 "comparison": {"incident": [{"start": d, "end": d} for d in g["days"]]}}
+        lead = leads.save(db, case_id, origin="found_by_loupe", selection_id=sel, result=shape, members=members,
+                          title=g["title"], summary=g["summary"], finder_key=g["key"], kinds=g["kinds"], level=level,
+                          raises=[], lowers=[m["words"] for m in g["missing"]], user=user,
+                          detail={"family": "gap", "order": 90, "days": g["days"], "people": g["people"]})
+        saved.append(lead)
+        keys_seen.add(g["key"])
+        by_level["cant_tell"] += 1
     gone = _withdraw_stale(db, case_id, keys_seen)
     return {"candidates": len(cands), "saved": len(saved), "by_level": dict(by_level), "key_nights": len(keys), "key_night_dates": [n.isoformat() for n in sorted(keys)],
             "stated_dates": sorted({d.isoformat() for d in stated}),

@@ -147,3 +147,50 @@ def test_cash_just_under_the_threshold_is_weighed_against_the_key_nights_it_foll
     assert "each within 4 days after a key night" in found[0]["title"]
     late = [dict(r, at=r["at"] + timedelta(days=2)) for r in deposits]  # 5 days after each night
     assert not any(r.startswith("k") for r in F.cash_splits(case(late), keys)[0]["refs"])
+
+
+def test_a_deletion_another_phone_kept_is_a_signal_compared_with_ordinary_days():
+    from datetime import time as dtime
+    from services.corroborate import signals as S
+    zone = M.tz("UTC")
+    days = [date(2025, 6, 1) + timedelta(days=n) for n in range(6)]
+    inst = [M.make_instance(d, dtime(18), timedelta(hours=8), zone, "incident" if n == 0 else "ordinary", "UTC")
+            for n, d in enumerate(days)]
+
+    def copy(ref, owner, deleted, when, key):
+        return {**msg(ref, owner, "b" if owner == "a" else "a", when, body="left it in the truck", deleted=deleted),
+                "dup_key": key}
+    recs, _ = M.dedupe([copy("a1", "a", True, at(days[0], 20), "k1"), copy("b1", "b", False, at(days[0], 20), "k1"),
+                        copy("a2", "a", False, at(days[2], 20), "k2"), copy("b2", "b", False, at(days[2], 20), "k2")])
+    assert len(recs) == 2  # each message held on both phones still counts once
+    rows = S.deletion_rows(PEOPLE, recs, inst)
+    assert [r["id"] for r in rows] == ["deleted:a:b"]  # Bob kept his copy; Ann's phone deleted hers
+    assert rows[0]["people"] == ["a", "b"]  # a deletion is between the two, so one instance can weigh it
+    assert rows[0]["link_kind"] == "absence" and {k for k, v in rows[0]["cells"].items() if v == "present"} == {days[0].isoformat()}
+    assert sorted(rows[0]["records"][days[0].isoformat()]) == ["a1", "b1"]
+    json.dumps([{k: r[k] for k in ("deleted_by", "kept_by") if k in r} for r in recs])  # plain lists, never sets
+
+
+def test_payments_the_alerts_show_and_the_bank_rows_do_not_are_cant_tell_with_what_is_missing():
+    from services.corroborate import levels
+
+    def pay(ref, kind, d, amount=50000):
+        return {"ref": ref, "kind": kind, "at": at(d, 9), "owner": "a", "parties": ["b"], "amount_minor": amount,
+                "dup_key": ("pay", "a", ("b",), amount, d)}
+    march, may = date(2025, 3, 8), date(2025, 5, 3)
+    recs = [pay("t1", "payment", march), pay("al1", "payment_alert", march),   # March: the bank row confirms it
+            pay("al2", "payment_alert", may), pay("al3", "payment_alert", may + timedelta(days=14)),
+            pay("al4", "payment_alert", may, amount=990000)]                  # never confirmed anywhere: left out
+    c = case(recs)
+    c.people = {**PEOPLE, "a": {**PEOPLE["a"], "accounts": ["acc1"]}}
+    found = F.statement_gaps(c, ledger_months={"a": {"2025-03", "2025-05"}})
+    assert [g["key"] for g in found] == ["gap:a:2025-05"]
+    assert found[0]["refs"] == ["al2", "al3"] and found[0]["days"] == ["2025-05-03", "2025-05-17"]
+    assert "Part of the statement is missing" in found[0]["summary"]
+    assert "May payments: the alerts show $500.00 from Ann on 3 May, 17 May" in found[0]["title"]
+    whole = F.statement_gaps(c, ledger_months={"a": {"2025-03"}})
+    assert "May statement is not in the case" in whole[0]["summary"]
+    lv = levels.records_missing(found[0]["missing"])
+    assert lv["key"] == "cant_tell" and lv["sentence"].startswith("Can't tell: too little data. Missing: Ann's bank rows")
+    c.people = PEOPLE  # a payer with no account in the case: nothing is missing from a statement
+    assert F.statement_gaps(c, ledger_months={}) == []

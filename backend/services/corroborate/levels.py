@@ -168,6 +168,14 @@ def decide(grid: list[dict], instances: list[dict], comparison: dict, checks: li
                [f"{r['label']}: {_counts_words(r, comparison)}." for r in present_rows])
 
 
+def records_missing(missing: list[dict]) -> dict[str, Any]:
+    """Can't tell, because the records that would settle it are not in the case (a statement page, a phone). Used
+    where the gap is known before any comparison, so nothing is weighed on the part that is there."""
+    return {"key": "cant_tell", "name": LEVELS["cant_tell"], "rule": "records_missing",
+            "reasons": [m["words"] for m in missing], "separating_kinds": [], "repeated": False,
+            "sentence": f"Can't tell: too little data. Missing: {'; '.join(m['missing'] for m in missing[:3])}."}
+
+
 def _only_together_once(full_sep: list[dict], rows: list[dict]) -> bool:
     """One instance, the only separating signal is being in one place (or active) at once, and no contact, money or
     document between the people anywhere in what was read: a meeting needs arranging, and nothing arranges this one."""

@@ -325,6 +325,7 @@ def _rows(people, recs, instances, cov, activity, store, kind, *, keep_absent=Fa
     rows += S.money_rows(people, recs, instances, cov)
     rows += S.access_rows(people, recs, instances, cov)
     rows += S.absence_rows(people, activity, instances, cov)
+    rows += S.deletion_rows(people, recs, instances)
     # shared words: count each candidate phrase across the case once
     cands = set()
     for inst in instances:
