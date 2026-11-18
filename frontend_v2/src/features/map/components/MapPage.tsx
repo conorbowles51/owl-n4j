@@ -13,6 +13,7 @@ import { LazyMeetingLayer, LazyTogetherPanel } from "@/features/phones/together/
 import { phoneMark } from "@/features/phones/lib/phone-palette"
 import { NearMessageNote } from "./NearMessageNote"
 import { PhonesInArea } from "./PhonesInArea"
+import { LazyAreaCompare } from "@/features/overlap/area/lazy"
 import { usePhonesInArea } from "../hooks/use-phones-in-area"
 import { useParams, useSearchParams } from "react-router-dom"
 import { useCase } from "@/features/cases/hooks/use-cases"
@@ -273,6 +274,7 @@ export function MapPage() {
           <PhoneLayerPanel caseId={caseId!} summary={phones.summary.data} points={phones.points.data} addDisabled={canEdit ? undefined : "A case member who can edit can add."} />
         )}
         {phones.on && lastShape && <PhonesInArea caseId={caseId!} shape={lastShape} />}
+        {caseId && <LazyAreaCompare caseId={caseId} areas={shapes.map((b) => b.coordinates)} />}
         <MapLegend locations={safeLocations} />
         <MapControls
           onZoomIn={zoomIn}

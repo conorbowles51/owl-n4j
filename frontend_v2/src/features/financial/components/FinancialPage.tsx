@@ -66,6 +66,7 @@ import {
   type ReactNode,
 } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
+import { AroundEventLink } from "@/features/overlap/money/AroundEventLink"
 import { BarChart3, DollarSign, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
@@ -738,6 +739,7 @@ function FinancialPageContent() {
               ? "Loading case…"
               : (caseId ?? "Choose a case")}
         </p>
+        {caseId && <AroundEventLink caseId={caseId} />}
         <FinancialGuide />
       </div>
       <NoFinancialEvidenceNotice caseId={caseId} />

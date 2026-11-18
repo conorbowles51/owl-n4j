@@ -45,6 +45,7 @@ const FinancialPage = lazy(() =>
     default: m.FinancialPage,
   }))
 )
+const AroundEventPage = lazy(() => import("@/features/overlap/money/AroundEventPage"))
 const PhonePrototypePage = lazy(() => import("@/features/phones/prototype/PhonePrototypePage"))
 const PhoneGuidePage = lazy(() => import("@/features/phones/PhoneGuidePage"))
 const MoneySignalsPage = lazy(() => import("@/features/phones/analysis/MoneySignalsPage"))
@@ -216,6 +217,7 @@ export function AppRoutes() {
             <Route path="map" element={<LazyPage><MapPage /></LazyPage>} />
             <Route path="table" element={<LazyPage><TablePage /></LazyPage>} />
             <Route path="financial" element={<LazyPage><FinancialPage /></LazyPage>} />
+            <Route path="financial/around-event" element={<LazyPage><AroundEventPage /></LazyPage>} />
             <Route path="cellebrite" element={<Navigate to="../phones" replace />} />
             <Route path="phones-prototype/:view?" element={<LazyPage><PhonePrototypePage /></LazyPage>} />
             <Route path="phone-review" element={<LazyPage><PhoneReviewPage /></LazyPage>} />

@@ -1,4 +1,5 @@
 import { CorroborateArea } from "@/features/corroborate/CorroborateArea"
+import { CompareAreasButton } from "@/features/overlap/area/CompareAreasButton"
 import { useState } from "react"
 import {
   BoxSelect,
@@ -470,6 +471,7 @@ export function MapToolbar({ caseId, locations, phonePositions, areaPhonePositio
                   />
                 )}
                 {caseId && <CorroborateArea caseId={caseId} areas={boundingShapes.map((b) => b.coordinates)} />}
+                {caseId && <CompareAreasButton count={boundingShapes.length} />}
                 <button
                   type="button"
                   onClick={clearBoundingShapes}

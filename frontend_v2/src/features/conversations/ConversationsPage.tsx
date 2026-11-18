@@ -43,6 +43,8 @@ import { ConversationFilters } from "./ConversationFilters"
 import { useStreamDensity } from "@/features/phones/hooks/use-stream-density"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useThreadMatches } from "./use-thread-matches"
+import { AlsoElsewhereToggle, RowMarks, SavedNames } from "@/features/overlap/conversations/marks"
+import { useAlsoElsewhere, useThreadMarks } from "@/features/overlap/conversations/use-also-elsewhere"
 import { dayZoneOf, filterChipWords, filterWordsOf, hasFilters, NO_FILTERS, viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
 import { rememberSpot } from "@/features/phones/lib/continue-reading"
 import { translateWords } from "@/features/phones/lib/translate-words"
@@ -67,6 +69,7 @@ import { useNotebookStore } from "@/features/notebook/notebook.store"
 
 // Opened by a press, so their code is not in the page's first-paint path (lx-convcost: 61 scripts vs 44 on the
 // old build). Each mounts only once its surface is asked for.
+const AlsoElsewherePanel = lazy(() => import("@/features/overlap/conversations/AlsoElsewherePanel"))
 const PhoneRecordPanel = lazy(() => import("@/features/phones/components/RecordPanel").then((m) => ({ default: m.PhoneRecordPanel })))
 const ExportDialog = lazy(() => import("./ExportDialog").then((m) => ({ default: m.ExportDialog })))
 const SplitForReview = lazy(() => import("./SplitForReview").then((m) => ({ default: m.SplitForReview })))
@@ -311,6 +314,8 @@ export function ConversationsPage() {
     return { ids: out, complete }
   }, [stream])
   const { usedIn, refresh: refreshUsedIn } = useUsedIn(caseId, marked.ids, marked.complete)
+  const [alsoOn, setAlsoOn] = useAlsoElsewhere()
+  const alsoMarks = useThreadMarks(caseId, current?.phone.extraction_id, current?.thread_key, alsoOn)
   const across = useAcrossBadges(caseId, stream)
   const chipWords = filterChipWords(view)
   const narrowWords = filterWordsOf(view)
@@ -735,6 +740,7 @@ export function ConversationsPage() {
               <ThreadAttachments caseId={caseId} extraction={current.phone.extraction_id} threadKey={current.thread_key} title={current.title}
                 back={`${location.pathname}?${viewToSearch({ ...view, at: focused?.event_uid ?? view.at }, fixedPhone)}`} />
             )}
+            {alsoOn && current && <SavedNames data={alsoMarks.data} />}
             {(view.deleted === true || !!view.oneDeletion) && (
               // 07 J-11: a deletion state never carries a time; say what it does and does not establish.
               <span className="w-full text-xs">Deleted at some time between the message's own time and the extraction. The report does not record when.</span>
@@ -743,6 +749,7 @@ export function ConversationsPage() {
               <span>Pick a person to read every message with them.</span>
             ) : null}
             <span className="ml-auto flex flex-wrap items-center gap-1" data-guide="conversations-actions">
+              <AlsoElsewhereToggle on={alsoOn} onChange={setAlsoOn} />
               <label className="inline-flex items-center gap-1 text-xs">
                 <input type="checkbox" checked={view.everyCopy} onChange={(e) => setView({ everyCopy: e.target.checked })} />
                 Show every copy
@@ -888,6 +895,7 @@ export function ConversationsPage() {
               </Button>
             </div>
           )}
+          {alsoOn && <Suspense fallback={<p role="status" className="px-3 text-xs">Opening the list…</p>}><AlsoElsewherePanel caseId={caseId} /></Suspense>}
           {streamFilter && <AcrossBadgesSource run={across.run} />}
           {streamFilter ? (
             <StreamList
@@ -916,6 +924,7 @@ export function ConversationsPage() {
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   {usedIn[row.record_uid] && <span className="text-muted-foreground">{usedIn[row.record_uid]}</span>}
                   <AcrossBadges caseId={caseId} badges={across.forRow(row)} />
+                  {alsoOn && <RowMarks data={alsoMarks.data} recordUid={row.record_uid} />}
                   {row.copies.count > 1 && !view.everyCopy && (
                     <>
                       <span>Found {fmt(row.copies.count)} times</span>

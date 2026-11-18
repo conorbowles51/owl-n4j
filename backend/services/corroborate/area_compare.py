@@ -325,6 +325,7 @@ def compare_areas(store, areas: list[dict], *, weekday: int, start: str, end: st
         "areas": out_areas, "order": order,
         "strip": [strip[d] for d in sorted(strip)],
         "members": members,
+        "documents_available": [{"id": d["id"], "name": d["name"]} for d in docs_all],
     }
 
 
