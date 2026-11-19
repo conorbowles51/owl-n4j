@@ -413,9 +413,12 @@ def test_dedupe_with_a_run_memo_keeps_the_same_records_and_reuses_them():
 
 
 def test_a_weighing_with_the_run_memo_matches_one_without_it():
-    plain = _run(_seed(), {"kind": "every_time"})
+    def result(out):  # wall time differs run to run (0.01 vs 0.02 s in head suite 12ae9dac); the rest must match
+        return {k: v for k, v in out.items() if k != "seconds"}
+
+    plain = result(_run(_seed(), {"kind": "every_time"}))
     store = FakeStore()
     store.dedupe_memo = {}
     for _ in range(2):  # the second weighing reuses the first one's kept records
-        assert engine.run(store, _seed(), {"kind": "every_time"}) == plain
+        assert result(engine.run(store, _seed(), {"kind": "every_time"})) == plain
     assert store.dedupe_memo
