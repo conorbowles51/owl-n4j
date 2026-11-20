@@ -83,7 +83,7 @@ class AISettingsAPITests(unittest.TestCase):
         routing = payload["routing"]
         # Wordless scanned pages are read by DeepSeek's image model (scanned_page_reading), like statement page images.
         deepseek_by_default = {"statement_claim_drafting", "phone_mapping_draft", "workspace_analysis",
-                               "scanned_page_reading", "search_ranking"}
+                               "scanned_page_reading", "search_ranking", "document_dates"}
         for w in deepseek_by_default:
             self.assertEqual(routing[w]["provider"], "deepseek")
         self.assertEqual({e["provider"] for w, e in routing.items()

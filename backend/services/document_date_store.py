@@ -47,13 +47,52 @@ def store_for_file(db, file_id, apply: bool = True) -> int:
 
 
 def store_for_file_safe(db, file_id) -> int:
-    """For the ingest path: a failure here costs the dates, never the ingestion."""
+    """For the ingest path: a failure here costs the dates, never the ingestion. A file the rules date nothing in is
+    queued for the model's reading (services.document_dates_model), which never holds up the ingest."""
     try:
         with db.begin_nested():
-            return store_for_file(db, file_id)
+            added = store_for_file(db, file_id)
+            undated = not added and not _has_readings(db, file_id)
     except Exception:  # noqa: BLE001
         log.exception("document dates not read for %s", file_id)
         return 0
+    if undated:
+        try:
+            from services import document_dates_model
+            document_dates_model.schedule(file_id)
+        except Exception:  # noqa: BLE001
+            log.exception("document date model reading not queued for %s", file_id)
+    return added
+
+
+def _has_readings(db, file_id) -> bool:
+    fid = file_id if isinstance(file_id, uuid.UUID) else uuid.UUID(str(file_id))
+    return db.execute(select(DocumentDateReading.id).where(DocumentDateReading.evidence_file_id == fid).limit(1)
+                      ).first() is not None
+
+
+def store_model_for_file(db, file_id, call, apply: bool = True) -> int:
+    """The model's reading of a file no rule dated (services.document_dates_model.read): saved as source 'model',
+    shown "Read by Loupe · not confirmed" with its words. A file with any reading already is left alone (no call).
+    Returns the rows added (``apply=False``: the call is made, nothing is written)."""
+    from services import document_dates_model as M
+    fid = file_id if isinstance(file_id, uuid.UUID) else uuid.UUID(str(file_id))
+    if _has_readings(db, fid):
+        return 0
+    row = db.execute(select(EvidenceFile.case_id, EvidenceDocumentText.content, EvidenceDocumentText.source_locations)
+                     .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
+                     .where(EvidenceFile.id == fid, EvidenceFile.deleted_at.is_(None))).first()
+    if not row or not (row.content or "").strip():
+        return 0
+    found = M.read(row.content, row.source_locations, call)
+    if apply:
+        for r in found:
+            db.add(DocumentDateReading(case_id=row.case_id, evidence_file_id=fid, kind=r["kind"],
+                                       date_from=r["date_from"], date_to=r["date_to"], source="model",
+                                       rule=M.rule_name(call), words=r["words"], page=r["page"]))
+        if found:
+            db.flush()
+    return len(found)
 
 
 def _view(r: DocumentDateReading, original: DocumentDateReading | None = None) -> dict:
@@ -120,8 +159,11 @@ def correct(db, case_id, reading_id, date_from: date, date_to: date, user_id, us
     return _view(row, r)
 
 
-def backfill(db, case_id=None, limit: int | None = None, apply: bool = False) -> dict:
-    """Read every file with text that has no reading yet, through ``store_for_file`` (the ingest path)."""
+def backfill(db, case_id=None, limit: int | None = None, apply: bool = False, model=None) -> dict:
+    """Read every file with text that has no reading yet, through ``store_for_file`` (the ingest path).
+
+    ``model`` (a model call, services.document_dates_model): files the rules still date nothing in are read by it,
+    one call each. A dry run makes no call and counts them as ``model_calls``."""
     q = (select(EvidenceFile.id, EvidenceFile.case_id).join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
          .where(EvidenceFile.deleted_at.is_(None), EvidenceFile.source_type.is_(None)))
     if case_id:
@@ -135,7 +177,19 @@ def backfill(db, case_id=None, limit: int | None = None, apply: bool = False) ->
         s = per_case.setdefault(str(c), {"files": 0, "readings": 0})
         s["files"] += 1
         if apply:
-            s["readings"] += store_for_file_safe(db, f)
+            with db.begin_nested():
+                s["readings"] += store_for_file(db, f)
+        undated = not _has_readings(db, f) and (apply or not store_for_file(db, f, apply=False))
+        if model is not None and undated:
+            s["model_calls"] = s.get("model_calls", 0) + 1
+            if apply:
+                try:
+                    with db.begin_nested():
+                        s["model_readings"] = s.get("model_readings", 0) + store_model_for_file(db, f, model)
+                except Exception:  # noqa: BLE001 - one file's failure costs its date, not the run
+                    log.exception("document date not read by model for %s", f)
+                    s["model_failed"] = s.get("model_failed", 0) + 1
+                db.commit()
     if apply:
         db.commit()
     return per_case

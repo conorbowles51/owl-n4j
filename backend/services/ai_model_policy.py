@@ -76,6 +76,12 @@ WORKLOADS: dict[str, dict[str, str]] = {
                        "ways to phrase the search. Sees the question and the found records only.",
         "group": "Investigation",
     },
+    "document_dates": {
+        "label": "Document dates",
+        "description": "Reads the date of a document whose wording the date rules could not read. Each date is shown "
+                       "with the words it came from, not confirmed until a person confirms it.",
+        "group": "Ingestion",
+    },
     "financial_vision": {
         "label": "Statement page images",
         "description": "Reads held bank statement pages from their images; saved only when the figures reconcile exactly.",
@@ -138,6 +144,7 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
     "phone_mapping_draft": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
     # lx-casesearch: the case search reranker; DeepSeek's fast model (Neil: "DeepSeek everywhere possible").
     "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+    "document_dates": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
     # The evidence engine's reader of wordless scanned pages (app.pipeline.page_image_reading): DeepSeek's image model,
     # the reader of choice for page images (financial_vision above). Only models that read images may be chosen.
@@ -165,6 +172,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
         "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
         "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "document_dates": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     },
     "gemini": {
         "chat": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
@@ -180,6 +188,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
         "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
         "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "document_dates": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     },
     "deepseek": {
         "chat": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
@@ -195,6 +204,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
         "scanned_page_reading": dict(FINANCIAL_VISION_DEEPSEEK),
         "search_ranking": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "document_dates": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
     },
 }
 

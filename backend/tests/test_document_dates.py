@@ -1,6 +1,7 @@
 """Dates read from document text: the rules and the store (lx-docdates B, C)."""
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import date
 from uuid import uuid4
@@ -225,3 +226,87 @@ class Reread(Store):
         self.assertEqual(first, [("signed", date(2026, 3, 9), "docdates-rules-1:cue-signed+2"),
                                  ("written", date(2026, 8, 5), "docdates-rules-1:cue-written")])
         self.assertEqual(self._run("--apply"), first)
+
+
+class ModelReading(unittest.TestCase):
+    """Where the rules date nothing, the "Document dates" model reads the date (followups, Neil 20 Nov). Fails on the
+    code before: a file the rules could not date stayed undated."""
+
+    UNDATED = "Ruiz Auto & Tire\n3/4/2024\nTo whom it may concern, the truck left the lot on time."
+
+    tearDown = Store.tearDown
+
+    def setUp(self):
+        Store.setUp(self)
+        row = self.db.get(EvidenceDocumentText, self.file)
+        row.content = self.UNDATED
+        row.source_locations = [{"start_char": 0, "end_char": len(self.UNDATED), "page_number": 1}]
+        self.db.commit()
+
+    def _call(self, answer):
+        sent = []
+
+        def call(prompt):
+            sent.append(prompt)
+            return json.dumps(answer)
+        call.model = "deepseek/deepseek-v4-flash"
+        call.sent = sent
+        return call
+
+    def test_the_rules_date_nothing_here(self):
+        self.assertEqual(S.store_for_file(self.db, self.file), 0)
+
+    def test_a_model_date_is_saved_as_loupes_reading_with_the_words_it_read(self):
+        call = self._call({"dates": [{"kind": "written", "date": "2024-03-04", "words": "3/4/2024"}]})
+        self.assertEqual(S.store_model_for_file(self.db, self.file, call), 1)
+        self.db.commit()
+        (v,) = S.effective(self.db, self.case)
+        self.assertEqual((v["source"], v["confirmed"], v["label"]), ("model", False, S.READ_LABEL))
+        self.assertEqual((v["date_from"], v["words"], v["page"]), ("2024-03-04", "3/4/2024", 1))
+        self.assertTrue(v["rule"].startswith("docdates-model-1:deepseek/"))
+        self.assertIn(self.UNDATED, call.sent[0])
+        # a file with a reading is not sent again
+        self.assertEqual(S.store_model_for_file(self.db, self.file, call), 0)
+        self.assertEqual(len(call.sent), 1)
+
+    def test_a_date_the_text_does_not_hold_is_never_saved(self):
+        for answer in ({"dates": [{"kind": "written", "date": "2024-03-05", "words": "3/4/2024"}]},   # not that day
+                       {"dates": [{"kind": "written", "date": "2024-03-04", "words": "4 March 2024"}]},  # not in the text
+                       {"dates": [{"kind": "due", "date": "2024-03-04", "words": "3/4/2024"}]},  # not a kind
+                       "no json at all"):
+            call = (lambda a: (lambda p: a if isinstance(a, str) else json.dumps(a)))(answer)
+            self.assertEqual(S.store_model_for_file(self.db, self.file, call), 0)
+        self.assertEqual(S.effective(self.db, self.case), [])
+
+    def test_a_file_the_rules_dated_is_never_sent_to_the_model(self):
+        row = self.db.get(EvidenceDocumentText, self.file)
+        row.content = "Invoice date: 5 August 2026 total 10"
+        self.db.commit()
+        S.store_for_file(self.db, self.file)
+        call = self._call({"dates": []})
+        self.assertEqual(S.store_model_for_file(self.db, self.file, call), 0)
+        self.assertEqual(call.sent, [])
+
+    def test_the_ingest_path_queues_an_undated_file_for_the_model_and_not_a_dated_one(self):
+        from unittest.mock import patch
+        from services import document_dates_model as M
+        with patch.object(M, "schedule") as queued:
+            S.store_for_file_safe(self.db, self.file)
+        queued.assert_called_once_with(self.file)
+
+    def test_backfill_counts_the_model_calls_in_a_dry_run_and_makes_none(self):
+        call = self._call({"dates": [{"kind": "written", "date": "2024-03-04", "words": "3/4/2024"}]})
+        dry = S.backfill(self.db, apply=False, model=call)
+        self.assertEqual(dry[str(self.case)]["model_calls"], 1)
+        self.assertEqual(call.sent, [])
+        done = S.backfill(self.db, apply=True, model=call)
+        self.assertEqual((done[str(self.case)]["model_calls"], done[str(self.case)]["model_readings"]), (1, 1))
+        self.assertEqual([v["source"] for v in S.effective(self.db, self.case)], ["model"])
+
+    def test_switched_off_no_call_is_made(self):
+        from unittest.mock import patch
+        from services import document_dates_model as M
+        with patch.dict("os.environ", {"LOUPE_DOC_DATES_MODEL": "off"}):
+            self.assertIsNone(M.default_model_call())
+            M.schedule(self.file)
+        self.assertTrue(M._queue.empty())
