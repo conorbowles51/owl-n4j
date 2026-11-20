@@ -255,10 +255,15 @@ class FinderStore(CaseStore):
         n = [0] * len(phrases)
         rows = self.db.execute(text("SELECT lower(body) FROM phone_comm_events WHERE case_id = :c AND body IS NOT NULL"),
                                self.c, execution_options={"stream_results": True, "yield_per": 2000})
+        chunk: list[str] = []
+        size = 0
         for (body,) in rows:
-            for i, hit in enumerate(tests):
-                if hit(body):
-                    n[i] += 1
+            chunk.append(body)
+            size += len(body)
+            if len(chunk) >= COUNT_CHUNK_ROWS or size >= COUNT_CHUNK_CHARS:
+                _count_chunk(chunk, lows, tests, n)
+                chunk, size = [], 0
+        _count_chunk(chunk, lows, tests, n)
         return dict(zip(phrases, n))
 
     def records(self, people, windows, everyone):
@@ -306,6 +311,46 @@ class FinderStore(CaseStore):
 STREAM_PHRASES_FROM = 4          # this many new phrases in one weighing are counted in one read of the case's texts
 
 
+COUNT_CHUNK_ROWS = 2000            # texts searched as one string by ``_count_chunk``
+COUNT_CHUNK_CHARS = 8_000_000
+_SEP = "\x00"                      # never in a database text (PostgreSQL text holds no NUL), so never in a phrase
+
+
+def _count_chunk(bodies: list[str], lows: list[str], tests: list, n: list[int]) -> None:
+    """Add to ``n[i]`` the texts of ``bodies`` that ``tests[i]`` matches. A phrase with no LIKE wildcard is found in all
+    the texts joined by ``_SEP`` with one search from match to match, each match counted once for its text and the
+    search moved on to the next text: one C search per phrase per chunk, not one Python test per text (Phone
+    reference 1, 20 Nov: 46 million tests a run). A match cannot run across two texts, since the separator is never in
+    a phrase. A phrase with a wildcard (or the separator) is tested text by text, as before."""
+    if not bodies:
+        return
+    alone = [any(ch in lo for ch in "_%\\" + _SEP) for lo in lows]  # a wildcard, or the separator: text by text
+    plain = [i for i, a in enumerate(alone) if not a]
+    other = [i for i, a in enumerate(alone) if a]
+    if plain:
+        starts, at = [], 0
+        for b in bodies:
+            starts.append(at)
+            at += len(b) + 1
+        blob = _SEP.join(bodies)
+        end = len(blob)
+        for i in plain:
+            lo = lows[i]
+            if not lo:
+                n[i] += len(bodies)  # the empty phrase is in every text, as LIKE '%%' is
+                continue
+            hit = blob.find(lo)
+            while hit != -1:
+                k = bisect_right(starts, hit) - 1
+                n[i] += 1
+                nxt = starts[k + 1] if k + 1 < len(starts) else end
+                hit = blob.find(lo, nxt)
+    for body in bodies if other else ():
+        for i in other:
+            if tests[i](body):
+                n[i] += 1
+
+
 def _like_test(low: str) -> Callable[[str], bool]:
     """LIKE with ``low`` between wildcards, as a test on a lower-cased text: ``_`` matches any one character, ``%`` any run, ``\\`` escapes."""
     if not any(ch in low for ch in "_%\\"):
@@ -336,6 +381,8 @@ def _people_sig(everyone: list[dict]) -> tuple:
 
 def photo_places_as_media(recs: list[dict], photo_refs: set[str]) -> list[dict]:
     """A position read from a photo is a media place: it shows where the photo was taken, and places no one."""
+    if not photo_refs:
+        return recs
     for r in recs:
         if r["kind"] == "position" and r["ref"] in photo_refs:
             r["kind"] = "media_position"
@@ -392,8 +439,14 @@ class Case:
         return (self.local(at) - NIGHT_SHIFT).date()
 
 
+_SPACE_RUN = re.compile(r"\s+")
+
+
 def _norm(body: str) -> str:
-    return " ".join(str(body or "").split()).casefold()
+    """``" ".join(body.split()).casefold()``: whitespace runs as one space, case folded. One substitution, not a list of
+    every word (an e-mail of 200,000 characters made 30,000 strings; Phone reference 1, 20 Nov: 85 s a run). The
+    pattern's whitespace is the same as str.split's (Unicode isspace)."""
+    return _SPACE_RUN.sub(" ", str(body or "")).strip().casefold()
 
 
 def _body_key(body: str) -> str:

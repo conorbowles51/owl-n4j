@@ -453,8 +453,11 @@ def test_records_alone_in_their_group_are_kept_as_the_plain_dedupe_keeps_them():
     """Fails on the code before: no ``hold_alone`` (lead finder 20 Nov: a weighing grouped every record again)."""
     import random
     held = _mixed_records()
+    # two records of one ref with no copy key: the plain dedupe keeps one, so neither is alone
+    held += [dict(held[k], dup_key=None, ref="phone_record:same-ref") for k in (1, len(held) // 2)]
     memo: dict = {}
     n = M.hold_alone(memo, held)
+    assert not any(r["ref"] == "phone_record:same-ref" for r in held if id(r) in memo[M.ALONE])
     assert 0 < n < len(held)
     assert not any(r["dup_key"] and r["dup_key"][0] == "pay" for r in held if id(r) in memo[M.ALONE])
     rnd = random.Random(3)

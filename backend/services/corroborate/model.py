@@ -315,12 +315,12 @@ def hold_alone(memo: dict, records: list[dict]) -> int:
     seen: dict = {}
     for r in records:
         k = r.get("dup_key")
-        if k is not None:
-            seen[k] = seen.get(k, 0) + 1
+        k = ("ref", r["ref"]) if k is None else k  # with no key, records of one ref are one (the last one wins)
+        seen[k] = seen.get(k, 0) + 1
     alone = {}
     for r in records:
         k = r.get("dup_key")
-        if k is None or (k[0] != "pay" and seen[k] == 1):
+        if k is None and seen[("ref", r["ref"])] == 1 or k is not None and k[0] != "pay" and seen[k] == 1:
             alone[id(r)] = [r, None]
     memo[ALONE] = alone
     return len(alone)

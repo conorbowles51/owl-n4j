@@ -611,3 +611,51 @@ def test_the_case_wide_reads_run_on_their_own_connection_and_give_the_inline_ans
     inline._hold_activity()
     assert inline.stock_rows() == rows and inline._activity == st._activity
     assert [w for w, _ in asked2] == ["background", "session", "session"]
+
+
+def test_a_chunk_is_counted_as_each_text_tested_alone():
+    """Fails on the code before: no ``_count_chunk`` (each text was tested phrase by phrase in Python)."""
+    import random
+    rnd = random.Random(7)
+    words = ["cash", "is", "in", "the", "van", "dock", "3", "tonight", "same", "as", "before", "ok"]
+    bodies = [" ".join(rnd.choice(words) for _ in range(rnd.randint(0, 30))) for _ in range(400)]
+    bodies += ["cash is in", "the van", "", "cash is in the van cash is in the van", "50% off_now \\ ok"]
+    lows = ["cash is in", "the van", "in the van", "is in the van cash", "", "50% off", "off_now", "c_sh",
+            "van cash", "never said", "ok\x00cash"]
+    tests = [F._like_test(lo) for lo in lows]
+    want = [sum(1 for b in bodies if t(b)) for t in tests]
+    for size in (1, 3, 50, len(bodies)):
+        got = [0] * len(lows)
+        for k in range(0, len(bodies), size):
+            F._count_chunk(bodies[k:k + size], lows, tests, got)
+        assert got == want, size
+    # a phrase across the end of one text and the start of the next is in neither
+    got = [0]
+    F._count_chunk(["the cash", "is in"], ["cash is"], [F._like_test("cash is")], got)
+    assert got == [0]
+
+
+def test_norm_folds_whitespace_as_split_does():
+    """Fails on the code before only by being slow; the folding must stay exactly ``split``'s."""
+    import sys
+    spaces = "".join(chr(c) for c in range(sys.maxunicode + 1) if chr(c).isspace())
+    for body in ["", "  a  b ", "A B\x1cC\xa0D", spaces + "Straße" + spaces + "x" + spaces, None, "ΣΑΣ\t\n ok"]:
+        assert F._norm(body) == " ".join(str(body or "").split()).casefold()
+
+
+def test_no_photo_places_leaves_the_records_as_they_are():
+    recs = [{"kind": "position", "ref": "phone_record:a"}, {"kind": "message", "ref": "phone_record:b"}]
+    assert F.photo_places_as_media(recs, set()) is recs and recs[0]["kind"] == "position"
+    assert F.photo_places_as_media(recs, {"phone_record:a"})[0]["kind"] == "media_position"
+
+
+def test_a_kind_of_row_filters_a_weighings_records_once():
+    """Fails on the code before: no ``_only`` (each pair's rows filtered the whole weighing's records again)."""
+    from services.corroborate import signals as S
+    recs = [{"kind": k, "ref": str(i), "at": datetime(2025, 6, 1, tzinfo=timezone.utc) + timedelta(minutes=i)}
+            for i, k in enumerate(["position", "message", "payment", "position"] * 5)]
+    a = S._only(recs, "pos", lambda r: r["kind"] == "position")
+    assert a is S._only(recs, "pos", lambda r: True)  # the same list for the same records and name
+    assert a == [r for r in recs if r["kind"] == "position"]
+    assert S._only(list(recs), "pos", lambda r: r["kind"] == "message") != a  # another list is filtered anew
+

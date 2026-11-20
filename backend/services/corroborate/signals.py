@@ -22,7 +22,7 @@ STOCK_PHRASE_MIN = 20     # used in this many or more, it is a stock phrase and 
 MAX_REFS = 25             # records listed per cell; the count is always the whole number
 
 
-HELD_LISTS = 4  # record lists whose sorted copy and time index are kept (the newest asked)
+HELD_LISTS = 8  # record lists whose sorted copy and time index are kept (the newest asked)
 _HELD: list = []   # [(records list, its length, sorted copy, {kinds: index})], newest first
 
 
@@ -43,6 +43,18 @@ def _held(recs: list[dict]) -> tuple:
 
 def _by_time(recs: list[dict]) -> list[dict]:
     return _held(recs)[0]
+
+
+def _only(recs: list[dict], name: str, keep) -> list[dict]:
+    """``[r for r in recs if keep(r)]``, made once per held list and ``name``: every pair's rows of one kind filter the
+    same records, and the same list then shares one sorted copy and time index in ``bucket``. Callers never change
+    it."""
+    memo = _held(recs)[1]
+    key = ("only", name)
+    got = memo.get(key)
+    if got is None:
+        got = memo[key] = [r for r in recs if keep(r)]
+    return got
 
 
 def _index(recs: list[dict], kinds) -> tuple:
@@ -128,8 +140,8 @@ def contact_rows(people: dict, recs: list[dict], instances: list[dict], cov: dic
                      f"{int(M.RELAY_WINDOW.total_seconds() // 60)} minutes", (a, b), instances)
         for inst in instances:
             inside = by_inst[inst["id"]]
-            hits = sorted((r for r in inside if {a, b} <= ({r.get("owner")} | set(r.get("parties") or ()))),
-                          key=lambda r: r["at"])
+            # ``bucket`` gives each instance's records in time order, so a filter keeps that order (no sort)
+            hits = [r for r in inside if {a, b} <= ({r.get("owner")} | set(r.get("parties") or ()))]
             covered = _covered(cov, a, inst) or _covered(cov, b, inst)
             _set(row, inst, bool(hits), [r["ref"] for r in hits], hits[0]["at"] if hits else None, covered)
             chain = _relay(inside, a, b, set(keys))
@@ -144,7 +156,7 @@ def _relay(inside: list[dict], a: str, b: str, pattern: set[str]):
         if r.get("owner") == who:
             return {v for v in (r.get("counterpart_values") or ()) if v} - {who}
         return set()
-    by_time = sorted(inside, key=lambda r: r["at"])
+    by_time = inside  # in time order, as ``bucket`` gives them
     for i, r1 in enumerate(by_time):
         for src, dst in ((a, b), (b, a)):
             xs = others(r1, src)
@@ -162,8 +174,8 @@ def _relay(inside: list[dict], a: str, b: str, pattern: set[str]):
 def together_rows(people: dict, recs: list[dict], instances: list[dict], cov: dict) -> list[dict]:
     """Two people's phones placed within each other's accuracy (plus TOGETHER_SLACK_M) inside TOGETHER_GAP. Only
     presence counts: a photo received from someone else places the photographer, not the phone (``media_position``)."""
-    pos = [r for r in recs if r["kind"] == "position" and r.get("place") and
-           (r["place"].get("radius_m") or 0) <= M.TOGETHER_MAX_RADIUS_M]
+    pos = _only(recs, "together", lambda r: r["kind"] == "position" and r.get("place") and
+                (r["place"].get("radius_m") or 0) <= M.TOGETHER_MAX_RADIUS_M)
     by_inst = bucket(pos, instances)
     rows = []
     for a, b in combinations(sorted(people), 2):
@@ -211,7 +223,7 @@ def money_rows(people: dict, recs: list[dict], instances: list[dict], cov: dict)
     """Money between two people inside the instance or up to MONEY_SPREAD after it: a ledger payment, or a payment
     alert on a phone (one payment seen both ways counts once). Cash deposits just under $10,000 by one person are a
     row of their own (structuring)."""
-    money = [r for r in recs if r["kind"] in M.MONEY_KINDS]
+    money = _only(recs, "money", lambda r: r["kind"] in M.MONEY_KINDS)
     by_inst = bucket(money, instances, money=True)
     rows = []
     for a, b in combinations(sorted(people), 2):
@@ -261,7 +273,7 @@ def access_rows(people: dict, recs: list[dict], instances: list[dict], cov: dict
             row = _row(f"access:{p}:{source}", "access", f"{_label(people, p)} named in {title}", (p,), instances)
             by_inst = bucket(these, instances)
             for inst in instances:
-                hits = sorted(by_inst[inst["id"]], key=lambda r: r["at"])
+                hits = by_inst[inst["id"]]  # in time order, as ``bucket`` gives them
                 covered = _covered(cov, f"doc:{source}", inst, "doc")
                 _set(row, inst, bool(hits), [r["ref"] for r in hits], hits[0]["at"] if hits else None, covered)
             rows.append(row)
@@ -274,7 +286,7 @@ def deletion_rows(people: dict, recs: list[dict], instances: list[dict]) -> list
     Deleting is an act, so it is compared with the ordinary days like any other signal, and kept apart from how
     often the two are in contact."""
     rows = []
-    deleted = [r for r in recs if r.get("deleted_by") and r["kind"] in M.CONTACT_KINDS]  # read once, not per pair
+    deleted = _only(recs, "deleted", lambda r: r.get("deleted_by") and r["kind"] in M.CONTACT_KINDS)
     for p in sorted(people):
         for q in sorted(people):
             if q == p:
@@ -287,7 +299,7 @@ def deletion_rows(people: dict, recs: list[dict], instances: list[dict]) -> list
                        instances)
             by_inst = bucket(mine, instances)
             for inst in instances:
-                hits = sorted(by_inst[inst["id"]], key=lambda r: r["at"])
+                hits = by_inst[inst["id"]]  # in time order, as ``bucket`` gives them
                 _set(row, inst, bool(hits), [x for r in hits for x in r.get("copies") or [r["ref"]]],
                      hits[0]["at"] if hits else None)
             rows.append(row)
@@ -327,7 +339,7 @@ def content_rows(people: dict, recs: list[dict], instances: list[dict], phrase_c
     """The same words in records of two different people (not copies of one record) inside an instance. A word run
     used in RARE_PHRASE_MAX records of the case or fewer counts; one used STOCK_PHRASE_MIN times or more is a stock
     phrase and is weighed low (``checks`` reports it)."""
-    comms = [r for r in recs if r["kind"] in M.CONTACT_KINDS and r.get("body") and r.get("sender")]
+    comms = _only(recs, "comms", lambda r: r["kind"] in M.CONTACT_KINDS and r.get("body") and r.get("sender"))
     found: dict[str, dict] = {}
     by_inst = bucket(comms, instances)
     for inst in instances:
