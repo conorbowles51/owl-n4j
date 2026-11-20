@@ -149,6 +149,16 @@ def run_pass(stop: Event) -> dict[str, int]:
             log.exception("Automatic address lookups failed for case %s", case_id)
             totals["case_failed"] = totals.get("case_failed", 0) + 1
             continue
+        if not counts.get("unavailable") and not stop.is_set():
+            # the addresses typed on the case's dossiers, under the same mode (services.dossier_addresses)
+            try:
+                from services import dossier_addresses
+                for outcome, n in dossier_addresses.look_up_waiting(case_id, stop).items():
+                    key = "unavailable" if outcome == "unavailable" else "dossier_" + outcome
+                    counts[key] = counts.get(key, 0) + n
+            except Exception:
+                log.exception("Automatic dossier address lookups failed for case %s", case_id)
+                counts["dossier_case_failed"] = counts.get("dossier_case_failed", 0) + 1
         for outcome, n in counts.items():
             totals[outcome] = totals.get(outcome, 0) + n
         if counts.get("unavailable"):

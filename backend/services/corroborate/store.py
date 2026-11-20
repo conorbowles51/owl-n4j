@@ -705,10 +705,18 @@ class CaseStore:
                     continue
                 val = str(ct["value"])
                 head = re.split(r",|\d", val, maxsplit=1)[0].strip() or val
+                pos = ct.get("position") if isinstance(ct.get("position"), dict) else {}
+                if pos.get("value") != val:
+                    pos = {}
+                lat, lon = ct.get("lat"), ct.get("lon")
+                how = "the address on the dossier"
+                if lat is None and pos.get("lat") is not None:
+                    # the address service's position for the dossier address (services.dossier_addresses)
+                    lat, lon = pos["lat"], pos["lon"]
+                    how = "the address on the dossier, placed by the address service (Read by Loupe, not confirmed)"
                 out.append({"name": f"{head} ({ct.get('label') or 'address'} of {p['label']})", "match": head,
                             "label": str(ct.get("label") or ""), "owner": p["key"], "address": val,
-                            "lat": ct.get("lat"), "lon": ct.get("lon"), "radius_m": 100.0,
-                            "how": "the address on the dossier"})
+                            "lat": lat, "lon": lon, "radius_m": 100.0, "how": how})
         self._known = out
         return out
 

@@ -17,7 +17,7 @@ from services.dossier_service import (
     create_dossier, create_interview, delete_assessment, delete_interview, delete_media,
     add_evidence_links, add_interview_evidence, get_dossier, link_dossier, list_dossiers,
     remove_evidence_link, reorder_media, replace_links, add_links, remove_link, remove_links,
-    update_dossier, update_interview, update_media, LINKS_ADD_LIMIT,
+    update_dossier, update_interview, update_media, LINKS_ADD_LIMIT, look_up_address,
 )
 
 
@@ -207,6 +207,17 @@ def get(dossier_id: UUID, db: Session = Depends(get_db), user: User = Depends(ge
 @router.patch("/{dossier_id}")
 def update(dossier_id: UUID, request: DossierUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     try: return update_dossier(db, dossier_id=dossier_id, user=user, data=_payload(request, exclude_unset=True))
+    except Exception as exc: _error(exc)
+
+
+@router.post("/{dossier_id}/contacts/{contact_id}/look-up")
+def look_up_contact_address(dossier_id: UUID, contact_id: str, db: Session = Depends(get_db),
+                            user: User = Depends(get_current_db_user)):
+    """Look up one dossier address's position (the address service's reading, shown not confirmed)."""
+    from services.geo_rescan_service import GeocoderUnavailable
+    try: return look_up_address(db, dossier_id=dossier_id, contact_id=contact_id, user=user)
+    except GeocoderUnavailable as exc:
+        raise HTTPException(status_code=503, detail="The address service did not answer. Try again in a minute.") from exc
     except Exception as exc: _error(exc)
 
 

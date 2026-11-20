@@ -124,6 +124,18 @@ export interface DossierContact {
     target_id?: string
     mapping_versions?: Record<string, unknown>
   } | null
+  /** An address's position as the address service read it: Loupe's reading, not confirmed. */
+  position?: {
+    value: string
+    lat: number
+    lon: number
+    formatted_address?: string | null
+    service?: string
+    requested_by?: string
+    words?: string
+  } | null
+  /** A lookup that placed nothing, and why. */
+  lookup?: { value: string; outcome: string } | null
 }
 export interface Dossier {
   id: string
@@ -215,6 +227,11 @@ export const dossiersAPI = {
       method: "PATCH",
       body: input,
     }),
+  lookUpAddress: (id: string, contactId: string) =>
+    fetchAPI<Dossier>(
+      `/api/dossiers/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}/look-up`,
+      { method: "POST" }
+    ),
   link: (id: string, entityKey: string) =>
     fetchAPI<Dossier>(`/api/dossiers/${encodeURIComponent(id)}/link`, {
       method: "POST",

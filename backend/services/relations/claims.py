@@ -320,6 +320,10 @@ def read_where(sentence: str, store, who: list[dict]) -> dict:
                 return _chip("read", {"name": name, "located": True, "radius_m": at["radius_m"], "lat": at["lat"],
                                       "lon": at["lon"], "how": at["how"]}, _words(sentence, m), "medium", note=at["how"])
             addr = next((k for k in known if k.get("owner") == speaker and k.get("label", "").lower() == kind), None)
+            if addr and addr.get("lat") is not None:
+                return _chip("read", {"name": name, "located": True, "radius_m": addr["radius_m"], "lat": addr["lat"],
+                                      "lon": addr["lon"], "how": addr["how"]}, _words(sentence, m), "medium",
+                             note=addr["how"])
             note = f"“{_words(sentence, m)}” is {name}, but Loupe has no position for it"
             if not speaker:
                 note = f"“{_words(sentence, m)}” needs to know whose {kind}: no person is named"

@@ -203,6 +203,74 @@ function ContactsEditor({
   )
 }
 
+const LOOKUP_WORDS: Record<string, string> = {
+  no_match: "The address service found no match.",
+  not_a_place: "Not looked up: the words name no place on their own.",
+  no_case_region: "Not looked up: the case has no state to bound the lookup.",
+  outside_case_region:
+    "Not placed: the address service's answer lies outside the case's state.",
+}
+
+function AddressPosition({
+  dossier,
+  contact,
+  canEdit,
+}: {
+  dossier: Dossier
+  contact: DossierContact
+  canEdit: boolean
+}) {
+  const [error, setError] = useState("")
+  const lookUp = useDossierMutation<void>(dossier.case_id, dossier.id, () =>
+    dossiersAPI.lookUpAddress(dossier.id, contact.id!)
+  )
+  const position =
+    contact.position && contact.position.value === contact.value
+      ? contact.position
+      : null
+  const tried =
+    contact.lookup && contact.lookup.value === contact.value
+      ? contact.lookup
+      : null
+  return (
+    <div className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+      {position ? (
+        <p>
+          Position {position.lat.toFixed(5)}, {position.lon.toFixed(5)}
+          {position.formatted_address
+            ? ` (${position.formatted_address})`
+            : ""}
+          . Read by Loupe, not confirmed.
+        </p>
+      ) : tried ? (
+        <p>{LOOKUP_WORDS[tried.outcome] ?? "Not placed."}</p>
+      ) : (
+        <p>No map position yet.</p>
+      )}
+      {canEdit && contact.id && !position && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={lookUp.isPending}
+          onClick={async () => {
+            setError("")
+            try {
+              await lookUp.mutateAsync()
+            } catch {
+              setError(
+                "The address service did not answer. Try again in a minute."
+              )
+            }
+          }}
+        >
+          {lookUp.isPending ? "Looking up…" : "Look up position"}
+        </Button>
+      )}
+      {error && <p className="text-destructive">{error}</p>}
+    </div>
+  )
+}
+
 export function DossierContacts({
   dossier,
   canEdit,
@@ -247,6 +315,13 @@ export function DossierContacts({
                       ? "Investigator recorded"
                       : "Saved contact"}
                   </p>
+                  {contact.kind === "address" && (
+                    <AddressPosition
+                      dossier={dossier}
+                      contact={contact}
+                      canEdit={canEdit}
+                    />
+                  )}
                 </div>
                 {contact.evidence_file_id && (
                   <Button

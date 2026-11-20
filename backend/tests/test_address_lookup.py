@@ -126,7 +126,8 @@ class AddressLookupPassTests(unittest.TestCase):
     def test_one_case_failing_does_not_starve_the_cases_after_it(self):
         with patch.object(address_lookup, "auto_case_ids", return_value=["bad", "good"]), \
                 patch.object(address_lookup, "look_up_waiting",
-                             side_effect=[RuntimeError("bad node"), {"placed": 2}]) as look:
+                             side_effect=[RuntimeError("bad node"), {"placed": 2}]) as look, \
+                patch("services.dossier_addresses.look_up_waiting", return_value={}):
             totals = address_lookup.run_pass(Event())
         self.assertEqual(look.call_count, 2)
         self.assertEqual(totals, {"case_failed": 1, "placed": 2})

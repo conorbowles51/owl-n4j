@@ -397,10 +397,26 @@ def _contacts(db: Session, case_id: uuid.UUID, user: User, raw_contacts: list[di
         unchanged = (previous.get("value") == value and previous.get("kind") == kind
                      and previous.get("evidence_file_id") == evidence_id
                      and _source_key(_stored_source(previous)) == _source_key(source))
-        result.append({"id": contact_id, "kind": kind, "label": _text(raw.get("label")), "value": value,
-                       "evidence_file_id": evidence_id, "record_source": source,
-                       "recorded_by_user_id": previous.get("recorded_by_user_id") if unchanged else str(user.id)})
+        item = {"id": contact_id, "kind": kind, "label": _text(raw.get("label")), "value": value,
+                "evidence_file_id": evidence_id, "record_source": source,
+                "recorded_by_user_id": previous.get("recorded_by_user_id") if unchanged else str(user.id)}
+        if kind == "address":
+            # the address service's position stays with the words it was read for, never sent back by the editor
+            from services.dossier_addresses import keep_reading
+            item.update(keep_reading(previous, value))
+        result.append(item)
     return result
+
+
+def look_up_address(db: Session, *, dossier_id: uuid.UUID, contact_id: str, user: User) -> dict[str, Any]:
+    """A person clicked Look up on a dossier address (services.dossier_addresses.look_up_one)."""
+    from services.dossier_addresses import look_up_one
+    dossier = _write(db, dossier_id, user)
+    try:
+        look_up_one(db, dossier=dossier, contact_id=contact_id, user=user)
+    except LookupError as exc:
+        raise DossierNotFound(str(exc)) from exc
+    return serialize_dossier(db, _load(db, dossier.id))
 
 
 CONTACT_SOURCE_TYPES = ("manual", "evidence", "phone_record")
