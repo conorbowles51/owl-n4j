@@ -115,6 +115,34 @@ def _take_turns(lists: list[list[dict]]) -> list[dict]:
     return out
 
 
+def without_name(question: str, name: str) -> str:
+    """The question with a person's name taken out ("What payments did Lena Marsh receive?" gives "What payments did
+    receive?"): on her own phone every message carries her name, so the rest of the question ranks them."""
+    q = question or ""
+    for w in sorted(set(name.split()), key=len, reverse=True):
+        q = re.sub(r"(?<!\w)%s(?:'s)?(?!\w)" % re.escape(w), " ", q, flags=re.I)
+    q = re.sub(r"\s+", " ", q).strip()
+    return q or question
+
+
+def own_tag(o: dict) -> str:
+    return " (%s's own phone)" % o["name"]
+
+
+def _own_phone_list(conn, case_id, question, own, *, person=None) -> list[dict]:
+    """One list over the named people's own phones (``understand.own_phones``), the phones taking turns; within a
+    phone, meaning and words fused. Messages already found elsewhere stay where they are: this is one more list."""
+    per_phone: list[list[dict]] = []
+    for o, fut in own:
+        _, w, _ = _embedded(conn, case_id, without_name(question, o["name"]), ["phone_text"], embed_query=None,
+                            collections=None, meaning=False, phone=o["extraction_id"], person=person, tag=own_tag(o))
+        m: list[dict] = []
+        if fut is not None:
+            m, _ = fut.result()
+        per_phone.append(_rrf([x for x in (m, w) if x]))
+    return _take_turns(per_phone)
+
+
 def _merge_words(hits: list[dict]) -> list[dict]:
     """More question words first; within one count, areas take turns (each area's first, then each area's second), as
     in the meaning list. One list by count alone let 30 graph connections holding one word of the question fill a
@@ -392,23 +420,35 @@ def gather(conn, case_id, question: str, understood: dict, kinds: tuple[str, ...
             return None
         return pool.submit(_meaning, case_id, q, ars, embed_query=embed, collections=collections, phone=phone,
                            person=person, date_from=df, date_to=dt, tag=tag)
+    def soon_phone(o):
+        if not meaning_ok:
+            return None
+        return pool.submit(_meaning, case_id, without_name(question, o["name"]), ["phone_text"], embed_query=embed,
+                           collections=collections, phone=o["extraction_id"], person=person,
+                           tag=own_tag(o))
     f_undated = soon(question, undated, date_from, date_to)
     f_dated = soon(question, dated)
     f_phrasings = [soon(p, areas, tag=" (other phrasing)") for p in (understood.get("phrasings") or [])] if areas else []
+    # messages on a named person's own phone, searched for the rest of the question (her name dropped): a message
+    # there is about her without naming her (demo case: "You received $500.00 from Travis K." on Lena Marsh's phone
+    # was not in the first 20 for "What payments did Lena Marsh receive?", 17 Nov)
+    own = [o for o in (understood.get("own_phones") or []) if not phone and "phone_text" in areas]
+    f_own = [soon_phone(o) for o in own] if own else []
     f_graph = pool.submit(_graph, case_id, question, understood.get("names") or [], understood.get("terms") or [],
                           embed_query=embed, expansions=understood.get("expansions") or [],
                           only_graph=tuple(kinds) == ("graph",)) if entities else None
     try:
         return _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated, undated, phone, person,
                              date_from, date_to, embed, collections, meaning_ok, entities, notes, searched,
-                             not_searched, clock, t0, f_undated, f_dated, f_phrasings, f_graph, exact)
+                             not_searched, clock, t0, f_undated, f_dated, f_phrasings, f_graph, exact,
+                             own=list(zip(own, f_own)))
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated, undated, phone, person, date_from,
                   date_to, embed, collections, meaning_ok, entities, notes, searched, not_searched, clock, t0,
-                  f_undated, f_dated, f_phrasings, f_graph, exact=False) -> dict[str, Any]:
+                  f_undated, f_dated, f_phrasings, f_graph, exact=False, own=()) -> dict[str, Any]:
     lists: list[list[dict]] = []
     meaning_all: list[dict] = []
     words_all: list[dict] = []
@@ -441,6 +481,10 @@ def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated
                                  tag=" (name tie: %s)" % e["term"], exact=True)
             tied.append(ew)
         lists.append(_take_turns(tied))
+        if own:
+            lists.append(_own_phone_list(conn, case_id, question, own, person=person))
+            searched += ["messages on %s as %s's own phone (%s; not confirmed by a person)" % (
+                o["label"], o["name"], o["basis"]) for o, _ in own]
         searched += ["%s (%s)" % (k, "meaning and words" if meaning_ok else "words only") for k in kinds
                      if KIND_AREAS[k]]
     clock["embedded_areas"] = round(time.time() - t0, 2)

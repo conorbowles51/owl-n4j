@@ -482,3 +482,109 @@ def test_one_file_uploaded_twice_shows_each_page_once_with_the_other_copy_listed
     out, removed = S.dedupe(cands, {a: "h1", b: "h1", c: "h2"})
     assert [h["key"] for h in out] == ["a1", "c1", "b2"] and removed == 1
     assert out[0]["also_at"] == ["doc://%s/1" % b]
+
+
+# ---- a named person's own phone (followups, 20 Nov) -----------------------------------------------------------------
+
+def _own_phone_meaning(seen):
+    def meaning(case_id, vec, items, chunks, areas, phone=None, **kw):
+        seen.append((tuple(vec), phone))
+        if phone == "ph6":
+            return [{"area": "phone_text", "key": "pay", "text": "You received $500.00 from Travis K.", "distance": 0.2,
+                     "area_rank": 1}]
+        out = []
+        for a in areas:
+            for i in range(1, 31):
+                out.append({"area": a, "key": "%s%d" % (a, i), "text": "Lena Marsh %d" % i, "distance": 0.01 * i,
+                            "area_rank": i})
+        # the payment message is found by the whole-case search too, far down
+        out.append({"area": "phone_text", "key": "pay", "text": "You received $500.00 from Travis K.", "distance": 0.9,
+                    "area_rank": 40})
+        return out
+    return meaning
+
+
+def test_a_message_on_a_named_persons_own_phone_ranks_among_the_first_for_a_question_about_her(monkeypatch):
+    """Fails on the code before: a message on Lena Marsh's own phone that does not name her ("You received $500.00
+    from Travis K.") ranked below 20 for "What payments did Lena Marsh receive?" (demo case, 17 Nov): her phone was
+    searched only as one of all, where every message carries her name as its owner."""
+    from services.case_search import net
+    from services.embed_all import search as ES
+    seen: list = []
+    monkeypatch.setattr(ES, "meaning_hits", _own_phone_meaning(seen))
+    monkeypatch.setattr(ES, "word_hits", lambda *a, **k: [])
+    asked: list = []
+    q = "What payments did Lena Marsh receive?"
+    understood = {"phrasings": [], "expansions": [], "own_phones": [
+        {"name": "Lena Marsh", "extraction_id": "ph6", "label": "Phone 6", "basis": "its own records name its owner"}]}
+    got = net.gather(object(), "c", q, understood, ("phones", "documents"), areas=["phone_text", "documents"],
+                     embed_query=lambda s: asked.append(s) or [float(len(s))], collections=(object(), object()))
+    keys = [c["key"] for c in got["candidates"]]
+    assert keys.index("pay") < 5
+    # her phone was searched for the rest of the question, her name taken out
+    assert "What payments did receive?" in asked
+    assert any(p == "ph6" for _, p in seen)
+    assert any("Lena Marsh's own phone" in s and "Phone 6" in s for s in got["searched"])
+    # one more list: everything the whole-case search found is still a candidate
+    assert {"phone_text%d" % i for i in range(1, 31)} <= set(keys)
+
+
+def test_a_phone_filter_set_by_the_caller_is_not_widened_by_the_owners_phone(monkeypatch):
+    from services.case_search import net
+    from services.embed_all import search as ES
+    seen: list = []
+    monkeypatch.setattr(ES, "meaning_hits", _own_phone_meaning(seen))
+    monkeypatch.setattr(ES, "word_hits", lambda *a, **k: [])
+    understood = {"phrasings": [], "expansions": [], "own_phones": [
+        {"name": "Lena Marsh", "extraction_id": "ph6", "label": "Phone 6", "basis": "b"}]}
+    net.gather(object(), "c", "What did Lena Marsh get?", understood, ("phones",), areas=["phone_text"], phone="ph1",
+               embed_query=lambda s: [1.0], collections=(object(), object()))
+    assert {p for _, p in seen} == {"ph1"}
+
+
+def test_without_name_drops_the_persons_name_and_its_possessive():
+    from services.case_search import net
+    assert net.without_name("What payments did Lena Marsh receive?", "Lena Marsh") == "What payments did receive?"
+    assert net.without_name("Who texted Lena's phone?", "Lena Marsh") == "Who texted phone?"
+    assert net.without_name("Lena Marsh", "Lena Marsh") == "Lena Marsh"
+
+
+def test_own_phones_names_the_phone_whose_records_name_its_owner(monkeypatch):
+    """A phone is the named person's own when its records name its owner so (no decision recorded), or when its
+    owner number is saved under her name; another person's phone is not."""
+    from services.phone import identities
+    from services.phone import readings
+
+    class Conn:
+        def begin_nested(self):
+            class N:
+                def __enter__(s): return s
+                def __exit__(s, *a): return False
+            return N()
+
+        def execute(self, sql, params=None):
+            q = str(sql)
+            if "FROM pv_extraction" in q:
+                return [("ph1",), ("ph6",), ("ph7",)]
+            if "pv_identity_name" in q:
+                class R:
+                    def __init__(s, name, display): s.name, s.display_name = name, display
+                return [R("Lena", None)] if params["k"] == ["phone:+7"] else []
+            raise AssertionError(q)
+
+    owners = {
+        "ph1": {"owner_identity_keys": ["phone:+1"], "decided": None,
+                "candidates": [{"candidate_kind": "name", "name": "Mateo Ruiz", "occurrences": 228}]},
+        "ph6": {"owner_identity_keys": ["phone:+6"], "decided": None,
+                "candidates": [{"candidate_kind": "name", "name": "synthetic user 1", "occurrences": 1},
+                               {"candidate_kind": "name", "name": "Lena Marsh", "occurrences": 128}]},
+        # a person decided this phone's owner: its records' owner name no longer counts
+        "ph7": {"owner_identity_keys": ["phone:+9"], "decided": {"identity_keys": ["phone:+9"]},
+                "candidates": [{"candidate_kind": "name", "name": "Lena Marsh", "occurrences": 50}]},
+    }
+    monkeypatch.setattr(identities, "owner", lambda conn, e: owners[e])
+    monkeypatch.setattr(readings, "phone_labels", lambda conn, c: {"ph1": "PH1", "ph6": "PH6", "ph7": "PH7"})
+    got = U.own_phones(Conn(), "c", "What payments did Lena Marsh receive?")
+    assert [(o["extraction_id"], o["label"], o["name"]) for o in got] == [("ph6", "PH6", "Lena Marsh")]
+    assert "Lena Marsh" in got[0]["basis"]
+    assert U.own_phones(Conn(), "c", "What did Harold Vint say?") == []

@@ -183,3 +183,56 @@ def test_each_attachment_has_its_own_source_location_naming_its_record(hooks):
         assert thread_text.build_stale(engine)[str(ext)]["rewritten"] == 1
         with engine.connect() as c:
             assert {loc["record_uid"] for loc in _docs(c, ext)[0].source_locations} == {call, *atts}
+
+
+# ---- notifications (followups, 20 Nov) -----------------------------------------------------------------------------
+
+def test_a_phones_notifications_become_searchable_text_one_document_per_app(monkeypatch):
+    """Fails on the code before: notifications were in no thread document, so no search reached them (demo case,
+    Phone 6: "You received $500.00 from Travis K."; Phone reference 1: 7,881 notifications with message previews)."""
+    from collections import namedtuple
+    from datetime import datetime, timezone
+    from services.phone import phone_setup
+
+    Row = namedtuple("Row", "record_uid first_instant deleted_state field_path value")
+    t1 = datetime(2024, 3, 16, 13, 15, tzinfo=timezone.utc)
+    t2 = datetime(2024, 3, 17, 9, 0, tzinfo=timezone.utc)
+    rows = [Row("r1", t1, "Intact", "ServiceIdentifier", "test.pocketwire.app"),
+            Row("r1", t1, "Intact", "Title", "Pocketwire"),
+            Row("r1", t1, "Intact", "Body", "You received $500.00 from Travis K."),
+            Row("r2", t2, "Deleted", "ServiceIdentifier", "net.whatsapp.WhatsApp"),
+            Row("r2", t2, "Deleted", "Subject", "Mary"),
+            Row("r2", t2, "Deleted", "Body", "A usted le escriben")]
+
+    class Conn:
+        def execute(self, sql, params=None):
+            assert "model_type = 'Notification'" in str(sql)
+            return rows
+
+    written = []
+    monkeypatch.setattr(phone_setup, "zone_decided_times", lambda conn, case, uids: [])
+    monkeypatch.setattr(thread_text, "_write", lambda conn, fid, case, name, body, locs, meta, path, generator=None:
+                        written.append((fid, name, body, locs, meta, generator)) or "written")
+    wanted, stats = set(), {}
+    stats = __import__("collections").defaultdict(int)
+    n = thread_text._notifications(Conn(), "ext1", "case1", "Phone 6", timezone.utc, 3, wanted, stats)
+    assert n == 2 and len(written) == 2 and stats["written"] == 2
+    by_name = {w[1]: w for w in written}
+    pay = by_name["Phone 6 · Pocketwire · Notifications (part 1 of 1)"]
+    assert pay[2] == "Sat, Mar 16, 2024, 1:15:00 PM UTC | Phone 6 | Pocketwire | Notification | You received $500.00 from Travis K."
+    assert pay[3] == [{"kind": "phone_record", "label": "Phone 6 Pocketwire notification, Sat, Mar 16, 2024, 1:15 PM UTC",
+                       "start_char": 0, "end_char": len(pay[2]), "record_uid": "r1", "source_ref": "rec://r1",
+                       "extraction_id": "ext1", "field_path": "Body", "instant": "2024-03-16T13:15:00Z"}]
+    assert pay[4]["phone_extraction_id"] == "ext1" and pay[5] == thread_text.NOTIFICATION_VERSION
+    wa = by_name["Phone 6 · net.whatsapp.WhatsApp · Notifications (part 1 of 1)"]
+    assert wa[2].endswith("| Notification | Subject: Mary | A usted le escriben [Deleted]")
+    # the documents are kept by the stale-document sweep (their ids are wanted)
+    assert {w[0] for w in written} == wanted
+
+
+def test_a_phone_with_no_notifications_writes_no_notification_document(monkeypatch):
+    class Conn:
+        def execute(self, sql, params=None):
+            return []
+    monkeypatch.setattr(thread_text, "_write", lambda *a, **k: (_ for _ in ()).throw(AssertionError("written")))
+    assert thread_text._notifications(Conn(), "e", "c", "Phone 1", None, 1, set(), {}) == 0

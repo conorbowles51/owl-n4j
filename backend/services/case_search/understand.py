@@ -14,11 +14,14 @@
 from __future__ import annotations
 
 import calendar
+import logging
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 MAX_EXPANSIONS = 12
 MONTHS = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
@@ -234,9 +237,74 @@ def expansions(conn, case_id, question: str) -> list[dict[str, Any]]:
     return out
 
 
+# phones searched as one person's own: a name such as "Ruiz" may own several
+MAX_OWN_PHONES = 4
+
+
+def _same_person(asked: str, owner_name: str) -> bool:
+    """Whether a name as asked ("Lena Marsh", "Lena") is the owner's name: every word asked is a word of it."""
+    want = asked.casefold().split()
+    have = set(re.findall(r"[\w'.-]+", owner_name.casefold()))
+    return bool(want) and all(w in have for w in want)
+
+
+def own_phones(conn, case_id, question: str) -> list[dict[str, Any]]:
+    """The phones a name in the question owns: ``{"name", "extraction_id", "label", "basis"}``, longest name first.
+
+    A phone is a person's own when its owner (a person's decision, else the computed owner number) is a number a
+    phone saves under that name or a person in the case linked to it, or, with no decision recorded, when the name
+    its own records give the owner most often is that name ("Owner of Phone 6: Lena Marsh"). A message on that phone
+    is about its owner without naming her ("You received $500.00 from Travis K.", demo case, 17 Nov), so the case
+    search gives these phones a list of their own (``net._own_phone_list``)."""
+    if conn is None:
+        return []
+    asked = [n for n in names(question) if " " in n] or names(question)
+    if not asked:
+        return []
+    from services.phone import identities
+    from services.phone.readings import phone_labels
+    try:
+        with conn.begin_nested():
+            phones = [str(r[0]) for r in conn.execute(text(
+                "SELECT extraction_id FROM pv_extraction WHERE case_id = :c AND standing = 'active' ORDER BY "
+                "created_at, extraction_id"), {"c": str(case_id)})]
+            labels = phone_labels(conn, case_id) if phones else {}
+            out: list[dict[str, Any]] = []
+            for ext in phones:
+                own = identities.owner(conn, ext)
+                keys = own.get("owner_identity_keys") or []
+                owner_names: list[tuple[str, str]] = []
+                if keys:
+                    for r in conn.execute(text(
+                            "SELECT DISTINCT n.name, p.display_name FROM pv_identity i LEFT JOIN pv_identity_name n ON "
+                            "n.identity_id = i.identity_id AND n.case_id = i.case_id LEFT JOIN case_profiles p ON "
+                            "p.id = i.person_id AND p.archived_at IS NULL WHERE i.case_id = :c AND i.identity_key = "
+                            "ANY(:k)"), {"c": str(case_id), "k": list(keys)}):
+                        if r.display_name:
+                            owner_names.append((r.display_name, "a person in the case linked to its owner's number"))
+                        if r.name:
+                            owner_names.append((r.name, "a phone saves its owner's number as %r" % r.name))
+                if not own.get("decided"):
+                    named = sorted((c for c in own.get("candidates") or [] if c["candidate_kind"] == "name"
+                                    and c.get("name")), key=lambda c: (-(c.get("occurrences") or 0), c["name"]))
+                    if named:
+                        owner_names.append((named[0]["name"], "its own records name its owner %r" % named[0]["name"]))
+                for name in asked:
+                    hit = next((b for n, b in owner_names if _same_person(name, n)), None)
+                    if hit:
+                        out.append({"name": name, "extraction_id": ext, "label": labels.get(ext) or "Phone",
+                                    "basis": hit})
+                        break
+    except Exception:  # noqa: BLE001 - a case without phone views (the savepoint is rolled back, nothing else)
+        logger.warning("Own phone lookup failed", exc_info=True)
+        return []
+    out.sort(key=lambda o: -len(o["name"]))
+    return out[:MAX_OWN_PHONES]
+
+
 def understand(conn, case_id, question: str) -> dict[str, Any]:
     from services.phone import chat_retrieval
     w = windows(conn, case_id, question)
     return {"terms": chat_retrieval.terms(question), "names": names(question),
-            "expansions": expansions(conn, case_id, question), "windows": w["windows"], "zone": w["zone"],
-            "notes": w["notes"], "phrasings": []}
+            "expansions": expansions(conn, case_id, question), "own_phones": own_phones(conn, case_id, question),
+            "windows": w["windows"], "zone": w["zone"], "notes": w["notes"], "phrasings": []}

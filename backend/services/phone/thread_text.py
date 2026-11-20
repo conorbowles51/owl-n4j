@@ -23,6 +23,12 @@ from sqlalchemy import text
 from services.phone.time_display import ZONE_DECIDED
 
 GENERATOR_VERSION = "phone-thread-text/3"  # 2: each attachment cites its own record; 3: and its file when known
+# A phone's notifications, one document per app (followups 20 Nov: a payment app's "You received $500.00 from
+# Travis K." on the demo case's Phone 6, and 7,881 notifications on Phone reference 1 holding message previews, were in
+# no searchable text, so neither chat nor the case search could find them). Its own version: a change here rewrites
+# the notification documents, not every thread.
+NOTIFICATION_VERSION = "phone-notification-text/1"
+NOTIFICATION_FIELDS = ("Title", "ServiceIdentifier", "Source", "Subject", "Body")
 SOURCE_TYPE = "phone_text"
 MAX_MESSAGES = 5000
 MAX_CHARS = 2_000_000
@@ -201,12 +207,84 @@ def build_extraction(conn, extraction_id) -> dict:
                 "first_event_uid": str(first["event_uid"]), "last_event_uid": str(last["event_uid"]),
                 "message_count": len(part), "generator_version": GENERATOR_VERSION, "generation": head.generation},
                 "phone-text://%s/%s/%d" % (extraction_id, tk, i))] += 1
+    stats["notification_documents"] = _notifications(conn, extraction_id, case_id, label, zone, head.generation,
+                                                     wanted, stats)
     stats["removed"] = _remove(conn, extraction_id, keep=wanted)
     stats["threads"] = len(events)
     return dict(stats)
 
 
-def _write(conn, fid, case_id, name, body, locs, meta, path):
+def notification_line(n, phone_label, zone, decided=frozenset()) -> str:
+    """``<when> | <phone> | <app> | Notification | Subject: <subject> | <body>``: the fields as recorded, none
+    reworded; the app is the notification's title, else its service identifier, else its source."""
+    app = n.get("Title") or n.get("ServiceIdentifier") or n.get("Source") or "Unknown app"
+    bits = []
+    if n.get("Subject") and n.get("Subject") != n.get("Body"):
+        bits.append("Subject: %s" % n["Subject"])
+    if n.get("Body"):
+        bits.append(n["Body"])
+    body = " | ".join(bits) or "No text recorded"
+    body = body.replace("\r\n", "\n").replace("\n", "\n  ")
+    line = "%s | %s | %s | Notification | %s" % (_when(n, zone, decided), phone_label, app, body)
+    if n.get("deleted_state") and n["deleted_state"] not in ("Intact", "intact"):
+        line += " [Deleted]"
+    return line
+
+
+def _notifications(conn, extraction_id, case_id, label, zone, generation, wanted, stats) -> int:
+    """Write the phone's notifications, one document per app (split as threads are). Returns the documents kept."""
+    recs: dict = {}
+    for r in conn.execute(text(
+            "SELECT r.record_uid, r.first_instant, r.deleted_state, t.field_path, t.value FROM pv_record r LEFT JOIN "
+            "pv_text t ON t.record_uid = r.record_uid AND t.field_path = ANY(:f) WHERE r.extraction_id = :e AND "
+            "r.model_type = 'Notification' ORDER BY r.first_instant NULLS LAST, r.record_uid, t.value_index"),
+            {"e": extraction_id, "f": list(NOTIFICATION_FIELDS)}):
+        n = recs.setdefault(r.record_uid, {"record_uid": r.record_uid, "sort_instant": r.first_instant,
+                                           "deleted_state": r.deleted_state})
+        if r.field_path and r.value and r.field_path not in n:
+            n[r.field_path] = r.value
+    if not recs:
+        return 0
+    from services.phone import phone_setup
+    decided = {uid for uid, _ in phone_setup.zone_decided_times(conn, case_id, list(recs))}
+    by_app: dict = defaultdict(list)
+    for n in recs.values():
+        by_app[n.get("ServiceIdentifier") or n.get("Title") or n.get("Source") or "unknown"].append(n)
+    kept = 0
+    for key in sorted(by_app):
+        items = by_app[key]
+        app = items[0].get("Title") or items[0].get("ServiceIdentifier") or items[0].get("Source") or "Unknown app"
+        parts = [[]]
+        for n in items:
+            line = notification_line(n, label, zone, decided)
+            if parts[-1] and (len(parts[-1]) >= MAX_MESSAGES or sum(len(x[1]) + 1 for x in parts[-1]) + len(line)
+                              > MAX_CHARS):
+                parts.append([])
+            parts[-1].append((n, line))
+        for i, part in enumerate(parts, 1):
+            content, locs, pos = [], [], 0
+            for n, line in part:
+                instant = (n["sort_instant"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                           if n["sort_instant"] else None)
+                locs.append({"kind": "phone_record", "label": "%s %s notification, %s" % (
+                    label, app, _when(n, zone, decided, seconds=False)), "start_char": pos,
+                    "end_char": pos + len(line), "record_uid": str(n["record_uid"]),
+                    "source_ref": "rec://%s" % n["record_uid"], "extraction_id": str(extraction_id),
+                    "field_path": "Body", "instant": instant})
+                content.append(line)
+                pos += len(line) + 1
+            name = "%s · %s · Notifications (part %d of %d)" % (label, app, i, len(parts))
+            fid = uuid.uuid5(NS, "%s|notifications|%s|%d" % (extraction_id, key, i))
+            wanted.add(fid)
+            kept += 1
+            stats[_write(conn, fid, case_id, name[:512], "\n".join(content), locs, {
+                "phone_extraction_id": str(extraction_id), "notifications": key, "part": i, "parts": len(parts),
+                "message_count": len(part), "generator_version": NOTIFICATION_VERSION, "generation": generation},
+                "phone-text://%s/notifications/%s/%d" % (extraction_id, key, i), generator=NOTIFICATION_VERSION)] += 1
+    return kept
+
+
+def _write(conn, fid, case_id, name, body, locs, meta, path, generator=GENERATOR_VERSION):
     data = body.encode("utf-8")
     sha = hashlib.sha256(data).hexdigest()
     cur = conn.execute(text(
@@ -214,7 +292,7 @@ def _write(conn, fid, case_id, name, body, locs, meta, path):
         "LEFT JOIN evidence_document_texts t ON t.evidence_file_id = f.id WHERE f.id = :i"), {"i": fid}).one_or_none()
     # same text, name and generator: nothing to do. A new generator rewrites even unchanged text, because what it
     # changes may be the source locations (which part of the text cites which record), not the text itself.
-    if cur is not None and cur[0] == sha and cur[1] == name and cur[2] == GENERATOR_VERSION:
+    if cur is not None and cur[0] == sha and cur[1] == name and cur[2] == generator:
         return "unchanged"
     conn.execute(text(
         "INSERT INTO evidence_files (id, case_id, original_filename, stored_path, size, sha256, status, source_type, "
@@ -232,7 +310,7 @@ def _write(conn, fid, case_id, name, body, locs, meta, path):
         "source_locations = EXCLUDED.source_locations, processing_manifest = EXCLUDED.processing_manifest, "
         "extracted_at = now()"),
         {"i": fid, "b": body, "h": sha, "n": len(body), "l": json.dumps(locs),
-         "pm": json.dumps({"generator_version": GENERATOR_VERSION, "source": "phone records"})})
+         "pm": json.dumps({"generator_version": generator, "source": "phone records"})})
     return "written" if cur is None else "rewritten"
 
 
@@ -256,7 +334,8 @@ def signature(conn, extraction_id):
         "SELECT md5(concat_ws('|', e.standing, s.generation, s.decision_revision, e.device_zone, "
         "(SELECT max(a.created_at)::text FROM adjudications a WHERE a.case_id = e.case_id AND a.subject_type IN "
         "('phone_identity', 'phone_extraction')), CAST(:v AS text))) FROM phone_extractions e LEFT JOIN phone_interpretation_state s "
-        "ON s.extraction_id = e.id WHERE e.id = :e"), {"e": extraction_id, "v": GENERATOR_VERSION}).scalar()
+        "ON s.extraction_id = e.id WHERE e.id = :e"), {"e": extraction_id, "v": GENERATOR_VERSION + "|" +
+                                                       NOTIFICATION_VERSION}).scalar()
 
 
 def build_stale(engine) -> dict:
