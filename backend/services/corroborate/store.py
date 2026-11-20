@@ -113,9 +113,9 @@ class CaseStore:
                                             "accounts": [], "phones": [], "names": [], "links": []})
             p["phones"].append(ext)
             p.setdefault("phone_labels", {})[ext] = labels[ext]
-            for n in nums - p["numbers"]:
+            for n in sorted(nums - p["numbers"]):
                 p["links"].append({"identifier": "+" + n, "how": "suggested", "basis": f"owner number of {labels[ext]}"})
-            for h in handles - p["handles"]:
+            for h in sorted(handles - p["handles"]):
                 p["links"].append({"identifier": h, "how": "suggested", "basis": f"owner handle of {labels[ext]}"})
             p["numbers"] |= nums
             p["handles"] |= handles

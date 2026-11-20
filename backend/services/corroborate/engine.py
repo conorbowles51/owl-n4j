@@ -337,7 +337,7 @@ def _rows(people, recs, instances, cov, activity, store, kind, *, keep_absent=Fa
         by_ph = defaultdict(set)
         for r in S.bucket(recs, [inst], M.CONTACT_KINDS)[inst["id"]]:
             if r.get("body") and r.get("sender") in people:
-                for ph in M.phrases(r["body"]):
+                for ph in M.phrase_tuple(r["body"]):
                     by_ph[ph].add(r["sender"])
         cands |= {ph for ph, s in by_ph.items() if len(s) >= 2}
     counts = store.phrase_counts(sorted(cands)) if cands else {}

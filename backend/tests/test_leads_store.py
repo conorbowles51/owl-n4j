@@ -288,6 +288,89 @@ class LeadStoreTests(DuplicateTestCase):
         self.assertGreater(beat, old + timedelta(minutes=29))
         self.assertFalse(F._stale(self.db.get(LeadFinderRun, row.id)))
 
+    def _run_row(self, *, status="done", seconds=300.0, material=None, minutes_ago=60, error=None):
+        from datetime import datetime, timedelta, timezone
+        at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        row = LeadFinderRun(id=uuid.uuid4(), case_id=self.case.id, status=status, step="Done", trigger="button",
+                            counts={"seconds": seconds}, material=material if material is not None else {"x": [1, None]},
+                            started_at=at, beat_at=at, error=error)
+        self.db.add(row)
+        self.db.commit()
+        return row
+
+    def test_a_quick_case_looks_for_leads_by_itself_on_new_material_once_it_is_quiet(self):
+        """Fails on the code before: no automatic run (a case looked for leads only when a person pressed)."""
+        from datetime import datetime, timedelta, timezone
+        from services.leads import finder as F
+        now = datetime.now(timezone.utc)
+        old = (now - timedelta(hours=2)).isoformat()
+        new = {"phone_records": [2, (now - timedelta(minutes=30)).isoformat()]}
+        self.assertIsNone(F.auto_due(self.db, self.case.id))  # never run: a person starts the first
+        self._run_row(material={"phone_records": [1, old]})
+        with mock.patch.object(facts, "material", return_value={"phone_records": [1, old]}):
+            self.assertIsNone(F.auto_due(self.db, self.case.id))  # nothing new
+        with mock.patch.object(facts, "material", return_value=new):
+            self.assertEqual(F.auto_due(self.db, self.case.id), "New or changed phone records")
+        arriving = {"phone_records": [3, (now - timedelta(minutes=2)).isoformat()]}
+        with mock.patch.object(facts, "material", return_value=arriving):
+            self.assertIsNone(F.auto_due(self.db, self.case.id))  # still arriving: wait until it is quiet
+
+    def test_a_slow_case_a_failed_run_and_a_run_in_progress_wait_for_a_person(self):
+        from datetime import datetime, timedelta, timezone
+        from services.leads import finder as F
+        new = {"phone_records": [2, (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()]}
+        slow = self._run_row(seconds=1094.4, material={})  # Phone reference 1 before the faster engine (18 Nov)
+        with mock.patch.object(facts, "material", return_value=new):
+            self.assertIsNone(F.auto_due(self.db, self.case.id))
+            slow.counts = {"seconds": 400.0}
+            self.db.commit()
+            self.assertIsNotNone(F.auto_due(self.db, self.case.id))
+            failed = self._run_row(status="failed", error="ValueError: bad record", minutes_ago=30)
+            self.assertIsNone(F.auto_due(self.db, self.case.id))  # failed on its own: a person looks first
+            failed.error = F.STALE_WORDS  # stopped by a release: tried once more
+            self.db.commit()
+            self.assertEqual(F.auto_due(self.db, self.case.id), "Stopped by a restart.")
+            self._run_row(status="failed", error=F.STALE_WORDS, minutes_ago=20)
+            self.assertIsNone(F.auto_due(self.db, self.case.id))  # stopped twice: not again
+            self._run_row(status="running", minutes_ago=1)
+            self.assertIsNone(F.auto_due(self.db, self.case.id))
+
+    def test_the_automatic_pass_starts_the_run_as_loupe_and_waits_for_it(self):
+        from datetime import datetime, timedelta, timezone
+        from services.leads import finder as F
+        new = {"phone_records": [2, (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()]}
+        self._run_row(material={})
+        started = []
+
+        class FakeThread:
+            def __init__(self, target, args, daemon, name):
+                started.append(args)
+
+            def start(self):
+                row = self.db_row()
+                row.status, row.counts = "done", {"seconds": 1.0}
+                outer.db.commit()
+        outer = self
+        FakeThread.db_row = lambda _self: outer.db.scalars(
+            __import__("sqlalchemy").select(LeadFinderRun).where(LeadFinderRun.status == "queued")).first()
+        factory = lambda: self.db  # noqa: E731
+        self.db.close = lambda: None
+        with mock.patch.object(facts, "material", return_value=new), \
+                mock.patch.object(F.threading, "Thread", FakeThread), mock.patch.object(F, "AUTO_WAIT_POLL", 0):
+            self.assertEqual(F.auto_pass(factory), [str(self.case.id)])
+            self.assertEqual(F.auto_pass(factory), [])  # its material is now the last run's
+        runs = list(self.db.scalars(__import__("sqlalchemy").select(LeadFinderRun)
+                                    .where(LeadFinderRun.trigger == F.AUTO_TRIGGER)))
+        self.assertEqual(len(runs), 1)
+        self.assertIsNone(runs[0].requested_by)  # Loupe's run, under no person's name
+        self.assertEqual(len(started), 1)
+
+    def test_the_automatic_runs_stay_off_when_switched_off(self):
+        import asyncio
+        from services.leads import finder as F
+        with mock.patch.dict("os.environ", {"LOUPE_LEADS_AUTO": "off"}):
+            self.assertIsNone(asyncio.run(asyncio.wait_for(F.run_auto_forever(), 5)))
+
     def test_a_run_whose_thread_cannot_start_fails_with_the_reason(self):
         from services.leads import finder as F
 

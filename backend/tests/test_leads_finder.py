@@ -214,7 +214,7 @@ def test_near_pairs_are_the_near_pairs_of_every_pair_in_the_same_order():
 class _Held(F.FinderStore):
     """A FinderStore without a database: its database read is the same rules applied to a list."""
     def __init__(self, recs):
-        self.photo_refs, self._held, self.reads, self.all = set(), None, 0, recs
+        self.photo_refs, self._held, self.reads, self.all, self.dedupe_memo = set(), None, 0, recs, {}
 
     def phone_records(self, people, windows, everyone):
         return super().phone_records(people, windows, everyone)

@@ -44,6 +44,8 @@ export interface FinderState {
   finished_at?: string | null
   /** The case's material changed since this run: look again to bring the leads up to date. */
   new_material?: boolean
+  /** What started the run: a person's press ("button") or new material ("new_material", Loupe by itself). */
+  trigger?: string
 }
 
 export interface LeadFilter {

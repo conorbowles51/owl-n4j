@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import timedelta
 from itertools import combinations
+from operator import itemgetter
 
 from services.corroborate import model as M
 
@@ -21,17 +22,53 @@ STOCK_PHRASE_MIN = 20     # used in this many or more, it is a stock phrase and 
 MAX_REFS = 25             # records listed per cell; the count is always the whole number
 
 
+HELD_LISTS = 4  # record lists whose sorted copy and time index are kept (the newest asked)
+_HELD: list = []   # [(records list, its length, sorted copy, {kinds: index})], newest first
+
+
+def _held(recs: list[dict]) -> tuple:
+    """``(sorted copy, index memo)`` for ``recs``, sorted by time. A weighing buckets the same records once per kind of
+    row and pair (Phone reference 1, 20 Nov: about 38 buckets of 160,000 records a weighing, 12 sorts), so the last
+    few lists asked keep their sorted copy. The list itself is held, so its identity is never reused while kept."""
+    for i, (held, n, pool, memo) in enumerate(_HELD):
+        if held is recs and n == len(recs):
+            if i:
+                _HELD.insert(0, _HELD.pop(i))
+            return pool, memo
+    pool = sorted(recs, key=itemgetter("at"))
+    _HELD.insert(0, (recs, len(recs), pool, {}))
+    del _HELD[HELD_LISTS:]
+    return pool, _HELD[0][3]
+
+
+def _by_time(recs: list[dict]) -> list[dict]:
+    return _held(recs)[0]
+
+
+def _index(recs: list[dict], kinds) -> tuple:
+    """The time index ``bucket`` searches: the records of ``kinds`` in time order, the timed ones' positions and
+    instants, and the day-only ones'. Built once per held list and kinds."""
+    pool, memo = _held(recs)
+    key = None if kinds is None else frozenset(kinds)
+    if key in memo:
+        return memo[key]
+    # a stable sort then a filter: the order sorting the filter gives
+    pool_k = pool if kinds is None else [r for r in pool if r["kind"] in kinds]
+    # a timed record is inside when start <= at <= end: a slice of the timed records, no test per record. Only a
+    # day-only record is tested (by its date), and the two are put back in the pool's order.
+    timed = [k for k, r in enumerate(pool_k) if not r.get("day_only")]
+    timed_at = [pool_k[k]["at"] for k in timed]
+    days = [k for k, r in enumerate(pool_k) if r.get("day_only")]
+    days_at = [pool_k[k]["at"] for k in days]
+    memo[key] = (pool_k, timed, timed_at, days, days_at)
+    return memo[key]
+
+
 def bucket(recs: list[dict], instances: list[dict], kinds=None, *, money: bool = False) -> dict[str, list[dict]]:
     """{instance id: records inside it}, read once (records sorted by time, each instance found by bisection)."""
     from bisect import bisect_left, bisect_right
     from heapq import merge
-    pool = sorted((r for r in recs if kinds is None or r["kind"] in kinds), key=lambda r: r["at"])
-    # a timed record is inside when start <= at <= end: a slice of the timed records, no test per record. Only a
-    # day-only record is tested (by its date), and the two are put back in the pool's order.
-    timed = [k for k, r in enumerate(pool) if not r.get("day_only")]
-    timed_at = [pool[k]["at"] for k in timed]
-    days = [k for k, r in enumerate(pool) if r.get("day_only")]
-    days_at = [pool[k]["at"] for k in days]
+    pool, timed, timed_at, days, days_at = _index(recs, kinds)
     out = {}
     for inst in instances:
         end = inst["money_end"] if money else inst["end"]
@@ -237,12 +274,12 @@ def deletion_rows(people: dict, recs: list[dict], instances: list[dict]) -> list
     Deleting is an act, so it is compared with the ordinary days like any other signal, and kept apart from how
     often the two are in contact."""
     rows = []
+    deleted = [r for r in recs if r.get("deleted_by") and r["kind"] in M.CONTACT_KINDS]  # read once, not per pair
     for p in sorted(people):
         for q in sorted(people):
             if q == p:
                 continue
-            mine = [r for r in recs if r["kind"] in M.CONTACT_KINDS and p in (r.get("deleted_by") or ())
-                    and q in (r.get("kept_by") or ())]
+            mine = [r for r in deleted if p in r["deleted_by"] and q in (r.get("kept_by") or ())]
             if not mine:
                 continue
             row = _row(f"deleted:{p}:{q}", "absence",
@@ -297,7 +334,7 @@ def content_rows(people: dict, recs: list[dict], instances: list[dict], phrase_c
         inside = by_inst[inst["id"]]
         by_phrase: dict[str, list[dict]] = defaultdict(list)
         for r in inside:
-            for ph in M.phrases(r["body"]):
+            for ph in M.phrase_tuple(r["body"]):
                 by_phrase[ph].append(r)
         for ph, rs in by_phrase.items():
             senders = {r["sender"] for r in rs}

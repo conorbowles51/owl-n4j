@@ -192,6 +192,11 @@ async def lifespan(app: FastAPI):
     from services.embed_all.runner import run_forever as embed_all_forever
     embed_all_task = asyncio.create_task(embed_all_forever(), name="embed-all-sweep")
 
+    # Cases whose lead search finishes in under 10 minutes look for leads again by themselves on new material, one
+    # worker per host (services.leads.finder.run_auto_forever).
+    from services.leads.finder import run_auto_forever as run_lead_finder_auto_forever
+    lead_finder_auto_task = asyncio.create_task(run_lead_finder_auto_forever(), name="lead-finder-auto")
+
     # An agent run killed by a restart is marked interrupted, never left running (services.agent.run_settle).
     from services.agent.run_settle import settle_forever as settle_agent_runs_forever
     agent_run_settle_task = asyncio.create_task(settle_agent_runs_forever(), name="agent-run-settle")
@@ -226,7 +231,8 @@ async def lifespan(app: FastAPI):
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, address_lookup_task, phone_interpretation_task, financial_batches_task,
          view_warmup_task, view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task,
-         casebin_purge_task, malware_scan_task, case_exports_task, handover_task, agent_run_settle_task, backfill_resume_task, embed_all_task],
+         casebin_purge_task, malware_scan_task, case_exports_task, handover_task, agent_run_settle_task, backfill_resume_task, embed_all_task,
+         lead_finder_auto_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 

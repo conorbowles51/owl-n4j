@@ -8,3 +8,4 @@ os.environ.setdefault('SHARED_SOURCE_ROOTS', '')
 # one passes its own model_call.
 os.environ.setdefault('LOUPE_CASE_SEARCH_MODEL', 'off')
 os.environ.setdefault('LOUPE_DOC_DATES_MODEL', 'off')  # no test pays for a document date reading
+os.environ.setdefault('LOUPE_LEADS_AUTO', 'off')  # no test starts a lead search by itself

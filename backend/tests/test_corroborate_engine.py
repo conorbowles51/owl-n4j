@@ -1,7 +1,7 @@
 """Corroborate (lx-corroengine B-H) on an invented case: levels come from the rules, every check is returned, copies
 count once, missing data is Can't tell, and the rules never name the demo case's people."""
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import re
 from pathlib import Path
 
@@ -422,3 +422,84 @@ def test_a_weighing_with_the_run_memo_matches_one_without_it():
     for _ in range(2):  # the second weighing reuses the first one's kept records
         assert result(engine.run(store, _seed(), {"kind": "every_time"})) == plain
     assert store.dedupe_memo
+
+
+def _mixed_records(n=600, seed=7):
+    import random
+    rnd = random.Random(seed)
+    t0 = datetime(2025, 6, 1, tzinfo=timezone.utc)
+    out = []
+    for i in range(n):
+        at = t0 + timedelta(minutes=rnd.randrange(0, 60 * 24 * 20))
+        kind = rnd.choice(["message", "call", "position", "payment_alert"])
+        key = None
+        if kind == "message":
+            key = ("msg", at.replace(second=0), rnd.choice(["hi", "ok", "cash", "later"]), frozenset({"a", "b"}))
+        elif kind == "call":
+            key = ("bare", "call", at.replace(second=0), frozenset({"a", "b"})) if rnd.random() < 0.5 else None
+        elif kind == "payment_alert":
+            key = ("pay", "a", ("b",), 500, at.date())
+        out.append({"ref": f"phone_record:{i}", "kind": kind, "at": at, "owner": rnd.choice(["a", "b"]),
+                    "deleted": rnd.random() < 0.1, "dup_key": key, "body": "x"})
+    # copies on the other phone, the same minute
+    for r in list(out[:80]):
+        if r["dup_key"] and r["dup_key"][0] == "msg":
+            out.append({**r, "ref": r["ref"] + "-copy", "owner": "b" if r["owner"] == "a" else "a", "deleted": False})
+    out.sort(key=lambda r: r["at"])
+    return out
+
+
+def test_records_alone_in_their_group_are_kept_as_the_plain_dedupe_keeps_them():
+    """Fails on the code before: no ``hold_alone`` (lead finder 20 Nov: a weighing grouped every record again)."""
+    import random
+    held = _mixed_records()
+    memo: dict = {}
+    n = M.hold_alone(memo, held)
+    assert 0 < n < len(held)
+    assert not any(r["dup_key"] and r["dup_key"][0] == "pay" for r in held if id(r) in memo[M.ALONE])
+    rnd = random.Random(3)
+    for _ in range(25):  # windows of the held records, plus ledger rows the held read never saw
+        pick = sorted(rnd.sample(range(len(held)), rnd.randrange(1, len(held))))
+        raw = [held[k] for k in pick]
+        raw += [{"ref": f"financial_transaction:{k}", "kind": "payment", "at": held[k]["at"], "day_only": True,
+                 "dup_key": ("pay", "a", ("b",), 500, held[k]["at"].date()), "owner": "a"} for k in pick[:5]]
+        plain = M.dedupe(raw)
+        assert M.dedupe(raw, memo) == plain
+        assert [r["ref"] for r in M.dedupe(raw, memo)[0]] == [r["ref"] for r in plain[0]]  # same order
+    again = M.dedupe(held, memo)[0]
+    assert all(x is y for x, y in zip(again, M.dedupe(held, memo)[0]))  # kept records reused
+
+
+def test_buckets_of_one_list_share_one_sort_and_match_sorting_each_kind():
+    """Fails on the code before: no held sort or index (each kind of row sorted and filtered the weighing's records
+    again, and a list built for one call evicted the weighing's sorted records)."""
+    from services.corroborate import signals as S
+    recs = _mixed_records()
+    insts = [M.make_instance(date(2025, 6, d), time(20, 0), timedelta(hours=12), M.tz("UTC"), "ordinary", "UTC")
+             for d in range(1, 21)]
+    want = {}
+    for kinds in (None, M.CONTACT_KINDS, ("position",)):
+        pool = sorted((r for r in recs if kinds is None or r["kind"] in kinds), key=lambda r: r["at"])
+        want[kinds] = {i["id"]: [r for r in pool if i["start"] <= r["at"] <= i["end"]] for i in insts}
+    for kinds in (None, M.CONTACT_KINDS, ("position",), None):
+        got = S.bucket(recs, insts, kinds)
+        assert {k: [r["ref"] for r in v] for k, v in got.items()} == \
+            {k: [r["ref"] for r in v] for k, v in want[kinds].items()}
+    assert S._HELD[0][0] is recs and set(S._HELD[0][3]) == {None, frozenset(M.CONTACT_KINDS), frozenset(("position",))}
+    # a list built for one call between two buckets of the weighing's records does not cost their sort or index
+    sorts = []
+    S.bucket([r for r in recs if r["kind"] == "position"], insts)
+    import builtins
+    orig = builtins.sorted
+    builtins.sorted = lambda *a, **k: sorts.append(1) or orig(*a, **k)
+    try:
+        S.bucket(recs, insts, M.CONTACT_KINDS)
+    finally:
+        builtins.sorted = orig
+    assert sorts == []
+
+
+def test_phrase_tuple_is_the_phrases_of_the_text():
+    body = "The cash is in the van, the cash is in the van."
+    assert set(M.phrase_tuple(body)) == M.phrases(body) and len(M.phrase_tuple(body)) == len(M.phrases(body))
+    assert M.phrase_tuple(body) is M.phrase_tuple(body)

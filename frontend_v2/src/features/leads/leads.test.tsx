@@ -74,6 +74,12 @@ describe("the Leads page", () => {
     await waitFor(() => expect(find).toHaveBeenCalledWith("c1"))
   })
 
+  it("says when Loupe looked on its own because new material arrived", async () => {
+    vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [], total: 0, finder: { status: "done", trigger: "new_material", finished_at: "2026-11-20T21:00:00Z" } })
+    wrap(<LeadsPage />)
+    expect(await screen.findByText(/by Loupe on its own when new material arrived/)).toBeTruthy()
+  })
+
   it("shows Loupe's words beside a person's correction", async () => {
     vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [lead({ title: "Kell's relay", read: { title: "Kell and Okafor through the prepaid phone", summary: "", by: "Loupe's lead finder", words: "Read by Loupe's lead finder · not confirmed" }, corrections: [{ field: "title", original: "Kell and Okafor through the prepaid phone", value: "Kell's relay", by_name: "Neil", at: "" }] })], total: 1, finder: { status: "done" } })
     wrap(<LeadsPage />)

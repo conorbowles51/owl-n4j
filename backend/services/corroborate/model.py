@@ -19,6 +19,7 @@ the zone is named in every label.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
@@ -302,22 +303,63 @@ def dedupe(records: Iterable[dict], memo: dict | None = None) -> tuple[list[dict
     return list(kept.values()), folded
 
 
+# memo key of the records a run holds that no other record can fold with (``hold_alone``)
+ALONE = ("alone",)
+
+
+def hold_alone(memo: dict, records: list[dict]) -> int:
+    """Mark the records of a run's whole read that are alone in their copy group: no dup_key, or a message or call
+    key no other held record shares (a payment's key may meet a ledger row read later, so payments are never
+    marked). A weighing's dedupe then takes them as they are, without grouping them again (lead finder, 20 Nov:
+    grouping 160,000 records per weighing was a quarter of each deleted-message check). Returns how many."""
+    seen: dict = {}
+    for r in records:
+        k = r.get("dup_key")
+        if k is not None:
+            seen[k] = seen.get(k, 0) + 1
+    alone = {}
+    for r in records:
+        k = r.get("dup_key")
+        if k is None or (k[0] != "pay" and seen[k] == 1):
+            alone[id(r)] = [r, None]
+    memo[ALONE] = alone
+    return len(alone)
+
+
 def _dedupe_memo(records: Iterable[dict], memo: dict) -> tuple[list[dict], int]:
+    alone = memo.get(ALONE) or {}
     groups: dict[tuple, list[dict]] = {}
+    order: list = []  # the kept records' order: each group at its first record, as the plain loop gives them
     folded = 0
     for r in records:
+        a = alone.get(id(r))
+        if a is not None and a[0] is r:
+            order.append(a)
+            continue
         key = r.get("dup_key")
         if key is None:
-            groups[("ref", r["ref"])] = [r]  # the last record with a ref wins, as in the plain loop
+            gk = ("ref", r["ref"])
+            if gk not in groups:
+                order.append(gk)
+            groups[gk] = [r]  # the last record with a ref wins, as in the plain loop
         elif key in groups:
             groups[key].append(r)
             folded += 1
         else:
             groups[key] = [r]
+            order.append(key)
     if len(memo) > DEDUPE_MEMO_MAX:
         memo.clear()
+        if alone:
+            memo[ALONE] = alone
     out = []
-    for key, members in groups.items():
+    for key in order:
+        if type(key) is list:
+            if key[1] is None:
+                key[1] = dedupe([key[0]])[0][0]
+            out.append(key[1])
+            continue
+        members = groups[key]
         hit = memo.get(key)
         if hit is not None and len(hit[0]) == len(members) and all(a is b for a, b in zip(hit[0], members)):
             out.append(hit[1])
@@ -329,6 +371,13 @@ def _dedupe_memo(records: Iterable[dict], memo: dict) -> tuple[list[dict], int]:
 
 
 _WORD = re.compile(r"[\w'$.,]+", re.UNICODE)
+
+
+@lru_cache(maxsize=250_000)
+def phrase_tuple(body: str) -> tuple[str, ...]:
+    """``phrases(body)`` as a tuple in the set's own order, kept per text: the same message is read by every weighing
+    of a lead finder run (Phone reference 1: 42,000 texts a weighing)."""
+    return tuple(phrases(body))
 
 
 def phrases(body: str | None, n: int = 3) -> set[str]:

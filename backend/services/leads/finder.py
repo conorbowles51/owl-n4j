@@ -280,6 +280,7 @@ class FinderStore(CaseStore):
                 aats.append(r["at"])
         self._held = {"lo": lo, "hi": hi, "sig": _people_sig(everyone), "recs": phone, "by_phone": by_phone,
                       "phones": {e for p in everyone for e in p["phones"]}}
+        M.hold_alone(self.dedupe_memo, phone)
 
     def phone_records(self, people, windows, everyone):
         """The held records in the windows, chosen by the same rules as the database read (a payment alert up to three
@@ -1222,3 +1223,150 @@ def _work(run_id: str, case_id: str, session_factory, own: bool = True) -> None:
         stop.set()
         if own:
             session.close()
+
+
+# ---- runs on new material, for cases a run finishes quickly (Neil 2026-11-20, followups) ------------------------------
+# A case whose last finished run took under AUTO_MAX_SECONDS looks for leads again by itself when its material has
+# changed since that run and nothing new has arrived for AUTO_QUIET (an upload in progress is not chased). A case
+# whose run takes longer, or that has never been run, waits for a person to press Look for leads. The run is
+# recorded with trigger AUTO_TRIGGER and no person: its leads are Loupe's, as a pressed run's are.
+AUTO_TRIGGER = "new_material"
+AUTO_MAX_SECONDS = 600
+AUTO_QUIET = timedelta(minutes=10)
+AUTO_PASS_SECONDS = 300
+_AUTO_LOCK_PATH = "/tmp/loupe-lead-finder-auto.lock"
+
+
+def auto_enabled() -> bool:
+    import os
+    return os.environ.get("LOUPE_LEADS_AUTO", "on").strip().lower() != "off"
+
+
+def _newest(material: dict) -> datetime | None:
+    out = None
+    for v in (material or {}).values():
+        try:
+            t = datetime.fromisoformat(v[1]) if v and v[1] else None
+        except (TypeError, ValueError, IndexError):
+            t = None
+        if t is not None:
+            t = _utc(t)
+            out = t if out is None or t > out else out
+    return out
+
+
+def auto_due(db, case_id, now: datetime | None = None) -> str | None:
+    """Why this case should look for leads again by itself now, or None."""
+    from postgres.models.corroborate import LeadFinderRun
+    from services.corroborate import facts
+    rows = list(db.scalars(select(LeadFinderRun).where(LeadFinderRun.case_id == uuid.UUID(str(case_id)))
+                           .order_by(LeadFinderRun.started_at.desc()).limit(2)))
+    if not rows:
+        return None
+    latest = rows[0]
+    if latest.status in ("queued", "running") and not _stale(latest):
+        return None
+    if latest.status != "done":
+        # a run a release stopped is tried once more; a run that failed on its own waits for a person
+        stopped = latest.status in ("queued", "running") or latest.error == STALE_WORDS
+        before = rows[1] if len(rows) > 1 else None
+        if not stopped or before is None or before.status != "done":
+            return None
+        done = before
+    else:
+        done = latest
+    took = (done.counts or {}).get("seconds")
+    if not isinstance(took, (int, float)) or took >= AUTO_MAX_SECONDS:
+        return None
+    now = now or datetime.now(timezone.utc)
+    material = facts.material(db, case_id)
+    if material == (latest.material or {}) and latest.status == "done":
+        return None
+    newest = _newest(material)
+    if newest is not None and now - newest < AUTO_QUIET:
+        return None
+    return facts._change_reason(done.material or {}, material) if latest.status == "done" else "Stopped by a restart."
+
+
+def _auto_case_ids(db) -> list[str]:
+    return sorted({str(uuid.UUID(str(c))) for (c,) in
+                   db.execute(text("SELECT DISTINCT case_id FROM lead_finder_runs WHERE status = 'done'"))})
+
+
+def auto_pass(session_factory, stop: threading.Event | None = None) -> list[str]:
+    """One pass: every due case looks for leads, one after another in this thread. Returns the cases run."""
+    ran = []
+    db = session_factory()
+    try:
+        ids = _auto_case_ids(db)
+    finally:
+        db.close()
+    for case_id in ids:
+        if stop is not None and stop.is_set():
+            break
+        db = session_factory()
+        try:
+            why = auto_due(db, case_id)
+            if why is None:
+                continue
+            log.info("lead finder: case %s looks for leads by itself (%s)", case_id, why)
+            got = start(db, case_id, user=None, trigger=AUTO_TRIGGER, session_factory=session_factory)
+            ran.append(case_id)
+            _wait_for(session_factory, got.get("id"), stop)
+        except Exception:  # noqa: BLE001 - one case's failure never stops the others; its run row says why
+            log.exception("lead finder: automatic run failed for case %s", case_id)
+            db.rollback()
+        finally:
+            db.close()
+    return ran
+
+
+AUTO_WAIT_POLL = 5
+
+
+def _wait_for(session_factory, run_id, stop: threading.Event | None) -> None:
+    """Until the run ends (one automatic run at a time on the host), or the backend stops: the run's own daemon thread
+    ends with the process, and the next start shows it stopped."""
+    from postgres.models.corroborate import LeadFinderRun
+    ev = stop if stop is not None else threading.Event()
+    while run_id and not ev.wait(AUTO_WAIT_POLL):
+        db = session_factory()
+        try:
+            row = db.get(LeadFinderRun, uuid.UUID(run_id))
+            if row is None or row.status not in ("queued", "running") or _stale(row):
+                return
+        finally:
+            db.close()
+
+
+async def run_auto_forever():
+    """Started by main.py in every backend worker; only the one holding the host lock runs the automatic passes."""
+    import asyncio
+    import fcntl
+    if not auto_enabled():
+        return
+    lock = None
+    while True:
+        stop = threading.Event()
+        try:
+            if lock is None:
+                try:
+                    handle = open(_AUTO_LOCK_PATH, "a")
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    lock = handle
+                except OSError:
+                    lock = None
+            if lock is not None:
+                from postgres.session import _get_background_session_local
+                work = asyncio.create_task(asyncio.to_thread(auto_pass, _get_background_session_local(), stop))
+                try:
+                    await asyncio.shield(work)
+                except asyncio.CancelledError:
+                    stop.set()
+                    await work  # returns within AUTO_WAIT_POLL: a run in progress is left to its own thread
+                    raise
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("lead finder: automatic pass will retry")
+        await asyncio.sleep(AUTO_PASS_SECONDS)

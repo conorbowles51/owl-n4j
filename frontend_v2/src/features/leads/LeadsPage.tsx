@@ -114,7 +114,7 @@ export function LeadsPage() {
           and deletions around key dates, and documents naming people together. Each lead is compared with the case's
           ordinary days before it is shown. Photos are never read as where a phone was.
         </p>
-        {finder?.finished_at && <p className="mt-1">Last checked {when(finder.finished_at)}.{finder.new_material ? " New material has arrived since then: press Look for leads now to bring the leads up to date." : ""}</p>}
+        {finder?.finished_at && <p className="mt-1">Last checked {when(finder.finished_at)}{finder.trigger === "new_material" ? ", by Loupe on its own when new material arrived" : ""}.{finder.new_material ? " New material has arrived since then: press Look for leads now to bring the leads up to date." : ""}</p>}
       </footer>
     </div>
   )
