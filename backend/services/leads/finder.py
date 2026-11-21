@@ -686,21 +686,28 @@ def places(case: Case) -> list[dict]:
         for x, y in _near_pairs(rs):
             if x["owner"] == y["owner"] or not _near(x, y):
                 continue
-            cell = (round(x["place"]["lat"] / 0.002), round(x["place"]["lon"] / 0.002))
-            g = groups.setdefault(cell, {"nights": defaultdict(set), "refs": defaultdict(set), "close": defaultdict(set),
-                                         "lat": x["place"]["lat"], "lon": x["place"]["lon"]})
+            # the cell of the pair's midpoint, the same whichever of the two was read first (the cell of the first
+            # position made the leads follow the order the database returned rows in: 20 Nov, Phone reference 1)
+            cell = (round((x["place"]["lat"] + y["place"]["lat"]) / 0.004),
+                    round((x["place"]["lon"] + y["place"]["lon"]) / 0.004))
+            g = groups.get(cell)
+            if g is None:
+                g = groups[cell] = {"nights": defaultdict(set), "refs": defaultdict(set), "close": defaultdict(set)}
+            for r in (x, y):  # the place shown: the cell's earliest position, then lowest ref
+                if "first" not in g or M.copy_order(r) < g["first"]:
+                    g["first"], g["lat"], g["lon"] = M.copy_order(r), r["place"]["lat"], r["place"]["lon"]
             g["nights"][night] |= {x["owner"], y["owner"]}
             g["refs"][night] |= {x["ref"], y["ref"]}
             if abs(x["at"] - y["at"]) <= M.TOGETHER_GAP:
                 g["close"][night].add(tuple(sorted((x["owner"], y["owner"]))))
     out = []
     for cell, g in groups.items():
-        repeated = {n: who for n, who in g["nights"].items() if len(who) >= 2}
+        repeated = {n: who for n, who in sorted(g["nights"].items()) if len(who) >= 2}
         if len(repeated) >= MIN_REPEAT:
             who = Counter(p for ws in repeated.values() for p in ws)
             keys = sorted(p for p, n in who.items() if n >= MIN_REPEAT)
             if len(keys) >= 2:
-                refs = [ref for n in repeated for ref in g["refs"][n]
+                refs = [ref for n in repeated for ref in sorted(g["refs"][n])
                         if any(r["ref"] == ref and r["owner"] in keys for r in pos)]
                 title = (f"{_people_words(case, keys)}: phones in the same place on {len(repeated)} nights "
                          f"({_days_words(repeated)})")
@@ -709,11 +716,11 @@ def places(case: Case) -> list[dict]:
                                  detail={"place": {"lat": g["lat"], "lon": g["lon"]},
                                          "nights": sorted(d.isoformat() for d in repeated)}))
                 continue
-        for night, pairs in g["close"].items():
+        for night, pairs in sorted(g["close"].items()):
             if len(g["nights"]) >= MIN_REPEAT:
                 continue
-            for a, b in pairs:
-                refs = [ref for ref in g["refs"][night] if any(r["ref"] == ref and r["owner"] in (a, b) for r in pos)]
+            for a, b in sorted(pairs):
+                refs = [ref for ref in sorted(g["refs"][night]) if any(r["ref"] == ref and r["owner"] in (a, b) for r in pos)]
                 at = min(r["at"] for r in pos if r["ref"] in refs)
                 title = (f"{case.label(a)} and {case.label(b)} in the same place on {case.local(at):%a %-d %b %Y, %H:%M}, "
                          "once")

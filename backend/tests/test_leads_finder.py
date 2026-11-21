@@ -753,3 +753,11 @@ def test_which_copy_of_a_record_stands_for_it_does_not_depend_on_the_order_given
     assert first[0][0]["ref"] == "phone_record:10" and first[0][0]["copies"] == ["phone_record:10", "phone_record:9"]
     assert first[0][0]["deleted_by"] == ["a"] and first[0][0]["kept_by"] == ["b"]
     assert M.dedupe([b, a], {})[0] == first[0]  # a run's memo gives the same kept record
+
+
+def test_a_pair_of_positions_is_filed_under_the_same_place_whichever_comes_first():
+    # 11 m apart either side of a map cell's edge: the cell of the first position gave two different leads
+    recs = [pos("p1", "a", at(NIGHTS[0], 21, 20), lat=51.50095), pos("p2", "z", at(NIGHTS[0], 21, 30), lat=51.50105)]
+    one = [(c["key"], c["refs"], c["detail"]) for c in F.places(case(recs))]
+    assert one and one == [(c["key"], c["refs"], c["detail"]) for c in F.places(case(recs[::-1]))]
+    assert one[0][2]["place"]["lat"] == 51.50095  # the place shown is the earlier position's
