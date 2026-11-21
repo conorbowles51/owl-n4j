@@ -568,12 +568,15 @@ class _Conn:
 
     def execute(self, sql, params=None, execution_options=None):
         q = str(sql)
-        self.asked.append((self.who, "activity" if "pol_activity_event" in q else "stock" if "phone_comm_events" in q else q))
+        self.asked.append((self.who, "activity" if "pol_activity_event" in q else "texts" if q == F.TEXTS_SQL else
+                           "stock" if "phone_comm_events" in q else q))
         if self.fail:
             raise RuntimeError("connection dropped")
         t = datetime(2025, 3, 7, 21, tzinfo=timezone.utc)
         if "pol_activity_event" in q:
             return iter([("e1", t, "explicit"), ("e1", t, "explicit"), ("e1", t + timedelta(minutes=5), "assumed")])
+        if q == F.TEXTS_SQL:
+            return iter([("cash is in the van",), ("",), ("the van ok",)])
         return iter([("sent from my phone", 3, 40)])
 
     def __enter__(self):
@@ -601,7 +604,8 @@ def test_the_case_wide_reads_run_on_their_own_connection_and_give_the_inline_ans
     st.start_reads()
     st._hold_activity()
     rows = st.stock_rows()
-    assert asked == [("background", "activity"), ("background", "stock")]  # the session was never asked
+    st.held_texts()
+    assert sorted(asked) == [("background", "activity"), ("background", "stock"), ("background", "texts")]  # never the session
     ts, cum, other = st._activity["e1"]
     assert len(ts) == 2 and list(cum) == [0, 2, 3] and list(other) == ["assumed"]
     assert rows == [("sent from my phone", 3, 40)]
@@ -610,7 +614,9 @@ def test_the_case_wide_reads_run_on_their_own_connection_and_give_the_inline_ans
     inline.start_reads()
     inline._hold_activity()
     assert inline.stock_rows() == rows and inline._activity == st._activity
-    assert [w for w, _ in asked2] == ["background", "session", "session"]
+    assert inline.held_texts() is None
+    assert sorted(asked2) == [("background", "activity"), ("background", "texts"), ("session", "activity"),
+                              ("session", "stock")]
 
 
 def test_a_chunk_is_counted_as_each_text_tested_alone():
@@ -633,6 +639,51 @@ def test_a_chunk_is_counted_as_each_text_tested_alone():
     got = [0]
     F._count_chunk(["the cash", "is in"], ["cash is"], [F._like_test("cash is")], got)
     assert got == [0]
+
+
+def test_phrases_are_counted_from_the_texts_read_once_as_the_database_counts_them():
+    """Fails on the code before: no held texts, so every batch of new phrases read all the case's texts again (Phone
+    reference 1, 20 Nov: 892 MB per read, 2 streams and 7 one-phrase counts, 167 s of a run)."""
+    import random
+    rnd = random.Random(11)
+    words = ["cash", "is", "in", "the", "van", "dock", "3", "tonight", "café", "naïve", "ok", "😀", "ß"]
+    bodies = [" ".join(rnd.choice(words) for _ in range(rnd.randint(0, 25))) for _ in range(500)]
+    bodies += ["cash is in", "", "café ok café", "50% off_now \\ ok", "😀😀 the van"]
+    lows = ["cash is in", "the van", "café ok", "naïve", "😀 the", "", "50% off", "off_now", "c_sh", "caf_",
+            "van cash", "never said", "ß ok", "é"]
+    tests = [F._like_test(lo) for lo in lows]
+    want = [sum(1 for b in bodies if t(b)) for t in tests]
+    for size in (1, 7, len(bodies)):
+        got = [0] * len(lows)
+        for k in range(0, len(bodies), size):
+            packed, count = F._pack(bodies[k:k + size])
+            F._count_packed(F.zlib.decompress(packed), count, lows, tests, got)
+        assert got == want, size
+    got = [0]
+    F._count_packed(F.zlib.decompress(F._pack(["the cash", "is in"])[0]), 2, ["cash is"], [F._like_test("cash is")], got)
+    assert got == [0]
+
+    # a run holding the texts asks the database only to lower-case the phrases, never to count them
+    st, asked = _bg_store(fail=False)
+    st._phrase_n = {}
+    st.start_reads()
+    st.q = lambda sql, **k: (asked.append(("session", sql)), iter([(p.lower(),) for p in k["ps"]]))[1]
+    assert st.phrase_counts(["The Van", "cash", "nothing"]) == {"The Van": 2, "cash": 1, "nothing": 0}
+    assert st.phrase_counts(["cash", "OK"]) == {"cash": 1, "OK": 1}
+    assert all("unnest" in q for w, q in asked if w == "session") and \
+        sum(1 for w, _ in asked if w == "session") == 2 and ("background", "texts") in asked
+
+
+def test_the_statement_files_outside_the_ledger_are_read_once_per_run(monkeypatch):
+    """Fails on the code before: each weighing read them again (Phone reference 1, 20 Nov: 110 reads a run)."""
+    from services.corroborate.store import CaseStore
+    reads = []
+    monkeypatch.setattr(CaseStore, "statement_files_outside_ledger", lambda self: reads.append(1) or ["a.pdf (x)"])
+    st = F.FinderStore.__new__(F.FinderStore)
+    st._statements_outside = None
+    first = st.statement_files_outside_ledger()
+    first.append("changed by a caller")
+    assert st.statement_files_outside_ledger() == ["a.pdf (x)"] and len(reads) == 1
 
 
 def test_norm_folds_whitespace_as_split_does():

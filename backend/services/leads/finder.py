@@ -39,6 +39,7 @@ import re
 import threading
 import time
 import uuid
+import zlib
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from array import array
@@ -109,6 +110,14 @@ class FinderStore(CaseStore):
         self.dedupe_memo: dict = {}  # kept records made from the same held records, reused across weighings
         self._contact: dict[tuple, int] = {}
         self._cov: dict[tuple, dict] = {}
+        self._statements_outside: list[str] | None = None
+
+    def statement_files_outside_ledger(self) -> list[str]:
+        """Read once per finder run: every weighing asked it again, with the same answer (Phone reference 1, 20 Nov:
+        110 reads, 8.7 s of a run). Callers get a copy."""
+        if self._statements_outside is None:
+            self._statements_outside = super().statement_files_outside_ledger()
+        return list(self._statements_outside)
 
     def contact_ever(self, a: dict, b: dict) -> int:
         """Asked of the database once per pair in a finder run (Phone reference 1, 18 Nov: every weighing asked its
@@ -189,6 +198,26 @@ class FinderStore(CaseStore):
         self._bg = threading.Thread(target=run, name="lead-finder-read", daemon=True)
         self._bg.start()
 
+
+        def texts():
+            try:
+                with bind.connect() as conn:
+                    self._texts = _read_texts(conn, params)
+            except Exception:  # each phrase is counted by the database instead: slower, same answer
+                log.exception("lead finder: reading the case's texts failed; counting phrases in the database")
+
+        self._texts: list[tuple[bytes, int]] | None = None
+        self._bg_texts = threading.Thread(target=texts, name="lead-finder-texts", daemon=True)
+        self._bg_texts.start()
+
+    def held_texts(self) -> list[tuple[bytes, int]] | None:
+        """The case's texts read by ``start_reads`` (waiting for the read), or None when they were not read."""
+        bg = getattr(self, "_bg_texts", None)
+        if bg is None:
+            return None
+        bg.join()
+        return self._texts
+
     def _background_result(self, name: str):
         bg = getattr(self, "_bg", None)
         if bg is None:
@@ -238,7 +267,10 @@ class FinderStore(CaseStore):
         count reads 847 MB of text (5.4 s, 18 Nov) and the weighings of one run ask many of the same phrases."""
         want = phrases[:200]
         new = [ph for ph in want if ph not in self._phrase_n]
-        if len(new) >= STREAM_PHRASES_FROM:
+        held = self.held_texts() if new else None
+        if held is not None:
+            self._phrase_n.update(self._held_counts(new, held))
+        elif len(new) >= STREAM_PHRASES_FROM:
             self._phrase_n.update(self._streamed_counts(new))
         elif new:
             self._phrase_n.update(super().phrase_counts(new))
@@ -264,6 +296,18 @@ class FinderStore(CaseStore):
                 _count_chunk(chunk, lows, tests, n)
                 chunk, size = [], 0
         _count_chunk(chunk, lows, tests, n)
+        return dict(zip(phrases, n))
+
+    def _held_counts(self, phrases: list[str], held: list[tuple[bytes, int]]) -> dict[str, int]:
+        """``_streamed_counts`` from the texts held for the run: the database lower-cases each phrase, the texts were
+        lower-cased by it when read. Phone reference 1, 20 Nov: 329,012 texts, 892 MB, read in each of 2 streams
+        and 7 one-phrase counts of a run (167 s); held, the case's texts are read once, alongside the case."""
+        lows = [str(x) for (x,) in self.q("SELECT lower(p) FROM unnest(CAST(:ps AS text[])) WITH ORDINALITY AS u(p, i) "
+                                         "ORDER BY i", ps=list(phrases))]
+        tests = [_like_test(lo) for lo in lows]
+        n = [0] * len(phrases)
+        for packed, count in held:
+            _count_packed(zlib.decompress(packed), count, lows, tests, n)
         return dict(zip(phrases, n))
 
     def records(self, people, windows, everyone):
@@ -337,7 +381,7 @@ def _count_chunk(bodies: list[str], lows: list[str], tests: list, n: list[int]) 
         for i in plain:
             lo = lows[i]
             if not lo:
-                n[i] += len(bodies)  # the empty phrase is in every text, as LIKE '%%' is
+                n[i] += len(bodies)  # the empty phrase is in every text, as LIKE with only wildcards matches every text
                 continue
             hit = blob.find(lo)
             while hit != -1:
@@ -349,6 +393,58 @@ def _count_chunk(bodies: list[str], lows: list[str], tests: list, n: list[int]) 
         for i in other:
             if tests[i](body):
                 n[i] += 1
+
+
+TEXTS_SQL = "SELECT lower(body) FROM phone_comm_events WHERE case_id = :c AND body IS NOT NULL"
+
+
+def _pack(bodies: list[str]) -> tuple[bytes, int]:
+    return zlib.compress(_SEP.join(bodies).encode("utf-8"), 1), len(bodies)
+
+
+def _read_texts(conn, params: dict) -> list[tuple[bytes, int]]:
+    """Every text of the case as the phrase counts read it (``TEXTS_SQL``), held as compressed chunks: each chunk the
+    UTF-8 of up to ``COUNT_CHUNK_ROWS`` texts joined by ``_SEP``, with its count of texts. Phone reference 1, 20 Nov:
+    892 MB of text."""
+    out: list[tuple[bytes, int]] = []
+    chunk: list[str] = []
+    size = 0
+    rows = conn.execute(text(TEXTS_SQL), params, execution_options={"stream_results": True, "yield_per": 2000})
+    for (body,) in rows:
+        chunk.append(body)
+        size += len(body)
+        if len(chunk) >= COUNT_CHUNK_ROWS or size >= COUNT_CHUNK_CHARS:
+            out.append(_pack(chunk))
+            chunk, size = [], 0
+    if chunk:
+        out.append(_pack(chunk))
+    return out
+
+
+def _count_packed(blob: bytes, count: int, lows: list[str], tests: list, n: list[int]) -> None:
+    """``_count_chunk`` on one held chunk (``count`` texts, UTF-8, joined by ``_SEP``). A phrase is in a text exactly
+    when its UTF-8 is in the text's UTF-8, and it cannot run across two texts, since the separator is never in a
+    phrase; after a match the search moves on past the text's end. A phrase with a wildcard (or the separator) is
+    tested text by text."""
+    sep = _SEP.encode()
+    words = None
+    for i, lo in enumerate(lows):
+        if any(ch in lo for ch in "_%\\" + _SEP):
+            if words is None:
+                words = blob.decode("utf-8").split(_SEP)
+            n[i] += sum(1 for body in words if tests[i](body))
+            continue
+        if not lo:
+            n[i] += count  # the empty phrase is in every text, as LIKE with only wildcards matches every text
+            continue
+        b = lo.encode("utf-8")
+        hit = blob.find(b)
+        while hit != -1:
+            n[i] += 1
+            end = blob.find(sep, hit + len(b))
+            if end == -1:
+                break
+            hit = blob.find(b, end + 1)
 
 
 def _like_test(low: str) -> Callable[[str], bool]:
