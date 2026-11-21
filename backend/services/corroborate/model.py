@@ -283,24 +283,38 @@ def dedupe(records: Iterable[dict], memo: dict | None = None) -> tuple[list[dict
     record objects as before is reused, not copied again. Callers never change a kept record."""
     if memo is not None:
         return _dedupe_memo(records, memo)
-    kept: dict[tuple, dict] = {}
+    groups: dict[tuple, list[dict]] = {}
     folded = 0
     for r in records:
         key = r.get("dup_key")
         if key is None:
-            kept[("ref", r["ref"])] = {**r, "copies": [r["ref"]]}
+            groups[("ref", r["ref"])] = [r]  # with no copy key, the last record of a ref wins
             continue
-        if key in kept:
-            kept[key]["copies"].append(r["ref"])
+        if key in groups:
+            groups[key].append(r)
             folded += 1
         else:
-            kept[key] = {**r, "copies": [r["ref"]]}
+            groups[key] = [r]
+    return [_fold(rs) for rs in groups.values()], folded
+
+
+def copy_order(r: dict) -> tuple:
+    """Which copy of a record stands for it: the earliest, then the lowest ref. Not the first one read, so the order
+    the database returns rows in decides nothing (lead finder, 20 Nov: two runs on one case kept different copies)."""
+    at = r.get("at")
+    return (at is None, at.timestamp() if at is not None else 0.0, r["ref"])
+
+
+def _fold(rs: list[dict]) -> dict:
+    rs = rs if len(rs) == 1 else sorted(rs, key=copy_order)
+    one = {**rs[0], "copies": [r["ref"] for r in rs]}
+    for r in rs:
         # whose phone deleted its copy and whose kept it (a deletion another phone kept is a signal, lx-leads D)
-        if r.get("owner"):
+        if r.get("owner") and r.get("dup_key") is not None:
             side = "deleted_by" if r.get("deleted") else "kept_by"
-            if r["owner"] not in kept[key].setdefault(side, []):
-                kept[key][side].append(r["owner"])
-    return list(kept.values()), folded
+            if r["owner"] not in one.setdefault(side, []):
+                one[side].append(r["owner"])
+    return one
 
 
 # memo key of the records a run holds that no other record can fold with (``hold_alone``)

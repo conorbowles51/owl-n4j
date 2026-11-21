@@ -710,3 +710,46 @@ def test_a_kind_of_row_filters_a_weighings_records_once():
     assert a == [r for r in recs if r["kind"] == "position"]
     assert S._only(list(recs), "pos", lambda r: r["kind"] == "message") != a  # another list is filtered anew
 
+
+
+class _Rows:
+    """A store with no database whose read returns the rows in the order given, as a database may."""
+    def __init__(self, rows):
+        self.rows = rows
+
+    def zone(self):
+        return "UTC"
+
+    def people(self):
+        return list(PEOPLE.values())
+
+    def period(self, people):
+        return (NIGHTS[0] - timedelta(days=1), NIGHTS[0] + timedelta(days=1))
+
+    def records(self, people, windows, everyone):
+        return [dict(r) for r in self.rows]
+
+
+def test_the_order_the_database_returns_rows_in_decides_no_lead():
+    # two positions 11 m apart either side of a 200 m map cell's edge, and two copies of one message in one second
+    rows = [pos("phone_record:2", "a", at(NIGHTS[0], 21, 20), lat=51.50095),
+            pos("phone_record:1", "z", at(NIGHTS[0], 21, 30), lat=51.50105),
+            {**msg("phone_record:4", "a", "z", at(NIGHTS[0], 22)), "dup_key": ("msg", "k")},
+            {**msg("phone_record:3", "z", "a", at(NIGHTS[0], 22)), "dup_key": ("msg", "k")}]
+    one, other = F.Case(_Rows(rows)), F.Case(_Rows(rows[::-1]))
+    assert [r["ref"] for r in one.recs] == [r["ref"] for r in other.recs]
+    found = [(c["key"], c["refs"]) for c in F.places(one)]
+    assert found and found == [(c["key"], c["refs"]) for c in F.places(other)]
+    kept = M.dedupe([r for r in one.recs if r["kind"] == "message"])[0]
+    assert kept == M.dedupe([r for r in other.recs if r["kind"] == "message"])[0]
+
+
+def test_which_copy_of_a_record_stands_for_it_does_not_depend_on_the_order_given():
+    def copy(ref, owner, deleted):
+        return {**msg(ref, owner, "z", at(NIGHTS[0], 22), deleted=deleted), "dup_key": ("msg", "k")}
+    a, b = copy("phone_record:9", "a", True), copy("phone_record:10", "b", False)
+    first, second = M.dedupe([a, b]), M.dedupe([b, a])
+    assert first == second and first[1] == 1
+    assert first[0][0]["ref"] == "phone_record:10" and first[0][0]["copies"] == ["phone_record:10", "phone_record:9"]
+    assert first[0][0]["deleted_by"] == ["a"] and first[0][0]["kept_by"] == ["b"]
+    assert M.dedupe([b, a], {})[0] == first[0]  # a run's memo gives the same kept record

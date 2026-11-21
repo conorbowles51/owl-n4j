@@ -317,7 +317,7 @@ class FinderStore(CaseStore):
         """Keep the phone records the finder has read for the whole case (``lo`` to ``hi``, everyone's phones), so each
         weighing reads its windows from them instead of the database. On Phone reference 1 one weighing re-read
         251,780 records in 339 s (18 Nov); a finder run weighs dozens of leads."""
-        phone = sorted((r for r in recs if r["ref"].startswith("phone_record:")), key=lambda r: r["at"])
+        phone = sorted((r for r in recs if r["ref"].startswith("phone_record:")), key=M.copy_order)
         # per phone, in time order: every record (place in ``recs``, instant), and its payment alerts alone
         by_phone: dict[str, tuple[list, list, list, list]] = {}
         for k, r in enumerate(phone):
@@ -505,7 +505,9 @@ class Case:
                 store.hold(raw, lo, hi, list(self.people.values()))
         else:
             raw = []
-        self.recs = [r for r in raw if r.get("at")]
+        # in time order, then by ref: the database returns rows in no set order, and the order decided which copy of a
+        # message stood for it and under which map cell a pair of positions was filed (20 Nov, Phone reference 1)
+        self.recs = sorted((r for r in raw if r.get("at")), key=M.copy_order)
         self.stock: set[str] = set()
         self.photo_places = sum(1 for r in self.recs if r.get("photo_place"))
         phones = {r["phone"] for r in self.recs if r.get("phone")}
