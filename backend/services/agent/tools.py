@@ -177,6 +177,21 @@ class ClarificationArgs(BaseModel):
     reason: str | None = None
 
 
+ANSWER_BOTH_LABEL = re.compile(r"^\W*(both|all of the above|all of these|each of these)\b", re.I)
+ANSWER_BOTH = ("Not asked: one option, \"%s\", is to have every reading, so answer every reading now, each under "
+               "its own heading, from this case's records. Ask only when the readings need work that cannot all be "
+               "done in this run, and then say which part is answered.")
+
+
+def _answer_both_option(options: list) -> str | None:
+    """The label of an option that takes every other reading ("Both, for each check"), or None."""
+    for option in options:
+        label = str(option.get("label") or "")
+        if ANSWER_BOTH_LABEL.match(label):
+            return label
+    return None
+
+
 def _fit_on(item: str) -> bool:
     from services.agent import fit
     return fit.on(item)
@@ -2053,6 +2068,13 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             for option in options
             if isinstance(option, (dict, BaseModel))
         ]
+        both = _answer_both_option(raw_options)
+        if both:
+            # A choice to have every reading is no choice: the person would take it. Answer each reading instead of
+            # handing the question back (probe 22 Nov: a follow-up the thread had fixed got only an ask-back).
+            message = ANSWER_BOTH % both
+            return context.result("request_clarification", {"asked": False, "reason": message},
+                                  summary=message, status="error", error=message)
         clarification = {
             "question": question,
             "options": [
