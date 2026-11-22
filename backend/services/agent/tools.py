@@ -2779,6 +2779,22 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             summary += " " + behind["sentence"]
         return context.result(tool_name, data, summary=summary)
 
+    def _phones_around(db, items) -> dict[str, Any]:
+        """What the phones hold in the week before the returned payments (services.agent.phones_around_payments).
+        A failure is said in the result, never hidden, and never fails the ledger read."""
+        from services.agent import phones_around_payments as PA
+        try:
+            got = PA.around(db.connection(), uuid.UUID(context.case_id), items)
+        except Exception:  # noqa: BLE001
+            logger.warning("Phones-around read failed for case %s", context.case_id, exc_info=True)
+            return {"around_on_phones": {"available": False, "sentence": "The phones around these payments could "
+                    "not be counted just now; read them with phone_messages for the payment days."}}
+        return {"around_on_phones": got} if got else {}
+
+    def _around_words(data) -> str:
+        sentence = (data.get("around_on_phones") or {}).get("sentence")
+        return (" " + sentence) if sentence else ""
+
     def read_ledger(tool_name: str, *, view: str, **kwargs) -> dict[str, Any]:
         if context.significant_scope:
             return scope_error(tool_name, "Financial analysis")
@@ -2815,6 +2831,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 data = kept_read_financial_ledger(db, case_id=uuid.UUID(context.case_id),
                     view=view, filters=filters or None, ledger_cache=context.ledger_cache, **kwargs)
                 outside = _statements_outside_ledger(db, context.case_id) if data.get("available") is True else None
+                if view == "transactions" and data.get("available") is True and data.get("items"):
+                    data = {**data, **_phones_around(db, data["items"])}
                 if outside is not None:
                     data = {**data, "coverage": {**(data.get("coverage") or {}), "statements_outside_ledger": outside}}
         except ValueError as exc:
@@ -2834,6 +2852,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             + ledger_population_words(data)
             + (" " + data["coverage"]["why_not_verified"]
                if not data.get("totals") and (data.get("coverage") or {}).get("why_not_verified") else "")
+            + _around_words(data)
             if available else str(data.get("reason") or "The complete financial scope is unavailable.")
         )
         return context.result(tool_name, data, summary=summary,
@@ -2956,6 +2975,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         summary = "Found %d ledger rows for '%s' by meaning and loose words, best first; showing %d from %d. %d rows " \
                   "hold every word as written (exact_words)." % (found, search, len(rows), data.get("offset") or 0,
                                                                  exact_words["total_matching"] or 0)
+        summary += _around_words(data)
         return context.result(tool, data, summary=summary)
 
     def analyze_financial_transactions(group_by="account", **kwargs) -> dict[str, Any]:
