@@ -319,7 +319,7 @@ class LeadStoreTests(DuplicateTestCase):
         from datetime import datetime, timedelta, timezone
         from services.leads import finder as F
         new = {"phone_records": [2, (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()]}
-        slow = self._run_row(seconds=1094.4, material={})  # Phone reference 1 before the faster engine (18 Nov)
+        slow = self._run_row(seconds=1260.0, material={})  # over 20 minutes
         with mock.patch.object(facts, "material", return_value=new):
             self.assertIsNone(F.auto_due(self.db, self.case.id))
             slow.counts = {"seconds": 400.0}
@@ -333,6 +333,22 @@ class LeadStoreTests(DuplicateTestCase):
             self._run_row(status="failed", error=F.STALE_WORDS, minutes_ago=20)
             self.assertIsNone(F.auto_due(self.db, self.case.id))  # stopped twice: not again
             self._run_row(status="running", minutes_ago=1)
+            self.assertIsNone(F.auto_due(self.db, self.case.id))
+
+    def test_a_case_whose_run_takes_up_to_20_minutes_runs_by_itself(self):
+        """Fails on the code before: the limit was 10 minutes, so Phone reference 1 (881 s, 21 Nov) waited for a person
+        (Neil 22 Nov: up to 20 minutes runs by itself)."""
+        from datetime import datetime, timedelta, timezone
+        from services.leads import finder as F
+        new = {"phone_records": [2, (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()]}
+        ref1 = self._run_row(seconds=881.0, material={})
+        with mock.patch.object(facts, "material", return_value=new):
+            self.assertEqual(F.auto_due(self.db, self.case.id), "New or changed phone records")
+            ref1.counts = {"seconds": 1199.0}
+            self.db.commit()
+            self.assertIsNotNone(F.auto_due(self.db, self.case.id))
+            ref1.counts = {"seconds": 1200.0}
+            self.db.commit()
             self.assertIsNone(F.auto_due(self.db, self.case.id))
 
     def test_the_automatic_pass_starts_the_run_as_loupe_and_waits_for_it(self):

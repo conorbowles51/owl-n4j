@@ -24,9 +24,9 @@ How it works, in order:
    nights, so "No link found" is shown with what was searched.
 
 Nothing here calls a model. A run re-checks on new material: leads keep their identity (``finder_key``), state and
-corrections; a level change is recorded with its reason. Runs start from the Leads page's button, never on their own:
-measured 18 Nov on the loaded box, the demo case took 31-70 s and Phone reference 1 more than 10 minutes, so by the
-brief's rule (over 10 minutes) automatic runs stay off; the page says when new material arrived since the last run.
+corrections; a level change is recorded with its reason. A case whose last run took under 20 minutes
+(``AUTO_MAX_SECONDS``; Neil 22 Nov) runs again by itself when new material arrives; a slower case waits for the Leads
+page's button, and the page says when new material arrived since the last run.
 
 Together rule: only the Corroborate engine's (``model.TOGETHER_GAP`` 15 minutes, accuracy radii plus
 ``TOGETHER_SLACK_M``) for "at the same time"; "same place the same night" uses the same distance rule over a
@@ -1389,7 +1389,7 @@ def _work(run_id: str, case_id: str, session_factory, own: bool = True) -> None:
 # whose run takes longer, or that has never been run, waits for a person to press Look for leads. The run is
 # recorded with trigger AUTO_TRIGGER and no person: its leads are Loupe's, as a pressed run's are.
 AUTO_TRIGGER = "new_material"
-AUTO_MAX_SECONDS = 600
+AUTO_MAX_SECONDS = 1200  # Neil 22 Nov: up to 20 minutes runs by itself (Phone reference 1 took 881-958 s, 21 Nov)
 AUTO_QUIET = timedelta(minutes=10)
 AUTO_PASS_SECONDS = 300
 _AUTO_LOCK_PATH = "/tmp/loupe-lead-finder-auto.lock"
