@@ -1,6 +1,6 @@
 {
   "case": "b75f3f2c-ffa1-4260-8fe9-6f5db4e9d4df",
-  "note": "Directed probing on the demo case (followups m111800442815723). Six chains of four follow-ups an investigator would ask, written from the answer key (planted-report-rubric.json, live-demo-key.mjs). Each later step leans on the earlier answer. Never given to the agent.",
+  "note": "Directed probing on the demo case (followups m111800442815723). Six chains of four follow-ups an investigator would ask, written from the answer key (planted-report-rubric.json, live-demo-key.mjs). Each later step leans on the earlier answer. Never given to the agent. Keys follow planted-truths.json: Kell wrote the tow-truck message to Okafor (F12); Okafor's badge B-20417 was at the staff entrance, not dock 3 (F23).",
   "chains": [
     {"id": "P1", "title": "The glovebox phone", "steps": [
       {"q": "Which phone in this case was found in a glovebox, and whose number is saved in it?", "expect": {"all": ["glovebox"]}},
@@ -14,9 +14,9 @@
       {"q": "Did his phone have any contact with Desmond Okafor on any of those nights?", "expect": {"all": ["Okafor"], "any": ["no contact", "no call", "no message", "no calls or messages"]}, "carries": ["Mateo"]}]},
     {"id": "P3", "title": "The tow truck message", "steps": [
       {"q": "Find the message about leaving something in the tow truck.", "expect": {"any": ["left something in the tow truck", "need it back"]}},
-      {"q": "Who sent it, and was it deleted?", "expect": {"all": ["Okafor", "deleted"]}, "carries": ["tow truck"]},
-      {"q": "What was 'the other one' they meant?", "expect": {"any": ["glovebox", "phone"]}, "carries": ["Okafor"]},
-      {"q": "Who else did that sender message that night?", "expect": {"any": ["Kell", "Dee", "D.O."]}, "carries": ["Okafor"]}]},
+      {"q": "Who sent it, and was it deleted?", "expect": {"all": ["Kell", "Okafor", "deleted"]}, "carries": ["tow truck"]},
+      {"q": "What was 'the other one' they meant?", "expect": {"any": ["glovebox", "phone"]}, "carries": ["Kell"]},
+      {"q": "Who else did that sender message that night?", "expect": {"any": ["Mateo", "garage"]}, "carries": ["Kell"]}]},
     {"id": "P4", "title": "Penn's checks", "steps": [
       {"q": "Who is Gary Penn and what payments did he make to Travis Kell?", "expect": {"all": ["Penn"], "any": ["check", "cheque"]}},
       {"q": "What comes before each of those checks?", "expect": {"any": ["price list", "drills", "table saws"]}, "carries": ["Penn"]},
@@ -30,7 +30,7 @@
     {"id": "P6", "title": "Kell's badge after his firing", "steps": [
       {"q": "When was Travis Kell dismissed from Brightwater Logistics?", "expect": {"all": ["Kell"]}},
       {"q": "Was his badge used after that?", "expect": {"all": ["badge"], "any": ["B-11032", "dock 3"]}, "carries": ["Kell"]},
-      {"q": "Whose badge was used at the same door on the theft nights?", "expect": {"all": ["B-20417"]}, "carries": ["dock 3", "badge"]},
+      {"q": "Whose other badge was used at the warehouse on the theft nights?", "expect": {"all": ["B-20417"]}, "carries": ["dock 3", "badge"]},
       {"q": "Was that person's phone near the warehouse then?", "expect": {"all": ["Okafor"], "any": ["warehouse", "near", "position"]}, "carries": ["B-20417", "Okafor"]}]}
   ]
 }

@@ -31,3 +31,9 @@ test("F04 counts when the report states the third-night alibi at the emergency r
   assert.ok(ids("Night N3, 3-4 May. Phone 1 sends 'vamos a Ferrowmere' and 'estamos en urgencias'.").includes("F04"))
   assert.ok(!ids("Phone 1 was 8.2 km from Phone 3 on the N3 night.").includes("F04"))
 })
+
+test("a decoy named in a question links nothing; the same words as a statement still do", () => {
+  // Fails on the scorer before: probe-1 (22 Nov) step P2-4 asked 'Is +1 443-555-0181 ("Mateo 🔧") actually Mateo Ruiz?'
+  assert.equal(scoreReport('Open questions:\n- Is +1 443-555-0181 ("Mateo 🔧") actually Mateo Ruiz? The records do not link it to him.', rubric).decoys_wrong, 0)
+  assert.equal(scoreReport('The contact "Mateo 🔧" is Mateo Ruiz.', rubric).decoys_wrong, 1)
+})

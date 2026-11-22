@@ -13,7 +13,8 @@ export function scoreReport(text, rubric) {
     return { id: f.id, found: all && any }
   })
   const decoys = rubric.decoys.map((d) => {
-    const bad = sentences(t).some((s) => {
+    // a question ("Is 'Mateo 🔧' actually Mateo Ruiz?") asks whether two are one; it links nothing (probe-1, 22 Nov)
+    const bad = sentences(t).filter((s) => !/\?[\s*_)\]]*$/u.test(s)).some((s) => {
       const low = s.toLowerCase()
       return d.wrong.some((w) => new RegExp(w, "iu").test(low)) && !(d.explained || []).some((e) => new RegExp(e, "iu").test(low))
     })
