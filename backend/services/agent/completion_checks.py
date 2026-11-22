@@ -63,6 +63,26 @@ def latest_outputs(context, artifacts):
     return list(latest.values())
 
 
+def draft_text(artifact, flagged):
+    """The saved report text, one block per section, with checked-and-failed lines marked."""
+    from services.agent.deliverables import sections_in
+    try:
+        sections = list(sections_in(artifact.get('data') or {}))
+    except ValueError:
+        return ''
+    out = []
+    for section in sections:
+        content = section.get('content', section.get('body', ''))
+        if isinstance(content, list):
+            content = '\n'.join(str(c) for c in content)
+        lines = []
+        for line in str(content or '').split('\n'):
+            hit = line.strip() and any(q and q in line for q in flagged)
+            lines.append('[flagged] ' + line if hit else line)
+        out.append(f"### {section.get('heading', '')}\n" + '\n'.join(lines))
+    return '\n\n'.join(out)
+
+
 def revision_needed_answer(artifacts, problems):
     """A failed check cannot be contradicted by a model-written success claim."""
     latest = {}
@@ -83,6 +103,16 @@ def revision_needed_answer(artifacts, problems):
         lines += ['', 'Checks that need attention:', *['- ' + issue for issue in issues[:8]]]
         if len(issues) > 8:
             lines += [f'{len(issues) - 8} further issues are available in the saved draft checks.']
+    flagged = []
+    for problem in problems:
+        for issue in problem.get('issues', []):
+            quote = str(issue).split(' Draft: ', 1)[1].split(' Source: ', 1)[0].strip() if ' Draft: ' in str(issue) else ''
+            if quote:
+                flagged.append(quote)
+    for a in latest.values():
+        body = draft_text(a, flagged)
+        if body:
+            lines += ['', f"Saved draft text ({a['title']}, version {a.get('metadata', {}).get('revision', 1)}); lines marked [flagged] failed a check:", '', body]
     if latest:
         lines += ['', 'Open the affected draft and choose Resolve checks with agent to continue from the saved work.']
     return '\n'.join(lines)

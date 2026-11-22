@@ -122,3 +122,16 @@ def test_checker_upgrade_grants_a_fresh_bounded_repair_window_but_ordinary_resum
     upgraded = list(runner().stream(case_id=CASE, messages=[], resume_checkpoint=saved, checkpoint_callback=lambda _: None))
     assert len([event for event in upgraded if event.get('stage') == 'repairing']) == 3
     assert upgraded[-1]['result']['repair_attempts'] == 3
+
+
+def test_failed_review_still_shows_saved_draft_with_flagged_lines():
+    from services.agent.completion_checks import revision_needed_answer
+    art = new_artifact('report', 'Phone report', {'sections': [
+        {'heading': 'Flagged communications', 'content': 'Line one is fine.\nThe payment was A & B Ltd.\nLast line.'}]})
+    issue = ('Source-to-draft review, section x: wording differs from the source. '
+             'Draft: The payment was A & B Ltd. Source: txn://1 A AND B LTD')
+    answer = revision_needed_answer([art], [{'issues': [issue]}])
+    assert 'still needs revision' in answer
+    assert 'Flagged communications' in answer and 'Line one is fine.' in answer
+    assert '[flagged] The payment was A & B Ltd.' in answer
+    assert 'Draft: ' not in answer.split('Checks that need attention:')[1].split('\n\n')[0]
