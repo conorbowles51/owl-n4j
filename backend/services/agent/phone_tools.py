@@ -595,5 +595,36 @@ def record(conn, case_id, record_uid) -> dict:
                  items=[{"rec": _rec(uid), "phone": d["extraction"]["label"], "model_type": d["model_type"],
                          "text": records.record_text(d), "parents": d.get("parents") or [],
                          "files": [f.get("path") or f.get("reference") for f in d["files"]],
+                         "file_readings": _file_readings(conn, case_id, d["files"]),
                          "corrections": d["corrections"]}],
                  coverage="The whole record, every field.", limitation=None)
+
+
+READING_KIND = {"ocr": "Text read from the image", "transcript": "Transcript of the audio"}
+NO_READING = ("No text has been read from this file or transcribed yet; a person can ask for it on the Media "
+              "screen.")
+
+
+def _file_readings(conn, case_id, files) -> list:
+    """The machine text stored beside each file the record carries (a photo's text read, an audio transcript), the
+    reading in use with its origin mark (07 4.6), so a photo that was read is never reported as unread. The text
+    is a machine reading unless a person corrected or confirmed it, and says so."""
+    from services.phone import derive
+    uids = [f["file_uid"] for f in files if f.get("file_uid")]
+    used = {}
+    if uids:
+        for r in conn.execute(text(
+                "SELECT DISTINCT ON (d.file_uid, d.kind) d.* FROM phone_derived_texts d WHERE d.case_id = :c AND "
+                "d.state = 'done' AND d.file_uid = ANY(CAST(:u AS uuid[])) " + derive.IN_USE_ORDER),
+                {"c": str(case_id), "u": uids}):
+            m = dict(r._mapping)
+            used.setdefault(str(m["file_uid"]), []).append({
+                "kind": READING_KIND.get(m["kind"], m["kind"]),
+                "text": m["corrected_text"] if m.get("corrected_text") is not None else m["text"],
+                "origin": derive.origin(m)["words"]})
+    out = []
+    for f in files:
+        readings = used.get(f.get("file_uid") or "", [])
+        out.append({"file": f.get("path") or f.get("reference"), "readings": readings,
+                    "none": None if readings else NO_READING})
+    return out
