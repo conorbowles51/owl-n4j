@@ -89,3 +89,28 @@ class PhonesAroundPaymentsTests(LedgerToolFixture):
         self.assertEqual(out["data"]["returned"], 1)
         self.assertFalse(out["data"]["around_on_phones"]["available"])
         self.assertIn("could not be counted", out["summary"])
+
+
+SAID = ("Read 23 of 23 matching transactions. The phones hold 598 messages, 64 calls and 10 emails from 7 days before "
+        "the first of these 23 payments to the last (counted in around_on_phones.windows, not read).")
+
+
+def _t(name, summary="", status="success"):
+    return {"name": name, "summary": summary, "status": status, "arguments": {}}
+
+
+def test_a_run_that_read_payments_with_phone_records_around_goes_back_once_before_it_answers():
+    from services.agent import answer_check
+    state = {}
+    msg = answer_check.around_message([_t("get_financial_coverage"), _t("get_financial_transactions", SAID)], state)
+    assert msg and "The phones hold 598 messages" in msg and "read_with" in msg
+    assert "say in the answer that the phones around these payments were not read" in msg
+    assert answer_check.around_message([_t("get_financial_transactions", SAID)], state) is None  # once per run
+
+
+def test_no_return_when_the_phones_were_read_after_or_the_read_named_none():
+    from services.agent import answer_check
+    for later in ("phone_messages", "search_case", "get_contact_and_money_between", "read_scope_with_model"):
+        assert answer_check.around_message([_t("get_financial_transactions", SAID), _t(later)], {}) is None
+    assert answer_check.around_message([_t("get_financial_transactions", "Read 5 of 5.")], {}) is None
+    assert answer_check.around_message([_t("get_financial_transactions", SAID, status="error")], {}) is None

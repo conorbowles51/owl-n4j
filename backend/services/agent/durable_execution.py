@@ -261,7 +261,8 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
         [m.content for m in messages if isinstance(m, HumanMessage)])
     repair_attempts = int(checkpoint.get('repair_attempts', 0))
     answer_check_state = {'returned': bool(checkpoint.get('answer_check_returned')),
-                          'parts_returned': bool(checkpoint.get('answer_check_parts_returned'))}
+                          'parts_returned': bool(checkpoint.get('answer_check_parts_returned')),
+                          'around_returned': bool(checkpoint.get('answer_check_around_returned'))}
     if (checkpoint and phase != 'done'
             and checkpoint.get('completion_check_version') != completion_checks.COMPLETION_CHECK_VERSION):
         # An upgraded checker gets a bounded fresh repair window; previous false
@@ -517,6 +518,9 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
             if not check:
                 check = answer_check.parts_message(question_text, trace, answer_check_state)
                 words = "Looking up the parts of the question not searched yet"
+            if not check:
+                check = answer_check.around_message(trace, answer_check_state)
+                words = "Reading the phones around the payments"
             if check:
                 state_messages.append(HumanMessage(content=check))
                 phase = "agent"
@@ -644,5 +648,6 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
            'source_coverage_receipts': source_receipts,
            'answer_check_returned': answer_check_state['returned'],
            'answer_check_parts_returned': answer_check_state['parts_returned'],
+           'answer_check_around_returned': answer_check_state['around_returned'],
            'evidence_review_receipts': {key: value for key, value in evidence_review_receipts.items() if value.get('active')},
            "tool_trace": trace, "messages": spent, "steering": steer_applied, "usage": runner._extract_usage(spent[billed_count:]), **g._cross_case_result(context, case_id)}}

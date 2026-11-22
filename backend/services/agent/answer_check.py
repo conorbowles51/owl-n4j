@@ -148,3 +148,36 @@ def parts_message(question: str, trace: list[dict], state: dict) -> str | None:
             "looked for %s yet. Look each up now (by name, number or amount, on the phones, documents and ledger as "
             "fits), or say in the answer that it was not searched and why." % (
                 "; ".join(missing), "it" if len(missing) == 1 else "them"))
+
+
+# ---- the phones around payments the run read (followups 22 Nov 2026) ----------------------------------------------
+# Live 22 Nov: after a payments read said the phones hold records in the week before each payment
+# (services.agent.phones_around_payments), 2 of 3 runs of 'What comes before each of those checks?' still answered
+# from the ledger alone and missed the price list emailed before one check. Before such a run writes, it goes back
+# once to read those windows or to say in the answer that it did not. Decision: one return per run, only when no
+# phone or whole-case read ran after the payments read; reverse if a measured run is made worse by the extra step.
+
+AROUND_MARK = "around_on_phones.windows"
+PHONE_READS = ("phone_", "get_contact_and_money_between", "get_payment_conversation", "get_day_activity",
+               "get_period_activity", "search_case", "read_scope_with_model", "search_by_meaning")
+
+
+def around_message(trace: list[dict], state: dict) -> str | None:
+    if state.get("around_returned"):
+        return None
+    marked = [i for i, t in enumerate(trace) if t.get("status") == "success"
+              and t.get("name") == "get_financial_transactions" and AROUND_MARK in str(t.get("summary") or "")]
+    if not marked:
+        return None
+    last = marked[-1]
+    if any(str(t.get("name") or "").startswith(PHONE_READS) for t in trace[last + 1:]):
+        return None
+    state["around_returned"] = True
+    said = str(trace[last].get("summary") or "")
+    said = said[said.find("The phones hold"):] if "The phones hold" in said else said
+    return ("Completeness check, not a new instruction from the person. A payments read said: \"%s\" No phone "
+            "record has been read since. If the question asks what came before, after or around these payments, read "
+            "the windows it is about now (each window's read_with call in around_on_phones, or search_case with a "
+            "name and that start and end) and answer from the phones beside the ledger. Otherwise say in the answer "
+            "that the phones around these payments were not read." % said.strip())
+
