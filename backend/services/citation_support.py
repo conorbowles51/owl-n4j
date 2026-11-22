@@ -93,6 +93,8 @@ class Claim:
     end: int
     hrefs: list[str]
     table: bool = False
+    # a link whose text states its own fact (a quote with its time): that link is judged on its own text
+    labels: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -101,6 +103,7 @@ class Source:
     complete: bool = True
     reason: str | None = None   # set when the source cannot be checked
     label: str = ""
+    brief: str = ""   # the source as a person reads it (a phone record's text and local times), given to the model
 
 
 @dataclass
@@ -119,16 +122,19 @@ def enabled() -> bool:
 # ---- the sentences and their citations ---------------------------------------------------------------------------
 
 
+_QUOTED = re.compile(r"[\"“”‘’'][^\"“”]{2,}[\"“”’']")
 _SOURCE_LABEL = re.compile(r"\.(pdf|csv|xlsx?|docx?|txt|eml|msg|rtf|html?|jpe?g|png|zip|json|xml)\b|\bp\.\s?\d|^\s*(source|page|"
                            r"record|row)\b", re.I)
 
 
 def _label(m: re.Match) -> str:
     """A link's text where it states the fact (``[2024-03-17, USD 1,200.00](txn://...)``), else nothing: a source's
-    name (``[kell-2024-03.pdf, p.1]``) is not part of what the sentence says."""
+    name (``[kell-2024-03.pdf, p.1]``) is not part of what the sentence says. A label with a time or a quote
+    (``[21 Mar 19:12, Travis to Gary: "are we still on for later"](rec://...)``) is the sentence's content too."""
     label = m.group(1)
     named = _SOURCE_LABEL.search(label) or "·" in label or "://" in label  # "Phone 1 · Native Messages · T", an address
-    return f" {label} " if _figures(label) and not named else " "
+    states = _figures(label) or _TIME.search(label) or _QUOTED.search(label)
+    return f" {label} " if states and not named else " "
 
 
 def _plain(text: str, labels: bool = True) -> str:
@@ -179,7 +185,12 @@ def claims(answer: str) -> list[Claim]:
                     out.append(claim)
                 pending = []
                 continue
-            claim = Claim(text=piece, plain=plain, start=start + a, end=start + b, hrefs=hrefs, table=table)
+            labels = {}
+            for m in _LINK.finditer(piece):
+                if m.group(2) in hrefs and m.group(2) not in labels and _label(m).strip():
+                    labels[m.group(2)] = m.group(1)
+            claim = Claim(text=piece, plain=plain, start=start + a, end=start + b, hrefs=hrefs, table=table,
+                          labels=labels if len(hrefs) > 1 else {})
             if hrefs:
                 pending = []
                 out.append(claim)
@@ -364,7 +375,14 @@ def _rec_text(session, case_id, record_uid: str) -> Source:
             return Source(reason=C.NOT_IN_CASE)
         logger.warning("Phone record %s could not be read for the citation check", record_uid, exc_info=True)
         return Source(reason="The phone record could not be read.")
-    return Source(text=json.dumps(detail, ensure_ascii=False, default=str)[:MAX_SOURCE_CHARS], label="phone record")
+    # the record's own text and its times as the phone screen shows them: the raw record is 10,000+ characters and
+    # an excerpt around the names left out the message body and the local time (demo case, 22 Nov: 17 quotes judged
+    # "does not show the text")
+    times = [t.get("full") for t in detail.get("times") or [] if isinstance(t, dict) and t.get("full")]
+    brief = "\n".join(x for x in (str(detail.get("as_text") or "").strip(),
+                                   "Times: " + "; ".join(dict.fromkeys(times)) if times else "") if x)
+    raw = json.dumps(detail, ensure_ascii=False, default=str)
+    return Source(text=(brief + "\n\n" + raw)[:MAX_SOURCE_CHARS], label="phone record", brief=brief)
 
 
 def _entity_text(case_id, key: str) -> Source:
@@ -560,13 +578,14 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
     sentences_sent = 0
     for index, claim in enumerate(found):
         wanted = specifics(claim.text)
+        own = {h: specifics(label) for h, label in claim.labels.items()}
         verdicts: dict[str, Verdict] = {}
         readable = [h for h in claim.hrefs if h in hay]
         for href in claim.hrefs:
             if sources[href].reason:
                 verdicts[href] = Verdict(UNCHECKED, sources[href].reason, "none")
         for href in readable:
-            verdict = code_verdict(wanted, [hay[href]])
+            verdict = code_verdict(own.get(href, wanted), [hay[href]])
             if verdict is not None and verdict.state == NOT_MENTIONED and not sources[href].complete:
                 verdict = None  # part of a long document was read: the rest may hold it
             if verdict is not None:
@@ -577,13 +596,17 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
                 sentences_sent += 1
                 for h in undecided:
                     pending[len(model_items)] = (index, h)
-                    model_items.append({"id": len(model_items), "sentence": claim.plain[:1200],
-                                        "cites": len(claim.hrefs), "source": _excerpt(sources[h].text, wanted)})
+                    label = claim.labels.get(h)
+                    model_items.append({"id": len(model_items),
+                                        "sentence": _plain(label) if label else claim.plain[:1200],
+                                        "cites": 1 if label else len(claim.hrefs),
+                                        "source": _excerpt(sources[h].brief or sources[h].text,
+                                                           own.get(h, wanted))})
             else:
                 for h in undecided:
                     verdicts[h] = Verdict(UNCHECKED, f"Over this answer's limit of {MAX_MODEL_ITEMS} sentences read "
                                           "by a model.", "none")
-        results.append({"claim": claim, "verdicts": verdicts, "wanted": wanted})
+        results.append({"claim": claim, "verdicts": verdicts, "wanted": wanted, "own": own})
     model_run: dict[str, Any] | None = None
     if model_items:
         refusal = budget() if budget else None
@@ -601,7 +624,8 @@ def check(session, case_id, answer: str, *, judge=None, budget: Callable[[], str
         for key, (index, href) in pending.items():
             verdict = verdicts_by_model.get(key) or Verdict(
                 UNCHECKED, failure or failures.get(key) or "The model gave no verdict for this source.", "none")
-            misses = near_misses(results[index]["wanted"]["figures"], hay[href].figures)
+            misses = near_misses(results[index]["own"].get(href, results[index]["wanted"])["figures"],
+                                 hay[href].figures)
             if verdict.state == SUPPORTS and misses:
                 # the model reads 39.288533 as 39.288503; code does not
                 verdict = Verdict(PARTLY, "The source has %s where the sentence has %s." % (misses[0][1], misses[0][0]),

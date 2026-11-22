@@ -112,6 +112,75 @@ class SupportTests(_Case):
         result = S.check(self.db, self.case.id, answer, judge=None)
         self.assertEqual((result["claims"][0]["state"], result["claims"][0]["citations"][0]["by"]), (S.SUPPORTS, "code"))
 
+    def _records(self, records):
+        from unittest import mock
+        from services.phone import records as phone_records
+
+        def detail(conn, case_id, uid):
+            return records[str(uid)]
+        from services import case_citations as C
+        real = C.resolve_citations
+
+        def resolve(session, case_id, citations):
+            citations = list(citations)
+            out = real(session, case_id, [c for c in citations if not c.href.startswith("rec://")])
+            return out + [C.Resolution(href=c.href, scheme="rec", status="ok", record_uid=c.href[6:])
+                          for c in citations if c.href.startswith("rec://")]
+        for patcher in (mock.patch.object(phone_records, "record_detail", side_effect=detail),
+                        mock.patch.object(C, "resolve_citations", side_effect=resolve)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _message(body, sender, to, utc, local, pad=0):
+        return {"record_uid": str(uuid.uuid4()), "model_type": "InstantMessage", "padding": "x " * pad,
+                "fields": [{"name": "Body", "values": [{"text": body}]},
+                           {"name": "TimeStamp", "values": [{"text": utc}]}],
+                "parties": [{"Name": sender, "Role": "From"}, {"Name": to, "Role": "To"}],
+                "times": [{"instant": utc, "full": local}],
+                "as_text": f"InstantMessage\nBody: {body}\nTimeStamp: No time recorded (in the report: {utc})\n"
+                           f"From: {sender}\nTo: {to}"}
+
+    def test_phone_messages_written_as_link_text_are_each_judged_on_their_own_text(self):
+        # demo P4 22 Nov 2026 (followups m112223403622805): the answer wrote each message as a rec:// link holding the
+        # quote; the check read the sentence "On the phone: ; ." and marked 15 records as not mentioning it
+        a, b = str(uuid.uuid4()), str(uuid.uuid4())
+        self._records({
+            a: self._message("are we still on for later", "Travis Kell", "Gary P", "2024-03-21T23:12:44+00:00",
+                             "Thu, Mar 21, 2024, 7:12:44 PM EDT"),
+            b: self._message("did you get the package", "Gary P", "Travis Kell", "2024-05-09T20:03:10+00:00",
+                             "Thu, May 9, 2024, 4:03:10 PM EDT")})
+        answer = (f'On the phone: [21 Mar 19:12, Travis to Gary: "are we still on for later"](rec://{a}); '
+                  f'[9 May 16:03, Gary to Travis: "did you get the package"](rec://{b}).')
+        claim = S.claims(answer)[0]
+        self.assertIn('"are we still on for later"', claim.plain)
+        self.assertEqual(set(claim.labels), {f"rec://{a}", f"rec://{b}"})
+        _, result = S.check_and_mark(self.db, self.case.id, answer, judge=self.judge("does_not_mention"))
+        self.assertEqual([(c["state"], c["by"]) for c in result["claims"][0]["citations"]],
+                         [(S.SUPPORTS, "code"), (S.SUPPORTS, "code")])
+        self.assertEqual(self.calls, [])
+
+    def test_the_model_reads_a_phone_record_as_its_text_and_local_time_not_an_excerpt_of_the_raw_record(self):
+        # demo P4 22 Nov 2026: the excerpt of a 10,000-character record around the names left out the body and the
+        # local time; gpt-5-mini answered "does not show the quoted text" for 17 quotes
+        a, b = str(uuid.uuid4()), str(uuid.uuid4())
+        self._records({
+            a: self._message("left it by the side door", "Travis Kell", "Gary P", "2024-04-12T04:16:06+00:00",
+                             "Fri, Apr 12, 2024, 12:16:06 AM EDT", pad=3000),
+            b: self._message("on my way", "Travis Kell", "Gary P", "2024-04-12T21:59:00+00:00",
+                             "Fri, Apr 12, 2024, 5:59:00 PM EDT", pad=3000)})
+        answer = (f'Travis Kell wrote to Gary Penn twice: [12 Apr, 12:16 AM EDT, "left it by the side door"](rec://{a}) '
+                  f'and [12 Apr, 5:59 PM EDT, Travis Kell to Gary Penn on Signal: "on my way"](rec://{b}).')
+        _, result = S.check_and_mark(self.db, self.case.id, answer, judge=self.judge("supports"))
+        # the first link's own text (its time and quote) is in its record: code settles it
+        self.assertEqual(result["claims"][0]["citations"][0]["by"], "code")
+        items = json.loads(self.calls[0].split("\n\n", 1)[1])["items"]
+        self.assertEqual(len(items), 1)  # the second names Signal and Gary Penn, which code cannot settle
+        self.assertIn("Body: on my way", items[0]["source"])
+        self.assertIn("5:59:00 PM EDT", items[0]["source"])
+        self.assertEqual(items[0]["sentence"], '12 Apr, 5:59 PM EDT, Travis Kell to Gary Penn on Signal: "on my way"')
+        self.assertEqual({i["cites"] for i in items}, {1})
+
     def test_many_citations_go_to_the_model_in_concurrent_chunks_and_a_failed_chunk_is_named(self):
         answer = "\n".join(f"Nobody {i} holds the keys [p]({self.p2})." for i in range(23))
         good = self.judge("supports")
