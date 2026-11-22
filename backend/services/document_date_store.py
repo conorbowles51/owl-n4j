@@ -12,7 +12,7 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 
-from postgres.models.document_date import DocumentDateReading
+from postgres.models.document_date import DocumentDateModelCheck, DocumentDateReading
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile
 from services.document_dates import RULE_SET, read_dates
 
@@ -71,6 +71,21 @@ def _has_readings(db, file_id) -> bool:
                       ).first() is not None
 
 
+def _model_checked(db, file_id, content_sha256) -> bool:
+    """The model already read this text of the file and found no date in it."""
+    return db.execute(select(DocumentDateModelCheck.evidence_file_id).where(
+        DocumentDateModelCheck.evidence_file_id == file_id,
+        DocumentDateModelCheck.content_sha256 == content_sha256)).first() is not None
+
+
+def model_checked_files(db) -> set:
+    """Files whose current text the model read and found no date in."""
+    return {f for (f,) in db.execute(
+        select(DocumentDateModelCheck.evidence_file_id)
+        .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == DocumentDateModelCheck.evidence_file_id)
+        .where(EvidenceDocumentText.content_sha256 == DocumentDateModelCheck.content_sha256))}
+
+
 def store_model_for_file(db, file_id, call, apply: bool = True) -> int:
     """The model's reading of a file no rule dated (services.document_dates_model.read): saved as source 'model',
     shown "Read by Loupe · not confirmed" with its words. A file with any reading already is left alone (no call).
@@ -79,12 +94,19 @@ def store_model_for_file(db, file_id, call, apply: bool = True) -> int:
     fid = file_id if isinstance(file_id, uuid.UUID) else uuid.UUID(str(file_id))
     if _has_readings(db, fid):
         return 0
-    row = db.execute(select(EvidenceFile.case_id, EvidenceDocumentText.content, EvidenceDocumentText.source_locations)
+    row = db.execute(select(EvidenceFile.case_id, EvidenceDocumentText.content, EvidenceDocumentText.source_locations,
+                            EvidenceDocumentText.content_sha256)
                      .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
                      .where(EvidenceFile.id == fid, EvidenceFile.deleted_at.is_(None))).first()
     if not row or not (row.content or "").strip():
         return 0
+    if _model_checked(db, fid, row.content_sha256):
+        return 0
     found = M.read(row.content, row.source_locations, call)
+    if apply and not found:
+        # read and no date found: not asked again until the text changes
+        db.merge(DocumentDateModelCheck(evidence_file_id=fid, content_sha256=row.content_sha256, rule=M.rule_name(call)))
+        db.flush()
     if apply:
         for r in found:
             db.add(DocumentDateReading(case_id=row.case_id, evidence_file_id=fid, kind=r["kind"],
@@ -163,7 +185,8 @@ def backfill(db, case_id=None, limit: int | None = None, apply: bool = False, mo
     """Read every file with text that has no reading yet, through ``store_for_file`` (the ingest path).
 
     ``model`` (a model call, services.document_dates_model): files the rules still date nothing in are read by it,
-    one call each. A dry run makes no call and counts them as ``model_calls``."""
+    one call each. A dry run makes no call and counts them as ``model_calls``. A file whose current text the model
+    already read with no date found is not asked again and is counted as ``model_checked``."""
     q = (select(EvidenceFile.id, EvidenceFile.case_id).join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
          .where(EvidenceFile.deleted_at.is_(None), EvidenceFile.source_type.is_(None)))
     if case_id:
@@ -173,6 +196,7 @@ def backfill(db, case_id=None, limit: int | None = None, apply: bool = False, mo
     if limit:
         todo = todo[:limit]
     per_case: dict[str, dict] = {}
+    checked = model_checked_files(db) if model is not None else set()
     for f, c in todo:
         s = per_case.setdefault(str(c), {"files": 0, "readings": 0})
         s["files"] += 1
@@ -180,7 +204,9 @@ def backfill(db, case_id=None, limit: int | None = None, apply: bool = False, mo
             with db.begin_nested():
                 s["readings"] += store_for_file(db, f)
         undated = not _has_readings(db, f) and (apply or not store_for_file(db, f, apply=False))
-        if model is not None and undated:
+        if model is not None and undated and f in checked:
+            s["model_checked"] = s.get("model_checked", 0) + 1
+        elif model is not None and undated:
             s["model_calls"] = s.get("model_calls", 0) + 1
             if apply:
                 try:

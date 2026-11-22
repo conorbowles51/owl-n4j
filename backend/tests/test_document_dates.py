@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from postgres.base import Base
-from postgres.models.document_date import DocumentDateReading
+from postgres.models.document_date import DocumentDateModelCheck, DocumentDateReading
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceFolder
 from services import document_date_store as S
 from services.document_dates import read_dates
@@ -99,7 +99,8 @@ class Store(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
         Base.metadata.create_all(self.engine, tables=[EvidenceFolder.__table__, EvidenceFile.__table__,
-                                                      EvidenceDocumentText.__table__, DocumentDateReading.__table__])
+                                                      EvidenceDocumentText.__table__, DocumentDateReading.__table__,
+                                                      DocumentDateModelCheck.__table__])
         self.db = sessionmaker(bind=self.engine, future=True)()
         self.case = uuid4()
         self.file = uuid4()
@@ -302,6 +303,26 @@ class ModelReading(unittest.TestCase):
         done = S.backfill(self.db, apply=True, model=call)
         self.assertEqual((done[str(self.case)]["model_calls"], done[str(self.case)]["model_readings"]), (1, 1))
         self.assertEqual([v["source"] for v in S.effective(self.db, self.case)], ["model"])
+
+    def test_a_file_the_model_found_no_date_in_is_not_asked_again_until_its_text_changes(self):
+        """Coordinator 22 Nov: after the Keyes apply run, a second dry run still needed 412 calls, every one a file
+        the model had already read and found no date in. Fails on the code before: each run asked them all again."""
+        call = self._call({"dates": []})
+        done = S.backfill(self.db, apply=True, model=call)
+        self.assertEqual((done[str(self.case)]["model_calls"], done[str(self.case)].get("model_readings")), (1, 0))
+        self.assertEqual(len(call.sent), 1)
+        again = S.backfill(self.db, apply=False, model=call)[str(self.case)]
+        self.assertEqual((again.get("model_calls", 0), again["model_checked"]), (0, 1))
+        S.backfill(self.db, apply=True, model=call)
+        self.assertEqual(S.store_model_for_file(self.db, self.file, call), 0)
+        self.assertEqual(len(call.sent), 1)
+        # new text: asked again
+        row = self.db.get(EvidenceDocumentText, self.file)
+        row.content, row.content_sha256 = self.UNDATED + " Signed off by the yard.", "c" * 64
+        self.db.commit()
+        self.assertEqual(S.backfill(self.db, apply=False, model=call)[str(self.case)]["model_calls"], 1)
+        S.store_model_for_file(self.db, self.file, call)
+        self.assertEqual(len(call.sent), 2)
 
     def test_switched_off_no_call_is_made(self):
         from unittest.mock import patch

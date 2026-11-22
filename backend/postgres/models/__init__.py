@@ -24,7 +24,7 @@ from postgres.models.collection_membership import CollectionMembership
 from postgres.models.case_selection import CaseSelection
 from postgres.models.relation_run import RelationRun
 from postgres.models.corroborate import CorroborateFact, CorroborateWatch, LeadFinderRun
-from postgres.models.document_date import DocumentDateReading
+from postgres.models.document_date import DocumentDateModelCheck, DocumentDateReading
 from postgres.models.theory_narrative import TheoryNarrative
 from postgres.models.workspace_attention import WorkspaceAttentionState
 from postgres.models.workspace_ai import WorkspaceAIOutput
@@ -209,4 +209,4 @@ __all__ += ["AccountResetCode", "LoginPolicy", "UserRecoveryCode", "UserTwoStep"
 # Deleted cases and evidence files are hidden from every ORM read (postgres/soft_delete.py).
 from postgres.soft_delete import install as _install_soft_delete
 _install_soft_delete()
-__all__ += ["CaseSelection", "RelationRun", "TheoryNarrative", "CorroborateFact", "CorroborateWatch", "LeadFinderRun", "DocumentDateReading"]
+__all__ += ["CaseSelection", "RelationRun", "TheoryNarrative", "CorroborateFact", "CorroborateWatch", "LeadFinderRun", "DocumentDateReading", "DocumentDateModelCheck"]

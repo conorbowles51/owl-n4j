@@ -39,3 +39,14 @@ class DocumentDateReading(Base):
     confirmed_by_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DocumentDateModelCheck(Base):
+    """A file the document dates model read and found no date in, with the hash of the text it read: the file is
+    not asked again until its text changes (services.document_date_store.store_model_for_file)."""
+    __tablename__ = "document_date_model_checks"
+
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("evidence_files.id", ondelete="CASCADE"), primary_key=True)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    rule: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

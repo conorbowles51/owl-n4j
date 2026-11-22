@@ -7,7 +7,8 @@ added, writing nothing.
 
 With --model, files the rules still date nothing in are read by the "Document dates" model (one call each, saved
 "Read by Loupe · not confirmed" with the words read; services.document_dates_model). The dry run makes no call and
-prints how many calls --apply would make.
+prints how many calls --apply would make. A file the model read with no date found is not asked again until its
+text changes (document_date_model_checks).
 
     set -a; . <app>/.env; set +a; PYTHONPATH=. python scripts/document_dates_backfill.py [--case <uuid>] [--reread] [--model] [--apply]
 """
@@ -41,6 +42,7 @@ def main(argv=None) -> int:
     files: Counter = Counter()
     calls: Counter = Counter()
     readings: Counter = Counter()
+    checked: Counter = Counter()
     with _get_session_local()() as db:
         if not args.reread:
             for case, counts in store.backfill(db, case_id=args.case, apply=args.apply, model=model).items():
@@ -48,6 +50,7 @@ def main(argv=None) -> int:
                 added[case] += counts["readings"]
                 calls[case] += counts.get("model_calls", 0)
                 readings[case] += counts.get("model_readings", 0)
+                checked[case] += counts.get("model_checked", 0)
         else:
             q = (select(EvidenceFile.id, EvidenceFile.case_id)
                  .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
@@ -66,10 +69,12 @@ def main(argv=None) -> int:
     done = "added" if args.apply else "would be added"
     for case in sorted(files):
         extra = (f"; model calls {'made' if args.apply else 'needed'} {calls[case]}" +
-                 (f", model readings added {readings[case]}" if args.apply else "")) if model is not None else ""
+                 (f", model readings added {readings[case]}" if args.apply else "") +
+                 f", already read with no date {checked[case]}") if model is not None else ""
         print(f"{case}: {files[case]} files read, {added[case]} readings {done}{extra}")
     extra = (f"; model calls {'made' if args.apply else 'needed'} {sum(calls.values())}" +
-             (f", model readings added {sum(readings.values())}" if args.apply else "")) if model is not None else ""
+             (f", model readings added {sum(readings.values())}" if args.apply else "") +
+             f", already read with no date {sum(checked.values())}") if model is not None else ""
     print(f"all: {sum(files.values())} files, {sum(added.values())} readings {done}{extra}")
     return 0
 
