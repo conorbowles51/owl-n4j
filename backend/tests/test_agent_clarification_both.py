@@ -31,3 +31,13 @@ def test_a_real_choice_is_still_asked_even_when_an_id_says_both():
                      {"id": "all", "label": "All persons (export full list of ~1,300 people)"}]):
         out = _ask(options)
         assert out["status"] == "success" and len(out["clarification"]["options"]) == 2
+
+
+def test_the_prompt_says_to_answer_every_reading_and_read_every_source_on_a_follow_up():
+    # live 22 Nov after the guard: the follow-up was answered, but from the ledger alone; the price list sent before
+    # each check is in the phones
+    from services.agent import graph
+    prompt = graph.render_system_prompt(case_id="c1", significant=False, mandate_context_block="",
+                                        artifact_preference="auto", available_artifact_context="")
+    assert "instead of asking or choosing one" in prompt
+    assert "reads every source that could hold it: the ledger, the phones and the documents" in prompt
