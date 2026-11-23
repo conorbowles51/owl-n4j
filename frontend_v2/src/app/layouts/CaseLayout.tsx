@@ -166,14 +166,14 @@ export function CaseLayout() {
             </div>
           )}
 
-          {/* The look in progress follows the investigator on every case screen (fixed position) */}
-          <TraySwitch />
-
           {/* Collapsed rail for non-graph views */}
           {showCaseSidePanel && !narrowViewport && graphPanelCollapsed && (
             <CaseSidePanelRail />
           )}
         </div>
+        {/* The look in progress follows the investigator on every case screen: fixed over the page from md up, a strip
+            in this column's flow below md, so the page ends above it */}
+        <TraySwitch />
         {caseId && (
           <ErrorBoundary fallback={<></>}>
             <Suspense fallback={<div className="h-7 shrink-0 border-t border-border bg-card" />}>
