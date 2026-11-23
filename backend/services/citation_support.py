@@ -139,7 +139,8 @@ def _label(m: re.Match) -> str:
 
 def _plain(text: str, labels: bool = True) -> str:
     text = _LINK.sub(_label if labels else " ", text)
-    text = re.sub(r"[*_`#>]+", " ", text)
+    # an underscore inside a word is the word's (IMG_00013.jpg), not Markdown emphasis
+    text = re.sub(r"[*`#>]+|(?<![^\W_])_+|_+(?![^\W_])", " ", text)
     text = re.sub(r"\(\s*[,;]?\s*\)", " ", text)
     return re.sub(r"\s+", " ", text).strip(" |-•\t")
 

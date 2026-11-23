@@ -104,6 +104,9 @@ class SupportTests(_Case):
         answer = f"- [1 October 2023, $650.00]({self.p2}) from [lease.pdf, p.2]({self.p2})"
         found = S.claims(answer)
         self.assertEqual(found[0].plain, "1 October 2023, $650.00 from")
+        # demo P4 23 Nov 2026: "IMG_00013.jpg" was read as "IMG 00013.jpg" and judged a different file name
+        self.assertEqual(S._plain('_Sent_ with photo IMG_00013.jpg, **bold** and __x__'),
+                         "Sent with photo IMG_00013.jpg, bold and x")
         for named in ("Phone 1 · Native Messages · Travis Kell", f"doc://{self.file.id}/2", "Phone 4 · Telegram · PTT-20240609"):
             self.assertEqual(S.claims(f"He wrote back [{named}]({self.p2}).")[0].plain, "He wrote back .")
         # a citation standing alone still backs the sentence before it, whatever its link says
