@@ -8,7 +8,9 @@ next-step cards open a workflow directly.
   under, the areas it passes through, the guidance features it shows and the switches its steps sit behind.
 - `tutorials/`: each workflow's steps. A step has an instruction, what the person should see on the demo case
   ("Demo: State v. Mateo Ruiz (synthetic)"), a picture, its alt text, and the screen and control "Open this screen"
-  goes to.
+  goes to. `open.then` says what to do on that screen first when the control sits inside something the person opens
+  (one theory, a payment's Details); the step bar shows it until the control is ringed. `switch` hides a step while
+  that switch is off; `unless` hides it while the switch is on (the classic Corroborate's steps).
 - `WorkflowGuide.tsx`: the list and the tutorial. `WorkflowHost.tsx` opens it on the `loupe:open-workflow` event
   (`open.ts`).
 - `workflows.test.tsx`: every workflow has 4 to 12 steps; every picture exists at both widths and has a recipe;
@@ -26,7 +28,9 @@ node journeys/workflow-stills.mjs
 
 One picture: `--only money-cash`. One width: `--width 390`. `--dump <dir>` also writes each screen's words, to check
 a step's "you should see" line against the screen. The script stops every request that would change the case and
-exits 1 if any picture failed or any request was stopped.
+exits 1 if any picture failed or any request was stopped (the conversation "also reviewing" signal is stopped and
+listed but fails nothing). Each picture starts from the default switches and an empty Corroborate selection; a recipe
+that needs a switch sets it in its address (`?corroborate-v2=on`, or `=off` for the classic Corroborate).
 
 The pictures are `public/docs/workflows/img/<shot>-1440.webp` (desktop) and `<shot>-390.webp` (phone width, cropped
 to the part of the screen that matters). A step's `shot` names its recipe in `SHOTS` in the script.
@@ -41,6 +45,10 @@ When a screen changes, also read the step's words again: the numbers in "you sho
 ```
 node journeys/live-workflowguide.mjs --out <dir> --follow money,contact,corroborate --ends --quiet
 ```
+
+`--open-all` presses Open this screen on every step of every workflow and lists each step whose control was not
+ringed, with what the step bar said. `--corroborate on` or `off` sets the Corroborate switch in that browser first, to
+walk the steps of either version.
 
 `--follow` walks each named workflow step by step with Next and the arrow keys and presses Open this screen on every
 step; `--ends` opens every workflow's first and last step and checks every picture loads; `--quiet` checks that a

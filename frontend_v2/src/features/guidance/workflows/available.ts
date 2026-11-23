@@ -4,9 +4,12 @@ import type { TutorialStep, Workflow, WorkflowSwitch } from "./types"
 
 export type SwitchState = Record<WorkflowSwitch, boolean>
 
-/** The steps a person sees: a step behind a switch that is off in their browser is left out, as tours do. */
+/**
+ * The steps a person sees: a step behind a switch that is off in their browser is left out, as tours do, and so is a
+ * step for the version a switch that is on replaces.
+ */
 export function stepsShown(steps: TutorialStep[], switches: SwitchState): TutorialStep[] {
-  return steps.filter((s) => !s.switch || switches[s.switch])
+  return steps.filter((s) => (!s.switch || switches[s.switch]) && (!s.unless || !switches[s.unless]))
 }
 
 /** Every workflow with its steps; one whose every step waits behind a switch that is off is not listed. */

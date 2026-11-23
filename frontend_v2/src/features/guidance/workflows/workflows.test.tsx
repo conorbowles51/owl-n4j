@@ -35,13 +35,6 @@ const EXCEPTIONS: Record<string, string> = {
   "map-review": "Places that need review are a check on the map's addresses, not a step of a workflow.",
   "record-panel-sheet": "How a phone record opens over the page, on every phone workflow alike.",
   "changed-since-cited": "Changed since cited shows on a theory only after its evidence changes; the theories guide explains it.",
-  "graph-overlap": "Behind the new Corroborate; the Graph guide explains it.",
-  "also-elsewhere": "Behind the new Corroborate; a mark in Conversations that the phones guide explains.",
-  "corroborate-panel": "Behind the new Corroborate; the Corroborate guide explains the panel over the page.",
-  "lead-records": "Behind the new Corroborate; a button on each lead that the Corroborate guide explains.",
-  "around-event": "Behind the new Corroborate; the Corroborate guide explains Money around an event.",
-  "who-overlaps": "Behind the new Corroborate; the Corroborate guide explains Who overlaps with whom.",
-  "area-compare": "Behind the new Corroborate; the Corroborate guide explains comparing drawn areas.",
   "search-notifications": "What search reads, not a control; Search the whole case uses it.",
   "dossier-addresses": "Map positions of a dossier's addresses show inside the dossier; the dossiers guide explains them.",
   "phones-together":
@@ -76,11 +69,16 @@ describe("the workflow catalogue (lx-workflowguide F)", () => {
         expect(s.open.to.startsWith("/"), `${w.id}: ${s.title} opens an address inside the case`).toBe(false)
       }
       // the list says which switches a workflow's steps wait behind
-      const behind = [...new Set(steps.map((s) => s.switch).filter(Boolean))].sort()
+      const behind = [...new Set(steps.flatMap((s) => [s.switch, s.unless]).filter(Boolean))].sort()
       expect([...w.switches].sort(), `${w.id} switches`).toEqual(behind)
-      // with every switch off, a person still has 4 steps, unless the whole workflow waits behind a switch
+      // with every switch off, and with every switch on, a person still has 4 to 12 steps, unless the whole workflow
+      // waits behind a switch that is off
       const off = stepsShown(steps, { "corroborate-v2": false, phone_layers: false })
       if (off.length) expect(off.length, `${w.id} with switches off`).toBeGreaterThanOrEqual(4)
+      expect(off.length, `${w.id} with switches off`).toBeLessThanOrEqual(12)
+      const on = stepsShown(steps, { "corroborate-v2": true, phone_layers: true })
+      expect(on.length, `${w.id} with switches on`).toBeGreaterThanOrEqual(4)
+      expect(on.length, `${w.id} with switches on`).toBeLessThanOrEqual(12)
     }
   })
 
@@ -121,11 +119,14 @@ describe("the workflow catalogue (lx-workflowguide F)", () => {
     expect(named.filter((id) => !CATALOGUE.some((w) => w.id === id))).toEqual([])
   })
 
-  it("a step behind a switch that is off is hidden, and a workflow with no step left is not listed", () => {
+  it("a step behind a switch that is off is hidden, a step the switch replaces is hidden while it is on, and a workflow with no step left is not listed", () => {
     const on = workflowsShown({ "corroborate-v2": true, phone_layers: true })
     const off = workflowsShown({ "corroborate-v2": false, phone_layers: false })
     for (const w of off) expect(w.steps.every((s) => !s.switch), w.id).toBe(true)
-    for (const w of on) expect(w.steps.length).toBe(TUTORIALS[w.id].length)
+    for (const w of on) expect(w.steps.every((s) => !s.unless), w.id).toBe(true)
+    // a step for the version a switch replaces shows only while that switch is off
+    const classic = Object.values(TUTORIALS).flat().filter((s) => s.unless)
+    for (const s of classic) expect(off.flatMap((w) => w.steps).includes(s), s.title).toBe(true)
   })
 })
 

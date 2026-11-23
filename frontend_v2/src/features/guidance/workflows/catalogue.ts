@@ -67,7 +67,8 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["money"],
     kinds: ["fraud", "drugs", "any"],
     areas: ["financial", "theory"],
-    features: ["financial-ledger", "financial-trace", "financial-coverage", "add-to-theory"],
+    features: ["financial-ledger", "financial-trace", "financial-coverage", "around-event", "add-to-theory"],
+    switches: ["corroborate-v2"],
   }),
   // Who was in contact?
   W({
@@ -77,7 +78,8 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["contact"],
     kinds: ["any"],
     areas: ["phones", "conversations", "graph"],
-    features: ["phones", "conversations", "people-in-contact", "phone-compare", "phone-analyses"],
+    features: ["phones", "conversations", "people-in-contact", "who-overlaps", "also-elsewhere", "phone-compare", "phone-analyses"],
+    switches: ["corroborate-v2"],
   }),
   // Was he there?
   W({
@@ -87,8 +89,8 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["there"],
     kinds: ["any", "defence"],
     areas: ["map", "phones", "timeline"],
-    features: ["map", "map-routes", "phone-layers", "phone-patterns", "timeline-phone-lens"],
-    switches: ["phone_layers"],
+    features: ["map", "map-routes", "area-compare", "phone-layers", "phone-patterns", "timeline-phone-lens"],
+    switches: ["corroborate-v2", "phone_layers"],
   }),
   // What happened, and when?
   W({
@@ -126,7 +128,8 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["who", "contact"],
     kinds: ["any"],
     areas: ["graph", "table"],
-    features: ["graph", "people-in-contact", "graph-merge", "table"],
+    features: ["graph", "people-in-contact", "graph-merge", "table", "graph-overlap"],
+    switches: ["corroborate-v2"],
   }),
   W({
     id: "search",
@@ -164,7 +167,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["theory", "contact"],
     kinds: ["any"],
     areas: ["relations", "corroborate"],
-    features: ["corroborate-classic", "corroborate-tray", "corroborate-levels"],
+    features: ["corroborate-classic", "corroborate-panel", "corroborate-tray", "corroborate-levels"],
     assistant: "link-group",
     switches: ["corroborate-v2"],
   }),
@@ -185,7 +188,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["theory", "contact"],
     kinds: ["any"],
     areas: ["leads"],
-    features: ["leads", "leads-auto"],
+    features: ["leads", "lead-records", "leads-auto"],
     switches: ["corroborate-v2"],
   }),
   W({

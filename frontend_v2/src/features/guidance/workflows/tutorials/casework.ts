@@ -97,14 +97,17 @@ export const DISCONFIRM: TutorialStep[] = [
 ]
 
 /** Corroborate: how could these items be linked? */
+const CLASSIC_RESULT = "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own."
 export const CORROBORATE: TutorialStep[] = [
+  // the classic Corroborate, for a browser with the new one turned off
   {
     title: "Mark the items as possibly related",
-    body: "Press Corroborate beside Add to theory on any payment, event, message, map area or search hit. Loupe saves them as one group and checks it against the records.",
+    body: "Press Corroborate beside Add to theory on any payment, event, message, map area or search hit, then Start a new look. Loupe saves them as one group and checks it against the records.",
     expect: "Corroborate in the details of the Pocketwire payments to Lena Marsh and Desmond Okafor.",
     shot: "co-payment",
     alt: "A payment's details with the Corroborate button marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: CLASSIC_RESULT },
+    unless: "corroborate-v2",
   },
   {
     title: "Read the result",
@@ -112,7 +115,8 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "6 items marked as possibly related: 15 pairs, 8 candidate links (0 strong, 4 moderate, 3 weak, 1 faint), 9 pairs with no link found.",
     shot: "co-header",
     alt: "A Corroborate result with its heading and counts marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: CLASSIC_RESULT },
+    unless: "corroborate-v2",
   },
   {
     title: "Check each candidate link",
@@ -120,7 +124,8 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "Moderate, Order of events: 500.00 USD to Lena Marsh on 13 April 2024, a phone position at 03:30 that night, then 1,200.00 USD to Desmond Okafor on 14 April. By chance, both would fall on the same day on 3.3% of days.",
     shot: "co-result",
     alt: "The candidate links, marked, each with its strength and the chance.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: CLASSIC_RESULT },
+    unless: "corroborate-v2",
   },
   {
     title: "See where no link was found",
@@ -128,7 +133,8 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "9 pairs with no link found, each with what was searched.",
     shot: "co-nolink",
     alt: "Pairs with no link found, marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: CLASSIC_RESULT },
+    unless: "corroborate-v2",
   },
   {
     title: "Ask how they could be linked",
@@ -136,15 +142,53 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "Ask how they could be linked, Export report (PDF) and Run again above the items.",
     shot: "co-actions",
     alt: "The result's buttons, Ask how they could be linked among them, marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: CLASSIC_RESULT },
+    unless: "corroborate-v2",
+  },
+  // the new Corroborate
+  {
+    title: "Choose what to corroborate",
+    body: "Press Corroborate beside Add to theory on a payment, a dossier person, a phone's summary, a line on the Graph or a photo. What you chose joins the selection in the corner of the screen, and a panel opens over the page.",
+    expect: "Corroborate in the details of the Pocketwire payment of 500.00 USD to Lena Marsh on 16 March 2024.",
+    shot: "co2-payment",
+    alt: "A payment's details with the Corroborate button marked.",
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside." },
+    switch: "corroborate-v2",
+  },
+  {
+    title: "See the leads already found",
+    body: "Leads already here lists the leads that touch what you chose: its records, its people or its dates. Each gives its level and the counts behind it.",
+    expect: "Leads already here 1: Strong link, Money. Travis Kell pays $500.00 to Lena Marsh and $1,200.00 to Desmond Okafor after 5 of the 5 key nights, none of the 164 ordinary days.",
+    shot: "co2-panel",
+    alt: "The Corroborate panel over the page, with Leads already here marked.",
+    open: { to: "financial?view=transactions", target: ['[data-guide="corroborate-panel-here"]', "text=Corroborate", "text=▸ Details"], then: "Open Details on a payment and press Corroborate: the panel opens over the page." },
+    switch: "corroborate-v2",
+  },
+  {
+    title: "Ask a new question",
+    body: "Ask a new question offers the questions that fit what you chose, each with its count, or Choose the question yourself. Nothing runs until you press one. The answer is saved to Leads as Asked by you: a reading by Loupe until you confirm it.",
+    expect: "What do you want to know? Is this payment connected to the rest of the selection? (1 payment), Who else is connected to these? (1 item), and Choose the question yourself.",
+    shot: "co2-question",
+    alt: "The panel's Ask a new question tab, marked, with the questions it offers.",
+    open: { to: "financial?view=transactions", target: ['[data-guide="corroborate-panel-ask"]', "text=Corroborate", "text=▸ Details"], then: "Open Details on a payment and press Corroborate: the panel opens over the page." },
+    switch: "corroborate-v2",
   },
   {
     title: "Gather a selection across screens",
-    body: "With the new Corroborate on, what you pick on any screen gathers in a tray in the corner and stays as you move between screens. Corroborate then offers questions about the selection, each with its count.",
-    expect: "The Corroborate tray in the corner of the Transactions screen.",
+    body: "What you choose on any screen gathers in the selection in the corner and stays as you move between screens. Its Corroborate asks about the whole selection; Paste a list, Check a claim and Save or combine are beside it.",
+    expect: "With nothing chosen yet, the corner of the Transactions screen offers Paste a list…, Saved subsets… and Check a claim….",
     shot: "co-tray",
-    alt: "The Corroborate tray, marked.",
+    alt: "The Corroborate selection in the corner, marked.",
     open: { to: "financial?view=transactions", target: ['[data-guide="corroborate-tray"]'] },
+    switch: "corroborate-v2",
+  },
+  {
+    title: "Read the answer in Leads",
+    body: "Open in Leads goes to the answer. Each lead gives its level, the counts on both sides, and what raises and lowers it. No link found says what was searched; it is not proof that no link exists.",
+    expect: "24 leads, the first Strong link, Contact: Lena Marsh and Desmond Okafor each in contact with the user of Phone 3 within 7 minutes of each other on 5 nights, 5 of 5 incident Fridays against none of the 11 other Fridays.",
+    shot: "leads-list",
+    alt: "Leads, strongest first.",
+    open: { to: "leads", target: ['[data-guide="leads-list"]'] },
     switch: "corroborate-v2",
   },
   {
@@ -236,6 +280,15 @@ export const LEADS: TutorialStep[] = [
     switch: "corroborate-v2",
   },
   {
+    title: "See a lead's records on every screen",
+    body: "Show these records marks the lead's records on every screen until you stop. A bar at the foot of each page links to Conversations, the Timeline and the Map, each opened at the lead's days, and marks each record In the open lead.",
+    expect: "Show these records on the first lead, Strong link, Contact, 52 records.",
+    shot: "leads-show",
+    alt: "A lead with Show these records marked.",
+    open: { to: "leads", target: ['[data-guide="lead-show-records"]'] },
+    switch: "corroborate-v2",
+  },
+  {
     title: "Look again after new material",
     body: "Look for leads now reads the whole case again. A case read in under 20 minutes is looked at again by itself when new material arrives.",
     expect: "Look for leads now at the top of the page.",
@@ -323,6 +376,15 @@ export const GRAPH: TutorialStep[] = [
     shot: "table-grid",
     alt: "The Table with its tool bar marked.",
     open: { to: "table", target: ['[data-guide="table-toolbar"]'] },
+  },
+  {
+    title: "See who reaches whom",
+    body: "Graph, People, go-betweens and documents: who reaches whom directly, through go-betweens, and through the documents that name them. A name read from a document by a model says so, with its page; nothing is confirmed until a person checks it.",
+    expect: "Documents naming two or more of them: 17 of 43 name two or more phone owners, such as kell-2024-03.pdf naming Travis Kell, Lena Marsh and Desmond Okafor, each read by a model on page 1.",
+    shot: "gr-overlap",
+    alt: "The graph of people, go-betweens and documents, marked.",
+    open: { to: "graph?graph-mode=people", target: ['[data-guide="graph-overlap"]'] },
+    switch: "corroborate-v2",
   },
   {
     title: "Keep what matters",

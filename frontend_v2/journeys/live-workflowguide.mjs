@@ -2,7 +2,7 @@
 // Live check of the Guide's Workflows section (lx-workflowguide G), signed in with the jobs login over plain http.
 // Read only: a request that is not a GET is stopped and reported, except the app's own view records.
 //
-//   node journeys/live-workflowguide.mjs --out <dir> [--width 1440|390] [--follow money,contact,theory] [--ends] [--open-all] [--quiet]
+//   node journeys/live-workflowguide.mjs --out <dir> [--width 1440|390] [--follow money,contact,theory] [--ends] [--open-all] [--quiet] [--corroborate on|off]
 //
 // Opens the Workflows list from the Guide menu on the demo case, follows each --follow workflow step by step with
 // Next (and the arrow keys), presses Open this screen on every step and checks the marked control is found, and with
@@ -23,6 +23,7 @@ const widths = arg("width") ? [Number(arg("width"))] : [1440, 390]
 const follow = (arg("follow", "") || "").split(",").filter(Boolean)
 const ends = process.argv.includes("--ends")
 const quiet = process.argv.includes("--quiet")
+const corroborate = arg("corroborate")
 // --open-all: press Open this screen on every step of every workflow and record whether its control is marked
 const openAll = process.argv.includes("--open-all")
 const C = CASES.demo
@@ -33,7 +34,7 @@ const VIEW_POSTS = [/\/api\/investigation-trail/, /\/api\/trail/, /\/api\/auth\/
   /\/api\/phones\/conversations\/review\/continue$/, /\/api\/phones\/streams\/window$/, /\/api\/phones\/link-analysis\/edges$/, /\/api\/phones\/links\/states$/,
   /\/api\/phones\/media\/(index|window|facets|image-index\/describe|derive-batches\/describe)$/,
   /\/api\/financial\/statement-import\/[^/]+\/(coverage-check|checks)$/, /\/api\/financial\/judgements\/preview$/,
-  /\/api\/citations\/resolve$/, /\/api\/phone-analysis\/across-badges$/, /\/api\/workspace\/[^/]+\/financial-evidence-changes$/]
+  /\/api\/citations\/resolve$/, /\/api\/phone-analysis\/across-badges$/, /\/api\/cases\/[^/]+\/leads:here$/, /\/api\/cases\/[^/]+\/corroborate\/preview$/, /\/api\/cases\/[^/]+\/corroborate\/around-event$/, /\/api\/workspace\/[^/]+\/financial-evidence-changes$/]
 const READ_WITHOUT_WORDS = [/\/api\/phones\/conversations\/threads$/, /\/api\/phones\/streams\/index$/]
 const noWords = (q) => {
   try {
@@ -50,7 +51,8 @@ const ok = (what) => report.checks.push(what)
 const bad = (what) => { report.failed.push(what); console.log("FAILED", what) }
 
 async function openList(page, base) {
-  await page.goto(`${base}/cases/${C}/financial?view=overview`, { waitUntil: "domcontentloaded" })
+  // --corroborate on|off sets the Corroborate switch in this browser, as ?corroborate-v2= does for a person
+  await page.goto(`${base}/cases/${C}/financial?view=overview${corroborate ? `&corroborate-v2=${corroborate}` : ""}`, { waitUntil: "domcontentloaded" })
   await page.getByText("Money in this scope").first().waitFor({ timeout: 120_000 })
   await page.locator('[data-guide="guide-menu"]').first().click()
   await page.locator('[data-guide="guide-workflows"]').first().click()
@@ -108,6 +110,9 @@ try {
       report.stopped.push(`${q.method()} ${path}`)
       return r.abort()
     })
+    // every job shares the jobs login, so another job's agent run would open the Agent page on its thread: the check
+    // sees the page as a person with no run going does
+    await page.route("**/api/agent/runs/active**", (r) => r.fulfill({ json: { runs: [] } }))
     const base = login.url
     await openList(page, base)
     await page.waitForTimeout(800)

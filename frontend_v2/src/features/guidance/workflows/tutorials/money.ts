@@ -63,6 +63,15 @@ export const MONEY: TutorialStep[] = [
     open: { to: "financial?view=transactions", target: SEARCH },
   },
   {
+    title: "See the money around each event",
+    body: "Financial, Around an event: under Choose events, tick the dates the case states or add your own. For each event, bank rows and payment alerts on the phones from that day to a week after, marked BANK + PHONE, PHONE ONLY or BANK ONLY. Money as common in other weeks is set apart.",
+    expect: "The five theft nights, each from its police report: after 5 of 5, Travis Kell pays Lena Marsh the same day ($2,500.00 in all) and Desmond Okafor the day after ($6,000.00), cash goes into his account two days after ($48,950.00), and checks 1043 to 1080 are paid to him six days after ($17,950.00).",
+    shot: "money-around",
+    alt: "Money around each event for the five theft nights, with the first payment marked BANK + PHONE.",
+    open: { to: "financial?view=overview", target: ['[data-guide="around-event"]'] },
+    switch: "corroborate-v2",
+  },
+  {
     title: "Keep what you found",
     body: "Record the pattern as a finding and attach its payments: Findings & Observations, then Create finding. From a payment's details, Add to theory files it with a theory as evidence for or against.",
     expect: "Findings & Observations with its Create finding button. The demo case has no saved findings yet.",

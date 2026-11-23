@@ -28,6 +28,8 @@ const widths = arg("width") ? [Number(arg("width"))] : [1440, 390]
 const dump = arg("dump")
 const C = CASES.demo
 const READ_ONLY_POSTS = [
+  // view reads sent as POST: Leads already here, the questions Corroborate offers, a conversation's badges
+  /\/api\/cases\/[^/]+\/leads:here$/, /\/api\/cases\/[^/]+\/corroborate\/preview$/, /\/api\/cases\/[^/]+\/corroborate\/around-event$/, /\/api\/phone-analysis\/across-badges$/,
   /\/api\/phones\/timeline\/(index|window|buckets)$/,
   /\/api\/investigation-trail/, /\/api\/trail/, /\/api\/auth\/refresh/,
   /\/api\/history\/cases\/[^/]+$/, /\/api\/request-speed\/page-views$/,
@@ -416,26 +418,78 @@ export const SHOTS = {
     return { mark: h.guide("dossiers-new") }
   },
   // Corroborate and leads
+  // the classic Corroborate: its pictures are taken with the switch off, as a browser with ?corroborate-v2=off sees it
   "co-payment": async (h) => {
-    await searchPayments(h, "POCKETWIRE")
+    await searchPayments(h, "POCKETWIRE", "off")
     await h.click(h.text("▸ Details"))
     return { mark: h.button("Corroborate", true) }
   },
   "co-result": async (h) => {
-    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e", "")
+    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e?corroborate-v2=off", "")
     return { mark: h.guide("relations-candidates") }
   },
   "co-nolink": async (h) => {
-    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e", "")
+    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e?corroborate-v2=off", "")
     return { mark: h.guide("relations-no-links") }
   },
   "co-header": async (h) => {
-    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e", "candidate links")
+    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e?corroborate-v2=off", "candidate links")
     return { mark: h.guide("relations-header") }
   },
   "co-actions": async (h) => {
-    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e", "candidate links")
+    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e?corroborate-v2=off", "candidate links")
     return { mark: h.guide("relations-actions") }
+  },
+  // the new Corroborate, switch on
+  "co2-payment": async (h) => {
+    await searchPayments(h, "POCKETWIRE", "on")
+    await h.click(h.text("▸ Details"))
+    return { mark: h.button("Corroborate", true) }
+  },
+  "co2-question": async (h) => {
+    await searchPayments(h, "POCKETWIRE", "on")
+    await h.click(h.text("▸ Details"))
+    await h.click(h.button("Corroborate", true))
+    await h.click(h.guide("corroborate-panel-ask"))
+    await h.see("What do you want to know?")
+    await h.settle(2000)
+    return { mark: h.guide("corroborate-panel-ask"), crop: h.guide("corroborate-panel") }
+  },
+  "co2-panel": async (h) => {
+    await searchPayments(h, "POCKETWIRE", "on")
+    await h.click(h.text("▸ Details"))
+    await h.click(h.button("Corroborate", true))
+    await h.see(/Leads already here \d/)
+    await h.settle(2000)
+    return { mark: h.guide("corroborate-panel-here"), crop: h.guide("corroborate-panel") }
+  },
+  "money-around": async (h) => {
+    await h.go("financial/around-event?corroborate-v2=on", "Dates the case states")
+    await h.click(h.text(/^Dates the case states/))
+    // the five theft nights, each dated by its police report: a pattern needs two or more events
+    for (const d of ["2024-03-16", "2024-04-13", "2024-05-04", "2024-05-18", "2024-06-01"]) {
+      await h.click(h.css(`label:has-text("${d}: police-report") input[type="checkbox"]`))
+      await h.settle(500)
+    }
+    await h.settle(4000)
+    return { mark: h.css('[data-testid="money-cell"]') }
+  },
+  "do-overlaps": async (h) => {
+    await h.go("dossiers?corroborate-v2=on", "Travis Kell")
+    await h.click(h.guide("dossiers-overlaps"))
+    await h.settle(4000)
+    return { mark: h.css('main h2:has-text("Who overlaps with whom")') }
+  },
+  "gr-overlap": async (h) => {
+    await h.go("graph?corroborate-v2=on&graph-mode=people", "")
+    await h.settle(5000)
+    return { mark: h.css('svg[aria-label="People, go-betweens and documents"]') }
+  },
+  "ph-elsewhere": async (h) => elsewhere(h, "Dee, Travis Kell"),
+  "leads-show": async (h) => {
+    await h.go("leads?corroborate-v2=on", "")
+    await h.settle()
+    return { mark: h.guide("lead-show-records") }
   },
   "leads-filters": async (h) => {
     await h.go("leads?corroborate-v2=on", "Look for leads now")
@@ -517,6 +571,19 @@ export const SHOTS = {
   },
 }
 
+/** Conversations with one thread open and Mark what also appears elsewhere ticked: its list of shared words marked. */
+async function elsewhere(h, thread) {
+  await h.go("conversations?corroborate-v2=on", "")
+  if (h.phone) await h.click(h.text(/^Threads \(\d+\)$/))
+  await h.click(h.css(`[data-guide="conversations-list"] :text-is("${thread}")`))
+  await h.settle()
+  await h.click(h.css('[data-testid="also-elsewhere-toggle"] input'))
+  await h.settle(4000)
+  // the Also elsewhere list: the words on two or more phones, and what was deleted on one phone and kept on another
+  const list = h.text("Words also on other phones", true)
+  return { mark: (await list.count()) ? list : h.guide("also-elsewhere") }
+}
+
 /** Theory T2 open in Casework; `mark` names the part of the theory to ring. */
 async function openTheory(h, mark) {
   await h.go("workspace?view=casework&kind=theory", "T2 ")
@@ -568,8 +635,9 @@ async function assistantWorkflow(h, title) {
 }
 
 /** The Transactions list with the search box filled, the count of matching payments marked. */
-async function searchPayments(h, words) {
-  await h.go("financial?view=transactions", "imported transactions in this case")
+async function searchPayments(h, words, corroborate) {
+  // corroborate: "on" or "off" sets the Corroborate switch for this picture through the address
+  await h.go(`financial?view=transactions${corroborate ? `&corroborate-v2=${corroborate}` : ""}`, "imported transactions in this case")
   await h.type(h.css('input[placeholder*="Search payments" i], input[aria-label*="Search payments" i]'), words)
   await h.see(/\d+ of 210 imported transactions/)
   return { mark: h.text(/\d+ of 210 imported transactions/) }
@@ -599,6 +667,8 @@ try {
       try {
         localStorage.removeItem("loupe.switch.corroborate-v2")
         localStorage.removeItem("loupe.phone_layers")
+        // each picture starts with no Corroborate selection: an earlier picture's Corroborate would fill the tray
+        for (const k of Object.keys(localStorage)) if (k.startsWith("loupeCorroSelection:")) localStorage.removeItem(k)
       } catch { /* storage unavailable: switches stay off */ }
     })
     const page = await context.newPage()
@@ -672,7 +742,9 @@ try {
   rmSync(scratch, { recursive: true, force: true })
 }
 console.log(JSON.stringify({ taken: report.taken.length, failed: report.failed, stopped: [...new Set(report.stopped)] }, null, 1))
-process.exit(report.failed.length || report.stopped.length ? 1 : 0)
+// "is also reviewing this thread" is a write the pictures never need; it is stopped and listed, and fails nothing
+const EXPECTED_STOPS = [/^POST \/api\/phones\/conversations\/presence$/]
+process.exit(report.failed.length || report.stopped.some((r) => !EXPECTED_STOPS.some((p) => p.test(r))) ? 1 : 0)
 
 /** The part of the screen a picture keeps: the crop element, or a window round the control, inside the viewport. */
 function cropBox(mark, area, vp, phone) {

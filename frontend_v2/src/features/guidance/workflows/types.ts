@@ -28,6 +28,8 @@ export interface TutorialStep {
   open: { to: string; target?: string[]; then?: string }
   /** Hidden while this switch is off in the person's browser. */
   switch?: WorkflowSwitch
+  /** Hidden while this switch is on: a step for the version the switch replaces, such as the classic Corroborate. */
+  unless?: WorkflowSwitch
 }
 
 /** One line of the catalogue (catalogue.ts): what the list shows and groups by. The steps are in tutorials/. */
@@ -44,7 +46,7 @@ export interface WorkflowEntry {
   features: string[]
   /** The assistant's guided workflow of the same name (backend services/agent/workflows.py), when there is one. */
   assistant?: string
-  /** The switches any of its steps sits behind (each off unless turned on in the browser); the test checks the steps. */
+  /** The switches any of its steps depends on, shown with them on or off (switch or unless); the test checks the steps. */
   switches: WorkflowSwitch[]
 }
 
