@@ -9,7 +9,11 @@ was unavailable and only words were searched.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import threading
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
 
@@ -80,6 +84,122 @@ def _where(case_id, areas, date_from, date_to):
 
 
 QUERY_WORKERS = 8  # Chroma queries of one search sent side by side
+# The vector store's queries in flight from this process, every search together: three overlapping searches sent 36
+# at once and the store answered "pool timed out while waiting for an open connection" (demo case, 23 Nov 02:38).
+_STORE_SLOTS = threading.BoundedSemaphore(QUERY_WORKERS)
+
+# A case with at most this many rows in a collection is scored here, not by the vector store. Measured on the demo case
+# (23 Nov, load 7): a filtered store query took 3.9-5.3 s over 193 chunks and 0.7 s per area over 1,347 items, 16 s
+# for one search's twelve queries; reading the case's rows took 0.3 s, and exact distances gave the same 30 hits.
+LOCAL_MAX_ROWS = 5000
+_VECTOR_CACHE_MAX = 20000  # vectors kept per process, by row id and text (float32: about 120 MB at most)
+_vectors: "OrderedDict[tuple, Any]" = OrderedDict()
+_vectors_lock = threading.Lock()
+_large: dict[tuple, float] = {}  # (collection, case) found over LOCAL_MAX_ROWS -> when; asked again after LARGE_TTL_S
+LARGE_TTL_S = 600
+
+
+def _matches(meta: dict, where: dict | None) -> bool:
+    """Chroma's metadata filter, for the operators this module sends. A key the row lacks fails every test but $ne
+    and $nin, as in the store."""
+    if not where:
+        return True
+    for k, cond in where.items():
+        if k == "$and":
+            if not all(_matches(meta, c) for c in cond):
+                return False
+            continue
+        if k == "$or":
+            if not any(_matches(meta, c) for c in cond):
+                return False
+            continue
+        ops = cond if isinstance(cond, dict) else {"$eq": cond}
+        has, v = k in meta and meta[k] is not None, meta.get(k)
+        for op, want in ops.items():
+            if op == "$eq":
+                ok = has and v == want
+            elif op == "$ne":
+                ok = not has or v != want
+            elif op == "$in":
+                ok = has and v in want
+            elif op == "$nin":
+                ok = not has or v not in want
+            elif op in ("$gt", "$gte", "$lt", "$lte"):
+                try:
+                    ok = has and {"$gt": v > want, "$gte": v >= want, "$lt": v < want, "$lte": v <= want}[op]
+                except TypeError:
+                    ok = False
+            else:
+                raise ValueError("filter operator %s is not scored here" % op)
+            if not ok:
+                return False
+    return True
+
+
+def _l2_space(collection) -> bool:
+    space = ((getattr(collection, "metadata", None) or {}).get("hnsw:space") or "l2")
+    try:  # chromadb 1.x keeps it in the collection's configuration
+        cfg = getattr(collection, "configuration_json", None) or {}
+        space = (cfg.get("hnsw") or {}).get("space") or space
+    except Exception:  # noqa: BLE001
+        pass
+    return space == "l2"
+
+
+def _case_rows(collection, case_id: str):
+    """The case's rows of one collection with their vectors, or None when the case is too large to score here (or the
+    collection cannot be read this way). Metadata and text are read fresh every time; a vector is reused while its
+    row's id and text are unchanged."""
+    import numpy as np
+    name = getattr(collection, "name", None)
+    if not name or not hasattr(collection, "get") or not _l2_space(collection):
+        return None
+    big = (name, case_id)
+    if time.time() - _large.get(big, -1e9) < LARGE_TTL_S:
+        return None
+    got = collection.get(where={"case_id": case_id}, include=["metadatas", "documents"], limit=LOCAL_MAX_ROWS + 1)
+    ids = got.get("ids") or []
+    if len(ids) > LOCAL_MAX_ROWS:
+        _large[big] = time.time()
+        return None
+    docs, metas = got.get("documents") or [None] * len(ids), got.get("metadatas") or [{}] * len(ids)
+    keys = [(name, i, hashlib.sha1((d or "").encode()).hexdigest()) for i, d in zip(ids, docs)]
+    with _vectors_lock:
+        missing = [k for k in keys if k not in _vectors]
+    if missing:
+        fetched = collection.get(ids=[k[1] for k in missing], include=["embeddings", "documents"])
+        by_id = {}
+        for i, e, d in zip(fetched["ids"], fetched["embeddings"], fetched.get("documents") or []):
+            by_id[(name, i, hashlib.sha1((d or "").encode()).hexdigest())] = np.asarray(e, dtype=np.float32)
+        with _vectors_lock:
+            for k, v in by_id.items():
+                _vectors[k] = v
+            while len(_vectors) > _VECTOR_CACHE_MAX:
+                _vectors.popitem(last=False)
+    rows = []
+    with _vectors_lock:
+        for k, d, m in zip(keys, docs, metas):
+            v = _vectors.get(k)
+            if v is None:  # changed between the two reads: the store has the newer row; ask it
+                return None
+            _vectors.move_to_end(k)
+            rows.append((k[1], d, m or {}, v))
+    return rows
+
+
+def _local_query(rows, query_vector, n_results: int, where: dict | None) -> dict:
+    """One store query answered from the case's rows: squared L2 distance, the store's measure for these
+    collections, nearest first."""
+    import numpy as np
+    keep = [r for r in rows if _matches(r[2], where)]
+    if not keep:
+        return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
+    q = np.asarray(query_vector, dtype=np.float32)
+    dist = ((np.stack([r[3] for r in keep]) - q) ** 2).sum(axis=1)
+    order = np.argsort(dist, kind="stable")[:n_results]
+    return {"ids": [[keep[i][0] for i in order]], "documents": [[keep[i][1] for i in order]],
+            "metadatas": [[keep[i][2] for i in order]], "distances": [[float(dist[i]) for i in order]]}
+
 
 def meaning_hits(case_id, query_vector, items_collection, chunks_collection, areas, *, phone=None, person=None,
                  date_from=None, date_to=None, entities_collection=None) -> list[dict]:
@@ -110,8 +230,21 @@ def meaning_hits(case_id, query_vector, items_collection, chunks_collection, are
                 conds.append({"source_kind": {"$ne": "phone_text"}})
             jobs.append(("chunks", chunks_collection, dict(n_results=over, where={"$and": conds})))
 
+    # small cases are scored here from their rows, read once per collection; large ones ask the store
+    local: dict[int, Any] = {}
+    for coll in {id(j[1]): j[1] for j in jobs}.values():
+        try:
+            local[id(coll)] = _case_rows(coll, str(case_id))
+        except Exception:  # noqa: BLE001 - the store's own query still answers
+            logger.warning("Case rows could not be read for local scoring; asking the vector store", exc_info=True)
+            local[id(coll)] = None
+
     def run(job):
-        return job[1].query(query_embeddings=[query_vector], include=include, **job[2])
+        rows = local.get(id(job[1]))
+        if rows is not None:
+            return _local_query(rows, query_vector, job[2]["n_results"], job[2].get("where"))
+        with _STORE_SLOTS:
+            return job[1].query(query_embeddings=[query_vector], include=include, **job[2])
     if len(jobs) > 1:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(QUERY_WORKERS, len(jobs))) as pool:

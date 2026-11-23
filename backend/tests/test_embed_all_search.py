@@ -224,3 +224,72 @@ def test_collapsed_connections_stay_readable_on_the_hit_that_stands_for_them():
 def test_the_snippet_shows_the_window_with_most_of_the_question_words():
     body = "cash note. " + "x " * 300 + "CASH DEPOSIT BR 031 WEXMOOR posted"
     assert "WEXMOOR" in S._snippet(body, ["cash", "deposit", "posted"])
+
+
+class Store:
+    """A vector-store collection with Chroma's get and query: rows (id, text, metadata, vector)."""
+    def __init__(self, name, rows):
+        self.name, self.metadata, self.rows = name, None, rows
+        self.queries, self.vector_reads = 0, 0
+
+    def get(self, where=None, ids=None, include=(), limit=None):
+        rows = [r for r in self.rows if (ids is None or r[0] in ids) and S._matches(r[2], where)][:limit]
+        if "embeddings" in include:
+            self.vector_reads += len(rows)
+        return {"ids": [r[0] for r in rows], "documents": [r[1] for r in rows], "metadatas": [r[2] for r in rows],
+                "embeddings": [r[3] for r in rows] if "embeddings" in include else None}
+
+    def query(self, query_embeddings, n_results, where, include):
+        self.queries += 1
+        q = query_embeddings[0]
+        rows = sorted((r for r in self.rows if S._matches(r[2], where)),
+                      key=lambda r: sum((a - b) ** 2 for a, b in zip(r[3], q)))[:n_results]
+        return {"ids": [[r[0] for r in rows]], "documents": [[r[1] for r in rows]], "metadatas": [[r[2] for r in rows]],
+                "distances": [[float(sum((a - b) ** 2 for a, b in zip(r[3], q))) for r in rows]]}
+
+
+def _store_rows():
+    return [("i1", "cash in at the branch", meta("ledger", "k1", item_ts=100), [1.0, 0.0]),
+            ("i2", "a far ledger row", meta("ledger", "k2", item_ts=100), [-1.0, 0.0]),
+            ("i3", "an account", meta("accounts", "k3"), [0.9, 0.1]),
+            ("i4", "another case", dict(meta("ledger", "k4"), case_id="other"), [1.0, 0.0])]
+
+
+def test_a_small_case_is_scored_from_its_rows_without_a_store_query(monkeypatch):
+    # demo case, 23 Nov: twelve filtered store queries took 16 s for 193 chunks and 1,347 items, and three
+    # overlapping searches ran 376-474 s with "pool timed out" from the store
+    monkeypatch.setattr(S, "_vectors", S.OrderedDict()); monkeypatch.setattr(S, "_large", {})
+    store = Store("case_items", _store_rows())
+    reference = Store("case_items", _store_rows())
+    monkeypatch.setattr(S, "LOCAL_MAX_ROWS", 0); monkeypatch.setattr(S, "_large", {})
+    by_store = S.meaning_hits("c", [1.0, 0.0], reference, None, ["ledger", "accounts"])
+    monkeypatch.setattr(S, "LOCAL_MAX_ROWS", 5000); monkeypatch.setattr(S, "_large", {})
+    hits = S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger", "accounts"])
+    assert store.queries == 0 and reference.queries == 2
+    assert [(h["key"], round(h["distance"], 6)) for h in hits] == [(h["key"], round(h["distance"], 6)) for h in by_store]
+    assert [h["key"] for h in hits] == ["k1", "k3"]  # k2 too far (over MAX_DISTANCE), k4 another case's
+    S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
+    assert store.vector_reads == 3  # vectors read once; a second search reads metadata and text only
+
+
+def test_a_changed_text_reads_its_vector_again_and_a_large_case_asks_the_store(monkeypatch):
+    monkeypatch.setattr(S, "_vectors", S.OrderedDict()); monkeypatch.setattr(S, "_large", {})
+    rows = _store_rows()
+    store = Store("case_items", rows)
+    S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
+    rows[0] = ("i1", "cash in at the branch, edited", rows[0][2], [0.6, 0.8])
+    hits = S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
+    assert store.vector_reads == 4 and hits[0]["text"] == "cash in at the branch, edited"
+    assert round(hits[0]["distance"], 6) == 0.8
+    monkeypatch.setattr(S, "LOCAL_MAX_ROWS", 2)
+    S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
+    assert store.queries == 1
+
+
+def test_local_filters_follow_the_store_for_missing_keys_and_dates():
+    m = {"case_id": "c", "area": "documents"}
+    assert S._matches(m, {"source_kind": {"$ne": "phone_text"}})  # a document passage has no source_kind
+    assert not S._matches(m, {"source_kind": "phone_text"})
+    assert S._matches(m, {"$and": [{"case_id": "c"}, {"area": {"$in": ["documents", "ledger"]}}]})
+    assert not S._matches({"item_ts": 5}, {"item_ts": {"$gte": 6}}) and S._matches({"item_ts": 6}, {"item_ts": {"$lte": 6}})
+    assert not S._matches({}, {"item_ts": {"$gte": 0}})
