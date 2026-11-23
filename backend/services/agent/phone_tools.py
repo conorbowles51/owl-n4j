@@ -228,6 +228,91 @@ def _row_out(r):
             "unconfirmed": r.get("interpretation_level") == "applied_unconfirmed"}
 
 
+MAX_OTHER_PAIRS = 12
+
+
+def _same_people(conn, case_id, key) -> list[dict]:
+    """Other identities the phones themselves give the same person as ``key``: both are one phone's owner identities,
+    or one phone names both with the same name (its contact entry or the name in its records, as labels show them).
+    A name recorded on a phone, never a person's link: ``[{identity_key, shown_as, basis}]``."""
+    from routers.pattern_of_life import _labels
+    from services.phone import identities
+    labels = _labels(conn, str(case_id))
+    out = {}
+    for (ext,) in conn.execute(text("SELECT id FROM phone_extractions WHERE case_id = :c"), {"c": str(case_id)}):
+        phone = labels.get(str(ext)) or labels.get(ext)
+        owners = list(identities.owner(conn, ext).get("owner_identity_keys") or [])
+        if key in owners:
+            for k in owners:
+                if k != key:
+                    out.setdefault(k, "%s's owner record gives both as its owner's" % (phone or "A phone"))
+    for r in conn.execute(text(
+            "SELECT o.identity_key, n.name, n.extraction_id FROM pv_identity_name n JOIN pv_identity_name o ON "
+            "o.case_id = n.case_id AND o.extraction_id = n.extraction_id AND o.name = n.name AND o.identity_key <> "
+            "n.identity_key AND o.is_phone_name WHERE n.case_id = :c AND n.identity_key = :k AND n.is_phone_name "
+            "ORDER BY o.identity_key, n.extraction_id"), {"c": str(case_id), "k": key}):
+        phone = labels.get(str(r.extraction_id)) or labels.get(r.extraction_id) or "A phone"
+        out.setdefault(r.identity_key, "%s names both %s" % (phone, r.name))
+    shown = {k: v for k, v in conn.execute(text(
+        "SELECT identity_key, value_display FROM pv_identity WHERE case_id = :c AND identity_key = ANY(:k)"),
+        {"c": str(case_id), "k": list(out)})} if out else {}
+    return [{"identity_key": k, "shown_as": shown.get(k) or k, "basis": b} for k, b in sorted(out.items())]
+
+
+def _other_identities(conn, case_id, keys, a, b, start, end) -> dict | None:
+    """Records between the same two people under their other identities (an email address beside a phone number) in
+    the window of a between read, counted by kind, with the read for each pair. Demo P4 (22 Nov 2026): a read between
+    the two phone numbers left out the price-list email between the same people's addresses."""
+    from services.phone import streams
+    from services.phone.filters import StreamFilter
+    if len(keys) != 2:
+        return None
+    sides = [[{"identity_key": k, "shown_as": None, "basis": None}] + _same_people(conn, case_id, k) for k in keys]
+    if len(sides[0]) == 1 and len(sides[1]) == 1:
+        return None
+    pairs, checked = [], 0
+    # both sides under other identities first (the two email addresses beside the two numbers), then one side
+    order = sorted(((x, y) for x in sides[0] for y in sides[1]), key=lambda xy: (xy[0]["basis"] is None) + (
+        xy[1]["basis"] is None))
+    for x, y in order:
+        if (x["identity_key"], y["identity_key"]) == tuple(keys) or checked >= MAX_OTHER_PAIRS:
+            continue
+        checked += 1
+        base = {"case_id": str(case_id), "participants": [x["identity_key"], y["identity_key"]],
+                "participant_mode": "between", "group_scope": "direct", "from_instant": a, "to_instant": b,
+                "include_no_time": a is None and b is None, "zone": {"mode": "case"}}
+        counts = streams.index_comm_events(conn, StreamFilter.model_validate(base))["counts"]
+        events = int(counts.get("events") or 0)
+        if not events:
+            continue
+        emails = int(streams.index_comm_events(conn, StreamFilter.model_validate(
+            {**base, "kinds": ["email"]}))["counts"].get("events") or 0)
+        read = {"people": [x["identity_key"], y["identity_key"]], "mode": "between"}
+        read.update({k: v for k, v in (("start", start), ("end", end)) if v})
+        pairs.append({"people": read["people"], "records": events, "messages": int(counts.get("messages") or 0),
+                      "calls": int(counts.get("calls") or 0), "emails": emails,
+                      "basis": [w["basis"] for w in (x, y) if w["basis"]],
+                      "read_with": {"tool": "phone_messages", "arguments": read}})
+    pairs_n = len(sides[0]) * len(sides[1]) - 1
+    if not pairs:
+        return {"pairs": [], "checked": checked, "sentence": (
+            "The same people's other identities on the phones (%s) hold nothing between them in this window." % "; ".join(
+                dict.fromkeys("%s: %s" % (w["shown_as"], w["basis"]) for side in sides for w in side[1:])))
+            + ("" if checked >= pairs_n else " Only %d of %d pairs were counted." % (checked, pairs_n))}
+
+    def kinds(p):
+        parts = [(p["messages"], "message"), (p["calls"], "call"), (p["emails"], "email"),
+                 (p["records"] - p["messages"] - p["calls"] - p["emails"], "other record")]
+        return ", ".join("%d %s%s" % (n, w, "" if n == 1 else "s") for n, w in parts if n > 0)
+    return {"pairs": pairs, "checked": checked, "sentence": (
+        "This read covers %s and %s only. The same people's other identities on the phones hold more in this window: %s. "
+        "These identities are tied by names recorded on the phones, not by a person's link; say so beside anything "
+        "read from them." % (keys[0], keys[1], "; ".join(
+            "%s between %s and %s (%s; read with phone_messages people=%s, mode between)" % (
+                kinds(p), p["people"][0], p["people"][1], "; ".join(p["basis"]), p["people"]) for p in pairs))
+        + ("" if checked >= pairs_n else " Only %d of %d pairs were counted." % (checked, pairs_n)))}
+
+
 def messages(conn, case_id, *, people=(), mode="between", start=None, end=None, phones=(), kinds=(), search=None,
              include_groups=False, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """Messages and calls under one Conversations filter: between people (``between``), involving any of them
@@ -293,6 +378,11 @@ def messages(conn, case_id, *, people=(), mode="between", start=None, end=None, 
                         len(unconfirmed), ", ".join(unconfirmed))) if unconfirmed else None,
                 counts={"messages": int(counts.get("messages") or 0), "calls": int(counts.get("calls") or 0),
                         "no_time": int(counts.get("no_time") or 0)})
+    if mode == "between" and not search and not phones and offset == 0:
+        other = _other_identities(conn, case_id, keys, a, b, start, end)
+        if other:
+            out["other_identities"] = other
+            out["other_identities_sentence"] = other["sentence"]
     if idx.get("group_totals"):
         out["group_totals"] = idx["group_totals"]
         out["group_sentence"] = ("Group chats they share are not counted here: %d more messages in %d group "

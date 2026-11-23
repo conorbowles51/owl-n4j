@@ -3011,7 +3011,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         subjects = [data.get("subject")] + list(data.get("subjects") or [])
         links = [s["link"]["words"] for s in subjects if isinstance(s, dict) and isinstance(s.get("link"), dict)]
         summary = " ".join(x for x in (*links, data.get("coverage"), data.get("limitation"),
-                                       data.get("unconfirmed_sentence"), data.get("group_sentence")) if x)
+                                       data.get("unconfirmed_sentence"), data.get("group_sentence"),
+                                       data.get("other_identities_sentence")) if x)
         return {**context.result(tool_name, data, summary=summary or "Read the phones."), "phone_generation": generation}
 
     def read_casework(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
