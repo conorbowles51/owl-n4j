@@ -9,9 +9,10 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import create_engine, event, func, inspect, select, text
 from sqlalchemy.orm import Session
 
+from postgres.base import Base
 from postgres.models.evidence import EvidenceFile
 from postgres.models.evidence_upload import EvidenceUploadGroup
 from routers import evidence_upload_groups as api
@@ -21,9 +22,23 @@ from tests.test_upload_group_batches import batch
 
 
 @pytest.fixture
-def held(groups, monkeypatch):
-    """Registration answers at once, and its file checks wait for ``release``."""
+def held(groups, monkeypatch, tmp_path):
+    """Registration answers at once, and its file checks wait for ``release``. The registration task and the page's
+    requests then use the database at the same moment, so each session gets a connection of its own: the in-memory
+    database of ``uploads`` is one connection, and two threads on it fail at random ("bad parameter or other API
+    misuse", or the selection not found; 1 run in 3 of this test alone, 23 Nov)."""
     f = groups
+    tables = [table for table in Base.metadata.sorted_tables if table.name in set(inspect(f.engine).get_table_names())]
+    engine = create_engine(f"sqlite:///{tmp_path / 'registration.sqlite'}",
+                           connect_args={'check_same_thread': False, 'timeout': 60})
+    event.listen(engine, 'connect', lambda connection, _: connection.execute('pragma journal_mode=wal'))
+    Base.metadata.create_all(engine, tables=tables)
+
+    def db_dependency():
+        with Session(engine) as db:
+            yield db
+    f.client.app.dependency_overrides[api.get_db] = db_dependency
+    f.engine = engine
     monkeypatch.setattr(api, 'COMPLETE_WAIT_SECONDS', 0)
     f.release, f.entered, f.prepares = threading.Event(), threading.Event(), []
     original = api.prepare_payload
@@ -38,6 +53,7 @@ def held(groups, monkeypatch):
     yield f
     f.release.set()
     api._running.clear()
+    engine.dispose()
 
 
 def staged(f, count=3):
@@ -64,6 +80,17 @@ def follow(f, state, until=('completed',), limit=60):
         time.sleep(0.05)
 
 
+def checking(f, state, limit=120):
+    """Waits for the registration to reach its file checks. A registration that ended first fails here with its own
+    error; on the loaded box a head suite once took over 30 s to get there (7d8c8ece, 23 Nov), so the wait is long."""
+    deadline = time.monotonic() + limit
+    while not f.entered.wait(0.1):
+        registration = api._running.get(UUID(state['id']))
+        if registration is not None and registration.task.done():
+            raise AssertionError(f'registration ended before its file checks: {registration.error}')
+        assert time.monotonic() < deadline, f'registration not at its file checks after {limit} s'
+
+
 def evidence_rows(f):
     with Session(f.engine) as db:
         return db.scalar(select(func.count()).select_from(EvidenceFile))
@@ -77,7 +104,7 @@ def test_complete_answers_before_registration_ends_and_the_page_reads_how_far_it
     answer = answer.json()
     assert answer['status'] == 'uploading' and answer['receipt'] is None
     assert answer['registration']['state'] == 'running' and answer['file_count'] == 3
-    assert f.entered.wait(30)
+    checking(f, state)
     now = f.client.get(f"/api/evidence-upload-groups/{state['id']}/registration").json()
     assert now['registration'] == dict(state='running', phase='checking', done=1, total=3)
     # The uploads list says it too (the panel shows "Registering 1 of 3 files").
@@ -125,7 +152,7 @@ def test_a_selection_paused_while_its_files_were_checked_is_not_registered(held)
     f = held
     state, _ = staged(f)
     assert control(f, state, 'complete').status_code == 200
-    assert f.entered.wait(30)
+    checking(f, state)
     with Session(f.engine) as db:
         db.execute(text("update evidence_upload_groups set status = 'paused' where id = :g"),
                    dict(g=UUID(state['id']).hex if f.engine.dialect.name == 'sqlite' else state['id']))
@@ -141,7 +168,7 @@ def test_a_registration_stopped_midway_leaves_no_rows_and_runs_again_to_one_regi
     f = held
     state, content = staged(f, 4)
     assert control(f, state, 'complete').json()['registration']['state'] == 'running'
-    assert f.entered.wait(30)
+    checking(f, state)
     # The server process ends (a release restarts it): its registration task is cancelled and its memory is gone.
     registration = api._running[UUID(state['id'])]
     f.client.portal.call(registration.task.cancel)
