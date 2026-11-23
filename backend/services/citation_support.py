@@ -366,10 +366,21 @@ def _txn_text(session, case_id, transaction_id: str) -> Source:
     return Source(text=text, label="payment" + (f" ({note})" if note else ""))
 
 
-def _rec_text(session, case_id, record_uid: str) -> Source:
-    from services.phone import records
+def _case_zone(streams, conn, case_id) -> str | None:
     try:
-        detail = records.record_detail(session.connection(), case_id, record_uid)
+        with conn.begin_nested():
+            return streams.case_zone(conn, case_id)["name"]
+    except Exception:  # noqa: BLE001 - no case zone: the record's own times, as before
+        logger.warning("Case zone of %s could not be read for the citation check", case_id, exc_info=True)
+        return None
+
+
+def _rec_text(session, case_id, record_uid: str) -> Source:
+    from services.phone import records, streams
+    try:
+        conn = session.connection()
+        # in the case's zone, as the record panel shows it: a quote's "7:12 PM EDT" is the record's local time
+        detail = records.record_detail(conn, case_id, record_uid, zone=_case_zone(streams, conn, case_id))
     except Exception as exc:  # noqa: BLE001 - a record that cannot be read is unchecked, with the reason
         if exc.__class__.__name__ == "NotFound":
             return Source(reason=C.NOT_IN_CASE)
@@ -379,7 +390,14 @@ def _rec_text(session, case_id, record_uid: str) -> Source:
     # an excerpt around the names left out the message body and the local time (demo case, 22 Nov: 17 quotes judged
     # "does not show the text")
     times = [t.get("full") for t in detail.get("times") or [] if isinstance(t, dict) and t.get("full")]
-    brief = "\n".join(x for x in (str(detail.get("as_text") or "").strip(),
+    try:
+        as_text = str(detail.get("as_text") or records.record_text(detail) or "").strip()
+    except Exception:  # noqa: BLE001 - without the panel's text the model reads the raw record, as before
+        logger.warning("Phone record %s text could not be built for the citation check", record_uid, exc_info=True)
+        as_text = ""
+    if not as_text:
+        times = []  # a timestamp alone is not the record: the model reads the raw record
+    brief = "\n".join(x for x in (as_text,
                                    "Times: " + "; ".join(dict.fromkeys(times)) if times else "") if x)
     raw = json.dumps(detail, ensure_ascii=False, default=str)
     return Source(text=(brief + "\n\n" + raw)[:MAX_SOURCE_CHARS], label="phone record", brief=brief)

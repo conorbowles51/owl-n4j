@@ -116,7 +116,13 @@ class SupportTests(_Case):
         from unittest import mock
         from services.phone import records as phone_records
 
-        def detail(conn, case_id, uid):
+        texts = {}
+        for uid, record in records.items():
+            texts[record["record_uid"]] = record.pop("as_text")  # the record panel adds it; record_detail does not
+        self.zones = []
+
+        def detail(conn, case_id, uid, zone="UTC"):
+            self.zones.append(zone)
             return records[str(uid)]
         from services import case_citations as C
         real = C.resolve_citations
@@ -126,7 +132,10 @@ class SupportTests(_Case):
             out = real(session, case_id, [c for c in citations if not c.href.startswith("rec://")])
             return out + [C.Resolution(href=c.href, scheme="rec", status="ok", record_uid=c.href[6:])
                           for c in citations if c.href.startswith("rec://")]
+        from services.phone import streams
         for patcher in (mock.patch.object(phone_records, "record_detail", side_effect=detail),
+                        mock.patch.object(phone_records, "record_text", side_effect=lambda d: texts[d["record_uid"]]),
+                        mock.patch.object(streams, "case_zone", return_value={"name": "America/New_York"}),
                         mock.patch.object(C, "resolve_citations", side_effect=resolve)):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -180,6 +189,7 @@ class SupportTests(_Case):
         self.assertIn("5:59:00 PM EDT", items[0]["source"])
         self.assertEqual(items[0]["sentence"], '12 Apr, 5:59 PM EDT, Travis Kell to Gary Penn on Signal: "on my way"')
         self.assertEqual({i["cites"] for i in items}, {1})
+        self.assertEqual(set(self.zones), {"America/New_York"})  # read in the case's zone, as the panel shows it
 
     def test_many_citations_go_to_the_model_in_concurrent_chunks_and_a_failed_chunk_is_named(self):
         answer = "\n".join(f"Nobody {i} holds the keys [p]({self.p2})." for i in range(23))
