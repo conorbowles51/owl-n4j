@@ -326,3 +326,16 @@ Where the newer Corroborate is turned on, Conversations offers **Mark what also 
 appear on other phones is marked **Also elsewhere**, with how many messages, phones and dates hold them; a stock phrase
 is shown but counted for nothing. The **Also elsewhere** panel lists those words, messages deleted on one phone and kept on
 another, and files and pictures shared across phones. The Corroborate guide explains each part.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Who was in contact with whom?](#workflow=contact). Use this when you need to know who messaged or called whom, how often, and under which names.
+- [Check a phone report is complete](#workflow=phone-check). Use this before you rely on a phone: compare it with a second, independent reading and look at the rows behind a record.
+- [Last proof of life](#workflow=last-proof-of-life). Use this when a person is missing or dead: find the last thing they did themselves, apart from what their phone did alone.
+- [Procurement kickbacks](#workflow=procurement-kickbacks). Use this when a contract may have been bought: follow meeting, award, payment and cash between two people.
+- [County lines](#workflow=county-lines). Use this when you need who ran a deal line over which periods, and the debt or threat messages beside the supply.
+- [Coercive control](#workflow=coercive-control). Use this when one person may control another's money and phone: list the bank-control events and monitoring apps by date.
+- [Human trafficking](#workflow=human-trafficking). Use this when you need who could operate a victim's phone and accounts, and where the money went.
+- [Embezzlement](#workflow=embezzlement). Use this when a phone shows accounts or cards the books do not, or statement months are missing.

@@ -16,6 +16,7 @@ import { tourArea, TOURS } from "./tours"
 import { useNextSteps } from "./announce"
 import { GUIDES, guidesFor, AREA_GUIDE } from "./guides"
 import { GLOSSARY_GUIDE } from "@/components/ui/glossary"
+import { openWorkflow } from "./workflows/open"
 
 // the guide reader (markdown) loads only when a guide is opened
 const GuideDialog = lazy(() => import("@/components/ui/guide-dialog").then((m) => ({ default: m.GuideDialog })))
@@ -71,6 +72,7 @@ export function GuideMenu({ caseId }: { caseId: string }) {
         {guideArea && (
           <DropdownMenuItem onSelect={() => setReading("area")}>Read the {GUIDES[AREA_GUIDE[guideArea]].title}</DropdownMenuItem>
         )}
+        <DropdownMenuItem data-guide="guide-workflows" onSelect={() => openWorkflow()}>Workflows: step-by-step guides</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setReading("glossary")}>Glossary of terms</DropdownMenuItem>
         {waiting > 0 && <DropdownMenuLabel className="text-xs font-normal">{waiting} next {waiting === 1 ? "step card is" : "step cards are"} waiting at the bottom left.</DropdownMenuLabel>}
         <DropdownMenuSeparator />

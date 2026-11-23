@@ -6,6 +6,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { useNextSteps, type Announced } from "./announce"
 import type { NextStep } from "./next-steps"
 import { useGuidance } from "./settings"
+import { openWorkflow } from "./workflows/open"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
@@ -55,6 +56,10 @@ export function NextStepsCardView({ card, onClose }: { card: Announced; onClose:
   const go = (step: NextStep) => {
     if (step.effect?.selectGraph?.length) useGraphStore.getState().selectNodes(step.effect.selectGraph)
     onClose()
+    if (step.effect?.workflow) {
+      openWorkflow({ id: step.effect.workflow })
+      return
+    }
     if (step.to.startsWith("/cases/")) navigate(step.to)
     else window.location.assign(step.to)
     if (step.effect?.event) {

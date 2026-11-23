@@ -7,6 +7,7 @@ import { GuideMenu } from "./GuideMenu"
 import { NextStepsHost } from "./NextStepsHost"
 import { StartHere } from "./StartHere"
 import { TourHost } from "./TourHost"
+import { WorkflowHost } from "./workflows/WorkflowHost"
 import { useGuidance } from "./settings"
 import { useEvidenceJobWatcher } from "./watchers"
 import { HistoryStrip } from "./history/HistoryStrip"
@@ -35,6 +36,7 @@ export default function CaseGuidanceBar({ caseId }: { caseId: string }) {
       </div>
       <ErrorBoundary fallback={<></>}>
         <TourHost caseId={caseId} />
+        <WorkflowHost caseId={caseId} />
         <HistoryDocument caseId={caseId} />
       </ErrorBoundary>
     </>

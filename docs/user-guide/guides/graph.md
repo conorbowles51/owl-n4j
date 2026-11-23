@@ -213,3 +213,9 @@ This control appears only where it has been turned on for you.
 Where the newer Corroborate is turned on, the Graph has a second tab, **People, go-betweens and documents**, drawing who
 reaches whom directly, through go-betweens, and through documents that name them. Names read from documents by a model
 show their page and are not confirmed until a person checks them. The Corroborate guide explains it.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [See who is linked to whom](#workflow=graph). Use this when you need the people, companies, accounts and places in the case and the links between them.

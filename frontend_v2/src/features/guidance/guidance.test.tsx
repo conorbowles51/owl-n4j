@@ -82,7 +82,7 @@ describe("next steps after an action", () => {
     const noLinks = nextSteps("c1", { kind: "document-processed", files: 2, names: 3, links: 0 })!
     expect(noLinks.steps.map((s) => s.id)).not.toContain("graph")
     const statement = nextSteps("c1", { kind: "statement-imported", payments: 40, needsLook: 0 })!
-    expect(statement.steps.map((s) => s.id)).toEqual(["payments", "follow"])
+    expect(statement.steps.map((s) => s.id)).toEqual(["payments", "follow", "how"])
     expect(nextSteps("c1", { kind: "export-done", fileName: "x.zip", href: null })).toBeNull()
     const notes = nextSteps("c1", { kind: "notes-imported", saved: 3, skipped: 1 })!
     expect(notes.title).toBe("3 notes saved to the case work, each linked to its payment. 1 note was there already.")
@@ -280,7 +280,8 @@ describe("next steps for the features added since the first guidance (lx-guideco
   it("a Corroborate result, a no-link result, a deep investigation, a case search, a comparison and layers each lead on", () => {
     const corro = nextSteps("c1", { kind: "corroborate-done", level: "Probable link", items: 4, selectionId: "s1" })!
     expect(corro.title).toBe("4 items weighed: Probable link.")
-    expect(corro.steps.map((s) => s.id)).toEqual(["result", "theory", "timeline"])
+    expect(corro.steps.map((s) => s.id)).toEqual(["result", "theory", "timeline", "how"])
+    expect(corro.steps[3]).toMatchObject({ label: "Show me how", effect: { workflow: "corroborate" } })
     expect(corro.steps[0].to).toBe("/cases/c1/relations/s1")
     expect(nextSteps("c1", { kind: "corroborate-done", level: "x", items: 2, noLink: true })!.title).toContain("not proof that no link exists")
     const deep = nextSteps("c1", { kind: "agent-run-done", threadId: "t1", payments: 2, records: 0, deep: true })!
@@ -288,12 +289,12 @@ describe("next steps for the features added since the first guidance (lx-guideco
     expect(deep.steps[0]).toMatchObject({ id: "report", to: "/cases/c1/agent?thread=t1" })
     const found = nextSteps("c1", { kind: "case-search-done", query: "orden", hits: 1, noun: "payments" })!
     expect(found.title).toBe('1 payment match "orden". Tick hits to add them to a theory or dossier, or to Corroborate them.')
-    expect(found.steps.map((s) => s.id)).toEqual(["agent", "keywords"])
+    expect(found.steps.map((s) => s.id)).toEqual(["agent", "keywords", "how"])
     expect(nextSteps("c1", { kind: "case-search-done", query: "x", hits: 0, noun: "payments" })).toBeNull()
     expect(nextSteps("c1", { kind: "phones-compared", title: "Two extractions of one phone", differences: 0 })!.steps.map((s) => s.id)).toEqual(["analyses"])
     const layers = nextSteps("c1", { kind: "layers-changed", on: 2, total: 5 })!
     expect(layers.title).toBe("2 of 5 phones on. Phones that are off are not drawn or counted on any phone screen.")
-    expect(layers.steps.map((s) => s.id)).toEqual(["map", "conversations", "timeline"])
+    expect(layers.steps.map((s) => s.id)).toEqual(["map", "conversations", "timeline", "how"])
   })
 
   it("changing phone layers again replaces the earlier card", () => {

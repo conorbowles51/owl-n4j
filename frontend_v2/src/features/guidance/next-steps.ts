@@ -13,6 +13,8 @@ export interface StepEffect {
   selectGraph?: string[]
   /** A window event the target screen listens for (e.g. open the Deleted items list). */
   event?: string
+  /** Open this step-by-step workflow in the Guide instead of going to an address. */
+  workflow?: string
 }
 
 export interface NextStep {
@@ -234,7 +236,21 @@ export function nextSteps(caseId: string, facts: ActionFacts): NextStepsCard | n
   }
   const kept = steps.filter((s): s is NextStep => !!s && !!s.to)
   if (!kept.length) return null
+  // the workflow that carries on from here, step by step, when the card has room for it
+  const how = SHOW_ME_HOW[facts.kind]
+  if (how && kept.length < 4) kept.push({ id: "how", text: how.text, label: "Show me how", to: `workflow:${how.id}`, effect: { workflow: how.id } })
   return { kind: facts.kind, title, steps: kept.slice(0, 4) }
+}
+
+/** The step-by-step workflow (Guide, Workflows) that follows on from an action. */
+export const SHOW_ME_HOW: Partial<Record<ActionKind, { id: string; text: string }>> = {
+  "statement-imported": { id: "money", text: "Follow the payments out of an account, step by step." },
+  "phone-imported": { id: "contact", text: "See who the phone's user was in contact with, step by step." },
+  "corroborate-done": { id: "corroborate", text: "How to read a Corroborate result and keep it, step by step." },
+  "case-search-done": { id: "search", text: "Search by exact words, by meaning and across the case, step by step." },
+  "agent-run-done": { id: "assistant", text: "Check the answer's sources and keep what it found, step by step." },
+  "theory-addition": { id: "theory", text: "Weigh the evidence for and against the theory, step by step." },
+  "layers-changed": { id: "there", text: "Check where the phones were on the map, step by step." },
 }
 
 /** Window events a target screen listens for. */

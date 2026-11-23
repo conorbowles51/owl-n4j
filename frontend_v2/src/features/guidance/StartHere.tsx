@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { guidanceAPI } from "./api"
 import { START_TIP, startSteps } from "./start-steps"
 import { useGuidance } from "./settings"
+import { openWorkflow } from "./workflows/open"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
@@ -39,7 +40,17 @@ export function StartHere({ caseId }: { caseId: string }) {
       <ul className="mt-2 flex flex-col gap-1.5">
         {steps.map((s) => (
           <li key={s.id} className="flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">{s.text}</span>
+            <span className="text-xs text-muted-foreground">
+              {s.text}
+              {s.workflow && (
+                <>
+                  {" "}
+                  <button type="button" className="underline underline-offset-2" onClick={() => openWorkflow({ id: s.workflow })}>
+                    Show me how
+                  </button>
+                </>
+              )}
+            </span>
             <Button size="sm" variant="outline" className="shrink-0" onClick={() => navigate(s.to)}>
               {s.label}
               <ArrowRight className="size-3.5" aria-hidden="true" />
@@ -47,6 +58,9 @@ export function StartHere({ caseId }: { caseId: string }) {
           </li>
         ))}
       </ul>
+      <button type="button" className="mt-2 text-[11px] underline underline-offset-2" onClick={() => openWorkflow()}>
+        Every workflow, step by step
+      </button>
       {counts.data.unavailable.length > 0 && (
         <p className="mt-2 text-[11px] text-muted-foreground">Not counted, could not be read: {counts.data.unavailable.join(", ")}.</p>
       )}

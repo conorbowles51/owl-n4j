@@ -89,3 +89,9 @@ Search by meaning reads phone notifications as text, beside messages, calls and 
 also reads the messages on that person's own phone as one more list. A snippet that cites a page shows the citation as
 words, such as a file name and page. Graph names and summaries come after source records, so the record itself comes
 first.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Search the whole case](#workflow=search). Use this when you remember a word, a name or an idea and need every document, payment and message that holds it.

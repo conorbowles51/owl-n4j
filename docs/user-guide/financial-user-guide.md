@@ -2134,3 +2134,21 @@ Your unfinished finalization explanation stays in this browser tab. After a refr
 The **Counterparty not identified** group explains why names are missing, with counts for card repayments, unnamed transfers, tax entries and other unclear descriptions. These payments do not represent one person or business. Card repayment descriptions may identify the issuer without identifying the funding account.
 
 Readable merchant descriptors can supply suggested names beyond the built-in brand list. They are marked **Suggested**, preserve the original description and do not establish legal identity or ownership. Location or store text stays in the label when its boundary is unclear. Printed counterparty fields and investigator edits take precedence, including names an investigator deliberately cleared. Opaque references and location-only entries remain available for review.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Turn bank statements into a checked ledger](#workflow=statements). Use this when statements arrive and you need every month read, balanced and complete before you count anything.
+- [Where did the money go?](#workflow=money). Use this when you need to follow payments out of an account, find who received them and cite each to its statement.
+- [Check and correct what Loupe read](#workflow=loupe-calls). Use this when a figure matters: see the calls Loupe made on a statement, confirm them or correct them, and keep the original.
+- [Decide on possible copies of a statement](#workflow=statement-copies). Use this when the same statement arrives twice, so its payments are counted once.
+- [Hidden assets](#workflow=hidden-assets). Use this when someone may hold accounts the case does not, or spend more than their proven income.
+- [Power-of-attorney and carer abuse](#workflow=carer-abuse). Use this when money left an older or vulnerable person's account and you need to know who moved it.
+- [Expense and travel fraud](#workflow=expense-fraud). Use this when a claimed dinner or trip needs checking against the card line and where the phone was.
+- [Insider trading](#workflow=insider-trading). Use this when trades may rest on inside information: set each trade against the calls and messages before it.
+- [Payment-scam victims](#workflow=payment-scam-victim). Use this when someone was talked into paying: set what they were told beside each payment and find the accounts that recur.
+- [Drug-supply turnover and proceeds](#workflow=drug-proceeds). Use this when you need what a deal line's messages and the cash deposits can support, with every assumption yours.
+- [Sanctions evasion](#workflow=sanctions-evasion). Use this when money may have moved after a designation date, and you need who was told and when.
+- [Money laundering](#workflow=money-laundering). Use this when you need a schedule of deposits and onward payments, each cell cited to its statement.
+- [Organised retail crime](#workflow=organised-retail-crime). Use this when stolen goods were resold: find the account the resale money reached and who could operate it.

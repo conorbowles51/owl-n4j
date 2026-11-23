@@ -164,3 +164,10 @@ A deep report whose source review fails still shows the saved draft, with each l
 When a question can be read more than one way and the answer can cover them all, the agent answers each reading under
 its own heading instead of asking which you meant. A normal run splits the question into its parts and looks each one
 up before it answers.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Ask the assistant and check its sources](#workflow=assistant). Use this when you want a quick answer from the whole case, with every source cited and checked.
+- [Run a deep investigation](#workflow=deep). Use this when a question needs the whole case read and a full report, not a quick answer.

@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { GUIDE_LINK, openWorkflow } from "@/features/guidance/workflows/open"
 
 /**
  * The generic Guide dialog (07 4.1, 9): FinancialGuide's dialog with its guides passed in, so the phone guide and
@@ -182,6 +183,14 @@ export function GuideDialog({
                             : href
                       }
                       onClick={(event) => {
+                        // a step-by-step workflow (lx-workflowguide C): close this guide and open its tutorial
+                        if (href?.startsWith(GUIDE_LINK)) {
+                          event.preventDefault()
+                          setOpen(false)
+                          onOpenChange?.(false)
+                          openWorkflow({ id: href.slice(GUIDE_LINK.length) })
+                          return
+                        }
                         if (href?.startsWith("#")) {
                           event.preventDefault()
                           document

@@ -112,3 +112,9 @@ own, the case has no state set to bound the lookup, or the place is outside the 
 
 Where the newer Corroborate is turned on, Dossiers has a third tab, **Who overlaps with whom**: every pair of people in
 the case against every kind of overlap. The Corroborate guide explains how to read it.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Build a picture of a person](#workflow=dossier). Use this when you need one place for a person's numbers, accounts, addresses and what the evidence says about them.

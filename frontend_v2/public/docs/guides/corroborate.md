@@ -337,3 +337,11 @@ On the Graph, the **People, go-betweens and documents** tab draws who reaches wh
 go-betweens, and through the documents that name them. Names are read from each document by a model and shown with their page; nothing is
 confirmed until a person checks it. **Case graph** returns to the full graph. Shown where the newer Corroborate is turned
 on.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Corroborate: how could these items be linked?](#workflow=corroborate). Use this when several items look related and you need the links Loupe can find, graded, and where it finds none.
+- [Check a claim against the phones](#workflow=claim). Use this when someone says where they were or what they did, and you need to know whether the phones fit it.
+- [Work through leads](#workflow=leads). Use this when you want Loupe to suggest links across the whole case for you to look into.

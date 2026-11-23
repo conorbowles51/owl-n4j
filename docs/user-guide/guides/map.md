@@ -129,3 +129,10 @@ If the map cannot read the case's locations, the phones' positions or the places
 Where the newer Corroborate is turned on, drawing an area adds **Look into this area over time** (or **Compare these N
 areas over time** for several). It shows who was inside each area night by night, who was in both and in what order,
 and everything inside an area in the window. The Corroborate guide explains the comparison.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Was he there? Phones on the map](#workflow=there). Use this when a timeline turns on where a phone was: on the night, at the address, together with another phone.
+- [Staged-accident insurance fraud](#workflow=staged-accident). Use this when the 'strangers' in a collision may have been organised: were they together before, and who paid them after?

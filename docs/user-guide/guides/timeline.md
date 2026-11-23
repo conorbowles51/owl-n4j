@@ -177,3 +177,9 @@ This menu and key appear only where they have been turned on for you.
 ***When to use it.*** Use it to hand a chronology to a colleague or to put it in a report.
 
 ***How to read the result.*** The file holds the events chosen, with the fields ticked, under the title you give it. A PDF takes up to 5,000 events; use CSV for more.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Build the timeline of the key dates](#workflow=timeline). Use this when you need everything that happened around a date in one place, in the order it happened.

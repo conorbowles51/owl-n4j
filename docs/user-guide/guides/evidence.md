@@ -155,3 +155,12 @@ If another task has been changing the same files for over a minute, **Process** 
 task has been changing these files for over a minute. Try again in a few minutes." Nothing was sent, so try again
 later. A file that the processing service stopped answering before it reached reads "Not sent: the processing service
 stopped answering before this file's turn. You can process it again."
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Bring a case in](#workflow=bring-in). Use this when a production arrives: upload it, read it, and deal with files that failed or arrived twice.
+- [Load a phone and see whose it is](#workflow=phone-in). Use this when a phone report arrives: load it, check it read in full, and see who used the phone.
+- [Use photos and videos as evidence](#workflow=photos). Use this when a photo's date or place matters, or a video or voice note has to be read.
+- [Get back something deleted](#workflow=deleted). Use this when a file, folder or piece of work was deleted by mistake in the last 30 days.

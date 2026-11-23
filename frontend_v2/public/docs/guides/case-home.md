@@ -206,3 +206,12 @@ When next-step cards are waiting, the menu counts them.
 ***When to use it.*** When a case was deleted by mistake, or to check what is waiting to be removed.
 
 ***How to read it.*** A deleted case disappears at once from every screen, search and the assistant. The case owner or an admin can restore it for the number of days shown (30 by default); after that it is removed for good. Days left shows in red from 3 days. If the delete dialog says the action is permanent, Deleted items is not in use on this installation, and the case cannot be restored. Deleted evidence files and graph items have their own lists, covered in the Evidence and Graph guides.
+
+## Step-by-step workflows
+
+Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
+
+- [Test a theory with the evidence for and against](#workflow=theory). Use this when you have a view of what happened and need to set the evidence for it beside the evidence against it.
+- [What breaks this theory](#workflow=disconfirm-theory). Use this before you rely on a theory: sweep the case for what tells against it and what it needs that the case lacks.
+- [Defence and review: test the other side's timeline](#workflow=defence-review). Use this when you review the other side's case and need to know what rests on readings no person confirmed.
+- [Report and export what you found](#workflow=reports). Use this when you need to hand over your findings, theories and notes as a report, with what each cites.
