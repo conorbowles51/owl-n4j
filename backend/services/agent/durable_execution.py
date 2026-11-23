@@ -629,6 +629,32 @@ def stream(runner, *, case_id, messages, artifact_preference="auto", max_tool_ca
                     if left:
                         answer = answer.rstrip() + "\n\n**Checks this answer did not pass**\n" + "\n".join(
                             "- " + x for x in left[:10])
+            # "No emails appear" when this run read an email it does not cite: the writer gets the record back once
+            # (services.agent.absence_check); a contradiction left is named, never shown as a clean absence.
+            if answer and not completion_issues and not clarification:
+                from services.agent import absence_check
+                contradicted = absence_check.contradictions(answer, trace)
+                if contradicted:
+                    note(live_runs.progress_writing(step=used))
+                    again = g.invoke_model(runner.base_model, [SystemMessage(content=g._final_answer_system_prompt(
+                        final_answer_rules)), *g.finalizer_messages(model_context(safe_messages)),
+                        AIMessage(content=answer), HumanMessage(content=absence_check.repair_request(contradicted))],
+                        note=note, step=used, should_cancel=should_cancel)
+                    if not getattr(again, "tool_calls", []):
+                        spent.append(again)
+                        replies, fixed = g._in_plain_words(runner.base_model, again)
+                        spent.extend(replies)
+                        fixed = g.link_named_files(g.link_document_citations(
+                            g.replace_result_handles(fixed, context.result_store)), g._tool_text({'messages': safe_messages}))
+                        if fixed.strip() and absence_check.keeps_citations(answer, fixed) and len(
+                                absence_check.contradictions(fixed, trace)) < len(contradicted):
+                            answer = fixed
+                    left = absence_check.contradictions(answer, trace)
+                    if left:
+                        heading = "**Checks this answer did not pass**"
+                        lines = "\n".join("- " + x for x in absence_check.check_lines(left)[:5])
+                        answer = (answer.rstrip() + "\n" + lines if heading in answer
+                                  else answer.rstrip() + "\n\n" + heading + "\n" + lines)
             # A group the person switched off is named under Not examined, with its steps (rule 1).
             answer = tool_groups.with_not_examined(answer, steer_applied, last_step=used)
             if context.deep_plan is not None and answer and not completion_issues and not deep_artifact:
