@@ -145,6 +145,31 @@ def _plain(text: str, labels: bool = True) -> str:
     return re.sub(r"\s+", " ", text).strip(" |-•\t")
 
 
+def _row_parts(row: str, hrefs: list[str]) -> dict[str, str] | None:
+    """The part of a table row each of its citations backs: the cell text up to and including the link, from the end
+    of the cell's previous link (a cell "WhatsApp ..., 21 Mar ([record](rec://a)); Telegram ..., 13 Mar
+    ([record](rec://b))" gives each record its own message). A row that pairs a check with the message before it
+    and cites both was judged whole against each source, so every citation read "supports part of this" (P4 follow-up
+    run 3, 23 Nov: 0 of 23 supported, 23 partly). None when a cell without a citation states a name, figure, date or
+    identifier: then no single citation backs it and the row is judged whole, as before."""
+    parts: dict[str, list[str]] = {}
+    for cell in row.strip().strip("|").split("|"):
+        links = [m for m in _LINK.finditer(cell) if m.group(2) in hrefs]
+        if not links:
+            if any(specifics(cell).values()):
+                return None
+            continue
+        last = 0
+        for i, m in enumerate(links):
+            end = m.end() if i < len(links) - 1 else len(cell)
+            text = cell[last:end].strip(" ;,")
+            parts.setdefault(m.group(2), []).append(text)
+            last = m.end()
+    if set(parts) != set(hrefs):
+        return None
+    return {h: " ".join(t) for h, t in parts.items()}
+
+
 def claims(answer: str) -> list[Claim]:
     """Sentences, bullets and table rows that carry a citation. A citation standing alone after a sentence (``... at
     01:15. [invoice, p.1](doc://...)``) backs the sentences of its line that carry none of their own."""
@@ -190,6 +215,8 @@ def claims(answer: str) -> list[Claim]:
             for m in _LINK.finditer(piece):
                 if m.group(2) in hrefs and m.group(2) not in labels and _label(m).strip():
                     labels[m.group(2)] = m.group(1)
+            if table and len(hrefs) > 1:
+                labels = _row_parts(piece, hrefs) or labels
             claim = Claim(text=piece, plain=plain, start=start + a, end=start + b, hrefs=hrefs, table=table,
                           labels=labels if len(hrefs) > 1 else {})
             if hrefs:

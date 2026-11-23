@@ -172,6 +172,33 @@ class SupportTests(_Case):
                          [(S.SUPPORTS, "code"), (S.SUPPORTS, "code")])
         self.assertEqual(self.calls, [])
 
+    def test_a_table_row_citing_two_records_judges_each_against_its_own_cell_text(self):
+        # demo P4 follow-up run 3, 23 Nov 2026 (followups m112304523830752): rows paired a message with the one before
+        # it and cited both; each record was judged against the whole row, so 23 of 23 read "supports part of this"
+        a, b = str(uuid.uuid4()), str(uuid.uuid4())
+        self._records({
+            a: self._message("are we still on for later", "Travis Kell", "Gary P", "2024-03-21T23:12:44+00:00",
+                             "Thu, Mar 21, 2024, 7:12:44 PM EDT"),
+            b: self._message("did you get the package", "Gary P", "Travis Kell", "2024-05-09T20:03:10+00:00",
+                             "Thu, May 9, 2024, 4:03:10 PM EDT")})
+        answer = ("| Messages |\n|---|\n"
+                  f'| Travis Kell to Gary P, "are we still on for later," 21 Mar 7:12 p.m. ET ([record](rec://{a})); '
+                  f'Gary P to Travis Kell, "did you get the package," 9 May 4:03 p.m. ET ([record](rec://{b})) |')
+        claim = S.claims(answer)[0]
+        self.assertTrue(claim.table)
+        self.assertIn("are we still on for later", claim.labels[f"rec://{a}"])
+        self.assertNotIn("did you get the package", claim.labels[f"rec://{a}"])
+        self.assertIn("did you get the package", claim.labels[f"rec://{b}"])
+        _, result = S.check_and_mark(self.db, self.case.id, answer, judge=self.judge("partly"))
+        self.assertEqual([(c["state"], c["by"]) for c in result["claims"][0]["citations"]],
+                         [(S.SUPPORTS, "code"), (S.SUPPORTS, "code")])
+
+    def test_a_table_row_with_an_uncited_fact_cell_is_judged_whole(self):
+        # a cell stating a figure with no citation of its own: no single citation backs it, so the row stays whole
+        a, b = str(uuid.uuid4()), str(uuid.uuid4())
+        row = f"| CHECK 1043, USD 3,400.00 | [record](rec://{a}) | [record](rec://{b}) |"
+        self.assertEqual(S.claims(row)[0].labels, {})
+
     def test_the_model_reads_a_phone_record_as_its_text_and_local_time_not_an_excerpt_of_the_raw_record(self):
         # demo P4 22 Nov 2026: the excerpt of a 10,000-character record around the names left out the body and the
         # local time; gpt-5-mini answered "does not show the quoted text" for 17 quotes
