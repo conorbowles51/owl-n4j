@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./dialog"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { X } from "lucide-react"
 import { Button } from "./button"
 import { hasWords } from "./has-words"
@@ -112,7 +112,13 @@ describe("Button keeps one element across renders", () => {
 })
 
 describe("Tooltip on keyboard focus in a narrow panel", () => {
+  // The 400 ms focus-scroll window is measured on the test's own clock: a loaded box can take longer than that
+  // between two awaited steps (head suite 2ae9b6ca: 1027 ms), which closed the tooltip in the test, not the app.
+  afterEach(() => void vi.useRealTimers())
+  const stall = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end) { /* a loaded box */ } }
+
   it("stays open when focus scrolls the panel, and closes when focus moves on", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] })
     render(
       <div data-testid="panel" style={{ overflowX: "auto", width: 55 }}>
         <Button size="icon" aria-label="Edit case processing profile"><X /></Button>
@@ -124,11 +130,27 @@ describe("Tooltip on keyboard focus in a narrow panel", () => {
     fireEvent.keyDown(document.body, { key: "Tab" })
     await act(async () => void button.focus())
     expect(button).toHaveAttribute("data-state", expect.stringMatching(/open/))
+    stall(450)
     // the browser then scrolls the panel to bring the focused control into view
     await act(async () => void screen.getByTestId("panel").dispatchEvent(new Event("scroll")))
     expect(button).toHaveAttribute("data-state", expect.stringMatching(/open/))
     await act(async () => void screen.getByRole("button", { name: "Next control" }).focus())
     expect(button).toHaveAttribute("data-state", "closed")
   })
-})
 
+  it("closes on a scroll that comes after the focus window", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] })
+    render(
+      <div data-testid="panel" style={{ overflowX: "auto", width: 55 }}>
+        <Button size="icon" aria-label="Edit case processing profile"><X /></Button>
+      </div>
+    )
+    const button = screen.getByRole("button", { name: "Edit case processing profile" })
+    fireEvent.keyDown(document.body, { key: "Tab" })
+    await act(async () => void button.focus())
+    expect(button).toHaveAttribute("data-state", expect.stringMatching(/open/))
+    await act(async () => void vi.advanceTimersByTime(500))
+    await act(async () => void screen.getByTestId("panel").dispatchEvent(new Event("scroll")))
+    expect(button).toHaveAttribute("data-state", "closed")
+  })
+})
