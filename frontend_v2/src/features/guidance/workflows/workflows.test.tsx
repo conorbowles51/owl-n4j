@@ -44,6 +44,8 @@ const EXCEPTIONS: Record<string, string> = {
   "area-compare": "Behind the new Corroborate; the Corroborate guide explains comparing drawn areas.",
   "search-notifications": "What search reads, not a control; Search the whole case uses it.",
   "dossier-addresses": "Map positions of a dossier's addresses show inside the dossier; the dossiers guide explains them.",
+  "phones-together":
+    "Behind the phone-together setting, which is off; the phones guide explains it. Phone patterns' Together view, which every case has, is in Was he there? and the staged-accident workflow.",
   "chat": "AI chat answers short questions beside a screen; the assistant workflow covers asking the case a question.",
 }
 

@@ -24,9 +24,22 @@ const follow = (arg("follow", "") || "").split(",").filter(Boolean)
 const ends = process.argv.includes("--ends")
 const quiet = process.argv.includes("--quiet")
 const C = CASES.demo
+// Reads sent as POST, as in workflow-stills.mjs; the two phone lists that record a search pass only with no words
 const VIEW_POSTS = [/\/api\/investigation-trail/, /\/api\/trail/, /\/api\/auth\/refresh/, /\/api\/history\/cases\/[^/]+$/,
-  /\/api\/request-speed\/page-views$/, /\/api\/evidence\/route-check$/, /\/api\/activity\/files$/, /\/api\/phones\//,
+  /\/api\/request-speed\/page-views$/, /\/api\/evidence\/route-check$/, /\/api\/activity\/files$/,
+  /\/api\/phones\/timeline\/(index|window|buckets)$/, /\/api\/phones\/map\/(summary|trajectory|points)$/,
+  /\/api\/phones\/conversations\/review\/continue$/, /\/api\/phones\/streams\/window$/, /\/api\/phones\/link-analysis\/edges$/, /\/api\/phones\/links\/states$/,
+  /\/api\/phones\/media\/(index|window|facets|image-index\/describe|derive-batches\/describe)$/,
+  /\/api\/financial\/statement-import\/[^/]+\/(coverage-check|checks)$/, /\/api\/financial\/judgements\/preview$/,
   /\/api\/citations\/resolve$/, /\/api\/workspace\/[^/]+\/financial-evidence-changes$/]
+const READ_WITHOUT_WORDS = [/\/api\/phones\/conversations\/threads$/, /\/api\/phones\/streams\/index$/]
+const noWords = (q) => {
+  try {
+    return !String(q.postDataJSON()?.text?.query ?? "").trim()
+  } catch {
+    return false
+  }
+}
 
 const login = readLogin()
 const browser = await chromium.launch()
@@ -89,6 +102,7 @@ try {
       const q = r.request()
       const path = new URL(q.url()).pathname
       if (["GET", "HEAD", "OPTIONS"].includes(q.method()) || VIEW_POSTS.some((p) => p.test(path))) return r.continue()
+      if (READ_WITHOUT_WORDS.some((p) => p.test(path)) && noWords(q)) return r.continue()
       report.stopped.push(`${q.method()} ${path}`)
       return r.abort()
     })
@@ -155,15 +169,17 @@ try {
     }
 
     if (ends) {
+      let steps = 0
       for (const id of ids) {
         await card(page, id).click()
         await page.getByTestId("workflow-tutorial").waitFor()
         const n1 = await imagesLoaded(page, `${width} ${id} first`)
         const count = await stepCount(page)
         const total = Number(count.match(/of (\d+)/)[1])
+        steps += total
         // jump to the last step from the step list (the strip on a phone)
-        const steps = phone ? page.getByRole("navigation", { name: "Steps" }) : page.getByTestId("workflow-tutorial").getByRole("navigation").last()
-        await steps.getByRole("button").nth(total - 1).click()
+        const list = phone ? page.getByRole("navigation", { name: "Steps" }) : page.getByTestId("workflow-tutorial").getByRole("navigation").last()
+        await list.getByRole("button").nth(total - 1).click()
         await page.waitForTimeout(300)
         const last = await stepCount(page)
         if (last !== `Step ${total} of ${total}`) bad(`${width} ${id}: jump to last says ${last}`)
@@ -172,25 +188,65 @@ try {
         await page.getByRole("button", { name: "All workflows" }).click()
         await page.getByLabel("Find a workflow").waitFor()
       }
-      ok(`${width}: first and last step of ${ids.length} workflows opened`)
+      ok(`${width}: first and last step of ${ids.length} workflows opened, ${steps} steps in all`)
     }
     await page.keyboard.press("Escape")
     await context.close()
   }
 
   if (quiet) {
-    // guidance off: no Workflows item, no Show me how, nothing opens by itself
+    // The jobs login has guidance off (its own setting, read from the server): nothing opens by itself, no Start here
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: state })
-    await context.addInitScript(() => { try { localStorage.setItem("loupe.guidance.off", "1") } catch { /* none */ } })
     const page = await context.newPage()
+    await page.goto(`${login.url}/cases/${C}/workspace`, { waitUntil: "domcontentloaded" })
+    await page.getByText("OBJECTIVE").first().waitFor({ timeout: 120_000 })
+    await page.waitForTimeout(4000)
+    const setting = await (await page.request.get(`${login.url}/api/guidance/me?case_id=${C}`)).json().catch(() => ({}))
+    ok(`guidance setting of the jobs login on the demo case: ${setting.guidance} (${setting.source})`)
+    if (await page.getByTestId("workflow-guide").count()) bad("guidance off: a workflow opened by itself")
+    else ok("guidance off: no workflow opened by itself")
+    if (await page.locator('[data-guide="start-here"]').count()) bad("guidance off: Start here shows")
+    else ok("guidance off: no Start here card, so no Show me how")
+    await page.screenshot({ path: join(out, "guidance-off-1440.png") })
+    // the area guide still links to its workflows: the Financial guide, then Where did the money go?
     await page.goto(`${login.url}/cases/${C}/financial?view=overview`, { waitUntil: "domcontentloaded" })
     await page.getByText("Money in this scope").first().waitFor({ timeout: 120_000 })
-    await page.waitForTimeout(3000)
-    const opened = await page.getByTestId("workflow-guide").count()
-    if (opened) bad("guidance off: a workflow opened by itself")
-    else ok("guidance off: no workflow opened by itself")
-    await page.screenshot({ path: join(out, "guidance-off-1440.png") })
+    await page.getByRole("button", { name: "Financial guide" }).first().click()
+    const link = page.getByRole("link", { name: "Where did the money go?" }).first()
+    await link.waitFor({ timeout: 60_000 })
+    await link.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(out, "area-guide-link-1440.png") })
+    await link.click()
+    await page.getByTestId("workflow-tutorial").waitFor({ timeout: 30_000 })
+    const t = await page.getByTestId("workflow-guide").getByRole("heading").first().textContent()
+    ok(`area guide: the Financial guide's link opened the workflow "${t?.trim()}" at ${await stepCount(page)}`)
     await context.close()
+
+    // a first-time person (guidance on, answered in this browser only; nothing is written): Start here offers the workflows
+    const on = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: state })
+    await on.route("**/api/guidance/me**", (r) => r.request().method() === "GET"
+      ? r.fulfill({ json: { guidance: "on", source: "default", case_default: null, tips_off: [], tours: { workspace: { state: "skipped" } }, history_collapsed: false } })
+      : r.abort())
+    const p2 = await on.newPage()
+    await p2.goto(`${login.url}/cases/${C}/workspace`, { waitUntil: "domcontentloaded" })
+    const start = p2.locator('[data-guide="start-here"]')
+    if (await start.waitFor({ timeout: 60_000 }).then(() => true, () => false)) {
+      await p2.waitForTimeout(800)
+      await p2.screenshot({ path: join(out, "start-here-1440.png") })
+      const how = start.getByRole("button", { name: "Show me how" })
+      const n = await how.count()
+      if (n) {
+        await how.first().click()
+        await p2.getByTestId("workflow-tutorial").waitFor({ timeout: 30_000 })
+        ok(`Start here: Show me how (${n} on the card) opened "${(await p2.getByTestId("workflow-guide").getByRole("heading").first().textContent())?.trim()}"`)
+        await p2.keyboard.press("Escape")
+        await p2.waitForTimeout(500)
+      } else ok("Start here: no step left to do on the demo case, so no Show me how")
+      await start.getByRole("button", { name: "Every workflow, step by step" }).click()
+      await p2.getByLabel("Find a workflow").waitFor({ timeout: 30_000 })
+      ok("Start here: Every workflow, step by step opened the list")
+    } else bad("guidance on: Start here did not show on the case home")
+    await on.close()
   }
 } catch (e) {
   bad(`stopped: ${e.message.split("\n")[0]}`)

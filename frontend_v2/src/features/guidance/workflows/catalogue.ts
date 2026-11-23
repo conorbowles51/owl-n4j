@@ -87,7 +87,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["there"],
     kinds: ["any", "defence"],
     areas: ["map", "phones", "timeline"],
-    features: ["map", "map-routes", "phone-layers", "phones-together", "phone-patterns", "timeline-phone-lens"],
+    features: ["map", "map-routes", "phone-layers", "phone-patterns", "timeline-phone-lens"],
     switches: ["phone_layers"],
   }),
   // What happened, and when?
@@ -352,7 +352,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["there", "money"],
     kinds: ["fraud"],
     areas: ["map", "financial", "agent"],
-    features: ["phones-together", "map-routes"],
+    features: ["map-routes"],
     assistant: "staged-accident",
   }),
   W({

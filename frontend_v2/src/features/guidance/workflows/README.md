@@ -32,3 +32,17 @@ The pictures are `public/docs/workflows/img/<shot>-1440.webp` (desktop) and `<sh
 to the part of the screen that matters). A step's `shot` names its recipe in `SHOTS` in the script.
 
 When a screen changes, also read the step's words again: the numbers in "you should see" are the demo case's.
+
+## Live check
+
+`journeys/live-workflowguide.mjs` signs in with the jobs login and walks the section on the live site at 1440 and
+390 wide, read only:
+
+```
+node journeys/live-workflowguide.mjs --out <dir> --follow money,contact,corroborate --ends --quiet
+```
+
+`--follow` walks each named workflow step by step with Next and the arrow keys and presses Open this screen on every
+step; `--ends` opens every workflow's first and last step and checks every picture loads; `--quiet` checks that a
+person with guidance off gets nothing opened by itself, that the area guide's links open their workflow, and that
+Start here offers the workflows to a person with guidance on (answered in the browser; nothing is saved).

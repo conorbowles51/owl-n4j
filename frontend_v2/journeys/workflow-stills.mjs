@@ -34,11 +34,24 @@ const READ_ONLY_POSTS = [
   /\/api\/evidence\/route-check$/, /\/api\/activity\/files$/,
   /\/api\/phones\/map\/(summary|trajectory)$/, // the Map's phone totals and routes (case view permission)
   /\/api\/phones\/conversations\/review\/continue$/, // "Continue reading": the person's open reviews (a read)
-  /\/api\/phones\/conversations\/threads$/, // the conversation list under the filter (case view permission)
-  /\/api\/phones\/map\/points$/, /\/api\/phones\/link-analysis\/edges$/, /\/api\/phones\/links\/states$/,
+  /\/api\/phones\/map\/points$/, /\/api\/phones\/streams\/window$/, /\/api\/phones\/link-analysis\/edges$/, /\/api\/phones\/links\/states$/,
   /\/api\/workspace\/[^/]+\/financial-evidence-changes$/, // what changed in cited payments ("Reads only")
   /\/api\/citations\/resolve$/, // a citation's record, for its link
+  /\/api\/phones\/media\/(index|window|facets|image-index\/describe|derive-batches\/describe)$/, // Media counts and lists (case view)
+  /\/api\/financial\/statement-import\/[^/]+\/(coverage-check|checks)$/, // a statement's date overlaps and checks (reads)
+  /\/api\/financial\/judgements\/preview$/, // the calls on a reading before it is saved ("Stores nothing")
 ]
+
+// Phone lists that also record a search on the case when the filter holds words (the review coverage's searches
+// run): let through only with no words in the filter.
+const READ_WITHOUT_WORDS = [/\/api\/phones\/conversations\/threads$/, /\/api\/phones\/streams\/index$/]
+const noWords = (q) => {
+  try {
+    return !String(q.postDataJSON()?.text?.query ?? "").trim()
+  } catch {
+    return false
+  }
+}
 
 const BUSY = /\d+ of \d+ parts? loaded|Loading the |Loading [^\n]*(…|\.\.\.)|Working out |Still working/
 
@@ -57,6 +70,11 @@ function helpers(page, base, width) {
       if (waitFor) await h.see(waitFor)
       else await h.see(page.locator("main"))
       await h.settle()
+      // a panel the last picture opened can come back with the page (a payment's details at phone width): shut it
+      if (await page.locator('[role="dialog"]').filter({ visible: true }).count()) {
+        await page.keyboard.press("Escape")
+        await h.settle(500)
+      }
     },
     async see(text, opts = {}) {
       const l = typeof text === "string" || text instanceof RegExp ? page.getByText(text, { exact: false, ...opts }).filter({ visible: true }).first() : text
@@ -186,7 +204,8 @@ export const SHOTS = {
   },
   "ph-conversations": async (h) => {
     await h.go("conversations", "")
-    return { mark: h.guide("conversations-list") }
+    // at phone width the thread list folds into a Threads button beside the messages
+    return { mark: h.phone ? h.text(/^Threads \(\d+\)$/) : h.guide("conversations-list") }
   },
   "ph-conv-search": async (h) => {
     await h.go("conversations", "")
@@ -302,7 +321,8 @@ export const SHOTS = {
   },
   "do-kell": async (h) => {
     await h.go("dossiers", "Travis Kell")
-    await h.click(h.text("Travis Kell"))
+    await h.click(h.text("Travis Kell", true))
+    await h.see("SUBJECT DOSSIER")
     return { mark: h.guide("dossiers-detail-tabs") }
   },
   "se-words": async (h) => {
@@ -318,14 +338,14 @@ export const SHOTS = {
     return { mark: h.text(/By meaning/) }
   },
   "ph-media": async (h) => {
-    await h.go("phones", "Phone 6")
-    await h.click(h.text("Phone 5"))
-    await h.click(h.button("Media", true))
-    return { mark: h.css("main h1, main h2") }
+    // Phone 5's media (Brianna Cole's phone): the files with their own dates, places and cameras
+    await h.go("phones/9fa5612f-3213-4fb2-853d-dcc9baabb4e0/records/media", "Media spread")
+    await h.settle(15_000)
+    return { mark: h.text("IMG_2041.JPG", true) }
   },
   "ag-source": async (h) => {
-    await h.go("agent", "Agent threads")
-    await h.click(h.text("What are the $650 monthly payments"))
+    // the thread "What are the $650 monthly payments into the Ruiz Auto & Tire account?", opened by its address
+    await h.go("agent?thread=b0a99e52-f218-4b84-9e84-842ad4dd9311", "monthly payments into the Ruiz Auto & Tire account")
     return { mark: h.text(/Source check/) }
   },
   "fin-judgement": async (h) => {
@@ -337,7 +357,15 @@ export const SHOTS = {
     await h.go("financial?view=statements", "Statements & accounts")
     await h.click(h.text(/^Review queue/))
     await h.click(h.text(/^Copies set aside \d/))
-    return { mark: h.guide("financial-compare") }
+    return { mark: h.button("Compare", true) }
+  },
+  "fin-compare-open": async (h) => {
+    await h.go("financial?view=statements", "Statements & accounts")
+    await h.click(h.text(/^Review queue/))
+    await h.click(h.text(/^Copies set aside \d/))
+    await h.click(h.button("Compare", true))
+    await h.see("MATCHING STATEMENT")
+    return { mark: h.css('[role="dialog"]').getByText("Opening balance").locator("xpath=ancestor::table[1]") }
   },
   "se-box": async (h) => {
     await h.go("workspace", "")
@@ -423,25 +451,19 @@ export const SHOTS = {
   },
   // The assistant
   "ag-thread": async (h) => {
-    await h.go("agent", "Agent threads")
-    await h.click(h.text("What are the $650 monthly payments"))
+    await h.go("agent?thread=b0a99e52-f218-4b84-9e84-842ad4dd9311", "monthly payments into the Ruiz Auto & Tire account")
     return { mark: h.css("main article, main [data-message-role='assistant']") }
   },
   "ag-ask": async (h) => {
-    await h.go("agent", "Agent threads")
+    await h.go("agent", "What can I ask?")
     return { mark: h.css('textarea[aria-label="Agent request"]') }
   },
   "ag-deep": async (h) => {
-    await h.go("agent", "Agent threads")
+    await h.go("agent", "What can I ask?")
     return { mark: h.guide("agent-deep") }
   },
-  "ag-tools": async (h) => {
-    await h.go("agent", "Agent threads")
-    return { mark: h.guide("agent-tools") }
-  },
   "ag-workflows": async (h) => {
-    await h.go("agent", "Agent threads")
-    await h.click(h.button("New agent thread"))
+    await h.go("agent", "What can I ask?")
     return { mark: h.text("Or start a guided workflow") }
   },
   // The assistant's guided workflows: the row opened with Use, its steps and what the demo case holds for each
@@ -501,8 +523,10 @@ async function openTheory(h, mark) {
 
 /** Agent, a new thread, the guided workflow's row opened with Use: its steps and whether each can run on this case. */
 async function assistantWorkflow(h, title) {
-  await h.go("agent", "Agent threads")
-  await h.click(h.button("New agent thread"))
+  // Agent opens on a new thread, whose empty state offers the guided workflows
+  await h.go("agent", "What can I ask?")
+  const picker = h.text("Or start a guided workflow")
+  if (!(await picker.isVisible())) await h.click(h.button("New agent thread"))
   await h.see("Or start a guided workflow")
   const use = h.button(`Use workflow ${title}`, true)
   // workflows past the first ten wait behind "Show 9 more workflows"
@@ -515,7 +539,22 @@ async function assistantWorkflow(h, title) {
     await use.evaluate((e) => e.click())
     await h.settle()
   }
-  return { mark: use.locator("xpath=ancestor::li[1]") }
+  const row = use.locator("xpath=ancestor::li[1]")
+  const start = row.getByRole("button", { name: "Start workflow" })
+  // at phone width the row's top sits under the thread's sticky header: the row's own Start workflow is the mark there
+  const mark = h.phone && (await start.count()) ? start.first() : row
+  // scroll the row to just below the thread header (Using case objective), which stays on screen above the list
+  await mark.evaluate((e) => {
+    const header = [...document.querySelectorAll("main *")].find((x) => x.textContent?.trim() === "Override for next request")
+    const below = header ? header.getBoundingClientRect().bottom + 24 : 120
+    let box = e.parentElement
+    while (box && !(box.scrollHeight > box.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement
+    const by = e.getBoundingClientRect().top - below
+    if (box) box.scrollTop += by
+    else window.scrollBy(0, by)
+  })
+  await h.settle(500)
+  return { mark }
 }
 
 /** The Transactions list with the search box filled, the count of matching payments marked. */
@@ -557,6 +596,7 @@ try {
       const q = r.request()
       const path = new URL(q.url()).pathname
       if (["GET", "HEAD", "OPTIONS"].includes(q.method()) || READ_ONLY_POSTS.some((p) => p.test(path))) return r.continue()
+      if (READ_WITHOUT_WORDS.some((p) => p.test(path)) && noWords(q)) return r.continue()
       report.stopped.push(`${q.method()} ${path}`)
       return r.abort()
     })

@@ -1196,7 +1196,9 @@ export function AgentPage() {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
           {messages.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
+            // min-h-full, not h-full: centred content taller than the box (the guided workflows) must grow and scroll,
+            // or its top is pushed above the scroll area where no one can reach it
+            <div className="flex min-h-full items-center justify-center" data-testid="agent-empty">
               <div className="w-full max-w-2xl text-center">
                 <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-lg border border-border bg-card">
                   <Sparkles className="size-5 text-amber-600 dark:text-amber-300" />

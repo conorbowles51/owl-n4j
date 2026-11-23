@@ -6,19 +6,11 @@ const SEARCH = ['input[aria-label="Search payments"]']
 export const ASSISTANT: TutorialStep[] = [
   {
     title: "Ask a question in your own words",
-    body: "Open Agent from the side menu, type the question and press Enter. The assistant answers from the case's evidence and cites each source.",
+    body: "Open Agent from the side menu, type the question and press Enter. While it works, a line names each step and the time so far, and Tools for this question lets you switch a kind of record off or on; a kind switched off is named as not examined in the answer.",
     expect: "Earlier questions on the demo case listed under Agent threads, such as “What are the $650 monthly payments into the Ruiz Auto & Tire account?”.",
     shot: "ag-ask",
     alt: "The Agent screen with the question box marked.",
     open: { to: "agent", target: ['textarea[aria-label="Agent request"]'] },
-  },
-  {
-    title: "Choose what it may search",
-    body: "While it works, a line names each step and the time so far. Tools for this question lets you choose which kinds of record it may search; a group you switch off is listed as not examined in the answer.",
-    expect: "The tools control under the question box.",
-    shot: "ag-tools",
-    alt: "The Agent screen with the tools control marked.",
-    open: { to: "agent", target: ['[data-guide="agent-tools"]'] },
   },
   {
     title: "Read the answer and its sources",
@@ -31,7 +23,7 @@ export const ASSISTANT: TutorialStep[] = [
   {
     title: "Check the Source check",
     body: "At the end of every answer, Source check says which citations support what they are cited for, which only partly do, and which do not mention it.",
-    expect: "A Source check line at the end of the answer, with the count of citations in each group.",
+    expect: "On the $650 answer: Source check: 16 of 20 citations support their sentence; 4 support part of it. Each partly supported citation says what its source does not show.",
     shot: "ag-source",
     alt: "The answer's Source check, marked.",
     open: { to: "agent" },
@@ -74,16 +66,16 @@ export const DEEP: TutorialStep[] = [
   },
   {
     title: "Follow its progress",
-    body: "A line names each step and the time so far. You can keep working on other screens; a next-step card says when the report is ready.",
-    expect: "The tools line and the steps of the run under the question box.",
-    shot: "ag-tools",
-    alt: "The tools control, marked.",
-    open: { to: "agent", target: ['[data-guide="agent-tools"]'] },
+    body: "Once it starts, a line names each step and the time so far, with Stop. You can keep working on other screens; a next-step card says when the report is ready.",
+    expect: "The question box, under which the run's steps and Tools for this question appear once it starts.",
+    shot: "ag-ask",
+    alt: "The question box, marked.",
+    open: { to: "agent", target: ['textarea[aria-label="Agent request"]'] },
   },
   {
     title: "Read the report and its Source check",
     body: "The report cites every source. Read the Source check at its end before you rely on any claim, then keep what holds up in a theory or finding.",
-    expect: "A Source check line at the end of each answer on the demo case.",
+    expect: "On the demo case, the $650 answer ends: Source check: 16 of 20 citations support their sentence; 4 support part of it.",
     shot: "ag-source",
     alt: "An answer's Source check, marked.",
     open: { to: "agent" },
@@ -107,7 +99,7 @@ function confirm(what: string): TutorialStep {
   return {
     title: "Confirm what it proposes",
     body: `The assistant returns proposals, never conclusions. You confirm ${what}, after opening the cited source. Anything it could not examine is listed as not examined.`,
-    expect: "Each claim in an answer on the demo case cites its source, and a Source check at the end says which citations support it.",
+    expect: "On the demo case, the $650 answer ends: Source check: 16 of 20 citations support their sentence; 4 support part of it.",
     shot: "ag-source",
     alt: "An assistant answer with its Source check marked.",
     open: { to: "workspace?view=proposals" },

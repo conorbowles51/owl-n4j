@@ -105,3 +105,12 @@ it("at phone width shows chat and artifacts one at a time, full width, with no s
     window.matchMedia = realMatchMedia
   }
 })
+
+it("lets a new thread's guided workflows grow and scroll, so the first ones can be reached", async () => {
+  // jsdom has no layout: the box's sizing is what decides it. A centred box fixed at the scroll area's height pushes
+  // the top of a taller list (the guided workflows) above the area, out of reach (seen live at 390 and 1440 wide).
+  show(`/cases/${caseId}/agent`)
+  const empty = await screen.findByTestId("agent-empty")
+  expect(empty.className.split(/\s+/)).toContain("min-h-full")
+  expect(empty.className.split(/\s+/)).not.toContain("h-full")
+})

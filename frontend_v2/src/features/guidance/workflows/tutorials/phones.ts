@@ -118,7 +118,7 @@ export const TIMELINE: TutorialStep[] = [
   {
     title: "Narrow it to the period",
     body: "Custom, then a start and an end date. The count shows how many events fall inside.",
-    expect: "From 2024-03-01 to 2024-06-10: 216 of 346 events, the five theft nights among them (15 March, 12 April, 3 May, 17 May, 31 May).",
+    expect: "From 2024-03-01 to 2024-06-10: 216 of 346 events, the period of the five theft nights.",
     shot: "tl-range",
     alt: "The timeline narrowed to 1 March to 10 June 2024, with the tool bar marked.",
     open: { to: "timeline", target: ['[data-guide="timeline-toolbar"]'] },
@@ -153,10 +153,10 @@ export const TIMELINE: TutorialStep[] = [
 export const PHOTOS: TutorialStep[] = [
   {
     title: "Find a phone's photos",
-    body: "Open a phone and its Media. Each photo shows the date, place and camera from its own data, marked as not checked by a person.",
-    expect: "Phone 5, Brianna Cole's phone, with her own photos from the storage unit.",
+    body: "Open a phone, then Media. Each file shows its phone, its date, whether it matches its stated hash and how many messages carried it. Text read from a picture is marked Machine-generated.",
+    expect: "Phone 5, Brianna Cole's phone: IMG_2041.JPG on 16 March 2024, IMG_2107.JPG on 13 April, IMG_2188.JPG on 4 May and IMG_2240.JPG on 1 June, each the day after a theft night and Intact: matches its stated hash.",
     shot: "ph-media",
-    alt: "Phone 5's media.",
+    alt: "Phone 5's media, with one photo marked.",
     open: { to: "phones", target: ["text=Phone 5"] },
   },
   {

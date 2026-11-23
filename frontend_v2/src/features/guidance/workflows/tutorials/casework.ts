@@ -89,7 +89,7 @@ export const DISCONFIRM: TutorialStep[] = [
   {
     title: "Decide on each counter-argument",
     body: "Every counter-argument is a proposal. Open its cited source, then accept or reject it; only what a person accepts joins the theory.",
-    expect: "The answer cites each source; a Source check at its end says which citations support what they are cited for.",
+    expect: "On the demo case, the $650 answer ends: Source check: 16 of 20 citations support their sentence; 4 support part of it.",
     shot: "ag-source",
     alt: "An assistant answer on the demo case with its Source check marked.",
     open: { to: "workspace?view=proposals" },
@@ -117,7 +117,7 @@ export const CORROBORATE: TutorialStep[] = [
   {
     title: "Check each candidate link",
     body: "Each link says why it was found and gives the chance of it happening by chance on the case's ordinary days. The strongest come first; weak links are labelled weak.",
-    expect: "Moderate, Close in time: Kell's 500.00 USD to Lena Marsh on 13 April and his phone's position that night.",
+    expect: "Moderate, Order of events: 500.00 USD to Lena Marsh on 13 April 2024, a phone position at 03:30 that night, then 1,200.00 USD to Desmond Okafor on 14 April. By chance, both would fall on the same day on 3.3% of days.",
     shot: "co-result",
     alt: "The candidate links, marked, each with its strength and the chance.",
     open: { to: "financial?view=transactions", target: ["text=Corroborate"] },
@@ -259,7 +259,7 @@ export const DOSSIER: TutorialStep[] = [
   {
     title: "Open one",
     body: "Click a dossier. Its tabs hold what is known about the subject and where each piece came from.",
-    expect: "Travis Kell: State's cooperator (CW-1), former shift supervisor at Brightwater Logistics, fired 20 April 2024, tenant of bay 4.",
+    expect: "Travis Kell's dossier: his mobile, +1 410 555 0121, and home address, each marked Investigator recorded, and his proffer of 20 June 2024 under Interviews at a glance.",
     shot: "do-kell",
     alt: "Travis Kell's dossier with its tabs marked.",
     open: { to: "dossiers", target: ['[data-guide="dossiers-detail-tabs"]'] },
@@ -267,15 +267,15 @@ export const DOSSIER: TutorialStep[] = [
   {
     title: "Check the phone links",
     body: "A number linked to the subject by Loupe is a suggestion until a person confirms it. Phone identities lists every number and account the phones hold, with the names each phone saved.",
-    expect: "Phone identities beside Dossiers at the top of the page.",
-    shot: "do-list",
-    alt: "The dossiers page with its views.",
+    expect: "On Kell's dossier: Suggested, not reviewed: 3 more identities may be Travis Kell. None is counted here.",
+    shot: "do-kell",
+    alt: "Travis Kell's dossier.",
     open: { to: "dossiers", target: ['[data-guide="dossiers-views"]'] },
   },
   {
     title: "Find the subject on the graph",
     body: "On the Graph, search for the name. The subject's links to people, companies, accounts and places come from the evidence, each with its source.",
-    expect: "553 items and 1,511 links on the graph; Travis Kell is linked to Stowell Self Storage, Lena Marsh, Desmond Okafor and Penn's Used Tools.",
+    expect: "553 items and 1,511 links on the graph.",
     shot: "gr-canvas",
     alt: "The graph of the demo case.",
     open: { to: "graph" },
@@ -346,8 +346,8 @@ export const DEFENCE_REVIEW: TutorialStep[] = [
   },
   {
     title: "Read the witness accounts",
-    body: "Each dossier holds the subject's interviews and statements. A claim drafted by the model from a transcript stays marked as drafted until a person confirms it.",
-    expect: "Travis Kell's dossier holds his proffer as an interview, with its drafted claims marked as not confirmed.",
+    body: "Each dossier holds the subject's interviews, under Interviews. A summary or comparison drafted by the model waits as a proposal until a person accepts it.",
+    expect: "Kell's dossier lists his proffer session of 20 June 2024 under Interviews at a glance, with its transcript, kell-proffer-transcript-2024-06-20.docx.",
     shot: "do-kell",
     alt: "Travis Kell's dossier.",
     open: { to: "dossiers", target: ['[data-guide="dossiers-detail-tabs"]'] },
@@ -379,7 +379,7 @@ export const DEFENCE_REVIEW: TutorialStep[] = [
   {
     title: "Confirm each claim and finding",
     body: "Nothing it proposes counts until you confirm it. Each finding quotes the other side's statement and the source that bears on it.",
-    expect: "Answers on the demo case cite each source, with a Source check at the end.",
+    expect: "On the demo case, the $650 answer ends: Source check: 16 of 20 citations support their sentence; 4 support part of it.",
     shot: "ag-source",
     alt: "An assistant answer with its Source check marked.",
     open: { to: "workspace?view=proposals" },
