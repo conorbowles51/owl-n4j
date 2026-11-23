@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from "react"
+import { otherDialogOpen } from "./other-dialog"
 import { createPortal } from "react-dom"
 import { useLocation } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -60,7 +61,7 @@ export function TourHost({ caseId }: { caseId: string }) {
     return () => window.clearInterval(t)
   }, [due, open])
   useEffect(() => {
-    if (!due || !area || document.querySelector("[role='dialog']:not([data-guide-panel])")) return
+    if (!due || !area || otherDialogOpen()) return
     // nothing of the tour on screen yet (a page still loading, an empty case): wait, so the tour is not used up
     if (stepsOnScreen(TOURS[area]).length === 0) return
     setOpen((o) => o ?? { area, step: resumeAt, auto: true })
@@ -101,8 +102,7 @@ function useOtherDialog(watch: boolean): boolean {
   useEffect(() => {
     if (!watch) return
     // a panel with its own tour (data-guide-panel) is what the tour explains, so it never pushes the tour aside
-    const look = () =>
-      setCovered(!!document.querySelector("[role='dialog']:not([data-testid='tour-popup']):not([data-guide-panel]), [role='alertdialog']"))
+    const look = () => setCovered(otherDialogOpen())
     look()
     const t = window.setInterval(look, 500)
     return () => window.clearInterval(t)

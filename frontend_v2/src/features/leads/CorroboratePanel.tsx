@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import { Link } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -26,18 +27,53 @@ export function CorroboratePanel() {
     window.addEventListener(CORROBORATE_OPEN, open)
     return () => window.removeEventListener(CORROBORATE_OPEN, open)
   }, [])
+  const host = useOpenWindow(req)
   useEffect(() => {
     if (!req) return
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setReq(null) }
-    window.addEventListener("keydown", esc)
-    return () => window.removeEventListener("keydown", esc)
+    // Escape closes the panel only; the window under it (a dossier sheet) stays open. Window capture runs before the
+    // window's own Escape handling, which leaves a key whose default is prevented alone.
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      e.preventDefault()
+      setReq(null)
+    }
+    window.addEventListener("keydown", esc, true)
+    return () => window.removeEventListener("keydown", esc, true)
   }, [req])
+  const panel = req && <Panel key={`${req.caseId}:${req.label}:${req.members.length}`} req={req} onClose={() => setReq(null)} />
   return (
     <>
       <ShownLeadBar />
-      {req && <Panel key={`${req.caseId}:${req.label}:${req.members.length}`} req={req} onClose={() => setReq(null)} />}
+      {panel && (host ? createPortal(panel, host) : panel)}
     </>
   )
+}
+
+const OPEN_WINDOW = "[data-slot='sheet-content'][data-state='open'], [data-slot='dialog-content'][data-state='open']"
+
+/**
+ * The open sheet or dialog the panel was asked from (a dossier sheet's Corroborate), if any. Such a window keeps
+ * clicks, keyboard focus and screen readers inside itself and covers the page, so the panel is drawn inside it, on
+ * top: there it can be seen, clicked and typed in. The window is chosen with each request (a dialog the panel opens
+ * itself never takes it), and let go when that window closes.
+ */
+function useOpenWindow(req: CorroborateRequest | null): HTMLElement | null {
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!req) return setHost(null)
+    const open = Array.from(document.querySelectorAll<HTMLElement>(OPEN_WINDOW))
+    const chosen = open[open.length - 1] ?? null
+    setHost(chosen)
+    if (!chosen) return
+    const look = () => {
+      if (!chosen.isConnected || chosen.dataset.state !== "open") setHost(null)
+    }
+    const watcher = new MutationObserver(look)
+    watcher.observe(document.body, { childList: true })
+    watcher.observe(chosen, { attributes: true, attributeFilter: ["data-state"] })
+    return () => watcher.disconnect()
+  }, [req])
+  return host
 }
 
 function Panel({ req, onClose }: { req: CorroborateRequest; onClose: () => void }) {
