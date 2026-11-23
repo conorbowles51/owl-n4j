@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,51 @@ def default_model_call() -> Callable[[str], str] | None:
         return ctx.call(prompt, temperature=0.0, json_mode=True, timeout=TIMEOUT_S)
     call.model = "%s/%s" % (provider, model_id)  # type: ignore[attr-defined]
     return call
+
+
+# A record whose page reading was replaced by the ledger amount carries both figures, in either of two forms:
+# "9,800.00 USD (the ledger amount; the AI reading was 800.00 USD)" or "9800.0 (the ledger amount; read from the page
+# as 800.0)". The model's reason may quote the reading; only the ledger figure is the real one.
+_FIG = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+_SUPERSEDED = re.compile(r"(?P<ledger>" + _FIG + r")(?:\s?[A-Z]{3})?\s*\(the ledger amount; (?:the AI reading was|read from the "
+                         r"page as) [^\d)]*(?P<read>" + _FIG + r")[^)]*\)")
+_REASON_FIG = re.compile(r"(?<![\d.,/\-])(?:" + _FIG + r")(?![\d/\-]|[.,]\d)")
+
+
+def _value(figure: str) -> Decimal | None:
+    try:
+        return Decimal(figure.replace(",", ""))
+    except InvalidOperation:
+        return None
+
+
+def _like(written: str, token: str) -> str:
+    """The ledger amount as the record writes it, or with the replaced figure's places when those differ."""
+    places = len(token.split(".", 1)[1]) if "." in token else 0
+    if places == (len(written.split(".", 1)[1]) if "." in written else 0):
+        return written
+    return (("{:,.%df}" if "," in written else "{:.%df}") % places).format(_value(written))
+
+
+def ledger_reason(reason: str, text: str) -> str:
+    """``reason`` with any figure that is a superseded page reading in ``text`` written as its ledger amount."""
+    if not reason or "(the ledger amount;" not in (text or ""):
+        return reason
+    swaps, real = {}, set()
+    for m in _SUPERSEDED.finditer(text):
+        ledger, read = _value(m.group("ledger")), _value(m.group("read"))
+        if ledger is not None and read is not None and ledger != read:
+            swaps.setdefault(read, m.group("ledger"))
+            real.add(ledger)
+    if not swaps:
+        return reason
+
+    def swap(m):
+        v = _value(m.group(0))
+        if v in swaps and v not in real:
+            return _like(swaps[v], m.group(0))
+        return m.group(0)
+    return _REASON_FIG.sub(swap, reason)
 
 
 def _parse(raw: str) -> dict:
@@ -190,7 +236,7 @@ def rerank(question: str, candidates: list[dict[str, Any]], *, terms: list[str],
                 continue
             if 0 <= i < len(part) and part[i]["score"] is None:
                 part[i]["score"] = s
-                part[i]["reason"] = str(g.get("reason") or "")[:200]
+                part[i]["reason"] = ledger_reason(str(g.get("reason") or "")[:200], part[i].get("text") or "")
                 scored += 1
     not_scored = len(candidates) - scored
     note = None

@@ -588,3 +588,30 @@ def test_own_phones_names_the_phone_whose_records_name_its_owner(monkeypatch):
     assert [(o["extraction_id"], o["label"], o["name"]) for o in got] == [("ph6", "PH6", "Lena Marsh")]
     assert "Lena Marsh" in got[0]["basis"]
     assert U.own_phones(Conn(), "c", "What did Harold Vint say?") == []
+
+
+# ---- a reason never quotes a superseded page reading ----------------------------------------------------------------
+
+# The live demo-case record (m112307561328350): the ledger says 9,800.00, the page was misread as 800.00.
+_FENWICK = ("Cash Deposit BR 014 Fenwick on 2024-03-18 (Transaction). ## Transaction Details\nA cash deposit of 9,800.00 "
+            "USD (the ledger amount; the AI reading was 800.00 USD) was made on 2024-03-18 at branch 014 Fenwick "
+            "[kell-2024-03.pdf, p.1](doc://e941f20d-3001-40f4-a7db-deb6c6ad4d51/1).")
+_FENWICK_ROW = ("Travis Kell made a cash deposit at branch 014 Fenwick. Date: 2024-03-18. Amount: 9800.0 (the ledger "
+                "amount; read from the page as 800.0). Read from: 2024-03-18 CASH DEPOSIT BR 014 FENWICK 800.00")
+
+
+def test_a_reason_quoting_the_page_misreading_shows_the_ledger_amount():
+    def model(prompt):
+        return json.dumps({"scores": [{"i": 1, "score": 9, "reason": "Cash deposit of 800.00 at branch 014 Fenwick, 2024-03-18"},
+                                      {"i": 2, "score": 9, "reason": "Deposit of 800 at Fenwick branch"}]})
+    c = [{"area": "graph", "key": "e", "text": _FENWICK, "kind": "graph"},
+         {"area": "relationships", "key": "r", "text": _FENWICK_ROW, "kind": "graph"}]
+    R.rerank("cash deposits at a branch", c, terms=["cash"], model_call=model)
+    assert c[0]["reason"] == "Cash deposit of 9,800.00 at branch 014 Fenwick, 2024-03-18"
+    assert c[1]["reason"] == "Deposit of 9800 at Fenwick branch"
+
+
+def test_a_reason_keeps_figures_that_are_not_superseded_readings():
+    assert R.ledger_reason("Deposit of 9,800.00 on 2024-03-18 at branch 014", _FENWICK) == \
+        "Deposit of 9,800.00 on 2024-03-18 at branch 014"
+    assert R.ledger_reason("Paid 800.00 for rent", "Rent 800.00 paid") == "Paid 800.00 for rent"
