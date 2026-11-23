@@ -196,6 +196,15 @@ def transcripts(conn, case_id) -> Iterator[Item]:
                    extraction_id=str(r.extraction_id or ""), as_read=not (r.confirmed_at or r.corrected))
 
 
+def _amount_text(row: dict) -> str:
+    """The connection's amount; one the ledger check replaced keeps the page reading beside it."""
+    if not row.get("amount"):
+        return ""
+    if row.get("amount_as_read") is not None:
+        return "Amount: %s (the ledger amount; read from the page as %s)." % (row["amount"], row["amount_as_read"])
+    return "Amount: %s." % row["amount"]
+
+
 def relationship_item(case_id, row: dict, docs: dict) -> Item | None:
     """One graph connection that carries a written detail: who, how, whom, the detail, and the quotes it was read from."""
     detail = str(row.get("detail") or "").strip()
@@ -208,7 +217,7 @@ def relationship_item(case_id, row: dict, docs: dict) -> Item | None:
     quote_text = " | ".join(str(q).replace("\n", " ") for q in quotes[:3])[:700]
     body = _join("%s %s %s." % (row.get("a") or "?", kind, row.get("b") or "?"), detail,
                  ("Date: %s." % row["date"]) if row.get("date") else "",
-                 ("Amount: %s." % row["amount"]) if row.get("amount") else "",
+                 _amount_text(row),
                  ("Read from: %s" % quote_text) if quote_text else "")
     cite, page = "", None
     locs = row.get("locations") or []
@@ -218,7 +227,9 @@ def relationship_item(case_id, row: dict, docs: dict) -> Item | None:
         except ValueError:
             locs = []
     for loc in locs if isinstance(locs, list) else []:
-        fid = docs.get(str(loc.get("source_document_id") or ""))
+        # The engine records the evidence file id; older locations may give the statement's own id.
+        sid = str(loc.get("source_document_id") or "")
+        fid = docs.get(sid) or (sid if sid in docs.values() else None)
         if fid:
             cite = "doc://%s/%s" % (fid, loc.get("page_start") or "")
             break
@@ -235,7 +246,8 @@ def relationships(conn, case_id) -> Iterator[Item]:
         rows = session.run(
             "MATCH (a)-[r]->(b) WHERE r.case_id = $c AND r.detail IS NOT NULL AND NOT a:RecycleBin AND NOT b:RecycleBin "
             "RETURN elementId(r) AS id, a.name AS a, type(r) AS type, b.name AS b, r.detail AS detail, r.date AS date, "
-            "r.amount AS amount, r.source_quotes AS quotes, r.source_locations AS locations", c=str(case_id))
+            "r.amount AS amount, r.amount_as_read AS amount_as_read, r.source_quotes AS quotes, "
+            "r.source_locations AS locations", c=str(case_id))
         for row in rows:
             item = relationship_item(case_id, dict(row), docs)
             if item is not None:

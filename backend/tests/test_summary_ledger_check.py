@@ -85,6 +85,8 @@ class FakeGraph:
                         checked_text=params["summary"], findings=params["findings"])
             self.writes.append(params["key"])
             return SimpleNamespace(single=lambda: {"key": params["key"]})
+        if "amount IS NOT NULL" in query:
+            return []  # no dated amounts in these graphs
         return [dict(key=k, name=k, summary=n["summary"], model_text=n.get("model_text"),
                      checked_text=n.get("checked_text"), manual_fields=n.get("manual_fields", []))
                 for k, n in self.nodes.items()]
@@ -94,6 +96,7 @@ class FakeGraph:
 def ledger(monkeypatch):
     state = {"rows": _rows()}
     monkeypatch.setattr(check, "ledger_rows", lambda session, case_id: state["rows"])
+    monkeypatch.setattr(check, "file_names", lambda session, case_id: {})
     import services.entity_vectors as vectors
     refreshed = []
     monkeypatch.setattr(vectors, "refresh_entities", lambda case_id, keys, **kw: refreshed.extend(keys))
@@ -170,3 +173,100 @@ def test_switch_off_stops_automatic_runs(monkeypatch):
     monkeypatch.setattr(check.threading, "Thread", lambda *a, **k: started.append(1))
     check.schedule_case_check("case")
     assert started == []
+
+
+# --- 23 Nov: the same misread deposit in forms the first check missed (demo case b75f3f2c, payment 459c951a) ------
+
+FILE_ID = "e941f20d-3001-40f4-a7db-deb6c6ad4d51"
+NAMES = {FILE_ID: KELL}
+
+# The live Transaction node summary, 23 Nov: it cites the statement by its evidence file id and writes "800.00 USD".
+LIVE_NODE_SUMMARY = (
+    "## Transaction Details\nA cash deposit of 800.00 USD was made on 2024-03-18 at branch 014 Fenwick "
+    f"[kell-2024-03.pdf, p.1](doc://{FILE_ID}/1)."
+)
+
+
+def test_summary_citing_a_file_id_with_a_code_after_the_figure_takes_the_ledger_amount():
+    result = check_text(LIVE_NODE_SUMMARY, _rows(), NAMES)
+    assert "9,800.00 USD (the ledger amount; the AI reading was 800.00 USD) was made" in result.text
+    assert check.strip_notes(result.text) == LIVE_NODE_SUMMARY
+    assert check_text(result.text, _rows(), NAMES).text == result.text
+    # Without the id map the citation names no ledger file, so nothing is judged.
+    assert check_text(LIVE_NODE_SUMMARY, _rows()).findings == []
+
+
+class FigureGraph:
+    """Nodes and connections with an amount, as the graph holds them."""
+
+    def __init__(self, records):
+        self.records = records
+        self.writes = []
+
+    def run(self, query, **params):
+        if "SET n.amount" in query or "SET r.amount" in query:
+            rec = self.records[params["key"]]
+            if str(rec["amount"]) != params["expected"]:
+                return SimpleNamespace(single=lambda: None)
+            rec.update(amount=params["amount"], as_read=params["as_read"], checked=params["checked"])
+            self.writes.append(params["key"])
+            return SimpleNamespace(single=lambda: {"key": params["key"]})
+        if "n.amount IS NOT NULL" in query:
+            return [dict(key=k, what=r.get("what", "node"), name=r["name"], amount=r["amount"], as_read=r.get("as_read"),
+                         checked=r.get("checked"), date=r["date"], files=r.get("files"), locations=r.get("locations"),
+                         manual_fields=r.get("manual_fields", [])) for k, r in self.records.items()]
+        return []
+
+
+def _figure_graph():
+    loc = json.dumps([{"source_document_id": FILE_ID, "source_file": KELL, "page_start": 1}])
+    return FigureGraph({
+        "deposit": {"name": "Cash Deposit BR 014 Fenwick on 2024-03-18", "amount": 800.0, "date": "2024-03-18",
+                    "files": str([KELL])},
+        "received": {"what": "connection", "name": "Cash Deposit BR 014 Fenwick on 2024-03-18 Travis Kell",
+                     "amount": 800.0, "date": "2024-03-18", "locations": loc},
+        "agrees": {"name": "Pocketwire to Lena Marsh", "amount": 500.0, "date": "2024-03-16", "files": [KELL]},
+        "opening": {"name": "Opening Balance 2024-03-18", "amount": 12345.0, "date": "2024-03-18", "files": [KELL]},
+        "edited": {"name": "Deposit a person typed", "amount": 800.0, "date": "2024-03-18", "files": [KELL],
+                   "manual_fields": ["amount"]},
+        "other_file": {"name": "Deposit", "amount": 800.0, "date": "2024-03-18", "files": ["other.pdf"]},
+    })
+
+
+def test_graph_amounts_take_the_ledger_amount_and_keep_the_page_reading(ledger, monkeypatch):
+    graph = _figure_graph()
+    monkeypatch.setattr(check, "file_names", lambda session, case_id: NAMES)
+    report = check.check_case("case", apply=True, db_session=object(), graph_session=graph)
+    assert sorted(graph.writes) == ["deposit", "received"]
+    for key in ("deposit", "received"):
+        rec = graph.records[key]
+        assert (rec["amount"], rec["as_read"], rec["checked"]) == (9800.0, 800.0, 9800.0)
+    assert graph.records["edited"]["amount"] == 800.0 and graph.records["opening"]["amount"] == 12345.0
+    assert (report["amounts_replaced"], report["amounts_written"]) == (3, 2)  # the person-typed one only counted
+    assert ledger["refreshed"] == ["deposit"]
+
+    again = check.check_case("case", apply=True, db_session=object(), graph_session=graph)
+    assert again["amounts_written"] == 0 and sorted(graph.writes) == ["deposit", "received"]
+
+    ledger["rows"][(KELL, date(2024, 3, 18))] = [LedgerRow(KELL, date(2024, 3, 18), 80000)]
+    check.check_case("case", apply=True, db_session=object(), graph_session=graph)
+    assert (graph.records["deposit"]["amount"], graph.records["deposit"]["as_read"]) == (800.0, None)
+
+
+def test_graph_amount_switch_off_leaves_amounts(ledger, monkeypatch):
+    monkeypatch.setenv("GRAPH_AMOUNT_LEDGER_CHECK", "0")
+    monkeypatch.setattr(check, "file_names", lambda session, case_id: NAMES)
+    graph = _figure_graph()
+    check.check_case("case", apply=True, db_session=object(), graph_session=graph)
+    assert graph.writes == []
+
+
+def test_connection_search_text_shows_the_ledger_amount_beside_the_reading():
+    from services.embed_all.sources import relationship_item
+    row = {"id": "r1", "a": "Travis Kell", "type": "RECEIVED_PAYMENT", "b": "Cash Deposit BR 014 Fenwick on 2024-03-18",
+           "detail": "Travis Kell made a cash deposit at branch 014 Fenwick.", "date": "2024-03-18", "amount": 9800.0,
+           "amount_as_read": 800.0, "quotes": ["2024-03-18\nCASH DEPOSIT BR 014 FENWICK\n800.00"],
+           "locations": json.dumps([{"source_document_id": FILE_ID, "page_start": 1}])}
+    item = relationship_item("case", row, {"src-doc": FILE_ID})
+    assert "Amount: 9800.0 (the ledger amount; read from the page as 800.0)." in item.text
+    assert item.cite == f"doc://{FILE_ID}/1"
