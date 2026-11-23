@@ -91,8 +91,9 @@ async def merge_entities(
     await db.commit()
     await db.refresh(job)
 
-    # Enqueue merge worker
+    # The merge worker's own queue: document ingests never hold its slots.
+    from app.services.processing_queues import MERGE_QUEUE
     pool = request.app.state.arq_pool
-    await pool.enqueue_job("process_merge", str(job_id), case_id)
+    await pool.enqueue_job("process_merge", str(job_id), case_id, _queue_name=MERGE_QUEUE)
 
     return job

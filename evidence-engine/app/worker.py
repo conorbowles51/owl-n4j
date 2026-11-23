@@ -179,6 +179,20 @@ class PhoneCaptureWorkerSettings:
     max_tries = 3
 
 
+class MergeWorkerSettings:
+    """A person's entity merge never waits behind document ingests (23 Nov: 17+ min behind 4 batches)."""
+    from app.services.processing_queues import MERGE_QUEUE as queue_name
+    from app.services.merge_queue_recovery import move_waiting_merges
+    on_startup = recovers(queue_name, move_waiting_merges)
+    functions = [process_merge]
+    redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    max_jobs = 2
+    job_timeout = 14400
+    job_completion_wait = 14430
+    retry_jobs = True
+    max_tries = 3
+
+
 class AudioReviewWorkerSettings(WorkerSettings):
     """Versioned queue: older ingestion workers cannot consume review jobs."""
     from app.services.processing_queues import AUDIO_REVIEW_QUEUE as queue_name, audio_worker_heartbeat

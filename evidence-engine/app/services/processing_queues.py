@@ -5,6 +5,9 @@ PDF_REVIEW_QUEUE = 'arq:pdf-review'
 PHONE_CAPTURE_QUEUE = 'arq:phone-capture'  # one phone at a time on its own worker (01 section 10.2)
 
 AUDIO_REVIEW_QUEUE = 'arq:audio-review-v1'
+# A person's entity merge takes seconds; on the general queue it waited behind document ingests that held every slot
+# (23 Nov: merge d44bb517 queued 16:42 behind 4 batches started 16:10-16:39, median merge 30 s).
+MERGE_QUEUE = 'arq:merge'
 AUDIO_REVIEW_HEARTBEAT = 'loupe:audio-review-v1:worker-ready'
 
 
