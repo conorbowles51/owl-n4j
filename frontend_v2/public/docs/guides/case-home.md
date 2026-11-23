@@ -212,6 +212,6 @@ When next-step cards are waiting, the menu counts them.
 Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
 
 - [Test a theory with the evidence for and against](#workflow=theory). Use this when you have a view of what happened and need to set the evidence for it beside the evidence against it.
-- [What breaks this theory](#workflow=disconfirm-theory). Use this before you rely on a theory: sweep the case for what tells against it and what it needs that the case lacks.
+- [What breaks this theory](#workflow=disconfirm-theory). Use this when you are about to rely on a theory: sweep the case for what tells against it and what it needs that the case lacks.
 - [Defence and review: test the other side's timeline](#workflow=defence-review). Use this when you review the other side's case and need to know what rests on readings no person confirmed.
 - [Report and export what you found](#workflow=reports). Use this when you need to hand over your findings, theories and notes as a report, with what each cites.

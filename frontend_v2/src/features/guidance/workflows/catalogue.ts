@@ -39,7 +39,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["start"],
     kinds: ["any"],
     areas: ["evidence", "workspace"],
-    features: ["Large videos and missing files", "Deleted items"],
+    features: ["evidence-upload", "evidence-process", "phone-readiness"],
   }),
   W({
     id: "statements",
@@ -48,7 +48,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["start", "check"],
     kinds: ["fraud", "any"],
     areas: ["financial"],
-    features: ["Held copies of a statement"],
+    features: ["financial-import", "financial-coverage", "held-copies", "judgement-calls"],
   }),
   W({
     id: "phone-in",
@@ -57,7 +57,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["start", "who"],
     kinds: ["any"],
     areas: ["evidence", "phones"],
-    features: ["Phone report readiness card"],
+    features: ["phone-readiness", "phones"],
   }),
   // Where did the money go?
   W({
@@ -67,7 +67,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["money"],
     kinds: ["fraud", "drugs", "any"],
     areas: ["financial", "theory"],
-    features: [],
+    features: ["financial-ledger", "financial-trace", "financial-coverage", "add-to-theory"],
   }),
   // Who was in contact?
   W({
@@ -77,7 +77,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["contact"],
     kinds: ["any"],
     areas: ["phones", "conversations", "graph"],
-    features: ["People in contact"],
+    features: ["phones", "conversations", "people-in-contact", "phone-compare", "phone-analyses"],
   }),
   // Was he there?
   W({
@@ -87,7 +87,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["there"],
     kinds: ["any", "defence"],
     areas: ["map", "phones", "timeline"],
-    features: ["Phone layers", "Where phones were together"],
+    features: ["map", "map-routes", "phone-layers", "phones-together", "phone-patterns", "timeline-phone-lens"],
     switches: ["phone_layers"],
   }),
   // What happened, and when?
@@ -98,7 +98,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["when"],
     kinds: ["any"],
     areas: ["timeline", "theory"],
-    features: [],
+    features: ["timeline", "timeline-phone-lens", "add-to-theory"],
   }),
   W({
     id: "photos",
@@ -107,7 +107,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["when", "there"],
     kinds: ["any"],
     areas: ["evidence", "timeline", "map"],
-    features: ["Photo data", "Large videos and missing files"],
+    features: ["photo-data", "large-videos"],
   }),
   // Who is this person?
   W({
@@ -117,7 +117,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["who"],
     kinds: ["any"],
     areas: ["dossiers", "graph"],
-    features: [],
+    features: ["dossiers", "phone-identities"],
   }),
   W({
     id: "graph",
@@ -126,7 +126,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["who", "contact"],
     kinds: ["any"],
     areas: ["graph", "table"],
-    features: ["People in contact"],
+    features: ["graph", "people-in-contact", "graph-merge", "table"],
   }),
   W({
     id: "search",
@@ -135,7 +135,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["who", "when"],
     kinds: ["any"],
     areas: ["search", "keywords"],
-    features: ["Search by meaning"],
+    features: ["search-box", "search-results", "keyword-lists"],
   }),
   // Does the theory hold up?
   W({
@@ -145,16 +145,16 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["theory"],
     kinds: ["any", "defence"],
     areas: ["workspace", "theory"],
-    features: ["Theories for and against"],
+    features: ["theory", "add-to-theory", "case-home"],
   }),
   W({
     id: "disconfirm-theory",
     title: "What breaks this theory",
-    useWhen: "Use this before you rely on a theory: sweep the case for what tells against it and what it needs that the case lacks.",
+    useWhen: "Use this when you are about to rely on a theory: sweep the case for what tells against it and what it needs that the case lacks.",
     questions: ["theory"],
     kinds: ["defence", "any"],
     areas: ["workspace", "agent"],
-    features: ["Theories for and against"],
+    features: ["theory", "agent-ask", "source-check"],
     assistant: "disconfirm-theory",
   }),
   W({
@@ -164,7 +164,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["theory", "contact"],
     kinds: ["any"],
     areas: ["relations", "corroborate"],
-    features: ["Corroborate (classic)", "Corroborate selection and question menu", "Corroborate levels and checks", "Corroborate result screen"],
+    features: ["corroborate-classic", "corroborate-tray", "corroborate-levels"],
     assistant: "link-group",
     switches: ["corroborate-v2"],
   }),
@@ -175,7 +175,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["theory", "there"],
     kinds: ["defence", "any"],
     areas: ["corroborate", "theory"],
-    features: ["Corroborate this claim", "Corroborate this claim on theory lines"],
+    features: ["corroborate-claim"],
     switches: ["corroborate-v2"],
   }),
   W({
@@ -185,7 +185,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["theory", "contact"],
     kinds: ["any"],
     areas: ["leads"],
-    features: ["Corroborate levels and checks"],
+    features: ["leads", "leads-auto"],
     switches: ["corroborate-v2"],
   }),
   W({
@@ -195,7 +195,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["theory", "check"],
     kinds: ["defence"],
     areas: ["workspace", "dossiers", "agent"],
-    features: [],
+    features: ["agent-ask", "source-check"],
     assistant: "defence-review",
   }),
   // Can I rely on what Loupe read?
@@ -206,7 +206,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["check"],
     kinds: ["fraud", "any"],
     areas: ["financial"],
-    features: ["Judgement calls before import", "Corrections become rules"],
+    features: ["judgement-calls", "financial-ledger"],
   }),
   W({
     id: "statement-copies",
@@ -215,16 +215,16 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["check"],
     kinds: ["fraud"],
     areas: ["financial"],
-    features: ["Compare side by side", "Held copies of a statement", "Go to field"],
+    features: ["compare-statements", "held-copies"],
   }),
   W({
     id: "phone-check",
     title: "Check a phone report is complete",
-    useWhen: "Use this before you rely on a phone: compare it with a second, independent reading and look at the rows behind a record.",
+    useWhen: "Use this when you are about to rely on a phone: compare it with a second, independent reading and look at the rows behind a record.",
     questions: ["check"],
     kinds: ["any"],
     areas: ["analyses", "phones"],
-    features: ["Source database row and read again"],
+    features: ["phone-source-row", "phone-analyses"],
   }),
   // The assistant
   W({
@@ -234,7 +234,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["who", "when", "check"],
     kinds: ["any"],
     areas: ["agent"],
-    features: ["Source check", "Live progress on assistant runs", "Tools for this question", "Rate an answer", "Fuller answers"],
+    features: ["agent-ask", "agent-tools", "agent-rate", "source-check", "answer-links", "agent-ledger-search", "phones-around-payments", "photo-text", "other-identities", "failed-check-draft", "every-reading"],
   }),
   W({
     id: "deep",
@@ -243,7 +243,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["report", "theory"],
     kinds: ["any"],
     areas: ["agent"],
-    features: ["Deep investigation"],
+    features: ["deep-investigation", "source-check"],
   }),
   // Sharing what you found
   W({
@@ -253,7 +253,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["report"],
     kinds: ["any"],
     areas: ["reports", "financial"],
-    features: [],
+    features: ["reports"],
   }),
   W({
     id: "deleted",
@@ -262,7 +262,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["start"],
     kinds: ["any"],
     areas: ["evidence"],
-    features: ["Deleted items"],
+    features: ["deleted-items"],
   }),
   // The assistant's guided workflows (Agent, Workflows): each can also be followed by hand
   W({
@@ -352,7 +352,7 @@ export const CATALOGUE: WorkflowEntry[] = [
     questions: ["there", "money"],
     kinds: ["fraud"],
     areas: ["map", "financial", "agent"],
-    features: ["Where phones were together"],
+    features: ["phones-together", "map-routes"],
     assistant: "staged-accident",
   }),
   W({

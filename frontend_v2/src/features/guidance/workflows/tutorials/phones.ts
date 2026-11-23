@@ -1,0 +1,230 @@
+import type { TutorialStep } from "../types"
+
+/** Who was in contact with whom? */
+export const CONTACT: TutorialStep[] = [
+  {
+    title: "Start from one phone",
+    body: "Open Phones and a phone. Top people by contact lists who it was in touch with most, under the names the phone saved.",
+    expect: "Phone 3, the glovebox phone, has three contacts: D.O. with 45 messages and calls, L with 24 and G with 22.",
+    shot: "ph-summary",
+    alt: "Phone 3's summary with Top people by contact.",
+    open: { to: "phones", target: ["text=Phone 3"] },
+  },
+  {
+    title: "Read the conversations",
+    body: "Open Conversations in the side menu. Every thread on every phone that is on, newest first; tick Only this beside a phone to read one phone alone.",
+    expect: "Threads from all 6 phones, with the phones listed beside the filters.",
+    shot: "ph-conversations",
+    alt: "The Conversations screen with its list of threads marked.",
+    open: { to: "conversations", target: ['[data-guide="conversations-list"]'] },
+  },
+  {
+    title: "Find a message by its words",
+    body: "Type words in Contains these words to keep the threads that hold them. Exact characters matches the words as typed.",
+    expect: "Contains “tow truck” finds Kell's message to Okafor of 9 June, “left something in the tow truck, need it back”: deleted on Kell's phone and recovered, intact on Okafor's.",
+    shot: "ph-conv-search",
+    alt: "The Conversations filters with the Contains these words box marked.",
+    open: { to: "conversations", target: ['[data-guide="conversations-filters"]'] },
+  },
+  {
+    title: "See every pair in contact",
+    body: "On the Graph, People in contact lists each pair of people on the phones who messaged, called or emailed each other, busiest first. Show their messages opens them.",
+    expect: "People in contact: 20 pairs of people on the phones.",
+    shot: "gr-people",
+    alt: "The graph's People in contact list open, marked.",
+    open: { to: "graph", target: ['[data-guide="graph-people-in-contact"]'] },
+  },
+  {
+    title: "Compare two phones",
+    body: "Phones, Compare phones: choose two. It counts the messages and calls only on one, on both, and outside the other phone's period.",
+    expect: "Phone 1 against Phone 2: 189 messages only on Phone 1, 17 on both, 398 only on Phone 2.",
+    shot: "ph-compare",
+    alt: "Compare phones with Phone 1 and Phone 2 chosen.",
+    open: { to: "phones", target: ["text=Compare phones"] },
+  },
+  {
+    title: "Follow a person's contacts over time",
+    body: "Phone analyses, Relationships over time: for each person on each phone, when contact began and ended and the weeks it rose or fell.",
+    expect: "People on each phone (108) and Weeks where contact rose or fell (11).",
+    shot: "an-relationships",
+    alt: "Relationships over time with its heading marked.",
+    open: { to: "phone-analyses/relationships" },
+  },
+]
+
+/** Was he there? Phones on the map. */
+export const THERE: TutorialStep[] = [
+  {
+    title: "Open the map",
+    body: "Open Map from the side menu. Addresses from the evidence and phone positions share one map. A position is where the phone recorded itself, not proof of where a person was.",
+    expect: "Phone positions over Baltimore: 1,004 positioned records, 4 that cannot be placed, each counted.",
+    shot: "map-canvas",
+    alt: "The map with the phone positions marked.",
+    open: { to: "map", target: ['[data-guide="map-canvas"]'] },
+  },
+  {
+    title: "Choose the phones",
+    body: "Layers turns each phone on or off. A phone that is off is not drawn or counted on any phone screen.",
+    expect: "The six phones under Layers, each with its own colour.",
+    shot: "map-layers",
+    alt: "The map's phone layers, marked.",
+    open: { to: "map", target: ['[data-guide="phone-layers"]'] },
+    switch: "phone_layers",
+  },
+  {
+    title: "Draw each phone's route",
+    body: "Show routes draws each phone's path in time order. Gaps of more than 2 hours are left out and counted, never joined by a guessed line.",
+    expect: "Routes in each phone's colour; the gaps over 2 hours counted beside them.",
+    shot: "map-routes",
+    alt: "The map's Show routes control, marked.",
+    open: { to: "map", target: ['[data-guide="map-routes"]'] },
+  },
+  {
+    title: "Draw round a place",
+    body: "Areas, then Draw area: draw round a place to list what happened there, and add it to a theory.",
+    expect: "The Areas control on the map's tool bar.",
+    shot: "map-areas",
+    alt: "The map's Areas control, marked.",
+    open: { to: "map", target: ['[data-guide="map-areas"]'] },
+  },
+  {
+    title: "Look at one phone's day",
+    body: "Phone patterns, Day view: one phone's records hour by hour, with places, messages, payments and the hours it holds no data.",
+    expect: "Day view, Pattern grid, Places over time, Together and Check a statement for each of the six phones.",
+    shot: "ph-patterns",
+    alt: "Phone patterns with its views marked.",
+    open: { to: "phone-patterns", target: ['[data-guide="pattern-views"]'] },
+  },
+  {
+    title: "Everything around one moment",
+    body: "Phone analyses, Incident window: everything each phone recorded around a moment, side by side, with the hours a phone holds nothing shown as no data.",
+    expect: "The window opens around the latest moment on the case's phones until you choose one.",
+    shot: "an-incident",
+    alt: "The Incident window analysis with its heading marked.",
+    open: { to: "phone-analyses/incident-window" },
+  },
+]
+
+/** Build the timeline of the key dates. */
+export const TIMELINE: TutorialStep[] = [
+  {
+    title: "Open the timeline",
+    body: "Open Timeline from the side menu. Events, payments, messages and documents from the case, in date order.",
+    expect: "346 events, with the people and accounts they involve listed by count: RUIZ AUTO & TIRE LLC 82, TRAVIS KELL 60.",
+    shot: "tl-add",
+    alt: "The timeline with its tool bar.",
+    open: { to: "timeline", target: ['[data-guide="timeline-toolbar"]'] },
+  },
+  {
+    title: "Narrow it to the period",
+    body: "Custom, then a start and an end date. The count shows how many events fall inside.",
+    expect: "From 2024-03-01 to 2024-06-10: 216 of 346 events, the five theft nights among them (15 March, 12 April, 3 May, 17 May, 31 May).",
+    shot: "tl-range",
+    alt: "The timeline narrowed to 1 March to 10 June 2024, with the tool bar marked.",
+    open: { to: "timeline", target: ['[data-guide="timeline-toolbar"]'] },
+  },
+  {
+    title: "Add what the phones did",
+    body: "Phones adds each phone's records in its own lane beneath the events, so a message sits beside the event it bears on.",
+    expect: "Phones (6): a lane for each phone.",
+    shot: "tl-phones",
+    alt: "The timeline's Phones button, marked.",
+    open: { to: "timeline", target: ["text=Phones ("] },
+  },
+  {
+    title: "Focus on one person",
+    body: "Focus beside a name keeps the events that involve that person or account.",
+    expect: "Travis Kell: 38 events; Lena Marsh: 11; Mateo Ruiz: 9.",
+    shot: "tl-range",
+    alt: "The timeline with its entity list and Focus buttons.",
+    open: { to: "timeline", target: ["text=Focus"] },
+  },
+  {
+    title: "Keep the range with a theory",
+    body: "Add this range to theory files the events in view with a theory, with the reason you chose them.",
+    expect: "Add this range to theory… beside Corroborate and Export.",
+    shot: "tl-add",
+    alt: "The Add this range to theory button, marked.",
+    open: { to: "timeline", target: ["text=Add this range to theory"] },
+  },
+]
+
+/** Photos and videos as evidence. */
+export const PHOTOS: TutorialStep[] = [
+  {
+    title: "Find a phone's photos",
+    body: "Open a phone and its Media. Each photo shows the date, place and camera from its own data, marked as not checked by a person.",
+    expect: "Phone 5, Brianna Cole's phone, with her own photos from the storage unit.",
+    shot: "ph-media",
+    alt: "Phone 5's media.",
+    open: { to: "phones", target: ["text=Phone 5"] },
+  },
+  {
+    title: "See photos in date order",
+    body: "On the Timeline, a photo with a date shows as Photo taken, with a thumbnail. Its date comes from the photo, not from a person.",
+    expect: "Photo taken entries among the 346 events.",
+    shot: "tl-range",
+    alt: "The timeline narrowed to March to June 2024.",
+    open: { to: "timeline", target: ['[data-guide="timeline-toolbar"]'] },
+  },
+  {
+    title: "See photos on the map",
+    body: "A photo whose data holds a place shows as a pin on the map. A photo received from someone else places the sender's camera, not the person who received it.",
+    expect: "Photo pins among the phone positions.",
+    shot: "map-canvas",
+    alt: "The map with phone positions.",
+    open: { to: "map", target: ['[data-guide="map-canvas"]'] },
+  },
+  {
+    title: "Read videos and voice notes",
+    body: "Videos are read in full, frames and a transcript. A file marked File missing is restored by uploading it again. Jobs shows a long video's progress.",
+    expect: "Jobs (none): every file on the demo case has been read.",
+    shot: "ev-jobs",
+    alt: "The Jobs button at the top right, marked.",
+    open: { to: "evidence", target: ['[data-guide="jobs-panel"]', "text=Jobs"] },
+  },
+]
+
+/** Check a phone report is complete. */
+export const PHONE_CHECK: TutorialStep[] = [
+  {
+    title: "Check what needs a decision",
+    body: "A phone's summary says whether it was read in full, and lists what a person must decide: a time zone, a country, readings to check.",
+    expect: "Phone 3: Read in full, 448 records. 35 readings need a person's check, and no time zone was recorded.",
+    shot: "ph-summary",
+    alt: "Phone 3's summary with Needs a decision.",
+    open: { to: "phones", target: ["text=Phone 3"] },
+  },
+  {
+    title: "Open the analyses",
+    body: "Phone analyses lists every check across the phones. Each result is a lead to look into, not a finding.",
+    expect: "Money on the phones, Messages across phones, Incident window, Deleted and hidden, Relationships over time and more.",
+    shot: "an-index",
+    alt: "The Phone analyses list, marked.",
+    open: { to: "phone-analyses", target: ['[data-guide="analyses-list"]'] },
+  },
+  {
+    title: "Read the phone again with another tool",
+    body: "Read again reads each phone with an independent open-source tool from the files in the production and lists where it differs from the report.",
+    expect: "Each of the six phones listed with Not read again yet and a button to read it with ALEAPP or iLEAPP.",
+    shot: "an-readagain",
+    alt: "Read again by an independent tool, with its heading marked.",
+    open: { to: "phone-analyses/read-again" },
+  },
+  {
+    title: "Check what was deleted",
+    body: "Deleted and hidden lists what the phones show was deleted, when each deletion can be placed, and conversations that lost more than the rest.",
+    expect: "Deleted records on 3 of 6 phones: Phone 1, Phone 2 and Phone 5.",
+    shot: "an-deletions",
+    alt: "Deleted and hidden, with its heading marked.",
+    open: { to: "phone-analyses/deletions" },
+  },
+  {
+    title: "Compare against the money",
+    body: "Money on the phones checks each bank alert and payment message on a phone against the statements, and lists accounts the statements do not hold.",
+    expect: "Notifications on 3 of 6 phones (Phone 1, Phone 2, Phone 6): 26 results, matched against the payments as strong 3, moderate 11, weak 33 and faint 146, none yet confirmed by a person.",
+    shot: "ph-money",
+    alt: "Money on the phones, with its heading marked.",
+    open: { to: "phone-money" },
+  },
+]

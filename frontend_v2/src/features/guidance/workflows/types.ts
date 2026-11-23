@@ -36,7 +36,7 @@ export interface WorkflowEntry {
   kinds: CaseKind[]
   /** The areas of the app it passes through, in order; the first one's guide links to it. */
   areas: TourArea[]
-  /** Feature names from the guidance feature list that this workflow shows (lx-guidecover's list). */
+  /** Ids from the guidance feature list (feature-list.ts) of the features this workflow's steps show. */
   features: string[]
   /** The assistant's guided workflow of the same name (backend services/agent/workflows.py), when there is one. */
   assistant?: string

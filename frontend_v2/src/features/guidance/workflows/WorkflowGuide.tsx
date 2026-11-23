@@ -130,6 +130,7 @@ export function WorkflowList({ workflows, onPick }: { workflows: Workflow[]; onP
                   <li key={w.id}>
                     <button
                       type="button"
+                      data-workflow-id={w.id}
                       onClick={() => onPick(w.id)}
                       className="flex h-full w-full flex-col items-start gap-1 rounded-md border border-border bg-card p-3 text-left hover:border-primary/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
@@ -199,7 +200,8 @@ export function Tutorial({
         </div>
         <DialogTitle>{workflow.title}</DialogTitle>
         <DialogDescription>
-          {workflow.useWhen} Use the arrow keys to move between steps.
+          {workflow.useWhen}
+          <span className="hidden sm:inline"> Use the arrow keys to move between steps.</span>
         </DialogDescription>
       </DialogHeader>
       {/* at phone width the steps are a strip of numbers above the step */}

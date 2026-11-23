@@ -332,7 +332,7 @@ another, and files and pictures shared across phones. The Corroborate guide expl
 Each workflow below opens as a tutorial: numbered steps, a picture of each screen on the demo case, and a link to the same screen in your case.
 
 - [Who was in contact with whom?](#workflow=contact). Use this when you need to know who messaged or called whom, how often, and under which names.
-- [Check a phone report is complete](#workflow=phone-check). Use this before you rely on a phone: compare it with a second, independent reading and look at the rows behind a record.
+- [Check a phone report is complete](#workflow=phone-check). Use this when you are about to rely on a phone: compare it with a second, independent reading and look at the rows behind a record.
 - [Last proof of life](#workflow=last-proof-of-life). Use this when a person is missing or dead: find the last thing they did themselves, apart from what their phone did alone.
 - [Procurement kickbacks](#workflow=procurement-kickbacks). Use this when a contract may have been bought: follow meeting, award, payment and cash between two people.
 - [County lines](#workflow=county-lines). Use this when you need who ran a deal line over which periods, and the debt or threat messages beside the supply.

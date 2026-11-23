@@ -34,6 +34,10 @@ const READ_ONLY_POSTS = [
   /\/api\/evidence\/route-check$/, /\/api\/activity\/files$/,
   /\/api\/phones\/map\/(summary|trajectory)$/, // the Map's phone totals and routes (case view permission)
   /\/api\/phones\/conversations\/review\/continue$/, // "Continue reading": the person's open reviews (a read)
+  /\/api\/phones\/conversations\/threads$/, // the conversation list under the filter (case view permission)
+  /\/api\/phones\/map\/points$/, /\/api\/phones\/link-analysis\/edges$/, /\/api\/phones\/links\/states$/,
+  /\/api\/workspace\/[^/]+\/financial-evidence-changes$/, // what changed in cited payments ("Reads only")
+  /\/api\/citations\/resolve$/, // a citation's record, for its link
 ]
 
 const BUSY = /\d+ of \d+ parts? loaded|Loading the |Loading [^\n]*(…|\.\.\.)|Working out |Still working/
@@ -103,6 +107,7 @@ export const SHOTS = {
   "money-cash": async (h) => searchPayments(h, "CASH"),
   "money-pocketwire": async (h) => searchPayments(h, "POCKETWIRE"),
   "money-rent": async (h) => searchPayments(h, "BAY 4 RENT"),
+  "money-penn": async (h) => searchPayments(h, "PENN"),
   "money-details": async (h) => {
     await searchPayments(h, "CASH")
     await h.click(h.text("▸ Details"))
@@ -138,8 +143,7 @@ export const SHOTS = {
   },
   "ev-jobs": async (h) => {
     await h.go("evidence", "PH6")
-    await h.click(h.button(/^Jobs/))
-    return { mark: h.guide("jobs-panel") }
+    return { mark: h.button(/^Jobs/) }
   },
   "ev-copies": async (h) => {
     await h.go("evidence", "PH6")
@@ -149,8 +153,16 @@ export const SHOTS = {
   },
   "ev-deleted": async (h) => {
     await h.go("evidence", "PH6")
-    await h.click(h.guide("evidence-deleted"))
     return { mark: h.guide("evidence-deleted") }
+  },
+  "ev-deleted-list": async (h) => {
+    await h.go("evidence", "PH6")
+    await h.click(h.guide("evidence-deleted"))
+    return { mark: h.css('[data-testid="deleted-items"]') }
+  },
+  "gr-deleted": async (h) => {
+    await h.go("graph", "")
+    return { mark: h.css('[aria-label="Deleted items"]') }
   },
   "ev-photo": async (h) => {
     await h.go("evidence", "PH6")
@@ -178,8 +190,8 @@ export const SHOTS = {
   },
   "ph-conv-search": async (h) => {
     await h.go("conversations", "")
-    await h.type(h.css('[data-guide="conversations-filters"] input, main input[type="search"], main input[placeholder*="Search" i]'), "tow truck")
-    return { mark: h.guide("conversations-list") }
+    // typing a search here records it on the case (the review coverage's searches run), so the box is only marked
+    return { mark: h.css('input[placeholder="Contains these words"]') }
   },
   "an-index": async (h) => {
     await h.go("phone-analyses", "")
@@ -298,8 +310,34 @@ export const SHOTS = {
     return { mark: h.guide("search-heading") }
   },
   "se-meaning": async (h) => {
-    await h.go("search?q=where%20were%20the%20stolen%20goods%20stored&mode=meaning", "")
-    return { mark: h.guide("search-hits") }
+    await h.go("workspace", "OBJECTIVE")
+    await h.click(h.guide("case-search"))
+    await h.type(h.css('[role="dialog"] input'), "where were the stolen goods kept")
+    await h.see(/By meaning/)
+    await h.settle(3000)
+    return { mark: h.text(/By meaning/) }
+  },
+  "ph-media": async (h) => {
+    await h.go("phones", "Phone 6")
+    await h.click(h.text("Phone 5"))
+    await h.click(h.button("Media", true))
+    return { mark: h.css("main h1, main h2") }
+  },
+  "ag-source": async (h) => {
+    await h.go("agent", "Agent threads")
+    await h.click(h.text("What are the $650 monthly payments"))
+    return { mark: h.text(/Source check/) }
+  },
+  "fin-judgement": async (h) => {
+    await h.go("financial?view=statements", "Statements & accounts")
+    await h.click(h.text(/^Judgement calls/))
+    return { mark: h.text(/^Judgement calls · \d+ on this case/) }
+  },
+  "fin-compare": async (h) => {
+    await h.go("financial?view=statements", "Statements & accounts")
+    await h.click(h.text(/^Review queue/))
+    await h.click(h.text(/^Copies set aside \d/))
+    return { mark: h.guide("financial-compare") }
   },
   "se-box": async (h) => {
     await h.go("workspace", "")
@@ -313,7 +351,7 @@ export const SHOTS = {
   // Workspace and theories
   "ws-home": async (h) => {
     await h.go("workspace", "OBJECTIVE")
-    return { mark: h.guide("case-objective") }
+    return { mark: h.text("OBJECTIVE", true) }
   },
   "ws-theories": async (h) => {
     await h.go("workspace?view=casework&kind=theory", "")
@@ -331,8 +369,19 @@ export const SHOTS = {
   },
   "ws-tasks": async (h) => {
     await h.go("workspace", "OBJECTIVE")
-    await h.click(h.button("Tasks & deadlines", true))
+    await h.click(h.tab("Tasks & deadlines"))
     return { mark: h.css("main h1, main h2") }
+  },
+  "ws-theory-compare": async (h) => openTheory(h, () => h.guide("theory-compare")),
+  "ws-theory-convert": async (h) => openTheory(h, () => h.guide("theory-convert")),
+  "ws-theory-reading": async (h) =>
+    openTheory(h, async () => {
+      await h.click(h.guide("theory-reading"))
+      return h.css('section[aria-label="What breaks this theory"]')
+    }),
+  "do-new": async (h) => {
+    await h.go("dossiers", "Travis Kell")
+    return { mark: h.guide("dossiers-new") }
   },
   // Corroborate and leads
   "co-payment": async (h) => {
@@ -347,6 +396,18 @@ export const SHOTS = {
   "co-nolink": async (h) => {
     await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e", "")
     return { mark: h.guide("relations-no-links") }
+  },
+  "co-header": async (h) => {
+    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e", "candidate links")
+    return { mark: h.guide("relations-header") }
+  },
+  "co-actions": async (h) => {
+    await h.go("relations/a57b2ccc-5418-418c-b701-abe8ca6e0e5e", "candidate links")
+    return { mark: h.guide("relations-actions") }
+  },
+  "leads-filters": async (h) => {
+    await h.go("leads?corroborate-v2=on", "Look for leads now")
+    return { mark: h.guide("leads-filters") }
   },
   "co-tray": async (h) => {
     await h.go("financial?view=transactions&corroborate-v2=on", "imported transactions in this case")
@@ -383,6 +444,26 @@ export const SHOTS = {
     await h.click(h.button("New agent thread"))
     return { mark: h.text("Or start a guided workflow") }
   },
+  // The assistant's guided workflows: the row opened with Use, its steps and what the demo case holds for each
+  "ag-wf-last-proof-of-life": async (h) => assistantWorkflow(h, "Last proof of life"),
+  "ag-wf-hidden-assets": async (h) => assistantWorkflow(h, "Hidden assets"),
+  "ag-wf-carer-abuse": async (h) => assistantWorkflow(h, "Power-of-attorney and carer abuse"),
+  "ag-wf-procurement-kickbacks": async (h) => assistantWorkflow(h, "Procurement kickbacks"),
+  "ag-wf-expense-fraud": async (h) => assistantWorkflow(h, "Expense and travel fraud"),
+  "ag-wf-insider-trading": async (h) => assistantWorkflow(h, "Insider trading"),
+  "ag-wf-payment-scam-victim": async (h) => assistantWorkflow(h, "Payment-scam victims"),
+  "ag-wf-drug-proceeds": async (h) => assistantWorkflow(h, "Drug-supply turnover and proceeds"),
+  "ag-wf-staged-accident": async (h) => assistantWorkflow(h, "Staged-accident insurance fraud"),
+  "ag-wf-defence-review": async (h) => assistantWorkflow(h, "Defence and review"),
+  "ag-wf-county-lines": async (h) => assistantWorkflow(h, "County lines"),
+  "ag-wf-coercive-control": async (h) => assistantWorkflow(h, "Coercive control"),
+  "ag-wf-human-trafficking": async (h) => assistantWorkflow(h, "Human trafficking"),
+  "ag-wf-sanctions-evasion": async (h) => assistantWorkflow(h, "Sanctions evasion"),
+  "ag-wf-money-laundering": async (h) => assistantWorkflow(h, "Money laundering"),
+  "ag-wf-embezzlement": async (h) => assistantWorkflow(h, "Embezzlement"),
+  "ag-wf-organised-retail-crime": async (h) => assistantWorkflow(h, "Organised retail crime"),
+  "ag-wf-disconfirm-theory": async (h) => assistantWorkflow(h, "What breaks this theory"),
+  "ag-wf-link-group": async (h) => assistantWorkflow(h, "Corroborate"),
   // Reports and financial checks
   "rp-casework": async (h) => {
     await h.go("reports", "Casework report")
@@ -408,6 +489,33 @@ export const SHOTS = {
     await searchPayments(h, "POCKETWIRE")
     return { mark: h.button("Name them one by one") }
   },
+}
+
+/** Theory T2 open in Casework; `mark` names the part of the theory to ring. */
+async function openTheory(h, mark) {
+  await h.go("workspace?view=casework&kind=theory", "T2 ")
+  await h.click(h.css("main").getByText(/^T2 /).first())
+  await h.see(h.guide("theory-panel"))
+  return { mark: await mark() }
+}
+
+/** Agent, a new thread, the guided workflow's row opened with Use: its steps and whether each can run on this case. */
+async function assistantWorkflow(h, title) {
+  await h.go("agent", "Agent threads")
+  await h.click(h.button("New agent thread"))
+  await h.see("Or start a guided workflow")
+  const use = h.button(`Use workflow ${title}`, true)
+  // workflows past the first ten wait behind "Show 9 more workflows"
+  const more = h.button(/^Show \d+ more workflows/)
+  if (!(await use.isVisible()) && (await more.isVisible())) await h.click(more)
+  await use.waitFor({ state: "visible", timeout: 120_000 })
+  await use.scrollIntoViewIfNeeded()
+  // a workflow the case cannot run has its Use switched off: the row, with its reason, is the picture
+  if (await use.isEnabled()) {
+    await use.evaluate((e) => e.click())
+    await h.settle()
+  }
+  return { mark: use.locator("xpath=ancestor::li[1]") }
 }
 
 /** The Transactions list with the search box filled, the count of matching payments marked. */
@@ -436,8 +544,13 @@ try {
       storageState: state,
     })
     // guidance popups (tours, Start here) stay out of the pictures
+    // every picture starts with the switches off, as a person's browser does; a recipe that shows switched-off work
+    // turns its switch on through the address (?corroborate-v2=on, ?phone_layers=on), which the app reads after this
     await context.addInitScript(() => {
-      try { sessionStorage.setItem("loupe.stills", "1") } catch { /* storage unavailable */ }
+      try {
+        localStorage.removeItem("loupe.switch.corroborate-v2")
+        localStorage.removeItem("loupe.phone_layers")
+      } catch { /* storage unavailable: switches stay off */ }
     })
     const page = await context.newPage()
     await page.route("**/api/**", (r) => {
@@ -480,7 +593,7 @@ try {
           const info = await page.evaluate(() => ({
             url: location.pathname + location.search,
             guides: [...new Set([...document.querySelectorAll("[data-guide]")].filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.getAttribute("data-guide")))],
-            text: (document.querySelector("main") || document.body).innerText.slice(0, 8000),
+            text: [document.querySelector("main") || document.body, ...document.querySelectorAll('[role="dialog"]')].map((e) => e.innerText).join("\n[dialog]\n").slice(0, 12000),
           }))
           writeFileSync(join(dump, `${name}-${width}.json`), JSON.stringify(info, null, 1))
         }
@@ -489,6 +602,8 @@ try {
       } catch (e) {
         report.failed.push({ shot: `${name}-${width}`, error: String(e.message || e).slice(0, 300) })
         console.log("FAILED", name, width, String(e.message || e).slice(0, 200))
+        // with --dump, what the screen showed when the recipe gave up
+        if (dump) await page.screenshot({ path: join(dump, `${name}-${width}-failed.png`) }).catch(() => {})
       }
     }
     await context.close()
