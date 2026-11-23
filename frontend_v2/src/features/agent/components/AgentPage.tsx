@@ -1115,6 +1115,18 @@ export function AgentPage() {
             </div>
           </div>
           <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+            {/* Below md the thread list is hidden, so the header carries the only way to start a new thread. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 md:hidden"
+              onClick={startNewThread}
+              data-testid="agent-new-thread-narrow"
+            >
+              <Plus className="size-4" />
+              New thread
+            </Button>
             {caseLayer === "significant" ? (
               <Badge
                 variant="outline"

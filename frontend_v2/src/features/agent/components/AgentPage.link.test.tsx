@@ -114,3 +114,30 @@ it("lets a new thread's guided workflows grow and scroll, so the first ones can 
   expect(empty.className.split(/\s+/)).toContain("min-h-full")
   expect(empty.className.split(/\s+/)).not.toContain("h-full")
 })
+
+it("at phone width the thread header has a New thread button that leaves the open thread (followups 23 Nov)", async () => {
+  // Below md the thread list (and its New agent thread button) is hidden: a person whose run had opened its thread
+  // could not reach the guided workflows or ask a separate question until the run ended.
+  const realMatchMedia = window.matchMedia
+  window.matchMedia = ((query: string) => ({
+    matches: query === "(max-width: 767px)", media: query, onchange: null,
+    addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+  try {
+    show(`/cases/${caseId}/agent?thread=${thread.id}`)
+    expect(await screen.findByText("Acme paid Ann three times in January.")).toBeTruthy()
+    const listButton = screen.getByRole("button", { name: "New agent thread" })
+    expect(listButton.closest("aside")?.className.split(/\s+/)).toContain("hidden")
+    const narrow = screen.getByRole("button", { name: "New thread" })
+    const classes = narrow.className.split(/\s+/)
+    expect(classes).toContain("md:hidden")
+    expect(classes).not.toContain("hidden")
+    expect(narrow.closest("aside")).toBeNull()
+    fireEvent.click(narrow)
+    await waitFor(() => expect(screen.queryByText("Acme paid Ann three times in January.")).toBeNull())
+    expect(await screen.findByTestId("agent-empty")).toBeTruthy()
+  } finally {
+    window.matchMedia = realMatchMedia
+  }
+})
