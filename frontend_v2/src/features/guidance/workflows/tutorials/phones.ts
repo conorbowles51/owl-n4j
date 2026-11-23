@@ -164,7 +164,7 @@ export const TIMELINE: TutorialStep[] = [
     expect: "Travis Kell: 38 events; Lena Marsh: 11; Mateo Ruiz: 9.",
     shot: "tl-range",
     alt: "The timeline with its entity list and Focus buttons.",
-    open: { to: "timeline", target: ["text=Focus"] },
+    open: { to: "timeline", target: ["text=Focus", "text=Filters"], then: "On a narrow screen, open Filters: Focus is beside each name." },
   },
   {
     title: "Keep the range with a theory",
