@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { GUIDE_LINK, openWorkflow } from "@/features/guidance/workflows/open"
 
 const guides = {
   user: {
@@ -183,6 +184,13 @@ export function FinancialGuide() {
                             : href
                       }
                       onClick={(event) => {
+                        // a step-by-step workflow: close this guide and open its tutorial, as every area guide does
+                        if (href?.startsWith(GUIDE_LINK)) {
+                          event.preventDefault()
+                          setOpen(false)
+                          openWorkflow({ id: href.slice(GUIDE_LINK.length) })
+                          return
+                        }
                         if (href?.startsWith("#")) {
                           event.preventDefault()
                           document

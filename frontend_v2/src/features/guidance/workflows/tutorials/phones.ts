@@ -16,7 +16,7 @@ export const CONTACT: TutorialStep[] = [
     expect: "Threads from all 6 phones, with the phones listed beside the filters.",
     shot: "ph-conversations",
     alt: "The Conversations screen with its list of threads marked.",
-    open: { to: "conversations", target: ['[data-guide="conversations-list"]'] },
+    open: { to: "conversations", target: ['[data-guide="conversations-list"]', "text=Threads ("] },
   },
   {
     title: "Find a message by its words",
