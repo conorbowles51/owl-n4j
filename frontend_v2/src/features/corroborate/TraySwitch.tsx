@@ -9,7 +9,8 @@ const DraftOpener = lazy(() => import("./DraftOpener").then((m) => ({ default: m
 const ItemKeys = lazy(() => import("./ItemKeys").then((m) => ({ default: m.ItemKeys })))
 const CorroboratePanel = lazy(() => import("@/features/leads/CorroboratePanel").then((m) => ({ default: m.CorroboratePanel })))
 
-/** Behind the switch `corroborate-v2` (off until Neil approves the page): the selection tray, else the look tray. */
+/** The switch `corroborate-v2` (on by default since Neil's approval, 23 Nov; ?corroborate-v2=off per browser): the
+ * selection tray, else the look tray. */
 export function TraySwitch() {
   const on = useSwitch("corroborate-v2")
   if (!on) return <RelationTray />

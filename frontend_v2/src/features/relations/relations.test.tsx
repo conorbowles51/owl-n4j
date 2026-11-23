@@ -7,6 +7,7 @@ import { LookIntoButton } from "./LookIntoButton"
 import { RelationsPage } from "./RelationsPage"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { render as plainRender } from "@testing-library/react"
+import { setSwitch } from "@/lib/ui-switches"
 
 vi.mock("@/features/phones/collect-targets", () => ({ useCollectTargets: () => ({ targets: [{ kind: "theory", id: "t1", label: "Acme pays Ann" }], note: null, loading: false, error: null }) }))
 
@@ -53,7 +54,8 @@ describe("the look in progress", () => {
     expect(currentQuery("c1")).toBeNull()
   })
 
-  it("adds to the look in progress by naming the group it grows from", async () => {
+  it("with Corroborate off in this browser, adds to the look in progress by naming the group it grows from", async () => {
+    setSwitch("corroborate-v2", false)  // the earlier menu; Corroborate is on by default (Neil 23 Nov)
     setCurrentQuery("c1", { id: "g1", count: 3 })
     const create = vi.spyOn(relationAPI, "create").mockResolvedValue({ group: { id: "g2", member_count: 4, left_out: 0 }, run: null })
     wrap(<Routes><Route path="/" element={<LookIntoButton caseId="c1" surface="financial" items={[{ target_type: "financial_transaction", target_id: "p1" }]} />} />

@@ -86,7 +86,8 @@ it("offers Report a problem on a phone screen and on no other page", async () =>
   expect(screen.queryByTestId("phone-problem-bar")).toBeNull()
 })
 
-it("shows the look in progress on every case screen, the graph included", async () => {
+it("with Corroborate off in this browser, shows the look in progress on every case screen, the graph included", async () => {
+  localStorage.setItem("loupe.switch.corroborate-v2", "off")  // the earlier tray; Corroborate is on by default (Neil 23 Nov)
   localStorage.setItem("loupeRelationQuery:case", JSON.stringify({ id: "g1", count: 4 }))
   for (const path of ["/cases/case/workspace", "/cases/case/graph", "/cases/case/financial"]) {
     state.path = path
