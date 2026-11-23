@@ -5,6 +5,9 @@
                                                                             # (--draft: AI claim drafting from it)
     python3 evidence-engine/tests/phone/demo_seed.py machine-text           # the Media screen's batch reading:
                                                                             # image text and voice-note transcripts
+    python3 evidence-engine/tests/phone/demo_seed.py retag [--apply]        # rewrite the seed label on items an older
+                                                                            # seed wrote (it named the job); dry run
+                                                                            # without --apply
 
 Stage 1 needs nothing uploaded; stage 2 runs after the documents, statements and phones are read. Each step reads
 first and adds only what is missing, so a rerun changes nothing. Every item is labelled as a seed entry. Drafted
@@ -18,7 +21,9 @@ import json, os, sys, urllib.request, urllib.error
 LOGIN = "/root/.config/loupe-jobs/login"
 CACHE = os.environ.get("LX_DEMO_TOKEN", os.path.expanduser("~/.cache/lx-demo-token.json"))
 C = "b75f3f2c-ffa1-4260-8fe9-6f5db4e9d4df"  # CASES.demo in frontend_v2/journeys/lib.mjs
-SEED = "Seed entry for the demo case (lx-demo)."
+SEED = "Seed entry for the demo case."
+# Older seeds wrote the job's name into the label; anyone walking the demo case saw it (23 Nov). retag() rewrites it.
+OLD_SEED = "Seed entry for the demo case (lx-demo)"
 STATE = os.environ.get("LX_DEMO_SEED_STATE", os.path.expanduser("~/.cache/lx-demo-seed.json"))
 def login_fields():
     f = {}
@@ -219,10 +224,69 @@ def machine_text():
         print(kind, s, json.dumps(r)[:300])
         if s == 200 and r.get("eligible"):
             s, r = call("POST", "/api/phones/media/derive-batches",
-                        {"case_id": C, "kind": kind, "scope_words": "All phones in the demo case (lx-demo seed)"})
+                        {"case_id": C, "kind": kind, "scope_words": "All phones in the demo case"})
             print(kind, s, json.dumps(r)[:300])
+
+
+def relabel(value):
+    """The text with an older seed label rewritten, or None when it holds none."""
+    if not isinstance(value, str) or OLD_SEED not in value:
+        return None
+    return value.replace(OLD_SEED, SEED.rstrip("."))
+
+
+def retag_plan(dossiers, details, tasks, notes, theories, mandate):
+    """(what, method, path, body) for every seeded item whose text still names the job. Pure: tests feed it lists."""
+    plan = []
+    for d in dossiers:
+        new = relabel(d.get("summary"))
+        if new:
+            plan.append((f"dossier {d.get('display_name')}", "PATCH", f"/api/dossiers/{d['id']}", {"summary": new}))
+        for i in (details.get(d["id"]) or {}).get("interviews", []):
+            new = relabel(i.get("working_notes"))
+            if new:
+                plan.append((f"interview on {d.get('display_name')}", "PATCH",
+                             f"/api/dossiers/{d['id']}/interviews/{i['id']}", {"working_notes": new}))
+    for t in tasks:
+        new = relabel(t.get("description"))
+        if new:
+            plan.append((f"task {t.get('title')}", "PATCH", f"/api/workspace/{C}/tasks/{t['id']}", {"description": new}))
+    for n in notes:
+        new = relabel(n.get("body"))
+        if new:
+            plan.append((f"note {n.get('title')}", "PATCH", f"/api/notebook/{C}/notes/{n['id']}", {"body": new}))
+    for e in theories:
+        new = relabel(e.get("body"))
+        if new:
+            plan.append((f"theory {e.get('title')}", "PATCH", f"/api/workspace/{C}/entries/{e['id']}",
+                         {"body": new, "expected_version": e.get("version")}))
+    if mandate and relabel(mandate.get("objective")):
+        # A mandate is versioned: the new version carries every field of the current one; the old stays in history.
+        fields = ("objective", "key_questions", "in_scope", "out_of_scope", "perspective", "success_criteria", "constraints")
+        body = {k: mandate.get(k) for k in fields if mandate.get(k) is not None}
+        body["objective"] = relabel(mandate["objective"])
+        plan.append(("case objective", "POST", f"/api/workspace/{C}/context/mandates", body))
+    return plan
+
+
+def retag():
+    s, r = ok(*call("GET", f"/api/dossiers?case_id={C}"), "list dossiers")
+    dossiers = r.get("dossiers", [])
+    details = {d["id"]: ok(*call("GET", f"/api/dossiers/{d['id']}"), "dossier")[1] for d in dossiers}
+    tasks = ok(*call("GET", f"/api/workspace/{C}/tasks"), "list tasks")[1].get("tasks", [])
+    notes = ok(*call("GET", f"/api/notebook/{C}/notes"), "list notes")[1].get("notes", [])
+    theories = ok(*call("GET", f"/api/workspace/{C}/entries?entry_type=theory"), "list theories")[1]
+    theories = theories.get("entries", []) if isinstance(theories, dict) else theories
+    context = ok(*call("GET", f"/api/workspace/{C}/context"), "case context")[1]
+    mandate = (context or {}).get("active_mandate") or (context or {}).get("mandate")
+    plan = retag_plan(dossiers, details, tasks, notes, theories, mandate)
+    for what, method, path, body in plan:
+        if "--apply" in sys.argv:
+            ok(*call(method, path, body), what)
+        print(("rewrote " if "--apply" in sys.argv else "would rewrite ") + what)
+    print(f"{len(plan)} item(s) {'rewritten' if '--apply' in sys.argv else 'to rewrite (dry run)'}")
 
 
 if __name__ == "__main__":
     step = sys.argv[1] if len(sys.argv) > 1 else ""
-    {"stage1": stage1, "stage2": stage2, "machine-text": machine_text}.get(step, lambda: sys.exit(__doc__))()
+    {"stage1": stage1, "stage2": stage2, "machine-text": machine_text, "retag": retag}.get(step, lambda: sys.exit(__doc__))()
