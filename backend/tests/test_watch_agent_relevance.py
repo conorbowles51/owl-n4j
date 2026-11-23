@@ -115,3 +115,14 @@ def test_origin_drift_ignores_noise_small_kinds_other_sets_and_queries_one_side_
     phones = W.origin_drift([_origin('2026-11-17T07:00:00Z', 'a', [1] * 6, kind='phones'),
                              _origin('2026-11-17T08:00:00Z', 'b', [3] * 6, kind='phones')])
     assert [d['owner'] for d in phones] == ['lx-casesearch']
+
+
+def test_follow_ups_do_not_move_the_lookups_median():
+    # a day of 10 opening questions (5 lookups each) plus 20 follow-ups (3 lookups each)
+    rs, cs = _day(TODAY - timedelta(days=1), 10, 1)
+    for i in range(20):
+        rid = 'f%d' % i
+        rs.append(dict(id=rid, day=TODAY - timedelta(days=1), final_answer='x', follow_up=True))
+        cs += [dict(run_id=rid, name='get_ledger', status='success', returned=1, total=1, preview=None)] * 3
+    m = W.day_metrics(rs, cs)[TODAY - timedelta(days=1)]
+    assert m['lookups_median'] == 5 and m['runs'] == 30

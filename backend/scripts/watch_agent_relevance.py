@@ -4,7 +4,9 @@ From the stored run records (agent_runs, agent_tool_calls), per UTC day:
 - empty searches: search calls that returned nothing, of all search calls (and per tool over the last 7 days);
 - results used: search calls whose result held citations and at least one of them is in the run's final answer;
 - refused queries: graph queries (run_readonly_cypher) that failed, of all graph queries;
-- lookups per answer: the median number of tool calls of a completed run.
+- lookups per answer: the median number of tool calls of a completed run that opens a thread. A follow-up in a thread
+  ("what comes before each of those?") builds on the reads above it and takes few calls by design, so a day with many
+  of them would look worse with no change in the agent.
 A number worsens when the last complete day (with at least MIN_RUNS runs) is outside the range of the earlier qualifying
 days of the week before (at least MIN_DAYS of them): same-settings days differ by that much on their own. A worsened
 number is sent once, as a work message, to the job that owns it (OWNERS), with the numbers.
@@ -78,7 +80,8 @@ def day_metrics(runs: list[dict], calls: list[dict]) -> dict:
         lookups = []
         for r in rs:
             cs = by_run.get(r["id"], [])
-            lookups.append(len(cs))
+            if not r.get("follow_up"):
+                lookups.append(len(cs))
             answer = r.get("final_answer") or ""
             for c in cs:
                 if c["name"] in SEARCH_TOOLS:
@@ -233,8 +236,11 @@ def main(argv=None) -> int:
     since = today - timedelta(days=args.days)
     with _financial_session() as s:
         s.execute(text("SET TRANSACTION READ ONLY"))
-        runs = [dict(id=str(r.id), day=r.day, final_answer=r.final_answer) for r in s.execute(text(
-            "SELECT id, (started_at AT TIME ZONE 'UTC')::date AS day, final_answer FROM agent_runs "
+        runs = [dict(id=str(r.id), day=r.day, final_answer=r.final_answer, follow_up=r.follow_up)
+                for r in s.execute(text(
+            "SELECT id, (started_at AT TIME ZONE 'UTC')::date AS day, final_answer, "
+            "EXISTS (SELECT 1 FROM agent_runs p WHERE p.thread_id = agent_runs.thread_id "
+            "AND p.started_at < agent_runs.started_at) AS follow_up FROM agent_runs "
             "WHERE status = 'completed' AND started_at >= :since"), dict(since=since))]
         calls = [dict(run_id=str(c.run_id), name=c.name, status=c.status, returned=c.returned, total=c.total,
                       preview=c.preview, at=c.created_at) for c in s.execute(text(
