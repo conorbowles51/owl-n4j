@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
@@ -50,8 +51,8 @@ export function DocumentDatesPanel({ caseId, fileId, canEdit }: { caseId: string
   const dates = query.data?.dates ?? []
   if (!dates.length) return null
   return (
-    <div className="space-y-2 rounded-lg border p-3 text-xs" data-document-dates="">
-      <p className="font-medium">Dates in the document</p>
+    <div className="space-y-2 rounded-lg border p-3 text-xs" data-document-dates="" data-guide="document-dates">
+      <p className="font-medium">Dates in the document <LearnMore term="Read by Loupe not confirmed" /></p>
       {dates.map((d) => {
         const target = d.original ?? d
         return (

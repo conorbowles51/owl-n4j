@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -50,7 +51,7 @@ export function LeadsPage() {
     <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
       <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">Leads</h1>
+          <h1 className="text-xl font-semibold">Leads <LearnMore term="Lead" /></h1>
           <Button size="sm" variant="outline" data-guide="leads-find" disabled={!!busy || find.isPending} onClick={() => find.mutate()}>
             {busy ? (finder?.step || "Looking for leads…") : "Look for leads now"}
           </Button>

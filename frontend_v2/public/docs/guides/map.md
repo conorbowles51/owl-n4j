@@ -96,8 +96,6 @@ When the case has phones, a scope bar above the map narrows the phone positions 
 
 ## Phone layers
 
-This section applies only where phone layers have been turned on for you.
-
 ***What it does.*** A **Phones** row above the map lists every phone in the case with its own colour and shape, its label, its owner and its count of positions in view. Each phone has its own tick box. **Only this** leaves one phone on; **All** turns every phone back on. With more than 6 phones, the row offers **Find a phone or owner** and groups the phones by owner. The last phone that is on cannot be turned off. Your choice carries to the other phone screens and stays after a reload.
 
 ***When to use it.*** Use it to follow one phone, or to compare two or three phones without the rest.
@@ -105,8 +103,6 @@ This section applies only where phone layers have been turned on for you.
 ***How to read it.*** "All N phones are on" means nothing is left out. "N of M phones are on" means the phones that are off are not drawn and not counted anywhere on the screen, including the area counts.
 
 ## Show routes
-
-This section applies only where phone layers have been turned on for you.
 
 ***What it does.*** **Show routes** joins each phone's positions in time order in that phone's colour, with arrowheads pointing from the earlier position to the later one. Pointing at a leg states the phone, the two times and the two positions.
 
@@ -127,3 +123,9 @@ This section applies only where both phone layers and phones together have been 
 ## When the map cannot load
 
 If the map cannot read the case's locations, the phones' positions or the places needing review, it says which part failed and offers **Try again**. When nothing at all could be read, it shows that message instead of an empty map. When one part fails, the map shows the rest and says that part is missing. "No location data" means the case holds nothing with a position yet; processing evidence that names places adds them.
+
+## Compare drawn areas over time
+
+Where the newer Corroborate is turned on, drawing an area adds **Look into this area over time** (or **Compare these N
+areas over time** for several). It shows who was inside each area night by night, who was in both and in what order,
+and everything inside an area in the window. The Corroborate guide explains the comparison.

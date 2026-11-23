@@ -126,8 +126,6 @@ The keys do nothing while a dialog is open.
 
 ## Phone layers on the Timeline
 
-This control appears only where it has been turned on for you.
-
 ***What it does.*** Above the phone entries, a list of the case's phones with a switch for each, Only this for one phone, and All. Above six phones, a box finds a phone or owner. Each phone shows its number of entries under the other filters.
 
 ***When to use it.*** Use it to read one phone, or a chosen few, without the others.

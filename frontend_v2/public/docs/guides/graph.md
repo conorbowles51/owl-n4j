@@ -178,8 +178,6 @@ This control appears only where it has been turned on for you.
 
 ## Phone layers on the graph
 
-This control appears only where it has been turned on for you.
-
 ***What it does.*** With a phone scope on the Graph, a Phones control lists each phone in the case with a switch, Only this, and All. Above six phones it adds Find a phone or owner and groups the phones by owner.
 
 ***When to use it.*** Use it to add or remove phones from the scope without going back to Conversations.
@@ -209,3 +207,9 @@ This control appears only where it has been turned on for you.
 ***When to use it.*** Use Bulk Edit to set one property on many items, Merge to join duplicates found in a sorted list, and Delete to clear wrong items.
 
 ***How to read the result.*** Merge takes up to 25 rows; with more ticked, the bar says how many are left out. Delete asks first and moves the rows to the graph's deleted items, where they can be restored.
+
+## People, go-betweens and documents
+
+Where the newer Corroborate is turned on, the Graph has a second tab, **People, go-betweens and documents**, drawing who
+reaches whom directly, through go-betweens, and through documents that name them. Names read from documents by a model
+show their page and are not confirmed until a person checks them. The Corroborate guide explains it.

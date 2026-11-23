@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
@@ -26,7 +27,7 @@ export function KeywordListsPage() {
   })
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-4">
-      <h1 className="text-lg font-semibold">Keyword lists</h1>
+      <h1 className="text-lg font-semibold">Keyword lists <LearnMore term="Keyword list" /></h1>
       <p className="text-sm text-muted-foreground" data-guide="keywords-intro">
         Each list runs on every phone in the case, including phones added later, and again whenever a phone is read or
         re-read. Save a list from search (Ctrl+K), with &ldquo;Save as keyword list&rdquo;.

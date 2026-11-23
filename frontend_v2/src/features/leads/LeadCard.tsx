@@ -72,7 +72,7 @@ export function LeadCard({ caseId, lead, compact = false }: { caseId: string; le
         <Button size="sm" variant="outline" onClick={() => openCorroborate({ caseId, screen: "Leads", label: lead.title, members: members(lead), people: lead.people.map((p) => p.key), ...(lead.period.from ? { period: { from: lead.period.from, to: lead.period.to ?? lead.period.from } } : {}) }, { keep: false })}>Corroborate</Button>
         {n > 0 && (showing
           ? <Button size="sm" variant="outline" onClick={() => clearLeadRecords(lead.id)}>Stop showing these records</Button>
-          : <Button size="sm" variant="outline" onClick={() => showLeadRecords(lead.id, lead.title, lead.record_refs, { caseId, period: lead.period })}>Show these records</Button>)}
+          : <Button size="sm" variant="outline" data-guide="lead-show-records" onClick={() => showLeadRecords(lead.id, lead.title, lead.record_refs, { caseId, period: lead.period })}>Show these records</Button>)}
         {!lead.finding_id && <Button size="sm" variant="outline" onClick={() => setPicking((x) => !x)}>Add to theory</Button>}
         {lead.state !== "looking" && lead.state !== "in_theory" && <Button size="sm" variant="ghost" onClick={() => act.mutate(() => leadsAPI.state(caseId, lead.id, "looking"))}>Looking into it</Button>}
         {lead.state !== "not_relevant" && lead.state !== "in_theory" && <Button size="sm" variant="ghost" onClick={() => act.mutate(() => leadsAPI.state(caseId, lead.id, "not_relevant"))}>Not relevant</Button>}

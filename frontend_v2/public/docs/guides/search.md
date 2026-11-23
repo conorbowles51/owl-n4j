@@ -82,3 +82,10 @@ The table gives one row per term: the count across all phones, then a column per
 **Attach to a theory** links the list to a theory you choose. The list then names every theory it is attached to.
 
 ***When to use it.*** Use a keyword list for terms that must be checked on every phone, including phones added later. The counts update by themselves when a phone is added or read again.
+
+## What search by meaning reads
+
+Search by meaning reads phone notifications as text, beside messages, calls and documents. A search that names a person
+also reads the messages on that person's own phone as one more list. A snippet that cites a page shows the citation as
+words, such as a file name and page. Graph names and summaries come after source records, so the record itself comes
+first.

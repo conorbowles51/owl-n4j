@@ -8,7 +8,7 @@ export function CompareAreasButton({ count }: { count: number }) {
   const show = useAreaCompare((s) => s.show)
   if (!on || count === 0) return null
   return (
-    <Button size="sm" variant="outline" className="w-full" onClick={show} data-testid="compare-areas">
+    <Button size="sm" variant="outline" className="w-full" onClick={show} data-testid="compare-areas" data-guide="area-compare">
       {count === 1 ? "Look into this area over time" : `Compare these ${count} areas over time`}
     </Button>
   )

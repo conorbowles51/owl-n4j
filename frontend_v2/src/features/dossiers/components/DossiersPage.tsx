@@ -164,6 +164,7 @@ export function DossiersPage() {
           <button
             key={value}
             type="button"
+            data-guide={value === "overlaps" ? "dossiers-overlaps" : undefined}
             aria-current={tab === value ? "page" : undefined}
             onClick={() => setTab(value)}
             className={cn(

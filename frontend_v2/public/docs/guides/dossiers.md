@@ -100,3 +100,15 @@ Choose **Link (y)**, **Not the same person (x)** or **Skip (s)**; **j** and **k*
 ## Put back what was removed
 
 Assessments, interviews, images and evidence links removed from a dossier are kept. **Removed from this dossier** at the foot of the dossier lists each one, with when and by whom it was removed. Someone who can edit the case can press **Put back** to restore it as it was.
+
+## Map positions of addresses
+
+Under each address in a dossier's contacts, Loupe shows the address's map position, found through the case's address
+lookup, as "Position ... Read by Loupe, not confirmed." Where there is no position yet, **Look up position** asks for
+one. When none can be given, the line says why: the address service found no match, the words name no place on their
+own, the case has no state set to bound the lookup, or the place is outside the case's state.
+
+## Who overlaps with whom in Dossiers
+
+Where the newer Corroborate is turned on, Dossiers has a third tab, **Who overlaps with whom**: every pair of people in
+the case against every kind of overlap. The Corroborate guide explains how to read it.

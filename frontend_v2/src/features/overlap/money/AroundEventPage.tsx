@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
@@ -42,7 +43,7 @@ export default function AroundEventPage() {
       <nav className="mb-2 text-xs text-muted-foreground">
         <Link className="underline" to={`/cases/${caseId}/financial`}>Financial</Link> / Around an event
       </nav>
-      <h1 className="text-base font-semibold">Money around each event</h1>
+      <h1 className="text-base font-semibold">Money around each event <LearnMore term="Money around an event" /></h1>
       <p className="text-xs text-muted-foreground">
         Bank rows and payment alerts on the phones, from each event's day to a week after. A payment found in a bank
         statement and on a phone shows <b>BANK + PHONE</b>; one only a phone shows is <b>PHONE ONLY</b>.

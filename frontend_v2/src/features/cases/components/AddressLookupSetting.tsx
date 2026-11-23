@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { MapPinned } from "lucide-react"
@@ -61,7 +62,7 @@ export function AddressLookupSetting({ caseData }: { caseData: Pick<Case, "id" |
         <div className="row-span-2 flex size-9 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
           <MapPinned className="size-4" />
         </div>
-        <CardTitle className="self-end text-base">Address lookup</CardTitle>
+        <CardTitle className="self-end text-base">Address lookup <LearnMore term="Address lookup" /></CardTitle>
         <CardDescription>
           How addresses found in this case's evidence are placed on the map. The map itself is always drawn from
           this server.

@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { openCorroborate } from "@/features/leads/open"
@@ -43,7 +44,7 @@ export function OverlapsView({ caseId }: { caseId: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-8" data-testid="overlaps-view">
       <div className="mx-auto max-w-6xl">
-        <h2 className="font-display text-xl font-semibold">Who overlaps with whom</h2>
+        <h2 className="font-display text-xl font-semibold">Who overlaps with whom <LearnMore term="Who overlaps with whom" /></h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
           Every pair of people in the case, against every kind of overlap: contact direct or through others, groups,
           shared words and files, places, access logs, money and documents. A square shows the pair's level from its

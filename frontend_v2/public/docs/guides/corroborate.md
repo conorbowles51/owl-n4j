@@ -248,3 +248,92 @@ assistant. Nothing has run. Check the question, change it if needed, and press *
 A look compares every pair of items, so the pairs grow fast. A group of more than 400 items is refused with the number
 of pairs it would make. Narrow the selection, use the scope bar, or split it with **Group these**. Nothing is saved when
 a look is refused.
+
+## Leads
+
+***Use it*** to see the patterns Loupe found across the whole case, strongest first, without choosing anything
+first. **Leads** in the side menu opens the page and shows how many there are; with the menu shut, the count is a
+badge on its icon. Leads appear where the newer Corroborate is turned on.
+
+Each card shows the lead in words, what **Raises it** and what **Lowers it**, and who saved it: **Found by Loupe**,
+**Asked by you** (a Corroborate question you asked) or **Suggested by the agent**. The chips above the list (**Contact**,
+**Together**, **Money**, **Words and files**, **Access logs**) show one kind at a time, with the count of each.
+
+***How to read it.*** A lead is a reading by Loupe, graded against the case's ordinary days, not a finding. Below the
+list:
+
+- **Coincidence likely** holds patterns the ordinary days explain as well as the lead does, folded away.
+- **No link found** holds people Loupe checked and found nothing for, with what was searched.
+- **Weighed down or set aside** holds leads that lost their weight and the ones marked **Not relevant**.
+
+Among the kinds are a deletion on one phone of a message another phone kept, payments the phones' alerts show but
+the bank rows miss (the lead asks for the missing statement pages), and cash just under $10,000 deposited within
+days after a key night.
+
+On each card, **Corroborate** asks a further question about it. **Looking into it** and **Not relevant** record where you
+stand; **Relevant after all** undoes Not relevant. **Edit words** puts the lead in your words, and Loupe's own words stay
+shown under **Loupe read**. **Add to theory** adds the lead to a theory you pick as a finding under your name.
+
+## Leads that keep themselves up to date
+
+**Look for leads now** reads the whole case again. While it works, the button names the step. On a case Loupe can read
+in up to 20 minutes, it also looks again by itself when new material arrives, and the foot of the page reads "Last
+checked ..., by Loupe on its own when new material arrived." On a larger case the page says "New material has arrived
+since Loupe last looked"; press **Look for leads now** to bring the leads up to date. **How leads are found**, at the foot
+of the page, lists every kind of pattern Loupe looks for.
+
+## Corroborate from anywhere
+
+Where the newer Corroborate is turned on, **Corroborate** on a dossier person, a phone's summary, a line on the Graph or a
+photo on the Media screen (right-click the tile, or press C) opens a panel over the page. **Leads already here** lists the
+leads that touch those records, people or dates. **Ask a new question** offers the questions that fit what you chose.
+The answer is saved to Leads as **Asked by you**, a reading by Loupe until you confirm it; **Open in Leads** goes there.
+
+## Show a lead's records across screens
+
+**Show these records** on a lead marks its records on every screen until you stop. A bar at the foot of each page reads
+"Showing N records of the lead ..." with links to **Conversations**, **Timeline** and **Map**, each opened at the lead's
+days (from the day before its first date). Conversations and the Timeline's phone rows mark each record **In the open
+lead**, and the Map rings its points. **Close** on the bar, or **Stop showing these records** on the card, ends it.
+
+## Compare drawn areas over time
+
+***Use it*** to see who was inside the areas you drew on the Map, night by night. Draw one or more areas, then press
+**Look into this area over time** (or **Compare these N areas over time**). The panel shows **Night by night**, **Who is in
+both, and in what order**, and **Everything inside** an area in the window. **Corroborate this** asks about what it shows,
+and **Money around these nights** opens Money around each event for those nights (see Money around an event). Shown where the newer Corroborate is turned on.
+
+## Words also on another phone
+
+***Use it*** to see whether a conversation's words turn up on other phones. In Conversations, tick **Mark what also
+appears elsewhere**. A message whose words appear on other phones gets the mark **Also elsewhere**, with how many
+messages, phones and dates hold them; a message held on two phones counts once. A stock phrase is shown but counted for
+nothing. **Meanwhile, from the same number** lists what the same number sent on other phones at the time.
+
+The **Also elsewhere** panel lists **Words also on other phones** (with **Corroborate these**), **Deleted on one phone, kept
+on another**, and **Compare files and pictures across the phones**: files with the same bytes on every phone or only some,
+and pictures that look alike, for a person to check and never counted as the same photo. Shown where the newer
+Corroborate is turned on.
+
+## Money around an event
+
+***Use it*** to see the money that moved after events you choose. On the Financial page, **Around an event** opens **Money
+around each event**. Pick events under **Choose events**; for each one the page lists bank rows and payment alerts on the phones from
+the event's day to a week after. It marks a payment found in both (**BANK + PHONE**) one only on a phone (**PHONE
+ONLY**) and one only in a bank row (**BANK ONLY**), and names **Missing statement pages**. Money as common in other weeks is set apart under **Ordinary money**.
+**Corroborate this** asks about what it shows. Shown where the newer Corroborate is turned on.
+
+## Who overlaps with whom
+
+***Use it*** to see every pair of people in the case at once. In Dossiers, the **Who overlaps with whom** tab shows a square
+for each pair, with the level of the pair's lead. Pick a square to see each kind of overlap for that pair, with its
+records: contact direct or through others, groups, shared words and files, places, access logs, money and documents. A
+name read from a document by a model says so, with its page. A case with more than 10,000 phone records and positions is
+too large for this view, and it says so. Shown where the newer Corroborate is turned on.
+
+## People, go-betweens and documents on the Graph
+
+On the Graph, the **People, go-betweens and documents** tab draws who reaches whom: directly, through
+go-betweens, and through the documents that name them. Names are read from each document by a model and shown with their page; nothing is
+confirmed until a person checks it. **Case graph** returns to the full graph. Shown where the newer Corroborate is turned
+on.

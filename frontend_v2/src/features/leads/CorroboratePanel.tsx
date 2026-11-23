@@ -49,7 +49,7 @@ function Panel({ req, onClose }: { req: CorroborateRequest; onClose: () => void 
   })
   const n = here.data?.leads.length
   return (
-    <aside role="dialog" aria-label="Corroborate" className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-background shadow-2xl sm:w-[440px]">
+    <aside role="dialog" aria-label="Corroborate" data-guide-panel="" data-guide="corroborate-panel" className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-background shadow-2xl sm:w-[440px]">
       <div className="flex items-center justify-between border-b p-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Corroborate · from {req.label}</p>
         <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
@@ -60,10 +60,10 @@ function Panel({ req, onClose }: { req: CorroborateRequest; onClose: () => void 
         </p>
       )}
       <div className="flex border-b text-sm" role="tablist">
-        <button role="tab" aria-selected={tab === "here"} className={cn("flex-1 p-2", tab === "here" && "border-b-2 border-slate-900 font-semibold")} onClick={() => setTab("here")}>
+        <button role="tab" data-guide="corroborate-panel-here" aria-selected={tab === "here"} className={cn("flex-1 p-2", tab === "here" && "border-b-2 border-slate-900 font-semibold")} onClick={() => setTab("here")}>
           Leads already here{n !== undefined ? ` ${n}` : ""}
         </button>
-        <button role="tab" aria-selected={tab === "ask"} className={cn("flex-1 p-2", tab === "ask" && "border-b-2 border-slate-900 font-semibold")} onClick={() => setTab("ask")}>
+        <button role="tab" data-guide="corroborate-panel-ask" aria-selected={tab === "ask"} className={cn("flex-1 p-2", tab === "ask" && "border-b-2 border-slate-900 font-semibold")} onClick={() => setTab("ask")}>
           Ask a new question
         </button>
       </div>

@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import { Mail, MapPin, Phone, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -240,7 +241,7 @@ function AddressPosition({
           {position.formatted_address
             ? ` (${position.formatted_address})`
             : ""}
-          . Read by Loupe, not confirmed.
+          . Read by Loupe, not confirmed. <LearnMore term="Read by Loupe not confirmed" />
         </p>
       ) : tried ? (
         <p>{LOOKUP_WORDS[tried.outcome] ?? "Not placed."}</p>
@@ -252,6 +253,8 @@ function AddressPosition({
           size="sm"
           variant="outline"
           disabled={lookUp.isPending}
+          title="Place this address on the map through the case's address lookup"
+          data-guide="dossier-address-position"
           onClick={async () => {
             setError("")
             try {

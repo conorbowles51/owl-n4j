@@ -137,3 +137,21 @@ This appears only where it has been turned on for you. Right-click a file row an
 ## Theories and Corroborate
 
 Add to theory, in the bar for chosen files, adds the files to a theory with how they bear on it: Supports, Contradicts or Context. In the file panel the same button reads Theory…. The button beside it, Corroborate (it can read Relate… in the file panel), weighs how the chosen files could be linked to each other. The Theories guide and the Corroborate guide cover both.
+
+## Dates read from a document
+
+***What it shows.*** A processed document's panel lists **Dates in the document**: when it was **Written**, **Signed**,
+the **Period** it covers and when it was **Received**, each with the words it was read from and their page. Loupe reads
+these dates by itself, first by its own rules and, where they find none, with a language model. Every such date is
+marked **Read by Loupe · not confirmed**. An incident report is dated the day it was reported.
+
+***What you do.*** **Confirm** a date that is right. **Correct** one that is wrong, enter the right date and **Save**. The
+reading Loupe made stays on record beside your correction, and the corrected date is the one used. The dates also appear
+on the Timeline, marked the same way until a person confirms them.
+
+## When a send cannot start
+
+If another task has been changing the same files for over a minute, **Process** stops with "Nothing was sent: another
+task has been changing these files for over a minute. Try again in a few minutes." Nothing was sent, so try again
+later. A file that the processing service stopped answering before it reached reads "Not sent: the processing service
+stopped answering before this file's turn. You can process it again."

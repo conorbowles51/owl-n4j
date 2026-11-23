@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useSwitch } from "@/lib/ui-switches"
 import type { ThreadMarks } from "../api"
 
@@ -5,10 +6,13 @@ export function AlsoElsewhereToggle({ on, onChange }: { on: boolean; onChange: (
   const allowed = useSwitch("corroborate-v2")
   if (!allowed) return null
   return (
-    <label className="inline-flex items-center gap-1 text-xs" data-testid="also-elsewhere-toggle">
-      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} />
-      Mark what also appears elsewhere
-    </label>
+    <span className="inline-flex items-center gap-1 text-xs" data-guide="also-elsewhere">
+      <label className="inline-flex items-center gap-1" data-testid="also-elsewhere-toggle">
+        <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} />
+        Mark what also appears elsewhere
+      </label>
+      <LearnMore term="Also elsewhere" />
+    </span>
   )
 }
 

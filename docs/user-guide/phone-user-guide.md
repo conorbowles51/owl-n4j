@@ -234,6 +234,10 @@ Two columns, one per phone, aligned by matching message, with counts on both, on
 
 **Available:** not yet.
 
+## Compare two phones, or two extractions of one
+
+Two phone analyses compare a pair. **Who used which phone** shows the numbers, SIMs, accounts and networks two phones share, how often each was used while the other was not, whether they were together or apart and used while apart, and signs of more than one user. **Two extractions of one phone** shows whether two extractions are of one device, and what is in one and not the other, deleted between them, or new. Open them from Phone analyses and press **Run**; a next-steps card follows with what to do with the differences.
+
 ## Explain a finding
 
 Every finding that holds phone records shows **How this was found**: the scope and searches behind it, the decisions and readings it relies on with their state, and whether it is a **Lead for enquiry** or a **Result for report**. Nothing in it is typed by hand.
@@ -280,8 +284,6 @@ A record only the tool read may be one the report did not decode, or a deleted r
 
 ## Switch phones on and off
 
-This part appears only where it has been turned on for you.
-
 On a screen that shows more than one phone, such as the Map, Conversations, the phone view of the Timeline, Places, Media and the phone analyses, the **Phones** row lists every phone in the case with its label, its owner and its count on this screen. Untick a phone to take it off. **Only this** keeps one phone; **All** brings every phone back. With more than 6 phones, the row offers **Find a phone or owner** and groups the phones by owner, with **No owner named** last.
 
 A phone that is off is left out of what the screen shows and out of its counts, and the line under the row says so, for example **3 of 5 phones are on. The 2 off are not drawn or counted.** The choice is kept in the page address, so a reload or a copied address keeps it.
@@ -289,8 +291,6 @@ A phone that is off is left out of what the screen shows and out of its counts, 
 On the Map, **Show routes** joins each phone's positions in time order. The line beside it counts the moves shown and the gaps over 2 hours left unjoined, so a long gap never reads as a journey. Positions with no time are counted and left out of the routes.
 
 A page that belongs to one phone says **This page shows one phone. Add other phones in Conversations, Timeline or Map.** Each link opens that screen with this phone on, ready to switch on others.
-
-**Available:** where it has been turned on for you.
 
 ## See where phones were together
 
@@ -319,3 +319,10 @@ Loupe records the screen, the size of what was in view as counts, the build, the
 ## The training case
 
 The training case holds two invented phones and a small invented ledger, so you can practise without real evidence. Every person, number and message in it is made up. Ask the case owner for access.
+
+## Words also on another phone
+
+Where the newer Corroborate is turned on, Conversations offers **Mark what also appears elsewhere**. A message whose words
+appear on other phones is marked **Also elsewhere**, with how many messages, phones and dates hold them; a stock phrase
+is shown but counted for nothing. The **Also elsewhere** panel lists those words, messages deleted on one phone and kept on
+another, and files and pictures shared across phones. The Corroborate guide explains each part.

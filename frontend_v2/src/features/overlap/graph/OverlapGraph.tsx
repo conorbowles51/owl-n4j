@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { openCorroborate } from "@/features/leads/open"
@@ -149,7 +150,7 @@ function Documents({ data }: { data: Overlaps }) {
           </li>
         )))}
       </ul>
-      <p className="mt-1 text-xs text-muted-foreground">Names are read from each document by a model and shown with their page; nothing is confirmed until a person checks it.</p>
+      <p className="mt-1 text-xs text-muted-foreground">Names are read from each document by a model and shown with their page; nothing is confirmed until a person checks it. <LearnMore term="Go-between" /></p>
     </section>
   )
 }

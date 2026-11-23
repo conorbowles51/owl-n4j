@@ -47,7 +47,7 @@ export const TOURS: Record<TourArea, Tour> = {
     name: "Evidence",
     steps: [
       { title: "Your files, as they came in", body: "Upload documents, statements, phone reports and recordings here. Folders keep the production's order.", targets: ['[data-guide="evidence-upload"]', "text=Upload"] },
-      { title: "Process a file to read it", body: "Processing finds the names, dates, places and payments in a file. Next steps appear when it finishes.", targets: ["text=Process"] },
+      { title: "Process a file to read it", body: "Processing finds the names, dates, places and payments in a file. Dates Loupe reads from a document are marked Read by Loupe, not confirmed, until you confirm them. Next steps appear when it finishes.", targets: ["text=Process"] },
       { title: "Work in progress", body: "The Jobs list shows what is being read and how long it has left. A phone report has its own card with the stage in words and the counts so far. You can keep working meanwhile.", targets: ['[data-guide="jobs-panel"]', '[data-panel-id="case-side-panel"]'] },
       { title: "Nothing deleted is lost", body: "Deleted files and folders wait in Deleted items for 30 days. Restore them from there, or delete them for good.", targets: ['[data-guide="evidence-deleted"]'] },
       { title: "Photos, videos and missing files", body: "A photo's date, place and camera come from its own data and are marked as not checked. Videos are read in full, frames and a transcript. A file marked File missing is restored by uploading it again.", targets: ['[data-guide="evidence-upload"]', "text=Upload"] },
@@ -62,6 +62,7 @@ export const TOURS: Record<TourArea, Tour> = {
       { title: "Zoom and focus", body: "Zoom in, then click a dot to see where it comes from. Right-click it to expand its links or merge duplicates.", targets: ['[aria-label="Zoom in"]'] },
       { title: "Keep what matters", body: "Select dots and add them to a theory, so the reason you chose them stays with them.", targets: ["text=Add to theory"] },
       { title: "People in contact", body: "Pairs of people who messaged, called or emailed each other on the phones. Open the list to see each pair and their messages.", targets: ['[data-guide="graph-people-in-contact"]'] },
+      { title: "People, go-betweens and documents", body: "This tab draws who reaches whom, directly, through go-betweens and through documents that name them. Names read by a model show their page.", targets: ['[data-guide="graph-overlap"]'] },
       HISTORY,
     ],
   },
@@ -84,6 +85,7 @@ export const TOURS: Record<TourArea, Tour> = {
       { title: "Draw an area", body: "Areas, then Draw area: draw around a place to see what happened there and add it to a theory.", targets: ['[data-guide="map-areas"]'] },
       { title: "Photos on the map", body: "A photo whose data holds a place shows as a pin. The place comes from the photo's own data and has not been checked by a person.", targets: ['[data-guide="map-canvas"]'] },
       { title: "Each phone's route", body: "Show routes draws each phone's path in time order. Gaps of more than 2 hours are left out and counted.", targets: ['[data-guide="map-routes"]'] },
+      { title: "Areas over time", body: "With an area drawn, Look into this area over time shows who was inside it night by night, and who was in two areas and in what order.", targets: ['[data-guide="area-compare"]'] },
       HISTORY,
     ],
   },
@@ -93,7 +95,7 @@ export const TOURS: Record<TourArea, Tour> = {
     steps: [
       { title: "The money in the case", body: "Overview gives the totals; NEXT FOR YOU lists the work that is waiting.", targets: ["text=Overview"] },
       { title: "Every payment", body: "Transactions lists each payment with its statement line. Filter by account, month or name.", targets: ["text=Transactions"] },
-      { title: "Follow the money", body: "See where money went, account to account, with each step cited to its statement.", targets: ["text=Follow the money"] },
+      { title: "Follow the money", body: "See where money went, account to account, with each step cited to its statement. Where it is turned on, Around an event shows the money after events you choose.", targets: ["text=Follow the money"] },
       { title: "Statements to check", body: "Lines that could not be read with certainty, and possible copies of a statement already imported, wait under Statements for a person to decide.", targets: ["text=Statements"] },
       { title: "Calls the reader made", body: "Where a statement does not print a value outright, the reader's choice is listed here. Mark it Looks right, or correct it before import.", targets: ['[data-guide="financial-judgement-calls"]'] },
       { title: "Two statements side by side", body: "Compare side by side shows a possible copy next to its original, with the facts that agree and differ.", targets: ['[data-guide="financial-compare"]'] },
@@ -115,7 +117,7 @@ export const TOURS: Record<TourArea, Tour> = {
     area: "agent",
     name: "Agent",
     steps: [
-      { title: "Ask about the case", body: "Ask a question in your own words. The agent answers from the case's evidence and cites each source. A Source check at the end says which citations support what they are cited for.", targets: ['[aria-label="Send agent prompt"]', "textarea"] },
+      { title: "Ask about the case", body: "Ask a question in your own words. The agent answers from the case's evidence and cites each source, and reads the phones around any payments it finds. A Source check at the end says which citations support what they are cited for.", targets: ['[aria-label="Send agent prompt"]', "textarea"] },
       { title: "Go deeper", body: "Deep investigation reads the whole case, works through a checklist and writes a full report. It takes longer and costs more; the switch says how much.", targets: ['[data-guide="agent-deep"]'] },
       { title: "Steer the tools", body: "While the assistant works, a line names each step and the time so far. Choose which kinds of record it may search. Groups you switch off are listed as not examined in the answer.", targets: ['[data-guide="agent-tools"]'] },
       { title: "Guided workflows", body: "Pick a ready-made line of enquiry, such as tracing a payment or building a timeline for a person.", targets: ['[aria-label="Guided workflows"]'] },

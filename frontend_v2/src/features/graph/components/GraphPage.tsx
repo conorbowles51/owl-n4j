@@ -78,7 +78,7 @@ export function GraphPage() {
     <div className="flex h-full min-h-0 flex-col">
       <nav aria-label="Graph modes" className="flex shrink-0 gap-4 border-b border-border px-4">
         {GRAPH_MODES.map(([m, words]) => (
-          <button key={m} type="button" aria-current={mode === m ? "page" : undefined} onClick={() => pick(m)}
+          <button key={m} type="button" data-guide={m === "people" ? "graph-overlap" : undefined} aria-current={mode === m ? "page" : undefined} onClick={() => pick(m)}
             className={mode === m ? "min-h-10 border-b-2 border-brand-500 text-sm font-medium" : "min-h-10 border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground"}>
             {words}
           </button>

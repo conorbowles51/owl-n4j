@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { LeadMark } from "@/features/leads/LeadMark"
 import { useEffect, useMemo, useState } from "react"
@@ -280,7 +281,7 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
         <ScopeCrossings caseId={caseId} scope={carried.scope} here="timeline" />
       </ScopeBar>
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <h2 className="font-semibold">Phone entries</h2>
+        <h2 className="font-semibold">Phone entries <LearnMore term="Phone lens" /></h2>
         {idx && <span role="status">{n(idx.total ?? idx.counts.events ?? 0)} phone {(idx.total ?? 0) === 1 ? "entry" : "entries"}</span>}
         <div role="group" aria-label="View" className="flex gap-1">
           <Button size="sm" variant={mode === "stream" ? "primary" : "outline"} aria-pressed={mode === "stream"} onClick={() => setMode("stream")}>Stream</Button>

@@ -6,9 +6,17 @@ The words Loupe uses on its screens, what each one means for your investigation,
 
 The account from whose point of view money comes in or goes out. The same payment is money out for the payer's account and money in for the payee's account.
 
+## Address lookup
+
+How addresses found in the evidence get a place on the map, set in the case's settings. Automatic sends them to an outside address service, one a second, and places them as not confirmed. Only when a person clicks keeps them in the map's Needs review list until someone looks them up.
+
 ## Agrees and Differs
 
 The results in the facts table of Compare side by side, which sets a statement beside the one it may copy. Agrees means both statements give the same value, Differs means they give different values, and Cannot compare means one side shows Not known. An unknown value is never treated as equal.
+
+## Also elsewhere
+
+A mark under a message in Conversations when the same words appear in messages on other phones. It says how many messages, phones and dates hold them; a message held on two phones counts once. A stock phrase, such as a greeting, is shown but counted for nothing. Turn the marks on with Mark what also appears elsewhere. Shown where the newer Corroborate is turned on.
 
 ## Audit chain
 
@@ -53,6 +61,14 @@ The last step of reading a phone report. Loupe checks what it read against the r
 ## Checks made
 
 The alternative explanations Corroborate tests on every result: routine contact, a shared household, a shared workplace, a stock phrase, a busy place, the clock or time zone, a recycled number, another person of the same name, a shared device, duplicate copies and received media. Each check says Ruled out, Weighed low, Checked, nothing found, or No data to check. Weighed low means the signal is present but this explanation accounts for it, so it counts for less.
+
+## Coincidence likely
+
+A Leads section for patterns that the case's ordinary days explain as well as the lead does. They stay listed, folded away, so you can check what was weighed and why it came out low.
+
+## Compare areas over time
+
+The Map's view of the areas you drew, night by night: who was inside each area, who was in both and in what order, and everything inside an area in the chosen window. Shown where the newer Corroborate is turned on.
 
 ## Conditional
 
@@ -108,6 +124,10 @@ A row of an imported bank or card statement. On the graph, a Transaction is diff
 
 The result of a claim you wrote and confirmed, checked against the phones' records. Fits means the records agree with it, Contradicts means they show something else, and Can't tell means the records cannot decide it. A contact that is not found never makes a claim Contradicts.
 
+## Go-between
+
+A person through whom two others are in contact, by calls, messages or a shared document, when the two have no direct contact. Graph shows go-betweens in People, go-betweens and documents.
+
 ## Graded likelihood
 
 Loupe never says yes or no to whether things are linked; it grades how likely a link is, by a stated rule and never by a model. A grade is a lead to check, not a finding.
@@ -134,6 +154,14 @@ A ledger row that counts toward totals and can be traced to its source. Its proo
 ## Judgement calls
 
 Values the statement reader chose that the page does not print outright, such as a year it inferred. Look at each one on its page, then mark it Looks right or correct it; none of them stops the import.
+
+## Keyword list
+
+A saved list of search terms that runs on every phone in the case. Its table counts each term on each phone, split by kind of record, and a count opens those records. A list can be attached to a theory.
+
+## Lead
+
+A pattern across the case's records that may show people acting together, saved on the Leads page. Loupe finds some by itself (Found by Loupe), some come from a Corroborate question you asked (Asked by you), and some from the agent (Suggested by the agent). Each is graded against the case's ordinary days, with what raises and lowers it. A lead is a reading by Loupe until a person adds it to a theory as a finding.
 
 ## Ledger
 
@@ -166,6 +194,10 @@ Whole units of a currency's smallest part. For GBP, 6,162 pence means GBP 61.62;
 ## Model reading
 
 Text or a value that a model produced, such as an explanation of how items could be linked, a meaning, or a search result's text. It is saved under the model's name and labelled as a model reading, or "read by a model, not confirmed", until a person checks it. Only then is it recorded as that person's reading.
+
+## Money around an event
+
+The Financial page's list of bank rows and payment alerts on the phones from each chosen event's day to a week after. It marks a payment found both in a bank row and on a phone, a payment only on a phone, and the statement pages that are missing. Money as common in other weeks is set apart as ordinary.
 
 ## Native file
 
@@ -203,6 +235,10 @@ A list on the graph page of pairs of people on the phones who messaged, called o
 
 The phone switches on phone screens and the map. Each phone is a layer you turn on or off; Only this shows one phone, and All turns every phone back on. A phone that is off is not drawn and not counted, and the line under the switches says how many are on.
 
+## Phone lens
+
+The Timeline's phone entries, opened with Phones beside the toolbar: messages, calls, emails, photos, locations and other kinds of entry, with Stream to read them in time order and Lanes to compare phones or people side by side.
+
 ## Phone marks and terms
 
 The phone screens mark where each value came from and what state it is in. For example, Mapped by the system, not yet confirmed means no person has checked the reading; Machine-generated means a model produced the text; Deleted means the phone marked the record as deleted; No data means the phone holds no records for that period, which is not the same as no activity. The phone glossary has more.
@@ -222,6 +258,10 @@ Recorded for working use while the identity or other details are still unconfirm
 ## Read again by an independent tool
 
 A phone analysis that reads each phone again with an independent open-source tool and compares that reading with the report. Its tabs show the differences: Totals differ, Only the tool read, Only in the report, Times differ, Content differs, Read the same, and Not compared. The tool's readings stay the tool's and are never merged into the report's records.
+
+## Read by Loupe not confirmed
+
+A value Loupe read from a file by itself, such as a date written in a document or the map position of an address, which no person has checked. Confirm it or correct it where it is shown. A correction keeps the reading on record, and the corrected value is the one used.
 
 ## Reconciliation
 
@@ -259,6 +299,10 @@ The file, page, cell or other place that supports a reading.
 
 A printed date, balance or total used to check a reviewed statement.
 
+## Stock phrase
+
+Words so common in messages, such as a greeting or ok thanks, that finding them on two phones means nothing. Loupe shows them and counts them for nothing.
+
 ## Story lanes
 
 The view titled What happened, person by person, opened from a column of the Corroborate grid. It gives one lane per person with the events numbered in time order and coloured by kind of record.
@@ -290,6 +334,10 @@ A statement period whose rows add up to its printed opening and closing balances
 ## Verified totals
 
 Totals that count only payments from verified periods. A period that does not add up, prints no balance or has a check that is incomplete is marked not fully checked; working totals count it and verified totals leave it out. Choose Verified payments only to see them.
+
+## Who overlaps with whom
+
+A Dossiers view of every pair of people in the case against every kind of overlap: contact direct or through others, groups, shared words and files, places, access logs, money and documents. A square shows the pair's level from its lead; pick one to see why. A case with more than 10,000 phone records and positions is too large for it, and the view says so.
 
 ## Workspace
 

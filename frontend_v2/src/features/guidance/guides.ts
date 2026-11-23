@@ -69,6 +69,7 @@ export const AREA_GUIDE: Record<TourArea, GuideId> = {
   corroborate: "corroborate",
   relations: "corroborate",
   leads: "corroborate",
+  corropanel: "corroborate",
   theory: "theories",
   dossiers: "dossiers",
   financial: "financial",

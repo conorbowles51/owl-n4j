@@ -12,7 +12,7 @@ export const CHAT_TOUR: Tour = {
     { title: "Choose what it reads", body: "Answer from all case data, from the Significant items only, or from the entities you have selected.", targets: ['[data-guide="chat-scope"]'] },
     { title: "The case objective", body: "Answers use the case's saved objective, when it has one. Override for next request changes it for one question only.", targets: ['[data-guide="case-objective"]'] },
     { title: "Your chats", body: "Start a new chat or search earlier ones. All in case shows chats by others on the case.", targets: ['[data-guide="chat-conversations"]'] },
-    { title: "What the answer names", body: "The result graph shows the entities an answer names and those found on the way. Click a dot to see why it was found.", targets: ['[data-guide="chat-result-graph"]'] },
+    { title: "What the answer names", body: "The result graph shows the entities an answer names and those found on the way. In the answer, a link opens its payment, graph item or phone record.", targets: ['[data-guide="chat-result-graph"]'] },
     HISTORY,
   ],
 }

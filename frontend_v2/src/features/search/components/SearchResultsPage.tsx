@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/ui/info-tip"
 import { CorroborateRows } from "@/features/corroborate/CorroborateRows"
 import { toMembers } from "@/features/relations/api"
 import type { ItemInput } from "@/features/theory/api"
@@ -119,6 +120,7 @@ export function SearchResultsPage() {
                 <input type="checkbox" checked={all} onChange={(e) => { setAll(e.target.checked); setPicked(new Set()) }} />
                 Every hit ({total.toLocaleString("en-US")})
               </label>
+              <InfoTip text="Every hit takes the whole result, including hits not on this page. Hits with nothing that can be saved are counted and left out." />
               {!all && picked.size > 0 && <span role="status">{picked.size.toLocaleString("en-US")} chosen</span>}
               <AddToMenu
                 caseId={caseId}

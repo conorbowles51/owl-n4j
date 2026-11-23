@@ -1,3 +1,4 @@
+import { LearnMore } from "@/components/ui/learn-more"
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
@@ -47,7 +48,7 @@ export function AreaCompare({ caseId, areas }: { caseId: string; areas: number[]
       className="z-20 flex flex-col overflow-hidden rounded-lg border border-border bg-card/95 text-xs shadow-lg backdrop-blur max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:top-14 max-md:z-40 md:absolute md:bottom-2 md:right-3 md:top-14 md:w-[44rem]"
     >
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <h2 className="text-sm font-semibold">Compare the drawn areas</h2>
+        <h2 className="text-sm font-semibold">Compare the drawn areas <LearnMore term="Compare areas over time" /></h2>
         <Button type="button" variant="ghost" size="icon-sm" aria-label="Close the comparison" className="ml-auto" onClick={close}>
           <X className="size-4" />
         </Button>
