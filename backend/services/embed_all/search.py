@@ -89,9 +89,13 @@ QUERY_WORKERS = 8  # Chroma queries of one search sent side by side
 _STORE_SLOTS = threading.BoundedSemaphore(QUERY_WORKERS)
 
 # A case with at most this many rows in a collection is scored here, not by the vector store. Measured on the demo case
-# (23 Nov, load 7): a filtered store query took 3.9-5.3 s over 193 chunks and 0.7 s per area over 1,347 items, 16 s
-# for one search's twelve queries; reading the case's rows took 0.3 s, and exact distances gave the same 30 hits.
+# (23 Nov, load 7): a filtered store query took 3.9-5.3 s over 193 chunks; reading the case's chunks took 0.3 s, and
+# exact distances gave the same hits.
 LOCAL_MAX_ROWS = 5000
+# Only the passages collection: there the store's filtered query is slowest (3.9-5.3 s) and exact distances gave the
+# store's own hits. On case_items, exact distances found records the store's index does not return, and the relevance
+# gate (23 Nov) ranked 9 answers one to three places lower and 1 higher; the items stay with the store.
+LOCAL_COLLECTIONS = frozenset({"chunks"})
 _VECTOR_CACHE_MAX = 20000  # vectors kept per process, by row id and text (float32: about 120 MB at most)
 _vectors: "OrderedDict[tuple, Any]" = OrderedDict()
 _vectors_lock = threading.Lock()
@@ -152,7 +156,7 @@ def _case_rows(collection, case_id: str):
     row's id and text are unchanged."""
     import numpy as np
     name = getattr(collection, "name", None)
-    if not name or not hasattr(collection, "get") or not _l2_space(collection):
+    if name not in LOCAL_COLLECTIONS or not hasattr(collection, "get") or not _l2_space(collection):
         return None
     big = (name, case_id)
     if time.time() - _large.get(big, -1e9) < LARGE_TTL_S:

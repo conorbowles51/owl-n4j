@@ -248,41 +248,57 @@ class Store:
                 "distances": [[float(sum((a - b) ** 2 for a, b in zip(r[3], q))) for r in rows]]}
 
 
+def _chunk(cid, text, vec, case="c", phone=True, n=0):
+    m = {"case_id": case, "ingestion_state": "active", "evidence_file_id": cid, "chunk_index": n, "doc_name": cid}
+    if phone:
+        m.update(source_kind="phone_text", url="rec://" + cid)
+    return (cid, text, m, vec)
+
+
 def _store_rows():
-    return [("i1", "cash in at the branch", meta("ledger", "k1", item_ts=100), [1.0, 0.0]),
-            ("i2", "a far ledger row", meta("ledger", "k2", item_ts=100), [-1.0, 0.0]),
-            ("i3", "an account", meta("accounts", "k3"), [0.9, 0.1]),
-            ("i4", "another case", dict(meta("ledger", "k4"), case_id="other"), [1.0, 0.0])]
+    return [_chunk("p1", "cash in at the branch", [1.0, 0.0]),
+            _chunk("p2", "a far message", [-1.0, 0.0]),
+            _chunk("d1", "a document passage", [0.9, 0.1], phone=False),
+            _chunk("p4", "another case's message", [1.0, 0.0], case="other")]
 
 
 def test_a_small_case_is_scored_from_its_rows_without_a_store_query(monkeypatch):
-    # demo case, 23 Nov: twelve filtered store queries took 16 s for 193 chunks and 1,347 items, and three
+    # demo case, 23 Nov: each filtered query of the passages took 3.9-5.3 s over its 193 rows, and three
     # overlapping searches ran 376-474 s with "pool timed out" from the store
     monkeypatch.setattr(S, "_vectors", S.OrderedDict()); monkeypatch.setattr(S, "_large", {})
-    store = Store("case_items", _store_rows())
-    reference = Store("case_items", _store_rows())
-    monkeypatch.setattr(S, "LOCAL_MAX_ROWS", 0); monkeypatch.setattr(S, "_large", {})
-    by_store = S.meaning_hits("c", [1.0, 0.0], reference, None, ["ledger", "accounts"])
+    store = Store("chunks", _store_rows())
+    reference = Store("chunks", _store_rows())
+    monkeypatch.setattr(S, "LOCAL_MAX_ROWS", 0)
+    by_store = S.meaning_hits("c", [1.0, 0.0], None, reference, ["phone_text", "documents"])
     monkeypatch.setattr(S, "LOCAL_MAX_ROWS", 5000); monkeypatch.setattr(S, "_large", {})
-    hits = S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger", "accounts"])
+    hits = S.meaning_hits("c", [1.0, 0.0], None, store, ["phone_text", "documents"])
     assert store.queries == 0 and reference.queries == 2
     assert [(h["key"], round(h["distance"], 6)) for h in hits] == [(h["key"], round(h["distance"], 6)) for h in by_store]
-    assert [h["key"] for h in hits] == ["k1", "k3"]  # k2 too far (over MAX_DISTANCE), k4 another case's
-    S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
+    assert [(h["area"], h["key"]) for h in hits] == [("phone_text", "p1:0"), ("documents", "d1:0")]  # p2 too far, p4 not this case
+    S.meaning_hits("c", [1.0, 0.0], None, store, ["phone_text"])
     assert store.vector_reads == 3  # vectors read once; a second search reads metadata and text only
+
+
+def test_items_still_ask_the_store(monkeypatch):
+    # on case_items exact distances found records the store's index does not return; the relevance gate ranked 9
+    # answers lower (23 Nov), so items stay with the store
+    monkeypatch.setattr(S, "_vectors", S.OrderedDict()); monkeypatch.setattr(S, "_large", {})
+    items = Store("case_items", [("i1", "cash", meta("ledger", "k1"), [1.0, 0.0])])
+    S.meaning_hits("c", [1.0, 0.0], items, None, ["ledger"])
+    assert items.queries == 1
 
 
 def test_a_changed_text_reads_its_vector_again_and_a_large_case_asks_the_store(monkeypatch):
     monkeypatch.setattr(S, "_vectors", S.OrderedDict()); monkeypatch.setattr(S, "_large", {})
     rows = _store_rows()
-    store = Store("case_items", rows)
-    S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
-    rows[0] = ("i1", "cash in at the branch, edited", rows[0][2], [0.6, 0.8])
-    hits = S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
+    store = Store("chunks", rows)
+    S.meaning_hits("c", [1.0, 0.0], None, store, ["phone_text"])
+    rows[0] = _chunk("p1", "cash in at the branch, edited", [0.6, 0.8])
+    hits = S.meaning_hits("c", [1.0, 0.0], None, store, ["phone_text"])
     assert store.vector_reads == 4 and hits[0]["text"] == "cash in at the branch, edited"
     assert round(hits[0]["distance"], 6) == 0.8
     monkeypatch.setattr(S, "LOCAL_MAX_ROWS", 2)
-    S.meaning_hits("c", [1.0, 0.0], store, None, ["ledger"])
+    S.meaning_hits("c", [1.0, 0.0], None, store, ["phone_text"])
     assert store.queries == 1
 
 
