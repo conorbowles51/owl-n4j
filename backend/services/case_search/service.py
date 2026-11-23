@@ -247,6 +247,8 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
     for i, c in enumerate(pool[offset:offset + limit]):
         if whole:
             unit = units.build(conn, case_id, dict(c), page_terms)
+            # the whole record may carry the ledger amount beside a page reading the ranked text did not show
+            unit["reason"] = R.ledger_reason(unit.get("reason"), unit.get("text") or "")
             if hits and used + len(unit["text"]) > page_chars:
                 whole = False
             else:

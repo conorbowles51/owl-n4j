@@ -615,3 +615,16 @@ def test_a_reason_keeps_figures_that_are_not_superseded_readings():
     assert R.ledger_reason("Deposit of 9,800.00 on 2024-03-18 at branch 014", _FENWICK) == \
         "Deposit of 9,800.00 on 2024-03-18 at branch 014"
     assert R.ledger_reason("Paid 800.00 for rent", "Rent 800.00 paid") == "Paid 800.00 for rent"
+
+
+def test_a_reason_is_checked_against_the_whole_record_shown(fake_gather, monkeypatch):
+    # live 23 Nov: the ranked text of the demo entity held only the page reading; the record shown holds both figures
+    fake_gather([{"area": "graph", "key": "e", "text": "Cash Deposit BR 014 Fenwick on 2024-03-18. 800.00 USD",
+                  "cite": "entity://e", "kind": "graph", "fused": 1.0}])
+    monkeypatch.setattr(S.units, "build", lambda conn, case, h, terms: dict(h, text=_FENWICK, unit="record",
+                                                                          chars_not_shown=0))
+
+    def model(prompt):
+        return json.dumps({"scores": [{"i": 1, "score": 9, "reason": "Cash deposit of 800.00 at branch 014 Fenwick"}]})
+    r = S.search(None, "case", "cash deposits at a branch", phrase=False, model_call=model, use_cache=False)
+    assert r["hits"][0]["reason"] == "Cash deposit of 9,800.00 at branch 014 Fenwick"
