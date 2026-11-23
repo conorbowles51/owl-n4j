@@ -81,6 +81,24 @@ class PhonesAroundPaymentsTests(LedgerToolFixture):
         with self.SessionLocal() as s:
             self.assertFalse(PA._has_phone_records(s.connection(), self.case.id))
 
+    def test_a_statement_read_names_the_week_before_its_payments(self):
+        # 23 Nov, live: the follow-up read only the statement's text (penn-used-tools-old-ferrow-2024.csv, 23 rows)
+        # and was never told the phones held records before its checks.
+        from services.agent.source_read_tools import _statement_around
+        doc, _period, rows = self.source(rows=2)
+        for row, d in zip(rows, (date(2024, 5, 10), date(2024, 6, 1))):
+            row.transaction_date = row.posted_date = row.ordering_date = d
+        self.db.commit()
+        with patch.object(PA, "_counts", _counts):
+            got = _statement_around(self.db, self.case.id, doc.evidence_file_id)
+        self.assertIn("counted in around_on_phones.windows", got["sentence"])
+        self.assertEqual([w["day"] for w in got["windows"]], ["2024-05-10", "2024-06-01"])
+        self.assertEqual(got["windows"][0]["read_with"],
+                         "phone_messages(start='2024-05-03', end='2024-05-10', include_groups=true)")
+        # A file that is not a ledger statement names no payments.
+        import uuid
+        self.assertIsNone(_statement_around(self.db, self.case.id, uuid.uuid4()))
+
     def test_a_failed_count_is_said_and_the_ledger_read_still_answers(self):
         self.rows([date(2024, 5, 10)])
         with patch.object(PA, "_counts", side_effect=RuntimeError("synthetic")):
@@ -110,7 +128,28 @@ def test_a_run_that_read_payments_with_phone_records_around_goes_back_once_befor
 
 def test_no_return_when_the_phones_were_read_after_or_the_read_named_none():
     from services.agent import answer_check
-    for later in ("phone_messages", "search_case", "get_contact_and_money_between", "read_scope_with_model"):
+    for later in ("phone_messages", "search_case", "read_scope_with_model"):
         assert answer_check.around_message([_t("get_financial_transactions", SAID), _t(later)], {}) is None
     assert answer_check.around_message([_t("get_financial_transactions", "Read 5 of 5.")], {}) is None
     assert answer_check.around_message([_t("get_financial_transactions", SAID, status="error")], {}) is None
+
+
+STATEMENT_SAID = ("Read 1 of 1 stored pages/parts of penn-used-tools-old-ferrow-2024.csv. The phones hold 598 messages, "
+                  "64 calls and 10 emails from 7 days before the first of these 23 payments to the last (counted in "
+                  "around_on_phones.windows, not read).")
+
+
+def test_a_statement_text_read_alone_goes_back_to_the_phones_once():
+    # Live 23 Nov, run 1 of check-b17: the follow-up's only call was get_document_text on the statement.
+    from services.agent import answer_check
+    msg = answer_check.around_message([_t("get_document_text", STATEMENT_SAID)], {})
+    assert msg and "The phones hold 598 messages" in msg
+    assert answer_check.around_message([_t("get_document_text", "Read 3 of 3 stored pages/parts of x.pdf. ")], {}) is None
+
+
+def test_a_contact_and_money_summary_is_not_a_read_of_the_windows():
+    # Live 23 Nov, run 5 of check-b17: ledger reads, then get_contact_and_money_between, and the price list was missed.
+    from services.agent import answer_check
+    trace = [_t("get_financial_transactions", SAID), _t("get_document_text", "Read 3 of 3."),
+             _t("get_contact_and_money_between"), _t("read_tool_result_page")]
+    assert answer_check.around_message(trace, {})

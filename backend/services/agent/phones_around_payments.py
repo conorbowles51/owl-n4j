@@ -104,3 +104,21 @@ def around(conn, case_id, items: Iterable[dict]) -> dict | None:
             "sentence": sentence,
             "note": "Counts of the records on the phones in each window, copies on two phones counted once. They "
                     "are not linked to the payments and say nothing of their purpose."}
+
+
+def statement_payments(db, case_id, evidence_file_id) -> list[dict]:
+    """The current ledger rows read from a statement file (admitted, not superseded), for ``around``. Empty when the
+    file is not a ledger statement (followups 23 Nov: a follow-up that read the statement's text, not the ledger,
+    was never told what the phones hold before its payments)."""
+    from sqlalchemy import select
+
+    from postgres.models.financial import FinancialSourceDocument as Source
+    from postgres.models.financial import FinancialTransaction as Payment
+    rows = db.execute(
+        select(Payment.id, Payment.transaction_date, Payment.posted_date, Payment.description)
+        .join(Source, Source.id == Payment.source_document_id)
+        .where(Source.case_id == case_id, Source.evidence_file_id == evidence_file_id, Source.superseded_by_id.is_(None),
+               Payment.case_id == case_id, Payment.ledger_status == "admitted", Payment.superseded_by_id.is_(None))
+        .order_by(Payment.transaction_date, Payment.id))
+    return [{"transaction_id": str(r.id), "transaction_date": r.transaction_date, "posted_date": r.posted_date,
+             "description": r.description} for r in rows]

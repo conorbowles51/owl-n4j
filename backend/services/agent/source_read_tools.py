@@ -7,6 +7,9 @@ the whole document. Case authorization and Significant scope apply before data.
 from __future__ import annotations
 
 from uuid import UUID
+import logging
+
+logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -59,6 +62,19 @@ def read_document_text(db, case_id, evidence_file_id, *, page_offset=0, page_lim
     return out
 
 
+def _statement_around(db, case_id, evidence_file_id) -> dict | None:
+    """A statement's text names payments: like a ledger read, say what the phones hold in the week before them
+    (services.agent.phones_around_payments). A failure is said in the result and never fails the read."""
+    from services.agent import phones_around_payments as PA
+    try:
+        payments = PA.statement_payments(db, UUID(str(case_id)), UUID(str(evidence_file_id)))
+        return PA.around(db.connection(), UUID(str(case_id)), payments) if payments else None
+    except Exception:  # noqa: BLE001
+        logger.warning("Phones-around read for a statement failed in case %s", case_id, exc_info=True)
+        return {"available": False, "sentence": "The phones around this statement's payments could not be counted "
+                "just now; read them with phone_messages for the payment days."}
+
+
 def make_source_read_tools(context):
     from langchain_core.tools import StructuredTool
 
@@ -76,9 +92,12 @@ def make_source_read_tools(context):
             check_case_access(db, UUID(str(context.case_id)), user, required_permission=("case", "view"))
             data = read_document_text(db, context.case_id, evidence_file_id, page_offset=page_offset,
                                       page_limit=page_limit, expected_revision=expected_revision)
+            around = _statement_around(db, context.case_id, evidence_file_id)
+        if around:
+            data["around_on_phones"] = around
         return context.result("get_document_text", data,
             summary=f"Read {data['returned']} of {data['total']} stored pages/parts of {data['document_name']}. "
-                    + (data.get('text_absent') or ""))
+                    + (data.get('text_absent') or "") + ((" " + around["sentence"]) if around else ""))
 
     def get_case_configuration():
         from services.agent.tools import _financial_session
