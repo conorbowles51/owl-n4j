@@ -17,7 +17,7 @@ const OPEN_ONE: TutorialStep = {
   expect: "T2 with its linked items, among them Kell's phone and the glovebox phone, and 6 more.",
   shot: "ws-theory",
   alt: "Theory T2 open, with its linked items marked.",
-  open: { to: THEORIES, target: ['[data-guide="theory-links"]'] },
+  open: { to: THEORIES, target: ['[data-guide="theory-links"]'], then: "Click a theory in the list to open it." },
 }
 
 /** Test a theory with the evidence for and against. */
@@ -30,7 +30,7 @@ export const THEORY: TutorialStep[] = [
     expect: "T2's supporting items beside the items that tell against it.",
     shot: "ws-theory-compare",
     alt: "Theory T2 with For and against marked.",
-    open: { to: THEORIES, target: ['[data-guide="theory-compare"]'] },
+    open: { to: THEORIES, target: ['[data-guide="theory-compare"]'], then: "Click a theory in the list to open it." },
   },
   {
     title: "Add evidence from any screen",
@@ -38,7 +38,7 @@ export const THEORY: TutorialStep[] = [
     expect: "Add to theory… in a payment's details, beside Corroborate and Open original statement.",
     shot: "money-details",
     alt: "A payment's details with its buttons, Add to theory among them.",
-    open: { to: "financial?view=transactions", target: ["text=Add to theory"] },
+    open: { to: "financial?view=transactions", target: ["text=Add to theory", "text=▸ Details"], then: "Open Details on a payment: Add to theory is inside." },
   },
   {
     title: "Read it as a whole",
@@ -46,7 +46,7 @@ export const THEORY: TutorialStep[] = [
     expect: "Reading & analysis on T2, with What breaks this theory inside it.",
     shot: "ws-theory-reading",
     alt: "Theory T2's Reading & analysis open, with What breaks this theory marked.",
-    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'] },
+    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'], then: "Click a theory in the list to open it." },
   },
   {
     title: "Turn it into a finding",
@@ -54,7 +54,7 @@ export const THEORY: TutorialStep[] = [
     expect: "Convert to finding on T2.",
     shot: "ws-theory-convert",
     alt: "Theory T2 with Convert to finding marked.",
-    open: { to: THEORIES, target: ['[data-guide="theory-convert"]'] },
+    open: { to: THEORIES, target: ['[data-guide="theory-convert"]'], then: "Click a theory in the list to open it." },
   },
 ]
 
@@ -68,7 +68,7 @@ export const DISCONFIRM: TutorialStep[] = [
     expect: "What breaks this theory inside T2's Reading & analysis, with its counter-arguments counted by what a person accepted, rejected or left waiting.",
     shot: "ws-theory-reading",
     alt: "What breaks this theory, marked, inside theory T2.",
-    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'] },
+    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'], then: "Click a theory in the list to open it." },
   },
   {
     title: "Ask for other explanations",
@@ -76,7 +76,7 @@ export const DISCONFIRM: TutorialStep[] = [
     expect: "Red cell beside What breaks this theory in T2's Reading & analysis.",
     shot: "ws-theory-reading",
     alt: "Theory T2's Reading & analysis.",
-    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'] },
+    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'], then: "Click a theory in the list to open it." },
   },
   {
     title: "Or ask the assistant to sweep",
@@ -84,7 +84,7 @@ export const DISCONFIRM: TutorialStep[] = [
     expect: "18. What breaks this theory: Ready, all 3 steps can run.",
     shot: "ag-wf-disconfirm-theory",
     alt: "The assistant's guided workflow What breaks this theory opened with Use.",
-    open: { to: "agent", target: ['[aria-label="Use workflow What breaks this theory"]'] },
+    open: { to: "agent", target: ['[aria-label="Use workflow What breaks this theory"]', "text=Show 9 more workflows"], then: "Press Show 9 more workflows, then Use on What breaks this theory." },
   },
   {
     title: "Decide on each counter-argument",
@@ -104,7 +104,7 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "Corroborate in the details of the Pocketwire payments to Lena Marsh and Desmond Okafor.",
     shot: "co-payment",
     alt: "A payment's details with the Corroborate button marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate"] },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
   },
   {
     title: "Read the result",
@@ -112,7 +112,7 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "6 items marked as possibly related: 15 pairs, 8 candidate links (0 strong, 4 moderate, 3 weak, 1 faint), 9 pairs with no link found.",
     shot: "co-header",
     alt: "A Corroborate result with its heading and counts marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate"] },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
   },
   {
     title: "Check each candidate link",
@@ -120,7 +120,7 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "Moderate, Order of events: 500.00 USD to Lena Marsh on 13 April 2024, a phone position at 03:30 that night, then 1,200.00 USD to Desmond Okafor on 14 April. By chance, both would fall on the same day on 3.3% of days.",
     shot: "co-result",
     alt: "The candidate links, marked, each with its strength and the chance.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate"] },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
   },
   {
     title: "See where no link was found",
@@ -128,7 +128,7 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "9 pairs with no link found, each with what was searched.",
     shot: "co-nolink",
     alt: "Pairs with no link found, marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate"] },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
   },
   {
     title: "Ask how they could be linked",
@@ -136,7 +136,7 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "Ask how they could be linked, Export report (PDF) and Run again above the items.",
     shot: "co-actions",
     alt: "The result's buttons, Ask how they could be linked among them, marked.",
-    open: { to: "financial?view=transactions", target: ["text=Corroborate"] },
+    open: { to: "financial?view=transactions", target: ["text=Corroborate", "text=▸ Details"], then: "Open Details on a payment: Corroborate is inside, and its result opens on a page of its own." },
   },
   {
     title: "Gather a selection across screens",
@@ -153,7 +153,7 @@ export const CORROBORATE: TutorialStep[] = [
     expect: "19. Corroborate: Ready, all 7 steps can run.",
     shot: "ag-wf-link-group",
     alt: "The assistant's guided workflow Corroborate opened with Use.",
-    open: { to: "agent", target: ['[aria-label="Use workflow Corroborate"]'] },
+    open: { to: "agent", target: ['[aria-label="Use workflow Corroborate"]', "text=Show 9 more workflows"], then: "Press Show 9 more workflows, then Use on Corroborate." },
   },
 ]
 
@@ -201,7 +201,7 @@ export const CLAIM: TutorialStep[] = [
     expect: "Reading & analysis on theory T2.",
     shot: "ws-theory-reading",
     alt: "Theory T2's Reading & analysis.",
-    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'] },
+    open: { to: THEORIES, target: ['[data-guide="theory-reading"]'], then: "Click a theory in the list to open it." },
     switch: "corroborate-v2",
   },
 ]
@@ -262,7 +262,7 @@ export const DOSSIER: TutorialStep[] = [
     expect: "Travis Kell's dossier: his mobile, +1 410 555 0121, and home address, each marked Investigator recorded, and his proffer of 20 June 2024 under Interviews at a glance.",
     shot: "do-kell",
     alt: "Travis Kell's dossier with its tabs marked.",
-    open: { to: "dossiers", target: ['[data-guide="dossiers-detail-tabs"]'] },
+    open: { to: "dossiers", target: ['[data-guide="dossiers-detail-tabs"]', '[data-guide="dossiers-list"]'], then: "Click a person in the list to open their dossier." },
   },
   {
     title: "Check the phone links",
@@ -330,7 +330,7 @@ export const GRAPH: TutorialStep[] = [
     expect: "Select by clicking and Drag select among the graph's tools.",
     shot: "gr-canvas",
     alt: "The graph with its selection tools.",
-    open: { to: "graph", target: ["text=Add to theory"] },
+    open: { to: "graph", target: ["text=Add to theory", '[aria-label="Drag select"]'], then: "Select dots: click one, or Drag select round several. Add to theory is in the panel beside the graph." },
   },
 ]
 
@@ -350,7 +350,7 @@ export const DEFENCE_REVIEW: TutorialStep[] = [
     expect: "Kell's dossier lists his proffer session of 20 June 2024 under Interviews at a glance, with its transcript, kell-proffer-transcript-2024-06-20.docx.",
     shot: "do-kell",
     alt: "Travis Kell's dossier.",
-    open: { to: "dossiers", target: ['[data-guide="dossiers-detail-tabs"]'] },
+    open: { to: "dossiers", target: ['[data-guide="dossiers-detail-tabs"]', '[data-guide="dossiers-list"]'], then: "Click a person in the list to open their dossier." },
   },
   {
     title: "Check what rests on Loupe's calls",

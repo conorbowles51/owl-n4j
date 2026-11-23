@@ -60,6 +60,10 @@ function helpers(page, base, width) {
   const h = {
     width,
     phone: width < 640,
+    /** A taller screen for one picture whose element does not fit a phone's height; reset after the picture. */
+    async tall(height = 1700) {
+      await page.setViewportSize({ width, height })
+    },
     async settle(ms = 1500) {
       await page.waitForTimeout(800)
       await page.waitForFunction((re) => !new RegExp(re).test(document.body.innerText), BUSY.source, { timeout: 120_000, polling: 500 }).catch(() => {})
@@ -523,7 +527,9 @@ async function openTheory(h, mark) {
 
 /** Agent, a new thread, the guided workflow's row opened with Use: its steps and whether each can run on this case. */
 async function assistantWorkflow(h, title) {
-  // Agent opens on a new thread, whose empty state offers the guided workflows
+  // Agent opens on a new thread, whose empty state offers the guided workflows; on a phone the row with its steps is
+  // taller than the space under the thread's header, so the picture is taken on a taller screen to keep the whole row
+  if (h.phone) await h.tall()
   await h.go("agent", "What can I ask?")
   const picker = h.text("Or start a guided workflow")
   if (!(await picker.isVisible())) await h.click(h.button("New agent thread"))
@@ -543,18 +549,22 @@ async function assistantWorkflow(h, title) {
   const start = row.getByRole("button", { name: "Start workflow" })
   // at phone width the row's top sits under the thread's sticky header: the row's own Start workflow is the mark there
   const mark = h.phone && (await start.count()) ? start.first() : row
-  // scroll the row to just below the thread header (Using case objective), which stays on screen above the list
-  await mark.evaluate((e) => {
+  // scroll the row to just below the thread header (Using case objective), which stays on screen above the list;
+  // at phone width the row's title shows too when its Start workflow still fits on the screen
+  await row.evaluate((r, m) => {
     const header = [...document.querySelectorAll("main *")].find((x) => x.textContent?.trim() === "Override for next request")
     const below = header ? header.getBoundingClientRect().bottom + 24 : 120
-    let box = e.parentElement
+    let box = r.parentElement
     while (box && !(box.scrollHeight > box.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement
-    const by = e.getBoundingClientRect().top - below
+    const target = m ?? r
+    const bottom = box ? box.getBoundingClientRect().bottom : window.innerHeight
+    const fits = target.getBoundingClientRect().bottom - r.getBoundingClientRect().top <= bottom - below - 16
+    const by = (fits ? r : target).getBoundingClientRect().top - below
     if (box) box.scrollTop += by
     else window.scrollBy(0, by)
-  })
+  }, mark === row ? null : await mark.elementHandle())
   await h.settle(500)
-  return { mark }
+  return h.phone ? { mark, crop: row, whole: true } : { mark }
 }
 
 /** The Transactions list with the search box filled, the count of matching payments marked. */
@@ -600,11 +610,14 @@ try {
       report.stopped.push(`${q.method()} ${path}`)
       return r.abort()
     })
+    // Every job signs in with the one jobs login, so another job's agent run on the demo case reads as this person's
+    // and the Agent page opens on it. The pictures show the page as a person with no run going sees it.
+    await page.route("**/api/agent/runs/active**", (r) => r.fulfill({ json: { runs: [] } }))
     for (const [name, recipe] of Object.entries(SHOTS)) {
       if (only && !only.has(name)) continue
       const h = helpers(page, login.url, width)
       try {
-        const { mark, crop } = await recipe(h)
+        const { mark, crop, whole } = await recipe(h)
         await mark.waitFor({ state: "visible", timeout: 120_000 })
         await mark.scrollIntoViewIfNeeded().catch(() => {})
         await page.waitForTimeout(400)
@@ -623,7 +636,11 @@ try {
         }, box)
         const vp = page.viewportSize()
         const area = crop ? await crop.boundingBox() : null
-        const clip = cropBox(box, area, vp, h.phone)
+        // whole: keep the crop element from its top down to the control, on the taller screen the recipe asked for
+        const clip = whole && area
+          ? { x: Math.max(0, Math.round(area.x - 8)), y: Math.max(0, Math.round(area.y - 8)), width: Math.round(Math.min(area.width + 16, vp.width - Math.max(0, area.x - 8))),
+              height: Math.round(Math.min(box.y + box.height + 20, vp.height) - Math.max(0, area.y - 8)) }
+          : cropBox(box, area, vp, h.phone)
         const png = join(scratch, `${name}-${width}.png`)
         await page.screenshot({ path: png, clip, timeout: 120_000 })
         await page.evaluate(() => document.getElementById("workflow-still-mark")?.remove())
@@ -637,6 +654,7 @@ try {
           }))
           writeFileSync(join(dump, `${name}-${width}.json`), JSON.stringify(info, null, 1))
         }
+        if (whole) await page.setViewportSize({ width, height: width < 640 ? 844 : 900 })
         report.taken.push(`${name}-${width}`)
         console.log("took", name, width)
       } catch (e) {
@@ -644,6 +662,7 @@ try {
         console.log("FAILED", name, width, String(e.message || e).slice(0, 200))
         // with --dump, what the screen showed when the recipe gave up
         if (dump) await page.screenshot({ path: join(dump, `${name}-${width}-failed.png`) }).catch(() => {})
+        await page.setViewportSize({ width, height: width < 640 ? 844 : 900 })
       }
     }
     await context.close()

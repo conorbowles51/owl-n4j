@@ -10,7 +10,7 @@ export const LOUPE_CALLS: TutorialStep[] = [
     expect: "49 calls Loupe made for you, 49 open.",
     shot: "fin-calls",
     alt: "The Financial overview with the Spot-check Loupe count marked.",
-    open: { to: "financial?view=overview", target: ["text=calls Loupe made for you"] },
+    open: { to: "financial?view=overview", target: ["text=Spot-check Loupe"] },
   },
   {
     title: "Open the judgement calls",

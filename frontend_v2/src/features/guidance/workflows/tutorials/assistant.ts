@@ -34,7 +34,7 @@ export const ASSISTANT: TutorialStep[] = [
     expect: "The rating buttons under each answer.",
     shot: "ag-thread",
     alt: "An answer on the demo case.",
-    open: { to: "agent", target: ['[data-guide="agent-rate"]'] },
+    open: { to: "agent", target: ['[data-guide="agent-rate"]'], then: "Open a thread with an answer: the rating buttons are under each answer." },
   },
   {
     title: "Keep what it found",
@@ -90,7 +90,10 @@ function ask(id: string, title: string, number: number, readiness: string, slots
     expect: `${number}. ${title}: ${readiness}`,
     shot: `ag-wf-${id}`,
     alt: `The assistant's guided workflow ${title} opened with Use, its steps listed.`,
-    open: { to: "agent", target: [`[aria-label="Use workflow ${title}"]`] },
+    open:
+      number > 10
+        ? { to: "agent", target: [`[aria-label="Use workflow ${title}"]`, "text=Show 9 more workflows"], then: `Press Show 9 more workflows, then Use on ${title}.` }
+        : { to: "agent", target: [`[aria-label="Use workflow ${title}"]`] },
   }
 }
 

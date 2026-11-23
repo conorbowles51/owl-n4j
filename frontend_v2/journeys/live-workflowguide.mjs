@@ -2,7 +2,7 @@
 // Live check of the Guide's Workflows section (lx-workflowguide G), signed in with the jobs login over plain http.
 // Read only: a request that is not a GET is stopped and reported, except the app's own view records.
 //
-//   node journeys/live-workflowguide.mjs --out <dir> [--width 1440|390] [--follow money,contact,theory] [--ends]
+//   node journeys/live-workflowguide.mjs --out <dir> [--width 1440|390] [--follow money,contact,theory] [--ends] [--open-all] [--quiet]
 //
 // Opens the Workflows list from the Guide menu on the demo case, follows each --follow workflow step by step with
 // Next (and the arrow keys), presses Open this screen on every step and checks the marked control is found, and with
@@ -23,6 +23,8 @@ const widths = arg("width") ? [Number(arg("width"))] : [1440, 390]
 const follow = (arg("follow", "") || "").split(",").filter(Boolean)
 const ends = process.argv.includes("--ends")
 const quiet = process.argv.includes("--quiet")
+// --open-all: press Open this screen on every step of every workflow and record whether its control is marked
+const openAll = process.argv.includes("--open-all")
 const C = CASES.demo
 // Reads sent as POST, as in workflow-stills.mjs; the two phone lists that record a search pass only with no words
 const VIEW_POSTS = [/\/api\/investigation-trail/, /\/api\/trail/, /\/api\/auth\/refresh/, /\/api\/history\/cases\/[^/]+$/,
@@ -31,7 +33,7 @@ const VIEW_POSTS = [/\/api\/investigation-trail/, /\/api\/trail/, /\/api\/auth\/
   /\/api\/phones\/conversations\/review\/continue$/, /\/api\/phones\/streams\/window$/, /\/api\/phones\/link-analysis\/edges$/, /\/api\/phones\/links\/states$/,
   /\/api\/phones\/media\/(index|window|facets|image-index\/describe|derive-batches\/describe)$/,
   /\/api\/financial\/statement-import\/[^/]+\/(coverage-check|checks)$/, /\/api\/financial\/judgements\/preview$/,
-  /\/api\/citations\/resolve$/, /\/api\/workspace\/[^/]+\/financial-evidence-changes$/]
+  /\/api\/citations\/resolve$/, /\/api\/phone-analysis\/across-badges$/, /\/api\/workspace\/[^/]+\/financial-evidence-changes$/]
 const READ_WITHOUT_WORDS = [/\/api\/phones\/conversations\/threads$/, /\/api\/phones\/streams\/index$/]
 const noWords = (q) => {
   try {
@@ -164,7 +166,7 @@ try {
       const leftTo = await stepCount(page)
       if (total > 1 && leftTo !== `Step ${total - 1} of ${total}`) bad(`${width} ${id}: ArrowLeft from the last step says ${leftTo}`)
       else ok(`${width} ${id}: arrow keys and Next walk all ${total} steps`)
-      await page.getByRole("button", { name: "All workflows" }).click()
+      await page.getByRole("button", { name: "All workflows" }).first().click()
       await page.getByLabel("Find a workflow").waitFor()
     }
 
@@ -185,10 +187,38 @@ try {
         if (last !== `Step ${total} of ${total}`) bad(`${width} ${id}: jump to last says ${last}`)
         const n2 = await imagesLoaded(page, `${width} ${id} last`)
         if (!n1 || !n2) bad(`${width} ${id}: a step with no picture`)
-        await page.getByRole("button", { name: "All workflows" }).click()
+        await page.getByRole("button", { name: "All workflows" }).first().click()
         await page.getByLabel("Find a workflow").waitFor()
       }
       ok(`${width}: first and last step of ${ids.length} workflows opened, ${steps} steps in all`)
+    }
+    if (openAll) {
+      const seen = new Set()
+      for (const id of ids) {
+        if (seen.has(id)) continue
+        seen.add(id)
+        await card(page, id).click()
+        await page.getByTestId("workflow-tutorial").waitFor()
+        const total = Number((await stepCount(page)).match(/of (\d+)/)[1])
+        for (let s = 1; s <= total; s++) {
+          const list = phone ? page.getByRole("navigation", { name: "Steps" }) : page.getByTestId("workflow-tutorial").getByRole("navigation").last()
+          await list.getByRole("button").nth(s - 1).click()
+          await page.waitForTimeout(200)
+          const title = await stepTitle(page)
+          await page.getByRole("link", { name: "Open this screen" }).or(page.getByRole("button", { name: "Open this screen" })).first().click()
+          const back = page.getByRole("button", { name: "Back to the step" })
+          await back.waitFor({ timeout: 60_000 })
+          const found = await page.getByTestId("workflow-ring").waitFor({ timeout: 25_000 }).then(() => true, () => false)
+          const hint = (await page.getByRole("region", { name: "Workflow step" }).innerText().catch(() => "")).replace(/\s+/g, " ")
+          const url = new URL(page.url()).pathname.replace(/^\/cases\/[^/]+\//, "") + new URL(page.url()).search
+          if (!found) await page.screenshot({ path: join(out, `open-${id}-${s}-${width}.png`) })
+          ok(`${width} open ${id} ${s}/${total} "${title}": ${found ? "marked" : "NOT MARKED"} at ${url}${found ? "" : ` | bar: ${hint}`}`)
+          await back.click()
+          await page.getByTestId("workflow-tutorial").waitFor()
+        }
+        await page.getByRole("button", { name: "All workflows" }).first().click()
+        await page.getByLabel("Find a workflow").waitFor()
+      }
     }
     await page.keyboard.press("Escape")
     await context.close()

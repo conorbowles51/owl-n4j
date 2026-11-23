@@ -20,8 +20,12 @@ export interface TutorialStep {
   shot: string
   /** The picture's alt text: what it shows. */
   alt: string
-  /** "Open this screen": the address inside the person's case (after /cases/<id>/) and the control to ring there. */
-  open: { to: string; target?: string[] }
+  /**
+   * "Open this screen": the address inside the person's case (after /cases/<id>/) and the control to ring there.
+   * `then` is what the person does on that screen before the control shows (it sits inside something they open first,
+   * such as one theory); the step bar says it until the control is ringed.
+   */
+  open: { to: string; target?: string[]; then?: string }
   /** Hidden while this switch is off in the person's browser. */
   switch?: WorkflowSwitch
 }

@@ -301,7 +301,7 @@ function StepPicture({ step }: { step: TutorialStep }) {
 }
 
 /** After "Open this screen": a ring round the step's control while it is on screen, and the way back to the step. */
-function StepReturn({
+export function StepReturn({
   workflow,
   index,
   step,
@@ -316,6 +316,8 @@ function StepReturn({
 }) {
   const [ring, setRing] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
   const [missing, setMissing] = useState(false)
+  // the step's own control (its first target) is ringed; a later target is the way to it, such as Details on a payment
+  const [own, setOwn] = useState(false)
   useEffect(() => {
     const targets = step.open.target ?? []
     if (!targets.length) return
@@ -325,11 +327,13 @@ function StepReturn({
       const el = findTarget(targets)
       if (!el) {
         setRing(null)
+        setOwn(false)
         // the screen may still be loading; after 20 seconds say so rather than ring nothing
         if (Date.now() - started > 20_000) setMissing(true)
         return
       }
       setMissing(false)
+      setOwn(Boolean(findTarget(targets.slice(0, 1))))
       if (!scrolled) {
         el.scrollIntoView?.({ block: "center" })
         scrolled = true
@@ -361,7 +365,11 @@ function StepReturn({
             {workflow.title} · step {index + 1} of {workflow.steps.length}:
           </span>{" "}
           {step.title}
-          {missing && <span className="block text-muted-foreground">The marked control is not on this screen in your case yet.</span>}
+          {/* a control inside something the person opens first: say what to open until it is ringed, never that it is missing */}
+          {step.open.then && !own && <span className="block text-muted-foreground">{step.open.then}</span>}
+          {missing && !step.open.then && (
+            <span className="block text-muted-foreground">The marked control is not on this screen in your case yet.</span>
+          )}
         </span>
         <Button size="sm" variant="outline" className="h-7 shrink-0" onClick={onBack}>
           Back to the step

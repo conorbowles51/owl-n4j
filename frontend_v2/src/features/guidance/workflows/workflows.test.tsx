@@ -2,7 +2,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { useState, type ReactNode } from "react"
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { FEATURES } from "../feature-list"
@@ -11,7 +11,7 @@ import { stepsShown, workflowsShown } from "./available"
 import { CASE_KINDS, CATALOGUE, QUESTIONS } from "./catalogue"
 import { TUTORIALS } from "./tutorials"
 import type { Workflow } from "./types"
-import { Tutorial, WorkflowList } from "./WorkflowGuide"
+import { StepReturn, Tutorial, WorkflowList } from "./WorkflowGuide"
 
 const front = path.resolve(__dirname, "../../../..")
 const src = path.join(front, "src")
@@ -210,6 +210,45 @@ describe("(4) the tutorial's navigation", () => {
     render(<Harness />)
     const current = screen.getAllByRole("button").filter((b) => b.getAttribute("aria-current") === "step")
     expect(current.length).toBe(2)
+  })
+})
+
+describe("the step bar after Open this screen", () => {
+  it("says what to open first for a control inside something opened, and never calls that control missing", () => {
+    vi.useFakeTimers()
+    try {
+      const inside = { ...step(2), open: { to: "workspace", target: ['[data-guide="nowhere-yet"]'], then: "Click a theory to open it." } }
+      const { unmount } = render(<StepReturn workflow={FAKE} index={1} step={inside} onBack={vi.fn()} onClose={vi.fn()} />)
+      expect(screen.getByText("Click a theory to open it.")).toBeTruthy()
+      act(() => void vi.advanceTimersByTime(21_000))
+      expect(screen.queryByText(/not on this screen/)).toBeNull()
+      unmount()
+      // the way to the control (a later target) is ringed and the line stays until the control itself is ringed
+      const way = document.createElement("button")
+      way.setAttribute("data-guide", "the-way")
+      way.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 40, bottom: 20, width: 40, height: 20, toJSON: () => ({}) })
+      document.body.appendChild(way)
+      const both = { ...step(2), open: { to: "workspace", target: ['[data-guide="the-control"]', '[data-guide="the-way"]'], then: "Open Details on a payment." } }
+      const second = render(<StepReturn workflow={FAKE} index={1} step={both} onBack={vi.fn()} onClose={vi.fn()} />)
+      expect(screen.getByTestId("workflow-ring")).toBeTruthy()
+      expect(screen.getByText("Open Details on a payment.")).toBeTruthy()
+      const control = way.cloneNode() as HTMLButtonElement
+      control.setAttribute("data-guide", "the-control")
+      control.getBoundingClientRect = way.getBoundingClientRect
+      document.body.appendChild(control)
+      act(() => void vi.advanceTimersByTime(600))
+      expect(screen.queryByText("Open Details on a payment.")).toBeNull()
+      second.unmount()
+      way.remove()
+      control.remove()
+      // a control with nothing to open first is said to be missing once the screen has had 20 seconds to load
+      render(<StepReturn workflow={FAKE} index={1} step={{ ...step(2), open: { to: "workspace", target: ['[data-guide="nowhere-yet"]'] } }} onBack={vi.fn()} onClose={vi.fn()} />)
+      expect(screen.queryByText(/not on this screen/)).toBeNull()
+      act(() => void vi.advanceTimersByTime(21_000))
+      expect(screen.getByText(/not on this screen/)).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
