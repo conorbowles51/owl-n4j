@@ -22,6 +22,11 @@ import { ALL_GROUP, DEFAULT_WHAT, groupCount, homeFacets, WHAT_GROUPS, whatGroup
 
 const ExportDialog = lazy(() => import("@/features/conversations/ExportDialog").then((m) => ({ default: m.ExportDialog })))
 const n = (x: number) => x.toLocaleString("en-US")
+/** Sibling screens of the phones redesign, linked only once their page is in this build (lx-phonesearch's Search,
+ * lx-phoneask's Ask), so the page never links to an address that is not there yet. */
+const HAS_SEARCH = Object.keys(import.meta.glob("/src/features/phones/search/PhoneSearchPage.tsx")).length > 0
+const HAS_ASK = Object.keys(import.meta.glob("/src/features/phones/ask/*Page.tsx")).length > 0
+
 /** The phone screens that used to have their own side-menu entries, reached from here now. */
 const MORE: [string, string][] = [
   ["conversations", "Threads and people"], ["phone-patterns", "Patterns of life"], ["phone-money", "Money on the phones"],
@@ -162,7 +167,9 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
         <form role="search" onSubmit={submit} className="flex flex-wrap items-center gap-2.5">
           <div role="radiogroup" aria-label="Search or ask" className="flex h-12 rounded-lg border bg-card p-1">
             <button type="button" role="radio" aria-checked="true" className="rounded-md bg-muted px-3.5 text-sm font-semibold">Search words</button>
-            <button type="button" role="radio" aria-checked="false" className="rounded-md px-3.5 text-sm text-muted-foreground hover:text-foreground" onClick={() => navigate(askHref)}>Ask a question</button>
+            <button type="button" role="radio" aria-checked="false" className="rounded-md px-3.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-60"
+              disabled={!HAS_ASK} title={HAS_ASK ? undefined : "Asking questions of the phones is not on this server yet. Search words works now."}
+              onClick={() => navigate(askHref)}>Ask a question</button>
           </div>
           <label htmlFor="phones-q" className="sr-only">Search every phone that is on</label>
           <div className="flex h-12 min-w-[14rem] flex-1 items-center gap-2.5 rounded-xl border bg-card px-3.5">
@@ -173,7 +180,7 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
           </div>
           <Button type="submit" className="h-12 px-6">Search</Button>
         </form>
-        {words.trim() && <p className="text-xs text-muted-foreground">The list shows every kind of record holding "{words.trim()}" on the phones that are on. <Link className="underline" to={scopeHref(`/cases/${encodeURIComponent(caseId)}/phones/search`, scope, { q: words.trim() })}>See the matches grouped by kind and phone</Link> · <button type="button" className="underline" onClick={() => { setTyped(""); set("q", null) }}>Clear the words</button></p>}
+        {words.trim() && <p className="text-xs text-muted-foreground">The list shows every kind of record holding "{words.trim()}" on the phones that are on. {HAS_SEARCH && <><Link className="underline" to={scopeHref(`/cases/${encodeURIComponent(caseId)}/phones/search`, scope, { q: words.trim() })}>See the matches grouped by kind and phone</Link> · </>}<button type="button" className="underline" onClick={() => { setTyped(""); set("q", null) }}>Clear the words</button></p>}
       </header>
 
       <div className="flex min-h-0 flex-1 flex-wrap">
