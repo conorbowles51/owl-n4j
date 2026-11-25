@@ -14,6 +14,7 @@ from itertools import combinations
 from typing import Any, Callable
 
 from services.corroborate import checks as C
+from services.corroborate import days as D
 from services.corroborate import levels as L
 from services.corroborate import model as M
 from services.corroborate import questions as Q
@@ -314,6 +315,7 @@ def run(store, members: list[dict], question: dict | None = None,
         "unread": unread,
         "notes": notes,
         "case_facts_used": [f for f in ctx["facts"] if any(f["text"] in (r.get("why_low") or "") for r in rows)],
+        "days": D.build(rows, instances, recs, points, people, kind, comparison, zone),
         "seconds": round(time.time() - started, 2),
     }
     return result

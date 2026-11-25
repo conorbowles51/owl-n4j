@@ -175,7 +175,8 @@ class CaseStore:
                     unread.append({"ref": ref, "why": "The payment has no date, or is not in this case."})
                     continue
                 payer, payee = self._payment_parties(by_account.get(str(row[0])), row[3], row[4], people)
-                pt.update(at=M.as_utc(row[1]), day_only=True, kind="payment", amount_minor=row[2])
+                pt.update(at=M.as_utc(row[1]), day_only=True, kind="payment", amount_minor=row[2],
+                          direction=row[3], memo=" ".join(str(row[4] or "").split()))
                 pt["people"] = [payer, payee]
             elif t == "document_row":
                 fid, _, idx = mid.partition(":")
