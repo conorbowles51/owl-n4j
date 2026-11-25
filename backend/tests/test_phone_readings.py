@@ -84,7 +84,10 @@ def test_the_queue_is_plain_sentences_most_records_first_with_no_field_names(rev
         counts = [i["records"] for i in q["items"]]
         assert counts == sorted(counts, reverse=True)
         for i in q["items"]:
-            assert re.match(r"^On C\d+, .+: .+\. Affects [\d,]+ \w", i["sentence"]), i["sentence"]
+            # a plain sentence about what the phone did, naming the phone, with what changes if it is wrong
+            assert re.search(r"\bC\d+\b", i["sentence"]) and i["sentence"].endswith("."), i["sentence"]
+            assert i["if_wrong"].startswith("If this is wrong, "), i
+            assert "party marked" not in i["sentence"] and " eq " not in i["sentence"], i["sentence"]
             # RQ-1: no field or rule names in the copy: no CamelCase token, no dotted id
             assert not re.search(r"[a-z][A-Z]|\w\.\w", i["sentence"]), i["sentence"]
             assert i["origin"] == "Mapped by the system, not yet confirmed"

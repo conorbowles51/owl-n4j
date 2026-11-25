@@ -32,18 +32,19 @@ def _confirmations(conn, case_id) -> list:
     labels = readings.phone_labels(conn, case_id)
     rows = conn.execute(text(
         "SELECT j.id AS reading_id, j.extraction_id, j.rule_id, j.mapping_version_id, j.rule_part, j.type_name, "
-        "j.summary, j.records_touched, a.id AS confirmation_id, a.actor_user_id, a.actor_name, a.actor_email, "
+        "j.summary, j.evidence, j.records_touched, a.id AS confirmation_id, a.actor_user_id, a.actor_name, a.actor_email, "
         "a.created_at, a.reason FROM phone_mapping_judgements j JOIN phone_interpretation_state s ON "
         "s.extraction_id = j.extraction_id AND s.generation = j.generation JOIN phone_extractions e ON "
         "e.id = j.extraction_id AND e.standing = 'active' JOIN adjudications a ON a.id = j.adjudication_id WHERE "
         "j.case_id = :c AND j.status = 'confirmed' AND j.records_touched > 0 AND a.decision = 'confirm_phone_reading' "
         "AND a.actor_user_id IS NOT NULL"), {"c": str(case_id)}).fetchall()
+    from services.phone import reading_words
+    means = reading_words.meanings(conn, {r.extraction_id for r in rows})
     return [{"confirmation_id": str(r.confirmation_id), "reading_id": str(r.reading_id),
              "extraction_id": str(r.extraction_id), "rule_id": r.rule_id,
              "mapping_version_id": str(r.mapping_version_id), "part": r.rule_part,
              "phone": labels.get(str(r.extraction_id), "Phone"),
-             "sentence": readings.sentence(labels.get(str(r.extraction_id), "Phone"), r.type_name, r.summary,
-                                           int(r.records_touched)),
+             "sentence": reading_words.for_row(labels.get(str(r.extraction_id), "Phone"), r, means)["sentence"],
              "first": {"by_id": str(r.actor_user_id), "by_name": r.actor_name, "by_email": r.actor_email,
                        "at": r.created_at.isoformat(), "reason": r.reason}} for r in rows]
 

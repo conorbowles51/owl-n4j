@@ -106,6 +106,8 @@ def _phrase(summary, type_words):
 
 
 def sentence(label, type_name, summary, n):
+    """The stored summary as one line (kept for the admin list); people checking a reading read
+    ``reading_words.plain`` instead."""
     tw = apply.words(type_name)
     return "On %s, %s: %s. Affects %s %s." % (label, plural(tw), _phrase(summary, tw), "{:,}".format(n),
                                               plural(tw) if n != 1 else tw)
@@ -120,20 +122,23 @@ def queue(conn, case_id, include_resolved=True) -> dict:
     rows = conn.execute(text(
         "SELECT j.id, j.extraction_id, j.rule_id, j.rule_part, j.type_name, j.summary, j.records_touched, j.status, "
         "j.resolved_by, j.resolved_at, j.resolution_reason, j.adjudication_id, j.mapping_version_id, j.mapping_kind, "
-        "j.mapping_name, a.reason_kind, a.after, j.evidence -> 'earlier_decision' AS earlier "
+        "j.mapping_name, j.evidence, a.reason_kind, a.after, j.evidence -> 'earlier_decision' AS earlier "
         "FROM phone_mapping_judgements j "
         "JOIN phone_interpretation_state s ON s.extraction_id = j.extraction_id AND s.generation = j.generation "
         "JOIN phone_extractions e ON e.id = j.extraction_id AND e.standing = 'active' "
         "LEFT JOIN adjudications a ON a.id = j.adjudication_id "
         "WHERE j.case_id = :c AND j.records_touched > 0" + ("" if include_resolved else " AND j.status = 'open'") +
         " ORDER BY j.records_touched DESC, j.rule_id"), {"c": case_id}).fetchall()
+    from services.phone import reading_words
+    means = reading_words.meanings(conn, {r.extraction_id for r in rows})
     items = []
     for r in rows:
         label = labels.get(str(r.extraction_id), "Phone")
+        words = reading_words.for_row(label, r, means)
         items.append({
             "id": str(r.id), "extraction_id": str(r.extraction_id), "phone": label, "type_name": r.type_name,
             "type_words": plural(apply.words(r.type_name)), "rule_id": r.rule_id, "part": r.rule_part,
-            "sentence": sentence(label, r.type_name, r.summary, int(r.records_touched)),
+            "sentence": words["sentence"], "if_wrong": words["if_wrong"],
             "records": int(r.records_touched), "status": r.status,
             "origin": "Mapped by the system, not yet confirmed" if r.status == "open" else None,
             "resolved_by": r.resolved_by, "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,

@@ -243,14 +243,13 @@ def test_the_record_panel_offers_the_open_readings_of_its_type_on_its_phone(api)
         for status, summary in (("open", "each instant message is read as a message"), ("confirmed", "checked")):
             conn.execute(text(
                 "INSERT INTO phone_mapping_judgements (id, case_id, extraction_id, mapping_version_id, mapping_kind, "
-                "mapping_name, rule_id, type_name, rule_part, summary, records_touched, status, generation) VALUES "
+                "mapping_name, rule_id, type_name, rule_part, summary, records_touched, status, generation, evidence) VALUES "
                 "(gen_random_uuid(), :c, :e, :mv, 'type', 'InstantMessage', :r, 'InstantMessage', "
-                "'record', :s, 3, :st, 1)"), {"c": case, "e": ext, "mv": mv, "r": "r-" + status, "s": summary,
+                "'record', :s, 3, :st, 1, '{\"choice\": \"message\"}')"), {"c": case, "e": ext, "mv": mv, "r": "r-" + status, "s": summary,
                                                "st": status})
     uid = api["evs"][0]["record_uid"]
     d = c.get(f"/api/phones/records/{uid}", params={"case_id": case}).json()
-    assert [r["sentence"].startswith("On C3") for r in d["readings"]] == [True]
-    assert "each instant message is read as a message" in d["readings"][0]["sentence"]
+    assert [r["sentence"] for r in d["readings"]] == ["Loupe reads each of C3’s messages as a message in a conversation."]
 
 
 def test_a_whole_result_is_frozen_as_one_selection_with_every_copy_and_resolves_only_in_its_case(api):

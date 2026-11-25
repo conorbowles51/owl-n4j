@@ -266,10 +266,11 @@ def _file_attr(body, name):
 def _open_readings(conn, case_id, ext, model_type, label) -> list:
     """The readings of this record's type on its phone that no person has checked yet (07 J-8b): the record panel
     offers each one beside its mark, and the choice opens that reading on Needs a decision, where its examples are."""
-    from services.phone import readings
-    return [{"id": str(r.id), "sentence": readings.sentence(label, r.type_name, r.summary, int(r.records_touched))}
+    from services.phone import reading_words
+    means = reading_words.meanings(conn, [ext])
+    return [{"id": str(r.id), "sentence": reading_words.for_row(label, r, means)["sentence"], "records": int(r.records_touched)}
             for r in conn.execute(text(
-                "SELECT j.id, j.type_name, j.summary, j.records_touched FROM phone_mapping_judgements j JOIN "
+                "SELECT j.id, j.extraction_id, j.type_name, j.rule_part, j.rule_id, j.evidence, j.records_touched FROM phone_mapping_judgements j JOIN "
                 "phone_interpretation_state s ON s.extraction_id = j.extraction_id AND s.generation = j.generation "
                 "WHERE j.case_id = :c AND j.extraction_id = CAST(:e AS uuid) AND j.type_name = :t AND j.status = 'open' "
                 "AND j.records_touched > 0 ORDER BY j.records_touched DESC, j.rule_id"),
