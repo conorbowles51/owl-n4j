@@ -21,6 +21,8 @@ export interface CorroborateRequest {
   skipped?: { type: string; count: number }[]
   /** The list's own time scope, handed to the full question menu. */
   scope?: Scope
+  /** The page it was asked from (set by openCorroborate): the panel shows only there, never on another page. */
+  path?: string
 }
 
 export const CORROBORATE_OPEN = "loupe-corroborate-open"
@@ -30,15 +32,18 @@ export function openCorroborate(request: CorroborateRequest, opts: { keep?: bool
   // The choice also joins the case-wide selection (lx-corroselect), so gathering across screens keeps working.
   if (opts.keep !== false && request.members.length)
     addPart(request.caseId, { screen: request.screen, label: request.label, members: request.members, skipped: request.skipped ?? [] })
-  last = request
-  window.dispatchEvent(new CustomEvent<CorroborateRequest>(CORROBORATE_OPEN, { detail: request }))
+  const asked = { ...request, path: request.path ?? window.location.pathname }
+  // kept only until a panel takes it: a panel already showing takes it from the event (and clears it), so a panel
+  // mounted later (another page) never opens by itself with an old request
+  last = asked
+  window.dispatchEvent(new CustomEvent<CorroborateRequest>(CORROBORATE_OPEN, { detail: asked }))
 }
 
-/** The request sent before the panel mounted, once. */
+/** The request sent before the panel mounted, once, and only on the page it was asked from. */
 export function takePendingCorroborate(): CorroborateRequest | null {
   const r = last
   last = null
-  return r
+  return r && (!r.path || r.path === window.location.pathname) ? r : null
 }
 
 export function clearPendingCorroborate(): void {

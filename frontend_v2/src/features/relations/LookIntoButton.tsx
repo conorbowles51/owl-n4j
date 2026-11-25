@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SURFACE_WORDS, type GroupInput, type ItemInput, type Surface } from "@/features/theory/api"
 import { useSwitch } from "@/lib/ui-switches"
 import { openCorroborate } from "@/features/leads/open"
-import { currentQuery, relationAPI, setCurrentQuery, toMembers } from "./api"
+import { currentQuery, relationAPI, setCurrentQuery, skippedWords, toMembers } from "./api"
 
 const TYPE_WORDS: Record<string, string> = {
   evidence_passage: "document passages", interview: "interviews", agent_answer: "assistant answers", dossier: "dossiers",
@@ -51,8 +51,9 @@ function CorroborateButton({ caseId, surface, items, group, size = "sm" }: LookI
     skipped: converted.skipped,
   })
   return (
-    <Button size={size} variant="outline" disabled={total === 0} onClick={go}
-      title={total === 0 ? "Nothing is selected" : "Corroborate this: the leads already here, or a new question"}>
+    <Button size={size} variant="outline" disabled={total === 0 || converted.members.length === 0} onClick={go}
+      disabledReason={total === 0 ? "Nothing is selected" : skippedWords(converted.skipped, true)}
+      title={total === 0 ? "Nothing is selected" : converted.members.length === 0 ? skippedWords(converted.skipped, true) : "Corroborate this: the leads already here, or a new question"}>
       Corroborate
     </Button>
   )

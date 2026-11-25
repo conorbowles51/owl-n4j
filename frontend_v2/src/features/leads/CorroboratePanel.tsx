@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
-import { Link } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/cn"
@@ -11,7 +11,8 @@ import { selectionCount, useSelection } from "@/features/corroborate/selection-s
 import { relationAPI, runIsWorking } from "@/features/relations/api"
 import { leadsAPI } from "./api"
 import { LeadCard } from "./LeadCard"
-import { CORROBORATE_OPEN, takePendingCorroborate, type CorroborateRequest } from "./open"
+import { clearPendingCorroborate, CORROBORATE_OPEN, takePendingCorroborate, type CorroborateRequest } from "./open"
+import { skippedWords } from "@/features/relations/api"
 import { clearLeadRecords, showLeadRecords, useShownLead } from "./highlight-store"
 import { EMPTY_SCOPE, scopeHref } from "@/features/phones/ui/scope"
 
@@ -23,10 +24,21 @@ import { EMPTY_SCOPE, scopeHref } from "@/features/phones/ui/scope"
 export function CorroboratePanel() {
   const [req, setReq] = useState<CorroborateRequest | null>(() => takePendingCorroborate())
   useEffect(() => {
-    const open = (e: Event) => setReq((e as CustomEvent<CorroborateRequest>).detail)
+    const open = (e: Event) => {
+      clearPendingCorroborate() // taken here: a panel mounted later never reopens it by itself
+      setReq((e as CustomEvent<CorroborateRequest>).detail)
+    }
     window.addEventListener(CORROBORATE_OPEN, open)
     return () => window.removeEventListener(CORROBORATE_OPEN, open)
   }, [])
+  // the panel belongs to the page it was asked from: leaving that page closes it
+  const { pathname } = useLocation()
+  const [askedOn, setAskedOn] = useState<{ req: CorroborateRequest; path: string } | null>(null)
+  if (req && askedOn?.req !== req) setAskedOn({ req, path: pathname })
+  if (req && askedOn?.req === req && askedOn.path !== pathname) {
+    setReq(null)
+    setAskedOn(null)
+  }
   const host = useOpenWindow(req)
   useEffect(() => {
     if (!req) return
@@ -92,7 +104,7 @@ function Panel({ req, onClose }: { req: CorroborateRequest; onClose: () => void 
       </div>
       {!!req.skipped?.length && (
         <p className="border-b bg-amber-50 p-2 text-xs dark:bg-amber-400/10" role="status">
-          Corroborate cannot read {req.skipped.map((x) => `${x.count.toLocaleString()} ${x.type}`).join(", ")} of what you chose yet; the rest is asked about.
+          {skippedWords(req.skipped)}
         </p>
       )}
       <div className="flex border-b text-sm" role="tablist">

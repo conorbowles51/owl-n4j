@@ -155,6 +155,34 @@ const TYPE_MAP: Record<string, string> = {
   entry: "entry", evidence_passage: "evidence_passage", place: "place",
 }
 
+/** What Corroborate cannot read yet, in words a person uses (never the type's internal name). */
+export const SKIPPED_WORDS: Record<string, [string, string]> = {
+  phone_extraction: ["a whole phone", "whole phones"], phone_file: ["a phone file", "phone files"],
+  phone_thread: ["a whole conversation", "whole conversations"], phone_identity: ["a phone contact", "phone contacts"],
+  phone_analysis: ["a phone analysis", "phone analyses"], phone_selection: ["a saved phone selection", "saved phone selections"],
+  phone_view: ["a saved phone view", "saved phone views"], interview: ["an interview", "interviews"],
+  agent_answer: ["an assistant answer", "assistant answers"], dossier: ["a dossier", "dossiers"],
+  statement_check: ["a statement check", "statement checks"], history_step: ["a step", "steps"],
+  agent_artifact: ["a piece of assistant work", "pieces of assistant work"], task: ["a task", "tasks"],
+  deadline: ["a deadline", "deadlines"], witness: ["a witness", "witnesses"],
+}
+
+export function skippedNoun(type: string, count: number): string {
+  const w = SKIPPED_WORDS[type]
+  if (w) return count === 1 ? w[0] : `${count.toLocaleString("en-US")} ${w[1]}`
+  return count === 1 ? "an item of another kind" : `${count.toLocaleString("en-US")} items of another kind`
+}
+
+/** The sentence for chosen items Corroborate cannot read: what they are, and what to choose instead. */
+export function skippedWords(skipped: { type: string; count: number }[], nothingElse = false): string {
+  const list = skipped.map((s) => skippedNoun(s.type, s.count)).join(", ")
+  const whole = skipped.some((s) => s.type === "phone_extraction" || s.type === "phone_thread")
+  const instead = whole ? " Choose messages or other records on the phone instead, or open the phone on the Phones page." : ""
+  return nothingElse
+    ? `Corroborate reads records, people, payments and passages, not ${list}.${instead}`
+    : `Corroborate cannot read ${list} yet; the rest of what you chose is asked about.${instead}`
+}
+
 export interface Converted {
   members: RelationMember[]
   skipped: { type: string; count: number }[]
