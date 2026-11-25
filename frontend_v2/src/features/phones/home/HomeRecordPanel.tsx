@@ -31,7 +31,9 @@ export interface ElsewhereItem {
   relation_label: string
   text: string
   reason?: string | null
-  citation?: { kind: string; id: string; label?: string | null; phone?: string | null; page?: number | null } | null
+  /** "Read by Loupe · not confirmed" when a model read the cited thing (COMMON rule 5). */
+  machine_label?: string | null
+  citation?: { kind: string; id?: string | null; href?: string | null; label?: string | null; phone?: string | null; page?: number | null } | null
 }
 export interface ElsewhereAnswer {
   parts: { source: string; label: string; state: "done" | "failed"; searched?: string; items: ElsewhereItem[] }[]
@@ -96,7 +98,7 @@ function Elsewhere({ caseId, row, alsoOn }: { caseId: string; row: StreamRow; al
           if (q.isPending) return <div key={part} className="flex gap-2 border-t pt-2 text-xs">{pill}<span className="text-muted-foreground" role="status">Checking</span></div>
           if (q.isError) return <div key={part} className="flex gap-2 border-t pt-2 text-xs">{pill}<span role="alert">{failureText(q.error, "This part of the case could not be checked.")} Open the record again to retry.</span></div>
           const a = q.data as ElsewhereAnswer
-          const items = a.parts.flatMap((p) => (p.state === "failed" ? [{ relation: "failed", relation_label: "Not checked", text: `${p.label} could not be checked. Open the record again to retry.` } as ElsewhereItem] : p.items))
+          const items = a.parts.flatMap((p) => (p.state === "failed" ? [{ relation: "failed", relation_label: "Not checked", text: `${p.searched || `${p.label} could not be checked.`} Open the record again to retry.` } as ElsewhereItem] : p.items))
           return items.map((it, k) => {
             const href = it.citation ? citationHref(caseId, it.citation) : null
             return (
@@ -104,8 +106,9 @@ function Elsewhere({ caseId, row, alsoOn }: { caseId: string; row: StreamRow; al
                 {pill}
                 <span className="leading-snug">
                   <span className="font-medium">{it.relation_label}.</span> {it.text}
+                  {it.machine_label && <span className="ml-1 rounded border px-1 text-[11px] text-muted-foreground">{it.machine_label}</span>}
                   {it.reason && <span className="text-muted-foreground"> {it.reason}</span>}
-                  {href && it.citation && <> <Link className="underline underline-offset-2" to={href}>{it.citation.label || "Open it"}</Link></>}
+                  {it.citation?.label && (href ? <> <Link className="underline underline-offset-2" to={href}>{it.citation.label}</Link></> : <span className="text-muted-foreground"> {it.citation.label}</span>)}
                 </span>
               </div>
             )

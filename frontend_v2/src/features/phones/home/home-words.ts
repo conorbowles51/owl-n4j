@@ -1,5 +1,6 @@
 /** Words and small rules of the Phones page (screen 1), apart from its components. */
 import { recordPath } from "@/lib/record-links"
+import { citationHref as judgedCitationHref } from "@/features/financial/lib/judgements"
 import { labelText } from "../lib/labels"
 import type { StreamRow } from "../schemas"
 import type { ElsewhereItem } from "./HomeRecordPanel"
@@ -57,12 +58,14 @@ export function monthTicks(walls: string[]): { i: number; label: string }[] {
 }
 
 export function citationHref(caseId: string, c: NonNullable<ElsewhereItem["citation"]>): string | null {
-  const id = encodeURIComponent(c.id)
+  if (c.href) return judgedCitationHref(caseId, c.href)
   const base = `/cases/${encodeURIComponent(caseId)}`
+  const id = encodeURIComponent(c.id ?? "")
+  if (!c.id) return null
   if (c.kind === "phone_record") return recordPath(caseId, c.id)
-  if (c.kind === "transaction") return `${base}/financial?transaction=${id}`
-  if (c.kind === "document") return `${base}/evidence?file=${id}${c.page ? `&page=${c.page}` : ""}`
-  if (c.kind === "timeline_entry") return `${base}/timeline?event=${id}`
+  if (c.kind === "transaction") return judgedCitationHref(caseId, `txn://${c.id}`)
+  if (c.kind === "document") return judgedCitationHref(caseId, `doc://${c.id}${c.page ? `/${c.page}` : ""}`)
+  if (c.kind === "timeline_event" || c.kind === "timeline_entry") return `${base}/timeline?event=${id}`
   return null
 }
 

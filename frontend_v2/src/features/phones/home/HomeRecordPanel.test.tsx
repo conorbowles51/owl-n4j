@@ -49,13 +49,14 @@ describe("the Phones page's record panel", () => {
   it("Elsewhere in the case shows each part's relation, text and citation from the elsewhere service, one request per part", async () => {
     m.fetch.mockImplementation(async (url: string) => {
       const part = new URL(url, "http://x").searchParams.get("part")
-      if (part === "financial") return { parts: [{ source: "financial", label: "Financial", state: "done", items: [{ relation: "possible_match", relation_label: "Possible match, not confirmed", text: "A $1,100 cash withdrawal on Fri 12 Jan.", reason: "Same person, next Friday.", citation: { kind: "transaction", id: "t9", label: "the withdrawal" } }] }] }
+      if (part === "financial") return { parts: [{ source: "financial", label: "Financial", state: "done", items: [{ relation: "possible_match", relation_label: "Possible match, not confirmed", text: "A $1,100 cash withdrawal on Fri 12 Jan.", reason: "Same person, next Friday.", citation: { kind: "transaction", id: "t9", href: "txn://t9", label: "the withdrawal" }, machine_label: "Read by Loupe · not confirmed" }] }] }
       return { parts: [{ source: part, label: part, state: "done", items: [{ relation: "nothing_found", relation_label: "Nothing found", text: `Nothing in ${part}.` }] }] }
     })
     show()
     const box = await screen.findByRole("region", { name: "Elsewhere in the case" })
     expect(await within(box).findByText(/A \$1,100 cash withdrawal/)).toBeInTheDocument()
-    expect(within(box).getByRole("link", { name: "the withdrawal" })).toHaveAttribute("href", "/cases/c1/financial?transaction=t9")
+    expect(within(box).getByRole("link", { name: "the withdrawal" })).toHaveAttribute("href", "/cases/c1/financial?view=transactions&payment=t9")
+    expect(box).toHaveTextContent("Read by Loupe · not confirmed")
     expect(m.fetch.mock.calls.map((c) => c[0])).toEqual(["phones", "financial", "documents", "timeline"].map((p) => `/api/cases/c1/elsewhere/record/r1?part=${p}`))
   })
 
