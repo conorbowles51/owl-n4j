@@ -442,6 +442,9 @@ def _would_test(kind, ctx):
     if kind in ("meeting", "plan"):
         out.append("both people's phones with positions at the time" if ctx.others else "who they were meeting, named or with a phone in the case")
     if kind == "money":
+        if ctx.who and not any(p.get("accounts") for p in ctx.who):
+            out.append(f"{ctx.who[0]['label']} joined to a bank account in the case (a person page with the account "
+                       "holder's name and the phone's number), so the account's own deposits and transfers can be read")
         out.append("the statement for the account the money moved through")
     if kind == "sent":
         out.append("the thing sent itself: the e-mail, file or payment, on a phone or in the evidence")

@@ -44,6 +44,8 @@ const detail = {
 function route(url: string) {
   if (url.includes("/phone-mentions/marks")) return Promise.resolve({ marks: { u1: [{ id: "m1", kind: "travel", kind_label: "Travel", start: 0, end: 4, phrase: "made it", outcome: "fits_weakly", outcome_label: "Fits weakly", state: "read", read_by: "Read by Loupe · not confirmed" }] } })
   if (/phone-mentions\/m2$/.test(url)) return Promise.resolve(detail)
+  if (url.includes("/elsewhere/statement?part=financial")) return Promise.resolve({ parts: [{ source: "financial", label: "Money", state: "done", searched: "", items: [{ relation: "possible_match", relation_label: "Possible match", text: "$40.00 to Gull Fuel", reason: "Same day; nothing names the people.", citation: { kind: "transaction", id: "t9", label: "Payment 7 Mar" } }] }] })
+  if (url.includes("/elsewhere/statement")) return Promise.resolve({ parts: [{ source: "x", label: "X", state: "done", searched: "", items: [{ relation: "nothing_found", relation_label: "Nothing found", text: "", reason: "" }] }] })
   if (url.includes("/phone-mentions?")) return Promise.resolve(list)
   return Promise.reject(new Error(`unexpected ${url}`))
 }
@@ -72,6 +74,9 @@ describe("Mentions, checked against the case", () => {
     expect(within(side).getByRole("link", { name: "Ada · Wed 5 Mar, 14:05" })).toHaveAttribute("href", "/cases/c1/records/x1")
     expect(within(side).getByText("and 2 more")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open the contradiction" })).toBeInTheDocument()
+    const elsewhere = within(side).getByRole("region", { name: "Elsewhere in the case" })
+    expect(await within(elsewhere).findByText(/Money · Possible match:/)).toBeInTheDocument()
+    expect(within(elsewhere).getByRole("link", { name: "Payment 7 Mar" })).toHaveAttribute("href", "/cases/c1/financial?transaction=t9")
     expect(screen.getAllByText(/Word rules only: this phone.s Outside services are not allowed/)).toHaveLength(2)
     expect(screen.getByRole("button", { name: "Read this phone" })).toBeInTheDocument()
   })

@@ -125,7 +125,7 @@ def _amounts(clause):
 
 
 def content_words(clause, people) -> list[str]:
-    """Capitalised names and the money words a payment or document could carry ("Quarrow", "Lake Orrin")."""
+    """Capitalised names and the money words a payment or document could carry (a supplier's or a place's name)."""
     names = {w.lower() for p in people for n in list(p.get("names") or []) if n for w in n.split()}
     out = []
     for m in _CAPS.finditer(clause):
@@ -235,7 +235,7 @@ def read_when(clause: str, at: datetime, zone: str, kind: str) -> dict:
     if lo is None:
         # no time named: the message's own moment
         span = {"travel": (timedelta(hours=1), timedelta(hours=3)), "at_place": (timedelta(minutes=30), timedelta(minutes=30)),
-                "home_away": (timedelta(hours=1), timedelta(hours=1)), "meeting": (timedelta(minutes=30), timedelta(hours=2)),
+                "home_away": (timedelta(hours=1), timedelta(hours=3)), "meeting": (timedelta(minutes=30), timedelta(hours=2)),
                 }.get(kind, (timedelta(hours=1), timedelta(hours=1)))
         if kind == "home_away" and re.search(r"\b(phone was off|phone off|no signal)\b", clause, re.I):
             span = (timedelta(hours=3), timedelta(0))

@@ -323,3 +323,17 @@ def test_copies_of_one_message_share_a_copy_key_to_the_minute():
     a = S.copy_key("Made it  to Gull Cabin", at(D, 10, 0) + timedelta(seconds=5))
     b = S.copy_key("made it to gull cabin", at(D, 10, 0) + timedelta(seconds=40))
     assert a == b and a != S.copy_key("made it to gull cabin", at(D, 10, 2))
+
+
+def test_the_evening_place_is_the_busiest_spot_with_enough_positions():
+    from services.mentions.data import busiest_spot
+    pts = [(40.2899, -76.8612)] * 6 + [(41.3, -77.6)] * 3
+    spot = busiest_spot(pts, "Ada Quill", "between 7 pm and 6 am")
+    assert spot and abs(spot["lat"] - 40.2899) < 1e-6 and spot["positions"] == 6 and "7 pm" in spot["how"]
+    assert busiest_spot(pts[:4], "Ada Quill", "x") is None
+
+
+def test_money_with_no_account_for_the_speaker_says_an_account_would_test_it():
+    m = read("refunds cleared", when=at(D, 19))[0]
+    res = run(m, FakeData(), at(D, 19))
+    assert res["outcome"] == "cant_tell" and any("joined to a bank account" in w for w in res["would_test"])

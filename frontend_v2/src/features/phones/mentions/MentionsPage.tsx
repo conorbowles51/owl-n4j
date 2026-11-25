@@ -8,6 +8,7 @@ import { PhoneShape } from "../ui/PhoneChip"
 import { phoneMark } from "../lib/phone-palette"
 import { useUrlScope } from "../ui/use-phone-scope"
 import { mentionsAPI, refPath, type Mention, type MentionDetail, type MentionKind, type MentionList, type NextStep } from "./api"
+import { Elsewhere } from "./Elsewhere"
 import { forgetMentionMarks } from "./marks-store"
 import { outcomeHeadline, outcomeTone, verdictText } from "./tones"
 
@@ -429,6 +430,7 @@ function Selected({ caseId, d, onChanged }: { caseId: string; d: MentionDetail; 
         ))}
         {!d.checks.length && <li className="border-t py-2.5 text-[13px] text-muted-foreground">Nothing in the case could be read for this kind of mention yet.</li>}
       </ul>
+      <Elsewhere caseId={caseId} d={d} />
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={recheck.isPending} onClick={() => recheck.mutate()}>{recheck.isPending ? "Checking…" : "Check again"}</Button>
         <Link className="inline-flex h-8 items-center rounded-md border px-3.5 text-[13px] no-underline hover:bg-accent"

@@ -39,9 +39,20 @@ class CaseData:
             return []
 
     def home(self, person: str) -> dict | None:
+        """Where the phone usually spends the night: the Corroborate reading (midnight to 5 am), else the busiest spot
+        of its evening and night positions (7 pm to 6 am), for a phone that logs no positions after midnight."""
         if person not in self._homes:
-            self._homes[person] = self.store.routine_place(person, "home")
+            self._homes[person] = self.store.routine_place(person, "home") or self._evening_place(person)
         return self._homes[person]
+
+    def _evening_place(self, person: str) -> dict | None:
+        p = next((x for x in self.people() if x["key"] == person), None)
+        if not p or not p["phones"]:
+            return None
+        rows = self.q("SELECT o.lat, o.lon FROM pol_place_observation o WHERE o.case_id = :c AND o.kind = 'presence' AND "
+                      "o.extraction_id = ANY(CAST(:e AS uuid[])) AND (EXTRACT(hour FROM o.start_utc AT TIME ZONE :z) >= 19 "
+                      "OR EXTRACT(hour FROM o.start_utc AT TIME ZONE :z) < 6)", e=p["phones"], z=self.zone()).fetchall()
+        return busiest_spot([(float(a), float(b)) for a, b in rows], p["label"], "between 7 pm and 6 am")
 
     def work(self, person: str) -> dict | None:
         return self.store.routine_place(person, "work")
@@ -126,3 +137,20 @@ class CaseData:
                 "f.original_filename ~* :rx) LIMIT 20", rx=rx):
             out.append({"ref": f"evidence_file:{fid}", "name": name or "a document", "content": content or ""})
         return out
+
+
+def busiest_spot(points, label, when, min_points=5) -> dict | None:
+    """The busiest ~200 m cell of the points, as ``CaseStore.routine_place`` reads it, or None under ``min_points``."""
+    cells: dict = {}
+    for la, lo in points:
+        cells.setdefault((round(la / 0.002), round(lo / 0.002)), []).append((la, lo))
+    if not cells:
+        return None
+    best = max(cells.values(), key=len)
+    if len(best) < min_points:
+        return None
+    lat = sum(x[0] for x in best) / len(best)
+    lon = sum(x[1] for x in best) / len(best)
+    rad = max(150.0, max(M.haversine_m(lat, lon, a, b) for a, b in best))
+    return {"lat": lat, "lon": lon, "radius_m": round(rad, 1), "positions": len(best),
+            "how": f"read from {label}'s phone: {len(best)} positions {when} sit within about {int(rad)} m of one spot"}
