@@ -333,19 +333,22 @@ def _example(conn, call, record_uid):
     parties = [{"role": p.role if p.role_basis != "owner_implicit" else p.implied_role,
                 "name": p.name_in_record, "identifier": p.identifier_raw, "is_owner": bool(p.is_phone_owner) or
                 p.role_basis == "owner_implicit", "implicit_owner": p.role_basis == "owner_implicit",
-                "mapped_by_this": p.mapping_row_id == call.rule_id}
+                "mapped_by_this": p.mapping_row_id == call.rule_id, "report_line": p.container_field}
                for p in conn.execute(text(
-                   "SELECT role, role_basis, implied_role, name_in_record, identifier_raw, is_phone_owner, mapping_row_id "
+                   "SELECT role, role_basis, implied_role, name_in_record, identifier_raw, is_phone_owner, mapping_row_id, "
+                   "container_field "
                    "FROM phone_participations WHERE record_uid = :r AND generation = :g ORDER BY ordinal, participation_uid"),
                    {"r": record_uid, "g": g})]
     times = [{"field": apply.words(t.field_name), "instant": t.effective_instant.isoformat() if t.effective_instant else None,
               "original_text": t.original_text, "is_event_time": bool(t.is_event_time),
-              "mapped_by_this": call.rule_id in (t.mapping_row_id, t.meaning_mapping_row_id)}
+              "mapped_by_this": call.rule_id in (t.mapping_row_id, t.meaning_mapping_row_id), "report_field": t.field_name}
              for t in conn.execute(text(
                  "SELECT field_name, effective_instant, original_text, is_event_time, mapping_row_id, "
                  "meaning_mapping_row_id FROM phone_time_values WHERE record_uid = :r AND generation = :g "
                  "ORDER BY ordinal, value_index"), {"r": record_uid, "g": g})]
+    # report_type, report_field and report_line: the report's own spelling, for the "in the report" side of an example
     return {"record_uid": record_uid, "type_words": apply.words(rs.model_type) if rs else None,
+            "report_type": rs.model_type if rs else None,
             "kind": ev.kind if ev else None, "direction": ev.direction if ev else None, "app": ev.app if ev else None,
             "instant": (ev.sort_instant if ev else (rs.first_instant if rs else None)).isoformat()
             if (ev and ev.sort_instant) or (not ev and rs and rs.first_instant) else None,

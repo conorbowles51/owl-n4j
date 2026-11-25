@@ -16,7 +16,10 @@ export interface Reading {
   type_words: string
   rule_id: string
   part: string
+  /** What the phone did and how Loupe reads it, in plain words (no type or field names). */
   sentence: string
+  /** What changes if this reading is wrong. */
+  if_wrong?: string
   records: number
   status: ReadingStatus
   origin: string | null
@@ -69,6 +72,8 @@ export interface ExampleParty {
   is_owner: boolean
   implicit_owner: boolean
   mapped_by_this: boolean
+  /** The report's own name for the line this party is on. */
+  report_line?: string | null
 }
 
 export interface ExampleTime {
@@ -77,11 +82,15 @@ export interface ExampleTime {
   original_text: string | null
   is_event_time: boolean
   mapped_by_this: boolean
+  /** The report's own name for this field. */
+  report_field?: string
 }
 
 export interface ExampleRecord {
   record_uid: string
   type_words: string | null
+  /** The report's own name for the record's type. */
+  report_type?: string | null
   kind: string | null
   direction: string | null
   app: string | null

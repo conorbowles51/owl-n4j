@@ -1,6 +1,6 @@
 import { Suspense } from "react"
 import { timedLazy as lazy } from "@/lib/timed-lazy"
-import { Routes, Route, Navigate } from "react-router-dom"
+import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { PageLoading } from "./page-loading"
 import { LoginPage } from "@/features/auth/components/LoginPage"
 import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute"
@@ -69,7 +69,7 @@ const AnalysesPage = lazy(() => import("@/features/phones/analysis/AnalysesPage"
 const PatternsPage = lazy(() =>
   import("@/features/pattern/components/PatternsPage").then((m) => ({ default: m.PatternsPage }))
 )
-const PhoneReviewPage = lazy(() => import("@/features/phones/review/PhoneReviewPage"))
+const PhoneSetupPage = lazy(() => import("@/features/phones/setup/SetupPage"))
 const ConversationsPage = lazy(() => import("@/features/conversations/ConversationsPage"))
 const MediaPage = lazy(() => import("@/features/phones/media/MediaPage"))
 const MediaSpreadPage = lazy(() => import("@/features/phones/media/MediaSpreadPage"))
@@ -197,6 +197,12 @@ function LazyPage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoading />}>{children}</Suspense>
 }
 
+/** Needs a decision moved to Phones › Set up (screen 6); a link to the old address keeps its query. */
+function ToPhoneSetup() {
+  const { search } = useLocation()
+  return <Navigate to={{ pathname: "../phones/set-up", search }} replace />
+}
+
 /**
  * The app's route table. app/route-table.ts reads this same tree (react-router's matcher) to start a page's code
  * when its link is pointed at, so AppRoutes must stay free of hooks.
@@ -225,9 +231,10 @@ export function AppRoutes() {
             <Route path="financial/around-event" element={<LazyPage><AroundEventPage /></LazyPage>} />
             <Route path="cellebrite" element={<Navigate to="../phones" replace />} />
             <Route path="phones-prototype/:view?" element={<LazyPage><PhonePrototypePage /></LazyPage>} />
-            <Route path="phone-review" element={<LazyPage><PhoneReviewPage /></LazyPage>} />
+            <Route path="phone-review" element={<ToPhoneSetup />} />
             <Route path="conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones" element={<LazyPage><PhonesIndexPage /></LazyPage>} />
+            <Route path="phones/set-up" element={<LazyPage><PhoneSetupPage /></LazyPage>} />
             <Route path="phones/:extraction" element={<LazyPage><PhoneSummaryPage /></LazyPage>} />
             <Route path="phones/:extraction/records/conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones/:extraction/records/media" element={<LazyPage><MediaPage /></LazyPage>} />
