@@ -16,6 +16,7 @@ import { Arrow } from "./ParticipantLabel"
 import { ParticipantMenu } from "./ParticipantMenu"
 import { rowBadges } from "../lib/badges"
 import { StateBadges } from "./StateBadges"
+import { MentionMark } from "../mentions/MentionMark"
 import { TimeCell } from "./TimeCell"
 import { corroAttrs } from "@/features/corroborate/item-target"
 
@@ -475,6 +476,7 @@ export function StreamList({
                       {row.kind === "record" ? row.phone.label : `${row.phone.label} · ${row.app ?? "app not recorded"}`}
                     </span>
                     <StateBadges badges={rowBadges(row)} />
+                    {row.kind !== "call" && <MentionMark caseId={caseId} recordUid={row.record_uid} />}
                   </div>
                   {row.kind !== "record" && <div className={density === "compact" ? "text-xs" : "text-sm"}>
                     <ParticipantMenu caseId={caseId} label={row.from} parties={row} />

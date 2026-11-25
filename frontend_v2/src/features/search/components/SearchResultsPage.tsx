@@ -1,4 +1,5 @@
 import { InfoTip } from "@/components/ui/info-tip"
+import { MentionMark } from "@/features/phones/mentions/MentionMark"
 import { CorroborateRows } from "@/features/corroborate/CorroborateRows"
 import { toMembers } from "@/features/relations/api"
 import type { ItemInput } from "@/features/theory/api"
@@ -173,6 +174,7 @@ export function SearchResultsPage() {
                 <Link to={hitPath(caseId, h)} className="block min-w-0 flex-1 hover:bg-muted">
                   <HitLine hit={h} />
                 </Link>
+                {h.record_uid && <MentionMark caseId={caseId} recordUid={h.record_uid} className="mt-1 max-w-[40%] justify-end" />}
               </li>
             ))}
           </ul>

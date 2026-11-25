@@ -82,6 +82,7 @@ const RelationsPage = lazy(() => import("@/features/relations/RelationsPage"))
 const KeywordListsPage = lazy(() => import("@/features/search/components/KeywordListsPage"))
 const RecordByIdRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.RecordByIdRoute })))
 const PhoneSummaryPage = lazy(() => import("@/features/phones/summary/PhoneSummaryPage"))
+const MentionsPage = lazy(() => import("@/features/phones/mentions/MentionsPage"))
 const DossiersPage = lazy(() =>
   import("@/features/dossiers/components/DossiersPage").then((m) => ({
     default: m.DossiersPage,
@@ -239,6 +240,7 @@ export function AppRoutes() {
             <Route path="phones/set-up" element={<LazyPage><PhoneSetupPage /></LazyPage>} />
             <Route path="phones/search" element={<LazyPage><PhoneSearchPage /></LazyPage>} />
             <Route path="phones/ask" element={<LazyPage><PhoneAskPage /></LazyPage>} />
+            <Route path="phones/mentions" element={<LazyPage><MentionsPage /></LazyPage>} />
             <Route path="phones/:extraction" element={<LazyPage><PhoneSummaryPage /></LazyPage>} />
             <Route path="phones/:extraction/records/conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones/:extraction/records/media" element={<LazyPage><MediaPage /></LazyPage>} />
