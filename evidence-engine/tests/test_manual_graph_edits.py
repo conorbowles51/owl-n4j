@@ -31,7 +31,7 @@ async def test_write_entities_preserves_manual_fields(monkeypatch):
     await write_graph._write_entities([entity], case_id="case-1", job_id="job-1")
 
     assert "coalesce(n.manual_fields, []) AS manual_fields" in captured["query"]
-    assert "apoc.map.removeKeys(node, manual_fields)" in captured["query"]
+    assert "apoc.map.removeKeys(node, manual_fields + ['_transcript_binding'])" in captured["query"]
     assert "WHEN 'summary' IN manual_fields THEN prev_summary" in captured["query"]
     assert "WHEN NOT 'category' IN manual_fields" in captured["query"]
     assert captured["params"]["nodes"][0]["date"] == "2024-01-01"
