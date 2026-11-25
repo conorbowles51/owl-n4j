@@ -101,6 +101,68 @@ def search_group(case_id: UUID = Query(...), q: str = Query(..., max_length=500)
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+# ---- Search every phone (Phones screen 2) ---------------------------------------------------------------------------
+
+@router.get("/phones")
+def search_phones(case_id: UUID = Query(...), q: str = Query(..., max_length=500), exact: bool = False,
+                  phones: Optional[str] = None, start: Optional[str] = Query(None, alias="from"),
+                  end: Optional[str] = Query(None, alias="to"), db: Session = Depends(get_db),
+                  user: User = Depends(get_current_db_user)):
+    """Every part of every phone in scope: counts by kind and phone, the first hits of each kind, people saved
+    differently on each phone, and next steps (services/search/phone_search.py)."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from services.search import phone_search as P
+    try:
+        out = P.phone_search(db.connection(), case_id, q, exact=exact, phones=_phones(phones), start=start, end=end)
+    except P.PhoneSearchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    from services.phone import review_share
+    review_share.record_search(db, case_id, user, q, exact=exact, surface="phone_search", hits=int(out["total"]))
+    return out
+
+
+@router.get("/phones/kind")
+def search_phones_kind(case_id: UUID = Query(...), q: str = Query(..., max_length=500), kind: str = Query(...),
+                       cursor: Optional[str] = None, limit: int = 200, exact: bool = False,
+                       phones: Optional[str] = None, start: Optional[str] = Query(None, alias="from"),
+                       end: Optional[str] = Query(None, alias="to"), db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    authorize_case(db, case_id, user, ("case", "view"))
+    if cursor is not None and not cursor.isdigit():
+        raise HTTPException(status_code=422, detail="That page marker is not one this search gave.")
+    from services.search import phone_search as P
+    try:
+        return P.kind_page(db.connection(), case_id, q, kind, cursor=cursor, limit=limit, exact=exact,
+                           phones=_phones(phones), start=start, end=end)
+    except P.PhoneSearchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/phones/elsewhere")
+def search_phones_elsewhere(case_id: UUID = Query(...), q: str = Query(..., max_length=500), exact: bool = False,
+                            db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The same words in the case's documents and payments, and the corroborate step, asked after the first results
+    because it reads every document text of the case."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from services.search import phone_search as P
+    try:
+        return P.elsewhere_step(db.connection(), case_id, q, exact=exact)
+    except P.PhoneSearchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/phones/context")
+def search_phones_context(case_id: UUID = Query(...), event_uid: UUID = Query(...), db: Session = Depends(get_db),
+                          user: User = Depends(get_current_db_user)):
+    """A message, call or email hit with the messages around it in its thread, on its day."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from services.search import phone_search as P
+    try:
+        return P.hit_context(db.connection(), case_id, event_uid)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 # ---- Saved keyword lists (03 section 11.2; 07 J-6, section 14) -----------------------------------------------------
 
 class KeywordListRequest(BaseModel):

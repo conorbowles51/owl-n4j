@@ -76,6 +76,7 @@ const MediaSpreadPage = lazy(() => import("@/features/phones/media/MediaSpreadPa
 const PhonesIndexPage = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhonesIndexPage })))
 const PhoneRecordsRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhoneRecordsRoute })))
 const SearchResultsPage = lazy(() => import("@/features/search/components/SearchResultsPage"))
+const PhoneSearchPage = lazy(() => import("@/features/phones/search/PhoneSearchPage"))
 const RelationsPage = lazy(() => import("@/features/relations/RelationsPage"))
 const KeywordListsPage = lazy(() => import("@/features/search/components/KeywordListsPage"))
 const RecordByIdRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.RecordByIdRoute })))
@@ -235,6 +236,7 @@ export function AppRoutes() {
             <Route path="conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones" element={<LazyPage><PhonesIndexPage /></LazyPage>} />
             <Route path="phones/set-up" element={<LazyPage><PhoneSetupPage /></LazyPage>} />
+            <Route path="phones/search" element={<LazyPage><PhoneSearchPage /></LazyPage>} />
             <Route path="phones/:extraction" element={<LazyPage><PhoneSummaryPage /></LazyPage>} />
             <Route path="phones/:extraction/records/conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones/:extraction/records/media" element={<LazyPage><MediaPage /></LazyPage>} />
