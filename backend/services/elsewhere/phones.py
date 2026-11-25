@@ -82,12 +82,10 @@ def _party_keys(conn, event_uids):
     for r in conn.execute(text(
             "SELECT event_uid::text AS ev, identifier_raw, name_in_record FROM pv_comm_party WHERE event_uid = "
             "ANY(CAST(:u AS uuid[]))"), {"u": list(event_uids)}):
-        k = W.number_key(r.identifier_raw) if r.identifier_raw and "@" not in r.identifier_raw else None
+        k, mail = W.identifier_key(r.identifier_raw)
         out.setdefault(r.ev, set())
-        if k:
-            out[r.ev].add(k)
-        elif r.identifier_raw:
-            out[r.ev].add(r.identifier_raw.lower())
+        if k or mail:
+            out[r.ev].add(k or mail)
     return out
 
 

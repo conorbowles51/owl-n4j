@@ -113,8 +113,7 @@ def _people(conn, ext, record_uid, root):
     own = [r for r in rows if r.uid == record_uid] or rows   # the record's own parties, else its conversation's
     people, owner = {}, None
     for r in own:
-        key = W.number_key(r.identifier_raw) if r.identifier_raw and "@" not in r.identifier_raw else None
-        email = r.identifier_raw.lower() if r.identifier_raw and "@" in r.identifier_raw else None
+        key, email = W.identifier_key(r.identifier_raw)
         ident = key or email or W.fold(r.name_in_record)
         if not ident:
             continue
@@ -126,7 +125,10 @@ def _people(conn, ext, record_uid, root):
         if email and email not in p.emails:
             p.emails.append(email)
         if r.identifier_raw:
-            p.shown = "%s (%s)" % (r.name_in_record, r.identifier_raw) if r.name_in_record else r.identifier_raw
+            # a chat address that is a number is shown as the number
+            shown = r.identifier_raw if email or "@" not in r.identifier_raw else \
+                "+" + W.digits(r.identifier_raw.split("@", 1)[0])
+            p.shown = "%s (%s)" % (r.name_in_record, shown) if r.name_in_record else shown
         if r.is_phone_owner and key:
             owner = key
     return list(people.values()), owner
@@ -183,6 +185,23 @@ def _date(v, what):
         raise BadSubject("The %s date is not a date (use YYYY-MM-DD)." % what) from None
 
 
+def _merge_person(people, p):
+    """Add a cited record's party to the statement's people, joining it to the person it is: the same number, or a
+    name whose words are all in one given name ("Dorian (office)" is the statement's "Dorian Pell")."""
+    for q in people:
+        same_number = bool(set(p.numbers) & set(q.numbers)) or bool(set(p.emails) & set(q.emails))
+        toks, qtoks = set(W.name_tokens(p.name)), set(W.name_tokens(q.name))
+        same_name = bool(toks) and bool(qtoks) and (toks <= qtoks or qtoks <= toks)
+        if same_number or (same_name and not (q.numbers and p.numbers)):
+            q.numbers += [n for n in p.numbers if n not in q.numbers]
+            q.emails += [e for e in p.emails if e not in q.emails]
+            if len(qtoks) < len(toks):
+                q.name = p.name
+            q.shown = q.shown or p.shown
+            return
+    people.append(p)
+
+
 def from_statement(conn, case_id, payload: dict) -> Subject:
     payload = payload or {}
     s = Subject(kind="statement", case_id=str(case_id), text=str(payload.get("text") or "")[:4000])
@@ -215,8 +234,7 @@ def from_statement(conn, case_id, payload: dict) -> Subject:
         rec = load_record(conn, case_id, uid)
         s.records.append(rec)
         for p in rec.people:
-            if not any(set(p.numbers) & set(q.numbers) for q in s.people if p.numbers):
-                s.people.append(p)
+            _merge_person(s.people, p)
         if rec.instant and not (period.get("start") or period.get("end")):
             d = rec.instant.date()
             s.start = min(s.start, d) if s.start else d

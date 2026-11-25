@@ -55,6 +55,20 @@ def number_key(s) -> str | None:
     return d[-10:] if len(d) >= 7 else None
 
 
+def identifier_key(raw):
+    """``(number key, e-mail)`` for an identifier as a report prints it. A chat address that is a phone number
+    (``17175550221@s.whatsapp.net``) is the number; only a real address is an e-mail."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None, None
+    if "@" in raw:
+        local = raw.split("@", 1)[0]
+        if re.fullmatch(r"\+?\d{7,15}", local):
+            return number_key(local), None
+        return None, raw.lower()
+    return number_key(raw), None
+
+
 def words_of(s) -> list:
     return re.findall(r"[0-9a-z]+", fold(s))
 
@@ -110,19 +124,22 @@ thur thurs fri sat sun""".split())
 
 
 def name_phrases(text) -> list:
-    """Capitalised words and runs of them ("Lake Orrin", "Quarrow", "Brackley") that may name a person, a firm or a
-    place. A common word or a month is never one; a single word must have four letters or more."""
+    """Capitalised words and runs of them ("Lake Orrin", "Quarrow") that may name a person, a firm or a place. A
+    common word or a month is never one; a single word must have four letters or more and not open the sentence."""
     out = []
     for sentence in re.split(r"(?<=[.!?\n])\s+", text or ""):
-        run = []
-        for w in re.findall(r"[A-Za-z][A-Za-z'’-]*", sentence) + [""]:
+        run, at_start = [], True
+        for i, w in enumerate(re.findall(r"[A-Za-z][A-Za-z'’-]*", sentence) + [""]):
             low = w.lower().strip("'’")
             if w and w[0].isupper() and low not in STOP and low not in CALENDAR:
+                if not run:
+                    at_start = i == 0
                 run.append(w.strip("'’"))
                 continue
             if run:
                 phrase = " ".join(run)
-                if len(run) > 1 or len(run[0]) >= 4:
+                # a lone capitalised first word of a sentence ("After", "Thanks") is how sentences start, not a name
+                if (len(run) > 1 or len(run[0]) >= 4) and not (len(run) == 1 and at_start):
                     out.append(phrase)
             run = []
     return list(dict.fromkeys(out))

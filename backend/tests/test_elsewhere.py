@@ -72,6 +72,22 @@ class WordsTest(unittest.TestCase):
         self.assertNotIn("March", got)
         self.assertNotIn("See", got)
 
+    def test_a_sentence_opening_word_is_not_a_name(self):
+        got = W.name_phrases("After the refund batch Dorian Pell told Marisol Teague. Brackley is asking.")
+        self.assertEqual(got, ["Dorian Pell", "Marisol Teague"])
+
+    def test_a_chat_address_that_is_a_number_is_the_number(self):
+        self.assertEqual(W.identifier_key("17175550221@s.whatsapp.net"), ("7175550221", None))
+        self.assertEqual(W.identifier_key("Dorian.Pell@example.net"), (None, "dorian.pell@example.net"))
+        self.assertEqual(W.identifier_key("+1 717-555-0221"), ("7175550221", None))
+
+    def test_a_cited_records_party_joins_the_person_it_is(self):
+        people = [S.Person(name="Dorian Pell")]
+        S._merge_person(people, S.Person(name="Dorian (office)", numbers=["7175550221"]))
+        S._merge_person(people, S.Person(name="M", numbers=["7175550231"]))
+        self.assertEqual([(p.name, p.numbers) for p in people],
+                         [("Dorian Pell", ["7175550221"]), ("M", ["7175550231"])])
+
     def test_a_single_first_name_is_not_a_full_name(self):
         self.assertFalse(W.strong_name("Dorian (office)"))
         self.assertTrue(W.strong_name("Priya Halloran"))
