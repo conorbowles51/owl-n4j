@@ -406,6 +406,8 @@ from routers.case_briefs import router as case_briefs_router
 app.include_router(case_briefs_router)
 from routers.search import router as search_router
 app.include_router(search_router)
+from routers.elsewhere import router as elsewhere_router  # noqa: E402
+app.include_router(elsewhere_router)
 from routers.citations import router as citations_router
 app.include_router(citations_router)
 from routers.claim_checks import router as claim_checks_router
