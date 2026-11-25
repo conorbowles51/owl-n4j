@@ -51,7 +51,7 @@ export function QuestionMenu({ caseId, onClose, initialScope, draftedKind }: { c
       const made = await corroborateAPI.run(caseId, { members: asked, surface: "corroborate", question: { kind: picked.kind, text: picked.text, chips: { ...chips, ...(preview.data?.scope.words.length ? { scope: preview.data.scope.words.join("; ") } : {}) } } })
       setCurrentQuery(caseId, { id: made.group.id, count: made.group.member_count })
       onClose()
-      navigate(`/cases/${caseId}/relations/${made.group.id}`)
+      navigate(`/cases/${caseId}/corroborate?q=${made.group.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Corroborate could not start. Nothing was saved.")
     } finally {
@@ -75,7 +75,7 @@ export function QuestionMenu({ caseId, onClose, initialScope, draftedKind }: { c
       if (runs.length === 1) {
         setCurrentQuery(caseId, { id: done[0].id, count: runs[0].count })
         onClose()
-        navigate(`/cases/${caseId}/relations/${done[0].id}`)
+        navigate(`/cases/${caseId}/corroborate?q=${done[0].id}`)
       }
     } catch (e) {
       setError(`${done.length ? `${done.length} of ${runs.length} groups ran. ` : ""}${e instanceof Error ? e.message : "Corroborate could not start."} Nothing else was changed.`)
@@ -110,7 +110,7 @@ export function QuestionMenu({ caseId, onClose, initialScope, draftedKind }: { c
             <GroupPicker caseId={caseId} members={members} busy={busy} onGroup={(g, all) => void runGroups([g], all)} onEach={(runs, all) => void runGroups(runs, all)} />
             {each.length > 0 && (
               <ul className="text-xs" aria-label="Group results">
-                {each.map((r) => <li key={r.id}>{r.label}: <a className="underline" href={`/cases/${caseId}/relations/${r.id}`}>open the result</a></li>)}
+                {each.map((r) => <li key={r.id}>{r.label}: <a className="underline" href={`/cases/${caseId}/corroborate?q=${r.id}`}>open the result</a></li>)}
               </ul>
             )}
             <div role="radiogroup" aria-label="Questions" className="flex flex-col gap-1">

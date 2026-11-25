@@ -282,7 +282,7 @@ describe("next steps for the features added since the first guidance (lx-guideco
     expect(corro.title).toBe("4 items weighed: Probable link.")
     expect(corro.steps.map((s) => s.id)).toEqual(["result", "theory", "timeline", "how"])
     expect(corro.steps[3]).toMatchObject({ label: "Show me how", effect: { workflow: "corroborate" } })
-    expect(corro.steps[0].to).toBe("/cases/c1/relations/s1")
+    expect(corro.steps[0].to).toBe("/cases/c1/corroborate?q=s1")
     expect(nextSteps("c1", { kind: "corroborate-done", level: "x", items: 2, noLink: true })!.title).toContain("not proof that no link exists")
     const deep = nextSteps("c1", { kind: "agent-run-done", threadId: "t1", payments: 2, records: 0, deep: true })!
     expect(deep.title).toContain("deep investigation finished")

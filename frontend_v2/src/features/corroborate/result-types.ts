@@ -36,6 +36,8 @@ export interface Check {
 
 export interface NotInPattern {
   who: string
+  key?: string
+  found?: { signal: string; instances: number }[]
   says: string
   searched: string[]
   counts?: Record<string, number>
@@ -49,7 +51,7 @@ export interface Corroboration {
   comparison: { kind: string; words: string; incident: Instance[]; ordinary: Instance[] }
   grid: GridRow[]
   checks: Check[]
-  people: { key: string; label: string }[]
+  people: { key: string; label: string; phones?: { id: string; label: string }[] }[]
   not_in_pattern: NotInPattern[]
   gaps: { missing: string; words: string }[]
   look_further: { text: string; count: number; question: { kind: string; chips: Record<string, unknown> } }[]
@@ -58,4 +60,28 @@ export interface Corroboration {
   /** Set when the run weighed a confirmed free-text claim (lx-corrostatement). */
   claim?: { id: string; sentence: string; confirmed_by: string | null; edited: string[] }
   cited?: { ref: string; at: string; person?: string; kind?: string; inside?: boolean }[]
+  /** The evidence day by day (lx-corroredo, backend services/corroborate/days.py); absent on older results. */
+  days?: Days
+}
+
+export interface DayTile {
+  instance: string
+  date: string
+  hours: string
+  events: string[]
+  event_refs: string[]
+  outcome: CellState
+  outcome_words: string
+  detail: string
+  records: string[]
+}
+
+export interface Days {
+  events_phrase: string
+  events_source: string
+  people: string[]
+  row: string | null
+  relation: { link_kind: string; word: string; label: string; people: string[]; definition: string; present: string; absent: string; no_data: string } | null
+  tiles: DayTile[]
+  ordinary: { of: number; present: number; absent: number; no_data: number; noun: string; span: string; words: string; cells: { instance: string; date: string; state: CellState }[] } | null
 }

@@ -16,8 +16,9 @@ function when(iso?: string | null): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
 }
 
-/** The Leads page (lx-leads B, screen 1): every lead strongest first, the only place leads are listed. */
-export function LeadsPage() {
+/** The leads, strongest first (lx-leads B): the "Leads Loupe found" tab of the Corroborate page (lx-corroredo E), where
+ * ``exclude="asked"`` leaves the person's own questions to the "Your earlier questions" tab. */
+export function LeadsPage({ embedded = false, exclude }: { embedded?: boolean; exclude?: Lead["origin"] } = {}) {
   const { id: caseId = "" } = useParams()
   const on = useSwitch("corroborate-v2")
   const qc = useQueryClient()
@@ -30,7 +31,7 @@ export function LeadsPage() {
     refetchInterval: (q) => (q.state.data && ["queued", "running"].includes(q.state.data.finder.status) ? 3000 : false),
   })
   const find = useMutation({ mutationFn: () => leadsAPI.find(caseId), onSuccess: () => qc.invalidateQueries({ queryKey: ["leads", caseId] }) })
-  const leads = useMemo(() => list.data?.leads ?? [], [list.data])
+  const leads = useMemo(() => (list.data?.leads ?? []).filter((l) => l.origin !== exclude), [list.data, exclude])
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
     for (const f of KIND_FILTERS) c[f.key] = leads.filter((l) => MAIN.has(l.level.key) || l.level.key === "coincidence").filter((l) => l.kinds.some((k) => f.kinds.includes(k))).length
@@ -48,10 +49,10 @@ export function LeadsPage() {
   const finder = list.data?.finder
   const busy = finder && ["queued", "running"].includes(finder.status)
   return (
-    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+    <div className={cn("space-y-5", !embedded && "mx-auto max-w-4xl p-4 sm:p-6")}>
       <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">Leads <LearnMore term="Lead" /></h1>
+          {embedded ? <h2 className="text-lg font-semibold">Leads Loupe found <LearnMore term="Lead" /></h2> : <h1 className="text-xl font-semibold">Leads <LearnMore term="Lead" /></h1>}
           <Button size="sm" variant="outline" data-guide="leads-find" disabled={!!busy || find.isPending} onClick={() => find.mutate()}>
             {busy ? (finder?.step || "Looking for leads…") : "Look for leads now"}
           </Button>

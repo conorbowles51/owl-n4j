@@ -6,7 +6,8 @@ import { LookIntoButton } from "@/features/relations/LookIntoButton"
 import { setSwitch } from "@/lib/ui-switches"
 import { corroborateAPI, type Preview } from "./api"
 import { CorroborateTray } from "./CorroborateTray"
-import { CorroboratePanel } from "@/features/leads/CorroboratePanel"
+import { CorroborateOpener } from "@/features/leads/CorroboratePanel"
+import { CorroboratePage } from "./page/CorroboratePage"
 import { leadsAPI } from "@/features/leads/api"
 import { getSelection } from "./selection-store"
 import { memberFromElement, isTyping } from "./item-target"
@@ -25,38 +26,32 @@ const preview: Preview = {
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/cases/c1/ledger"]}>
-    <Routes><Route path="/cases/:id/ledger" element={<>{ui}<CorroborateTray /><CorroboratePanel /></>} /><Route path="/cases/c1/relations/g9" element={<p>result page</p>} /></Routes>
+    <Routes><Route path="/cases/:id/ledger" element={<>{ui}<CorroborateTray /><CorroborateOpener /></>} />
+      <Route path="/cases/:id/corroborate" element={<><CorroboratePage /><CorroborateTray /><CorroborateOpener /></>} /></Routes>
   </MemoryRouter></QueryClientProvider>)
 }
 
-beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); setSwitch("corroborate-v2", true); vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } }) })
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.restoreAllMocks(); setSwitch("corroborate-v2", true); vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } }) })
 
 describe("Corroborate from a selection", () => {
-  it("adds the choice to the selection, shows the whole count, drafts the question and hands off the whole set", async () => {
+  it("adds the choice to the selection, opens the Corroborate page with the question filled in, and asks the whole set on Ask", async () => {
     vi.spyOn(corroborateAPI, "preview").mockResolvedValue(preview)
     const create = vi.spyOn(corroborateAPI, "run").mockResolvedValue({ group: { id: "g9", member_count: 3, left_out: 0 } })
     wrap(<LookIntoButton caseId="c1" surface="financial" group={{ group_type: "financial_selection", how: {}, words: "Marsh's Pocketwire payments", members: [1, 2, 3].map((n) => ({ type: "financial_transaction" as const, id: `p${n}` })) }} />)
     fireEvent.click(screen.getByRole("button", { name: "Corroborate" }))
     expect(getSelection("c1")).toHaveLength(1)
-    fireEvent.click(await screen.findByRole("tab", { name: /Ask a new question/ }))
-    fireEvent.click(screen.getByRole("button", { name: /Choose the question yourself/ }))
-    await screen.findByText(/What Loupe takes from your 3 items/)
-    expect(screen.getByText(/1 chosen items are not in this case/)).toBeTruthy()
-    expect(screen.getByText("Your question: Were Kell and Okafor in contact around 2026-05-18 to 2026-05-19?")).toBeTruthy()
-    fireEvent.change(screen.getByDisplayValue("the same hours on other days of the period"), { target: { value: "ordinary Fridays" } })
-    fireEvent.click(screen.getAllByRole("button", { name: "Corroborate" }).at(-1)!)
+    await waitFor(() => expect(screen.getByTestId("question-sentence").textContent).toBe("Were Kell and Okafor in contact on the records you chose?"))
+    expect(create).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }))
     await waitFor(() => expect(create).toHaveBeenCalled())
-    const body = create.mock.calls[0][1]
-    expect(body.members).toHaveLength(3)
-    expect((body.question as { chips: { compare_with: string } }).chips.compare_with).toBe("ordinary Fridays")
-    await screen.findByText("result page")
+    expect(create.mock.calls[0][1].members).toHaveLength(3)
   })
 
-  it("shows each part of the selection as a chip with its count and screen, and removes one", () => {
+  it("shows each part of the selection as a chip with its count and screen, and removes one", async () => {
     vi.spyOn(corroborateAPI, "preview").mockResolvedValue(preview)
     wrap(<LookIntoButton caseId="c1" surface="financial" items={[{ target_type: "financial_transaction", target_id: "p1", target_label: "Payment 1" }]} />)
     fireEvent.click(screen.getByRole("button", { name: "Corroborate" }))
-    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    await screen.findByTestId("question-sentence")
     expect(screen.getByText(/1 item selected/)).toBeTruthy()
     expect(screen.getByText(/1 from the ledger/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Remove Payment 1" }))

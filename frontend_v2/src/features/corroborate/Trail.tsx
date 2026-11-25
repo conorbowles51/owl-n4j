@@ -18,7 +18,7 @@ export function Trail({ caseId, selectionId }: { caseId: string; selectionId: st
             Step {s.n}: {s.n === 1 ? `started with ${s.members.toLocaleString("en-US")} items` : s.adds_nothing ? "added nothing" : `added ${s.added_count.toLocaleString("en-US")} item${s.added_count === 1 ? "" : "s"}${s.added.length ? ` (${s.added.slice(0, 3).map((a) => a.label || a.type.replace(/_/g, " ")).join(", ")}${s.added_count > 3 ? ", …" : ""})` : ""}`}
             {s.level?.name ? `. ${s.level.name}${s.level_moved ? `: ${MOVED[s.level_moved].toLowerCase()}` : ""}.` : ". No level yet."}{" "}
             {s.selection_id === q.data!.current ? <span className="text-muted-foreground">(this page)</span>
-              : <Link className="underline" to={`/cases/${caseId}/relations/${s.selection_id}`}>Open this step without the later ones</Link>}
+              : <Link className="underline" to={`/cases/${caseId}/corroborate?q=${s.selection_id}`}>Open this step without the later ones</Link>}
           </li>
         ))}
       </ol>

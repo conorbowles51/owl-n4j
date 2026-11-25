@@ -7,7 +7,7 @@ import { useSwitch } from "@/lib/ui-switches"
 const CorroborateTray = lazy(() => import("./CorroborateTray").then((m) => ({ default: m.CorroborateTray })))
 const DraftOpener = lazy(() => import("./DraftOpener").then((m) => ({ default: m.DraftOpener })))
 const ItemKeys = lazy(() => import("./ItemKeys").then((m) => ({ default: m.ItemKeys })))
-const CorroboratePanel = lazy(() => import("@/features/leads/CorroboratePanel").then((m) => ({ default: m.CorroboratePanel })))
+const CorroborateOpener = lazy(() => import("@/features/leads/CorroboratePanel").then((m) => ({ default: m.CorroborateOpener })))
 
 /** The switch `corroborate-v2` (on by default since Neil's approval, 23 Nov; ?corroborate-v2=off per browser): the
  * selection tray, else the look tray. */
@@ -19,7 +19,7 @@ export function TraySwitch() {
       <CorroborateTray />
       <ItemKeys />
       <DraftOpener />
-      <CorroboratePanel />
+      <CorroborateOpener />
     </Suspense>
   )
 }

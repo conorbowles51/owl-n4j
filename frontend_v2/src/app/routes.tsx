@@ -182,9 +182,9 @@ const SecurityPage = lazy(() =>
     default: m.SecurityPage,
   }))
 )
-const LeadsPage = lazy(() =>
-  import("@/features/leads/LeadsPage").then((m) => ({
-    default: m.LeadsPage,
+const CorroboratePage = lazy(() =>
+  import("@/features/corroborate/page/CorroboratePage").then((m) => ({
+    default: m.CorroboratePage,
   }))
 )
 const AISettingsPage = lazy(() =>
@@ -267,7 +267,9 @@ export function AppRoutes() {
             <Route path="phone-analyses" element={<LazyPage><AnalysesPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
-            <Route path="leads" element={<LazyPage><LeadsPage /></LazyPage>} />
+            <Route path="corroborate" element={<LazyPage><CorroboratePage /></LazyPage>} />
+            {/* Leads are a tab of the Corroborate page (lx-corroredo E) */}
+            <Route path="leads" element={<Navigate to="../corroborate?tab=leads" replace />} />
             <Route path="evidence" element={<LazyPage><EvidenceExplorer /></LazyPage>} />
             <Route path="evidence/:fileId/text" element={<LazyPage><TextWorkbenchPage /></LazyPage>} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />

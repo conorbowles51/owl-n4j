@@ -128,6 +128,11 @@ export const corroborateAPI = {
   combine: (caseId: string, first: string, second: string, op: string) =>
     fetchAPI<Combined>(`${base(caseId)}/subsets/combine`, { method: "POST", body: { first, second, op } }),
   matchList: (caseId: string, text: string) => fetchAPI<ListMatch>(`${base(caseId)}/match-list`, { method: "POST", body: { text } }),
+  /** "Keep watching as a lead": the question runs again when new material arrives. */
+  watch: (caseId: string, runId: string) => fetchAPI<Record<string, unknown>>(`${base(caseId)}/watches`, { method: "POST", body: { run_id: runId } }),
+  /** A case fact a person records ("they live together"); later answers weigh it and name who recorded it. */
+  addFact: (caseId: string, body: { kind: string; text: string; people: string[]; run_id?: string }) =>
+    fetchAPI<{ id: string }>(`${base(caseId)}/facts`, { method: "POST", body }),
 }
 
 /** A free-text claim read into chips (lx-corrostatement). Loupe's reading is "Read by Loupe · not confirmed" until a person confirms it. */

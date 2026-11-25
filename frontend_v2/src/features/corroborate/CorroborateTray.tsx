@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useNavigate, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { clearSelection, removePart, selectionCount, useSelection } from "./selection-store"
-import { QuestionMenu } from "./QuestionMenu"
+import { corroborateHref, forgetCorroborateRequest } from "@/features/leads/open"
 import { PasteList } from "./PasteList"
 import { SavedSubsets } from "./SavedSubsets"
 import { ClaimComposer } from "./ClaimComposer"
@@ -11,14 +11,14 @@ import { CLAIM_EVENT, type ClaimComposerRequest } from "./claim-composer"
 
 /**
  * The selection tray (lx-corroselect B): every part of the case-wide selection as a removable chip with its count and
- * the screen it came from, the whole count, and the way to the question menu. It follows the investigator.
+ * the screen it came from, the whole count, and the way to the Corroborate page. It follows the investigator.
  * Below md it is a one-line strip in the page's own flow, above the bottom bar: the page ends above it instead of under
  * it (a floating tray covered the agent's message box at 390 px), and "More" opens the rest over the page.
  */
 export function CorroborateTray() {
   const { id: caseId } = useParams()
   const parts = useSelection(caseId)
-  const [menu, setMenu] = useState(false)
+  const navigate = useNavigate()
   const [paste, setPaste] = useState(false)
   const [saved, setSaved] = useState(false)
   const [claim, setClaim] = useState<ClaimComposerRequest | null>(null)
@@ -31,10 +31,11 @@ export function CorroborateTray() {
   }, [])
   if (!caseId) return null
   const total = selectionCount(parts)
+  // Corroborate opens the Corroborate page with the question filled from the whole selection (lx-corroredo A)
+  const ask = () => { forgetCorroborateRequest(caseId); navigate(corroborateHref(caseId, { from: "tray" })) }
   const dialogs = (
     <>
-      {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => { setPaste(false); if (!parts.length) setMenu(true) }} />}
-      {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
+      {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => { setPaste(false); if (!parts.length) ask() }} />}
       {saved && <SavedSubsets caseId={caseId} onClose={() => setSaved(false)} />}
       {claim && <ClaimComposer caseId={caseId} request={claim} onClose={() => setClaim(null)} />}
     </>
@@ -46,7 +47,7 @@ export function CorroborateTray() {
           {parts.length ? (
             <>
               <strong className="truncate">{total.toLocaleString("en-US")} {total === 1 ? "item" : "items"} selected</strong>
-              <Button size="sm" onClick={() => setMenu(true)} data-guide="corroborate-run">Corroborate</Button>
+              <Button size="sm" onClick={() => ask()} data-guide="corroborate-run">Corroborate</Button>
               <button type="button" className="ml-auto text-muted-foreground underline" aria-expanded={more} onClick={() => setMore(!more)}>{more ? "Less" : "More"}</button>
             </>
           ) : (
@@ -88,8 +89,7 @@ export function CorroborateTray() {
           <Button size="sm" variant="outline" className="ml-1" onClick={() => setSaved(true)} data-guide="corroborate-saved">Saved subsets…</Button>
           <Button size="sm" variant="outline" className="ml-1" onClick={() => setClaim({ text: "" })} data-guide="corroborate-claim" title="Type a sentence someone said and check it against the records">Check a claim…</Button>
         </div>
-        {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => { setPaste(false); setMenu(true) }} />}
-        {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
+        {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => { setPaste(false); ask() }} />}
       {saved && <SavedSubsets caseId={caseId} onClose={() => setSaved(false)} />}
       {claim && <ClaimComposer caseId={caseId} request={claim} onClose={() => setClaim(null)} />}
       </>
@@ -99,7 +99,7 @@ export function CorroborateTray() {
       <div role="region" aria-label="Corroborate selection" data-guide="corroborate-tray" className="fixed bottom-12 right-3 z-40 flex max-h-[50vh] max-w-[calc(100vw-1.5rem)] flex-col gap-2 overflow-auto rounded-md border bg-background px-3 py-2 text-sm shadow-md sm:max-w-md">
         <div className="flex flex-wrap items-center gap-2">
           <strong>{total.toLocaleString("en-US")} {total === 1 ? "item" : "items"} selected</strong>
-          <Button size="sm" onClick={() => setMenu(true)} data-guide="corroborate-run">Corroborate</Button>
+          <Button size="sm" onClick={() => ask()} data-guide="corroborate-run">Corroborate</Button>
           <button type="button" className="text-muted-foreground underline" onClick={() => setPaste(true)} data-guide="corroborate-paste">Paste a list</button>
           <button type="button" className="text-muted-foreground underline" onClick={() => setClaim({ text: "" })} data-guide="corroborate-claim">Check a claim</button>
           <button type="button" className="text-muted-foreground underline" onClick={() => setSaved(true)} data-guide="corroborate-saved">Save or combine</button>
@@ -117,7 +117,6 @@ export function CorroborateTray() {
         </ul>
       </div>
       {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => setPaste(false)} />}
-      {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
       {saved && <SavedSubsets caseId={caseId} onClose={() => setSaved(false)} />}
       {claim && <ClaimComposer caseId={caseId} request={claim} onClose={() => setClaim(null)} />}
     </>

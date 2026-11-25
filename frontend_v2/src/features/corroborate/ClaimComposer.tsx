@@ -56,7 +56,7 @@ export function ClaimComposer({ caseId, request, onClose }: { caseId: string; re
       const made = await corroborateAPI.run(caseId, { members: [{ type: "claim", id: claim.id, label: claim.sentence.slice(0, 120) }], surface: "corroborate", question: { kind: "statement", text: claim.sentence.slice(0, 200), chips: { claim_id: claim.id } } })
       setCurrentQuery(caseId, { id: made.group.id, count: made.group.member_count })
       onClose()
-      navigate(`/cases/${caseId}/relations/${made.group.id}`)
+      navigate(`/cases/${caseId}/corroborate?q=${made.group.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Corroborate could not start. Nothing was weighed.")
     } finally {

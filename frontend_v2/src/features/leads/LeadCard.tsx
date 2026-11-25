@@ -86,7 +86,7 @@ export function LeadCard({ caseId, lead, compact = false }: { caseId: string; le
   )
 }
 
-function TheoryPicker({ caseId, onPick }: { caseId: string; onPick: (id: string) => void }) {
+export function TheoryPicker({ caseId, onPick }: { caseId: string; onPick: (id: string) => void }) {
   const t = useCollectTargets(caseId)
   const theories = t.targets.filter((x) => x.kind === "theory")
   return (

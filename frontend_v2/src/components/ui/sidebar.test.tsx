@@ -66,15 +66,15 @@ function sidebar() {
 }
 
 describe("AppSidebar case navigation", () => {
-  it("lx-leads B: Leads sits in the menu with its count only when the switch is on, and keeps the count when collapsed", async () => {
+  it("lx-corroredo E: Corroborate sits in the menu with the leads count only when the switch is on, and keeps the count when collapsed", async () => {
     const { setSwitch } = await import("@/lib/ui-switches")
     setSwitch("corroborate-v2", false)
     const off = sidebar()
-    expect(screen.queryByRole("link", { name: /Leads/ })).toBeNull()
+    expect(screen.queryByRole("link", { name: /Corroborate/ })).toBeNull()
     off.unmount()
     setSwitch("corroborate-v2", true)
     const on = sidebar()
-    expect(await within(await screen.findByRole("link", { name: /Leads/ })).findByText("24")).toBeInTheDocument()
+    expect(await within(await screen.findByRole("link", { name: /Corroborate/ })).findByText("24")).toBeInTheDocument()
     on.unmount()
     shell.expanded = false
     sidebar()

@@ -1,14 +1,10 @@
 import { useState, useEffect, useRef } from "react"
 import { announce } from "@/features/guidance/announce"
-import { Link, useNavigate, useParams } from "react-router-dom"
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { InfoTip } from "@/components/ui/info-tip"
 import { LearnMore } from "@/components/ui/learn-more"
-import { Trail } from "@/features/corroborate/Trail"
-import { ResultView } from "@/features/corroborate/ResultView"
-import { ClaimResult } from "@/features/corroborate/ClaimResult"
-import { corroborateAPI } from "@/features/corroborate/api"
 import { useSwitch } from "@/lib/ui-switches"
 import { useCollectTargets } from "@/features/phones/collect-targets"
 import { downloadRelationReport, relationAPI, runIsWorking, type Candidate, type Hypothesis, type NoLink, type RelationResult, type Strength } from "./api"
@@ -168,11 +164,9 @@ export function RelationsPage() {
   if (!query.data) return <main className="p-4"><p role="status">Opening this look…</p></main>
   const members = query.data.group.member_count
   const corro = v2 ? result?.corroboration : undefined
-  const further = (l: { question: { kind: string; chips: Record<string, unknown> } }) => {
-    void corroborateAPI.run(caseId, { members: query.data!.group.members, question: l.question, surface: "look-further" })
-      .then((made) => navigate(`/cases/${caseId}/relations/${made.group.id}`))
-      .catch((e) => setReportError(e instanceof Error ? e.message : "The next question could not be started."))
-  }
+  // A Corroborate answer is read on the Corroborate page (lx-corroredo A); this page keeps the older looks only.
+  if (corro) return <Navigate to={`/cases/${caseId}/corroborate?q=${encodeURIComponent(selectionId)}`} replace />
+
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-4">
       <header data-guide="relations-header">
@@ -195,10 +189,8 @@ export function RelationsPage() {
           <Button size="sm" variant="outline" onClick={() => void relationAPI.rerun(caseId, selectionId).then(() => qc.invalidateQueries({ queryKey: ["relation-query", caseId, selectionId] }))}>Run again</Button>
         </section>
       )}
-      {result && run && corro?.claim && <ClaimResult c={corro} />}
-      {result && run && !corro?.claim && (
+      {result && run && (
         <>
-          {corro && <><Trail caseId={caseId} selectionId={selectionId} /><ResultView c={corro} onAsk={askAssistant} onFurther={further} caseId={caseId} runId={run.id} /></>}
           <Summary r={result} />
           <div className="flex flex-wrap gap-2" data-guide="relations-actions">
             <Button size="sm" onClick={askAssistant}>Ask how they could be linked</Button>

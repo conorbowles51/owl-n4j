@@ -20,7 +20,7 @@ const parsed: ParsedClaim = {
 
 function wrap() {
   return render(<MemoryRouter initialEntries={["/cases/c1/ledger"]}><Routes>
-    <Route path="/cases/:id/ledger" element={<CorroborateTray />} /><Route path="/cases/c1/relations/g9" element={<p>result page</p>} />
+    <Route path="/cases/:id/ledger" element={<CorroborateTray />} /><Route path="/cases/c1/corroborate" element={<p>result page</p>} />
   </Routes></MemoryRouter>)
 }
 beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); setSwitch("corroborate-v2", true) })

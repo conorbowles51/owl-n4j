@@ -175,7 +175,7 @@ export function nextSteps(caseId: string, facts: ActionFacts): NextStepsCard | n
         ? `${plural(facts.items, "item")} weighed: no link found. That is what was searched, not proof that no link exists.`
         : `${plural(facts.items, "item")} weighed: ${facts.level}.`
       steps = [
-        facts.selectionId && { id: "result", text: "Read why, with each check made and the records behind it.", label: "Read the result", to: `${base}/relations/${encodeURIComponent(facts.selectionId)}` },
+        facts.selectionId && { id: "result", text: "Read why, with each check made and the records behind it.", label: "Read the result", to: `${base}/corroborate?q=${encodeURIComponent(facts.selectionId)}` },
         facts.items > 0 && { id: "theory", text: "Keep the result with a theory, as evidence for or against it.", label: "Open theories", to: `${base}/workspace?view=casework&kind=theory` },
         facts.items > 0 && { id: "timeline", text: "See the items in date order beside the rest of the case.", label: "See the timeline", to: `${base}/timeline` },
       ]

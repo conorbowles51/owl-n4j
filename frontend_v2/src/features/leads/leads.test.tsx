@@ -7,7 +7,8 @@ import { getSelection } from "@/features/corroborate/selection-store"
 import { corroborateAPI } from "@/features/corroborate/api"
 import { leadsAPI, searchedWords, type Lead } from "./api"
 import { LeadsPage } from "./LeadsPage"
-import { CorroboratePanel } from "./CorroboratePanel"
+import { CorroborateOpener } from "./CorroboratePanel"
+import { CorroboratePage } from "@/features/corroborate/page/CorroboratePage"
 import { openCorroborate, clearPendingCorroborate } from "./open"
 import { clearLeadRecords, getShownLead, isShownRef } from "./highlight-store"
 
@@ -89,31 +90,54 @@ describe("the Leads page", () => {
   })
 })
 
-describe("Corroborate from anywhere", () => {
-  it("opens over the page with the leads already here, filtered to the chosen records, and joins the selection", async () => {
-    const list = vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [LEADS[0]], total: 1, finder: { status: "done" } })
-    wrap(<><p>page under</p><CorroboratePanel /></>)
+function wrapPage(ui: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/cases/c1/conversations"]}>
+    <Routes><Route path="/cases/:id/conversations" element={<>{ui}<CorroborateOpener /></>} />
+      <Route path="/cases/:id/corroborate" element={<><CorroborateOpener /><CorroboratePage /></>} /></Routes></MemoryRouter></QueryClientProvider>)
+}
+const PREVIEW = { questions: [{ kind: "together", text: "Were they together?", count: 2, count_words: "1 day", chips: {} }],
+  joined: { people: [{ key: "person:k", label: "Kell" }, { key: "person:o", label: "Okafor" }], instances: ["Mon 04 Mar 2024 19:00-21:00 (UTC)"] } }
+
+describe("Corroborate from anywhere (lx-corroredo A)", () => {
+  it("opens the Corroborate page with the question filled from the choice, joins the selection, and runs nothing", async () => {
+    vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: LEADS, total: 5, finder: { status: "done" } })
+    vi.spyOn(corroborateAPI, "preview").mockResolvedValue(PREVIEW as never)
+    const run = vi.spyOn(corroborateAPI, "run")
+    wrapPage(<p>page under</p>)
     act(() => openCorroborate({ caseId: "c1", screen: "Conversations", label: "1 message", members: [{ type: "phone_record", id: "a" }] }))
-    expect(await screen.findByRole("dialog", { name: "Corroborate" })).toBeTruthy()
-    expect(screen.getByText("page under")).toBeTruthy()
-    expect(await screen.findByRole("tab", { name: "Leads already here 1" })).toBeTruthy()
-    expect(list).toHaveBeenCalledWith("c1", expect.objectContaining({ records: ["phone_record:a"] }))
+    expect(await screen.findByRole("heading", { name: "Corroborate" })).toBeTruthy()
+    expect(screen.queryByText("page under")).toBeNull()
+    expect(screen.queryByRole("dialog", { name: "Corroborate" })).toBeNull()  // no panel over the page any more
+    await waitFor(() => expect(screen.getByTestId("question-sentence").textContent).toBe("Were Kell and Okafor together on the day you chose?"))
+    expect(screen.getByRole("tab", { name: "Leads Loupe found (5)" })).toBeTruthy()
     expect(getSelection("c1")).toHaveLength(1)
-    fireEvent.click(screen.getByRole("tab", { name: "Ask a new question" }))
-    expect(screen.getByRole("button", { name: /Choose the question yourself/ })).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Close" }))
-    expect(screen.queryByRole("dialog", { name: "Corroborate" })).toBeNull()
+    expect(run).not.toHaveBeenCalled()
   })
 
-  it("asks the question on the chosen records and the answer is saved to Leads as Asked by you", async () => {
-    vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } })
-    vi.spyOn(corroborateAPI, "preview").mockResolvedValue({ questions: [{ kind: "in_contact", text: "Were Kell and Okafor in contact?", count: 2, count_words: "2 people", chips: {} }] } as never)
+  it("asks the question on the chosen records when Ask is pressed, with the people and relation as changed", async () => {
+    vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } })
+    vi.spyOn(corroborateAPI, "preview").mockResolvedValue(PREVIEW as never)
     const run = vi.spyOn(corroborateAPI, "run").mockResolvedValue({ group: { id: "g9", member_count: 1, left_out: 0 } })
-    wrap(<CorroboratePanel />)
+    wrapPage(<p>page under</p>)
     act(() => openCorroborate({ caseId: "c1", screen: "the map", label: "1 position", members: [{ type: "phone_record", id: "p" }] }))
-    fireEvent.click(await screen.findByRole("tab", { name: /Ask a new question/ }))
-    fireEvent.click(await screen.findByRole("button", { name: /Were Kell and Okafor in contact\?/ }))
-    await waitFor(() => expect(run).toHaveBeenCalledWith("c1", expect.objectContaining({ members: [{ type: "phone_record", id: "p" }] })))
+    await waitFor(() => expect(screen.getByTestId("question-sentence").textContent).toContain("Kell and Okafor"))
+    fireEvent.click(screen.getByRole("button", { name: "in contact" }))
+    expect(screen.getByTestId("question-sentence").textContent).toBe("Were Kell and Okafor in contact on the day you chose?")
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }))
+    await waitFor(() => expect(run).toHaveBeenCalledWith("c1", expect.objectContaining({ members: [{ type: "phone_record", id: "p" }],
+      question: expect.objectContaining({ kind: "in_contact", chips: expect.objectContaining({ people: ["person:k", "person:o"] }) }) })))
+  })
+
+  it("the old Leads address opens the Leads tab of the Corroborate page", async () => {
+    vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: LEADS, total: 5, finder: { status: "done" } })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { Navigate } = await import("react-router-dom")
+    render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/cases/c1/leads"]}><Routes>
+      <Route path="/cases/:id"><Route path="leads" element={<Navigate to="../corroborate?tab=leads" replace />} /><Route path="corroborate" element={<CorroboratePage />} /></Route>
+    </Routes></MemoryRouter></QueryClientProvider>)
+    expect(await screen.findByText("Kell and Okafor through the prepaid phone")).toBeTruthy()
+    expect(screen.getByRole("tab", { name: "Leads Loupe found (5)" }).getAttribute("aria-selected")).toBe("true")
   })
 
   it("a lead's Corroborate does not fill the case-wide selection", () => {
@@ -125,7 +149,7 @@ describe("Corroborate from anywhere", () => {
 describe("Show these records", () => {
   it("marks the lead's records on every screen until the lead is closed", async () => {
     vi.spyOn(leadsAPI, "list").mockResolvedValue({ leads: [LEADS[0]], total: 1, finder: { status: "done" } })
-    wrap(<><LeadsPage /><CorroboratePanel /></>)
+    wrap(<><LeadsPage /><CorroborateOpener /></>)
     fireEvent.click((await screen.findAllByRole("button", { name: "Show these records" }))[0])
     expect(getShownLead()?.leadId).toBe("a")
     expect(isShownRef(getShownLead(), "phone_record:b")).toBe(true)
