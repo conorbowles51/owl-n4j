@@ -23,6 +23,7 @@ vi.mock("@/features/phones/ui/use-phone-scope", async () => {
 })
 import PhoneSearchPage from "./PhoneSearchPage"
 import { dayPath, hasRoute, stepPath, withElsewhere } from "./step-path"
+import type { NextStep } from "./api"
 
 const phones = [{ extraction_id: "p1", label: "Phone 1" }, { extraction_id: "p2", label: "Phone 2" }, { extraction_id: "p3", label: "Phone 3" }]
 const msgHit = {
@@ -54,14 +55,14 @@ const result = {
     own_phones: [{ extraction_id: "p3", phone: "Phone 3" }],
   }],
   complete: true, limits: [], not_searched: [],
-  next_steps: [
+  next_steps: ([
     { id: "person", rank: 1, title: "Open Dorian Pell across every phone", why: "Saved under different names on 2 phones.", open: { screen: "person", params: { people: "phone:+17175550221", person_id: null } } },
     { id: "deleted", rank: 2, title: "Read the 1 deleted item first", why: "1 of the 31 results was deleted.", open: { screen: "conversations", params: { q: "pell", deleted: "1" } } },
     { id: "ask", rank: 3, title: "Ask a question about these results", why: "31 results on 3 phones.", open: { screen: "ask", params: { q: "pell" } } },
     { id: "keyword_list", rank: 4, title: "Keep watching for “pell”", why: "Saved as a keyword list.", open: { screen: "keyword_list", params: { q: "pell" } } },
-  ],
+  ] as NextStep[]),
 }
-const corroborate = { id: "corroborate", title: "Check it against the rest of the case", why: "The same words are in 21 documents outside the phones.", open: { screen: "corroborate", params: { q: "pell" } } }
+const corroborate: NextStep = { id: "corroborate", title: "Check it against the rest of the case", why: "The same words are in 21 documents outside the phones.", open: { screen: "corroborate", params: { q: "pell" } } }
 
 function open(url = "/cases/c1/phones/search?q=pell") {
   render(
@@ -135,7 +136,7 @@ describe("Search every phone", () => {
 describe("next step links carry the people, phones and period", () => {
   const scope = { phones: ["p1", "p2"], from: "2024-03-01", to: "2024-03-31" }
   it("opens the timeline on the phones and dates the step names", () => {
-    const s = { id: "empty_phones", title: "", why: "", open: { screen: "timeline", params: { phones: "p3", from: "2024-03-11", to: "2024-06-01" } } }
+    const s: NextStep = { id: "empty_phones", title: "", why: "", open: { screen: "timeline", params: { phones: "p3", from: "2024-03-11", to: "2024-06-01" } } }
     expect(stepPath("c1", s, scope)).toBe("/cases/c1/timeline?phones=p3&from=2024-03-11&to=2024-06-01")
   })
   it("opens the deleted items with the search's words and scope", () => {
