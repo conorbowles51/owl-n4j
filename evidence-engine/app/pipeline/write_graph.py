@@ -13,6 +13,7 @@ from app.pipeline.resolve_entities import (
 )
 from app.pipeline.property_canonicalization import (
     canonicalize_properties,
+    drop_pronoun_aliases,
     is_neo4j_primitive_list,
 )
 from app.services import chroma_client, neo4j_client
@@ -166,7 +167,7 @@ async def _write_entities(
             "key": e.id,
             "case_id": case_id,
             "name": e.name,
-            "aliases": e.aliases,
+            "aliases": drop_pronoun_aliases(e.aliases),    # name forms merged in ('She') are aliases too
             "description": e.properties.get("description", ""),
             "summary": e.summary,
             "confidence": e.confidence,

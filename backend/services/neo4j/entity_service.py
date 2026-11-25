@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
 from services.neo4j.driver import driver, parse_json_field
+from services.reference_words import is_pronoun, reference_key
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 
 # The lowest threshold the Similar entities screen offers (its slider runs 0.5 to 1). Pairs from here up to the
@@ -96,7 +97,11 @@ def alias_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, st
     of one type in ``ALIAS_PAIR_TYPES`` is suggested when an alias of one matches the other's name (``_name_key``):
     the same text, or the alias's words, two or more, all in the name with one word more at most ('Randall Carnes'
     in 'Marvin Randall Carnes'; not 'Duncan Cameron Sheils' in 'Son of Duncan Cameron Sheils'), or the reverse.
-    Two aliases alike ('Thomas' on Adam Thomas and on Thomas Lee Keyes) do not pair. ``similarity`` is the name
+    Two aliases alike ('Thomas' on Adam Thomas and on Thomas Lee Keyes) do not pair. A pronoun never pairs ('She'
+    on a Person and the Person 'She', 5eeaa265), and a role word ('The Court', 'Lic':
+    ``services.reference_words``) pairs only when two records of the type carry it, as name or alias ('Mommy' on
+    a Person and the Person 'Mommy', merged by a person in 0e4fb172; not 'The Court' on three judges in
+    042cfaee). ``similarity`` is the name
     ratio of the two matching texts, which are returned so the screen can say what matched, and the scan's threshold
     applies to it. Pairs the name passes already list are left to them; rejected pairs are skipped.
     """
@@ -112,6 +117,17 @@ def alias_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, st
     for key in names:
         for word in key.split():
             words_index.setdefault(word, set()).add(key)
+    # How many records of a type carry each role word, as name or alias: 'The Court' on three judges names none
+    carriers: Dict[Tuple[str, str], int] = {}
+    for entity in entities:
+        if entity.get("type") in ALIAS_PAIR_TYPES:
+            for word in {reference_key(text) for text in [entity.get("name"), *_aliases(entity)]} - {""}:
+                carriers[(entity["type"], word)] = carriers.get((entity["type"], word), 0) + 1
+
+    def names_no_one(text: Optional[str], kind: str) -> bool:
+        word = reference_key(text)
+        return is_pronoun(text) or (bool(word) and carriers.get((kind, word), 0) > 2)
+
     best: Dict[Tuple[int, int], Tuple[float, str, str]] = {}
     for i, entity in enumerate(entities):
         if entity.get("type") not in ALIAS_PAIR_TYPES:
@@ -119,11 +135,11 @@ def alias_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, st
         own = _name_key(entity.get("name"))
         for alias in _aliases(entity):
             key = _name_key(alias)
-            if not key or key == own:
-                continue
+            if not key or key == own or names_no_one(alias, entity["type"]):
+                continue    # 'She'; 'The Court' on several records
             words = key.split()
             matches = set(names.get(key, ()))
-            if len(words) >= 2:
+            if len(words) >= 2 and not reference_key(key):    # a role word matches its own text only
                 # names holding every word of the alias, one word more at most
                 shared = set.intersection(*(words_index.get(w, set()) for w in words))
                 matches.update(j for name in shared if len(name.split()) <= len(set(words)) + 1
@@ -131,11 +147,13 @@ def alias_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, st
                 # names whose words are all in the alias, one word fewer at most
                 for name in {n for w in words for n in words_index.get(w, ())}:
                     name_words = set(name.split())
-                    if len(name_words) >= 2 and name_words <= set(words) and len(set(words)) <= len(name_words) + 1:
+                    if len(name_words) >= 2 and name_words <= set(words) and len(set(words)) <= len(name_words) + 1 \
+                            and not reference_key(name):
                         matches.update(names[name])
             for j in matches:
                 other = entities[j]
-                if j == i or other["type"] != entity["type"]:
+                if j == i or other["type"] != entity["type"] \
+                        or names_no_one(other.get("name"), other["type"]):
                     continue
                 if _name_key(other.get("name")) == own:
                     continue    # the same name: the type pass lists it

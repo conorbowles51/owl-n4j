@@ -536,20 +536,42 @@ def _normalize_financial_properties(category: str, properties: dict[str, Any]) -
             properties["receiver"] = source[1].strip()
 
 
+def _reference_words():
+    """The backend's pronoun and role-word lists (services.reference_words), shared so extraction and the Similar
+    entities scan agree: /backend is on the image's path."""
+    try:
+        from services import reference_words  # the backend module (PYTHONPATH=/app:/backend)
+    except ImportError:  # a checkout outside the image: the repo's backend folder
+        import sys
+        from pathlib import Path
+
+        backend = Path(__file__).resolve().parents[3] / "backend"
+        if str(backend) not in sys.path:
+            sys.path.insert(0, str(backend))
+        from services import reference_words
+    return reference_words
+
+
+def drop_pronoun_aliases(aliases: Any) -> list[str]:
+    """The aliases without bare pronouns ('She' on a Person in case 5eeaa265): a pronoun names no
+    one, and the Similar entities scan paired it with every record called 'She'. Role words ('Mother') stay."""
+    return _reference_words().drop_pronouns(list(aliases or []))
+
+
 def _normalize_aliases(properties: dict[str, Any]) -> None:
     aliases = properties.get("aliases")
     if aliases in (None, ""):
         return
     if isinstance(aliases, str):
         parts = [part.strip() for part in re.split(r"[,;]", aliases) if part.strip()]
-        properties["aliases"] = parts
+        properties["aliases"] = drop_pronoun_aliases(parts)
     elif isinstance(aliases, (list, tuple, set)):
         normalized = []
         for item in aliases:
             text = str(item or "").strip()
             if text and text not in normalized:
                 normalized.append(text)
-        properties["aliases"] = normalized
+        properties["aliases"] = drop_pronoun_aliases(normalized)
 
 
 def canonicalize_properties(

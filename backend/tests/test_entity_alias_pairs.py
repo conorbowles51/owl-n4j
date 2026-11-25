@@ -95,3 +95,39 @@ def test_the_scan_and_the_streaming_scan_suggest_the_alias_pair_last():
         assert pairs[1]['matched_on'] == {'basis': 'alias', 'entity1_text': 'Marvin Randall Carnes',
                                           'entity2_text': 'Randall Carnes'}
         assert 'matched_on' not in pairs[0]
+
+
+def test_a_pronoun_alias_pairs_no_one():
+    # 5eeaa265, live 25 Nov 2026: a Person with the alias 'She' and the Person 'She' at 100 % (names invented)
+    ana = _entity('k1', 'Ana Ruiz Vega', 'Person', ['Ana', 'She'])
+    she = _entity('k2', 'She', 'Person')
+    assert alias_pairs([ana, she], threshold=0.7) == []
+
+
+def test_a_role_word_on_several_records_pairs_none_of_them():
+    # 042cfaee: 'The Court' was an alias of three different judges (names invented) and the name of a fourth record
+    judges = [_entity(f'j{n}', name, 'Person', ['THE COURT']) for n, name in
+              enumerate(['Judge One', 'Judge Two', 'Judge Three'])]
+    court = _entity('c1', 'The Court', 'Person')
+    assert alias_pairs([*judges, court], threshold=0.7) == []
+
+
+def test_a_role_word_two_records_share_still_pairs_them():
+    # 0e4fb172: a person merged a Person with the alias 'Mommy' and the Person 'Mommy' (names invented)
+    rosa = _entity('e1', 'Rosa Field', 'Person', ['Mommy', 'Ms. Field'])
+    mommy = _entity('e2', 'Mommy', 'Person')
+    assert _keys(alias_pairs([rosa, mommy], threshold=0.7)) == [('e1', 'e2')]
+
+
+def test_a_role_word_alias_matches_its_own_text_only():
+    # d5b330d1: the alias 'Unknown Recipient' matched 'Unknown Recipient 1' and 'Unknown Recipient 2', two people
+    tocayo = _entity('t1', 'Tocayo (5210000000000)', 'Person', ['Unknown Recipient'])
+    one = _entity('u1', 'Unknown Recipient 1', 'Person')
+    two = _entity('u2', 'Unknown Recipient 2', 'Person')
+    assert alias_pairs([tocayo, one, two], threshold=0.7) == []
+
+
+def test_us_in_capitals_is_a_name():
+    usa = _entity('o1', 'United States of America', 'Organization', ['US'])
+    us = _entity('o2', 'US', 'Organization')
+    assert _keys(alias_pairs([usa, us], threshold=0.7)) == [('o1', 'o2')]

@@ -199,3 +199,18 @@ def test_string_aliases_become_a_list_not_characters() -> None:
     )
 
     assert props["aliases"] == ["Tim", "Timothy V.", "TV"]
+
+
+def test_a_bare_pronoun_is_not_kept_as_an_alias() -> None:
+    # A Person in case 5eeaa265 was stored with the alias 'She'; the Similar entities scan then
+    # paired her with every record named 'She'. Role words and 'US' in capitals name someone and stay.
+    props = canonicalize_properties("Person", {"aliases": ["Ana", "She", "her", "Mother", "US"]})
+
+    assert props["aliases"] == ["Ana", "Mother", "US"]
+    assert canonicalize_properties("Person", {"aliases": "Ana; he"})["aliases"] == ["Ana"]
+
+
+def test_name_forms_merged_into_an_entity_are_written_without_pronouns() -> None:
+    from app.pipeline.write_graph import drop_pronoun_aliases
+
+    assert drop_pronoun_aliases(["She", "Ana R. Vega", "him"]) == ["Ana R. Vega"]
