@@ -190,6 +190,42 @@ def _window_records(conn, case_id, windows: list[dict], extraction_ids: list[str
     return out, more
 
 
+WORDS_PROMPT = """An investigator asks this question about phone messages:
+{question}
+
+List up to {n} words or short phrases a message answering it would contain. Mix two kinds: single words for the
+things, places and amounts a message would name (for power tools: "drill", "saw"), and phrases exactly as people
+type them, with the person in the phrase where people say it that way (for "did anyone lose their job": "let me go",
+"let him go", "fired me", "laid off", "lost my job"). A search finds each one as written, so "let go" does not find
+"let me go". Add other languages only when the question names them. Leave out the question's own words.
+Return JSON only: {{"words": ["..."]}}
+"""
+MAX_WORDS = 16
+MAX_WORD_WINDOWS = 12
+
+
+def message_words(question: str, model_call) -> list[str]:
+    """Words a message answering the question would hold. The model sees the question only, never phone text:
+    phone messages have no meaning search while no phone allows outside services (no embeddings), so the words
+    the question uses are all a word search would find without this ("lose their job" never finds "they let me
+    go today", demo case, 25 Nov)."""
+    from services import writing_standard
+    if model_call is None:
+        return []
+    try:
+        got = parse(model_call(writing_standard.system_prompt(WORDS_PROMPT.format(question=question.strip(),
+                                                                                    n=MAX_WORDS), "data")))
+    except Exception:  # noqa: BLE001 - the search goes on with the question's own words, said in the notes
+        logger.warning("Message words could not be made", exc_info=True)
+        return []
+    out = []
+    for w in got.get("words") or []:
+        w = re.sub(r"\s+", " ", str(w or "")).strip().strip('"').lower()
+        if 3 <= len(w) <= 40 and w not in out:
+            out.append(w)
+    return out[:MAX_WORDS]
+
+
 def gather(conn, case_id, question: str, phones: list[dict], *, model_call=None, embed_query=None,
            collections=None, rank=True) -> dict[str, Any]:
     """The sources the answer may use: message windows found by the case search (phone areas only) on the phones
@@ -220,11 +256,32 @@ def gather(conn, case_id, question: str, phones: list[dict], *, model_call=None,
         sources.append({"title": unit.get("title") or c.get("title") or "", "text": body, "records": keep,
                         "kind": "search", "grade": c.get("grade")})
     more_found = max(0, len(r["candidates"]) - len(sources) - left_out_phone)
+    words = message_words(question, model_call) if rank else []
+    word_windows = 0
+    if words:
+        from services.phone import chat_retrieval
+        q = " ".join('"%s"' % w if " " in w else w for w in words)
+        for w in chat_retrieval.windows(conn, case_id, q, max_windows=MAX_WORD_WINDOWS, extraction_ids=read):
+            body = w.get("text") or ""
+            uids = [u.lower() for u in REC.findall(body)]
+            if not uids or set(uids) <= seen or used + len(body) > PROMPT_CHARS:
+                continue
+            facts = record_facts(conn, case_id, uids)
+            keep = [u for u in uids if u in facts and facts[u]["extraction_id"] in read]
+            if not keep:
+                continue
+            used += len(body)
+            word_windows += 1
+            facts_all.update(facts)
+            seen.update(keep)
+            sources.append({"title": (w.get("metadata") or {}).get("doc_name") or "Messages", "text": body,
+                            "records": keep, "kind": "words", "grade": None})
     win, more_in_time = _window_records(conn, case_id, r["understood"].get("windows") or [], read, seen)
     for s in win:
         facts_all.update(record_facts(conn, case_id, s["records"]))
     return {"sources": sources + win, "facts": facts_all, "understood": r["understood"], "notes": r["notes"],
             "found": len(r["candidates"]), "more_found": more_found, "more_in_time": more_in_time,
+            "words": words, "word_windows": word_windows,
             "ranking_model": r["ranking"].get("model"), "seconds": r.get("seconds") or {}}
 
 
@@ -241,7 +298,7 @@ Records:
 
 Return JSON only:
 {{"statements": [{{"text": "...", "cites": ["rec://..."], "people": ["..."], "date_from": "YYYY-MM-DD or null", "date_to": "YYYY-MM-DD or null"}}],
- "not_found": [{{"asked": "the part of the question", "text": "one sentence on what no record shows"}}]}}
+ "not_found": [{{"asked": "the part of the question no record answers"}}]}}
 
 Rules:
 - Each statement is one finding: who did or said what, when, on which phone. At most {max_statements} statements, the ones that answer the question first.
@@ -250,7 +307,7 @@ Rules:
 - Name people as the records name them. Give dates and times as the records give them, with their time zone.
 - Say a record was deleted only when the record says so.
 - "people" lists the people the statement names; "date_from" and "date_to" are the dates it covers.
-- Put each part of the question the records do not answer in "not_found", saying what was looked for. If nothing answers the question, return no statements.
+- Put each part of the question the records do not answer in "not_found", in a few words. If nothing answers the question, return no statements.
 """
 
 
@@ -312,15 +369,34 @@ def _day(v) -> str | None:
         return None
 
 
+def record_texts(sources: list[dict]) -> dict[str, str]:
+    """``{uid: its text}``. A record's text is the line holding its citation, the lines without a citation just
+    before it, and the indented lines after it (an email's body follows its subject line and citation). Demo case,
+    25 Nov: a check reading only the line with the citation refused a word-for-word quotation of an email's body."""
+    out: dict[str, str] = {}
+    for s in sources:
+        pending: list[str] = []
+        cur = None
+        for line in s["text"].split("\n"):
+            uids = [u.lower() for u in REC.findall(line)]
+            if uids:
+                for u in uids:
+                    out[u] = " ".join([out.get(u, "")] + pending + [line])
+                pending, cur = [], uids[-1]
+            elif cur and line[:1] in (" ", "\t"):
+                out[cur] = out[cur] + " " + line
+            else:
+                pending.append(line)
+                cur = None
+    return out
+
+
 def check(parsed: dict, sources: list[dict], facts: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
     """Keep the statements the rules allow. Returns (kept, why_left_out counts)."""
     shown = {u for s in sources for u in s["records"]}
-    text_of = {}
-    for s in sources:
-        for line in s["text"].split("\n"):
-            for u in REC.findall(line):
-                text_of[u.lower()] = text_of.get(u.lower(), "") + " " + line
+    text_of = record_texts(sources)
     kept, dropped = [], {"no_citation": 0, "quote_not_in_record": 0, "empty": 0}
+    check.left_out = []  # type: ignore[attr-defined]  # what was not shown, kept for audit (never displayed)
     for st in (parsed.get("statements") or [])[:MAX_STATEMENTS * 2]:
         if not isinstance(st, dict):
             continue
@@ -339,10 +415,14 @@ def check(parsed: dict, sources: list[dict], facts: dict[str, dict]) -> tuple[li
                 cites.append(u.lower())
         if not cites:
             dropped["no_citation"] += 1
+            check.left_out.append({"why": "no_citation", "text": body})  # type: ignore[attr-defined]
             continue
         cited_text = fold(" ".join(text_of.get(u, "") for u in cites))
-        if any(fold(q) not in cited_text for q in QUOTE.findall(body)):
+        bad = [q for q in QUOTE.findall(body) if fold(q) not in cited_text]
+        if bad:
             dropped["quote_not_in_record"] += 1
+            check.left_out.append({"why": "quote_not_in_record", "text": body, "quotes": bad,  # type: ignore[attr-defined]
+                                   "cites": cites})
             continue
         people = [str(p).strip() for p in (st.get("people") or []) if str(p).strip()][:6]
         kept.append({"text": body, "cites": cites, "people": people, "date_from": _day(st.get("date_from")),
@@ -558,8 +638,12 @@ def ask(conn, case_id, question: str, *, phones: list[str] | None = None, model_
             out["notes"].append(n)
     if got["more_found"]:
         out["notes"].append("The answer read the %d strongest of %d message groups found; the other %d are in a "
-                            "word search." % (len(sources) - sum(1 for s in sources if s["kind"] == "time"),
+                            "word search." % (len(sources) - sum(1 for s in sources if s["kind"] != "search"),
                                               got["found"], got["more_found"]))
+    if got.get("words"):
+        out["words"] = got["words"]
+        out["notes"].append("Also searched the words a message about this might use: %s." % ", ".join(
+            "\u201c%s\u201d" % w for w in got["words"]))
     if got["more_in_time"]:
         out["notes"].append("%d more records are dated inside the time asked about and were not read; open the "
                             "phones at that time to see them." % got["more_in_time"])
@@ -576,6 +660,7 @@ def ask(conn, case_id, question: str, *, phones: list[str] | None = None, model_
     parsed = parse(raw) if raw else {}
     kept, dropped = check(parsed, sources, facts)
     out["dropped"] = dropped
+    out["left_out_statements"] = list(getattr(check, "left_out", []))
     ds = dropped_sentence(dropped)
     if ds:
         out["notes"].append(ds)
@@ -584,10 +669,15 @@ def ask(conn, case_id, question: str, *, phones: list[str] | None = None, model_
                               "extraction_id": (facts.get(u) or {}).get("extraction_id")} for u in st["cites"]]
         st["elsewhere"] = (elsewhere or elsewhere_rows)(conn, case_id, st, read, facts)
     out["statements"] = kept
-    nf = [{"asked": str(x.get("asked") or "").strip()[:200], "text": str(x.get("text") or "").strip()[:400]}
-          for x in (parsed.get("not_found") or []) if isinstance(x, dict) and (x.get("text") or x.get("asked"))]
+    # the sentence is built here from the part asked: a model's own "not found" sentence describes records without
+    # citing them (demo case, 25 Nov: "the email only lists drills ... with payment to Travis Kell")
+    nf = []
+    for x in parsed.get("not_found") or []:
+        asked = str((x.get("asked") if isinstance(x, dict) else x) or "").strip().rstrip(" ?.!")[:200]
+        if asked and asked.lower() not in [n["asked"].lower() for n in nf]:
+            nf.append({"asked": asked, "text": "No record on the phones read answers this: %s." % asked})
     if sources and not kept and not nf and not out["error"]:
-        nf = [{"asked": question, "text": "No record on the phones read answers this."}]
+        nf = [{"asked": question, "text": "No record on the phones read answers this question."}]
     if not sources and not out["error"]:
         nf = [{"asked": question, "text": "The search found no record on the phones read for this question."}]
     out["not_found"] = nf[:4]

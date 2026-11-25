@@ -43,27 +43,43 @@ function Cite({ caseId, label, record, index }: { caseId: string; label: string;
   )
 }
 
+const ORDER: Record<string, number> = { disagrees: 0, missing_here: 1, agrees: 2, possible_match: 3, nothing_found: 4 }
+
+function ElsewhereRowView({ caseId, r }: { caseId: string; r: ElsewhereRow }) {
+  const rel = { words: r.relation_label || RELATION[r.relation]?.words || r.relation, cls: RELATION[r.relation]?.cls ?? "text-muted-foreground" }
+  return (
+    <div className="flex flex-wrap items-start gap-2.5">
+      <span className={`w-24 shrink-0 rounded-full px-2 py-0.5 text-center text-xs font-semibold ${SOURCE_CLS[r.source] ?? "bg-source-1-soft text-source-1"}`}>{r.source}</span>
+      <span className="min-w-0 flex-1 text-sm leading-snug">
+        {r.text}{" "}
+        {r.cite && r.cite_label && <Link to={meaningPath(caseId, r.cite)} className="rounded-sm border px-1 font-mono text-xs hover:bg-accent">{r.cite_label}</Link>}
+        {r.reason && <span className="block text-xs text-muted-foreground">{r.reason}</span>}
+      </span>
+      <span className={`shrink-0 text-xs font-semibold ${rel.cls}`}>{rel.words}</span>
+    </div>
+  )
+}
+
 function ElsewhereBlock({ caseId, st }: { caseId: string; st: Statement }) {
+  const [showEmpty, setShowEmpty] = useState(false)
   const rows = st.elsewhere?.rows
+  const found = (rows ?? []).filter((r) => r.relation !== "nothing_found").sort((x, y) => (ORDER[x.relation] ?? 9) - (ORDER[y.relation] ?? 9))
+  const empty = (rows ?? []).filter((r) => r.relation === "nothing_found")
+  const where = [...new Set(empty.map((r) => r.source))]
   return (
     <div className="flex flex-col gap-2 border-t pt-3">
       <div className="text-xs text-muted-foreground">What the rest of the case says</div>
       {(rows == null || st.elsewhere?.note) && <p className="text-sm text-muted-foreground">{st.elsewhere?.note ?? "The rest of the case was not checked for this statement."}</p>}
-      {rows != null && rows.length === 0 && <p className="text-sm text-muted-foreground">Nothing in the financial records, documents or timeline bears on it.{st.elsewhere.searched?.length ? ` Searched: ${st.elsewhere.searched.join("; ")}.` : ""}</p>}
-      {rows?.map((r: ElsewhereRow, i) => {
-        const rel = { words: r.relation_label || RELATION[r.relation]?.words || r.relation, cls: RELATION[r.relation]?.cls ?? "text-muted-foreground" }
-        return (
-          <div key={i} className="flex flex-wrap items-start gap-2.5">
-            <span className={`w-24 shrink-0 rounded-full px-2 py-0.5 text-center text-xs font-semibold ${SOURCE_CLS[r.source] ?? "bg-source-1-soft text-source-1"}`}>{r.source}</span>
-            <span className="min-w-0 flex-1 text-sm leading-snug">
-              {r.text}{" "}
-              {r.cite && r.cite_label && <Link to={meaningPath(caseId, r.cite)} className="rounded-sm border px-1 font-mono text-xs hover:bg-accent">{r.cite_label || "Open"}</Link>}
-              {r.reason && <span className="block text-xs text-muted-foreground">{r.reason}</span>}
-            </span>
-            <span className={`shrink-0 text-xs font-semibold ${rel.cls}`}>{rel.words}</span>
-          </div>
-        )
-      })}
+      {rows != null && rows.length === 0 && <p className="text-sm text-muted-foreground">Nothing in the other phones, financial records, documents or timeline bears on it.</p>}
+      {found.map((r, i) => <ElsewhereRowView key={i} caseId={caseId} r={r} />)}
+      {empty.length > 0 && (
+        <div className="text-sm text-muted-foreground">
+          <button type="button" className="underline underline-offset-2 hover:text-foreground" aria-expanded={showEmpty} onClick={() => setShowEmpty((v) => !v)}>
+            {`Nothing found in ${empty.length.toLocaleString("en-US")} ${empty.length === 1 ? "check" : "checks"}: ${where.join(", ")}`}
+          </button>
+          {showEmpty && <div className="mt-2 flex flex-col gap-2">{empty.map((r, i) => <ElsewhereRowView key={i} caseId={caseId} r={r} />)}</div>}
+        </div>
+      )}
     </div>
   )
 }

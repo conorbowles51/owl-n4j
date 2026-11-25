@@ -122,7 +122,7 @@ def test_the_answer_cites_labels_used_records_and_not_found():
     model = _model({"statements": [{"text": 'Marisol Teague told Dorian "the checks are in the drawer".',
                                     "cites": [M1, M2], "people": ["Marisol Teague", "Dorian Pell"],
                                     "date_from": "2024-03-12"}],
-                    "not_found": [{"asked": "check numbers", "text": "No message names a check number."}]})
+                    "not_found": [{"asked": "check numbers", "text": "The email only lists drills with payment to Travis."}]})
     g = {"sources": SOURCES, "facts": FACTS, "understood": {}, "notes": [], "found": 2, "more_found": 0,
          "more_in_time": 0, "ranking_model": None, "seconds": {}}
     with mock.patch.object(A, "phones_in_scope", return_value=PHONES), \
@@ -135,7 +135,8 @@ def test_the_answer_cites_labels_used_records_and_not_found():
                                                        "Phone 2 · Message 12 Mar 2024 10:21 AM UTC"]
     assert out["searched"] == "Searched 244 messages and 31 calls"
     assert [(r["record"], r["cited"]) for r in out["records_used"]] == [(M1, True), (M2, True), (M3, False)]
-    assert out["not_found"] == [{"asked": "check numbers", "text": "No message names a check number."}]
+    # the model's own not-found sentence is not shown: it describes records without citing them
+    assert out["not_found"] == [{"asked": "check numbers", "text": "No record on the phones read answers this: check numbers."}]
     kinds = [s["kind"] for s in out["steps"]]
     # Phone 3 is Dorian Pell's and holds none of it; two people to test; the thread has 14 messages, 2 cited
     assert kinds[:4] == ["missing_on_phone", "corroborate", "thread", "not_found"]
@@ -270,3 +271,46 @@ def test_what_the_rest_of_the_case_says_comes_from_the_elsewhere_service_with_it
     with mock.patch.object(SU, "from_statement", side_effect=SU.BadSubject("x")):
         bad = A.elsewhere_rows(Conn(), CASE, st, PHONES, FACTS)
     assert bad["rows"] is None and "could not be checked" in bad["note"]
+
+
+def test_words_a_message_would_use_are_searched_and_the_model_sees_only_the_question():
+    from services.case_search import service as S
+    from services.phone import chat_retrieval
+    ranked = {"understood": {"terms": ["lose", "job"], "expansions": [], "windows": []}, "candidates": [], "notes": [],
+              "ranking": {}, "seconds": {}}
+    window = {"text": "20 Apr 2024 | Phone 3 | they let me go today [rec://%s]" % M4,
+              "metadata": {"doc_name": "Phone 3 · Messages"}}
+    calls = {}
+
+    def windows(conn, case_id, q, max_windows, extraction_ids):
+        calls["q"], calls["phones"] = q, extraction_ids
+        return [window]
+    model = _model({"words": ["let me go", "fired", "x"]})
+    facts = {M4: {"extraction_id": P3, "model_type": "InstantMessage", "at": AT, "deleted": False, "parent": None,
+                  "title": ""}}
+    with mock.patch.object(S, "ranked", return_value=ranked), \
+            mock.patch.object(chat_retrieval, "windows", side_effect=windows), \
+            mock.patch.object(A, "record_facts", return_value=facts):
+        got = A.gather(Conn(), CASE, "Did anyone lose their job?", PHONES, model_call=model)
+    assert calls["q"] == '"let me go" fired' and calls["phones"] == [P1, P2, P3]
+    assert got["sources"][0]["records"] == [M4] and got["words"] == ["let me go", "fired"]
+    assert "rec://" not in model.prompts[0] and "Did anyone lose their job?" in model.prompts[0]
+
+
+def test_a_quote_from_a_record_over_several_lines_is_kept():
+    src = [{"title": "Phone 2 · Email", "kind": "search", "records": [M1, M2],
+            "text": "4 May 2024 | Phone 2 | Email | Travis -> Gary | Gary, for Saturday.\nTorvane drill x14, $85 each.\n"
+                    "Same as last time, check to me. [rec://%s]\n5 May | Phone 2 | Gary -> Travis | ok [rec://%s]" % (M1, M2)}]
+    kept, dropped = A.check({"statements": [{"text": 'Travis wrote "Gary, for Saturday. Torvane drill x14, $85 each".',
+                                             "cites": [M1]},
+                                            {"text": 'Gary wrote "Torvane drill".', "cites": [M2]}]}, src, {})
+    assert [k["cites"] for k in kept] == [[M1]] and dropped == {"quote_not_in_record": 1}
+
+
+def test_an_emails_body_after_its_citation_is_part_of_the_record():
+    src = [{"title": "Phone 2 · Emails", "kind": "search", "records": [M1, M2],
+            "text": "4 May 2024 | Phone 2 | Emails | Travis -> Gary | Subject: price list [rec://%s]\n  Gary, for Saturday. "
+                    "Torvane drill x14, $85 each.\n5 May | Phone 2 | Gary -> Travis | ok [rec://%s]" % (M1, M2)}]
+    kept, dropped = A.check({"statements": [{"text": 'Travis wrote "Torvane drill x14, $85 each".', "cites": [M1]},
+                                            {"text": 'Gary wrote "Torvane drill".', "cites": [M2]}]}, src, {})
+    assert [k["cites"] for k in kept] == [[M1]] and dropped == {"quote_not_in_record": 1}
