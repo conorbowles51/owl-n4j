@@ -141,7 +141,7 @@ describe("the Phones page", () => {
   it("keeps the screens that left the side menu one click away", async () => {
     show()
     const more = await screen.findByRole("navigation", { name: "More about these phones" })
-    expect(within(more).getAllByRole("link").map((l) => l.textContent)).toEqual(["Threads and people", "Patterns of life", "Money on the phones", "Analyses", "Needs a decision"])
+    expect(within(more).getAllByRole("link").map((l) => l.textContent)).toEqual(["Threads and people", "Patterns of life", "Money on the phones", "What people said, checked", "Analyses", "Needs a decision"])
   })
 })
 

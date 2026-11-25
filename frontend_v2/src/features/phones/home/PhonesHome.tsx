@@ -30,7 +30,7 @@ const HAS_ASK = Object.keys(import.meta.glob("/src/features/phones/ask/*Page.tsx
 /** The phone screens that used to have their own side-menu entries, reached from here now. */
 const MORE: [string, string][] = [
   ["conversations", "Threads and people"], ["phone-patterns", "Patterns of life"], ["phone-money", "Money on the phones"],
-  ["phone-analyses", "Analyses"], ["phone-review", "Needs a decision"],
+  ["phones/mentions", "What people said, checked"], ["phone-analyses", "Analyses"], ["phone-review", "Needs a decision"],
 ]
 
 function Facet({ label, count, on, onClick, disabledReason }: { label: string; count: number | null | undefined; on: boolean; onClick: () => void; disabledReason?: string }) {
