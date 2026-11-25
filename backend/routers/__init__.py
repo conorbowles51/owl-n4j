@@ -33,6 +33,7 @@ from routers.workspace_entries import router as workspace_entries_router
 from routers.theory_additions import router as theory_additions_router
 from routers.relation_queries import router as relation_queries_router
 from routers.corroborate import router as corroborate_router
+from routers.phone_ask import router as phone_ask_router
 from routers.leads import router as leads_router
 from routers.corroborate_overlaps import router as corroborate_overlaps_router
 from routers.workspace_ai import router as workspace_ai_router
@@ -91,6 +92,7 @@ __all__ = [
     "theory_additions_router",
     "relation_queries_router",
     "corroborate_router",
+    "phone_ask_router",
     "leads_router",
     "corroborate_overlaps_router",
     "workspace_ai_router",
