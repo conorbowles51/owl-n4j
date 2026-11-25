@@ -7,6 +7,9 @@ import { PhonesIndexPage } from "./PhoneRoutes"
 const mocks = vi.hoisted(() => ({ phones: vi.fn(), media: vi.fn(), view: vi.fn() }))
 vi.mock("@/features/phones/api", () => ({ getPhones: mocks.phones, getRecord: vi.fn(), getMediaDetail: mocks.media, getSavedView: mocks.view, failureText: (_e: unknown, w: string) => w }))
 vi.mock("@/features/phones/components/ComparePhones", () => ({ ComparePhones: () => null }))
+// the Phones page itself has its own tests (features/phones/home); here only what the route chooses to show
+vi.mock("@/features/phones/home/PhonesHome", () => ({ PhonesHome: ({ caseId }: { caseId: string }) => <p>Phones page of {caseId}</p> }))
+vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { title: "Case one" } }) }))
 
 const phone = (id: string, label: string, standing: string) => ({
   extraction_id: id, label, standing, device: { manufacturer: null, model: null },
@@ -70,10 +73,10 @@ describe("Phones list after a Replace (07 J-13b, 01 10.7)", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     )
-    expect(await screen.findByRole("link", { name: /^C1$/ })).toHaveAttribute("href", "/cases/case-1/phones/n")
+    // the active phones are the Phones page's cards; the retired report is listed apart, under its own words
+    expect(await screen.findByText("Phones page of case-1")).toBeInTheDocument()
     const replaced = screen.getByRole("region", { name: "Replaced reports" })
     expect(replaced).toHaveTextContent("Replaced report: C1")
-    expect(screen.getAllByRole("link", { name: /^C1\b/ })).toHaveLength(1) // the journeys open a phone by its name
     expect(screen.getByRole("link", { name: "Replaced report: C1" })).toHaveAttribute("href", "/cases/case-1/phones/o")
   })
 })

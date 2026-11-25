@@ -38,7 +38,7 @@ export function useGlobalShortcuts(caseIdOverride?: string | null) {
         "map",
         "table",
         "financial",
-        "conversations",
+        "phones",
         "dossiers",
         "evidence",
       ]

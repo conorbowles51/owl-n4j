@@ -1,12 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useState, type ReactNode } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { useEffect, type ReactNode } from "react"
 import { Link, useLocation, useParams } from "react-router-dom"
-import { useAfterFirstPaint } from "@/lib/after-first-paint"
 import { preloadRouteIntent } from "@/lib/route-preload"
 import { phonesQuery } from "@/features/phones/phones-query"
-import { HELP_PARAM, hideNewMarks, marksQuery, newMarksUntil } from "@/features/phones/marks"
 import {
-  Banknote,
   FolderOpen,
   Network,
   Clock,
@@ -31,11 +28,10 @@ import {
   Gauge,
   type LucideIcon,
   Search as SearchIcon,
-  ListChecks,
-  CircleHelp,
   Lightbulb,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
+import { phonesEntryActive } from "./phones-entry"
 import { fetchAPI } from "@/lib/api-client"
 import { LoupeLogo } from "@/components/brand/LoupeLogo"
 import { useAppStore } from "@/stores/app.store"
@@ -56,8 +52,6 @@ interface NavItem {
   to: string
   end?: boolean
   shortcut?: string
-  /** Carries the "New" mark (07 section 9). */
-  isNew?: boolean
   /** A count beside the name (Leads). */
   count?: number
 }
@@ -87,16 +81,10 @@ function getFullDataCaseNav(caseId: string): NavItem[] {
   ]
 }
 
-/** The Phones group (03 D-18): the full group once the case has a phone; before that, one entry that adds one. */
-function getPhonesNav(caseId: string): NavItem[] {
-  return [
-    { label: "Phone summary", icon: Smartphone, to: `/cases/${caseId}/phones`, end: true },
-    { label: "Conversations", icon: MessageSquare, to: `/cases/${caseId}/conversations`, shortcut: "6" },
-    { label: "Patterns", icon: Clock, to: `/cases/${caseId}/phone-patterns` },
-    { label: "Money on the phones", icon: Banknote, to: `/cases/${caseId}/phone-money` },
-    { label: "Analyses", icon: ListChecks, to: `/cases/${caseId}/phone-analyses` },
-    { label: "Needs a decision", icon: ShieldCheck, to: `/cases/${caseId}/phone-review` },
-  ]
+/** Phones (screen 1 of the phones redesign): one entry, the page that shows every phone at once. Every phone screen
+ * (a phone's own page, a thread, the analyses) is reached from it, so the entry is current on all of them. */
+function getPhonesNav(caseId: string): NavItem {
+  return { label: "Phones", icon: Smartphone, to: `/cases/${caseId}/phones`, shortcut: "6" }
 }
 
 function getCaseAiNav(caseId: string): NavItem[] {
@@ -145,10 +133,6 @@ function ShortcutHint({ value, active = false }: { value: string; active?: boole
   )
 }
 
-function NewMark() {
-  return <span className="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700 dark:bg-brand-400/15 dark:text-brand-200">New</span>
-}
-
 function SidebarLink({
   item,
   expanded,
@@ -164,7 +148,7 @@ function SidebarLink({
       onPointerEnter={() => preloadRouteIntent(item.to)}
       onFocus={() => preloadRouteIntent(item.to)}
       aria-current={active ? "page" : undefined}
-      aria-label={!expanded ? `${item.label}${item.isNew ? ", new" : ""}` : undefined}
+      aria-label={!expanded ? item.label : undefined}
       className={cn(
         "group relative flex items-center rounded-lg text-sm font-medium outline-none",
         "transition-[background-color,color,box-shadow,transform] duration-150 ease-[var(--ease-loupe)]",
@@ -186,15 +170,10 @@ function SidebarLink({
         )}
       />
       {expanded && (
-        // a marked name may be too long to share the row with the mark, so it wraps rather than being cut
-        <span className={cn("min-w-0 flex-1", item.isNew ? "leading-tight [overflow-wrap:anywhere]" : "truncate")}>{item.label}</span>
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
       )}
-      {expanded && item.isNew && <NewMark />}
       {expanded && item.count !== undefined && (
         <span className="ml-auto rounded-full bg-slate-100 px-1.5 text-[11px] font-semibold tabular-nums text-slate-700 dark:bg-white/10 dark:text-slate-200">{item.count}</span>
-      )}
-      {!expanded && item.isNew && (
-        <span className="absolute right-1 top-1 size-1.5 rounded-full bg-brand-600 dark:bg-brand-400" aria-hidden="true" />
       )}
       {/* collapsed (a narrow screen): the count rides on the icon, since it is the only sign of leads off their page */}
       {!expanded && item.count !== undefined && item.count > 0 && (
@@ -202,7 +181,7 @@ function SidebarLink({
           aria-label={`${item.count} ${item.label.toLowerCase()}`}>{item.count > 99 ? "99+" : item.count}</span>
       )}
       {/* the mark takes the hint's room for its 7 days, so the name is not cut; the hint stays in the tooltip */}
-      {expanded && item.shortcut && !item.isNew && (
+      {expanded && item.shortcut && (
         <ShortcutHint value={item.shortcut} active={active} />
       )}
     </Link>
@@ -325,16 +304,6 @@ export function AppSidebar() {
   // The phones API module (and its schema library) loads with this query, not with the shell.
   const phones = useQuery({ ...phonesQuery(caseId), enabled: !!caseId, staleTime: 60_000 })
   const hasPhones = (phones.data?.phones.length ?? 0) > 0
-  // The "New" mark (07 section 9): its window is worked out here, so after it closes nothing more is asked.
-  const client = useQueryClient()
-  const [renderedAt] = useState(() => Date.now())
-  const markWindow = newMarksUntil(phones.data?.phones.map((p) => p.ingested_at) ?? [])
-  const inWindow = hasPhones && renderedAt < markWindow
-  const painted = useAfterFirstPaint()
-  // deferred past the first paint only; the mark still arrives (late) on a first visit, which first-run tests cover
-  const marks = useQuery({ ...marksQuery, enabled: inWindow && painted })
-  const showNew = inWindow && !!marks.data && !marks.data.marks.phones_new_hidden
-  const hideNew = useMutation({ mutationFn: hideNewMarks, onSuccess: (data) => client.setQueryData(marksQuery.queryKey, data) })
 
   const toggleButton = (
     <Button
@@ -490,29 +459,7 @@ export function AppSidebar() {
 
         {caseId && hasPhones && (
           <SidebarSection label="Phones" expanded={sidebarExpanded} separated>
-            {getPhonesNav(caseId).map((item) => (
-              <SidebarLink
-                key={item.to}
-                item={showNew ? { ...item, isNew: true } : item}
-                expanded={sidebarExpanded}
-                active={isItemActive(pathname, item) || (item.label === "Conversations" && /\/phones\/[^/]+\/records\/conversations/.test(pathname))}
-              />
-            ))}
-            <SidebarLink
-              item={{ label: "Help", icon: CircleHelp, to: `/cases/${caseId}/phones?${HELP_PARAM}=phones` }}
-              expanded={sidebarExpanded}
-              active={false}
-            />
-            {showNew && sidebarExpanded && (
-              <button
-                type="button"
-                className="px-3 py-0.5 text-left text-[11px] text-sidebar-muted underline underline-offset-2 hover:text-sidebar-foreground"
-                disabled={hideNew.isPending}
-                onClick={() => hideNew.mutate()}
-              >
-                Hide the New marks
-              </button>
-            )}
+            <SidebarLink item={getPhonesNav(caseId)} expanded={sidebarExpanded} active={phonesEntryActive(pathname, caseId)} />
           </SidebarSection>
         )}
 

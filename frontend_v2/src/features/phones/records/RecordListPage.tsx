@@ -51,9 +51,12 @@ export function RecordListPage({ caseId, extraction, modelType }: { caseId: stri
   const [panel, setPanel] = useState<string | null>(null)
   const [restarted, setRestarted] = useState(false)
   const chosen = recordListFilter(`?${params}`)
-  const wholeCase = params.get("phone") === "all"
+  // the one phone scope (COMMON rule 1): phones named in the address are the phones listed; "phone=all" is every
+  // phone; with neither, the phone in the address (the count on its Phone summary opens exactly that list)
+  const scopePhones = (params.get("phones") ?? "").split(",").filter(Boolean)
+  const wholeCase = params.get("phone") === "all" || scopePhones.length > 1
   const filter: RecordListFilter = useMemo(
-    () => ({ ...chosen, phones: wholeCase ? [] : [extraction] }),
+    () => ({ ...chosen, phones: params.get("phone") === "all" ? [] : scopePhones.length ? scopePhones : [extraction] }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [params, extraction],
   )

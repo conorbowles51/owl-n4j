@@ -39,9 +39,9 @@ vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("../collect-targets", () => ({ useCollectTargets: () => ({ targets: [], note: null, loading: false, error: null }) }))
 import MediaSpreadPage from "./MediaSpreadPage"
 
-const page = () => render(
+const page = (search = "") => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={["/cases/c/phones/e1/records/media/spread"]}>
+    <MemoryRouter initialEntries={[`/cases/c/phones/e1/records/media/spread${search}`]}>
       <Routes><Route path="/cases/:id/phones/:extraction/records/media/spread" element={<MediaSpreadPage />} /></Routes>
     </MemoryRouter>
   </QueryClientProvider>,
@@ -81,5 +81,13 @@ describe("Media spread (05 section 11, exact tier)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /Only files on/ }))
     fireEvent.change(screen.getByRole("combobox", { name: /Common files/ }), { target: { value: "hide" } })
     await waitFor(() => expect(api.getMediaSpreadWindow).toHaveBeenLastCalledWith("c", { phones: [], common: "hide" }, 0, 50))
+  })
+
+  it("reads the one phone scope: the phones on in the Phones page are the phones compared (phones redesign rule 1)", async () => {
+    api.getMediaSpreadIndex.mockResolvedValue({ case_id: "c", case_phone_count: 3, total_groups: 0, total_copies: 0, common_file_groups: 0, sha256_disagreement_groups: 0, by_phone: [], by_pair: [], population_words: "p", clock_words: "k" })
+    api.getMediaSpreadWindow.mockResolvedValue({ case_id: "c", total: 0, offset: 0, limit: 50, items: [], clock_words: "k" })
+    page("?phones=e1,e3")
+    await waitFor(() => expect(api.getMediaSpreadWindow).toHaveBeenCalledWith("c", { phones: ["e1", "e3"], common: "all" }, 0, 50))
+    expect(await screen.findByText("Files on the 2 phones that are on in the Phones page.")).toBeInTheDocument()
   })
 })

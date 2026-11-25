@@ -109,7 +109,15 @@ def test_each_group_is_counted_without_its_own_choice(world):
 
 def test_one_part_is_answered_alone():
     from services.phone import phone_home as H
-    assert H.PARTS == ("kinds", "people", "states")
+    assert H.PARTS == ("kinds", "people", "states", "phones")
+
+
+def test_each_phone_card_has_its_first_and_last_day(world):
+    from services.phone import phone_home as H
+    with world["engine"].connect() as c:
+        spans = {s["extraction_id"]: s for s in H.facets(c, _f(world), "phones")["phones"]}
+    assert spans[world["p1"]]["first_day"] == "2024-01-05" and spans[world["p1"]]["last_day"] == "2024-01-07"
+    assert spans[world["p2"]]["first_day"] == "2024-01-05" and spans[world["p2"]]["last_day"] == "2024-01-07"
 
 
 def test_the_facets_route_takes_a_part():

@@ -66,6 +66,9 @@ export function AddToMenu({
   noDossierWhy,
   kinds,
   description = "Each keeps a link back to its record. Nothing is copied out of the phone.",
+  label = "Add to…",
+  corroborate = true,
+  buttonClassName,
 }: {
   caseId: string
   /** What is selected, as links (a selection over 500 arrives as one phone_selection link, 07 6.1). */
@@ -87,6 +90,11 @@ export function AddToMenu({
   kinds?: TargetKind[]
   /** The line under the dialog's title. */
   description?: string
+  /** The button's words (the Phones page's record panel says "Add to the case"). */
+  label?: string
+  /** False where the screen shows its own Corroborate beside this menu. */
+  corroborate?: boolean
+  buttonClassName?: string
 }) {
   const [open, setOpen] = useState(false)
   const [kind, setKind] = useState<TargetKind | null>(null)
@@ -150,10 +158,10 @@ export function AddToMenu({
   return (
     <div className="inline-flex flex-col gap-1">
       <div className="inline-flex flex-wrap items-center gap-1">
-        <Button size="sm" onClick={() => start(kind ?? "finding", false)} disabled={!!disabledReason || count === 0} title={disabledReason}>
-          Add to…
+        <Button size="sm" className={buttonClassName} onClick={() => start(kind ?? "finding", false)} disabled={!!disabledReason || count === 0} title={disabledReason}>
+          {label}
         </Button>
-        {!disabledReason && count > 0 && (
+        {corroborate && !disabledReason && count > 0 && (
           <LookInto caseId={caseId} surface="phone"
             items={links.map((l) => ({ target_type: l.target_type, target_id: l.target_id, target_label: l.label }))} />
         )}

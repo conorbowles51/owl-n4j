@@ -5,12 +5,10 @@ import { Button } from "@/components/ui/button"
 import { HELP_PARAM, marksQuery, saveMark } from "../marks"
 
 const SCREENS = [
-  ["Phone summary", "What each phone holds, whose it is and what still needs a person."],
-  ["Conversations", "Read messages and calls, by thread or by person, across all the phones."],
-  ["Patterns", "A person's days, places and contacts over time, and whether two people were together."],
-  ["Money on the phones", "Payments and amounts mentioned on the phones, beside the ledger."],
-  ["Analyses", "Deleted material, relationships, shared contacts and other questions asked of the phones."],
-  ["Needs a decision", "Readings and links that wait for a person to confirm them."],
+  ["Phones", "Every phone at once: switch phones on and off, search them, and read everything on them in time order."],
+  ["About this phone", "What one phone holds, whose it is and what still needs a person. Open it from the phone's card."],
+  ["Read the thread", "A message's whole conversation, from the record beside the list."],
+  ["Elsewhere in the case", "Beside each record: what the other phones, the financial records, the documents and the timeline hold about it."],
 ] as const
 
 /**

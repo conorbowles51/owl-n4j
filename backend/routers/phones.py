@@ -2354,7 +2354,7 @@ def timeline_lens_buckets(body: LensBucketsBody, db: Session = Depends(get_db),
 
 
 @router.post("/home/facets")
-def phone_home_facets(body: dict, part: Optional[str] = Query(None, pattern="^(kinds|people|states)$"),
+def phone_home_facets(body: dict, part: Optional[str] = Query(None, pattern="^(kinds|people|states|phones)$"),
                       db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """The Phones page's What, Who and State counts (screen 1), each exact and equal to the list it opens; ``part``
     asks for one group, so the page shows each as it arrives."""

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import { Link, Navigate, useLocation, useParams } from "react-router-dom"
 import { failureText, getMediaDetail, getRecord, getSavedView } from "@/features/phones/api"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,9 @@ import { phonesQuery } from "@/features/phones/phones-query"
 import { RecordListPage } from "@/features/phones/records/RecordListPage"
 import { FirstPhoneCard } from "@/features/phones/summary/FirstPhoneCard"
 import { AddPhoneReport } from "@/features/phones/AddPhoneReport"
+import { useCase } from "@/features/cases/hooks/use-cases"
+
+const PhonesHome = lazy(() => import("@/features/phones/home/PhonesHome").then((m) => ({ default: m.PhonesHome })))
 
 /**
  * The phone addresses Workspace, dossiers and Notebook links use (07 section 4.13; phone-links.ts). Each one lands
@@ -28,6 +31,7 @@ export function PhonesIndexPage() {
   const viewId = q.get("view")
   const saved = useQuery({ queryKey: ["phone-view", caseId, viewId], queryFn: () => getSavedView(caseId, viewId!), enabled: !!caseId && !!viewId && !target, retry: false })
   const phones = useQuery({ ...phonesQuery(caseId), enabled: !!caseId && !target })
+  const caseQ = useCase(caseId)
   // a dossier's "Compare phones" names the two phones and the person (07 J-16)
   const comparePair = (q.get("compare") ?? "").split(",").filter(Boolean)
   const comparePerson = q.get("person")
@@ -42,49 +46,53 @@ export function PhonesIndexPage() {
   // a report retired by Replace stays readable but is listed apart, so two reports of one phone never share a name
   const active = (phones.data?.phones ?? []).filter((p) => p.standing !== "superseded")
   const replaced = (phones.data?.phones ?? []).filter((p) => p.standing === "superseded")
+  const opening = (viewId && !saved.isError) || (fileUid && !file.isError)
+  if (phones.data && active.length > 0 && !opening)
+    return (
+      <>
+        <div className="px-4 pt-3 md:px-7 empty:hidden">
+          <FirstPhoneCard caseId={caseId} />
+          {viewId && saved.isError && <p role="alert">{failureText(saved.error, "This saved view is not in this case.")}</p>}
+          {fileUid && file.isError && <p role="alert">{failureText(file.error, "This file is not in this case.")}</p>}
+          {comparing && <ComparePhones caseId={caseId} phones={active} first={comparePair[0]} second={comparePair[1]} person={comparePerson} />}
+          {comparing && <Button size="sm" variant="outline" className="mt-2" onClick={() => setComparing(false)}>Close the comparison</Button>}
+        </div>
+        <Suspense fallback={<p role="status" className="p-6 text-sm">Loading the phones</p>}>
+          <PhonesHome caseId={caseId} caseName={caseQ.data?.title ?? "This case"} />
+        </Suspense>
+        {replaced.length > 0 && (
+          <section aria-label="Replaced reports" className="flex flex-col gap-1 border-t px-4 py-3 text-sm md:px-7">
+            <h2 className="font-medium">Replaced reports</h2>
+            <p className="text-muted-foreground">Retired by a newer report of the same phone. Their records stay readable and are not counted.</p>
+            <ul className="flex flex-col gap-1">
+              {replaced.map((p) => (
+                <li key={p.extraction_id}>
+                  <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}`}>Replaced report: {p.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </>
+    )
   return (
     <div className="flex flex-col gap-3 p-6">
       <h1 className="text-lg font-semibold">Phones</h1>
-      {phones.data && phones.data.phones.length > 0 && <FirstPhoneCard caseId={caseId} />}
       {viewId && saved.isLoading && <p role="status" className="text-sm">Opening the saved view</p>}
       {viewId && saved.isError && <p role="alert">{failureText(saved.error, "This saved view is not in this case.")}</p>}
       {fileUid && file.isLoading && <p role="status" className="text-sm">Opening the file</p>}
       {fileUid && file.isError && <p role="alert">{failureText(file.error, "This file is not in this case.")}</p>}
       {phones.isLoading && <p className="text-sm">Loading the phones</p>}
-      {phones.isError && <p role="alert">{failureText(phones.error, "The phones could not be loaded.")}</p>}
+      {phones.isError && <p role="alert">{failureText(phones.error, "The phones could not be loaded.")} Reload the page to try again.</p>}
       {phones.data && phones.data.phones.length === 0 && <AddPhoneReport caseId={caseId} />}
-      {active.length >= 2 && (
-        <div>
-          <Button size="sm" variant="outline" aria-expanded={comparing} onClick={() => setComparing((v) => !v)}>
-            Compare phones
-          </Button>
-        </div>
-      )}
-      {comparing && phones.data && <ComparePhones caseId={caseId} phones={active} first={comparePair[0]} second={comparePair[1]} person={comparePerson} />}
-      <ul className="flex flex-col gap-1">
-        {active.map((p) => (
-          <li key={p.extraction_id}>
-            <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}`}>
-              {p.label}
-            </Link>
-            <span className="text-sm text-muted-foreground">
-              {" "}
-              {[p.device.manufacturer, p.device.model].filter(Boolean).join(" ") || "device not recorded"} · {p.counts.messages.toLocaleString("en-US")} messages,{" "}
-              {p.counts.calls.toLocaleString("en-US")} calls, {p.counts.locations.toLocaleString("en-US")} locations
-            </span>
-          </li>
-        ))}
-      </ul>
+      {phones.data && phones.data.phones.length > 0 && active.length === 0 && <p className="text-sm">Every phone report in this case has been replaced; the replaced reports are listed below.</p>}
       {replaced.length > 0 && (
         <section aria-label="Replaced reports" className="flex flex-col gap-1 text-sm">
           <h2 className="font-medium">Replaced reports</h2>
-          <p className="text-muted-foreground">Retired by a newer report of the same phone. Their records stay readable and are not counted.</p>
           <ul className="flex flex-col gap-1">
             {replaced.map((p) => (
               <li key={p.extraction_id}>
-                <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}`}>
-                  Replaced report: {p.label}
-                </Link>
+                <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}`}>Replaced report: {p.label}</Link>
               </li>
             ))}
           </ul>

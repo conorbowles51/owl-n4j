@@ -61,6 +61,13 @@ describe("the list for a record type (03 section 7.5)", () => {
     expect(screen.getByText(/more fields are in each record/)).toBeInTheDocument()
   })
 
+  it("reads the one phone scope: phones named in the address are the phones listed (phones redesign rule 1)", async () => {
+    mocks.list.mockResolvedValue(page([row("a")], 1))
+    show("/cases/c1/phones/x1/records/VisitedPage?phones=x1,x2")
+    expect(await screen.findByText("value a")).toBeInTheDocument()
+    expect(mocks.list.mock.calls[0][2]).toMatchObject({ phones: ["x1", "x2"] })
+  })
+
   it("fetches the next window near the end and never more than it needs", async () => {
     const first = Array.from({ length: 30 }, (_, i) => row(`r${i}`))
     mocks.list.mockImplementation(async (_c, _t, _f, cursor) => (cursor ? page([row("last")], 31) : page(first, 31, "next-1")))

@@ -91,7 +91,9 @@ export default function MediaSpreadPage() {
     else next.delete("file")
     return next
   }, { replace: true })
-  const filter: SpreadFilter = { phones: onlyThis && extraction ? [extraction] : [], common }
+  // the one phone scope (COMMON rule 1): the phones named in the address, else this phone or every phone
+  const scopePhones = (params.get("phones") ?? "").split(",").filter(Boolean)
+  const filter: SpreadFilter = { phones: scopePhones.length ? scopePhones : onlyThis && extraction ? [extraction] : [], common }
   const idx = useQuery({ queryKey: ["phone-media-spread-index", caseId], queryFn: () => getMediaSpreadIndex(caseId), enabled: !!caseId })
   const win = useQuery({ queryKey: ["phone-media-spread-window", caseId, filter, offset], queryFn: () => getMediaSpreadWindow(caseId, filter, offset, PAGE), enabled: !!caseId })
   const total = win.data?.total ?? 0
@@ -122,10 +124,14 @@ export default function MediaSpreadPage() {
           </details>
         )}
         <div className="flex flex-wrap items-center gap-3 text-xs">
-          <label className="flex items-center gap-1">
-            <input type="checkbox" checked={onlyThis} onChange={(e) => { setOnlyThis(e.target.checked); setOffset(0) }} />
-            Only files on {thisLabel ?? "this phone"}
-          </label>
+          {scopePhones.length ? (
+            <span>Files on the {n(scopePhones.length)} {scopePhones.length === 1 ? "phone" : "phones"} that are on in the Phones page.</span>
+          ) : (
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={onlyThis} onChange={(e) => { setOnlyThis(e.target.checked); setOffset(0) }} />
+              Only files on {thisLabel ?? "this phone"}
+            </label>
+          )}
           <label className="flex items-center gap-1">Common files
             <select value={common} onChange={(e) => { setCommon(e.target.value as "all" | "hide" | "only"); setOffset(0) }} className="rounded border bg-background px-1 py-0.5">
               <option value="all">Show</option>

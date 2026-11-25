@@ -78,7 +78,22 @@ def state_counts(conn, f: TL.TimelineLensFilter) -> list:
     return out
 
 
-PARTS = ("kinds", "people", "states")
+def phone_spans(conn, f: TL.TimelineLensFilter) -> list:
+    """Each active phone's first and last day with an event time (communications and other records), in the
+    screen's zone, for its card. Every phone of the case, on or off, so a phone switched off keeps its card."""
+    from services.phone import time_display as T
+    zone = streams.resolve_zone(conn, f)
+    zn = "UTC" if T.is_utc(zone["name"]) else zone["name"]
+    rows = conn.execute(text(
+        "WITH x AS (SELECT extraction_id, sort_instant AS i FROM pv_comm_event WHERE case_id = :c AND sort_instant IS "
+        "NOT NULL UNION ALL SELECT extraction_id, instant FROM pv_timeline_entry WHERE case_id = :c AND is_event_time "
+        "AND instant IS NOT NULL) SELECT x.extraction_id::text AS e, (min(i) AT TIME ZONE :z)::date AS a, "
+        "(max(i) AT TIME ZONE :z)::date AS b FROM x JOIN phone_extractions p ON p.id = x.extraction_id AND "
+        "p.standing = 'active' GROUP BY 1"), {"c": f.case_id, "z": zn}).fetchall()
+    return [{"extraction_id": r.e, "first_day": r.a.isoformat(), "last_day": r.b.isoformat()} for r in rows]
+
+
+PARTS = ("kinds", "people", "states", "phones")
 STATES_NOTE = ("Copies on other phones are judged for messages and calls only: same kind, same minute and same text "
                "(a call, the same length).")
 
@@ -93,4 +108,6 @@ def facets(conn, f: TL.TimelineLensFilter, part: str | None = None) -> dict:
         out.update(people=people["people"], people_total=people["people_total"], people_applies=people["applies"])
     if part in (None, "states"):
         out.update(states=state_counts(conn, f), states_note=STATES_NOTE)
+    if part in (None, "phones"):
+        out["phones"] = phone_spans(conn, f)
     return out

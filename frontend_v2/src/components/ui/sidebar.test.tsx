@@ -123,42 +123,29 @@ describe("AppSidebar case navigation", () => {
     // The phones query loads its API module on first use (lx-shell), so the group arrives after a module load: wait
     // for it with a cheap text query (a role query over the whole sidebar takes seconds on a loaded machine), then
     // check the group once.
-    await screen.findByText("Phone summary", undefined, { timeout: 15_000 })
+    await screen.findByText("Phones", { selector: "span" }, { timeout: 15_000 })
     const group = screen.getByRole("region", { name: "Phones" })
-    expect(within(group).getAllByRole("link").map((l) => l.textContent?.replace(/Ctrl\+\d/, ""))).toEqual([
-      "Phone summary", "Conversations", "Patterns", "Money on the phones", "Analyses", "Needs a decision", "Help",
-    ])
-    expect(within(group).getByRole("link", { name: /Conversations/ })).toHaveAttribute("href", "/cases/case-1/conversations")
+    // one entry for every phone screen (phones redesign, screen 1): the six old entries and Help are gone
+    expect(within(group).getAllByRole("link").map((l) => l.textContent?.replace(/Ctrl\+\d/, ""))).toEqual(["Phones"])
+    expect(within(group).getByRole("link", { name: /Phones/ })).toHaveAttribute("href", "/cases/case-1/phones")
     expect(screen.queryByText("Phones (prototype)")).not.toBeInTheDocument()
   })
 })
 
-describe("AppSidebar New marks (07 section 9)", () => {
-  const withPhone = () => {
+describe("AppSidebar Phones entry (phones redesign, screen 1)", () => {
+  it("never carries a New mark, even inside the 7 days after a phone arrives", async () => {
+    Object.assign(marks, { until: Date.now() + 60_000, hidden: false, saved: 0 })
     phones.list = [{ extraction_id: "e1", label: "Phone 1" }]
     sidebar()
-  }
-  it("marks the phone items inside the 7 days, and hiding them is saved", async () => {
-    Object.assign(marks, { until: Date.now() + 60_000, hidden: false, saved: 0 })
-    withPhone()
-    const hide = await screen.findByRole("button", { name: "Hide the New marks" }, { timeout: 15_000 })
-    expect(screen.getAllByText("New")).toHaveLength(6)
-    // the mark takes room from the row: a marked name wraps, it is never cut
-    expect(screen.getByText("Money on the phones")).not.toHaveClass("truncate")
-    fireEvent.click(hide)
-    await vi.waitFor(() => expect(screen.queryByText("New")).not.toBeInTheDocument())
-    expect(marks.saved).toBe(1)
-  })
-  it("shows no mark once the 7 days have passed, or once this person hid them", async () => {
-    Object.assign(marks, { until: Date.now() - 1, hidden: false })
-    withPhone()
-    await screen.findByText("Phone summary", undefined, { timeout: 15_000 })
+    await screen.findByText("Phones", { selector: "span" }, { timeout: 15_000 })
     expect(screen.queryByText("New")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Hide the New marks" })).not.toBeInTheDocument()
   })
-  it("reopens the first-phone card from Help", async () => {
-    Object.assign(marks, { until: 0 })
-    withPhone()
-    expect(await screen.findByRole("link", { name: /Help/ }, { timeout: 15_000 })).toHaveAttribute("href", "/cases/case-1/phones?help=phones")
+  it("is the current page on every phone screen", async () => {
+    const { phonesEntryActive } = await import("./phones-entry")
+    for (const p of ["/cases/c/phones", "/cases/c/phones/e1", "/cases/c/phones/e1/records/conversations", "/cases/c/conversations", "/cases/c/phone-analyses/plans", "/cases/c/phone-review", "/cases/c/phones/search"])
+      expect(phonesEntryActive(p, "c")).toBe(true)
+    for (const p of ["/cases/c/map", "/cases/c/phones-prototype/summary", "/cases/d/phones"]) expect(phonesEntryActive(p, "c")).toBe(false)
   })
 })
 
