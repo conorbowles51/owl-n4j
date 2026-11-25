@@ -2353,6 +2353,19 @@ def timeline_lens_buckets(body: LensBucketsBody, db: Session = Depends(get_db),
         raise _failure("The lanes could not be loaded.", exc)
 
 
+@router.post("/home/facets")
+def phone_home_facets(body: dict, part: Optional[str] = Query(None, pattern="^(kinds|people|states)$"),
+                      db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The Phones page's What, Who and State counts (screen 1), each exact and equal to the list it opens; ``part``
+    asks for one group, so the page shows each as it arrives."""
+    from services.phone import phone_home
+    f = _lens_filter(body, db, user)
+    try:
+        return phone_home.facets(db.connection(), f, part)
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("The counts beside the filters could not be loaded.", exc)
+
+
 @router.post("/conversations/threads")
 def conversation_threads(body: dict, sort: str = Query("recent", pattern="^(recent|first|volume|unreviewed|name)$"),
                          db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):

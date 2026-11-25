@@ -18,7 +18,7 @@ no data marked ``no_data`` (from 04's hour states), distinct from a period with 
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import Field
 from sqlalchemy import text
@@ -60,6 +60,21 @@ class TimelineLensFilter(StreamFilter):
     model_types: List[str] = Field(default_factory=list)
     activity_classes: List[Literal["interaction", "device_state", "passive", "unknown"]] = Field(default_factory=list)
     lane_by: Literal["phone", "person", "activity_class", "kind"] = "phone"
+    # "many": a communication whose copy is on another phone in scope (same kind, same minute, same text; a call also
+    # the same length); "one": a communication on no other phone in scope. Only communications are judged, so the
+    # other entries are left out while it is set (the screen says so).
+    copies_on: Optional[Literal["one", "many"]] = None
+
+
+# The rule behind copies_on, on the communication row ``ev``; the phones in scope are :cp_phones (null = every phone).
+COPY_ON_OTHER_PHONE_SQL = (
+    "EXISTS (SELECT 1 FROM pv_comm_event o WHERE o.case_id = ev.case_id AND o.extraction_id <> ev.extraction_id "
+    "AND (CAST(:cp_phones AS uuid[]) IS NULL OR o.extraction_id = ANY(CAST(:cp_phones AS uuid[]))) "
+    "AND o.kind = ev.kind AND ev.sort_instant IS NOT NULL "
+    "AND date_trunc('minute', o.sort_instant) = date_trunc('minute', ev.sort_instant) "
+    "AND (CASE WHEN ev.kind IN ('call', 'voicemail') THEN o.call_duration_s IS NOT DISTINCT FROM ev.call_duration_s "
+    "ELSE coalesce(ev.body, '') <> '' AND o.body = ev.body END))")
+COPIES_WORDS = {"one": "On one phone only", "many": "On more than one phone"}
 
 
 def _kind_sql(col="t.model_type"):
@@ -75,7 +90,7 @@ def _stream_filter(f: TimelineLensFilter) -> StreamFilter | None:
         chosen = [k for k in chosen if k in f.kinds]
     if not chosen or (f.activity_classes and "interaction" not in f.activity_classes) or f.model_types:
         return None
-    body = f.model_dump(exclude={"lens_kinds", "model_types", "activity_classes", "lane_by"})
+    body = f.model_dump(exclude={"lens_kinds", "model_types", "activity_classes", "lane_by", "copies_on"})
     body["kinds"] = chosen
     return StreamFilter.model_validate(body)
 
@@ -84,6 +99,8 @@ def _other_applies(f: TimelineLensFilter) -> bool:
     """Filters that only communications have (a conversation, a direction, an app, a badge, Between) leave the other
     entries out rather than pretend they matched."""
     fl = f.flags
+    if f.copies_on:
+        return False
     return not (f.threads or f.directions or f.apps or f.participant_mode in ("between", "sent_by", "sent_to")
                 or any(v is not None for v in (fl.carved, fl.unreadable, fl.synced, fl.has_attachment)))
 
@@ -202,6 +219,10 @@ def _union(conn, f, zone, extra_comm=(), extra_other=(), cols=("uid", "src", "in
     if sf is not None:
         q, _ = streams._query(conn, sf)
         lane = _lane_key_comm(f, q)
+        if f.copies_on:
+            extra_comm = list(extra_comm) + [COPY_ON_OTHER_PHONE_SQL if f.copies_on == "many"
+                                             else "NOT " + COPY_ON_OTHER_PHONE_SQL]
+            params["cp_phones"] = f.phones or None
         inner = q.matched_sql(list(extra_comm))
         # the lane expression refers to ev: compute it inside the matched rows
         sels.append("SELECT m.event_uid AS uid, 'comm' AS src, m.sort_instant AS instant, m.lane FROM (%s) m WHERE %s"
