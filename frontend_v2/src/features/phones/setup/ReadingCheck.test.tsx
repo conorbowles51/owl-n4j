@@ -73,10 +73,11 @@ describe("Set up: checking how the system read a phone", () => {
     view([reading({})])
     await screen.findAllByText("Loupe shows")
     const pre = document.querySelectorAll("pre")
-    expect(pre[0].textContent).toBe("DeviceConnectivity\nTimeStamp  2024-03-11 21:04:17\nName  Corwen-Front-Desk")
+    expect(pre[0].textContent).toBe("DeviceConnectivity\nTimeStamp  2024-03-11 21:04:17")
+    expect(loupeShows(EXAMPLES.kinds[0], "UTC")).toContain("Listed as “Corwen-Front-Desk”.")
     expect(pre[1].textContent).toContain("TimeStamp  (empty)")
     expect(screen.getByText(/^Time not recorded: listed at the end, never placed on the timeline\./)).toBeInTheDocument()
-    expect(loupeShows(EXAMPLES.kinds[0], "UTC")).toMatch(/^Placed at .*2024.*shown at that time on the timeline\.$/)
+    expect(loupeShows(EXAMPLES.kinds[0], "UTC")).toMatch(/^Placed at .*2024.*shown at that time on the timeline\. Listed as/)
     expect(reportLines(EXAMPLES.kinds[1])[0]).toBe("DeviceConnectivity")
   })
 

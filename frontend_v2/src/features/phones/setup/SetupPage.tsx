@@ -47,7 +47,7 @@ function PhoneRow({ label, index, owner, profile, readings, chosen, onChoose }: 
   return (
     <li>
       <button type="button" onClick={onChoose} aria-current={chosen ? "true" : undefined}
-        className="flex w-full items-center gap-3 border-t px-1 py-3 text-left hover:bg-accent/50 aria-[current=true]:bg-accent">
+        className="flex w-full items-center gap-3 border-t px-1 py-3 text-left hover:bg-muted/60 aria-[current=true]:bg-muted aria-[current=true]:shadow-[inset_3px_0_0_var(--color-foreground)]">
         <PhoneShape index={index} />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold">{label} <span className="font-normal text-muted-foreground">{owner ?? "owner not set yet"}</span></span>

@@ -167,7 +167,7 @@ export function ReadingCheck({ caseId, extraction, label, items, zone, initial }
               <Button size="lg" variant="ghost" className="h-11 px-5 text-[14px]" onClick={skip}>Skip for now</Button>
             </div>
             {r.status === "open" && sameKind.length > 1 && (
-              <Button size="sm" variant="link" className="self-start px-0" aria-expanded={kindOpen} onClick={() => setKindOpen((o) => !o)}>
+              <Button size="sm" variant="ghost" className="self-start px-1 text-[13px] text-foreground underline underline-offset-2" aria-expanded={kindOpen} onClick={() => setKindOpen((o) => !o)}>
                 Looks right for all {fmt(sameKind.length)} readings like this on {label}…
               </Button>
             )}
@@ -230,7 +230,7 @@ export function ReadingCheck({ caseId, extraction, label, items, zone, initial }
         {mine.map((x, i) => (
           <button key={x.id} type="button" onClick={() => setId(x.id)} aria-current={x.id === r?.id ? "true" : undefined}
             title={x.sentence}
-            className="min-w-8 rounded border px-2 py-1 font-mono text-xs aria-[current=true]:border-foreground aria-[current=true]:bg-accent">
+            className="min-w-8 rounded border px-2 py-1 font-mono text-xs aria-[current=true]:border-foreground aria-[current=true]:bg-muted">
             {i + 1}{x.status === "open" ? "" : x.status === "confirmed" ? " ✓" : " ✎"}
             <span className="sr-only">{x.status === "open" ? ", not checked" : x.status === "confirmed" ? ", confirmed" : ", corrected"}</span>
           </button>
