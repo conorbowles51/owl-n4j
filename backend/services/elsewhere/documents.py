@@ -85,11 +85,20 @@ def _ref_positions(content, ref):
 
 
 def _amounts_near(content, at):
-    win = content[max(0, at - NEAR):at + NEAR]
+    """Amounts within ``NEAR`` characters of ``at``; the window is widened to whole words, so an amount on its edge
+    is read whole ("$2,460.00", never "460.00")."""
+    s, e = max(0, at - NEAR), min(len(content), at + NEAR)
+    while s > 0 and not content[s - 1].isspace():
+        s -= 1
+    while e < len(content) and not content[e].isspace():
+        e += 1
+    win = content[s:e]
     out = set()
     for m in AMOUNT_RE.finditer(win):
+        if m.start() and (win[m.start() - 1].isdigit() or win[m.start() - 1] in ",."):
+            continue
         out.add(int(round(float(re.sub(r"[^\d.]", "", m.group())) * 100)))
-    for m in re.finditer(r"(?<![\d.])(\d{2,7}\.\d{2})(?![\d])", win):
+    for m in re.finditer(r"(?<![\d.,])(\d{2,7}\.\d{2})(?![\d])", win):
         out.add(int(round(float(m.group(1)) * 100)))
     return out
 

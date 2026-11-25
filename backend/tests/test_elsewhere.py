@@ -159,6 +159,14 @@ class DocumentsTest(unittest.TestCase):
         out = documents.part(self.conn(text), CASE, statement(references=["2204"]), "UTC", {"2204": 246000})
         self.assertEqual(out["items"][0]["relation"], W.DISAGREES)
 
+    def test_an_amount_on_the_window_edge_is_read_whole(self):
+        pre = "$1,890.00. "
+        # the window's start (NEAR characters before the check number) falls inside "$1,890.00"
+        text = pre + "y" * (documents.NEAR + 3 - len(pre) - len("Check ")) + "Check 2204, pay to Ada Wrenfield, $2,460.00."
+        at = text.index("2204")
+        self.assertEqual(at - documents.NEAR, 3)
+        self.assertEqual(documents._amounts_near(text, at) & {89000, 46000, 189000, 246000}, {189000, 246000})
+
     def test_a_name_alone_is_a_possible_match(self):
         out = documents.part(self.conn("Ada Wrenfield was refunded."), CASE,
                              statement(people=[S.Person(name="Ada Wrenfield")]), "UTC")
