@@ -48,16 +48,16 @@ function ElsewhereBlock({ caseId, st }: { caseId: string; st: Statement }) {
   return (
     <div className="flex flex-col gap-2 border-t pt-3">
       <div className="text-xs text-muted-foreground">What the rest of the case says</div>
-      {rows == null && <p className="text-sm text-muted-foreground">{st.elsewhere?.note ?? "The rest of the case was not checked for this statement."}</p>}
+      {(rows == null || st.elsewhere?.note) && <p className="text-sm text-muted-foreground">{st.elsewhere?.note ?? "The rest of the case was not checked for this statement."}</p>}
       {rows != null && rows.length === 0 && <p className="text-sm text-muted-foreground">Nothing in the financial records, documents or timeline bears on it.{st.elsewhere.searched?.length ? ` Searched: ${st.elsewhere.searched.join("; ")}.` : ""}</p>}
       {rows?.map((r: ElsewhereRow, i) => {
-        const rel = RELATION[r.relation] ?? { words: r.relation, cls: "text-muted-foreground" }
+        const rel = { words: r.relation_label || RELATION[r.relation]?.words || r.relation, cls: RELATION[r.relation]?.cls ?? "text-muted-foreground" }
         return (
           <div key={i} className="flex flex-wrap items-start gap-2.5">
             <span className={`w-24 shrink-0 rounded-full px-2 py-0.5 text-center text-xs font-semibold ${SOURCE_CLS[r.source] ?? "bg-source-1-soft text-source-1"}`}>{r.source}</span>
             <span className="min-w-0 flex-1 text-sm leading-snug">
               {r.text}{" "}
-              {r.cite && <Link to={meaningPath(caseId, r.cite)} className="rounded-sm border px-1 font-mono text-xs hover:bg-accent">{r.cite_label || "Open"}</Link>}
+              {r.cite && r.cite_label && <Link to={meaningPath(caseId, r.cite)} className="rounded-sm border px-1 font-mono text-xs hover:bg-accent">{r.cite_label || "Open"}</Link>}
               {r.reason && <span className="block text-xs text-muted-foreground">{r.reason}</span>}
             </span>
             <span className={`shrink-0 text-xs font-semibold ${rel.cls}`}>{rel.words}</span>

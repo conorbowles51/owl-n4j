@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 WORKLOAD = "chat"
 MAX_SOURCES = 24          # message windows passed to the model
 MAX_WINDOW_RECORDS = 40   # records dated inside the question's time, per answer
-SOURCE_CHARS = 2400       # one window's text
+PROMPT_CHARS = 60000      # all sources together; a unit is never cut here (the case search cuts a long one around
+                          # its match and says so), it is left out whole and counted
 MAX_STATEMENTS = 8
 MODEL_TIMEOUT_S = 180
 REC = re.compile(r"rec://([0-9a-fA-F-]{36})")
@@ -198,10 +199,10 @@ def gather(conn, case_id, question: str, phones: list[dict], *, model_call=None,
     r = S.ranked(conn, case_id, question, kinds=("phones",), rank=rank, phrase=rank, model_call=model_call,
                  embed_query=embed_query, collections=collections)
     terms = r["understood"]["terms"] + [e["term"] for e in r["understood"]["expansions"]]
-    sources, seen, left_out_phone = [], set(), 0
+    sources, seen, left_out_phone, used = [], set(), 0, 0
     facts_all: dict[str, dict] = {}
     for c in r["candidates"]:
-        if len(sources) >= MAX_SOURCES:
+        if len(sources) >= MAX_SOURCES or used >= PROMPT_CHARS:
             break
         unit = units.build(conn, case_id, dict(c), terms)
         body = unit.get("text") or ""
@@ -211,8 +212,9 @@ def gather(conn, case_id, question: str, phones: list[dict], *, model_call=None,
         if uids and not keep:
             left_out_phone += 1
             continue
-        if len(body) > SOURCE_CHARS:
-            body = body[:SOURCE_CHARS]
+        if sources and used + len(body) > PROMPT_CHARS:
+            break
+        used += len(body)
         facts_all.update(facts)
         seen.update(keep)
         sources.append({"title": unit.get("title") or c.get("title") or "", "text": body, "records": keep,
@@ -365,22 +367,42 @@ def dropped_sentence(dropped: dict[str, int]) -> str | None:
 
 # ---- elsewhere in the case ------------------------------------------------------------------------------------------
 def elsewhere_rows(conn, case_id, statement: dict, phones: list[dict], facts: dict[str, dict]) -> dict:
-    """What the rest of the case says about one statement, from lx-elsewhere's service. Until that service is on
-    this code, the block says it was not checked (never rows made up here)."""
+    """What the rest of the case says about one statement: lx-elsewhere's service (``services.elsewhere``), given
+    the statement's text, its cited records, its people and its dates. Relations are that service's rules; nothing
+    here or in the model decides one. A part that fails says so; a part that finds nothing says what it searched."""
     try:
-        from services import elsewhere  # type: ignore[attr-defined]
-        fn = getattr(elsewhere, "for_statement")
-    except (ImportError, AttributeError):
-        return {"rows": None, "note": "The rest of the case was not checked for this statement yet."}
+        from services.elsewhere import service as ES, subject as SU
+    except ImportError:
+        return {"rows": None, "searched": [], "note": "The rest of the case was not checked for this statement yet."}
+    payload = {"text": statement["text"], "record_uids": statement["cites"][:SU.MAX_RECORDS],
+               "people": [{"name": n} for n in statement.get("people") or []]}
+    if statement.get("date_from") or statement.get("date_to"):
+        payload["period"] = {"start": statement.get("date_from"), "end": statement.get("date_to")}
     try:
-        got = fn(conn, case_id, text=statement["text"], records=statement["cites"], people=statement["people"],
-                 date_from=_as_date(statement.get("date_from")), date_to=_as_date(statement.get("date_to")),
-                 phones_in_scope=[p["extraction_id"] for p in phones])
-        return {"rows": list(got.get("rows") or []), "searched": list(got.get("searched") or []), "note": None}
+        subject = SU.from_statement(conn, case_id, payload)
+        got = ES.run(conn, case_id, subject)
     except Exception:  # noqa: BLE001 - the answer stands; the block says the check failed
         logger.warning("Elsewhere check failed", exc_info=True)
-        return {"rows": None, "note": "The rest of the case could not be checked for this statement (an error). "
-                                      "Ask again to retry."}
+        return {"rows": None, "searched": [], "note": "The rest of the case could not be checked for this statement "
+                                                      "(an error). Ask again to retry."}
+    rows, searched, failed = [], [], []
+    for part in got.get("parts") or []:
+        label = part.get("label") or str(part.get("source") or "").capitalize()
+        if part.get("state") != "done":
+            failed.append(label)
+        if part.get("searched"):
+            searched.append("%s: %s" % (label, part["searched"]))
+        for it in part.get("items") or []:
+            c = it.get("citation") or {}
+            href = c.get("href")
+            if not href and c.get("kind") in ("timeline_entry", "timeline_event"):
+                href = "/cases/%s/timeline" % case_id
+            rows.append({"source": (c.get("phone") if part.get("source") == "phones" and c.get("phone") else label),
+                         "part": part.get("source"), "text": it.get("text") or "", "relation": it.get("relation"),
+                         "relation_label": it.get("relation_label"), "reason": it.get("reason") or "",
+                         "cite": href, "cite_label": c.get("label") or ("Open" if href else None)})
+    note = ("Not checked, an error: %s. Ask again to retry." % ", ".join(failed)) if failed else None
+    return {"rows": rows, "searched": searched, "note": note, "counts": got.get("counts") or {}}
 
 
 def _as_date(v):
@@ -443,7 +465,7 @@ def next_steps(conn, case_id, question: str, statements: list[dict], not_found: 
     # a dated statement the timeline does not hold (from the elsewhere rows)
     for i, st in enumerate(statements):
         rows = (st.get("elsewhere") or {}).get("rows") or []
-        if st.get("date_from") and any(r.get("source") == "Timeline" and r.get("relation") == "nothing_found"
+        if st.get("date_from") and any(r.get("part") == "timeline" and r.get("relation") == "nothing_found"
                                        for r in rows):
             steps.append({"kind": "timeline", "statement": i, "rank": 3,
                           "title": "Put %s on the case timeline" % st["date_from"],
@@ -473,7 +495,7 @@ def next_steps(conn, case_id, question: str, statements: list[dict], not_found: 
         asked = "; ".join(nf.get("asked") or question for nf in not_found[:3])
         steps.append({"kind": "not_found", "rank": 5, "title": "Look in the rest of the case",
                       "why": "The phones did not answer this: %s. The case search reads the financial records, the "
-                             "documents and the timeline too." % asked[:300],
+                             "documents and the timeline too." % asked[:300].rstrip(" ?.!"),
                       "action": {"label": "Search the case", "kind": "case_search", "q": question[:200]}})
     if left_out:
         names = ", ".join(p["label"] for p in left_out)

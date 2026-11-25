@@ -3,7 +3,7 @@ import { fetchAPI } from "@/lib/api-client"
 /** Ask the phones a question (lx-phoneask; backend routers/phone_ask.py). */
 export interface AskPhone { extraction_id: string; label: string; owner: string | null; allowed: boolean | null }
 export interface CiteLabel { record: string; label: string; extraction_id: string | null }
-export interface ElsewhereRow { source: string; text: string; cite?: string; cite_label?: string; relation: string; reason?: string }
+export interface ElsewhereRow { source: string; part?: string; text: string; cite?: string | null; cite_label?: string | null; relation: string; relation_label?: string; reason?: string }
 export interface Statement {
   text: string
   cites: string[]

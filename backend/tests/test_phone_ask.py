@@ -214,3 +214,59 @@ def test_an_empty_or_long_question_is_refused(db):
         R.start(db, case_id=uuid.UUID(CASE), question="  ", phones=None, user=None, run=False)
     with pytest.raises(R.AskError):
         R.start(db, case_id=uuid.UUID(CASE), question="x" * (R.MAX_QUESTION + 1), phones=None, user=None, run=False)
+
+
+def test_a_long_conversation_reaches_the_model_whole_and_a_unit_over_budget_is_counted():
+    """Halloran case, 25 Nov: "delete the Quarrow emails" sat at character 2,600 of its conversation, and a cut at
+    2,400 characters hid it, so the answer said nobody asked for emails to be deleted."""
+    from services.case_search import service as S, units
+    filler = "".join("1 Jan 2024 | Phone 3 | ok [rec://%s]\n" % ("dddddddd-0000-0000-0000-%012d" % i) for i in range(70))
+    long_text = filler + "26 Apr 2024 | Phone 3 | delete the Quarrow emails [rec://%s]" % M4
+    cands = [{"area": "phone_text", "title": "Phone 3 · WhatsApp", "text": long_text, "grade": "strong"},
+             {"area": "phone_text", "title": "Phone 2", "text": SOURCES[0]["text"], "grade": "weak"}]
+    ranked = {"understood": {"terms": [], "expansions": [], "windows": []}, "candidates": cands, "notes": [],
+              "ranking": {}, "seconds": {}}
+
+    def facts(conn, case_id, uids):
+        return {u: {"extraction_id": P3, "model_type": "InstantMessage", "at": AT, "deleted": False, "parent": None,
+                    "title": ""} for u in uids}
+    with mock.patch.object(S, "ranked", return_value=ranked), \
+            mock.patch.object(units, "build", side_effect=lambda conn, case_id, c, terms: c), \
+            mock.patch.object(A, "record_facts", side_effect=facts):
+        got = A.gather(Conn(), CASE, "Did anyone ask for emails to be deleted?", PHONES)
+        assert len(got["sources"][0]["text"]) > 2400
+        assert "delete the Quarrow emails" in got["sources"][0]["text"] and M4 in got["sources"][0]["records"]
+        with mock.patch.object(A, "PROMPT_CHARS", len(long_text) + 10):
+            small = A.gather(Conn(), CASE, "Did anyone ask for emails to be deleted?", PHONES)
+    assert len(small["sources"]) == 1 and small["more_found"] == 1  # left out whole, and counted
+
+
+def test_what_the_rest_of_the_case_says_comes_from_the_elsewhere_service_with_its_relations():
+    from services.elsewhere import service as ES, subject as SU
+    got = {"parts": [
+        {"source": "financial", "label": "Financial", "state": "done", "searched": "statement rows 1 to 30 Mar",
+         "items": [{"relation": "agrees", "relation_label": "Agrees", "text": "Check 2204 arrives", "reason": "same amount",
+                    "citation": {"kind": "transaction", "id": "t1", "href": "txn://t1", "label": "pell-2024-03.pdf p.1"}}]},
+        {"source": "phones", "label": "Phones", "state": "done", "searched": "other phones",
+         "items": [{"relation": "missing_here", "relation_label": "Missing here", "text": "Phone 1 was recording",
+                    "reason": "", "citation": {"kind": "phone_record", "id": M4, "href": "rec://" + M4, "phone": "Phone 1",
+                                               "label": "Phone 1 · Message"}}]},
+        {"source": "timeline", "label": "Timeline", "state": "failed", "searched": "", "items": []}],
+        "counts": {"agrees": 1}}
+    seen = {}
+
+    def subject(conn, case_id, payload):
+        seen.update(payload)
+        return object()
+    st = {"text": "Dorian banked the checks.", "cites": [M1], "people": ["Dorian Pell"], "date_from": "2024-03-12",
+          "date_to": "2024-03-12"}
+    with mock.patch.object(SU, "from_statement", side_effect=subject), mock.patch.object(ES, "run", return_value=got):
+        out = A.elsewhere_rows(Conn(), CASE, st, PHONES, FACTS)
+    assert seen["record_uids"] == [M1] and seen["people"] == [{"name": "Dorian Pell"}]
+    assert seen["period"] == {"start": "2024-03-12", "end": "2024-03-12"}
+    assert [(r["source"], r["relation"], r["cite"]) for r in out["rows"]] == [
+        ("Financial", "agrees", "txn://t1"), ("Phone 1", "missing_here", "rec://" + M4)]
+    assert "Timeline" in out["note"]  # a failed part is said, never left out silently
+    with mock.patch.object(SU, "from_statement", side_effect=SU.BadSubject("x")):
+        bad = A.elsewhere_rows(Conn(), CASE, st, PHONES, FACTS)
+    assert bad["rows"] is None and "could not be checked" in bad["note"]
