@@ -22,7 +22,7 @@ vi.mock("@/features/phones/ui/use-phone-scope", async () => {
   return { useUrlScope: () => ({ scope: EMPTY_SCOPE, apply: vi.fn(), presets: [], recent: [], restored: false, notApplied: [] }) }
 })
 import PhoneSearchPage from "./PhoneSearchPage"
-import { stepPath, withElsewhere } from "./step-path"
+import { dayPath, hasRoute, stepPath, withElsewhere } from "./step-path"
 
 const phones = [{ extraction_id: "p1", label: "Phone 1" }, { extraction_id: "p2", label: "Phone 2" }, { extraction_id: "p3", label: "Phone 3" }]
 const msgHit = {
@@ -143,5 +143,14 @@ describe("next step links carry the people, phones and period", () => {
   })
   it("ranks a late step after the person and deleted steps", () => {
     expect(withElsewhere(result.next_steps, corroborate).map((s) => [s.id, s.rank])).toEqual([["person", 1], ["deleted", 2], ["corroborate", 3], ["ask", 4], ["keyword_list", 5]])
+  })
+  it("links a sibling screen only once its route is in the build", () => {
+    expect(hasRoute("phones/search")).toBe(true)
+    expect(hasRoute("phones/no-such-screen")).toBe(false)
+    const person = stepPath("c1", result.next_steps[0], scope)
+    expect(person).toBe(hasRoute("phones/person") ? "/cases/c1/phones/person?people=phone%3A%2B17175550221" : "/cases/c1/conversations?tab=people&people=phone%3A%2B17175550221")
+    expect(dayPath("c1", "2024-03-12")).toBe(hasRoute("phones/moment")
+      ? "/cases/c1/phones/moment?from=2024-03-12T00%3A00%3A00&to=2024-03-12T23%3A59%3A59"
+      : "/cases/c1/conversations?from=2024-03-12&to=2024-03-12")
   })
 })

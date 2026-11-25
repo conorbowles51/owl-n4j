@@ -19,7 +19,7 @@ import { hitPath } from "@/features/search/lib/open-hit"
 import { recordPath } from "@/lib/record-links"
 import { cn } from "@/lib/cn"
 import { hitContext, searchPhones, searchPhonesElsewhere, searchPhonesKind, type KindCount, type NextStep, type PhoneHit, type PhoneSearchResult } from "./api"
-import { stepPath, withElsewhere, type StepScope } from "./step-path"
+import { dayPath, stepPath, withElsewhere, type StepScope } from "./step-path"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -451,7 +451,7 @@ function ContextPane({ caseId, hit, q, exact, index, stepScope }: { caseId: stri
         </Button>
         {day && (
           <Button asChild variant="outline" size="sm">
-            <Link to={`/cases/${encodeURIComponent(caseId)}/conversations?${new URLSearchParams({ from: day, to: day })}`}>That day, all phones</Link>
+            <Link to={dayPath(caseId, day)}>That day, all phones</Link>
           </Button>
         )}
         <Button asChild variant="outline" size="sm">

@@ -9,6 +9,12 @@ export interface StepScope {
 
 const c = (caseId: string) => `/cases/${encodeURIComponent(caseId)}`
 
+/** The phone redesign's sibling screens (lx-phoneperson's person and moment, lx-phoneask's ask) are linked once their
+ * route is in this build's route table; until then the step opens today's screen for the same thing, never an address
+ * that is not there. Read from the route file's text so it follows whatever path those jobs register. */
+const ROUTES = Object.values(import.meta.glob("/src/app/routes.tsx", { query: "?raw", import: "default", eager: true }))[0] as string | undefined
+export const hasRoute = (path: string) => !!ROUTES && ROUTES.includes(`path="${path}"`)
+
 function withScope(base: Record<string, string>, scope: StepScope, own: Record<string, string | null>) {
   const q = new URLSearchParams(base)
   // the step's own phones and dates win; otherwise the search's scope travels on
@@ -31,12 +37,14 @@ export function stepPath(caseId: string, step: NextStep, scope: StepScope, exact
   switch (step.open.screen) {
     case "person":
       // every phone: the person is opened across all of them, whatever this search's phone scope
+      if (hasRoute("phones/person")) return `${c(caseId)}/phones/person?${new URLSearchParams({ people: p.people ?? "" })}`
       return `${c(caseId)}/conversations?${new URLSearchParams({ tab: "people", people: p.people ?? "" })}`
     case "conversations":
       return `${c(caseId)}/conversations?${withScope({ q, ...(p.deleted ? { deleted: p.deleted } : {}), ...(exact ? { exact: "1" } : {}) }, scope, {})}`
     case "timeline":
       return `${c(caseId)}/timeline?${withScope({}, scope, { phones: p.phones, from: p.from, to: p.to })}`
     case "ask":
+      if (hasRoute("phones/ask")) return `${c(caseId)}/phones/ask?${withScope({ q }, scope, {})}`
       return `${c(caseId)}/agent?${new URLSearchParams({ question: `What do the phones say about “${q}”?` })}`
     case "corroborate":
       return `${c(caseId)}/search?${new URLSearchParams({ q, group: "documents", ...(exact ? { exact: "1" } : {}) })}`
@@ -56,4 +64,14 @@ export function withElsewhere(steps: NextStep[], extra: NextStep | null): NextSt
   const list = [...steps]
   list.splice(at < 0 ? list.length : at, 0, extra)
   return list.map((s, i) => ({ ...s, rank: i + 1 }))
+}
+
+/** "That day, all phones": the moment screen when it is in the build, else Conversations on that day. */
+export function dayPath(caseId: string, day: string): string {
+  if (hasRoute("phones/moment")) {
+    const from = `${day}T00:00:00`
+    const to = `${day}T23:59:59`
+    return `${c(caseId)}/phones/moment?${new URLSearchParams({ from, to })}`
+  }
+  return `${c(caseId)}/conversations?${new URLSearchParams({ from: day, to: day })}`
 }
