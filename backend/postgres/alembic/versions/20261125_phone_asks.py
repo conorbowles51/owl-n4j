@@ -1,12 +1,12 @@
 """Questions asked of a case's phones, with their answers (lx-phoneask D: earlier questions are kept and listed).
 
 Revision ID: 20261125_phone_asks
-Revises: 20261122_document_date_model_checks
+Revises: 20261125_phone_texts_digits_joined
 """
 from alembic import op
 
 revision = "20261125_phone_asks"
-down_revision = "20261122_document_date_model_checks"
+down_revision = "20261125_phone_texts_digits_joined"
 branch_labels = None
 depends_on = None
 
