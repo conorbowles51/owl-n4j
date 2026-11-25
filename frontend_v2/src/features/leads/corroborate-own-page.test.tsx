@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { act, fireEvent, render, screen } from "@testing-library/react"
-import { MemoryRouter, useNavigate } from "react-router-dom"
+import { act, render, screen } from "@testing-library/react"
+import { MemoryRouter, useLocation } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { setSwitch } from "@/lib/ui-switches"
-import { CorroboratePanel } from "./CorroboratePanel"
+import { CorroborateOpener } from "./CorroboratePanel"
 import { openCorroborate, takePendingCorroborate } from "./open"
 import { leadsAPI } from "./api"
 import { skippedWords, toMembers } from "@/features/relations/api"
@@ -12,15 +12,16 @@ import { LookIntoButton } from "@/features/relations/LookIntoButton"
 // 23 Nov, live: the Corroborate panel was open on every phone screen, and Phone summary's Corroborate showed
 // "Corroborate cannot read 1 phone_extraction". A request kept after a panel showed it reopened every panel mounted
 // later (any other page); a whole phone was handed to Corroborate, which reads records, and its type name was printed.
-function Go({ to }: { to: string }) {
-  const nav = useNavigate()
-  return <button onClick={() => nav(to)}>go {to}</button>
+// Since lx-corroredo A the panel is gone: Corroborate opens the Corroborate page, and the same rule holds for it.
+function Where() {
+  const loc = useLocation()
+  return <p data-testid="where">{loc.pathname + loc.search}</p>
 }
-function page(panel = true) {
+function page() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/cases/c1/phones"]}>
-    {panel && <CorroboratePanel />}
-    <Go to="/cases/c1/map" />
+    <CorroborateOpener />
+    <Where />
   </MemoryRouter></QueryClientProvider>)
 }
 const ask = () => openCorroborate({ caseId: "c1", screen: "Phones", label: "1 message", members: [{ type: "phone_record", id: "r1" } as never] }, { keep: false })
@@ -32,26 +33,19 @@ beforeEach(() => {
   vi.spyOn(leadsAPI, "here").mockResolvedValue({ leads: [], total: 0, finder: { status: "done" } })
 })
 
-describe("the Corroborate panel opens only when asked, on the page it was asked from", () => {
-  it("a panel mounted after another one showed a request does not open by itself", async () => {
+describe("Corroborate opens its page only when asked", () => {
+  it("asking moves to the Corroborate page; an opener mounted later does not move by itself", async () => {
     const first = page()
     act(() => ask())
-    await screen.findByRole("dialog", { name: "Corroborate" })
+    expect(screen.getByTestId("where").textContent).toBe("/cases/c1/corroborate?from=selection")
     first.unmount()
     page()
-    expect(screen.queryByRole("dialog", { name: "Corroborate" })).toBeNull()
+    expect(screen.getByTestId("where").textContent).toBe("/cases/c1/phones")
   })
-  it("leaving the page closes it", async () => {
-    page()
-    act(() => ask())
-    await screen.findByRole("dialog", { name: "Corroborate" })
-    fireEvent.click(screen.getByRole("button", { name: "go /cases/c1/map" }))
-    expect(screen.queryByRole("dialog", { name: "Corroborate" })).toBeNull()
-  })
-  it("a request made before the panel loaded is still shown once, on its own page", async () => {
+  it("a request made before the opener loaded still opens the page once", async () => {
     act(() => ask())
     page()
-    await screen.findByRole("dialog", { name: "Corroborate" })
+    expect(screen.getByTestId("where").textContent).toBe("/cases/c1/corroborate?from=selection")
   })
 })
 
