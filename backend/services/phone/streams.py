@@ -224,6 +224,11 @@ class Query:
                 q = F.fold(f.text.query)
                 cond = "t.value_folded LIKE %s" % self._p("%" + q.replace("\\", "\\\\").replace("%", "\\%")
                                                            .replace("_", "\\_") + "%")
+                # a phone number typed any way also finds it stored any way (search/number_words.py)
+                from services.search import number_words
+                number = number_words.sql("t.value_folded", f.text.query, self._p)
+                if number:
+                    cond = "(%s OR %s)" % (cond, number)
             if q:
                 # the record's own text, or a child record's text (an attachment's name): two index lookups per
                 # event; as one OR the child lookup ran once per event and text pair (1,050 ms -> 66 ms measured on

@@ -25,7 +25,10 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/embed_all/search.py": (3, SEARCH),
     "services/phone/chat_retrieval.py": (2, SEARCH),
     "services/evidence_text_search_service.py": (2, SEARCH),
-    "services/search/search.py": (7, SEARCH),
+    "services/search/search.py": (8, SEARCH),
+    # A phone number typed any way (lx-phonesearch): exact matches counted like every search.py match, read through
+    # the index of migration 20261125_phone_texts_digits_joined.
+    "services/search/number_words.py": (1, SEARCH),
     "services/search/payments.py": (1, SEARCH),
     "services/vector_db_service.py": (1, SEARCH),
     "services/neo4j/graph_service.py": (11, SEARCH),

@@ -28,7 +28,7 @@ from services.phone import labels as L
 from services.phone import streams
 from services.phone import time_display as T
 from services.phone.derive import IN_USE_ORDER
-from services.search import document_folds
+from services.search import document_folds, number_words
 
 GROUPS = ("messages", "calls", "emails", "people", "records", "documents", "machine_text", "payments", "production_numbers")
 COMM_KINDS = {"messages": ["message", "chat_activity"], "calls": ["call", "voicemail"], "emails": ["email"]}
@@ -72,6 +72,10 @@ def snippet(original, query, exact=False):
         if at >= 0:
             s, e = starts[at], starts[at + len(fq) - 1] + 1
             return _cut(original, s, e)
+    if not exact:  # a number typed one way, stored another (number_words)
+        at = number_words.span(original, number_words.number_digits(query))
+        if at:
+            return _cut(original, *at)
     return None
 
 
@@ -137,8 +141,9 @@ RECORD_TEXT_SQL = ("SELECT t.value FROM pv_text t WHERE t.record_uid = :u AND NO
 
 def _record_text(conn, record_uid, q, exact):
     fq = F.fold(q, exact=exact)
+    digits = None if exact else number_words.number_digits(q)
     for (v,) in conn.execute(text(RECORD_TEXT_SQL), {"u": record_uid}):
-        if v and fq in F.fold(v, exact=exact):
+        if v and (fq in F.fold(v, exact=exact) or (digits and number_words.span(v, digits))):
             return v
     return None
 
@@ -198,35 +203,77 @@ def _people(conn, case_id, q, exact, short, offset, limit):
 
 # ---- other phone records ------------------------------------------------------------------------------------------------
 
-def _records_sql(exact):
-    cond = "position(:q in lower(t.value)) > 0" if exact else "t.value_folded LIKE :like"
-    # sensitive values (passwords, cookies, card numbers, key-value pairs) are never searched (05 section 3.8)
+MASK = "••••"
+
+
+def records_match(q, exact, p):
+    """The text condition for other phone records, its parameters added to ``p``. Sensitive values (passwords,
+    cookies, typed words, card numbers; 05 section 3.8) are compared inside the backend and only on their whole
+    value, and their hits are shown masked (``records_items``), so a search never shows or spells one out."""
+    p.update({"q": F.fold(q, exact=True), "like": _like(F.fold(q)), "whole": F.fold(q, exact=exact)})
+    if exact:
+        plain, hidden = "position(:q in lower(t.value)) > 0", "lower(t.value) = :whole"
+    else:
+        plain, hidden = "t.value_folded LIKE :like", "t.value_folded = :whole"
+        number = number_words.sql("t.value_folded", q, lambda v: p.setdefault("digits", v) and ":digits")
+        if number:
+            plain = "(%s OR %s)" % (plain, number)
+    return "((NOT t.is_sensitive AND %s) OR (t.is_sensitive AND %s))" % (plain, hidden)
+
+
+def records_sql(cond):
+    # undated records stay in a dated search, as undated messages do in Conversations (include_no_time)
     return ("FROM pv_text t JOIN pv_record r ON r.record_uid = t.record_uid WHERE t.case_id = :c AND %s "
-            "AND NOT t.is_sensitive "
             "AND (CAST(:p AS uuid[]) IS NULL OR t.extraction_id = ANY(CAST(:p AS uuid[]))) "
+            "AND (r.first_instant IS NULL OR ((CAST(:a AS timestamptz) IS NULL OR r.first_instant >= CAST(:a AS "
+            "timestamptz)) AND (CAST(:b AS timestamptz) IS NULL OR r.first_instant <= CAST(:b AS timestamptz)))) "
             "AND NOT EXISTS (SELECT 1 FROM pv_comm_event e WHERE e.record_uid = t.record_uid OR "
             "e.record_uid = r.parent_record_uid OR e.record_uid = r.root_record_uid)" % cond)
 
 
-def _records(conn, case_id, q, exact, phones, offset, limit, ctx):
-    p = {"c": case_id, "q": F.fold(q, exact=True), "like": _like(F.fold(q)), "p": phones or None}
-    total = int(conn.execute(text("SELECT count(DISTINCT t.record_uid) " + _records_sql(exact)), p).scalar() or 0)
+def _records(conn, case_id, q, exact, phones, offset, limit, ctx, start=None, end=None):
+    p = {"c": case_id, "p": phones or None, "a": start, "b": end}
+    sql = records_sql(records_match(q, exact, p))
+    total = int(conn.execute(text("SELECT count(DISTINCT t.record_uid) " + sql), p).scalar() or 0)
     if not total or not limit:
         return total, []
     p.update({"lim": limit, "off": offset})
     rows = conn.execute(text(
         "SELECT DISTINCT ON (r.first_instant, t.record_uid) t.record_uid, t.extraction_id, r.model_type, "
-        "r.first_instant, t.value " + _records_sql(exact) + " ORDER BY r.first_instant NULLS LAST, t.record_uid, "
-        "t.field_path LIMIT :lim OFFSET :off"), p).fetchall()
+        "r.first_instant, r.deleted_state, t.value, t.is_sensitive, t.field_path, t.value_index " + sql
+        + " ORDER BY r.first_instant NULLS LAST, t.record_uid, t.is_sensitive, t.field_path LIMIT :lim OFFSET :off"),
+        p).fetchall()
+    return total, records_items(rows, q, exact, ctx)
+
+
+def records_items(rows, q, exact, ctx):
     out = []
     for r in rows:
         phone = ctx["phones"].get(str(r.extraction_id), "Phone")
-        out.append({"kind": "record", "title": "%s %s" % (phone, r.model_type), "phone_label": phone,
-                    "snippet": snippet(r.value, q, exact) or {"before": "", "match": "", "after": r.value[:120]},
-                    "time": T.format_row(r.first_instant, ctx["zone"]) if r.first_instant else None,
-                    "instant": T.iso(r.first_instant), "record_uid": str(r.record_uid), "evidence_file_id": None,
-                    "open": {"screen": "record", "params": {"record_uid": str(r.record_uid)}}})
-    return total, out
+        hit = {"kind": "record", "title": "%s %s" % (phone, r.model_type), "phone_label": phone,
+               "extraction_id": str(r.extraction_id), "model_type": r.model_type,
+               "time": T.format_row(r.first_instant, ctx["zone"]) if r.first_instant else None,
+               "instant": T.iso(r.first_instant), "record_uid": str(r.record_uid), "evidence_file_id": None,
+               "deleted": _is_deleted(r.deleted_state),
+               "open": {"screen": "record", "params": {"record_uid": str(r.record_uid)}}}
+        if r.is_sensitive:
+            # the value is never sent: the screen offers the logged Reveal for this field (05 section 3.8)
+            hit.update(masked=True, field_path=r.field_path, value_index=int(r.value_index or 0),
+                       snippet={"before": "%s: " % field_name(r.field_path), "match": MASK,
+                                "after": " (hidden; it holds exactly what you typed)"})
+        else:
+            hit["snippet"] = snippet(r.value, q, exact) or {"before": "", "match": "", "after": r.value[:120]}
+        out.append(hit)
+    return out
+
+
+def field_name(field_path):
+    """The field a value sits in, from its path (``Entries[2].Word`` is ``Word``)."""
+    return re.sub(r"\[\d+\]", "", (field_path or "").rsplit(".", 1)[-1]) or "Value"
+
+
+def _is_deleted(state):
+    return (state or "").lower() in ("deleted", "trash")
 
 
 # ---- documents ------------------------------------------------------------------------------------------------------------
@@ -437,7 +484,7 @@ def _group(conn, case_id, group, q, exact, phones, start, end, offset, limit, ct
     elif group == "people":
         total, items = _people(conn, case_id, q, exact, short, offset, limit)
     elif group == "records":
-        total, items = (0, []) if short else _records(conn, case_id, q, exact, phones, offset, limit, ctx)
+        total, items = (0, []) if short else _records(conn, case_id, q, exact, phones, offset, limit, ctx, start, end)
     elif group == "machine_text":
         total, items = (0, []) if short else _machine(conn, case_id, q, exact, phones, offset, limit, ctx)
     elif group == "documents":
