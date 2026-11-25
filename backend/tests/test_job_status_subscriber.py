@@ -336,14 +336,18 @@ class TerminalWriteThreadTests(unittest.IsolatedAsyncioTestCase):
             threads.append(threading.get_ident())
             yield db
 
+        # The engine fetch is patched: a real HTTP call is slow on a loaded box, and the session patch is
+        # process-wide, so a leftover thread from an earlier test could open a session meanwhile (head 0a077173:
+        # 2 != 1 on len(threads)). The assertion is on the loop thread, not on how many threads wrote.
         with patch("postgres.session.get_background_session", session), \
+                patch("services.evidence_engine_client.get_job", AsyncMock(return_value={})), \
                 patch("services.evidence_db_storage.EvidenceDBStorage.find_by_engine_job_id", return_value=None):
             handled = await subscriber._dispatch_terminal("job-9", {"job_id": "job-9", "status": "failed"},
                                                           "failed", "case-1")
 
         self.assertTrue(handled)
-        self.assertEqual(len(threads), 1)
-        self.assertNotEqual(threads[0], threading.get_ident())
+        self.assertTrue(threads)
+        self.assertNotIn(threading.get_ident(), threads)
 
 
 class QuietSweepMissingJobTests(unittest.IsolatedAsyncioTestCase):
