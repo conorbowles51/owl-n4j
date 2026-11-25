@@ -142,8 +142,13 @@ def family(kind, app) -> str:
 
 
 def match(evs, a, b) -> set:
-    """Indexes of ``evs`` paired one to one across phones ``a`` and ``b`` (05 section 5.3.4). Each group is
-    sorted by time and only candidates inside the 120-second window are compared."""
+    """Indexes of ``evs`` paired one to one across phones ``a`` and ``b`` (05 section 5.3.4)."""
+    return {i for pair in match_pairs(evs, a, b) for i in pair}
+
+
+def match_pairs(evs, a, b) -> list:
+    """``[(x, y)]``: index pairs of ``evs`` matched one to one across phones ``a`` and ``b`` (05 section 5.3.4), closest
+    in time first. Each group is sorted by time and only candidates inside the 120-second window are compared."""
     import bisect
     from collections import Counter, defaultdict
 
@@ -183,8 +188,9 @@ def match(evs, a, b) -> set:
                     continue
                 cands.append((gap, x, y))
     cands.sort()
-    out = set()
+    used, out = set(), []
     for gap, x, y in cands:
-        if x not in out and y not in out:
-            out.update((x, y))
+        if x not in used and y not in used:
+            used.update((x, y))
+            out.append((x, y))
     return out

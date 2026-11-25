@@ -157,6 +157,44 @@ def compare_phones(case_id: UUID = Query(...), a: UUID = Query(...), b: UUID = Q
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/person-across")
+def person_across(case_id: UUID = Query(...), people: str = Query(..., max_length=4000),
+                  phones: Optional[str] = Query(None, max_length=4000), with_people: Optional[str] = Query(
+                      None, alias="with", max_length=4000), only: Optional[str] = Query(None, max_length=40),
+                  offset: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db),
+                  user: User = Depends(get_current_db_user)):
+    """One person across every phone in scope (phones redesign screen 3): a card per phone, their contacts once each
+    with the phones that hold them, what differs between the phones, contact over time, places and next steps."""
+    from services.phone import person_across as PA
+    authorize_case(db, case_id, user, ("case", "view"))
+    split = (lambda v: [x for x in (v or "").split(",") if x])
+    try:
+        return PA.person_across(db.connection(), case_id, split(people), phones=split(phones) or None,
+                                with_keys=split(with_people) or None, offset=offset, limit=limit, only=only or None)
+    except PA.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/moment")
+def phones_moment(case_id: UUID = Query(...), from_at: str = Query(..., alias="from", max_length=40),
+                  to_at: str = Query(..., alias="to", max_length=40), phones: Optional[str] = Query(None, max_length=4000),
+                  db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Around a moment on every phone in scope (phones redesign screen 4): a lane per phone with not recording drawn
+    apart from quiet, together and apart for every pair of phones, the records in order, the places and next steps."""
+    from services.phone import moment as MO
+    from services.phone import person_across as PA
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return MO.moment(db.connection(), case_id, from_at, to_at,
+                         phones=[x for x in (phones or "").split(",") if x] or None)
+    except PA.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 class ReplacedLinksBody(BaseModel):
     case_id: UUID
     record_uids: list[str] = Field(default_factory=list)
