@@ -315,6 +315,11 @@ export function SimilarEntitiesView({
                   <span className="min-w-0 truncate text-xs">{pair.name2}</span>
                 </div>
               </div>
+              {pair.matchedAlias && (
+                <p className="mb-2 text-[11px] text-muted-foreground">
+                  Alias match: “{pair.matchedAlias.text1}” and “{pair.matchedAlias.text2}”
+                </p>
+              )}
               <div className="flex gap-2">
                 <Button
                   variant="outline"

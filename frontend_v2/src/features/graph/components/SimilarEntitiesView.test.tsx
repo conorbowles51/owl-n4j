@@ -18,6 +18,7 @@ const graphMocks = vi.hoisted(() => ({
   startScan: vi.fn(),
   removePair: vi.fn(),
   summary: null as null | { total: number; belowThreshold: number; threshold: number; floor: number },
+  results: null as null | Array<Record<string, unknown>>,
 }))
 
 vi.mock("../hooks/use-similar-entities", () => ({
@@ -25,7 +26,7 @@ vi.mock("../hooks/use-similar-entities", () => ({
     isScanning: false,
     progress: null,
     currentType: null,
-    results: [
+    results: graphMocks.results ?? [
       {
         key1: "entity-a",
         name1: "Alpha",
@@ -105,6 +106,18 @@ describe("SimilarEntitiesView", () => {
     graphMocks.startScan.mockReset()
     graphMocks.removePair.mockReset()
     graphMocks.summary = null
+    graphMocks.results = null
+  })
+
+  it("says which alias matched when a pair was found through one (80d1f81e: Randy Collins, aka Randall Carnes)", () => {
+    graphMocks.results = [
+      { key1: "p1", name1: "Marvin Randall Carnes", type1: "Person", key2: "p2", name2: "Randy Collins", type2: "Person",
+        similarity: 0.8, matchedAlias: { text1: "Marvin Randall Carnes", text2: "Randall Carnes" } },
+      { key1: "a", name1: "Alpha", type1: "person", key2: "b", name2: "Alpha Inc", type2: "organization", similarity: 0.91 },
+    ]
+    render(<SimilarEntitiesView caseId="case-1" graphData={graphData} onRefresh={vi.fn()} />)
+    expect(screen.getByText("Alias match: “Marvin Randall Carnes” and “Randall Carnes”")).toBeInTheDocument()
+    expect(screen.getAllByText(/Alias match:/)).toHaveLength(1)
   })
 
   it("states what the scan found against what is shown and what the threshold leaves unlisted", () => {

@@ -69,6 +69,105 @@ def same_name_other_type_pairs(entities: List[Dict], rejected_pairs: Optional[Se
     return pairs
 
 
+def _aliases(entity: Dict) -> List[str]:
+    """The entity's stored aliases (a list, or a JSON list in a string), as written."""
+    raw = (entity.get("properties") or {}).get("aliases") if entity.get("aliases") is None else entity.get("aliases")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = [raw]
+    return [a for a in (raw or []) if isinstance(a, str) and a.strip()]
+
+
+# The types an alias names: people and organisations. Measured on the live graphs (25 Nov 2026), an alias match
+# across types or on payments, charges and events pairs records that only share a counterparty or a name in a title
+# (1,592 payment pairs in one case of 685 entities).
+ALIAS_PAIR_TYPES = frozenset({"Person", "Organization", "Company", "Bank"})
+
+
+def alias_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, str]]] = None,
+                threshold: float = 0.0):
+    """[(entity1, entity2, similarity, (text1, text2))] for two people or organisations one of which is named by
+    an alias of the other.
+
+    The name passes never read aliases, so a Person 'Randy Collins' whose aliases are 'Marvin Carnes' and 'Randall
+    Carnes' was not suggested with the Person 'Marvin Randall Carnes' (80d1f81e, merged by hand 25 Nov 2026). A pair
+    of one type in ``ALIAS_PAIR_TYPES`` is suggested when an alias of one matches the other's name (``_name_key``):
+    the same text, or the alias's words, two or more, all in the name with one word more at most ('Randall Carnes'
+    in 'Marvin Randall Carnes'; not 'Duncan Cameron Sheils' in 'Son of Duncan Cameron Sheils'), or the reverse.
+    Two aliases alike ('Thomas' on Adam Thomas and on Thomas Lee Keyes) do not pair. ``similarity`` is the name
+    ratio of the two matching texts, which are returned so the screen can say what matched, and the scan's threshold
+    applies to it. Pairs the name passes already list are left to them; rejected pairs are skipped.
+    """
+    from difflib import SequenceMatcher
+    rejected_pairs = rejected_pairs or set()
+    names: Dict[str, List[int]] = {}
+    for index, entity in enumerate(entities):
+        if entity.get("type") in ALIAS_PAIR_TYPES:
+            key = _name_key(entity.get("name"))
+            if key:
+                names.setdefault(key, []).append(index)
+    words_index: Dict[str, Set[str]] = {}
+    for key in names:
+        for word in key.split():
+            words_index.setdefault(word, set()).add(key)
+    best: Dict[Tuple[int, int], Tuple[float, str, str]] = {}
+    for i, entity in enumerate(entities):
+        if entity.get("type") not in ALIAS_PAIR_TYPES:
+            continue
+        own = _name_key(entity.get("name"))
+        for alias in _aliases(entity):
+            key = _name_key(alias)
+            if not key or key == own:
+                continue
+            words = key.split()
+            matches = set(names.get(key, ()))
+            if len(words) >= 2:
+                # names holding every word of the alias, one word more at most
+                shared = set.intersection(*(words_index.get(w, set()) for w in words))
+                matches.update(j for name in shared if len(name.split()) <= len(set(words)) + 1
+                               for j in names[name])
+                # names whose words are all in the alias, one word fewer at most
+                for name in {n for w in words for n in words_index.get(w, ())}:
+                    name_words = set(name.split())
+                    if len(name_words) >= 2 and name_words <= set(words) and len(set(words)) <= len(name_words) + 1:
+                        matches.update(names[name])
+            for j in matches:
+                other = entities[j]
+                if j == i or other["type"] != entity["type"]:
+                    continue
+                if _name_key(other.get("name")) == own:
+                    continue    # the same name: the type pass lists it
+                if SequenceMatcher(None, (entity.get("name") or "").lower().strip(),
+                                   (other.get("name") or "").lower().strip()).ratio() >= threshold:
+                    continue    # the type pass lists it on the names alone
+                pair = (entity["key"], other["key"]) if entity["key"] <= other["key"] else (other["key"], entity["key"])
+                if pair in rejected_pairs:
+                    continue
+                similarity = SequenceMatcher(None, key, _name_key(other.get("name"))).ratio()
+                if similarity < threshold:
+                    continue
+                slot = (min(i, j), max(i, j))
+                texts = (alias, other["name"]) if i < j else (other["name"], alias)
+                if similarity > best.get(slot, (-1.0,))[0]:
+                    best[slot] = (similarity, *texts)
+    return [(entities[i], entities[j], s, (a, b)) for (i, j), (s, a, b) in sorted(best.items())]
+
+
+def _alias_pair(e1: Dict, e2: Dict, similarity: float, matched: Tuple[str, str]) -> Dict:
+    pair = _similar_pair(e1, e2, similarity)
+    pair["matched_on"] = {"basis": "alias", "entity1_text": matched[0], "entity2_text": matched[1]}
+    return pair
+
+
+def pair_order(pair: Dict) -> Tuple[bool, float]:
+    """Sort key, highest first: name pairs by similarity, then alias pairs by similarity. An alias pair is listed
+    after every name pair so the result cap never drops a name pair the scan listed before alias pairs existed
+    (measured 25 Nov 2026: 1,314 alias pairs on the live cases, most at 1.0)."""
+    return (pair.get("matched_on") is None, pair["similarity"])
+
+
 def _similar_pair(e1: Dict, e2: Dict, similarity: float) -> Dict:
     return {
         "entity1": {
@@ -570,9 +669,12 @@ class EntityService:
             similar_pairs.extend(_similar_pair(e1, e2, similarity)
                                  for e1, e2, similarity in same_name_other_type_pairs(
                                      entities, threshold=name_similarity_threshold))
+            similar_pairs.extend(_alias_pair(e1, e2, similarity, matched)
+                                 for e1, e2, similarity, matched in alias_pairs(
+                                     entities, threshold=name_similarity_threshold))
 
-            # Sort by similarity (highest first) and limit results
-            similar_pairs.sort(key=lambda x: x["similarity"], reverse=True)
+            # Sort by similarity (highest first) and limit results; alias pairs after every name pair
+            similar_pairs.sort(key=pair_order, reverse=True)
             return similar_pairs[:max_results]
 
     async def find_similar_entities_streaming(
@@ -789,6 +891,11 @@ class EntityService:
                                                              threshold=name_similarity_threshold):
             similar_pairs.append(_similar_pair(e1, e2, similarity))
             pairs_found += 1
+        # A name one of them gives as an alias ('Randy Collins', also known as 'Randall Carnes').
+        for e1, e2, similarity, matched in alias_pairs(all_entities, rejected_pairs,
+                                                       threshold=name_similarity_threshold):
+            similar_pairs.append(_alias_pair(e1, e2, similarity, matched))
+            pairs_found += 1
         await asyncio.sleep(0)
 
         # Emit final progress update if not already at 100%
@@ -806,8 +913,8 @@ class EntityService:
             }
             await asyncio.sleep(0)
 
-        # Sort final results by similarity
-        similar_pairs.sort(key=lambda x: x["similarity"], reverse=True)
+        # Sort final results by similarity; alias pairs after every name pair
+        similar_pairs.sort(key=pair_order, reverse=True)
 
         # Yield complete event
         yield {

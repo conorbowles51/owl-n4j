@@ -70,6 +70,7 @@ export function useSimilarEntities(caseId: string) {
             const p = value as Record<string, unknown>
             const e1 = p.entity1 as Record<string, unknown> | undefined
             const e2 = p.entity2 as Record<string, unknown> | undefined
+            const matched = p.matched_on as Record<string, unknown> | undefined
             return {
               key1: (e1?.key ?? p.key1) as string,
               name1: (e1?.name ?? p.name1) as string,
@@ -78,6 +79,9 @@ export function useSimilarEntities(caseId: string) {
               name2: (e2?.name ?? p.name2) as string,
               type2: (e2?.type ?? p.type2) as string,
               similarity: p.similarity as number,
+              ...(matched?.basis === "alias"
+                ? { matchedAlias: { text1: String(matched.entity1_text ?? ""), text2: String(matched.entity2_text ?? "") } }
+                : {}),
             }
           })
           const gone = goneRef.current

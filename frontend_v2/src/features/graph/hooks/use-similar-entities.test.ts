@@ -52,4 +52,16 @@ describe("useSimilarEntities", () => {
     act(() => callbacks.onComplete!({ limited_results: [pair("b", "c"), pair("m", "c"), pair("d", "e")], total_pairs: 3 } as never))
     expect(result.current.results.map((p) => `${p.key1}-${p.key2}`)).toEqual(["m-c", "d-e"])
   })
+
+  it("keeps the alias that matched, and only on alias pairs", () => {
+    const { result } = renderHook(() => useSimilarEntities("case-a"))
+    act(() => result.current.startScan({}))
+    act(() => callbacks.onComplete!({ total_pairs: 2, limited_results: [
+      { entity1: { key: "a", name: "Alpha", type: "Person" }, entity2: { key: "b", name: "Alpha B", type: "Person" }, similarity: 0.9 },
+      { entity1: { key: "c", name: "Marvin Randall Carnes", type: "Person" }, entity2: { key: "d", name: "Randy Collins", type: "Person" },
+        similarity: 0.8, matched_on: { basis: "alias", entity1_text: "Marvin Randall Carnes", entity2_text: "Randall Carnes" } },
+    ] } as never))
+    expect(result.current.results[0].matchedAlias).toBeUndefined()
+    expect(result.current.results[1].matchedAlias).toEqual({ text1: "Marvin Randall Carnes", text2: "Randall Carnes" })
+  })
 })

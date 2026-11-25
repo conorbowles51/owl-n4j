@@ -99,6 +99,8 @@ export interface SimilarPair {
   name2: string
   type2: string
   similarity: number
+  /** Set when the pair was found through an alias: the alias and the name that matched, entity 1's text first. */
+  matchedAlias?: { text1: string; text2: string }
 }
 
 export interface RejectedMergePair {
