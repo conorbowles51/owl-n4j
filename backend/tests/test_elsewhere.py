@@ -184,39 +184,47 @@ class PhonesTest(unittest.TestCase):
     OWNERS = {"e1": ("7175550211", "Priya Halloran"), "e2": ("7175550231", "Marisol Teague"),
               "e3": ("7175550221", "Dorian Pell")}
 
-    def test_copy_agrees_party_phone_without_it_is_missing_here(self):
-        def copies(p):
-            if p["e"] == "e3":
-                return [NS(ev="v3", uid="r3", body="leave me your login", subject=None, sort_instant=T0,
-                           deleted_state="Deleted")]
-            return []
+    def stat(self, ext, n=0, before=None, after=None):
+        b, a = before or (None, None, None), after or (None, None, None)
+        return NS(ext=ext, n=n, b_uid=b[0], b_kind=b[1], b_at=b[2], a_uid=a[0], a_kind=a[1], a_at=a[2],
+                  f_uid=b[0] or a[0], f_kind=b[1] or a[1], f_at=b[2] or a[2])
 
-        def around(p):
-            if p["e"] == "e2":
-                return []
-            return []
-
-        conn = FakeConn([(("pv_comm_event WHERE extraction_id", "kind = :k"), copies),
-                         (("pv_comm_party WHERE event_uid",), lambda p: []),
-                         (("JOIN pv_comm_party p",), around)])
+    def test_copy_agrees_and_other_phones_without_the_people_find_nothing(self):
+        copy = NS(ext="e3", ev="v3", uid="r3", body="leave me your login", subject=None, sort_instant=T0,
+                  deleted_state="Deleted")
+        conn = FakeConn([(("pv_comm_event WHERE case_id", "kind = :k"), lambda p: [copy]),
+                         (("unnest",), lambda p: [])])
         items = phones.record_items(conn, CASE, rec(), self.PHONES, self.OWNERS, "UTC")
-        by_phone = {i["citation"]["phone"] if i["citation"] else i["text"]: i for i in items}
-        self.assertEqual(by_phone["Phone 3"]["relation"], W.AGREES)
-        self.assertIn("deleted on Phone 3 and intact on Phone 1", by_phone["Phone 3"]["text"])
-        nothing = [i for i in items if i["relation"] == W.NOTHING]
-        self.assertEqual(len(nothing), 1)
-        self.assertIn("Phone 2", nothing[0]["text"])
+        self.assertEqual([i["relation"] for i in items], [W.NOTHING, W.AGREES])
+        self.assertIn("Not on Phone 2", items[0]["text"])
+        self.assertIn("deleted on Phone 3 and intact on Phone 1", items[1]["text"])
 
     def test_a_partys_phone_that_holds_the_conversation_either_side_is_missing_here(self):
-        before = NS(ev="b", uid="rb", kind="message", sort_instant=T0 - timedelta(hours=2), deleted_state=None)
-        after = NS(ev="a", uid="ra", kind="message", sort_instant=T0 + timedelta(hours=3), deleted_state=None)
-        conn = FakeConn([(("pv_comm_event WHERE extraction_id", "kind = :k"), lambda p: []),
-                         (("JOIN pv_comm_party p",), lambda p: [before, after] if p["e"] == "e3" else [])])
-        record = rec(extraction_id="e1")
-        items = phones.record_items(conn, CASE, record, [("e1", "Phone 1"), ("e3", "Phone 3")], self.OWNERS, "UTC")
+        b = ("rb", "message", T0 - timedelta(hours=2))
+        a = ("ra", "message", T0 + timedelta(hours=3))
+        seen = []
+
+        def stats(p):
+            seen.append((sorted(set(p["exts"])), sorted(p["ks"]), "s" in p))
+            return [self.stat("e3", 2, b, a)] if "e3" in p["exts"] else []
+
+        conn = FakeConn([(("pv_comm_event WHERE case_id", "kind = :k"), lambda p: []), (("unnest",), stats)])
+        items = phones.record_items(conn, CASE, rec(extraction_id="e1"), [("e1", "Phone 1"), ("e3", "Phone 3")],
+                                    self.OWNERS, "UTC")
         self.assertEqual(items[0]["relation"], W.MISSING)
         self.assertIn("either side", items[0]["text"])
         self.assertEqual(items[0]["also"][0]["id"], "ra")
+        # Dorian's phone is searched for Priya's number (the other side), within the two-day window
+        self.assertIn((["e3"], ["7175550211"], True), seen)
+
+    def test_one_side_only_is_nothing_found_not_missing(self):
+        b = ("rb", "message", T0 - timedelta(hours=2))
+        conn = FakeConn([(("pv_comm_event WHERE case_id", "kind = :k"), lambda p: []),
+                         (("unnest",), lambda p: [self.stat("e3", 1, b)] if "s" in p else [])])
+        items = phones.record_items(conn, CASE, rec(extraction_id="e1"), [("e1", "Phone 1"), ("e3", "Phone 3")],
+                                    self.OWNERS, "UTC")
+        self.assertEqual(items[0]["relation"], W.NOTHING)
+        self.assertIn("after it", items[0]["text"])
 
     def test_a_photo_place_is_never_the_phones_position(self):
         here = (51.5, -0.12)

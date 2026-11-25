@@ -99,41 +99,21 @@ def _record_keys(rec):
     return keys
 
 
-def _events_with(conn, ext, keys, start=None, end=None, limit=None):
-    """Events on phone ``ext`` with any of ``keys`` (number keys or e-mail addresses), oldest first."""
-    if not keys:
-        return []
-    nums = [k for k in keys if "@" not in k]
-    mails = [k for k in keys if "@" in k]
-    sql = ("SELECT DISTINCT c.event_uid::text AS ev, c.record_uid::text AS uid, c.kind, c.sort_instant, "
-           "c.deleted_state FROM pv_comm_event c JOIN pv_comm_party p ON p.event_uid = c.event_uid WHERE "
-           "c.extraction_id = CAST(:e AS uuid) AND (right(regexp_replace(coalesce(p.identifier_raw, ''), '\\D', '', "
-           "'g'), 10) = ANY(:n) OR lower(p.identifier_raw) = ANY(:m))")
-    params = {"e": ext, "n": nums or [""], "m": mails or [""]}
-    if start is not None:
-        sql += " AND c.sort_instant >= :s"
-        params["s"] = start
-    if end is not None:
-        sql += " AND c.sort_instant < :t"
-        params["t"] = end
-    sql += " ORDER BY c.sort_instant NULLS LAST"
-    if limit:
-        sql += " LIMIT %d" % int(limit)
-    return conn.execute(text(sql), params).fetchall()
-
-
-def _copy_on(conn, rec, ext):
+def _copies(conn, case_id, rec):
+    """``{extraction_id: row}``: the nearest copy of ``rec`` on each other phone, in one query."""
     if rec.instant is None or rec.kind is None:
-        return None
+        return {}
     rows = conn.execute(text(
-        "SELECT event_uid::text AS ev, record_uid::text AS uid, body, subject, sort_instant, deleted_state FROM "
-        "pv_comm_event WHERE extraction_id = CAST(:e AS uuid) AND kind = :k AND sort_instant BETWEEN :a AND :b"),
-        {"e": ext, "k": rec.kind, "a": rec.instant - timedelta(seconds=COPY_SECONDS),
-         "b": rec.instant + timedelta(seconds=COPY_SECONDS)}).fetchall()
+        "SELECT extraction_id::text AS ext, event_uid::text AS ev, record_uid::text AS uid, body, subject, "
+        "sort_instant, deleted_state FROM pv_comm_event WHERE case_id = CAST(:c AS uuid) AND extraction_id <> "
+        "CAST(:here AS uuid) AND kind = :k AND sort_instant BETWEEN :a AND :b"),
+        {"c": str(case_id), "here": rec.extraction_id, "k": rec.kind,
+         "a": rec.instant - timedelta(seconds=COPY_SECONDS), "b": rec.instant + timedelta(seconds=COPY_SECONDS)}
+    ).fetchall()
     mine = W.fold(rec.body)
     keys = _record_keys(rec)
-    parties = _party_keys(conn, [r.ev for r in rows]) if rows else {}
-    best = None
+    parties = _party_keys(conn, [r.ev for r in rows]) if rows and not mine else {}
+    best = {}
     for r in rows:
         theirs = W.fold(" ".join(x for x in (r.subject, r.body) if x))
         if mine and theirs:
@@ -142,9 +122,49 @@ def _copy_on(conn, rec, ext):
             same = not mine and not theirs and len(keys & parties.get(r.ev, set())) >= 2
         if same:
             gap = abs((r.sort_instant - rec.instant).total_seconds())
-            if best is None or gap < best[0]:
-                best = (gap, r)
-    return best[1] if best else None
+            if r.ext not in best or gap < best[r.ext][0]:
+                best[r.ext] = (gap, r)
+    return {e: v[1] for e, v in best.items()}
+
+
+STATS_SQL = (
+    "WITH w AS (SELECT * FROM unnest(CAST(:exts AS uuid[]), CAST(:ks AS text[])) AS w(ext, k)), "
+    "ev AS (SELECT DISTINCT c.extraction_id, c.event_uid, c.record_uid, c.kind, c.sort_instant FROM pv_comm_event c "
+    "JOIN pv_comm_party p ON p.event_uid = c.event_uid JOIN w ON w.ext = c.extraction_id AND (w.k = "
+    "right(regexp_replace(coalesce(p.identifier_raw, ''), '\\D', '', 'g'), 10) OR w.k = lower(p.identifier_raw)) "
+    "WHERE c.case_id = CAST(:c AS uuid) AND c.sort_instant IS NOT NULL{window}) "
+    "SELECT extraction_id::text AS ext, count(*) AS n, "
+    "(array_agg(record_uid::text ORDER BY sort_instant DESC) FILTER (WHERE sort_instant < :t))[1] AS b_uid, "
+    "(array_agg(kind ORDER BY sort_instant DESC) FILTER (WHERE sort_instant < :t))[1] AS b_kind, "
+    "max(sort_instant) FILTER (WHERE sort_instant < :t) AS b_at, "
+    "(array_agg(record_uid::text ORDER BY sort_instant) FILTER (WHERE sort_instant > :t))[1] AS a_uid, "
+    "(array_agg(kind ORDER BY sort_instant) FILTER (WHERE sort_instant > :t))[1] AS a_kind, "
+    "min(sort_instant) FILTER (WHERE sort_instant > :t) AS a_at, "
+    "(array_agg(record_uid::text ORDER BY sort_instant))[1] AS f_uid, "
+    "(array_agg(kind ORDER BY sort_instant))[1] AS f_kind, min(sort_instant) AS f_at "
+    "FROM ev GROUP BY 1")
+
+
+def _stats(conn, case_id, wants, t=None, start=None, end=None):
+    """``{extraction_id: row}`` for the records on each phone with any of that phone's keys (``wants``: ``{ext:
+    keys}``), in one query: how many, the nearest before and after ``t``, and the first."""
+    exts, ks = [], []
+    for ext, keys in wants.items():
+        for k in keys:
+            exts.append(ext)
+            ks.append(k)
+    if not exts:
+        return {}
+    window = ""
+    params = {"c": str(case_id), "exts": exts, "ks": ks,
+              "t": t or datetime(9999, 1, 1, tzinfo=timezone.utc)}
+    if start is not None:
+        window += " AND c.sort_instant >= :s"
+        params["s"] = start
+    if end is not None:
+        window += " AND c.sort_instant < :e"
+        params["e"] = end
+    return {r.ext: r for r in conn.execute(text(STATS_SQL.format(window=window)), params).fetchall()}
 
 
 def _names(rec, keys):
@@ -161,11 +181,27 @@ def record_items(conn, case_id, rec, phones, owners, zone, prefix=""):
     what = KIND_WORDS.get(rec.kind or "", "record")
     keys = _record_keys(rec)
     here_owner = owners.get(rec.extraction_id, (None, None))[0] or rec.owner_key
+    copies = _copies(conn, case_id, rec)
+    party_wants, other_wants = {}, {}
+    for ext, _ in phones:
+        if ext == rec.extraction_id or ext in copies:
+            continue
+        owner_key = owners.get(ext, (None, None))[0]
+        if owner_key is not None and owner_key in keys:
+            # on a party's phone the other side of the conversation includes this phone's own owner
+            party_wants[ext] = keys - {owner_key}
+        else:
+            other_wants[ext] = keys - {here_owner, owner_key}
+    around = {}
+    if rec.instant is not None and party_wants:
+        around = _stats(conn, case_id, party_wants, rec.instant, rec.instant - timedelta(days=EITHER_SIDE_DAYS),
+                        rec.instant + timedelta(days=EITHER_SIDE_DAYS))
+    shared = _stats(conn, case_id, other_wants, rec.instant)
     for ext, label in phones:
         if ext == rec.extraction_id:
             continue
         owner_key, owner_name = owners.get(ext, (None, None))
-        copy = _copy_on(conn, rec, ext)
+        copy = copies.get(ext)
         if copy is not None:
             gap = abs((copy.sort_instant - rec.instant).total_seconds())
             words = "%sAlso on %s: the same %s, %s." % (prefix, label, what,
@@ -178,51 +214,48 @@ def record_items(conn, case_id, rec, phones, owners, zone, prefix=""):
                                 "seconds, on another phone." % COPY_SECONDS,
                                 _cite(copy.uid, label, what, copy.sort_instant, zone), ["time", "text"]))
             continue
-        party = owner_key is not None and owner_key in keys
-        # on a party's phone the other side of the conversation includes this phone's own owner
-        others = keys - {owner_key} if party else keys - {here_owner, owner_key}
-        if party:
+        if ext in party_wants:
+            others = party_wants[ext]
             who = owner_name or "its owner"
             if rec.instant is None or not others:
                 items.append(W.item(W.NOTHING, "%s%s belongs to %s, a party to this %s, and does not hold it." % (
                     prefix, label, who, what), "No copy on %s; this %s has no time or no other party, so the "
                     "conversation around it could not be checked." % (label, what), None, ["number"]))
                 continue
-            lo, hi = rec.instant - timedelta(days=EITHER_SIDE_DAYS), rec.instant + timedelta(days=EITHER_SIDE_DAYS)
-            around = _events_with(conn, ext, others, lo, hi)
-            before = [e for e in around if e.sort_instant and e.sort_instant < rec.instant]
-            after = [e for e in around if e.sort_instant and e.sort_instant > rec.instant]
-            if before and after:
-                b, a = before[-1], after[0]
+            st = around.get(ext)
+            if st is not None and st.b_uid and st.a_uid:
                 items.append(W.item(
                     W.MISSING, "%s%s belongs to %s, a party to this %s. It holds the conversation either side of it "
-                    "(%s and %s) but not this %s." % (prefix, label, who, what, _when(b.sort_instant, zone),
-                                                      _when(a.sort_instant, zone), what),
+                    "(%s and %s) but not this %s." % (prefix, label, who, what, _when(st.b_at, zone),
+                                                      _when(st.a_at, zone), what),
                     "The owner's number on %s is a party to this %s, and %s holds records with %s before and after "
                     "it, within %d days." % (label, what, label, _names(rec, others), EITHER_SIDE_DAYS),
-                    _cite(b.uid, label, KIND_WORDS.get(b.kind, "record"), b.sort_instant, zone), ["number", "time"],
-                    also=[_cite(a.uid, label, KIND_WORDS.get(a.kind, "record"), a.sort_instant, zone)]))
+                    _cite(st.b_uid, label, KIND_WORDS.get(st.b_kind, "record"), st.b_at, zone), ["number", "time"],
+                    also=[_cite(st.a_uid, label, KIND_WORDS.get(st.a_kind, "record"), st.a_at, zone)]))
             else:
-                side = "after it" if before else ("before it" if after else "within %d days of it" % EITHER_SIDE_DAYS)
+                side = ("after it" if st is not None and st.b_uid else
+                        "before it" if st is not None and st.a_uid else "within %d days of it" % EITHER_SIDE_DAYS)
                 items.append(W.item(
                     W.NOTHING, "%s%s belongs to %s, a party to this %s, and does not hold it. It holds no record with "
                     "%s %s." % (prefix, label, who, what, _names(rec, others), side),
                     "A phone can only show what it held when it was examined; with no records on that side, its "
                     "silence says nothing either way.", None, ["number"]))
             continue
-        shared = _events_with(conn, ext, others, limit=500) if others else []
-        if shared:
-            nearest = min(shared, key=lambda e: abs((e.sort_instant - rec.instant).total_seconds())
-                          if (e.sort_instant and rec.instant) else 1e18)
-            gap = ("" if not (nearest.sort_instant and rec.instant) else
-                   "; the nearest is %s" % W.when_words(W.days_apart(rec.instant, nearest.sort_instant)))
+        others = other_wants.get(ext, set())
+        st = shared.get(ext)
+        if st is not None and st.n:
+            cands = [(uid, kind, at) for uid, kind, at in ((st.b_uid, st.b_kind, st.b_at), (st.a_uid, st.a_kind, st.a_at))
+                     if uid]
+            if rec.instant is not None and cands:
+                uid, kind, at = min(cands, key=lambda c: abs((c[2] - rec.instant).total_seconds()))
+                gap = "; the nearest is %s" % W.when_words(W.days_apart(rec.instant, at))
+            else:
+                uid, kind, at, gap = st.f_uid, st.f_kind, st.f_at, ""
             items.append(W.item(
                 W.POSSIBLE, "%sNot on %s, which holds %s with %s%s." % (
-                    prefix, label, W.plural(len(shared), "record") if len(shared) < 500 else "500 or more records",
-                    _names(rec, others), gap),
+                    prefix, label, W.plural(int(st.n), "record"), _names(rec, others), gap),
                 "Same people, not the same record.",
-                _cite(nearest.uid, label, KIND_WORDS.get(nearest.kind, "record"), nearest.sort_instant, zone),
-                ["number"]))
+                _cite(uid, label, KIND_WORDS.get(kind, "record"), at, zone), ["number"]))
         else:
             items.append(W.item(
                 W.NOTHING, "%sNot on %s. It holds no record with %s." % (prefix, label, _names(rec, others)),
@@ -240,20 +273,23 @@ def _people_items(conn, subject, phones, owners, zone):
     start = datetime(lo.year, lo.month, lo.day, tzinfo=timezone.utc) if lo else None
     end = datetime(hi.year, hi.month, hi.day, tzinfo=timezone.utc) + timedelta(days=1) if hi else None
     names = W.join_words([p.label() for p in subject.people if p.numbers or p.emails])
+    wants = {}
+    for ext, _ in phones:
+        want = keys - {owners.get(ext, (None, None))[0]}
+        if want:
+            wants[ext] = want
+    stats = _stats(conn, subject.case_id, wants, None, start, end)
     items = []
     for ext, label in phones:
-        owner_key = owners.get(ext, (None, None))[0]
-        want = keys - {owner_key}
-        if not want:
+        if ext not in wants:
             continue
-        rows = _events_with(conn, ext, want, start, end, limit=1000)
-        if rows:
+        st = stats.get(ext)
+        if st is not None and st.n:
             items.append(W.item(
-                W.POSSIBLE, "%s holds %s with %s %s." % (label, W.plural(len(rows), "record") if len(rows) < 1000
-                                                         else "1,000 or more records", names, W.span_text(lo, hi)),
+                W.POSSIBLE, "%s holds %s with %s %s." % (label, W.plural(int(st.n), "record"), names,
+                                                         W.span_text(lo, hi)),
                 "Same people in the same period; what they say is not compared here.",
-                _cite(rows[0].uid, label, KIND_WORDS.get(rows[0].kind, "record"), rows[0].sort_instant, zone),
-                ["number", "date"]))
+                _cite(st.f_uid, label, KIND_WORDS.get(st.f_kind, "record"), st.f_at, zone), ["number", "date"]))
         else:
             items.append(W.item(W.NOTHING, "%s holds no record with %s %s." % (label, names, W.span_text(lo, hi)),
                                 "Searched every message, call and email on %s for their numbers and addresses." %
