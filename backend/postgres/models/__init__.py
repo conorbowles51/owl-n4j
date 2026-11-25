@@ -25,6 +25,7 @@ from postgres.models.case_selection import CaseSelection
 from postgres.models.relation_run import RelationRun
 from postgres.models.corroborate import CorroborateFact, CorroborateWatch, LeadFinderRun
 from postgres.models.phone_ask import PhoneAsk
+from postgres.models.phone_mention import PhoneMention, PhoneMentionRun
 from postgres.models.document_date import DocumentDateModelCheck, DocumentDateReading
 from postgres.models.theory_narrative import TheoryNarrative
 from postgres.models.workspace_attention import WorkspaceAttentionState
@@ -212,3 +213,4 @@ from postgres.soft_delete import install as _install_soft_delete
 _install_soft_delete()
 __all__ += ["CaseSelection", "RelationRun", "TheoryNarrative", "CorroborateFact", "CorroborateWatch", "LeadFinderRun", "DocumentDateReading", "DocumentDateModelCheck"]
 __all__ += ["PhoneAsk"]
+__all__ += ["PhoneMention", "PhoneMentionRun"]

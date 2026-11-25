@@ -49,6 +49,7 @@ from routers import (
     relation_queries_router,
     corroborate_router,
     phone_ask_router,
+    phone_mentions_router,
     leads_router,
     corroborate_overlaps_router,
     workspace_ai_router,
@@ -360,6 +361,7 @@ app.include_router(theory_additions_router)
 app.include_router(relation_queries_router)
 app.include_router(corroborate_router)
 app.include_router(phone_ask_router)
+app.include_router(phone_mentions_router)
 app.include_router(leads_router)
 app.include_router(corroborate_overlaps_router)
 app.include_router(workspace_ai_router)
