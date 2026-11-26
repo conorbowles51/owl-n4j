@@ -266,19 +266,20 @@ function KindTable({ caseId, data, found, indexOf, onOpen }: {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-muted-foreground">
-              <th scope="col" className="px-3 py-2 font-medium">Found in</th>
+              {/* the kind and its total stay in view while the phone columns scroll (14 phones at 1440 hid All) */}
+              <th scope="col" className="sticky left-0 z-10 bg-card px-3 py-2 font-medium">Found in</th>
               {data.phones.map((p) => (
                 <th key={p.extraction_id} scope="col" className="px-3 py-2 text-right font-medium">
                   <span className="inline-flex items-center gap-1.5"><PhoneShape index={indexOf.get(p.extraction_id) ?? 0} />{p.label}</span>
                 </th>
               ))}
-              <th scope="col" className="px-3 py-2 text-right font-medium">All</th>
+              <th scope="col" className="sticky right-0 z-10 border-l bg-card px-3 py-2 text-right font-medium">All</th>
             </tr>
           </thead>
           <tbody>
             {found.map((k) => (
               <tr key={k.kind} className="border-t">
-                <th scope="row" className="px-3 py-1.5 text-left font-medium">{k.label}{k.deleted ? <span className="ml-1 text-xs font-normal text-muted-foreground">({n(k.deleted)} deleted)</span> : null}</th>
+                <th scope="row" className="sticky left-0 z-10 bg-card px-3 py-1.5 text-left font-medium">{k.label}{k.deleted ? <span className="ml-1 text-xs font-normal text-muted-foreground">({n(k.deleted)} deleted)</span> : null}</th>
                 {data.phones.map((p) => {
                   const v = k.by_phone[p.extraction_id] ?? 0
                   return (
@@ -291,7 +292,7 @@ function KindTable({ caseId, data, found, indexOf, onOpen }: {
                     </td>
                   )
                 })}
-                <td className="px-3 py-1.5 text-right tabular-nums">
+                <td className="sticky right-0 z-10 border-l bg-card px-3 py-1.5 text-right tabular-nums">
                   <button type="button" className="font-semibold text-foreground underline underline-offset-2 hover:no-underline" aria-label={`All ${n(k.total)} ${k.label.toLowerCase()}`} onClick={() => onOpen({ kind: k.kind, phone: null })}>{n(k.total)}</button>
                 </td>
               </tr>
