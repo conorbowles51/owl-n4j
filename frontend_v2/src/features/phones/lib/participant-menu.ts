@@ -14,6 +14,11 @@ export function personPath(caseId: string, key: string): string {
   return `${base(caseId)}/conversations?${new URLSearchParams({ tab: "people", people: key }).toString()}`
 }
 
+/** Phones redesign screen 3: the person's contact across every phone in the case. */
+export function personAcrossPath(caseId: string, key: string): string {
+  return `${base(caseId)}/phones/person?${new URLSearchParams({ people: key }).toString()}`
+}
+
 /** The other party of the row: the sender for a recipient, the first recipient who is someone else for the sender. */
 export function otherParty(row: RowParties, label: ParticipantLabelData): ParticipantLabelData | null {
   const same = (x: ParticipantLabelData) => x === label || (!!label.identity_key && x.identity_key === label.identity_key)

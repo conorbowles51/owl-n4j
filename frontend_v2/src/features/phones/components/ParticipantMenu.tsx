@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { copyInGesture } from "@/lib/copy-text"
 import { labelText } from "../lib/labels"
-import { otherParty, pairPath, peoplePath, personPath } from "../lib/participant-menu"
+import { otherParty, pairPath, peoplePath, personAcrossPath, personPath } from "../lib/participant-menu"
 import { identitiesAPI } from "../review/identities.api"
 import type { ParticipantLabelData } from "../schemas"
 import { ParticipantLabel } from "./ParticipantLabel"
@@ -29,6 +29,7 @@ function MenuItems({ caseId, label, parties, identityKey, onFailed }: {
   return (
     <>
       <DropdownMenuItem onSelect={() => navigate(personPath(caseId, identityKey))}>Show all with this person</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => navigate(personAcrossPath(caseId, identityKey))}>Their contact on every phone</DropdownMenuItem>
       <DropdownMenuItem disabled={!pair} title={pair ? undefined : "This row names no second person."} onSelect={() => pair && navigate(pair)}>Show this pair</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void openPeople()}>Open in People</DropdownMenuItem>
     </>

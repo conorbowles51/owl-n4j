@@ -74,6 +74,8 @@ const ConversationsPage = lazy(() => import("@/features/conversations/Conversati
 const MediaPage = lazy(() => import("@/features/phones/media/MediaPage"))
 const MediaSpreadPage = lazy(() => import("@/features/phones/media/MediaSpreadPage"))
 const PhoneAskPage = lazy(() => import("@/features/phones/ask/AskPage"))
+const PersonAcrossPage = lazy(() => import("@/features/phones/person/PersonAcrossPage").then((m) => ({ default: m.PersonAcrossPage })))
+const MomentPage = lazy(() => import("@/features/phones/moment/MomentPage").then((m) => ({ default: m.MomentPage })))
 const PhonesIndexPage = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhonesIndexPage })))
 const PhoneRecordsRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhoneRecordsRoute })))
 const SearchResultsPage = lazy(() => import("@/features/search/components/SearchResultsPage"))
@@ -241,6 +243,8 @@ export function AppRoutes() {
             <Route path="phones/search" element={<LazyPage><PhoneSearchPage /></LazyPage>} />
             <Route path="phones/ask" element={<LazyPage><PhoneAskPage /></LazyPage>} />
             <Route path="phones/mentions" element={<LazyPage><MentionsPage /></LazyPage>} />
+            <Route path="phones/person" element={<LazyPage><PersonAcrossPage /></LazyPage>} />
+            <Route path="phones/moment" element={<LazyPage><MomentPage /></LazyPage>} />
             <Route path="phones/:extraction" element={<LazyPage><PhoneSummaryPage /></LazyPage>} />
             <Route path="phones/:extraction/records/conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones/:extraction/records/media" element={<LazyPage><MediaPage /></LazyPage>} />

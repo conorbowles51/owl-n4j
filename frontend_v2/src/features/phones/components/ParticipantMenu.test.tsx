@@ -44,6 +44,13 @@ describe("the participant menu on a stream row", () => {
     expect(screen.getByTestId("where").textContent).toBe("/cases/c/conversations?tab=people&people=phone%3A%2B12025550143")
   })
 
+  it("lands Their contact on every phone on the person across every phone", async () => {
+    page()
+    await open()
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Their contact on every phone" }))
+    expect(screen.getByTestId("where").textContent).toBe("/cases/c/phones/person?people=phone%3A%2B12025550143")
+  })
+
   it("lands Show this pair on both, between them", async () => {
     page(B)
     await open()

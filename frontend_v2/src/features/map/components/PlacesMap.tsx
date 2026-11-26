@@ -82,7 +82,7 @@ export function PlacesMap({ layers, height = 360, route }: {
           </Source>
           <Source id="pm-dots" type="geojson" data={layers.dots ?? EMPTY}>
             <Layer id="pm-dots" type="circle" paint={{
-              "circle-radius": 4, "circle-color": "#0369a1", "circle-stroke-color": "#ffffff",
+              "circle-radius": 4, "circle-color": ["coalesce", ["get", "colour"], "#0369a1"], "circle-stroke-color": "#ffffff",
               "circle-stroke-width": ["match", ["get", "accuracy"], "not recorded", 0, 1.5],
               "circle-opacity": ["match", ["get", "accuracy"], "not recorded", 0.45, 0.9],
             }} />
