@@ -37,6 +37,14 @@ def _low(row, why):
     row["weight"], row["why_low"] = "low", why
 
 
+def _unnamed(p) -> bool:
+    """No dossier and no name from the phone's own records: who uses the phone is unknown, so a phone that travels with
+    someone may be that person's second phone. Two phones that name two people are two people who may share a home
+    (Demo 2, 26 Nov: Priya Halloran's and Dorian Pell's phones together on 71 of 113 ordinary days read as 'maybe one
+    person's second phone', and the shared home as ruled out)."""
+    return not p.get("dossier_id") and not p.get("names")
+
+
 def _fact_for(facts, kind, people) -> dict | None:
     for f in facts:
         if f["kind"] == kind and set(f.get("people") or ()) >= set(people) and f.get("state", "active") == "active":
@@ -85,7 +93,7 @@ def run(rows, instances, people, recs, ctx, store) -> list[dict]:
         for r in together:
             f = _fact_for(facts, "live_together", r["people"])
             share = L.share(r["ordinary"])
-            if any(not people[k].get("dossier_id") for k in r["people"]) and not f:
+            if any(_unnamed(people[k]) for k in r["people"]) and not f:
                 device.append(r)  # a phone with no known user that travels with someone is the shared-device check
                 continue
             if f:
@@ -252,7 +260,7 @@ def run(rows, instances, people, recs, ctx, store) -> list[dict]:
                       "; ".join(dict.fromkeys(same)) + "." if same else "No one else in the case shares their names."))
 
     # shared device
-    unknown = [k for k in people if not people[k].get("dossier_id") and people[k]["phones"]]
+    unknown = [k for k in people if _unnamed(people[k]) and people[k]["phones"]]
     dev_notes, dev_rows = [], []
     for u in unknown:
         # a "together" row of one person (inside the area chosen) says where, not with whom

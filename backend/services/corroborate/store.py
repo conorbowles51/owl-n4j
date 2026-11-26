@@ -32,6 +32,7 @@ def _uid(v) -> str | None:
 
 MAPPED_NAME = "mapped by the system, not yet confirmed"
 UNCONFIRMED = "not yet confirmed"
+HOLDER_NAME = "printed as the account holder on the statements"
 
 
 class CaseStore:
@@ -135,6 +136,17 @@ class CaseStore:
                 hits[0]["accounts"].append(str(acc))
                 hits[0]["links"].append({"identifier": f"{inst} {ident}", "how": "suggested",
                                          "basis": f"account holder printed as “{holder}”"})
+            elif not hits and holder and holder.strip():
+                # a holder no dossier or phone names is still someone a question can name (Demo 2, 26 Nov: DORIAN PELL,
+                # credited the refund cheque deposits, was missing), with their accounts. Accounts printed with the
+                # same holder name are one holder; the name stays as printed on the statement.
+                # (a second account printed with the same name joins this holder as a hit above)
+                key = f"holder:{acc}"
+                people[key] = {"key": key, "label": holder.strip(), "dossier_id": None, "numbers": set(),
+                               "handles": set(), "emails": set(), "accounts": [str(acc)], "phones": [],
+                               "names": [holder.strip()], "name_origin": HOLDER_NAME,
+                               "links": [{"identifier": f"{inst} {ident}", "how": "printed",
+                                          "basis": f"account holder printed as “{holder}”"}]}
         self._people = list(people.values())
         return self._people
 

@@ -75,3 +75,21 @@ def test_a_phone_with_no_owner_name_keeps_its_number_label(monkeypatch):
     st = _store(monkeypatch, owners=[(E3, "+14435550131")])
     (p,) = st.people()
     assert p["label"] == "the user of Phone 3 (+14435550131)" and p["names"] == [] and "name_origin" not in p
+
+
+def test_an_account_holder_no_dossier_or_phone_names_is_a_person_with_their_accounts(monkeypatch):
+    """Demo 2, 26 Nov: DORIAN PELL, holder of the account the refund cheques were deposited to, was no one a question
+    could name, because no dossier or phone carried the name."""
+    st = _store(monkeypatch, owners=[(E1, "+17175550211")], names={E1: "Priya Halloran"},
+                accounts=[("a1", "PRIYA HALLORAN", "Bank", "x1234"), ("a2", "DORIAN PELL", "Bank", "x7302"),
+                          ("a3", "Dorian Pell", "Other Bank", "x55"), ("a4", "", "Bank", "x0")])
+    people = {p["key"]: p for p in st.people()}
+    assert people["phone:%s" % E1]["accounts"] == ["a1"]
+    holder = people["holder:a2"]
+    assert holder["label"] == "DORIAN PELL" and holder["accounts"] == ["a2", "a3"] and not holder["phones"]
+    assert holder["name_origin"] == S.HOLDER_NAME
+    assert len(people) == 2  # a blank holder name is no one
+    from services.corroborate import questions
+    choice = next(c for c in questions.people_choices(st) if c["key"] == "holder:a2")
+    assert choice["accounts"] == 2 and choice["label"] == "DORIAN PELL"
+    assert S.M.person_for_name(st.people(), "Dorian Pell deposited the cheques") == "holder:a2"

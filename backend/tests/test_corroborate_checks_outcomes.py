@@ -74,3 +74,11 @@ def test_busy_place_with_no_other_phones_is_not_known():
 
 def test_busy_place_with_other_phones_far_away_is_ruled_out():
     assert _run([_row(20, 113)], _people(), total=4)["busy_place"]["outcome"] == "ruled_out"
+
+
+def test_two_phones_named_from_their_own_records_together_most_days_may_share_a_home():
+    people = _people(known=False)
+    people["a"]["names"], people["b"]["names"] = ["Ann Example"], ["Bea Example"]
+    got = _run([_row(71, 113)], people)
+    assert got["household"]["outcome"] == "weighed_low", got["household"]
+    assert got["shared_device"]["outcome"] == "checked"
