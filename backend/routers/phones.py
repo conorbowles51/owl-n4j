@@ -2301,7 +2301,8 @@ def timeline_lens_index(body: dict, db: Session = Depends(get_db), user: User = 
 
 
 class LensWindowBody(WindowBody):
-    pass
+    # the last day of a run of whole days asked for at once (``day`` the first); the list splits it by the index's counts
+    until_day: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
 @router.post("/timeline/window")
@@ -2311,7 +2312,7 @@ def timeline_lens_window(body: LensWindowBody, db: Session = Depends(get_db),
     f = _lens_filter(body.filter, db, user)
     try:
         return timeline_lens.window(db.connection(), f, snapshot_token=body.snapshot, day=body.day,
-                                    offset=body.offset, limit=body.limit)
+                                    offset=body.offset, limit=body.limit, until_day=body.until_day)
     except streams.StaleSnapshot:
         raise HTTPException(status_code=409, detail="stale_snapshot")
     except Exception as exc:  # noqa: BLE001

@@ -270,3 +270,20 @@ def test_a_no_data_hour_holding_a_hidden_record_is_not_drawn_as_no_data(monkeypa
         {"hour_utc": h10, "state": "no_data"}, {"hour_utc": h11, "state": "no_data"}])
     monkeypatch.setattr(availability, "hours_with_records", lambda c, e, a, b: {h10})
     assert timeline_lens._no_data_hours(Conn(), "e", h10, h11) == {h11}
+
+
+@pytest.mark.parametrize("sort", ["oldest_first", "newest_first"])
+def test_a_run_of_days_in_one_window_is_each_days_window_in_turn(world, sort):
+    """followups 26 Nov: a short result loaded one request per day (113 for 275 entries); a run of days asked at once
+    lists the same rows in the same order as the days' own windows."""
+    from services.phone import timeline_lens
+    with world["engine"].connect() as c:
+        f = _f(world, lens_kinds=list(timeline_lens.KIND_WORDS), sort=sort)
+        idx = timeline_lens.index(c, f)
+        days = [x["day"] for x in idx["items"]]
+        per_day = [x["entry_uid"] for d in days
+                   for x in timeline_lens.window(c, f, snapshot_token=idx["snapshot"], day=d, limit=1000)["items"]]
+        span = timeline_lens.window(c, f, snapshot_token=idx["snapshot"], day=days[0], until_day=days[-1],
+                                    limit=1000)["items"]
+    assert len(days) == 2 and len(per_day) == sum(x["count"] for x in idx["items"])
+    assert [x["entry_uid"] for x in span] == per_day

@@ -321,7 +321,11 @@ def index(conn, f: TimelineLensFilter) -> dict:
     return out
 
 
-def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=200) -> dict:
+def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=200, until_day=None) -> dict:
+    """Rows of one day (or the no-time group, ``day`` null) by offset. With ``until_day``, the rows of every day from
+    ``day`` to ``until_day`` (either order, both included) in one list, in the order each day's own window lists
+    them, so a list that loads a whole short result asks once per 1,000 rows, not once per day (followups 26 Nov:
+    275 entries took 113 requests on the Corwen Street case)."""
     if snapshot(conn, f) != snapshot_token:
         raise streams.StaleSnapshot()
     limit = max(1, min(int(limit), WINDOW_MAX))
@@ -331,7 +335,8 @@ def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=
         ec, eo = ["ev.sort_instant IS NULL"], ["t.instant IS NULL"]
         bounds = {}
     else:
-        start, end = T.day_bounds(day_d, zone["name"])
+        last = date.fromisoformat(until_day) if until_day else day_d
+        start, end = T.day_bounds(min(day_d, last), zone["name"])[0], T.day_bounds(max(day_d, last), zone["name"])[1]
         ec = ["ev.sort_instant >= CAST(:d0 AS timestamptz)", "ev.sort_instant < CAST(:d1 AS timestamptz)"]
         eo = ["t.instant >= CAST(:d0 AS timestamptz)", "t.instant < CAST(:d1 AS timestamptz)"]
         bounds = {"d0": start, "d1": end}

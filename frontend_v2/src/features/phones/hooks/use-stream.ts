@@ -98,6 +98,9 @@ export interface StreamSource {
   index: (f: StreamFilter) => Promise<StreamIndex>
   window: (f: StreamFilter, snapshot: string, day: string | null, offset: number, limit: number) => Promise<StreamWindow>
   locate: (f: StreamFilter, snapshot: string, eventUid: string) => Promise<{ day: string | null; offset: number }>
+  /** Every row of the days from ``firstDay`` to ``lastDay`` in one list, each day in its own window order. The full
+   * load asks for runs of whole days with it, up to FULL_WINDOW rows a request, instead of one request a day. */
+  span?: (f: StreamFilter, snapshot: string, firstDay: string, lastDay: string, limit: number) => Promise<StreamWindow>
 }
 const STREAMS: StreamSource = { index: (f) => streamIndex(f), window: (f, s, d, o, l) => streamWindow(f, s, d, o, l), locate: streamLocate }
 
@@ -222,24 +225,102 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     fetchRef.current = fetchWindow
   }, [fetchWindow])
 
-  // Full load (rule 4): every window, sequentially, right after the index.
+  // A run of whole dated segments in one request (source.span), split back by the index's counts. A reply that does
+  // not add up, or fails, falls back to one window per segment, which has its own retry and failed state.
+  const fetchSpan = useCallback(
+    async (segIdx: number[]) => {
+      const idx = index
+      const f = filterRef.current
+      const span = sourceRef.current.span
+      if (!idx || !f || indexLoading.current || !span) return
+      const segs = buildSegments(idx)
+      const keys = segIdx.map((si) => `${si}|0`)
+      if (keys.some((k) => wins.current.get(k))) return
+      const gen = generation.current
+      keys.forEach((k) => wins.current.set(k, { state: "loading", tries: 0 }))
+      bump()
+      const total = segIdx.reduce((n, si) => n + segs[si].count, 0)
+      let got: StreamRow[] | null = null
+      try {
+        const w = await span(f, idx.snapshot, segs[segIdx[0]].day as string, segs[segIdx[segIdx.length - 1]].day as string, total)
+        if (gen !== generation.current) return
+        if (w.items.length === total) got = w.items
+      } catch (e) {
+        if (gen !== generation.current) return
+        if (e instanceof StaleSnapshotError) {
+          void loadIndex(true)
+          return
+        }
+      }
+      if (got) {
+        let at = 0
+        segIdx.forEach((si, k) => {
+          rows.current.set(keys[k], got.slice(at, at + segs[si].count))
+          wins.current.set(keys[k], { state: "loaded", tries: 1 })
+          at += segs[si].count
+        })
+        bump()
+        return
+      }
+      keys.forEach((k) => wins.current.delete(k))
+      for (const si of segIdx) {
+        if (gen !== generation.current) return
+        await fetchWindow(si, 0)
+      }
+    },
+    [index, loadIndex, fetchWindow],
+  )
+
+  // Full load (rule 4): every window, sequentially, right after the index; whole days in runs of up to FULL_WINDOW
+  // rows when the source can answer a run of days at once.
   useEffect(() => {
     if (!index || index.counts.events > index.full_load_rows) return
     let cancelled = false
     const gen = generation.current
+    const canSpan = !!sourceRef.current.span
     void (async () => {
       const segs = buildSegments(index)
+      let run: number[] = []
+      let runRows = 0
+      const flush = async () => {
+        const r = run
+        run = []
+        runRows = 0
+        // a day the list already asked for (it scrolled into view) leaves the run; what is left goes in unbroken runs
+        const groups: number[][] = []
+        for (const si of r.filter((x) => !wins.current.get(`${x}|0`))) {
+          const g = groups[groups.length - 1]
+          if (g && g[g.length - 1] === si - 1) g.push(si)
+          else groups.push([si])
+        }
+        for (const g of groups) {
+          if (cancelled || gen !== generation.current) return
+          if (g.length === 1) await fetchWindow(g[0], 0)
+          else await fetchSpan(g)
+        }
+      }
       for (let si = 0; si < segs.length; si++) {
-        for (let start = 0; start < segs[si].count; start += FULL_WINDOW) {
+        if (cancelled || gen !== generation.current) return
+        const s = segs[si]
+        if (canSpan && s.day && s.count > 0 && s.count <= FULL_WINDOW) {
+          if (runRows + s.count > FULL_WINDOW) await flush()
+          if (cancelled || gen !== generation.current) return
+          run.push(si)
+          runRows += s.count
+          continue
+        }
+        await flush()
+        for (let start = 0; start < s.count; start += FULL_WINDOW) {
           if (cancelled || gen !== generation.current) return
           await fetchWindow(si, start)
         }
       }
+      if (!cancelled && gen === generation.current) await flush()
     })()
     return () => {
       cancelled = true
     }
-  }, [index, fetchWindow])
+  }, [index, fetchWindow, fetchSpan])
 
   const item = useCallback(
     (i: number): StreamItem => {

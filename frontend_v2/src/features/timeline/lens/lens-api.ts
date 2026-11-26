@@ -76,8 +76,9 @@ export async function lensIndex(filter: LensFilter): Promise<LensIndex> {
   return LensIndexSchema.parse(await fetchAPI("/api/phones/timeline/index", { method: "POST", body: filter, read: true }))
 }
 
-export async function lensWindow(filter: LensFilter, snapshot: string, day: string | null, offset: number, limit: number): Promise<StreamWindow> {
-  return StreamWindowSchema.parse(await stale(fetchAPI("/api/phones/timeline/window", { method: "POST", body: { filter, snapshot, day, offset, limit }, read: true })))
+export async function lensWindow(filter: LensFilter, snapshot: string, day: string | null, offset: number, limit: number, untilDay?: string): Promise<StreamWindow> {
+  const body = untilDay ? { filter, snapshot, day, offset, limit, until_day: untilDay } : { filter, snapshot, day, offset, limit }
+  return StreamWindowSchema.parse(await stale(fetchAPI("/api/phones/timeline/window", { method: "POST", body, read: true })))
 }
 
 /** Show on Timeline (03 section 3.6): the day and offset of a record's entry in the lens, in window order. */
@@ -102,6 +103,7 @@ export async function lensMoneyItems(filter: LensFilter, start: string, end: str
 export const LENS_SOURCE: StreamSource = {
   index: (f) => lensIndex(f as LensFilter),
   window: (f, s, d, o, l) => lensWindow(f as LensFilter, s, d, o, l),
+  span: (f, s, first, last, l) => lensWindow(f as LensFilter, s, first, 0, l, last),
   locate: async () => {
     throw new Error("The lens keeps its scroll position instead of finding a row again.")
   },
