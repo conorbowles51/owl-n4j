@@ -276,7 +276,7 @@ export function AskPage() {
         <aside aria-label="Follow up" className="flex max-w-[380px] flex-[1_1_320px] flex-col gap-4 border-l bg-panel px-4.5 py-5">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Test it properly</h2>
           <p className="text-[13px] leading-normal">An answer is a reading. To weigh it against ordinary days with fixed rules, send it to Corroborate.</p>
-          <Button type="button" disabled={!answer?.statements.length} onClick={() => corroborate("all")}>Corroborate this</Button>
+          <Button type="button" disabled={!answer?.statements.length} disabledReason={answer ? "This answer has no statements to weigh." : "Ask a question first; Corroborate weighs its answer."} onClick={() => corroborate("all")}>Corroborate this</Button>
           <h2 className="mt-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Earlier questions in this case</h2>
           {earlier.data && earlier.data.total === 0 && <p className="text-[13px] text-muted-foreground">No questions asked yet.</p>}
           {earlier.error && <p className="text-[13px] text-status-error">The earlier questions could not be read.</p>}

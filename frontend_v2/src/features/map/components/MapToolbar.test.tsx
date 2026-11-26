@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MemoryRouter } from "react-router-dom"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { useMapStore } from "../stores/map.store"
 import { MapToolbar } from "./MapToolbar"
@@ -20,9 +21,9 @@ beforeAll(() => {
 function renderToolbar() {
   const queryClient = new QueryClient()
   return render(
-    <QueryClientProvider client={queryClient}>
+    <MemoryRouter><QueryClientProvider client={queryClient}>
       <MapToolbar caseId="case-1" locations={[]} />
-    </QueryClientProvider>
+    </QueryClientProvider></MemoryRouter>
   )
 }
 
@@ -103,15 +104,15 @@ describe("MapToolbar count with the phone layer", () => {
   it("counts the phone positions the layer draws beside the case's locations, never a bare 0 locations", () => {
     const queryClient = new QueryClient()
     const { rerender } = render(
-      <QueryClientProvider client={queryClient}>
+      <MemoryRouter><QueryClientProvider client={queryClient}>
         <MapToolbar caseId="case-1" locations={[]} phonePositions={1234} />
-      </QueryClientProvider>
+      </QueryClientProvider></MemoryRouter>
     )
     expect(screen.getByText("0 locations · 1,234 phone positions")).toBeInTheDocument()
     rerender(
-      <QueryClientProvider client={queryClient}>
+      <MemoryRouter><QueryClientProvider client={queryClient}>
         <MapToolbar caseId="case-1" locations={[]} phonePositions={null} />
-      </QueryClientProvider>
+      </QueryClientProvider></MemoryRouter>
     )
     expect(screen.getByText("0 locations")).toBeInTheDocument()
   })
@@ -124,9 +125,9 @@ describe("MapToolbar area banner with the phone layer (sitefilms 15 Nov)", () =>
   it("counts the phone positions inside the area beside the case's locations, never a bare 0 of 0", () => {
     const queryClient = new QueryClient()
     const ui = (v: number | "counting" | null) => (
-      <QueryClientProvider client={queryClient}>
+      <MemoryRouter><QueryClientProvider client={queryClient}>
         <MapToolbar caseId="case-1" locations={[]} phonePositions={4000} areaPhonePositions={v} />
-      </QueryClientProvider>
+      </QueryClientProvider></MemoryRouter>
     )
     const { rerender } = render(ui("counting"))
     expect(screen.getByText(/Showing 0 of 0 case locations; counting phone positions inside the area \(1 area\)/)).toBeInTheDocument()
@@ -136,9 +137,9 @@ describe("MapToolbar area banner with the phone layer (sitefilms 15 Nov)", () =>
   it("keeps the old wording when the phone layer is off", () => {
     const queryClient = new QueryClient()
     render(
-      <QueryClientProvider client={queryClient}>
+      <MemoryRouter><QueryClientProvider client={queryClient}>
         <MapToolbar caseId="case-1" locations={[]} />
-      </QueryClientProvider>
+      </QueryClientProvider></MemoryRouter>
     )
     expect(screen.getByText(/Showing 0 of 0 locations \(1 area\)/)).toBeInTheDocument()
   })

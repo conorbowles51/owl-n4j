@@ -21,6 +21,7 @@ vi.mock("@/stores/ui.store", () => ({
 }))
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ id: "case" }),
+  useNavigate: () => () => {},
   useMatch: (pattern: string) => (pattern.endsWith(state.path.split("/").pop() ?? "~") && state.path.endsWith("graph") ? {} : null),
   useLocation: () => ({ pathname: state.path }),
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => <a href={to}>{children}</a>,

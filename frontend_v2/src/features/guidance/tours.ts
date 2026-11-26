@@ -137,6 +137,7 @@ export function tourArea(pathname: string): TourArea | null {
   if (first === "phone-analyses" || first === "phone-money") return "analyses"
   if (first === "phone-patterns") return "pattern"
   if (first === "keyword-lists") return "keywords"
+  if (first === "corroborate") return "corropanel"
   if (first === "evidence" && parts[2] === "text") return "text"
   if (first === "phones" || first.startsWith("phone") || first === "records") return "phones"
   const area = first in TOURS && !TOURS[first as TourArea].panel ? (first as TourArea) : null

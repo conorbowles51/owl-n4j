@@ -40,7 +40,7 @@ export function CorroboratePage() {
         <h1 className="text-2xl font-semibold">Corroborate</h1>
         <p className="text-sm text-muted-foreground">Is a pattern more than coincidence? Loupe compares the moments that matter with ordinary days, using fixed rules, never AI.</p>
       </header>
-      <div role="tablist" aria-label="Corroborate" className="flex flex-wrap gap-1 border-b">
+      <div role="tablist" aria-label="Corroborate" data-guide="corroborate-tabs" className="flex flex-wrap gap-1 border-b">
         <TabButton on={tab === "ask"} onClick={() => setTab("ask")}>Ask a question</TabButton>
         <TabButton on={tab === "leads"} onClick={() => setTab("leads")}>Leads Loupe found{leads.data ? ` (${found})` : ""}</TabButton>
         <TabButton on={tab === "earlier"} onClick={() => setTab("earlier")}>Your earlier questions{leads.data ? ` (${earlier.length})` : ""}</TabButton>

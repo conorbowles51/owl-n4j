@@ -285,9 +285,10 @@ of the page, lists every kind of pattern Loupe looks for.
 ## Corroborate from anywhere
 
 Where the newer Corroborate is turned on, **Corroborate** on a dossier person, a phone's summary, a line on the Graph or a
-photo on the Media screen (right-click the tile, or press C) opens a panel over the page. **Leads already here** lists the
-leads that touch those records, people or dates. **Ask a new question** offers the questions that fit what you chose.
-The answer is saved to Leads as **Asked by you**, a reading by Loupe until you confirm it; **Open in Leads** goes there.
+photo on the Media screen (right-click the tile, or press C) opens the Corroborate page with the question filled from
+what you chose. The question is a sentence with blue parts to change; nothing runs until you press **Ask**. **Leads
+Loupe found** lists the patterns Loupe found by itself, and **Your earlier questions** keeps every answer you asked for,
+a reading by Loupe until you confirm it.
 
 ## Show a lead's records across screens
 
