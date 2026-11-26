@@ -180,7 +180,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
               <p className="text-sm font-medium text-muted-foreground">
                 Ask anything about this case
               </p>
-              <p className="text-xs text-muted-foreground/70 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Questions are answered using your uploaded evidence
               </p>
             </div>

@@ -185,7 +185,7 @@ function CellRenderer({
                 <button
                   aria-label={`Explore ${connCount} relationships`}
                   onClick={(e) => { e.stopPropagation(); onExploreRelationships(node.key) }}
-                  className="rounded p-0.5 text-muted-foreground/50 hover:text-amber-500 hover:bg-amber-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                  className="rounded p-0.5 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors opacity-0 group-hover:opacity-100"
                 >
                   <Network className="size-3.5" />
                 </button>

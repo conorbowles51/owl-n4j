@@ -245,7 +245,7 @@ export function GraphSidePanelContent({
               <p className="text-sm font-medium text-muted-foreground">
                 Select an entity to view details
               </p>
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Click a node on the graph or use search
               </p>
             </div>

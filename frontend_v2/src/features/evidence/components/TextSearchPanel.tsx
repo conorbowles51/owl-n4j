@@ -86,7 +86,7 @@ function HitButton({
         <HighlightedSnippet hit={hit} />
       </p>
       {hit.location_label && (
-        <span className="mt-1 inline-flex font-mono text-[10px] text-muted-foreground/75">
+        <span className="mt-1 inline-flex font-mono text-[10px] text-muted-foreground">
           {hit.location_label}
         </span>
       )}

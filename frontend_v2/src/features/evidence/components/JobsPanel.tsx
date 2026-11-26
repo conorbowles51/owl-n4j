@@ -579,7 +579,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
             <p className="text-sm font-medium text-muted-foreground">
               No processing activity
             </p>
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Select files and click Process to begin
             </p>
           </div>

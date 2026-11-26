@@ -362,7 +362,7 @@ export function FileListPanel({
                   ? "No files match these filters"
                   : "No files yet"}
             </p>
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               {searching
                 ? "Try a different filename or search scope."
                 : statusFilter !== "all" || typeFilter

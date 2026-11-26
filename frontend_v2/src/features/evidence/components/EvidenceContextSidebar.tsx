@@ -283,7 +283,7 @@ function EntityList({
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {category}
               </span>
-              <span className="text-[10px] text-muted-foreground/50">({items.length})</span>
+              <span className="text-[10px] text-muted-foreground">({items.length})</span>
             </div>
             <div className="space-y-0.5">
               {items.map((entity) => (
@@ -690,7 +690,7 @@ function DetailsPanelContent({
                     {file.failure_reason || file.last_error}
                   </p>
                   {file.failure_reason && file.last_error && file.failure_reason !== file.last_error && (
-                    <p className="mt-1 break-words text-[10px] leading-relaxed text-muted-foreground/80">
+                    <p className="mt-1 break-words text-[10px] leading-relaxed text-muted-foreground">
                       Recorded error: {file.last_error}
                     </p>
                   )}
@@ -1032,7 +1032,7 @@ export function EvidenceContextSidebar({
               <p className="text-sm font-medium text-muted-foreground">
                 Select a file to view details
               </p>
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Click a filename in the file list
               </p>
             </div>

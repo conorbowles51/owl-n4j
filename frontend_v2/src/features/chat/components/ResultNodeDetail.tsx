@@ -66,7 +66,7 @@ export function ResultNodeDetail({ node, onClose }: ResultNodeDetailProps) {
 
       {/* Relevance */}
       {node.relevance_reason && (
-        <p className="mt-1.5 text-[10px] text-muted-foreground/70 italic">
+        <p className="mt-1.5 text-[10px] text-muted-foreground italic">
           {node.relevance_reason}
         </p>
       )}
