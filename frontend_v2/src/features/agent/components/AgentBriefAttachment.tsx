@@ -35,7 +35,7 @@ export function AgentBriefAttachment({ brief, onChange, disabled, onBusyChange }
     }} />
     {!brief ? <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="ghost" disabled={disabled || reading} onClick={() => file.current?.click()}>{reading ? "Preparing brief…" : "Attach brief or template"}</Button><span className="text-muted-foreground">TXT, Markdown, PDF or DOCX · PDF and Word text is extracted for review.</span></div> : <div className="rounded border border-border bg-muted/20 p-2">
       <div className="flex items-center justify-between gap-2"><span>{brief.name} · {brief.text.length.toLocaleString()} characters · included with your next message</span><Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChange(null)}>Remove</Button></div>
-      {!!brief.warnings?.length && <ul className="my-2 list-disc pl-4 text-amber-700 dark:text-amber-400">{brief.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
+      {!!brief.warnings?.length && <ul className="my-2 list-disc pl-4 text-status-warning">{brief.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
       <details open><summary className="cursor-pointer text-muted-foreground">Review attached brief</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-sans">{brief.text}</pre></details>
     </div>}
     {error && <p role="alert" className="text-destructive">{error}</p>}

@@ -132,7 +132,7 @@ export function ArtifactRevisionControls({ artifact, artifacts, disabled, onSave
       <span className="ml-auto text-xs text-muted-foreground">{artifactText(artifact.metadata.status) || "Saved draft"}</span>
     </div>
     {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
-    {issues.length > 0 && <div className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+    {issues.length > 0 && <div className="mt-2 rounded border border-status-warning/50 bg-status-warning-soft p-2 text-xs">
       <details open={issues.length <= 3}><summary className="cursor-pointer font-medium">Draft checks need attention ({issues.length})</summary>
         <ul className="mt-2 max-h-40 list-disc space-y-1 overflow-auto pl-4">{issues.map((issue, index) => <li key={index}>{issue.replace(/^Required coverage (.+): Exactly one explicit coverage record is required\.$/, "$1: this requested topic still needs its supporting content checked.")}</li>)}</ul>
       </details>

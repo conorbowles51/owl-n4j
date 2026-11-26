@@ -148,3 +148,15 @@ describe("data colour tokens (lx-style)", () => {
     }
   })
 })
+
+describe("muted text (followups 26 Nov)", () => {
+  // the day headings and mention marks on /phones read 4.45:1 and 4.49:1 on the muted grey in light
+  for (const [theme, vars] of Object.entries(THEMES)) {
+    it(`muted-foreground is 4.5:1 or more on every surface, ${theme}`, () => {
+      for (const surface of [...SURFACES, "secondary", "sidebar"]) {
+        const ratio = contrast(tripletToRgb(vars["muted-foreground"]), tripletToRgb(vars[surface]))
+        expect(ratio, `muted-foreground on ${surface} (${theme}) = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+      }
+    })
+  }
+})
