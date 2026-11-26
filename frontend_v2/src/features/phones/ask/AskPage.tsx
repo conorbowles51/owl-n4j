@@ -4,9 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { recordPath } from "@/lib/record-links"
 import { meaningPath } from "@/features/search/lib/open-hit"
-import { QuestionMenu } from "@/features/corroborate/QuestionMenu"
-import { addPart } from "@/features/corroborate/selection-store"
-import type { Scope as CorroScope } from "@/features/corroborate/api"
+import { openCorroborate } from "@/features/leads/open"
 import { PhoneShape } from "../ui/PhoneChip"
 import { askAPI, type Answer, type AskPhone, type AskRow, type ElsewhereRow, type Statement, type Step } from "./api"
 import { corroborateStart, permissionLine } from "./ask-logic"
@@ -198,7 +196,6 @@ export function AskPage() {
   const askId = params.get("ask")
   const phones = useMemo(() => (params.get("phones") ?? "").split(",").filter(Boolean), [params])
   const [draft, setDraft] = useState(params.get("q") ?? "")
-  const [corro, setCorro] = useState<{ scope: CorroScope } | null>(null)
   const [moreFrom, setMoreFrom] = useState(20)
 
   const row = useQuery({
@@ -235,8 +232,14 @@ export function AskPage() {
     const start = corroborateStart(answer, which)
     if (!start.members.length) return
     const what = which === "all" ? "the answer" : `statement ${which + 1}`
-    addPart(caseId, { screen: "Ask the phones", label: `Records cited by ${what}${start.people.length ? ` (${start.people.slice(0, 3).join(", ")})` : ""}`, members: start.members, skipped: [] })
-    setCorro({ scope: start.scope })
+    // the Corroborate page opens with the question filled from the cited records and their period; nothing runs
+    // until the person presses Ask there (lx-corroredo A)
+    openCorroborate({
+      caseId, screen: "Ask the phones",
+      label: `Records cited by ${what}${start.people.length ? ` (${start.people.slice(0, 3).join(", ")})` : ""}`,
+      members: start.members, scope: start.scope,
+      ...(start.scope.from && start.scope.to ? { period: { from: start.scope.from, to: start.scope.to } } : {}),
+    })
   }
   const toWords = () => navigate(`/cases/${encodeURIComponent(caseId)}/phones?${new URLSearchParams({ ...(draft.trim() ? { q: draft.trim() } : {}), ...(phones.length ? { phones: phones.join(",") } : {}) })}`)
   const scopePhones = row.data?.answer?.phones
@@ -293,7 +296,6 @@ export function AskPage() {
           )}
         </aside>
       </div>
-      {corro && <QuestionMenu caseId={caseId} initialScope={corro.scope} onClose={() => setCorro(null)} />}
     </div>
   )
 }

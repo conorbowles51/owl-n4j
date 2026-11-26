@@ -6,7 +6,7 @@ import { askAPI, type Answer, type AskRow } from "./api"
 import { AskPage } from "./AskPage"
 import { corroborateStart, permissionLine } from "./ask-logic"
 import { getSelection } from "@/features/corroborate/selection-store"
-import { corroborateAPI } from "@/features/corroborate/api"
+import * as open from "@/features/leads/open"
 
 const phones = [
   { extraction_id: "p1", label: "Phone 1", owner: "Priya Halloran", allowed: null },
@@ -88,7 +88,7 @@ describe("Ask the phones", () => {
   it("Corroborate this puts the statement's cited records in the selection with its period", async () => {
     vi.spyOn(askAPI, "read").mockResolvedValue(done)
     vi.spyOn(askAPI, "earlier").mockResolvedValue({ total: 0, shown: 0, offset: 0, next_offset: null, items: [] })
-    vi.spyOn(corroborateAPI, "preview").mockReturnValue(new Promise(() => {}))
+    const opened = vi.spyOn(open, "openCorroborate")
     page("/cases/c1/phones/ask?ask=a1")
     const first = await screen.findByRole("article", { name: "Statement 1" })
     fireEvent.click(within(first).getByRole("button", { name: "Corroborate this statement" }))
@@ -96,6 +96,9 @@ describe("Ask the phones", () => {
     expect(sel).toHaveLength(1)
     expect(sel[0].members.map((m) => m.id)).toEqual(["r1", "r2"])
     expect(sel[0].label).toContain("Marisol Teague")
+    // it opens the Corroborate page with the statement's period, not a dialog over this page
+    expect(opened).toHaveBeenCalledWith(expect.objectContaining({ caseId: "c1", screen: "Ask the phones", period: { from: "2024-03-12", to: "2024-03-12" } }))
+    expect(screen.queryByRole("dialog")).toBeNull()
     expect(corroborateStart(answer, 0).scope).toEqual({ from: "2024-03-12", to: "2024-03-12" })
     expect(corroborateStart(answer, "all").members.map((m) => m.id)).toEqual(["r1", "r2", "r3"])
     expect(corroborateStart(answer, "all").scope).toEqual({ from: "2024-02-12", to: "2024-03-12" })
