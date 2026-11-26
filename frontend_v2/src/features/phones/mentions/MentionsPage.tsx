@@ -121,7 +121,7 @@ export default function MentionsPage() {
             Loupe picks out anything checkable in the messages: trips, meetings, places, plans, being home or away, money, things sent or handed over. Each one is tested against whatever in the case could back it up or contradict it.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" aria-pressed={only === "against"} onClick={() => set("only", only === "against" ? null : "against")}>
             {only === "against" ? "Show every outcome" : "Only contradictions"}
           </Button>
@@ -408,9 +408,9 @@ function Selected({ caseId, d, onChanged }: { caseId: string; d: MentionDetail; 
 
       <ul aria-label="Checks per source">
         {d.checks.map((c, i) => (
-          <li key={i} className="flex items-start gap-2.5 border-t py-2.5">
+          <li key={i} className="flex flex-wrap items-start gap-x-2.5 gap-y-1 border-t py-2.5 sm:flex-nowrap">
             <span className="w-[92px] flex-none rounded-full bg-muted py-0.5 text-center text-[11px] font-semibold">{c.source_label}</span>
-            <div className="min-w-0 flex-1">
+            <div className="order-last min-w-0 basis-full sm:order-none sm:basis-auto sm:flex-1">
               <p className="text-[13px] leading-snug">{c.text}</p>
               {c.note && <p className="mt-0.5 text-xs text-muted-foreground">{c.note}</p>}
               {c.refs.length > 0 && (
@@ -425,7 +425,7 @@ function Selected({ caseId, d, onChanged }: { caseId: string; d: MentionDetail; 
                 </p>
               )}
             </div>
-            <span className={cn("flex-none text-xs font-semibold", verdictText(c.verdict))}>{c.verdict_label}</span>
+            <span className={cn("ml-auto flex-none text-xs font-semibold sm:ml-0", verdictText(c.verdict))}>{c.verdict_label}</span>
           </li>
         ))}
         {!d.checks.length && <li className="border-t py-2.5 text-[13px] text-muted-foreground">Nothing in the case could be read for this kind of mention yet.</li>}
