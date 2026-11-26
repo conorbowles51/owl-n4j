@@ -3,6 +3,7 @@ import { lazy, Suspense, useMemo } from "react"
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import type { FeatureCollection, Point } from "geojson"
 import { Button } from "@/components/ui/button"
+import { openCorroborate } from "@/features/leads/open"
 import { failureText, saveView } from "../api"
 import { phoneMark } from "../lib/phone-palette"
 import { NextSteps, PhoneTag } from "../person/parts"
@@ -70,7 +71,11 @@ export function MomentPage() {
     if (s.code === "wider" && s.from && s.to) return { to: momentHref(caseId, s.from, s.to, phones) }
     if (s.code === "search_gap" && s.from && s.to) return { to: `/cases/${encodeURIComponent(caseId)}/phone-analyses/incident-window?${new URLSearchParams({ start: s.from, end: s.to })}` }
     if (s.code === "open_deleted" && s.record_uid) return { to: `/cases/${encodeURIComponent(caseId)}/records/${encodeURIComponent(s.record_uid)}` }
-    if (s.code === "corroborate" && s.phones) return { to: `/cases/${encodeURIComponent(caseId)}/phone-patterns?view=together&subject=e:${encodeURIComponent(s.phones[0])}` }
+    // Corroborate's "together" question takes both phones and tests them at the case's other key times
+    if (s.code === "corroborate" && s.phones) {
+      const both = s.phones
+      return { onClick: () => openCorroborate({ caseId, screen: "Around a moment", kind: "together", label: both.map(label).join(" and "), members: both.map((id) => ({ type: "phone", id })) }) }
+    }
     if (s.code === "compare") return { onClick: () => document.getElementById("moment-records")?.scrollIntoView({ block: "start" }) }
     return {}
   }

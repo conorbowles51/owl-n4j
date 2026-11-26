@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from "vitest"
 const api = vi.hoisted(() => ({ fetchAPI: vi.fn() }))
 vi.mock("@/lib/api-client", async (orig) => ({ ...(await orig<object>()), fetchAPI: api.fetchAPI }))
 vi.mock("../ui/use-case-phones", () => ({ useCasePhones: () => [{ id: "p1", label: "Phone 1", index: 0 }, { id: "p2", label: "Phone 2", index: 1 }, { id: "p3", label: "Phone 3", index: 2 }] }))
+const corro = vi.hoisted(() => ({ openCorroborate: vi.fn() }))
+vi.mock("@/features/leads/open", () => corro)
 vi.mock("@/features/conversations/ExportDialog", () => ({ ExportDialog: (p: { words: string }) => <div role="dialog">Export {p.words}</div> }))
 
 import { PersonAcrossPage } from "./PersonAcrossPage"
@@ -138,6 +140,15 @@ describe("Around a moment", () => {
     const body = api.fetchAPI.mock.calls.find((c) => c[0] === "/api/phones/views")![1].body
     expect(body.filter).toEqual({ case_id: "c1", phones: ["p1", "p2"], from_instant: MOMENT.from, to_instant: MOMENT.to })
     expect(await screen.findByRole("status")).toHaveTextContent("Saved to the case's Workspace")
+  })
+
+  it("tests the two phones together in Corroborate, with both phones", async () => {
+    const step = { code: "corroborate", rank: 1, title: "Test whether Phone 1 and Phone 2 are together at other key times", why: "w", action: "Corroborate", phones: ["p1", "p2"] }
+    api.fetchAPI.mockResolvedValue({ ...MOMENT, next_steps: [step] })
+    mount("/cases/:id/phones/moment", "/cases/c1/phones/moment?from=2024-03-12T09:00:00Z&to=2024-03-12T12:00:00Z", <MomentPage />)
+    fireEvent.click(await screen.findByRole("button", { name: "Corroborate" }))
+    expect(corro.openCorroborate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: "c1", kind: "together", label: "Phone 1 and Phone 2", members: [{ type: "phone", id: "p1" }, { type: "phone", id: "p2" }] }))
   })
 
   it("says what to do when the window has no clear start and end", () => {
