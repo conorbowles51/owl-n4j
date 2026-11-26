@@ -441,7 +441,8 @@ function ContextPane({ caseId, hit, q, exact, index, stepScope }: { caseId: stri
           const isHit = r.event_uid === hit.event_uid
           return (
             <div key={r.event_uid} className={cn("flex max-w-[85%] flex-col gap-0.5 rounded-lg border px-3 py-2", mine ? "self-end bg-muted" : "self-start bg-background", isHit && "border-2 border-foreground")} aria-current={isHit ? "true" : undefined}>
-              <span className="text-xs text-muted-foreground">
+              {/* muted text on the owner's muted bubble was 4.49:1 in light (live, Phone reference 1) */}
+              <span className={cn("text-xs", mine ? "text-foreground" : "text-muted-foreground")}>
                 {labelText(r.from)} · {r.time.row}{r.flags.includes("deleted") ? " · deleted, recovered from the phone" : ""}
               </span>
               <span className="break-words">{isHit ? <Snippet hit={{ ...hit, snippet: hit.snippet && r.body && r.body.includes(hit.snippet.match) ? splitAt(r.body, hit.snippet.match) : hit.snippet }} /> : (r.body ?? r.call?.words ?? r.subject ?? "(no text)")}</span>
