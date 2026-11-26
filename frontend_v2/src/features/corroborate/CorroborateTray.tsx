@@ -84,10 +84,13 @@ export function CorroborateTray() {
   if (!parts.length)
     return (
       <>
-        <div className="fixed bottom-12 right-3 z-40" data-guide="corroborate-tray">
-          <Button size="sm" variant="outline" onClick={() => setPaste(true)} data-guide="corroborate-paste" title="Paste numbers, accounts or plates to corroborate">Paste a list…</Button>
-          <Button size="sm" variant="outline" className="ml-1" onClick={() => setSaved(true)} data-guide="corroborate-saved">Saved subsets…</Button>
-          <Button size="sm" variant="outline" className="ml-1" onClick={() => setClaim({ text: "" })} data-guide="corroborate-claim" title="Type a sentence someone said and check it against the records">Check a claim…</Button>
+        {/* Nothing selected: the three ways in sit in the page's flow above the bottom bar, as on a phone, so the page
+            ends above them instead of under them. A selection in progress floats over the page and follows the
+            investigator (below). */}
+        <div role="region" aria-label="Corroborate selection" className="flex h-9 shrink-0 items-center justify-end gap-1 border-t bg-background px-3" data-guide="corroborate-tray">
+          <Button size="sm" variant="ghost" onClick={() => setPaste(true)} data-guide="corroborate-paste" title="Paste numbers, accounts or plates to corroborate">Paste a list…</Button>
+          <Button size="sm" variant="ghost" onClick={() => setSaved(true)} data-guide="corroborate-saved">Saved subsets…</Button>
+          <Button size="sm" variant="ghost" onClick={() => setClaim({ text: "" })} data-guide="corroborate-claim" title="Type a sentence someone said and check it against the records">Check a claim…</Button>
         </div>
         {paste && <PasteList caseId={caseId} onClose={() => setPaste(false)} onDone={() => { setPaste(false); ask() }} />}
       {saved && <SavedSubsets caseId={caseId} onClose={() => setSaved(false)} />}

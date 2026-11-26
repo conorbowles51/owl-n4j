@@ -61,7 +61,7 @@ export function CaseBottomBar({ caseId }: { caseId: string }) {
         <button
           type="button"
           data-guide="history-strip"
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-muted"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-muted"
           disabled={g.saving}
           onClick={() => void g.setHistoryCollapsed(false)}
         >
@@ -70,7 +70,7 @@ export function CaseBottomBar({ caseId }: { caseId: string }) {
         </button>
       ) : (
         <>
-          <ErrorBoundary fallback={<span className="flex-1 text-[11px]">Your steps could not be shown.</span>}>
+          <ErrorBoundary fallback={<span className="flex-1 text-xs">Your steps could not be shown.</span>}>
             <HistoryStrip caseId={caseId} />
           </ErrorBoundary>
           <Tooltip>

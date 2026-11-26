@@ -38,8 +38,8 @@ export function HistoryStrip({ caseId }: { caseId: string }) {
     <>
       <div data-guide="history-strip" className="flex min-w-0 flex-1 items-center gap-1">
         <History className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        {list.isError && <span role="alert" className="text-[11px]">Your steps could not be read. They are still being kept.</span>}
-        {list.data && steps.length === 0 && <span className="text-[11px] text-muted-foreground">Your steps in this case appear here.</span>}
+        {list.isError && <span role="alert" className="text-xs">Your steps could not be read. They are still being kept.</span>}
+        {list.data && steps.length === 0 && <span className="text-xs text-muted-foreground">Your steps in this case appear here.</span>}
         <ol ref={row} aria-label="Your last steps in this case" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
           {steps.map((step, i) => {
             const current = step.id === currentId || (!currentId && i === steps.length - 1)
@@ -52,7 +52,7 @@ export function HistoryStrip({ caseId }: { caseId: string }) {
                   title={`${step.name} · ${when(step.at)}`}
                   onClick={() => go(step)}
                   className={cn(
-                    "max-w-[14rem] truncate rounded px-1.5 py-0.5 text-[11px] leading-4",
+                    "max-w-[14rem] truncate rounded px-1.5 py-0.5 text-xs leading-4",
                     current ? "bg-primary text-primary-foreground" : "text-foreground/80 hover:bg-muted"
                   )}
                 >
@@ -63,7 +63,7 @@ export function HistoryStrip({ caseId }: { caseId: string }) {
           })}
         </ol>
         {list.data && list.data.total > 0 && (
-          <button type="button" onClick={() => setAll(true)} className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-muted">
+          <button type="button" onClick={() => setAll(true)} className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-muted">
             <ListTree className="size-3.5" aria-hidden="true" />
             All steps ({list.data.total.toLocaleString("en-US")})
           </button>

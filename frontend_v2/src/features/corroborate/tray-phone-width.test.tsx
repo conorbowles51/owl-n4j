@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { CorroborateTray } from "./CorroborateTray"
@@ -51,6 +51,16 @@ describe("the Corroborate tray at phone width", () => {
     const tray = screen.getByRole("region", { name: "Corroborate selection" })
     expect(tray.className).not.toMatch(/\bfixed\b/)
     for (const name of ["Paste a list", "Saved subsets", "Check a claim"]) expect(screen.getByRole("button", { name })).toBeTruthy()
+  })
+
+  it("from md up, with nothing selected, its three ways in sit in the page's flow, never over the page", () => {
+    // live at 1440 the idle tray floated over the bottom right of every case page, covering page content
+    phoneWidth(false)
+    wrap()
+    const tray = screen.getByRole("region", { name: "Corroborate selection" })
+    expect(tray.className).not.toMatch(/\bfixed\b/)
+    expect(tray.className).toMatch(/\bshrink-0\b/)
+    for (const name of ["Paste a list…", "Saved subsets…", "Check a claim…"]) expect(within(tray).getByRole("button", { name })).toBeTruthy()
   })
 
   it("stays the floating tray from md up", () => {

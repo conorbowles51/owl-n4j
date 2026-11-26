@@ -46,7 +46,7 @@ export function GuideMenu({ caseId }: { caseId: string }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         data-guide="guide-menu"
-        className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-muted"
+        className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-muted"
       >
         <CircleHelp className="size-3.5" aria-hidden="true" />
         Guide
