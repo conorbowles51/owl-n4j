@@ -1,5 +1,6 @@
 import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/cn"
 import type { LensBuckets } from "@/features/timeline/lens/lens-api"
 import { phoneMark } from "../lib/phone-palette"
 import { weekInWindow, weeksToWindow } from "./home-api"
@@ -36,8 +37,9 @@ export function ActivityStrip({ buckets, phoneIndex, window, onPick, loading, er
   const shown = (i: number) => (drag ? i >= Math.min(drag.a, drag.b) && i <= Math.max(drag.a, drag.b) : window ? weekInWindow(walls[i], window) : true)
   const total = (i: number) => lanes.map((l) => `${l.label} ${n(l.buckets[i]?.count ?? 0)}`).join(", ")
   const cols = { gridTemplateColumns: `repeat(${Math.max(1, walls.length)}, minmax(0, 1fr))` }
+  // bottom room for the Corroborate tray, which floats over the bottom right of every case page
   return (
-    <section aria-label="Activity on each phone" className="border-t bg-muted/30 px-4 py-3 md:px-7">
+    <section aria-label="Activity on each phone" className="border-t bg-muted/30 px-4 pb-14 pt-3 md:px-7">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="text-sm font-semibold text-foreground">Activity on each phone, by week</span>
         <span className="flex items-center gap-2">
@@ -110,8 +112,8 @@ export function ActivityStrip({ buckets, phoneIndex, window, onPick, loading, er
               }}
             >
               <div className="relative h-4 font-mono text-[11px] text-muted-foreground">
-                {monthTicks(walls).map((t) => (
-                  <span key={t.i} className="absolute top-0 whitespace-nowrap" style={{ left: `${(t.i / walls.length) * 100}%` }}>{t.label}</span>
+                {monthTicks(walls).map((t, k) => (
+                  <span key={t.i} className={cn("absolute top-0 whitespace-nowrap", k % 2 === 1 && "max-md:hidden")} data-testid="month-tick" style={{ left: `${(t.i / walls.length) * 100}%` }}>{t.label}</span>
                 ))}
               </div>
             </div>

@@ -63,7 +63,7 @@ const PILL: Record<ElsewherePart, string> = {
 function OtherPhonesOnly({ row, alsoOn }: { row: StreamRow; alsoOn: string[] }) {
   return (
     <div className="flex gap-2 border-t pt-2 text-xs">
-      <span className={`w-20 shrink-0 rounded-full px-2 py-0.5 text-center font-semibold ${PILL.phones}`}>Phones</span>
+      <span className={`w-20 shrink-0 self-start rounded-full px-2 py-0.5 text-center font-semibold ${PILL.phones}`}>Phones</span>
       <span className="leading-snug">
         {alsoOn.length ? `Also on ${alsoOn.join(" and ")}.` : `Not found on any other phone that is on.`}{" "}
         <span className="text-muted-foreground">Only the other phones were checked; financial records, documents and the timeline are not checked from here yet.</span>
@@ -94,7 +94,7 @@ function Elsewhere({ caseId, row, alsoOn }: { caseId: string; row: StreamRow; al
       ) : (
         ELSEWHERE_PARTS.map((part, i) => {
           const q = parts[i]
-          const pill = <span className={`w-20 shrink-0 rounded-full px-2 py-0.5 text-center text-xs font-semibold ${PILL[part]}`}>{PART_WORDS[part]}</span>
+          const pill = <span className={`w-20 shrink-0 self-start rounded-full px-2 py-0.5 text-center text-xs font-semibold ${PILL[part]}`}>{PART_WORDS[part]}</span>
           if (q.isPending) return <div key={part} className="flex gap-2 border-t pt-2 text-xs">{pill}<span className="text-muted-foreground" role="status">Checking</span></div>
           if (q.isError) return <div key={part} className="flex gap-2 border-t pt-2 text-xs">{pill}<span role="alert">{failureText(q.error, "This part of the case could not be checked.")} Open the record again to retry.</span></div>
           const a = q.data as ElsewhereAnswer

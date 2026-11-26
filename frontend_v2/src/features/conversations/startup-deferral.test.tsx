@@ -103,7 +103,7 @@ describe("Conversations start-up defers what the shell does not need", () => {
     api.getThreads.mockResolvedValue({ case_id: "case-1", snapshot: "s", complete: true, limits: [], counts: { threads: 1, threads_total: 1, reviewed: 0, not_reviewed: 1 }, items: [t], sort: "recent" })
     api.getReaderSettings.mockResolvedValue({ stream_density: "compact" })
     scopePresets.mockResolvedValue({ people: [] })
-    getJobs.mockResolvedValue({ active: 0, items: [] })
+    getJobs.mockResolvedValue({ active: 0, items: [], unavailable: [], older_finished: 0 })
   })
   afterEach(() => {
     frames.length = 0
@@ -131,15 +131,16 @@ describe("Conversations start-up defers what the shell does not need", () => {
     await waitFor(() => expect(getJobs).toHaveBeenCalledWith("case-1"))
   })
 
-  it("my-marks waits for the first paint and the New mark still appears from the late answer", async () => {
+  it("the side menu's one Phones entry never asks my-marks and shows no New mark, before or after the first paint", async () => {
+    // The Phones page replaced the six phone entries and their New marks, so the menu has nothing to mark.
     marksFn.mockResolvedValue({ marks: {} })
     mount(<AppSidebar />, "/cases/case-1/workspace")
     await waitFor(() => expect(api.getPhones).toHaveBeenCalled())
-    await screen.findByText("Phones") // the sidebar has drawn with the phones list in hand, marks still unasked
+    await screen.findByRole("link", { name: /^Phones/ })
+    paint()
+    paint()
+    await new Promise((r) => setTimeout(r, 50))
     expect(marksFn).not.toHaveBeenCalled()
-    paint()
-    paint()
-    await waitFor(() => expect(marksFn).toHaveBeenCalled())
-    expect((await screen.findAllByText("New")).length).toBeGreaterThan(0)
+    expect(screen.queryAllByText("New")).toHaveLength(0)
   })
 })

@@ -186,7 +186,7 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
         {words.trim() && <p className="text-xs text-muted-foreground">The list shows every kind of record holding "{words.trim()}" on the phones that are on. {HAS_SEARCH && <><Link className="underline" to={scopeHref(`/cases/${encodeURIComponent(caseId)}/phones/search`, scope, { q: words.trim() })}>See the matches grouped by kind and phone</Link> · </>}<button type="button" className="underline" onClick={() => { setTyped(""); set("q", null) }}>Clear the words</button></p>}
       </header>
 
-      <div className="flex flex-wrap @min-[62rem]:min-h-[28rem] @min-[62rem]:flex-1 @min-[62rem]:flex-nowrap" data-testid="phones-home-body">
+      <div className="flex flex-wrap @min-[62rem]:min-h-[24rem] @min-[62rem]:flex-1 @min-[62rem]:flex-nowrap" data-testid="phones-home-body">
         <aside aria-label="Narrow" className="flex w-full flex-col gap-5 border-b px-3.5 py-4 md:w-60 md:flex-none md:border-b-0 md:border-r @min-[62rem]:overflow-y-auto">
           {facetFailed && <p role="alert" className="text-xs">Some counts could not be loaded; the list is complete without them. Reload the page to count again.</p>}
           <div className="flex flex-col gap-0.5" role="group" aria-label="What">
@@ -257,7 +257,7 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
                 const others = alsoOn(row)
                 return others.length ? <span className="rounded border border-violet-400/60 px-1.5 text-[11px] text-violet-800 dark:text-violet-200">Also on {others.join(", ")}</span> : null
               }}
-              className="h-[70dvh] flex-none @min-[62rem]:h-auto @min-[62rem]:min-h-[20rem] @min-[62rem]:flex-1"
+              className="h-[70dvh] flex-none @min-[62rem]:h-auto @min-[62rem]:min-h-[18rem] @min-[62rem]:flex-1"
             />
           )}
         </section>

@@ -43,15 +43,23 @@ export function weekWords(wall: string): string {
 
 /** Month labels under the strip: the first week of each month, with the year on the first and last label. */
 export function monthTicks(walls: string[]): { i: number; label: string }[] {
-  const out: { i: number; label: string }[] = []
-  let last = ""
+  const starts: { i: number; m: string }[] = []
   walls.forEach((w, i) => {
     const m = w.slice(0, 7)
-    if (m !== last) {
-      out.push({ i, label: MONTHS[Number(m.slice(5, 7)) - 1] + (out.length === 0 ? ` ${m.slice(0, 4)}` : m.endsWith("-01") ? ` ${m.slice(0, 4)}` : "") })
-      last = m
-    }
+    if (starts[starts.length - 1]?.m !== m) starts.push({ i, m })
   })
+  // A month that begins under three weeks after the last label is left unlabelled, so labels never run together;
+  // a first, partial month gives way to the next one.
+  const kept: { i: number; m: string }[] = []
+  for (const s of starts) {
+    const prev = kept[kept.length - 1]
+    if (prev && s.i - prev.i < 3) {
+      if (kept.length === 1 && prev.i === 0) kept[0] = s
+      continue
+    }
+    kept.push(s)
+  }
+  const out = kept.map((s, k) => ({ i: s.i, label: MONTHS[Number(s.m.slice(5, 7)) - 1] + (k === 0 || s.m.endsWith("-01") ? ` ${s.m.slice(0, 4)}` : "") }))
   // too many to read: keep about twelve
   const step = Math.ceil(out.length / 12)
   return step > 1 ? out.filter((_, k) => k % step === 0) : out

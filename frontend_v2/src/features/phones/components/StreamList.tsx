@@ -404,7 +404,7 @@ export function StreamList({
             if (it.type === "header") {
               const s = stream.segments[it.segment]
               return (
-                <div key={`h${it.segment}`} ref={virtualizer.measureElement} data-index={v.index} style={style} className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2 text-sm" data-day={s.day ?? "none"}>
+                <div key={`h${it.segment}`} ref={virtualizer.measureElement} data-index={v.index} style={style} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b bg-muted/60 px-3 py-2 text-sm" data-day={s.day ?? "none"}>
                   {s.day === null ? (
                     // 07 J-4: the undated rows are counted and their place is stated, never silently dropped.
                     <span role="heading" aria-level={3} className="font-semibold">

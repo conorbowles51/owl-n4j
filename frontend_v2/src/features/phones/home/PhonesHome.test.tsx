@@ -160,6 +160,18 @@ describe("the Phones page", () => {
   })
 })
 
+describe("month labels under the weekly strip", () => {
+  it("never run together: a month starting under three weeks after the last label is left unlabelled", async () => {
+    const { monthTicks } = await import("./home-words")
+    // live (Corwen Street): the first week is in late December, the second starts January, and "Dec 2023Jan 2024" ran together
+    const walls = ["2023-12-25", "2024-01-01", "2024-01-08", "2024-01-15", "2024-01-22", "2024-01-29", "2024-02-05", "2024-02-12", "2024-02-19", "2024-02-26", "2024-03-04"]
+    expect(monthTicks(walls)).toEqual([{ i: 1, label: "Jan 2024" }, { i: 6, label: "Feb" }, { i: 10, label: "Mar" }])
+    const short = ["2024-01-22", "2024-01-29", "2024-02-05", "2024-02-12", "2024-02-19", "2024-02-26", "2024-03-04"]
+    expect(monthTicks(short).map((t) => t.label)).toEqual(["Feb 2024", "Mar"]) // two weeks of January give way to February
+    expect(monthTicks(["2024-01-29", "2024-02-05", "2024-02-12", "2024-02-19", "2024-02-26"]).map((t) => t.label)).toEqual(["Feb 2024"])
+  })
+})
+
 describe("copies on other phones among the loaded rows", () => {
   const row = (phone: string, body: string | null, at: string, kind: StreamRow["kind"] = "message") =>
     ({ kind, body, time: { instant: at }, call: kind === "call" ? { duration_s: 120 } : null, phone: { extraction_id: phone, label: phone } }) as unknown as StreamRow
