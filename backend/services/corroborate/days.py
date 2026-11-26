@@ -101,6 +101,20 @@ def event_words(p: dict) -> str:
     return noun
 
 
+_PLURAL = {"Message": "messages", "Call": "calls", "E-mail": "e-mails", "Location": "locations",
+           "Photo place": "photo places", "Phone in use": "records of a phone in use", "Record": "records",
+           "Payment alert on a phone": "payment alerts on a phone", "A document line": "document lines"}
+
+
+def collapse(words: list[str]) -> list[str]:
+    """The same few words said once with their count ("8 messages"), in the order first seen; each different line
+    (a check, a document) stays as it is."""
+    counts: dict[str, int] = {}
+    for w in words:
+        counts[w] = counts.get(w, 0) + 1
+    return [w if n == 1 else f"{n} {_PLURAL.get(w, w)}" if w in _PLURAL else f"{w} ({n} times)" for w, n in counts.items()]
+
+
 def _events_phrase(points: list[dict], n: int) -> tuple[str, str]:
     """("the 7 check deposits", "from the financial records") for the question sentence and the tiles' heading."""
     kinds = {p.get("kind") for p in points if p.get("at")}
@@ -148,9 +162,9 @@ def _phone_words(people: dict, keys: list[str]) -> list[str]:
         if not labels:
             out.append(f"{p['label']} (no phone of theirs is in the case)")
         elif len(labels) == 1:
-            out.append(f"{p['label']}'s phone ({labels[0]})")
+            out.append(f"{p['label']}'s phone ({labels[0]})" if p.get("dossier_id") else labels[0])
         else:
-            out.append(f"{p['label']}'s phones ({_names(labels)})")
+            out.append(f"{p['label']}'s phones ({_names(labels)})" if p.get("dossier_id") else _names(labels))
     return out
 
 
@@ -212,7 +226,7 @@ def build(rows: list[dict], instances: list[dict], recs: list[dict], points: lis
             detail = _missing_who(row, i, recs_by_inst, people)
         ev = events.get(i["id"], [])
         tiles.append({"instance": i["id"], "date": _short_day(i), "hours": i["label"],
-                      "events": [event_words(p) for p in ev], "event_refs": [p["ref"] for p in ev],
+                      "events": collapse([event_words(p) for p in ev]), "event_refs": [p["ref"] for p in ev],
                       "outcome": state, "outcome_words": {"present": yes, "absent": no, "no_data": none}[state],
                       "detail": detail, "records": refs})
     counts = {"present": 0, "absent": 0, "no_data": 0}

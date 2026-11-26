@@ -23,14 +23,16 @@ def test_together_question_tiles_every_incident_with_outcome_and_time_and_counts
     rel = days["relation"]
     assert rel["link_kind"] == "together" and rel["word"] == "together"
     # the definition names each owner's phone, so "together" says for which phones
-    assert "Bob Brook's phone (phB)" in rel["definition"] and "the user of Phone C's phone (phC)" in rel["definition"]
+    # a person with a dossier is named with their phone; a phone whose user is unknown is named by its own label
+    assert "Bob Brook's phone (phB)" in rel["definition"] and "and phC were placed" in rel["definition"]
+    assert "the user of Phone C's phone" not in rel["definition"]
     assert "15 minutes" in rel["definition"]
     assert [t["instance"] for t in days["tiles"]] == [i["id"] for i in res["comparison"]["incident"]]
     assert len(days["tiles"]) == 3
     for t in days["tiles"]:
         assert t["outcome"] == "present" and t["outcome_words"] == "Together"
         assert t["detail"] == "11:30 PM to 11:35 PM", t
-        assert t["events"] == ["Location", "Location"] and len(t["event_refs"]) == 2
+        assert t["events"] == ["2 locations"] and len(t["event_refs"]) == 2
         assert t["records"]
     o = days["ordinary"]
     assert o["of"] == len(res["comparison"]["ordinary"]) == o["present"] + o["absent"] + o["no_data"]
@@ -59,8 +61,8 @@ def test_a_no_data_tile_names_the_phone_without_locations_and_is_counted_apart()
     utc = timezone.utc
     mk = lambda d, side: M.make_instance(d, datetime.min.time(), timedelta(hours=24), utc, side, "UTC")  # noqa: E731
     inc, ordi = mk(INCIDENTS[0], "incident"), mk(INCIDENTS[1], "ordinary")
-    people = {"a": {"key": "a", "label": "Ann", "phones": ["pa"], "phone_labels": {"pa": "Phone 1"}},
-              "b": {"key": "b", "label": "Bob", "phones": ["pb"], "phone_labels": {"pb": "Phone 2"}}}
+    people = {"a": {"key": "a", "label": "Ann", "dossier_id": "a", "phones": ["pa"], "phone_labels": {"pa": "Phone 1"}},
+              "b": {"key": "b", "label": "Bob", "dossier_id": "b", "phones": ["pb"], "phone_labels": {"pb": "Phone 2"}}}
     row = {"id": "together:a:b", "link_kind": "together", "label": "Ann and Bob in the same place", "people": ["a", "b"],
            "cells": {inc["id"]: "no_data", ordi["id"]: "no_data"}, "records": {}, "weight": "full",
            "incident": {"present": 0, "absent": 0, "no_data": 1, "of": 1},
@@ -73,3 +75,8 @@ def test_a_no_data_tile_names_the_phone_without_locations_and_is_counted_apart()
     assert t["detail"] == "Bob's phone has no locations that day, so it counts neither way."
     assert out["ordinary"]["no_data"] == 1 and out["ordinary"]["present"] == 0
     assert "Ann's phone (Phone 1) and Bob's phone (Phone 2)" in out["relation"]["definition"]
+
+
+def test_repeated_records_on_a_day_are_said_once_with_their_count():
+    assert D.collapse(["Message"] * 8 + ["Document: badge B-20417", "Message"]) == ["9 messages", "Document: badge B-20417"]
+    assert D.collapse(["Check 2204 · $2,460.00", "Check 2205 · $2,310.00"]) == ["Check 2204 · $2,460.00", "Check 2205 · $2,310.00"]
