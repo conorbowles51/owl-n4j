@@ -137,8 +137,8 @@ describe("first-visit tours", () => {
     expect(tourArea("/cases/c1/evidence/f1/text")).toBe("text")
     expect(tourArea("/cases/c1/financial?view=overview")).toBe("financial")
     expect(tourArea("/cases/c1/settings")).toBe("settings")
-    // a panel tour has no address of its own
-    expect(tourArea("/cases/c1/corroborate")).toBeNull()
+    // the Corroborate page has its own tour at its own address
+    expect(tourArea("/cases/c1/corroborate")).toBe("corropanel")
   })
 
   it("skips a step whose control is not on screen, and finds a panel tour by its open panel", () => {
