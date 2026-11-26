@@ -30,6 +30,9 @@ def _uid(v) -> str | None:
         return None
 
 
+MAPPED_NAME = "mapped by the system, not yet confirmed"
+
+
 class CaseStore:
     def __init__(self, db, case_id):
         self.db, self.case = db, str(case_id)
@@ -109,6 +112,7 @@ class CaseStore:
                 shown = sorted(nums)[0] if nums else ext[:8]
                 key = f"phone:{ext}"
                 p = people.setdefault(key, {"key": key, "label": f"the user of {labels[ext]} (+{shown})",
+                                            "owner_of": f"{labels[ext]}, +{shown}",
                                             "dossier_id": None, "numbers": set(), "handles": set(), "emails": set(),
                                             "accounts": [], "phones": [], "names": [], "links": []})
             p["phones"].append(ext)
@@ -120,15 +124,46 @@ class CaseStore:
             p["numbers"] |= nums
             p["handles"] |= handles
             p["emails"] |= emails
+        self._owner_names(people)
         for acc, holder, inst, ident in self.q(
                 "SELECT id, holder_name, institution_name, identifier_as_printed FROM financial_accounts WHERE case_id = :c"):
             hits = [p for p in people.values() if holder and any(M.names_match(n, holder) for n in p["names"] if n)]
+            # a dossier's name decides first; a phone owner's mapped name only when no dossier holds it
+            hits = [p for p in hits if p["dossier_id"]] or hits
             if len(hits) == 1:
                 hits[0]["accounts"].append(str(acc))
                 hits[0]["links"].append({"identifier": f"{inst} {ident}", "how": "suggested",
                                          "basis": f"account holder printed as “{holder}”"})
         self._people = list(people.values())
         return self._people
+
+    def _owner_names(self, people: dict) -> None:
+        """A phone's owner known by no dossier is named as the phones screens name it (the owner label's name, from
+        the phone's own records), said to be mapped by the system and not yet confirmed, so every screen names the
+        person the same way and a name in text can match them (Demo 2, 26 Nov: 'Owner of Phone 1: Priya Halloran' on
+        the phones screens, 'the user of Phone 1 (+17175550211)' here). A name a dossier holds is left out: that
+        person's matches stay the dossier's."""
+        from services.phone.labels import LabelContext
+        dossier_names = [n for p in people.values() if p["dossier_id"] for n in p["names"] if n]
+        ctx = None
+        for p in people.values():
+            if p["dossier_id"] or not p["phones"]:
+                continue
+            ctx = ctx or LabelContext(self.db.connection(), self.case)
+            found = []
+            for ext in p["phones"]:
+                name = (ctx.label(ext, is_phone_owner=True).get("name") or "").strip()
+                if name and not any(M.names_match(d, name) or M.names_match(name, d) for d in dossier_names):
+                    found.append(name)
+            if not found:
+                continue
+            p["names"] = list(dict.fromkeys(found))
+            p["name_origin"] = MAPPED_NAME
+            if len(p["names"]) == 1:
+                p["label"] = "%s (the user of %s; %s)" % (p["names"][0], p["owner_of"], MAPPED_NAME)
+            else:  # the phones name their owner differently: each name, none chosen
+                p["label"] = "the user of %s (named %s on its phones; %s)" % (p["owner_of"], " or ".join(p["names"]),
+                                                                             MAPPED_NAME)
 
     # -- the selection -------------------------------------------------------------------------------------------
     def selection_points(self, members: list[dict]) -> tuple[list[dict], list[dict]]:
