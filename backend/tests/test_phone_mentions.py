@@ -350,3 +350,26 @@ def test_money_with_no_account_for_the_speaker_says_an_account_would_test_it():
     m = read("refunds cleared", when=at(D, 19))[0]
     res = run(m, FakeData(), at(D, 19))
     assert res["outcome"] == "cant_tell" and any("joined to a bank account" in w for w in res["would_test"])
+
+
+def test_reading_a_phone_again_rechecks_the_mentions_it_already_holds(monkeypatch):
+    """A stored mention found again is not duplicated; its outcome is worked out afresh from its effective values, so a
+    rule change reaches mentions found before it, and a person's correction is what gets checked."""
+    sent = at(D, 21)
+    t = {"record_uid": "u1", "body": "phone was off, sorry", "at": sent, "speaker": "ada", "addressee": ["ben"], "kind": "message"}
+    m = read(t["body"], when=sent)[0]
+    stored = SimpleNamespace(record_uid="u1", start=m["start"], reading=m, corrected={"kind": "plan"}, context={"at": sent.isoformat()},
+                             outcome="contradicts", result=None, checked_at=None)
+
+    class Rows:
+        def scalars(self):
+            return [stored]
+
+    added = []
+    db = SimpleNamespace(execute=lambda *_a, **_k: Rows(), add=added.append)
+    seen = []
+    monkeypatch.setattr(S.C, "check", lambda data, mention, ctx: seen.append(mention["kind"]) or {"outcome": "cant_tell"})
+    run = SimpleNamespace(case_id="c", reader="rules", extraction_id="e", id="r")
+    n = S._read_page(db, FakeData(), run, [t], PEOPLE, ZONE, [], None)
+    assert n == 1 and added == []   # found again, counted, not stored twice
+    assert stored.outcome == "cant_tell" and stored.checked_at is not None and seen == ["plan"]

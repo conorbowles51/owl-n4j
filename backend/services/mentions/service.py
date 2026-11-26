@@ -178,11 +178,15 @@ def _read_page(db, data, run, page, people, zone, known, model) -> int:
         run.model_calls, run.tokens_in, run.tokens_out = model.calls, model.tokens_in, model.tokens_out
         run.cost_usd = run_cost(db, run.id)
     uids = [t["record_uid"] for t in page]
-    have = {(r.record_uid, r.start) for r in db.execute(select(PhoneMention).where(
+    have = {(r.record_uid, r.start): r for r in db.execute(select(PhoneMention).where(
         PhoneMention.case_id == run.case_id, PhoneMention.reader == run.reader, PhoneMention.record_uid.in_(uids))).scalars()}
     n = 0
     for t, m in readings:
         if (t["record_uid"], m["start"]) in have:
+            # Read again: the stored mention (and any correction on it) stays; its outcome is worked out afresh, so a
+            # change in the rules or the records reaches every mention already found.
+            _check_row(data, have[(t["record_uid"], m["start"])])
+            n += 1
             continue
         ctx = {"at": t["at"].isoformat(), "record_uid": t["record_uid"], "phone": str(run.extraction_id), "app": t.get("app"),
                "direction": t.get("direction"), "speaker": t.get("speaker"), "addressee": t.get("addressee"),

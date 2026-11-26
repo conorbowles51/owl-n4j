@@ -87,6 +87,8 @@ describe("Mentions, checked against the case", () => {
     wrap(<MentionsPage />)
     fireEvent.click(await screen.findByRole("button", { name: "Read this phone" }))
     await waitFor(() => expect(fetchAPI).toHaveBeenCalledWith("/api/cases/c1/phone-mentions/runs", { method: "POST", body: { phone: "p2", reader: "rules" } }))
+    fireEvent.click(screen.getByRole("button", { name: "Read again" }))   // a phone already read is read and checked afresh
+    await waitFor(() => expect(fetchAPI).toHaveBeenCalledWith("/api/cases/c1/phone-mentions/runs", { method: "POST", body: { phone: "p1", reader: "rules" } }))
   })
 })
 

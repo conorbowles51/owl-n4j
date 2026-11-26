@@ -292,7 +292,11 @@ function Readings({ data, colourOf, onStart, busy, error }: { data: MentionList;
             ) : r.status === "running" ? (
               <span className="text-muted-foreground">Reading: {r.texts_read} of {r.texts_total} texts, {r.mentions_found} mentions so far.</span>
             ) : r.status === "done" ? (
-              <span className="text-muted-foreground">Read by word rules: {r.texts_read} texts, {r.mentions_found} mentions.</span>
+              <>
+                <span className="text-muted-foreground">Read by word rules: {r.texts_read} texts, {r.mentions_found} mentions.</span>
+                <Button size="sm" variant="ghost" disabled={busy} title="Reads the texts again and checks every mention afresh against the case as it is now. Corrections stay."
+                  onClick={() => onStart(p.phone, "rules")}>Read again</Button>
+              </>
             ) : (
               <>
                 <span className="text-muted-foreground">The reading stopped at {r.texts_read} of {r.texts_total} texts{r.error ? ` (${r.error})` : ""}.</span>
