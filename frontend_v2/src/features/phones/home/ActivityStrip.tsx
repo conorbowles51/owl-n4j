@@ -111,9 +111,12 @@ export function ActivityStrip({ buckets, phoneIndex, window, onPick, loading, er
                 }
               }}
             >
-              <div className="relative h-4 font-mono text-[11px] text-muted-foreground">
+              <div className="relative h-4 font-mono text-xs text-muted-foreground">
                 {monthTicks(walls).map((t, k) => (
-                  <span key={t.i} className={cn("absolute top-0 whitespace-nowrap", k % 2 === 1 && "max-md:hidden")} data-testid="month-tick" style={{ left: `${(t.i / walls.length) * 100}%` }}>{t.label}</span>
+                  <span key={t.i} className={cn("absolute top-0 whitespace-nowrap", k % 2 === 1 && "max-md:hidden")} data-testid="month-tick" style={{ left: `${(t.i / walls.length) * 100}%` }}>
+                    {/* a phone's strip is too narrow for a year beside every month: the year shows from md up */}
+                    {t.label.split(" ")[0]}{t.label.includes(" ") && <span className="max-md:hidden"> {t.label.split(" ")[1]}</span>}
+                  </span>
                 ))}
               </div>
             </div>

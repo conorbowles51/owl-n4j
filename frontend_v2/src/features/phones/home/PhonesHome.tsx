@@ -190,13 +190,13 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
         <aside aria-label="Narrow" className="flex w-full flex-col gap-5 border-b px-3.5 py-4 md:w-60 md:flex-none md:border-b-0 md:border-r @min-[62rem]:overflow-y-auto">
           {facetFailed && <p role="alert" className="text-xs">Some counts could not be loaded; the list is complete without them. Reload the page to count again.</p>}
           <div className="flex flex-col gap-0.5" role="group" aria-label="What">
-            <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">What</p>
+            <p className="px-2 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">What</p>
             {[...WHAT_GROUPS, ALL_GROUP].map((g) => (
               <Facet key={g.key} label={g.label} count={facets.kinds ? groupCount(facets.kinds, g.kinds) : undefined} on={what.key === g.key} onClick={() => set("what", g.key === DEFAULT_WHAT ? null : g.key)} />
             ))}
           </div>
           <div className="flex flex-col gap-0.5" role="group" aria-label="Who">
-            <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Who</p>
+            <p className="px-2 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Who</p>
             {facets.people_applies === false && <p className="px-2 text-xs text-muted-foreground">People are counted in messages and calls. Choose Messages and calls to narrow by person.</p>}
             {facets.people?.map((p) => <Facet key={p.key} label={p.label} count={p.count} on={personOn(p.key)} onClick={() => togglePerson(p.key, p.label)} />)}
             {scope.people.filter((p) => !facets.people?.some((x) => x.key === p.key)).map((p) => <Facet key={p.key} label={p.label} count={null} on onClick={() => togglePerson(p.key, p.label)} />)}
@@ -206,15 +206,15 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
             {facets.people && facets.people.length === 0 && facets.people_applies && <p className="px-2 text-xs text-muted-foreground">No one but the phones' owners takes part in what is shown.</p>}
           </div>
           <div className="flex flex-col gap-0.5" role="group" aria-label="State">
-            <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">State</p>
+            <p className="px-2 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">State</p>
             {(facets.states ?? [{ key: "deleted", label: "Deleted or in trash" }, { key: "one", label: "On one phone only" }, { key: "many", label: "On more than one phone" }] as HomeFacets["states"] & object).map((s) => (
               <Facet key={s.key} label={s.label} count={facets.states ? s.count : undefined} on={state === s.key} onClick={() => set("state", state === s.key ? null : s.key)}
                 disabledReason={s.applies === false ? "Copies on other phones are judged for messages and calls only." : s.key !== "deleted" && on.length < 2 ? "Turn on a second phone to compare." : undefined} />
             ))}
-            {facets.states_note && <p className="px-2 pt-1 text-[11px] leading-snug text-muted-foreground">{facets.states_note}</p>}
+            {facets.states_note && <p className="px-2 pt-1 text-xs leading-snug text-muted-foreground">{facets.states_note}</p>}
           </div>
           <nav aria-label="More about these phones" className="flex flex-col gap-0.5">
-            <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">More about these phones</p>
+            <p className="px-2 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">More about these phones</p>
             {MORE.map(([path, label]) => (
               <Link key={path} className="rounded-md px-2 py-1 text-sm text-foreground/85 underline-offset-2 hover:bg-muted hover:underline" to={scopeHref(`/cases/${encodeURIComponent(caseId)}/${path}`, scope)}>{label}</Link>
             ))}
@@ -255,7 +255,7 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
               highlight={words.trim() ? { query: words.trim(), exact: false } : null}
               rowExtra={(row) => {
                 const others = alsoOn(row)
-                return others.length ? <span className="rounded border border-violet-400/60 px-1.5 text-[11px] text-violet-800 dark:text-violet-200">Also on {others.join(", ")}</span> : null
+                return others.length ? <span className="rounded border border-violet-400/60 px-1.5 text-xs text-violet-800 dark:text-violet-200">Also on {others.join(", ")}</span> : null
               }}
               className="h-[70dvh] flex-none @min-[62rem]:h-auto @min-[62rem]:min-h-[18rem] @min-[62rem]:flex-1"
             />

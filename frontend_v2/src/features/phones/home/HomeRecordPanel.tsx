@@ -106,7 +106,7 @@ function Elsewhere({ caseId, row, alsoOn }: { caseId: string; row: StreamRow; al
                 {pill}
                 <span className="leading-snug">
                   <span className="font-medium">{it.relation_label}.</span> {it.text}
-                  {it.machine_label && <span className="ml-1 rounded border px-1 text-[11px] text-muted-foreground">{it.machine_label}</span>}
+                  {it.machine_label && <span className="ml-1 rounded border px-1 text-xs text-muted-foreground">{it.machine_label}</span>}
                   {it.reason && <span className="text-muted-foreground"> {it.reason}</span>}
                   {it.citation?.label && (href ? <> <Link className="underline underline-offset-2" to={href}>{it.citation.label}</Link></> : <span className="text-muted-foreground"> {it.citation.label}</span>)}
                 </span>
