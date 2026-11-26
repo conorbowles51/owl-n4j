@@ -7,6 +7,8 @@ import { getSelection } from "@/features/corroborate/selection-store"
 import { corroborateAPI } from "@/features/corroborate/api"
 import { leadsAPI, searchedWords, type Lead } from "./api"
 import { LeadsPage } from "./LeadsPage"
+import { leadMembers } from "./lead-members"
+import { readCorroborateRequest } from "./open"
 import { CorroborateOpener } from "./CorroboratePanel"
 import { CorroboratePage } from "@/features/corroborate/page/CorroboratePage"
 import { openCorroborate, clearPendingCorroborate } from "./open"
@@ -138,6 +140,14 @@ describe("Corroborate from anywhere (lx-corroredo A)", () => {
     </Routes></MemoryRouter></QueryClientProvider>)
     expect(await screen.findByText("Kell and Okafor through the prepaid phone")).toBeTruthy()
     expect(screen.getByRole("tab", { name: "Leads Loupe found (5)" }).getAttribute("aria-selected")).toBe("true")
+  })
+
+  it("a lead's Corroborate asks only the records a question can hold and names the rest (live 26 Nov: a dated document line made the whole question refused)", () => {
+    const got = leadMembers(lead({ record_refs: ["phone_record:a", "document_date:d1", "financial_transaction:t", "document_date:d2"] }))
+    expect(got.members).toEqual([{ type: "phone_record", id: "a" }, { type: "financial_transaction", id: "t" }])
+    expect(got.skipped).toEqual([{ type: "document_date", count: 2 }])
+    openCorroborate({ caseId: "c1", screen: "Leads", label: "x", ...got }, { keep: false })
+    expect(readCorroborateRequest("c1")?.skipped).toEqual([{ type: "document_date", count: 2 }])
   })
 
   it("a lead's Corroborate does not fill the case-wide selection", () => {

@@ -5,14 +5,9 @@ import { cn } from "@/lib/cn"
 import { useCollectTargets } from "@/features/phones/collect-targets"
 import { LEVEL_DOT, leadsAPI, type Lead } from "./api"
 import { openCorroborate } from "./open"
+import { leadMembers } from "./lead-members"
 import { clearLeadRecords, showLeadRecords, useShownLead } from "./highlight-store"
 
-function members(lead: Lead) {
-  return lead.record_refs.slice(0, 2000).map((r) => {
-    const i = r.indexOf(":")
-    return { type: r.slice(0, i), id: r.slice(i + 1) }
-  })
-}
 
 export function LevelBadge({ lead }: { lead: Lead }) {
   return (
@@ -69,7 +64,7 @@ export function LeadCard({ caseId, lead, compact = false }: { caseId: string; le
       )}
       <p className="mt-2 text-[11px] text-muted-foreground">{lead.read.words}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" onClick={() => openCorroborate({ caseId, screen: "Leads", label: lead.title, members: members(lead), people: lead.people.map((p) => p.key), ...(lead.period.from ? { period: { from: lead.period.from, to: lead.period.to ?? lead.period.from } } : {}) }, { keep: false })}>Corroborate</Button>
+        <Button size="sm" variant="outline" onClick={() => openCorroborate({ caseId, screen: "Leads", label: lead.title, ...leadMembers(lead), people: lead.people.map((p) => p.key), ...(lead.period.from ? { period: { from: lead.period.from, to: lead.period.to ?? lead.period.from } } : {}) }, { keep: false })}>Corroborate</Button>
         {n > 0 && (showing
           ? <Button size="sm" variant="outline" onClick={() => clearLeadRecords(lead.id)}>Stop showing these records</Button>
           : <Button size="sm" variant="outline" data-guide="lead-show-records" onClick={() => showLeadRecords(lead.id, lead.title, lead.record_refs, { caseId, period: lead.period })}>Show these records</Button>)}

@@ -165,6 +165,7 @@ export const SKIPPED_WORDS: Record<string, [string, string]> = {
   statement_check: ["a statement check", "statement checks"], history_step: ["a step", "steps"],
   agent_artifact: ["a piece of assistant work", "pieces of assistant work"], task: ["a task", "tasks"],
   deadline: ["a deadline", "deadlines"], witness: ["a witness", "witnesses"],
+  document_date: ["a dated line in a document", "dated lines in documents"],
 }
 
 export function skippedNoun(type: string, count: number): string {
