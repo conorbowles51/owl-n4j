@@ -31,6 +31,7 @@ def _uid(v) -> str | None:
 
 
 MAPPED_NAME = "mapped by the system, not yet confirmed"
+UNCONFIRMED = "not yet confirmed"
 
 
 class CaseStore:
@@ -158,12 +159,15 @@ class CaseStore:
             if not found:
                 continue
             p["names"] = list(dict.fromkeys(found))
+            # the label is said in every sentence naming the person, so it carries the short note; the whole note and
+            # the phone are their own fields, for the screens that list people (one verdict sentence repeated the
+            # 60-character note 5 times, Demo 2, 26 Nov)
             p["name_origin"] = MAPPED_NAME
             if len(p["names"]) == 1:
-                p["label"] = "%s (the user of %s; %s)" % (p["names"][0], p["owner_of"], MAPPED_NAME)
+                p["label"] = "%s (%s)" % (p["names"][0], UNCONFIRMED)
             else:  # the phones name their owner differently: each name, none chosen
-                p["label"] = "the user of %s (named %s on its phones; %s)" % (p["owner_of"], " or ".join(p["names"]),
-                                                                             MAPPED_NAME)
+                p["label"] = "the user of %s (named %s on its phones, %s)" % (p["owner_of"], " or ".join(p["names"]),
+                                                                             UNCONFIRMED)
 
     # -- the selection -------------------------------------------------------------------------------------------
     def selection_points(self, members: list[dict]) -> tuple[list[dict], list[dict]]:

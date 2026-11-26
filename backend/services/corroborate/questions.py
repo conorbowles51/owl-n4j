@@ -199,8 +199,11 @@ def people_choices(store) -> list[dict]:
     out = []
     for p in store.people():
         labels = p.get("phone_labels") or {}
-        out.append({"key": p["key"], "label": p["label"], "dossier": bool(p.get("dossier_id")),
-                    "phones": [labels.get(e, "a phone") for e in p["phones"]], "accounts": len(p["accounts"])})
+        row = {"key": p["key"], "label": p["label"], "dossier": bool(p.get("dossier_id")),
+               "phones": [labels.get(e, "a phone") for e in p["phones"]], "accounts": len(p["accounts"])}
+        if p.get("name_origin"):  # a name mapped from the phone's records: the whole note and the phone it is from
+            row.update(name_origin=p["name_origin"], owner_of=p.get("owner_of"))
+        out.append(row)
     out.sort(key=lambda x: (not x["dossier"], not x["phones"] and not x["accounts"], x["label"].casefold()))
     return out
 

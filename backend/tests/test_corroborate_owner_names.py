@@ -42,9 +42,13 @@ def test_a_phone_owner_known_by_no_dossier_carries_the_mapped_name_said_to_be_un
     st = _store(monkeypatch, owners=[(E1, "+17175550211")], names={E1: "Priya Halloran"},
                 accounts=[("a1", "PRIYA HALLORAN", "Bank", "x1234")])
     (p,) = st.people()
-    assert p["label"] == "Priya Halloran (the user of Phone 1, +17175550211; mapped by the system, not yet confirmed)"
+    assert p["label"] == "Priya Halloran (not yet confirmed)"
     assert p["names"] == ["Priya Halloran"] and p["name_origin"] == "mapped by the system, not yet confirmed"
-    assert p["accounts"] == ["a1"]
+    assert p["accounts"] == ["a1"] and p["owner_of"] == "Phone 1, +17175550211"
+    from services.corroborate import questions
+    (choice,) = questions.people_choices(st)
+    assert choice["label"] == "Priya Halloran (not yet confirmed)"
+    assert choice["name_origin"] == "mapped by the system, not yet confirmed" and choice["owner_of"] == "Phone 1, +17175550211"
     assert S.M.person_for_name(st.people(), "Priya Halloran was at the lake") == p["key"]
 
 
@@ -63,8 +67,8 @@ def test_phones_that_name_one_owner_differently_show_both_names_and_choose_none(
                 names={E1: "Zeno Oakhurst", E3: "Tamsin C."})
     (p,) = st.people()
     assert p["names"] == ["Zeno Oakhurst", "Tamsin C."]
-    assert p["label"] == ("the user of Phone 1, +12015550102 (named Zeno Oakhurst or Tamsin C. on its phones; mapped by "
-                          "the system, not yet confirmed)")
+    assert p["label"] == ("the user of Phone 1, +12015550102 (named Zeno Oakhurst or Tamsin C. on its phones, not yet "
+                          "confirmed)")
 
 
 def test_a_phone_with_no_owner_name_keeps_its_number_label(monkeypatch):
