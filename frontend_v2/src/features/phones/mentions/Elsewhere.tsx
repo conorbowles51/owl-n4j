@@ -1,6 +1,7 @@
 import { useQueries } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { fetchAPI } from "@/lib/api-client"
+import type { ElsewhereItem } from "../home/HomeRecordPanel"
 import { citationHref } from "../home/home-words"
 import type { MentionDetail } from "./api"
 
@@ -10,13 +11,7 @@ import type { MentionDetail } from "./api"
  * mention checks' own. A possible match is labelled so and is never counted as agreement.
  */
 
-interface Item {
-  relation: string
-  relation_label: string
-  text: string
-  reason: string
-  citation?: { kind: string; id: string; label?: string | null; phone?: string | null; page?: number | null } | null
-}
+type Item = ElsewhereItem
 interface Part { source: string; label: string; state: string; searched: string; items: Item[] }
 
 const PARTS = ["financial", "documents", "timeline", "phones"] as const
@@ -52,6 +47,7 @@ export function Elsewhere({ caseId, d }: { caseId: string; d: MentionDetail }) {
               <li key={k} className="border-t py-2 text-[13px] leading-snug">
                 <span className="font-semibold">{i.source} · {i.relation_label}:</span> {i.text}
                 {i.reason && <span className="block text-xs text-muted-foreground">{i.reason}</span>}
+                {i.machine_label && <span className="block text-xs font-medium text-status-model">{i.machine_label}</span>}
                 {i.citation && (to ? <Link to={to} className="mt-0.5 inline-block rounded border bg-muted px-1.5 font-mono text-[11px] no-underline hover:underline">{i.citation.label || "Open it"}</Link>
                   : <span className="mt-0.5 inline-block rounded border px-1.5 font-mono text-[11px]">{i.citation.label}</span>)}
               </li>

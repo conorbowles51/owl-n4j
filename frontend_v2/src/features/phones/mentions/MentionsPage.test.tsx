@@ -76,7 +76,7 @@ describe("Mentions, checked against the case", () => {
     expect(screen.getByRole("button", { name: "Open the contradiction" })).toBeInTheDocument()
     const elsewhere = within(side).getByRole("region", { name: "Elsewhere in the case" })
     expect(await within(elsewhere).findByText(/Money · Possible match:/)).toBeInTheDocument()
-    expect(within(elsewhere).getByRole("link", { name: "Payment 7 Mar" })).toHaveAttribute("href", "/cases/c1/financial?transaction=t9")
+    expect(within(elsewhere).getByRole("link", { name: "Payment 7 Mar" })).toHaveAttribute("href", "/cases/c1/financial?view=transactions&payment=t9")
     expect(screen.getAllByText(/Word rules only: this phone.s Outside services are not allowed/)).toHaveLength(2)
     expect(screen.getByRole("button", { name: "Read this phone" })).toBeInTheDocument()
   })
