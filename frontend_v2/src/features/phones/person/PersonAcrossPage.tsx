@@ -86,7 +86,7 @@ export function PersonAcrossPage() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="border-b px-7 pt-5">
+      <header className="border-b px-4 sm:px-7 pt-5">
         <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
           <Link className="underline-offset-2 hover:underline" to={`/cases/${encodeURIComponent(caseId)}/phones`}>Phones</Link> / People
         </nav>
@@ -114,7 +114,7 @@ export function PersonAcrossPage() {
             </Button>
           </div>
         </div>
-        <ul aria-label="Phones in scope" className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-2.5">
+        <ul aria-label="Phones in scope" className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-2.5">
           {d.phones.map((p) => (
             <li key={p.extraction_id} className="rounded-xl border bg-card px-3.5 py-3">
               <div className="flex items-center justify-between gap-2">
@@ -192,7 +192,7 @@ export function PersonAcrossPage() {
         </aside>
       </div>
 
-      <div className="border-t px-7 py-5">
+      <div className="border-t px-4 sm:px-7 py-5">
         <NextSteps steps={d.next_steps} intro="Most useful first, from what differs between the phones." act={act} />
       </div>
       {exporting && <ExportDialog caseId={caseId} filter={filter} words={exportWords} open={exporting} onOpenChange={setExporting} />}
@@ -219,7 +219,7 @@ function Stream({ d, only, indexOf, label, onPage, onAll, caseId }: {
   const shownTo = d.offset + d.records.length
   return (
     <div>
-      <div className="flex flex-wrap justify-between gap-1.5 border-b px-6 py-3 text-[13px] text-muted-foreground">
+      <div className="flex flex-wrap justify-between gap-1.5 border-b px-4 sm:px-6 py-3 text-[13px] text-muted-foreground">
         <span>
           <span className="font-semibold text-foreground">{plural(s.messages, "message", "messages")} and {plural(s.calls, "call", "calls")}</span>{" "}
           across {plural(s.apps.length, "app", "apps")} on {plural(s.phones_holding, "phone", "phones")}
@@ -229,13 +229,13 @@ function Stream({ d, only, indexOf, label, onPage, onAll, caseId }: {
         <span>Messages that appear on more than one phone are shown once, marked with each phone</span>
       </div>
       {only && (
-        <div className="flex flex-wrap items-center gap-2 border-b px-6 py-2 text-[13px]" role="status">
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 sm:px-6 py-2 text-[13px]" role="status">
           Showing the {fmt(d.records_total)} {ONLY_WORDS[only]}.
           <button type="button" className="underline underline-offset-2" onClick={onAll}>Show every contact</button>
         </div>
       )}
       {d.records.length === 0 && (
-        <p className="px-6 py-4 text-sm">{only ? "None of their contacts are in this list." : "No message or call with this person is on the phones in scope. Add phones to the scope, or check the person's numbers in Phone review."}</p>
+        <p className="px-4 sm:px-6 py-4 text-sm">{only ? "None of their contacts are in this list." : "No message or call with this person is on the phones in scope. Add phones to the scope, or check the person's numbers in Phone review."}</p>
       )}
       <ol aria-label="Their contacts">
         {d.records.map((r, i) => {
@@ -245,9 +245,9 @@ function Stream({ d, only, indexOf, label, onPage, onAll, caseId }: {
           const text = r.row.kind === "call" ? r.row.call?.words ?? "Call" : r.row.body ?? r.row.subject ?? "(no text)"
           return (
             <li key={r.row.event_uid}>
-              {head && <div className="px-6 pb-1.5 pt-3 text-xs font-semibold text-muted-foreground">{head}</div>}
+              {head && <div className="px-4 sm:px-6 pb-1.5 pt-3 text-xs font-semibold text-muted-foreground">{head}</div>}
               <Link to={`/cases/${encodeURIComponent(caseId)}/records/${encodeURIComponent(r.row.record_uid)}`}
-                className="flex gap-3 border-b px-6 py-2.5 hover:bg-accent/50">
+                className="flex gap-3 border-b px-4 sm:px-6 py-2.5 hover:bg-accent/50">
                 <span className="flex w-[26px] shrink-0 gap-0.5 pt-1" aria-hidden>
                   {r.on.map((e) => <span key={e} {...phoneFill(indexOf(e), "size-2 rounded-full")} />)}
                 </span>
@@ -264,13 +264,13 @@ function Stream({ d, only, indexOf, label, onPage, onAll, caseId }: {
         })}
       </ol>
       {d.records_total > d.records.length && (
-        <div className="flex flex-wrap items-center gap-2 px-6 py-3 text-[13px]">
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 text-[13px]">
           Showing {fmt(d.offset + 1)} to {fmt(shownTo)} of {fmt(d.records_total)}.
           {d.offset > 0 && <Button size="sm" variant="outline" onClick={() => onPage(Math.max(0, d.offset - d.limit))}>Earlier {fmt(d.limit)}</Button>}
           {shownTo < d.records_total && <Button size="sm" variant="outline" onClick={() => onPage(shownTo)}>Next {fmt(Math.min(d.limit, d.records_total - shownTo))}</Button>}
         </div>
       )}
-      <p className="px-6 py-3 text-xs text-muted-foreground">{d.rule_words}</p>
+      <p className="px-4 sm:px-6 py-3 text-xs text-muted-foreground">{d.rule_words}</p>
     </div>
   )
 }
@@ -278,7 +278,7 @@ function Stream({ d, only, indexOf, label, onPage, onAll, caseId }: {
 function CompareHoldings({ d, indexOf, label }: { d: PersonAcross; indexOf: (id: string) => number; label: (id: string) => string }) {
   const missing = d.differs.find((x) => x.code === "missing")
   return (
-    <div className="flex flex-col gap-3 px-6 py-4 text-sm">
+    <div className="flex flex-col gap-3 px-4 sm:px-6 py-4 text-sm">
       <p className="text-[13px] text-muted-foreground">Each of their contacts counted once, by the phones that hold it. {d.phones.length > 2 ? `All ${d.phones.length} phones are compared at once.` : ""}</p>
       <table className="w-full border-collapse text-[13px]">
         <thead>
@@ -317,9 +317,9 @@ function Volume({ d, indexOf }: { d: PersonAcross; indexOf: (id: string) => numb
   const name = (b: string) => (d.volume.bucket === "month"
     ? new Date(`${b}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" })
     : `Week of ${day(`${b}T00:00:00Z`)}`)
-  if (!rows.length) return <p className="px-6 py-4 text-sm">No dated contact to draw.</p>
+  if (!rows.length) return <p className="px-4 sm:px-6 py-4 text-sm">No dated contact to draw.</p>
   return (
-    <div className="flex flex-col gap-3 px-6 py-4">
+    <div className="flex flex-col gap-3 px-4 sm:px-6 py-4">
       <p className="text-[13px] text-muted-foreground">Messages and calls per {d.volume.bucket}, by the phone that holds them (a contact on two phones counts on each).</p>
       <table className="w-full border-collapse text-[13px]">
         <thead>
@@ -353,7 +353,7 @@ function Places({ d, indexOf, label }: { d: PersonAcross; indexOf: (id: string) 
     features: d.places.squares.map((s) => ({ type: "Feature", geometry: { type: "Point", coordinates: [s.lon, s.lat] }, properties: { colour: phoneMark(indexOf(s.extraction_id)).light, accuracy: "recorded" } })),
   }), [d.places.squares, indexOf])
   return (
-    <div className="flex flex-col gap-3 px-6 py-4 text-sm">
+    <div className="flex flex-col gap-3 px-4 sm:px-6 py-4 text-sm">
       <p className="text-[13px]">{d.places.words}</p>
       {d.places.squares.length > 0 && (
         <>

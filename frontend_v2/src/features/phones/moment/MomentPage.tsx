@@ -17,7 +17,7 @@ const MAX = 7 * DAY
 const STRIP_CLASS: Record<StripState, string> = {
   together: "bg-emerald-700 dark:bg-emerald-600",
   maybe: "bg-emerald-700/40 dark:bg-emerald-600/40",
-  apart: "bg-amber-800 dark:bg-amber-700",
+  apart: "bg-slate-500 dark:bg-slate-400",
   unknown: "bg-muted",
 }
 const KIND_WORDS: Record<MomentRecord["kind"], string> = { message: "Message", call: "Call", place: "Place", not_recording: "Not recording" }
@@ -77,7 +77,7 @@ export function MomentPage() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="border-b px-7 py-5">
+      <header className="border-b px-4 sm:px-7 py-5">
         <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
           <Link className="underline-offset-2 hover:underline" to={`/cases/${encodeURIComponent(caseId)}/phones`}>Phones</Link> / Around a moment
         </nav>
@@ -103,18 +103,18 @@ export function MomentPage() {
         {save.isError && <p role="alert" className="mt-2 text-[13px]">{failureText(save.error, "This moment could not be saved. You need edit access to the case.")}</p>}
       </header>
 
-      <section aria-label="Lanes" className="overflow-x-auto px-7 py-5">
-        <div className="min-w-[640px]">
-          <div className="ml-[180px] flex justify-between text-xs text-muted-foreground" aria-hidden>
+      <section aria-label="Lanes" className="overflow-x-auto px-4 sm:px-7 py-5">
+        <div className="sm:min-w-[640px]">
+          <div className="flex justify-between text-xs text-muted-foreground sm:ml-[180px]" aria-hidden>
             {ticks.map((t) => <span key={t}>{clock(new Date(t).toISOString())}</span>)}
           </div>
           {d.phones.map((p) => (
-            <div key={p.extraction_id} className="mt-2 flex items-center gap-3">
-              <div className="w-[168px] shrink-0">
+            <div key={p.extraction_id} className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <div className="shrink-0 sm:w-[168px]">
                 <div className="text-[13px] font-semibold"><PhoneTag index={indexOf(p.extraction_id)} label={p.label} /></div>
                 <div className="text-xs text-muted-foreground">{p.owner ?? "Owner not known"}</div>
               </div>
-              <div className="relative h-14 flex-1 rounded-lg border bg-card" role="img"
+              <div className="relative h-14 w-full flex-1 rounded-lg border bg-card" role="img"
                 aria-label={`${p.label}: ${fmt(p.counts.messages)} messages, ${fmt(p.counts.calls)} calls, ${fmt(p.counts.places)} places, ${fmt(p.counts.use)} uses of the phone${p.not_recording.length ? `; not recording ${p.not_recording.map((g) => `${clock(g.start)} to ${clock(g.end)}`).join(", ")}` : ""}`}>
                 {p.not_recording.map((g) => (
                   <span key={g.start} className="absolute inset-y-0 rounded" style={{ left: pct(g.start), width: `calc(${pct(g.end)} - ${pct(g.start)})`, ...HATCH }} title={`Not recording ${clock(g.start)} to ${clock(g.end)}`} />
@@ -124,14 +124,14 @@ export function MomentPage() {
             </div>
           ))}
           {d.pairs.map((pr) => (
-            <div key={pr.phones.join(",")} className="mt-2 flex items-center gap-3">
-              <div className="w-[168px] shrink-0 text-xs text-muted-foreground">{label(pr.phones[0])} and {label(pr.phones[1])}</div>
-              <div className="grid h-3 flex-1 gap-0.5" style={{ gridTemplateColumns: `repeat(${pr.strip.length}, 1fr)` }} role="img" aria-label={pr.words}>
+            <div key={pr.phones.join(",")} className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <div className="shrink-0 text-xs text-muted-foreground sm:w-[168px]">{label(pr.phones[0])} and {label(pr.phones[1])}</div>
+              <div className="grid h-3 w-full flex-1 gap-0.5" style={{ gridTemplateColumns: `repeat(${pr.strip.length}, 1fr)` }} role="img" aria-label={pr.words}>
                 {pr.strip.map((s) => <span key={s.start} className={`block rounded-sm ${STRIP_CLASS[s.state]}`} title={`${clock(s.start)} to ${clock(s.end)}: ${d.strip_words[s.state]}`} />)}
               </div>
             </div>
           ))}
-          <ul aria-label="Key" className="ml-[180px] mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <ul aria-label="Key" className="mt-3 sm:ml-[180px] flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-foreground/70" />Message</li>
             <li className="flex items-center gap-1.5"><span className="h-1.5 w-5 rounded bg-foreground/70" />Call</li>
             <li className="flex items-center gap-1.5"><span className="size-2 rotate-45 border-2 border-foreground/70" />Place</li>
@@ -144,14 +144,14 @@ export function MomentPage() {
 
       <div className="flex flex-wrap border-t">
         <section id="moment-records" aria-label="Records in this window" className="min-w-0 flex-[999_1_520px]">
-          <p className="border-b px-6 py-3 text-[13px]">{d.summary}</p>
-          {d.records.length === 0 && <p className="px-6 py-4 text-sm">No phone in scope holds a record in this window. Try Wider, or add phones to the scope.</p>}
+          <p className="border-b px-4 sm:px-6 py-3 text-[13px]">{d.summary}</p>
+          {d.records.length === 0 && <p className="px-4 sm:px-6 py-4 text-sm">No phone in scope holds a record in this window. Try Wider, or add phones to the scope.</p>}
           <ol>
             {d.records.map((r, i) => {
               const c = r.on.length === 1 ? indexOf(r.on[0]) : null
               const inner = (
                 <>
-                  <span aria-hidden {...(c != null ? phoneFill(c, "w-[3px] shrink-0 self-stretch rounded") : { className: "w-[3px] shrink-0 self-stretch rounded bg-muted-foreground" })} />
+                  {r.kind === "not_recording" ? <span aria-hidden className="w-3 shrink-0 self-stretch rounded" style={HATCH} /> : <span aria-hidden {...(c != null ? phoneFill(c, "w-[3px] shrink-0 self-stretch rounded") : { className: "w-[3px] shrink-0 self-stretch rounded bg-muted-foreground" })} />}
                   <span className="w-[66px] shrink-0 text-xs text-muted-foreground">{clock(r.at)}</span>
                   <span className="min-w-0 flex-1 text-[13px]">
                     <span className="font-semibold">{r.on.map(label).join(" and ")}</span>{" "}
@@ -166,9 +166,9 @@ export function MomentPage() {
               return (
                 <li key={`${r.kind}:${r.at}:${i}`}>
                   {r.record_uids[0] ? (
-                    <Link to={`/cases/${encodeURIComponent(caseId)}/records/${encodeURIComponent(r.record_uids[0])}`} className="flex gap-3 border-b px-6 py-2 hover:bg-accent/50">{inner}</Link>
+                    <Link to={`/cases/${encodeURIComponent(caseId)}/records/${encodeURIComponent(r.record_uids[0])}`} className="flex gap-3 border-b px-4 sm:px-6 py-2 hover:bg-accent/50">{inner}</Link>
                   ) : (
-                    <div className="flex gap-3 border-b px-6 py-2" style={r.kind === "not_recording" ? HATCH : undefined}>{inner}</div>
+                    <div className="flex gap-3 border-b px-4 py-2 italic text-muted-foreground sm:px-6">{inner}</div>
                   )}
                 </li>
               )
@@ -191,7 +191,7 @@ export function MomentPage() {
         </aside>
       </div>
 
-      <div className="border-t px-7 py-5">
+      <div className="border-t px-4 sm:px-7 py-5">
         <NextSteps steps={d.next_steps} intro="Most useful first, from the gaps and overlaps in this window." act={act} />
       </div>
     </div>
