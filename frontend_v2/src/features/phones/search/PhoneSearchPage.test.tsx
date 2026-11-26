@@ -109,6 +109,9 @@ describe("Search every phone", () => {
     const pane = screen.getByRole("region", { name: "In context" })
     expect(await within(pane).findByText(/14 items in this conversation · this one is deleted/)).toBeInTheDocument()
     expect(within(pane).getByRole("link", { name: "Open the thread" })).toHaveAttribute("href", expect.stringContaining("/cases/c1/phones/p2/records/conversations?thread=t1&at=e1&hl=pell"))
+    // the design's buttons: Add to the case, Open the thread, That day, all phones, and one Corroborate (this hit)
+    expect(within(pane).getByRole("button", { name: "Add to the case" })).toBeInTheDocument()
+    await waitFor(() => expect(within(pane).getAllByText("Corroborate")).toHaveLength(1))
     // the day as the screen shows it (the server's, in the case zone), never the UTC date of the instant
     expect(await within(pane).findByRole("link", { name: "That day, all phones" })).toHaveAttribute("href", expect.stringMatching(/from=2024-03-12/))
   })

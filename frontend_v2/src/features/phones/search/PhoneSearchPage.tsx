@@ -10,6 +10,7 @@ import { useCollectTargets } from "@/features/phones/hooks/use-collect"
 import { MentionMark } from "@/features/phones/mentions/MentionMark"
 import { labelText } from "@/features/phones/lib/labels"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
+import { LookInto } from "@/features/relations/LookInto"
 import { PhoneShape } from "@/features/phones/ui/PhoneChip"
 import { ScopeBar } from "@/features/phones/ui/ScopeBar"
 import { useCasePhones } from "@/features/phones/ui/use-case-phones"
@@ -458,6 +459,8 @@ function ContextPane({ caseId, hit, q, exact, index, stepScope }: { caseId: stri
             targets={collect.data ?? []}
             client={liveCollectClient}
             origin="Added from Search every phone"
+            label="Add to the case"
+            corroborate={false}
             keys={false}
             disabledReason={canEdit ? undefined : "A case member who can edit can add."}
           />
@@ -470,9 +473,14 @@ function ContextPane({ caseId, hit, q, exact, index, stepScope }: { caseId: stri
             <Link to={dayPath(caseId, day)}>That day, all phones</Link>
           </Button>
         )}
-        <Button asChild variant="outline" size="sm">
-          <Link to={stepPath(caseId, { id: "corroborate", title: "", why: "", open: { screen: "corroborate", params: { q } } }, stepScope, exact)}>Corroborate</Link>
-        </Button>
+        {link && canEdit ? (
+          // this hit itself on the Corroborate page (lx-corroredo), last as in the design
+          <LookInto caseId={caseId} surface="phone" items={[{ target_type: link.target_type, target_id: link.target_id, target_label: link.label }]} />
+        ) : (
+          <Button asChild variant="outline" size="sm">
+            <Link to={stepPath(caseId, { id: "corroborate", title: "", why: "", open: { screen: "corroborate", params: { q } } }, stepScope, exact)}>Corroborate</Link>
+          </Button>
+        )}
       </div>
     </section>
   )
