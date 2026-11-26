@@ -112,6 +112,12 @@ def _comm(conn, case_id, group, q, exact, phones, start, end, offset, limit, ctx
         "WITH m AS (%s) SELECT event_uid, record_uid, extraction_id, thread_key, kind, app, sort_instant, body, subject "
         "FROM m WHERE copy_rank = 1 ORDER BY sort_instant NULLS LAST, event_uid LIMIT :lim OFFSET :off"
         % qy.matched_sql()), qy.params).fetchall()
+    return total, comm_hits(conn, rows, q, exact, ctx)
+
+
+def comm_hits(conn, rows, q, exact, ctx):
+    """Hits from matched stream rows (event_uid, record_uid, extraction_id, thread_key, kind, app, sort_instant, body,
+    subject), with their snippets and senders."""
     senders = _senders(conn, [r.event_uid for r in rows], ctx)
     zone = ctx["zone"]
     out = []
@@ -129,7 +135,7 @@ def _comm(conn, case_id, group, q, exact, phones, start, end, offset, limit, ctx
             "open": {"screen": "conversations", "params": {"phone": str(r.extraction_id), "thread": r.thread_key,
                                                            "event": str(r.event_uid), "q": q,
                                                            "exact": exact}}})
-    return total, out
+    return out
 
 
 # a record's own text and its child records' text, each read through the record_uid index (an OR of the two made
@@ -164,17 +170,46 @@ def _senders(conn, event_uids, ctx):
 
 # ---- people -----------------------------------------------------------------------------------------------------------
 
+def _could_hold(col, fq, exact, p, key):
+    """SQL true for every ``col`` whose fold holds ``fq``, so only those are read and folded in Python (the exact test
+    stays ``fold``'s). For an ASCII query: a value of printable ASCII folds as Postgres ``lower`` with every run of
+    other characters one space (``fold``'s table for those characters), and a value with any other character always
+    passes. None when the query is not ASCII (every value is then read)."""
+    if not fq or not fq.isascii():
+        return None
+    p[key] = fq
+    folded = "lower(%s)" % col if exact else "btrim(regexp_replace(lower(%s), '[^a-z0-9]+', ' ', 'g'))" % col
+    return "(%s ~ '[^\\x20-\\x7e]' OR position(:%s in %s) > 0)" % (col, key, folded)
+
+
 def _people(conn, case_id, q, exact, short, offset, limit):
     fq = F.fold(q, exact=exact)
     digits = _digits(q)
+    p = {"c": case_id}
+    name_cond = None if short else _could_hold("name", fq, exact, p, "fq")
+    if name_cond is None:
+        id_where = ""
+    else:
+        # the identities a name, the shown value or the digits could match: the rest cannot be a hit below
+        shown_cond = _could_hold("value_display", fq, exact, p, "fq")
+        ors = [shown_cond, "identity_key IN (SELECT identity_key FROM pv_identity_name WHERE case_id = :c AND %s)"
+               % name_cond]
+        if digits:
+            p["digits"] = digits
+            ors.append("position(:digits in regexp_replace(coalesce(value_normalised, ''), '\\D', '', 'g')) > 0")
+        id_where = " AND (%s)" % " OR ".join(ors)
+    ids = conn.execute(text(
+        "SELECT identity_key, kind, value_display, value_normalised, sighting_count, person_id FROM pv_identity "
+        "WHERE case_id = :c%s ORDER BY identity_key" % id_where), p).fetchall()
     names = {}
-    for key, name in conn.execute(text(
-            "SELECT DISTINCT identity_key, name FROM pv_identity_name WHERE case_id = :c"), {"c": case_id}):
+    name_sql = "SELECT DISTINCT identity_key, name FROM pv_identity_name WHERE case_id = :c"
+    if id_where:
+        name_sql += " AND identity_key = ANY(:keys)"
+        p["keys"] = [r.identity_key for r in ids]
+    for key, name in conn.execute(text(name_sql), p):
         names.setdefault(key, []).append(name)
     found = []
-    for r in conn.execute(text(
-            "SELECT identity_key, kind, value_display, value_normalised, sighting_count, person_id FROM pv_identity "
-            "WHERE case_id = :c ORDER BY identity_key"), {"c": case_id}):
+    for r in ids:
         own = names.get(r.identity_key, [])
         if short:
             hit = q.strip().lower() in (r.value_normalised.lower(), r.value_display.lower())

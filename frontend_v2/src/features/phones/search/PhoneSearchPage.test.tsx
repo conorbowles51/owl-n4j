@@ -5,10 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 /** Search every phone (Phones screen 2): counts by kind and phone, highlights, the hit in context, saved
  * differently, next steps. Invented data only. */
-const api = vi.hoisted(() => ({ search: vi.fn(), kind: vi.fn(), elsewhere: vi.fn(), context: vi.fn(), save: vi.fn() }))
+const api = vi.hoisted(() => ({ search: vi.fn(), kind: vi.fn(), elsewhere: vi.fn(), context: vi.fn(), save: vi.fn(), people: vi.fn() }))
 vi.mock("./api", async (orig) => ({
   ...(await orig<typeof import("./api")>()),
   searchPhones: api.search, searchPhonesKind: api.kind, searchPhonesElsewhere: api.elsewhere, hitContext: api.context,
+  searchPhonesPeople: api.people,
 }))
 vi.mock("@/features/search/api", async (orig) => ({ ...(await orig<typeof import("@/features/search/api")>()), saveKeywordList: api.save }))
 vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { id: "c1" } }) }))
@@ -22,7 +23,7 @@ vi.mock("@/features/phones/ui/use-phone-scope", async () => {
   return { useUrlScope: () => ({ scope: EMPTY_SCOPE, apply: vi.fn(), presets: [], recent: [], restored: false, notApplied: [] }) }
 })
 import PhoneSearchPage from "./PhoneSearchPage"
-import { dayPath, hasRoute, stepPath, withElsewhere } from "./step-path"
+import { dayPath, hasRoute, stepPath, withElsewhere, withPeople } from "./step-path"
 import type { NextStep } from "./api"
 
 const phones = [{ extraction_id: "p1", label: "Phone 1" }, { extraction_id: "p2", label: "Phone 2" }, { extraction_id: "p3", label: "Phone 3" }]
@@ -126,6 +127,24 @@ describe("Search every phone", () => {
     await waitFor(() => expect(api.save).toHaveBeenCalledWith("c1", "pell", ["pell"], false))
   })
 
+  it("shows the first results before the people saved differently, then adds them and their step first", async () => {
+    let answer: (v: unknown) => void = () => {}
+    api.people.mockReturnValue(new Promise((r) => { answer = r }))
+    const [personStep, ...rest] = result.next_steps
+    api.search.mockResolvedValue({ ...result, saved_differently: [], next_steps: rest.map((s, i) => ({ ...s, rank: i + 1 })), people_pending: true })
+    open()
+    expect(await screen.findByRole("table")).toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Saved differently" })).toBeNull()
+    const steps = screen.getByRole("region", { name: "Next steps" })
+    expect(within(steps).getByText("Checking whether the people found are saved under different names on each phone")).toBeInTheDocument()
+    expect(api.people.mock.calls[0][1]).toMatchObject({ q: "pell", exact: false })
+    answer({ saved_differently: result.saved_differently, steps: [{ ...personStep, rank: undefined }] })
+    expect(await screen.findByRole("region", { name: "Saved differently" })).toHaveTextContent("Dorian Pell is saved differently on each phone")
+    await waitFor(() => expect(within(steps).getByText("Check it against the rest of the case")).toBeInTheDocument())
+    const titles = within(steps).getAllByRole("listitem").map((li) => li.querySelector("p")?.textContent)
+    expect(titles[0]).toBe("Open Dorian Pell across every phone")
+  })
+
   it("says what an empty result means and what to do", async () => {
     api.search.mockResolvedValue({ ...result, total: 0, kinds: [], groups: [], saved_differently: [], next_steps: [] })
     open()
@@ -141,6 +160,12 @@ describe("next step links carry the people, phones and period", () => {
   })
   it("opens the deleted items with the search's words and scope", () => {
     expect(stepPath("c1", result.next_steps[1], scope)).toBe("/cases/c1/conversations?q=pell&deleted=1&phones=p1%2Cp2&from=2024-03-01&to=2024-03-31")
+  })
+  it("puts the person steps first, after a search-again step", () => {
+    const [person, ...rest] = result.next_steps
+    expect(withPeople(rest, [person]).map((s) => [s.id, s.rank])).toEqual([["person", 1], ["deleted", 2], ["ask", 3], ["keyword_list", 4]])
+    const limits = { id: "limits", title: "", why: "", open: { screen: "phones", params: {} } }
+    expect(withPeople([limits, ...rest], [person]).map((s) => s.id)).toEqual(["limits", "person", "deleted", "ask", "keyword_list"])
   })
   it("ranks a late step after the person and deleted steps", () => {
     expect(withElsewhere(result.next_steps, corroborate).map((s) => [s.id, s.rank])).toEqual([["person", 1], ["deleted", 2], ["corroborate", 3], ["ask", 4], ["keyword_list", 5]])

@@ -57,6 +57,14 @@ export function stepPath(caseId: string, step: NextStep, scope: StepScope, exact
   }
 }
 
+/** The person steps arrive beside the first results; they lead, after a "search again when every phone is read". */
+export function withPeople(steps: NextStep[], people: NextStep[]): NextStep[] {
+  if (!people.length) return steps
+  const at = steps[0]?.id === "limits" ? 1 : 0
+  const list = [...steps.slice(0, at), ...people, ...steps.slice(at)]
+  return list.map((s, i) => ({ ...s, rank: i + 1 }))
+}
+
 /** The corroborate step arrives after the first results; it takes its rank after the person and deleted steps. */
 export function withElsewhere(steps: NextStep[], extra: NextStep | null): NextStep[] {
   if (!extra) return steps

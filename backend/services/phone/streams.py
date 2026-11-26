@@ -238,6 +238,16 @@ class Query:
                          "FROM phone_record_summaries s JOIN phone_texts t ON t.record_uid = s.record_uid WHERE "
                          "s.parent_record_uid = ev.record_uid AND s.generation = ev.generation AND t.extraction_id = "
                          "ev.extraction_id AND t.generation = ev.generation AND NOT t.is_sensitive AND %s))" % (cond, cond))
+                if not f.text.exact_characters:
+                    # The records whose text (or a child's text) matches, from the text indexes, so the query starts
+                    # at the matches through ix_phone_comm_events_record instead of testing every event of every
+                    # phone against them. Only a necessary condition, wider than the two tests above (any generation),
+                    # so what matches is unchanged. Phone reference 1, 14 phones, "dinner": the counts read 38,000
+                    # pages and took 9.5 s without it (the plan in LX-PHONESEARCH-STATUS.md).
+                    w.append("ev.record_uid IN (SELECT t.record_uid FROM phone_texts t WHERE t.case_id = CAST(:case AS uuid) "
+                             "AND NOT t.is_sensitive AND %s UNION ALL SELECT s.parent_record_uid FROM phone_texts t "
+                             "JOIN phone_record_summaries s ON s.record_uid = t.record_uid WHERE t.case_id = CAST(:case AS uuid) "
+                             "AND NOT t.is_sensitive AND s.parent_record_uid IS NOT NULL AND %s)" % (cond, cond))
         self._participants()
         if f.significant_only:
             from services.phone import significant
@@ -695,10 +705,11 @@ UNREADABLE_SQL = ("EXISTS (SELECT 1 FROM phone_record_summaries s WHERE s.parent
                   "s.generation = m.generation AND s.model_type = 'ScrambledMessageData')")
 
 
-def thread_titles(conn, case_id, keys) -> dict:
+def thread_titles(conn, case_id, keys, ctx=None) -> dict:
     """``{thread_key: {title, extraction_id, phone}}`` for named threads, with the titles ``thread_list`` gives them,
-    without reading the case's events. A key that is not a current thread of the case is left out."""
-    _, ctx = _query(conn, StreamFilter(case_id=str(case_id)))
+    without reading the case's events. A key that is not a current thread of the case is left out. ``ctx``: the
+    request's ``LabelContext`` (phone names) when the caller has one; building it reads every phone's owner."""
+    _, ctx = _query(conn, StreamFilter(case_id=str(case_id)), ctx)
     rows = conn.execute(text(
         "SELECT thread_key, extraction_id, title_in_record, party_identity_keys FROM pv_thread WHERE case_id = :c AND "
         "thread_key = ANY(:k)"), {"c": str(case_id), "k": [k for k in keys if not k.startswith(NO_THREAD_PREFIX)]}).fetchall()

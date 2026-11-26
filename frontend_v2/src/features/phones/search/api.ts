@@ -55,6 +55,8 @@ export const PhoneSearchSchema = lazySchema(() => z.object({
   complete: z.boolean(),
   limits: z.array(LimitSchema),
   next_steps: z.array(StepSchema),
+  /** the people saved differently, and their steps, come from searchPhonesPeople, asked beside */
+  people_pending: z.boolean().optional(),
   not_searched: z.array(z.object({ group: z.string(), reason: z.string() })),
 }))
 export type PhoneSearchResult = z.infer<typeof PhoneSearchSchema>
@@ -77,7 +79,14 @@ function query(caseId: string, p: PhoneSearchParams, more: Record<string, string
 }
 
 export async function searchPhones(caseId: string, p: PhoneSearchParams, signal?: AbortSignal): Promise<PhoneSearchResult> {
-  return PhoneSearchSchema.parse(await fetchAPI(`/api/search/phones?${query(caseId, p)}`, { signal }))
+  // the people saved differently fold the case's names; they come beside the first results (searchPhonesPeople)
+  return PhoneSearchSchema.parse(await fetchAPI(`/api/search/phones?${query(caseId, p, { people: "false" })}`, { signal }))
+}
+
+const PeopleSchema = lazySchema(() => z.object({ saved_differently: z.array(SavedSchema), steps: z.array(StepSchema) }))
+
+export async function searchPhonesPeople(caseId: string, p: PhoneSearchParams, signal?: AbortSignal) {
+  return PeopleSchema.parse(await fetchAPI(`/api/search/phones/people?${query(caseId, { q: p.q, exact: p.exact, phones: p.phones })}`, { signal }))
 }
 
 const KindPageSchema = lazySchema(() => z.object({

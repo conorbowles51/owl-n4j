@@ -77,6 +77,14 @@ def _strip_format(text):
 def fold(text, exact=False):
     if text is None:
         return ""
+    if _ASCII is not None and text.isascii():
+        # plain ASCII through the table taken from the steps themselves (``_ascii_tables``: no step joins ASCII
+        # characters and step 3 needs a Cyrillic or Greek letter), so the result is the steps' own. Phone search
+        # folds every identity name of the case per search: 44,000 names on Phone reference 1, 46 s through the
+        # steps at load 33, the table path a small fraction of that (LX-PHONESEARCH-STATUS.md)
+        if exact:
+            return text.translate(_ASCII[1])
+        return _WS.sub(" ", text.translate(_ASCII[0])).strip()
     if exact:
         return _strip_format(text).casefold()
     s = unicodedata.normalize("NFKC", text)

@@ -19,8 +19,8 @@ import { hitLink } from "@/features/search/lib/hit-links"
 import { hitPath } from "@/features/search/lib/open-hit"
 import { recordPath } from "@/lib/record-links"
 import { cn } from "@/lib/cn"
-import { hitContext, searchPhones, searchPhonesElsewhere, searchPhonesKind, type KindCount, type NextStep, type PhoneHit, type PhoneSearchResult } from "./api"
-import { dayPath, stepPath, withElsewhere, type StepScope } from "./step-path"
+import { hitContext, searchPhones, searchPhonesElsewhere, searchPhonesKind, searchPhonesPeople, type KindCount, type NextStep, type PhoneHit, type PhoneSearchResult, type SavedDifferently } from "./api"
+import { dayPath, stepPath, withElsewhere, withPeople, type StepScope } from "./step-path"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -56,6 +56,13 @@ export default function PhoneSearchPage() {
     enabled: !!caseId && !!q && !!search.data && search.data.total > 0,
     retry: false,
     staleTime: 60_000,
+  })
+  const people = useQuery({
+    queryKey: ["phone-search-people", caseId, q, exact, phoneKey],
+    queryFn: ({ signal }) => searchPhonesPeople(caseId, { q, exact, phones: phoneIds }, signal),
+    enabled: !!caseId && !!q && !!search.data?.people_pending,
+    retry: false,
+    staleTime: 30_000,
   })
   const [picked, setPicked] = useState<PhoneHit | null>(null)
   const [openKind, setOpenKind] = useState<{ kind: string; phone: string | null } | null>(null)
@@ -146,13 +153,16 @@ export default function PhoneSearchPage() {
           stepScope={stepScope}
           elsewhereStep={elsewhere.data?.step ?? null}
           elsewhereLoading={elsewhere.isLoading}
+          saved={data.people_pending ? (people.data?.saved_differently ?? []) : data.saved_differently}
+          personSteps={data.people_pending ? (people.data?.steps ?? []) : []}
+          peopleLoading={!!data.people_pending && people.isLoading}
         />
       )}
     </div>
   )
 }
 
-function Results({ caseId, data, exact, indexOf, picked, onPick, openKind, onOpenKind, stepScope, elsewhereStep, elsewhereLoading }: {
+function Results({ caseId, data, exact, indexOf, picked, onPick, openKind, onOpenKind, stepScope, elsewhereStep, elsewhereLoading, saved, personSteps, peopleLoading }: {
   caseId: string
   data: PhoneSearchResult
   exact: boolean
@@ -164,10 +174,13 @@ function Results({ caseId, data, exact, indexOf, picked, onPick, openKind, onOpe
   stepScope: StepScope
   elsewhereStep: NextStep | null
   elsewhereLoading: boolean
+  saved: SavedDifferently[]
+  personSteps: NextStep[]
+  peopleLoading: boolean
 }) {
   const found = data.kinds.filter((k) => k.total > 0)
   const phoneCount = data.phones.length
-  const steps = useMemo(() => withElsewhere(data.next_steps, elsewhereStep), [data.next_steps, elsewhereStep])
+  const steps = useMemo(() => withElsewhere(withPeople(data.next_steps, personSteps), elsewhereStep), [data.next_steps, personSteps, elsewhereStep])
   if (data.short) return <p role="status" className="px-4 py-6 text-sm md:px-6">{data.short} Shorter text is matched against numbers and identifiers only.</p>
   return (
     <div className="flex flex-col gap-4 px-4 py-4 md:px-6">
@@ -188,7 +201,7 @@ function Results({ caseId, data, exact, indexOf, picked, onPick, openKind, onOpe
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-4">
             <KindTable caseId={caseId} data={data} found={found} indexOf={indexOf} onOpen={onOpenKind} />
-            {data.saved_differently.map((s) => (
+            {saved.map((s) => (
               <section key={s.identity_keys.join(",")} aria-label="Saved differently" className="rounded-lg border bg-card p-3 text-sm">
                 <p className="font-semibold">{s.name} is saved differently on each phone</p>
                 <p className="mt-1 text-muted-foreground">{s.sentence}</p>
@@ -224,7 +237,7 @@ function Results({ caseId, data, exact, indexOf, picked, onPick, openKind, onOpe
           </div>
         </div>
       )}
-      <NextSteps caseId={caseId} steps={steps} q={data.query} exact={exact} stepScope={stepScope} waiting={elsewhereLoading} />
+      <NextSteps caseId={caseId} steps={steps} q={data.query} exact={exact} stepScope={stepScope} waiting={[...(peopleLoading ? ["Checking whether the people found are saved under different names on each phone"] : []), ...(elsewhereLoading ? ["Checking the case's documents and payments for the same words"] : [])]} />
     </div>
   )
 }
@@ -498,10 +511,10 @@ function RecordContext({ caseId, hit }: { caseId: string; hit: PhoneHit }) {
   )
 }
 
-function NextSteps({ caseId, steps, q, exact, stepScope, waiting }: { caseId: string; steps: NextStep[]; q: string; exact: boolean; stepScope: StepScope; waiting: boolean }) {
+function NextSteps({ caseId, steps, q, exact, stepScope, waiting }: { caseId: string; steps: NextStep[]; q: string; exact: boolean; stepScope: StepScope; waiting: string[] }) {
   const [saved, setSaved] = useState<string | null>(null)
   const [saveErr, setSaveErr] = useState<string | null>(null)
-  if (!steps.length && !waiting) return null
+  if (!steps.length && !waiting.length) return null
   return (
     <section aria-label="Next steps" className="rounded-lg border bg-card">
       <h2 className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next steps</h2>
@@ -530,7 +543,7 @@ function NextSteps({ caseId, steps, q, exact, stepScope, waiting }: { caseId: st
             )}
           </li>
         ))}
-        {waiting && <li className="px-3 py-2 text-xs text-muted-foreground" role="status">Checking the case's documents and payments for the same words</li>}
+        {waiting.map((w) => <li key={w} className="px-3 py-2 text-xs text-muted-foreground" role="status">{w}</li>)}
       </ol>
       {saveErr && <p role="alert" className="px-3 pb-2 text-xs">{saveErr}</p>}
     </section>

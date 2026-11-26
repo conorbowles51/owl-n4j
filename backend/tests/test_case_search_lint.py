@@ -25,7 +25,9 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/embed_all/search.py": (3, SEARCH),
     "services/phone/chat_retrieval.py": (2, SEARCH),
     "services/evidence_text_search_service.py": (2, SEARCH),
-    "services/search/search.py": (8, SEARCH),
+    # 10: the people group narrows the identities it folds to those whose name, shown value or digits could hold the
+    # words (2), the exact test staying in Python; other phone records' hidden values on their whole value (1)
+    "services/search/search.py": (10, SEARCH),
     # Search every phone (lx-phonesearch): exact counts by kind and phone, every hit reachable by paging; the ranked
     # case search returns a best-first page and cannot give those counts. The number and file-name matches are read
     # through the indexes of migration 20261125_phone_texts_digits_joined.

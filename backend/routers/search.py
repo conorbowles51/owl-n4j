@@ -106,14 +106,16 @@ def search_group(case_id: UUID = Query(...), q: str = Query(..., max_length=500)
 @router.get("/phones")
 def search_phones(case_id: UUID = Query(...), q: str = Query(..., max_length=500), exact: bool = False,
                   phones: Optional[str] = None, start: Optional[str] = Query(None, alias="from"),
-                  end: Optional[str] = Query(None, alias="to"), db: Session = Depends(get_db),
+                  end: Optional[str] = Query(None, alias="to"), people: bool = True, db: Session = Depends(get_db),
                   user: User = Depends(get_current_db_user)):
     """Every part of every phone in scope: counts by kind and phone, the first hits of each kind, people saved
-    differently on each phone, and next steps (services/search/phone_search.py)."""
+    differently on each phone, and next steps (services/search/phone_search.py). ``people=false`` (the screen)
+    leaves the people saved differently to ``/phones/people``, asked beside."""
     authorize_case(db, case_id, user, ("case", "view"))
     from services.search import phone_search as P
     try:
-        out = P.phone_search(db.connection(), case_id, q, exact=exact, phones=_phones(phones), start=start, end=end)
+        out = P.phone_search(db.connection(), case_id, q, exact=exact, phones=_phones(phones), start=start, end=end,
+                             people=people)
     except P.PhoneSearchError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     from services.phone import review_share
@@ -134,6 +136,20 @@ def search_phones_kind(case_id: UUID = Query(...), q: str = Query(..., max_lengt
     try:
         return P.kind_page(db.connection(), case_id, q, kind, cursor=cursor, limit=limit, exact=exact,
                            phones=_phones(phones), start=start, end=end)
+    except P.PhoneSearchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/phones/people")
+def search_phones_people(case_id: UUID = Query(...), q: str = Query(..., max_length=500), exact: bool = False,
+                         phones: Optional[str] = None, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    """The people the words find whom the phones save under different names, with their next steps, asked beside
+    the first results (``/phones?people=false``)."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from services.search import phone_search as P
+    try:
+        return P.people_step(db.connection(), case_id, q, exact=exact, phones=_phones(phones))
     except P.PhoneSearchError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

@@ -80,7 +80,10 @@ def _scope_phones(conn, case_id, phones):
 
 # ---- counts ---------------------------------------------------------------------------------------------------------
 
-def _comm_counts(conn, case_id, q, exact, phones, start, end):
+def _comm_counts(conn, case_id, q, exact, phones, start, end, first=0, labels=None):
+    """Messages, calls and emails per kind and phone, and with ``first`` each kind's first ``first`` rows (in the
+    order ``S._comm`` lists them) from the same match, under ``"_first"``: the match is the cost (Phone reference 1:
+    each kind's own count and list ran it twice more, 3.5 s each, 26 Nov)."""
     from services.phone.filters import StreamFilter
     body = {"case_id": str(case_id), "kinds": [k for ks in COMM.values() for k in ks],
             "text": {"query": q, "exact_characters": exact}, "phones": phones}
@@ -89,21 +92,34 @@ def _comm_counts(conn, case_id, q, exact, phones, start, end):
     if end:
         body["to_instant"] = end
     f = StreamFilter.model_validate(body)
-    qy, _ = streams._query(conn, f)
+    qy, _ = streams._query(conn, f, labels)
+    params = dict(qy.params, lxf=int(first))
+    grp = "CASE %s END" % " ".join("WHEN kind IN (%s) THEN '%s'" % (", ".join("'%s'" % k for k in ks), g)
+                                   for g, ks in COMM.items())
     out = defaultdict(lambda: defaultdict(int))
     deleted = defaultdict(int)
     span = [None, None]
+    rows = defaultdict(list)
     for r in conn.execute(text(
-            "WITH m AS (%s) SELECT kind, extraction_id::text AS ext, count(*) AS n, count(*) FILTER (WHERE "
+            "WITH m AS (%s), g AS (SELECT *, %s AS grp FROM m WHERE %s) "
+            "SELECT 0 AS part, grp, extraction_id::text AS ext, count(*) AS n, count(*) FILTER (WHERE "
             "lower(coalesce(deleted_state, '')) IN ('deleted', 'trash')) AS d, min(sort_instant) AS a, "
-            "max(sort_instant) AS b FROM m WHERE %s GROUP BY 1, 2" % (qy.matched_sql(), streams._shown(f))), qy.params):
-        group = next(g for g, ks in COMM.items() if r.kind in ks)
-        out[group][r.ext] += int(r.n)
-        deleted[group] += int(r.d)
+            "max(sort_instant) AS b, NULL AS event_uid, NULL AS record_uid, NULL AS extraction_id, NULL AS thread_key, "
+            "NULL AS kind, NULL AS app, NULL AS sort_instant, NULL AS body, NULL AS subject, 0 AS rn FROM g GROUP BY 2, 3 "
+            "UNION ALL SELECT 1, grp, NULL, NULL, NULL, NULL, NULL, event_uid, record_uid, extraction_id, thread_key, "
+            "kind, app, sort_instant, body, subject, rn FROM (SELECT g.*, row_number() OVER (PARTITION BY grp ORDER BY "
+            "sort_instant NULLS LAST, event_uid) AS rn FROM g) x WHERE rn <= :lxf ORDER BY 1, 2, rn"
+            % (qy.matched_sql(), grp, streams._shown(f))), params):
+        if r.part == 1:
+            rows[r.grp].append(r)
+            continue
+        out[r.grp][r.ext] += int(r.n)
+        deleted[r.grp] += int(r.d)
         if r.a is not None:
             span[0] = r.a if span[0] is None else min(span[0], r.a)
             span[1] = r.b if span[1] is None else max(span[1], r.b)
     out["_span"] = span
+    out["_first"] = rows
     return out, deleted
 
 
@@ -133,16 +149,37 @@ def _records_where(cond):
             "AND %s" % (cond, NOT_COMM))
 
 
-def _record_counts(conn, case_id, q, exact, phones, start, end):
+RECORD_ROWS = ("SELECT DISTINCT ON (root.first_instant, root.record_uid) root.record_uid, t.extraction_id, "
+               "root.model_type, root.first_instant, root.deleted_state, t.value, t.is_sensitive, t.field_path, "
+               "t.value_index, t.record_uid AS matched_record_uid, %s AS kind %s%s ORDER BY root.first_instant NULLS "
+               "LAST, root.record_uid, t.is_sensitive, t.field_path")
+
+
+def _record_counts(conn, case_id, q, exact, phones, start, end, first=0):
+    """Other records per kind and phone, once per top-level record, and with ``first`` each kind's first ``first``
+    rows (``_record_items``'s order) from the same match under ``"_first"``: each kind's own list ran the match
+    again (Phone reference 1, "password": 4 s for the lists, 26 Nov)."""
     p, cond = _record_params(case_id, q, exact, phones, start, end)
+    p["lxf"] = int(first)
     out = defaultdict(lambda: defaultdict(int))
     deleted = defaultdict(int)
+    rows = defaultdict(list)
     for r in conn.execute(text(
-            "SELECT kind, ext, count(*) AS n, count(*) FILTER (WHERE del) AS d FROM (SELECT DISTINCT %s AS kind, "
-            "t.extraction_id::text AS ext, root.record_uid, lower(coalesce(root.deleted_state, '')) IN ('deleted', "
-            "'trash') AS del %s%s) x GROUP BY 1, 2" % (KIND_CASE, RECORD_FROM, _records_where(cond))), p):
+            "WITH x AS (" + RECORD_ROWS % (KIND_CASE, RECORD_FROM, _records_where(cond)) + ") "
+            "SELECT 0 AS part, kind, extraction_id::text AS ext, count(*) AS n, count(*) FILTER (WHERE "
+            "lower(coalesce(deleted_state, '')) IN ('deleted', 'trash')) AS d, NULL AS record_uid, NULL AS "
+            "extraction_id, NULL AS model_type, NULL AS first_instant, NULL AS deleted_state, NULL AS value, NULL AS "
+            "is_sensitive, NULL AS field_path, NULL AS value_index, NULL AS matched_record_uid, 0 AS rn FROM x GROUP BY "
+            "2, 3 UNION ALL SELECT 1, kind, NULL, NULL, NULL, record_uid, extraction_id, model_type, first_instant, "
+            "deleted_state, value, is_sensitive, field_path, value_index, matched_record_uid, rn FROM (SELECT x.*, "
+            "row_number() OVER (PARTITION BY kind ORDER BY first_instant NULLS LAST, record_uid) AS rn FROM x) y "
+            "WHERE rn <= :lxf ORDER BY 1, 2, rn"), p):
+        if r.part == 1:
+            rows[r.kind].append(r)
+            continue
         out[r.kind][r.ext] += int(r.n)
         deleted[r.kind] += int(r.d)
+    out["_first"] = rows
     return out, deleted
 
 
@@ -182,15 +219,21 @@ def _machine_counts(conn, case_id, q, exact, phones, ctx):
 
 # ---- hits -------------------------------------------------------------------------------------------------------------
 
-def _comm_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx):
-    total, items = S._comm(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx)
+def _comm_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx, rows=None, titles=None):
+    """A page of one kind's hits; ``rows`` the page already matched (``_comm_counts(first=...)``), ``titles`` their
+    threads' titles already read (``streams.thread_titles`` reads the case's phone owners each call)."""
+    if rows is None:
+        total, items = S._comm(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx)
+    else:
+        total, items = len(rows), S.comm_hits(conn, rows, q, exact, ctx)
     if not items:
         return total, items
     events = [i["open"]["params"]["event"] for i in items]
     extra = {str(r.event_uid): r for r in conn.execute(text(
         "SELECT event_uid, deleted_state, thread_key, extraction_id, direction FROM pv_comm_event WHERE event_uid = "
         "ANY(CAST(:u AS uuid[]))"), {"u": events})}
-    titles = streams.thread_titles(conn, case_id, sorted({r.thread_key for r in extra.values() if r.thread_key}))
+    if titles is None:
+        titles = streams.thread_titles(conn, case_id, sorted({r.thread_key for r in extra.values() if r.thread_key}))
     for i in items:
         r = extra.get(i["open"]["params"]["event"])
         if r is None:
@@ -201,15 +244,14 @@ def _comm_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit
     return total, items
 
 
-def _record_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx):
-    p, cond = _record_params(case_id, q, exact, phones, start, end)
-    p.update({"k": kind, "lim": limit, "off": offset})
-    rows = conn.execute(text(
-        "SELECT * FROM (SELECT DISTINCT ON (root.first_instant, root.record_uid) root.record_uid, t.extraction_id, "
-        "root.model_type, root.first_instant, root.deleted_state, t.value, t.is_sensitive, t.field_path, "
-        "t.value_index, t.record_uid AS matched_record_uid, %s AS kind %s%s ORDER BY root.first_instant NULLS LAST, "
-        "root.record_uid, t.is_sensitive, t.field_path) x WHERE kind = :k ORDER BY first_instant NULLS LAST, "
-        "record_uid LIMIT :lim OFFSET :off" % (KIND_CASE, RECORD_FROM, _records_where(cond))), p).fetchall()
+def _record_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx, rows=None):
+    """A page of one kind's other records; ``rows`` the page already matched (``_record_counts(first=...)``)."""
+    if rows is None:
+        p, cond = _record_params(case_id, q, exact, phones, start, end)
+        p.update({"k": kind, "lim": limit, "off": offset})
+        rows = conn.execute(text(
+            "SELECT * FROM (" + RECORD_ROWS % (KIND_CASE, RECORD_FROM, _records_where(cond)) + ") x WHERE kind = :k "
+            "ORDER BY first_instant NULLS LAST, record_uid LIMIT :lim OFFSET :off"), p).fetchall()
     items = S.records_items(rows, q, exact, ctx)
     for item, r in zip(items, rows):
         item["where"] = _record_where(r.model_type, S.field_name(r.field_path))
@@ -255,23 +297,26 @@ def _file_items(conn, case_id, q, exact, phones, offset, limit, ctx):
     return out
 
 
-def _items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx, total, file_records=None):
+def _items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx, total, file_records=None,
+           rows=None, titles=None):
+    """A page of one kind; ``rows`` its page already matched by the counts (first page only), ``titles`` threads'
+    titles already read."""
     if not total or not limit:
         return []
     if kind in COMM:
-        return _comm_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx)[1]
+        return _comm_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx, rows, titles)[1]
     if kind == "files":
         # file records (downloads, uploads, recordings) first, then the phone's files by name
         recs = file_records if file_records is not None else _record_count_of(conn, case_id, "files", q, exact,
                                                                                phones, start, end)
-        items = _record_items(conn, case_id, "files", q, exact, phones, start, end, offset, limit, ctx) \
+        items = _record_items(conn, case_id, "files", q, exact, phones, start, end, offset, limit, ctx, rows) \
             if offset < recs else []
         if len(items) < limit:
             items += _file_items(conn, case_id, q, exact, phones, max(0, offset - recs), limit - len(items), ctx)
         return items
     if kind == "machine_text":
         return S._machine(conn, case_id, q, exact, phones, offset, limit, ctx)[1]
-    return _record_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx)
+    return _record_items(conn, case_id, kind, q, exact, phones, start, end, offset, limit, ctx, rows)
 
 
 def _record_count_of(conn, case_id, kind, q, exact, phones, start, end):
@@ -339,13 +384,8 @@ def next_steps(q, kinds, phones, saved, limits, deleted_total, elsewhere, ctx, s
     and what to open with the people, phones and period filled in. Rules, in rank order:
     a person saved differently, deleted items found, the same words in the case's other sources, phones with
     nothing found while others have hits, a question over the results, keeping the words as a keyword list."""
-    steps = []
+    steps = person_steps(saved)
     total = sum(k["total"] for k in kinds)
-    for s in saved[:2]:
-        steps.append({"id": "person", "title": "Open %s across every phone" % s["name"],
-                      "why": "Saved under different names on %d phones: %s" % (len(s["names"]), s["sentence"]),
-                      "open": {"screen": "person", "params": {"people": ",".join(s["identity_keys"]),
-                                                              "person_id": s["person_id"]}}})
     if deleted_total:
         steps.append({"id": "deleted", "title": "Read the %s deleted %s first" % (
             "{:,}".format(deleted_total), "item" if deleted_total == 1 else "items"),
@@ -392,6 +432,27 @@ def next_steps(q, kinds, phones, saved, limits, deleted_total, elsewhere, ctx, s
     return steps
 
 
+def person_steps(saved):
+    """The first next steps: open each of the first two people saved differently across every phone."""
+    return [{"id": "person", "title": "Open %s across every phone" % s["name"],
+             "why": "Saved under different names on %d phones: %s" % (len(s["names"]), s["sentence"]),
+             "open": {"screen": "person", "params": {"people": ",".join(s["identity_keys"]),
+                                                     "person_id": s["person_id"]}}} for s in saved[:2]]
+
+
+def people_step(conn, case_id, q, *, exact=False, phones=None) -> dict:
+    """The people the words find whom the phones save under different names, and their next steps, on their own:
+    ``{saved_differently, steps}``. The screen asks it beside the first results (``phone_search(people=False)``):
+    it folds the names of the case's identities that could hold the words, 1.2 to 1.5 s of the first results on
+    Phone reference 1 (26 Nov)."""
+    q = _check(q)
+    scope = _scope_phones(conn, case_id, phones)
+    if len(F.fold(q, exact=exact).replace(" ", "")) < S.MIN_TEXT or not scope:
+        return {"saved_differently": [], "steps": []}
+    saved = saved_differently(conn, case_id, q, exact, scope, S._context(conn, case_id))
+    return {"saved_differently": saved, "steps": person_steps(saved)}
+
+
 def _day_words(dt):
     return "%d %s %d" % (dt.day, dt.strftime("%b"), dt.year)
 
@@ -427,10 +488,12 @@ def period(conn, case_id, start, end):
     return out
 
 
-def phone_search(conn, case_id, q, *, exact=False, phones=None, start=None, end=None, elsewhere=False) -> dict:
+def phone_search(conn, case_id, q, *, exact=False, phones=None, start=None, end=None, elsewhere=False,
+                 people=True) -> dict:
     """The first results. ``elsewhere`` (off for the screen) also counts the words in the case's documents and
     payments: that count read every document text of a case (19 s on Demo 2, 25 Nov), so the screen asks
-    ``elsewhere_step`` after the first results instead."""
+    ``elsewhere_step`` after the first results instead. ``people`` off leaves the people saved differently and
+    their steps to ``people_step``, asked beside (``people_pending`` says so)."""
     q = _check(q)
     scope = _scope_phones(conn, case_id, phones)
     start, end = period(conn, case_id, start, end)
@@ -439,10 +502,14 @@ def phone_search(conn, case_id, q, *, exact=False, phones=None, start=None, end=
     counts, deleted = defaultdict(dict), defaultdict(int)
     file_records = 0
     span = [None, None]
+    first_rows = {}
     if not short and scope:
-        comm = _comm_counts(conn, case_id, q, exact, scope, start, end)
+        comm = _comm_counts(conn, case_id, q, exact, scope, start, end, first=FIRST, labels=ctx["labels"])
         span = comm[0].pop("_span")
-        for src in (comm, _record_counts(conn, case_id, q, exact, scope, start, end)):
+        first_rows = comm[0].pop("_first")
+        recs = _record_counts(conn, case_id, q, exact, scope, start, end, first=FIRST)
+        first_rows.update(recs[0].pop("_first"))
+        for src in (comm, recs):
             for kind, per in src[0].items():
                 for ext, n in per.items():
                     counts[kind][ext] = counts[kind].get(ext, 0) + n
@@ -454,6 +521,9 @@ def phone_search(conn, case_id, q, *, exact=False, phones=None, start=None, end=
             counts["files"][ext] = counts["files"].get(ext, 0) + n
         deleted["files"] += fdel
         counts["machine_text"] = _machine_counts(conn, case_id, q, exact, scope, ctx)
+    # the threads of every message, call and email shown, titled in one read
+    keys = sorted({r.thread_key for k in COMM for r in first_rows.get(k, []) if r.thread_key})
+    titles = streams.thread_titles(conn, case_id, keys, ctx["labels"]) if keys else {}
     kinds, groups = [], []
     for kind, label in KINDS:
         per = {ext: int(counts.get(kind, {}).get(ext, 0)) for ext in scope}
@@ -461,17 +531,19 @@ def phone_search(conn, case_id, q, *, exact=False, phones=None, start=None, end=
         kinds.append({"kind": kind, "label": label, "total": total, "by_phone": per,
                       "deleted": int(deleted.get(kind, 0))})
         if total:
-            items = _items(conn, case_id, kind, q, exact, scope, start, end, 0, FIRST, ctx, total, file_records)
+            items = _items(conn, case_id, kind, q, exact, scope, start, end, 0, FIRST, ctx, total, file_records,
+                           first_rows.get(kind, []) if kind != "machine_text" else None, titles)
             groups.append({"kind": kind, "label": label, "total": total, "items": items,
                            "next_cursor": str(len(items)) if len(items) < total else None})
     limits = S.coverage_limits(conn, case_id, scope)
-    saved = [] if short else saved_differently(conn, case_id, q, exact, scope, ctx)
+    saved = [] if short or not people else saved_differently(conn, case_id, q, exact, scope, ctx)
     other = _elsewhere(conn, case_id, q, exact) if elsewhere and not short else {}
     total = sum(k["total"] for k in kinds)
     return {"query": q, "folded_query": F.fold(q, exact=exact), "exact": exact, "short": S.SHORT if short else None,
             "number_digits": None if exact else S.number_words.number_digits(q),
             "phones": [{"extraction_id": e, "label": ctx["phones"].get(e, "Phone")} for e in scope],
             "total": total, "kinds": kinds, "groups": groups, "saved_differently": saved,
+            "people_pending": bool(not people and not short and scope),
             "elsewhere": other, "complete": not limits, "limits": limits,
             "period": {"from": T.iso(span[0]), "to": T.iso(span[1])},
             "next_steps": next_steps(q, kinds, scope, saved, limits, sum(deleted.values()), other, ctx, span),
