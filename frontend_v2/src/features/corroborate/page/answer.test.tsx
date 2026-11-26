@@ -102,7 +102,7 @@ describe("sentences open with a capital", () => {
   })
 
   it("draws Did not arise on the card, not on the muted fill (measured 4.49:1 there in light, under 4.5:1)", () => {
-    const none: Corroboration = { ...C, checks: [{ check: "workplace", outcome: "not_applicable", words: "No access log names them." }] }
+    const none: Corroboration = { ...C, checks: [{ check: "workplace", outcome: "checked", words: "No access log names them." }] }
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={qc}><MemoryRouter><AnswerView c={none} caseId="c1" runId="r1" selectionId="s1" members={[]} onAsk={() => undefined} /></MemoryRouter></QueryClientProvider>)
     expect(screen.getByText("Did not arise").className).not.toContain("bg-muted")
