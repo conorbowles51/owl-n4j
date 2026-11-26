@@ -495,3 +495,19 @@
 .maplibregl-ctrl-group {
   display: none;
 }
+
+/*
+ * Brand red as text (followups 26 Nov). The dark --primary (#D6293D) is tuned for white labels on red buttons and reads
+ * only 3.0-4.0:1 as text on the dark surfaces; amber-500 (brand-500, #E33B4C) reads 3.5-4.7:1 in dark and 3.0-4.2:1 in
+ * light. As text they draw brand-700 in light and brand-400 in dark, 4.6:1 or more on every surface and on a 15% brand
+ * tint (text-colour.test.ts). An element that names its own dark: text colour keeps it. Fills and borders are untouched.
+ */
+@layer utilities {
+  .text-amber-500:not([class*="dark:text-"]) {
+    color: var(--color-brand-700);
+  }
+  .dark .text-amber-500:not([class*="dark:text-"]),
+  .dark .text-primary:not([class*="dark:text-"]) {
+    color: var(--color-brand-400);
+  }
+}

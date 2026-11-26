@@ -10,6 +10,13 @@ interface NodeBadgeProps {
   color?: string
 }
 
+/**
+ * The label is the type colour mixed with the theme's text colour: the raw type colours (graph node fills) read only
+ * 2.9-4.0:1 as text on their own tint. At 65% every type reads 5.1:1 or more on every surface in both themes
+ * (followups 26 Nov, node-badge.test.tsx). The dot keeps the pure type colour.
+ */
+export const BADGE_TEXT_SHARE = 65
+
 export function NodeBadge({ type, className, children, color: chosen }: NodeBadgeProps) {
   const color = chosen ?? getNodeColor(type)
   return (
@@ -21,7 +28,7 @@ export function NodeBadge({ type, className, children, color: chosen }: NodeBadg
       )}
       style={{
         backgroundColor: `${color}15`,
-        color: color,
+        color: `color-mix(in srgb, ${color} ${BADGE_TEXT_SHARE}%, hsl(var(--foreground)))`,
       }}
     >
       <span
