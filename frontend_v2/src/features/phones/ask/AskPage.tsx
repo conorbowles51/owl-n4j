@@ -60,6 +60,31 @@ function ElsewhereRowView({ caseId, r }: { caseId: string; r: ElsewhereRow }) {
   )
 }
 
+/** Rows that share source, relation and reason (a message's copies on another phone) are one group. */
+function groupRows(rows: ElsewhereRow[]) {
+  const groups = new Map<string, ElsewhereRow[]>()
+  for (const r of rows) {
+    const key = `${r.source}|${r.relation}|${r.reason ?? ""}`
+    groups.set(key, [...(groups.get(key) ?? []), r])
+  }
+  return [...groups.entries()].map(([key, rs]) => ({ key, rows: rs }))
+}
+
+function RowGroup({ caseId, rows }: { caseId: string; rows: ElsewhereRow[] }) {
+  const [open, setOpen] = useState(false)
+  const shown = open || rows.length <= 2 ? rows : rows.slice(0, 1)
+  return (
+    <>
+      {shown.map((r, i) => <ElsewhereRowView key={i} caseId={caseId} r={r} />)}
+      {rows.length > 2 && (
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="self-start text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          {open ? "Show fewer" : `${(rows.length - 1).toLocaleString("en-US")} more like this (${rows[0].source}, ${(rows[0].relation_label || rows[0].relation).toLowerCase()})`}
+        </button>
+      )}
+    </>
+  )
+}
+
 function ElsewhereBlock({ caseId, st }: { caseId: string; st: Statement }) {
   const [showEmpty, setShowEmpty] = useState(false)
   const rows = st.elsewhere?.rows
@@ -71,7 +96,7 @@ function ElsewhereBlock({ caseId, st }: { caseId: string; st: Statement }) {
       <div className="text-xs text-muted-foreground">What the rest of the case says</div>
       {(rows == null || st.elsewhere?.note) && <p className="text-sm text-muted-foreground">{st.elsewhere?.note ?? "The rest of the case was not checked for this statement."}</p>}
       {rows != null && rows.length === 0 && <p className="text-sm text-muted-foreground">Nothing in the other phones, financial records, documents or timeline bears on it.</p>}
-      {found.map((r, i) => <ElsewhereRowView key={i} caseId={caseId} r={r} />)}
+      {groupRows(found).map((g) => <RowGroup key={g.key} caseId={caseId} rows={g.rows} />)}
       {empty.length > 0 && (
         <div className="text-sm text-muted-foreground">
           <button type="button" className="underline underline-offset-2 hover:text-foreground" aria-expanded={showEmpty} onClick={() => setShowEmpty((v) => !v)}>
@@ -246,10 +271,10 @@ export function AskPage() {
         </section>
 
         <aside aria-label="Follow up" className="flex max-w-[380px] flex-[1_1_320px] flex-col gap-4 border-l bg-panel px-4.5 py-5">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Test it properly</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Test it properly</h2>
           <p className="text-[13px] leading-normal">An answer is a reading. To weigh it against ordinary days with fixed rules, send it to Corroborate.</p>
           <Button type="button" disabled={!answer?.statements.length} onClick={() => corroborate("all")}>Corroborate this</Button>
-          <h2 className="mt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Earlier questions in this case</h2>
+          <h2 className="mt-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Earlier questions in this case</h2>
           {earlier.data && earlier.data.total === 0 && <p className="text-[13px] text-muted-foreground">No questions asked yet.</p>}
           {earlier.error && <p className="text-[13px] text-status-error">The earlier questions could not be read.</p>}
           <ul className="flex flex-col gap-2">

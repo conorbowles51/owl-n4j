@@ -20,7 +20,8 @@ const answer: Answer = {
   statements: [
     { text: "Marisol Teague told Dorian “the checks are in the drawer”.", cites: ["r1", "r2"], people: ["Marisol Teague", "Dorian Pell"], date_from: "2024-03-12", date_to: "2024-03-12",
       cite_labels: [{ record: "r1", label: "Phone 2 · Message 12 Mar 2024 10:20 AM UTC", extraction_id: "p2" }, { record: "r2", label: "Phone 2 · Message 12 Mar 2024 10:21 AM UTC", extraction_id: "p2" }],
-      elsewhere: { rows: [{ source: "Timeline", text: "No event on 12 Mar.", relation: "nothing_found" }, { source: "Financial", text: "Checks 2204 to 2206 arrive in the account ending 7302.", cite: "txn://t1", cite_label: "pell-2024-03.pdf p.1", relation: "agrees", reason: "same amounts" }], note: null } },
+      elsewhere: { rows: [{ source: "Timeline", text: "No event on 12 Mar.", relation: "nothing_found" },
+        ...[1, 2, 3].map((n) => ({ source: "Phone 3", text: `Copy ${n} on Phone 3.`, relation: "agrees", relation_label: "Agrees", reason: "same text, same minute" })), { source: "Financial", text: "Checks 2204 to 2206 arrive in the account ending 7302.", cite: "txn://t1", cite_label: "pell-2024-03.pdf p.1", relation: "agrees", reason: "same amounts" }], note: null } },
     { text: "Priya Halloran wrote “check 2209 goes out today”.", cites: ["r3"], people: ["Priya Halloran"], date_from: "2024-02-12", date_to: null,
       cite_labels: [{ record: "r3", label: "Phone 1 · Message 12 Feb 2024 3:30 PM UTC", extraction_id: "p1" }],
       elsewhere: { rows: null, note: "The rest of the case was not checked for this statement yet." } },
@@ -56,8 +57,13 @@ describe("Ask the phones", () => {
     page("/cases/c1/phones/ask?ask=a1")
     const first = await screen.findByRole("article", { name: "Statement 1" })
     expect(within(first).getByRole("link", { name: /Phone 2 · Message 12 Mar 2024 10:20 AM UTC/ }).getAttribute("href")).toBe("/cases/c1/records/r1")
-    expect(within(first).getByText("Agrees")).toBeTruthy()
+    expect(within(first).getAllByText("Agrees")).toHaveLength(2) // the Financial row and the first of the Phone 3 group
     expect(within(first).getByRole("link", { name: "pell-2024-03.pdf p.1" })).toBeTruthy()
+    // a message's copies on another phone are one group: the first shown, the rest counted and opened on request
+    expect(within(first).getByText("Copy 1 on Phone 3.")).toBeTruthy()
+    expect(within(first).queryByText("Copy 3 on Phone 3.")).toBeNull()
+    fireEvent.click(within(first).getByRole("button", { name: "2 more like this (Phone 3, agrees)" }))
+    expect(within(first).getByText("Copy 3 on Phone 3.")).toBeTruthy()
     // checks that found nothing are folded under one line that names them, and open on request
     expect(within(first).queryByText("No event on 12 Mar.")).toBeNull()
     fireEvent.click(within(first).getByRole("button", { name: "Nothing found in 1 check: Timeline" }))
