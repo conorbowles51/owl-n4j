@@ -380,7 +380,7 @@ export function GraphCanvas3D({
       />
 
       {!isSpotlight ? (
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-slate-100/90 px-2 py-1 text-[10px] text-slate-500 dark:bg-slate-900/80 dark:text-slate-400">
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-slate-100/90 px-2 py-1 text-[10px] text-slate-600 dark:bg-slate-900/80 dark:text-slate-400">
           {fgData.nodes.length} nodes · {fgData.links.length} edges · 3D
           {hiddenNodeKeys.size > 0 ? ` · ${hiddenNodeKeys.size} hidden` : ""}
         </div>
