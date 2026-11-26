@@ -218,6 +218,11 @@ def plural(n, one, many=None) -> str:
     return "%s %s" % ("{:,}".format(n), one if n == 1 else (many or one + "s"))
 
 
+def more(n, noun, verb_one, verb_many) -> str:
+    """``1 more payment prints`` / ``3 more payments print``."""
+    return "%s more %s %s" % ("{:,}".format(n), noun if n == 1 else noun + "s", verb_one if n == 1 else verb_many)
+
+
 def join_words(xs) -> str:
     xs = [x for x in xs if x]
     if len(xs) <= 1:

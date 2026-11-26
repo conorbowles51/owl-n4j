@@ -172,8 +172,8 @@ def part(conn, case_id, subject, zone) -> dict:
                     add(W.POSSIBLE, r, "“%s” is printed on this payment; nothing else ties it to this %s." % (
                         term, subject.kind), ["name"], rank=2)
             if len(rows) > PER_RULE:
-                items.append(W.item(W.POSSIBLE, "%s more payments print “%s” %s." % (
-                    "{:,}".format(len(rows) - PER_RULE), term, W.span_text(tlo, thi)),
+                items.append(W.item(W.POSSIBLE, "%s “%s” %s." % (
+                    W.more(len(rows) - PER_RULE, "payment", "prints", "print"), term, W.span_text(tlo, thi)),
                     "Listed in Financial; only the first %d are shown here." % PER_RULE, {
                         "kind": "search", "screen": "financial", "query": term}, ["name"], _rank=3))
     strong = subject.names(strong_only=True)
@@ -194,8 +194,8 @@ def part(conn, case_id, subject, zone) -> dict:
                 _person_on(subject, r, holder=False), W.when_words(W.days_apart(subject.anchor, r.ordering_date))
                 if subject.anchor else W.span_text(lo, hi), subject.kind), ["name", "date"], rank=4)
         if len(rows) > PER_RULE:
-            items.append(W.item(W.POSSIBLE, "%s more payments name %s %s." % (
-                "{:,}".format(len(rows) - PER_RULE), W.join_words(strong), W.span_text(lo, hi)),
+            items.append(W.item(W.POSSIBLE, "%s %s %s." % (
+                W.more(len(rows) - PER_RULE, "payment", "names", "name"), W.join_words(strong), W.span_text(lo, hi)),
                 "Listed in Financial; only the nearest %d are shown here." % PER_RULE,
                 {"kind": "search", "screen": "financial", "query": strong[0], "start": lo.isoformat(),
                  "end": hi.isoformat()}, ["name"], _rank=5))

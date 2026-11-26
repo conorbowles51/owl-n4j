@@ -99,6 +99,10 @@ class WordsTest(unittest.TestCase):
                  W.item(W.NOTHING, "a", "b")]
         self.assertEqual(W.counts(items), {"agrees": 1, "disagrees": 0, "missing_here": 0, "possible_match": 2})
 
+    def test_more_reads_as_english(self):
+        self.assertEqual(W.more(1, "payment", "prints", "print"), "1 more payment prints")
+        self.assertEqual(W.more(3, "document", "names", "name"), "3 more documents name")
+
     def test_amount_forms(self):
         self.assertEqual(W.money_forms(246000), ["2,460.00", "2460.00", "2,460"])
         self.assertEqual(W.money_text(277500), "$2,775")
@@ -315,6 +319,32 @@ class ServiceTest(unittest.TestCase):
         self.assertIn("could not be checked", out["parts"][0]["searched"])
         self.assertFalse(out["complete"])
         self.assertEqual(out["counts"]["agrees"], 1)
+
+    def test_for_statement_gives_rows_with_source_citation_and_relation(self):
+        conn = FakeConn([(("financial_transactions",), lambda p: [row()])])
+        out = service.for_statement(conn, CASE, text="He deposited check 2204", people=["Dorian Pell", "+1 717-555-0221"],
+                                    parts=("financial",))
+        self.assertEqual(out["rows"][0]["source"], "Financial")
+        self.assertEqual(out["rows"][0]["cite"], "txn://t1")
+        self.assertEqual(out["rows"][0]["relation"], W.AGREES)
+        self.assertEqual(len(out["searched"]), 1)
+
+    def test_phones_off_in_the_screen_are_not_searched(self):
+        conn = FakeConn([(("FROM phone_extractions WHERE case_id",), lambda p: [NS(ext="e1"), NS(ext="e2"), NS(ext="e3")]),
+                         (("unnest",), lambda p: [])])
+        s = S.from_statement(conn, CASE, {"people": [{"numbers": ["+17175550221"]}],
+                                          "period": {"start": "2024-03-08", "end": "2024-03-08"}, "phones": ["e2"]})
+        out = phones.part(conn, CASE, s, "UTC")
+        self.assertTrue(out["searched"].startswith("1 phone on in this screen"))
+
+    def test_a_full_name_takes_the_number_of_the_phone_it_owns(self):
+        cands = [NS(ext="e3", candidate_kind="number", identity_key="phone:+17175550221", name=None, tier=1),
+                 NS(ext="e3", candidate_kind="name", identity_key=None, name="Dorian Pell", tier=None),
+                 NS(ext="e2", candidate_kind="name", identity_key=None, name="Marisol Teague", tier=None)]
+        conn = FakeConn([(("pv_owner_candidate",), lambda p: cands)])
+        s = S.from_statement(conn, CASE, {"people": [{"name": "Dorian Pell"}, {"name": "Marisol Teague"},
+                                                     {"name": "Dorian"}]})
+        self.assertEqual([p.numbers for p in s.people], [["7175550221"], [], []])
 
     def test_statement_needs_something_to_check(self):
         with self.assertRaises(S.BadSubject):

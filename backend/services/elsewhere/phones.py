@@ -375,6 +375,9 @@ def place_items(conn, case_id, subject, phones, owners, zone):
 
 def part(conn, case_id, subject, zone) -> dict:
     phones = _phones(conn, case_id)
+    if subject.phone_scope:
+        keep = set(subject.phone_scope) | {r.extraction_id for r in subject.records}
+        phones = [(e, l) for e, l in phones if e in keep]
     owners = _owners(conn, case_id)
     items = []
     many = len(subject.records) > 1
@@ -384,7 +387,8 @@ def part(conn, case_id, subject, zone) -> dict:
     if subject.kind == "statement" and (subject.start or subject.end) and not subject.records:
         items.extend(_people_items(conn, subject, phones, owners, zone))
     items.extend(place_items(conn, case_id, subject, phones, owners, zone))
-    searched = "%s in this case: %s." % (W.plural(len(phones), "phone"), W.join_words([l for _, l in phones]))
+    searched = "%s %s: %s." % (W.plural(len(phones), "phone"), "on in this screen" if subject.phone_scope else
+                                "in this case", W.join_words([l for _, l in phones]))
     if len(phones) <= 1 and not subject.places:
         items.append(W.item(W.NOTHING, "This case has no other phone to compare.", "Only one phone is in the case.",
                             None))

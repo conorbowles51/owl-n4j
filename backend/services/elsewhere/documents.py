@@ -180,7 +180,7 @@ def part(conn, case_id, subject, zone, ledger_amounts=None) -> dict:
     more = max(0, len(items) - MAX_FILES)
     items = items[:MAX_FILES]
     if more:
-        items.append(W.item(W.POSSIBLE, "%s more documents name these too." % "{:,}".format(more),
+        items.append(W.item(W.POSSIBLE, "%s these too." % W.more(more, "document", "names", "name"),
                             "Only the first %d are listed here; Search lists them all." % MAX_FILES,
                             {"kind": "search", "screen": "search"}, []))
     searched = ("Searched every document in the case for %s. Bank statements the ledger was built from are read "

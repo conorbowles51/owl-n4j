@@ -65,6 +65,7 @@ class Subject:
     places: list = field(default_factory=list)    # [{"name", "lat", "lon", "radius_m"}]
     terms: list = field(default_factory=list)     # names of firms and places read from the text
     records: list = field(default_factory=list)   # [Record]
+    phone_scope: list | None = None               # extraction ids the screen has on; None is every phone
 
     def as_dict(self):
         return {"kind": self.kind,
@@ -202,6 +203,31 @@ def _merge_person(people, p):
     people.append(p)
 
 
+def _owner_numbers(conn, case_id, people):
+    """A person given by full name only takes the number of the phone the report names them the owner of (its best
+    owner number). Said in the person's shown text, so the link is never silent; a name two phones' owners share is
+    left alone."""
+    want = [p for p in people if not p.numbers and not p.emails and p.name and W.strong_name(p.name)]
+    if not want:
+        return
+    owners = {}
+    for r in conn.execute(text(
+            "SELECT extraction_id::text AS ext, candidate_kind, identity_key, name, tier FROM pv_owner_candidate "
+            "WHERE case_id = CAST(:c AS uuid) AND candidate_kind IN ('number', 'name') ORDER BY tier NULLS LAST"),
+            {"c": str(case_id)}):
+        o = owners.setdefault(r.ext, {"names": [], "number": None})
+        if r.candidate_kind == "name" and r.name:
+            o["names"].append(r.name)
+        elif r.candidate_kind == "number" and o["number"] is None:
+            o["number"] = W.number_key((r.identity_key or "").split(":", 1)[-1])
+    for p in want:
+        hits = [o for o in owners.values() if o["number"] and any(
+            W.name_in(p.name, n) and W.name_in(n, p.name) for n in o["names"])]
+        if len(hits) == 1:
+            p.numbers.append(hits[0]["number"])
+            p.shown = "%s (the owner of a phone in this case, by the report)" % p.name
+
+
 def from_statement(conn, case_id, payload: dict) -> Subject:
     payload = payload or {}
     s = Subject(kind="statement", case_id=str(case_id), text=str(payload.get("text") or "")[:4000])
@@ -227,6 +253,11 @@ def from_statement(conn, case_id, payload: dict) -> Subject:
                  "radius_m": float(pl.get("radius_m") or 500)}
         if place["name"] or (place["lat"] is not None and place["lon"] is not None):
             s.places.append(place)
+    for t in (payload.get("words") or [])[:MAX_TERMS]:
+        if str(t).strip() and str(t).strip() not in s.terms:
+            s.terms.append(str(t).strip()[:120])
+    if payload.get("phones"):
+        s.phone_scope = [str(e) for e in payload["phones"]][:50]
     uids = list(dict.fromkeys(str(u) for u in (payload.get("record_uids") or [])))
     if len(uids) > MAX_RECORDS:
         raise BadSubject("At most %d records can be checked at once; %d were given." % (MAX_RECORDS, len(uids)))
@@ -239,6 +270,7 @@ def from_statement(conn, case_id, payload: dict) -> Subject:
             d = rec.instant.date()
             s.start = min(s.start, d) if s.start else d
             s.end = max(s.end, d) if s.end else d
+    _owner_numbers(conn, case_id, s.people)
     _read_text(s, s.text)
     for place in s.places:
         if place["name"] and place["name"] not in s.terms:

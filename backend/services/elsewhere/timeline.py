@@ -110,8 +110,8 @@ def part(conn, case_id, subject, zone, graph_events=_graph_events) -> dict:
              "machine": machine}, ["name", "date"],
             machine_label="Read by Loupe · not confirmed" if machine else None))
     if len(hits) > MAX_ITEMS:
-        items.append(W.item(W.POSSIBLE, "%s more timeline events name them %s." % (
-            "{:,}".format(len(hits) - MAX_ITEMS), W.span_text(lo, hi)), "Only the first %d are listed here." %
+        items.append(W.item(W.POSSIBLE, "%s them %s." % (
+            W.more(len(hits) - MAX_ITEMS, "timeline event", "names", "name"), W.span_text(lo, hi)), "Only the first %d are listed here." %
             MAX_ITEMS, {"kind": "screen", "screen": "timeline", "start": lo.isoformat(), "end": hi.isoformat()}, []))
     searched = "Searched the case timeline %s (%s)%s." % (
         W.span_text(lo, hi), W.plural(total, "event") if not clipped else "%s or more events" % "{:,}".format(total),

@@ -58,6 +58,8 @@ class StatementIn(BaseModel):
     places: List[PlaceIn] = Field(default_factory=list, max_length=10)
     references: List[str] = Field(default_factory=list, max_length=20)
     accounts: List[str] = Field(default_factory=list, max_length=10)
+    words: List[str] = Field(default_factory=list, max_length=12)
+    phones: List[UUID] = Field(default_factory=list, max_length=50)
 
 
 def _zone(db, case_id):
@@ -88,6 +90,7 @@ def elsewhere_statement(case_id: UUID, body: StatementIn, part: Optional[Part] =
     conn = db.connection()
     payload = body.model_dump()
     payload["record_uids"] = [str(u) for u in body.record_uids]
+    payload["phones"] = [str(u) for u in body.phones]
     try:
         subj = S.from_statement(conn, str(case_id), payload)
     except S.NotFound:
