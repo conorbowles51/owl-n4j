@@ -14,6 +14,9 @@ from sqlalchemy import text
 from services.corroborate import model as M
 from services.corroborate.store import CaseStore
 
+COMM_CAP = 200   # messages naming the words, per check; one more is fetched to know the cap was hit
+DOC_CAP = 50     # documents naming the words, per check
+
 
 class CaseData:
     def __init__(self, db, case_id):
@@ -103,15 +106,16 @@ class CaseData:
                 "place": {"lat": row[2], "lon": row[3], "radius_m": row[4]}}
 
     def comm_with_words(self, words: list[str], lo: datetime, hi: datetime, exclude_uid: str | None = None) -> list[dict]:
-        """Messages and e-mails on any phone in the case, in the window, that hold one of the words."""
+        """Messages and e-mails on any phone in the case, in the window, that hold one of the words: deleted copies
+        first, then by time. Up to ``COMM_CAP`` + 1 come back, so a caller can say "more than" when the cap is hit."""
         if not words:
             return []
         rx = "(" + "|".join(re.escape(w) for w in words) + ")"
         out = []
         for uid, ext, kind, at, body, deleted in self.q(
                 "SELECT record_uid, extraction_id, kind, sort_instant, body, deleted_state FROM phone_comm_events WHERE "
-                "case_id = :c AND sort_instant BETWEEN :lo AND :hi AND body ~* :rx ORDER BY sort_instant LIMIT 50",
-                lo=lo, hi=hi, rx=rx):
+                "case_id = :c AND sort_instant BETWEEN :lo AND :hi AND body ~* :rx ORDER BY (deleted_state IN ('Deleted', 'Trash')) "
+                "DESC, sort_instant LIMIT :n", lo=lo, hi=hi, rx=rx, n=COMM_CAP + 2):
             if exclude_uid and str(uid) == exclude_uid:
                 continue
             out.append({"ref": f"phone_record:{uid}", "phone": str(ext), "kind": kind, "at": M.as_utc(at),
@@ -139,7 +143,8 @@ class CaseData:
     # -- documents -----------------------------------------------------------------------------------------------
     def documents_with_words(self, words: list[str]) -> list[dict]:
         """Documents whose text or name holds one of the words. A phone conversation kept as a document (it carries
-        a ``thread_key``) is left out: its messages are the phone's own records, read as such."""
+        a ``thread_key``) is left out: its messages are the phone's own records, read as such. Up to ``DOC_CAP`` + 1
+        come back, so a caller can say "more than" when the cap is hit."""
         if not words:
             return []
         rx = "(" + "|".join(re.escape(w) for w in words) + ")"
@@ -148,7 +153,7 @@ class CaseData:
                 "SELECT f.id, f.original_filename, t.content FROM evidence_document_texts t JOIN evidence_files f ON "
                 "f.id = t.evidence_file_id WHERE f.case_id = :c AND f.deleted_at IS NULL AND NOT (COALESCE(f.metadata, '{}'::jsonb) ? "
                 "'thread_key') AND (t.content ~* :rx OR "
-                "f.original_filename ~* :rx) LIMIT 20", rx=rx):
+                "f.original_filename ~* :rx) ORDER BY f.original_filename LIMIT :n", rx=rx, n=DOC_CAP + 1):
             out.append({"ref": f"evidence_file:{fid}", "name": name or "a document", "content": content or ""})
         return out
 

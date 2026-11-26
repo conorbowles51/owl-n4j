@@ -79,6 +79,9 @@ ALLOWED: dict[str, tuple[int, str]] = {
     "services/elsewhere/financial.py": (5, "Elsewhere in the case: every ledger row with the record's check number, "
                                            "firm or place name, or a person's full name, in its dates; each row is "
                                            "judged by rule, so a ranked page would drop some"),
+    "services/mentions/data.py": (3, "Mentions (lx-mentions B): every message naming a mention's words in its window "
+                                     "and every document naming them, each judged by rule (a ranked page would drop "
+                                     "some); capped, and the check says 'more than' when the cap is hit"),
     "services/elsewhere/documents.py": (2, "Elsewhere in the case: every document naming the record's check "
                                           "numbers, amounts or people, judged by rule (a ranked page would drop "
                                           "some); the folded text Search uses"),

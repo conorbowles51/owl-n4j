@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timedelta
 
 from services.corroborate import model as M
+from services.mentions import data as D
 from services.mentions.kinds import OUTCOME_LABELS, SOURCES, VERDICT_LABELS
 
 AT_M = 100.0             # a position this precise can say "at"
@@ -368,6 +369,11 @@ def travel_spend_check(ctx):
                 "These do not name the place." if not who else "", [_ref(h, h["words"]) for h in hits])
 
 
+def _capped(items, cap):
+    """The items up to the cap, and how to say their number: "more than 200" when the cap was hit."""
+    return items[:cap], (f"more than {cap}" if len(items) > cap else str(len(items))), len(items) > cap
+
+
 def messages_check(ctx, words, days=3):
     ws = [w for w in words if len(w) >= 4]
     if not ws:
@@ -376,10 +382,12 @@ def messages_check(ctx, words, days=3):
                                     exclude_uid=ctx.c.get("record_uid"))
     if not hits:
         return _chk("messages", "nothing", f"No other message or e-mail within {days} days names {', '.join(f'“{w}”' for w in ws)}.")
+    hits, n, clipped = _capped(hits, D.COMM_CAP)
     em = [h for h in hits if h["kind"] == "email"]
     return _chk("messages", "fits_weakly" if em else "context",
-                f"{len(hits)} other message{'s' if len(hits) != 1 else ''} or e-mail{'s' if len(hits) != 1 else ''} within {days} days "
-                f"name {', '.join(f'“{w}”' for w in ws)}" + (f", {len(em)} of them e-mails" if em else "") + ".",
+                f"{n} other message{'s' if n != '1' else ''} or e-mail{'s' if n != '1' else ''} within {days} days "
+                f"name {', '.join(f'“{w}”' for w in ws)}" + (f", {len(em)} of {'the first ' + str(D.COMM_CAP) if clipped else 'them'} "
+                f"e-mails" if em else "") + ".",
                 "Naming the same thing is not the same as being the thing sent.",
                 [_ref(h, f"{h['kind']} · {_local(h['at'], ctx.zone)}") for h in hits])
 
@@ -393,17 +401,19 @@ def deleted_check(ctx, words):
     if not hits:
         return _chk("messages", "nothing", f"No message or e-mail on any phone in the case names {', '.join(f'“{w}”' for w in ws)}.",
                     "Nothing left fits a deletion, and fits nothing having existed.")
+    hits, _n, clipped = _capped(hits, D.COMM_CAP)   # deleted copies come first, so the cap never hides one
+    more = f" (the first {D.COMM_CAP} of more, deleted copies first)" if clipped else ""
     gone = [h for h in hits if h["deleted"]]
     kept = [h for h in hits if not h["deleted"]]
     refs = [_ref(h, f"{h['kind']} · {_local(h['at'], ctx.zone)}{' · deleted' if h['deleted'] else ''}") for h in gone + kept]
     if gone:
         return _chk("messages", "fits", f"{len(gone)} message{'s' if len(gone) != 1 else ''} or e-mail{'s' if len(gone) != 1 else ''} "
                     f"naming {', '.join(f'“{w}”' for w in ws)} {'are' if len(gone) != 1 else 'is'} marked deleted on a phone"
-                    + (f"; {len(kept)} {'are' if len(kept) != 1 else 'is'} still there." if kept else "."), "", refs, strong=True)
+                    + (f"; {len(kept)} {'are' if len(kept) != 1 else 'is'} still there{more}." if kept else f"{more}."), "", refs, strong=True)
     after = [h for h in kept if h["at"] > ctx.at]
     return _chk("messages", "context", f"{len(kept)} message{'s' if len(kept) != 1 else ''} or e-mail{'s' if len(kept) != 1 else ''} "
                 f"naming {', '.join(f'“{w}”' for w in ws)} are still on the phones" + (f", {len(after)} dated after this message" if after else "")
-                + ".", "A phone keeps a copy the sender's deletion does not reach.", refs)
+                + f"{more}.", "A phone keeps a copy the sender's deletion does not reach.", refs)
 
 
 def documents_check(ctx, words):
@@ -418,7 +428,10 @@ def documents_check(ctx, words):
         if d["name"] not in seen:
             seen.add(d["name"])
             uniq.append(d)
-    return _chk("documents", "context", f"{len(uniq)} document{'s' if len(uniq) != 1 else ''} name "
+    uniq, n, clipped = _capped(uniq, D.DOC_CAP)
+    if len(docs) > D.DOC_CAP and not clipped:   # the query was cut before copies of one name were folded together
+        n = f"at least {len(uniq)}"
+    return _chk("documents", "context", f"{n} document{'s' if n != '1' else ''} name "
                 f"{', '.join(f'“{w}”' for w in ws)}: " + ", ".join(d["name"] for d in uniq[:4]) + ("…" if len(uniq) > 4 else "") + ".",
                 "Read them for dates and names; Loupe does not decide what a document says.",
                 [_ref(d, d["name"]) for d in uniq])

@@ -379,3 +379,19 @@ def test_reading_a_phone_again_rechecks_the_mentions_it_already_holds(monkeypatc
     n = S._read_page(db, FakeData(), run, [t], PEOPLE, ZONE, [], None)
     assert n == 1 and added == []   # found again, counted, not stored twice
     assert stored.outcome == "cant_tell" and stored.checked_at is not None and seen == ["plan"]
+
+
+def test_a_capped_search_says_more_than():
+    """No silent truncation: when the message or document search is cut at its cap, the check says so."""
+    from services.mentions import data as Dm
+    sent = at(D, 21)
+    m = read("the Quarrow invoice goes out Friday", when=sent)[0]
+    many = [{"ref": f"phone_record:m{i}", "kind": "message", "at": sent - timedelta(hours=1), "body": "Quarrow", "deleted": False}
+            for i in range(Dm.COMM_CAP + 1)]
+    res = run(read("sent the Quarrow box over", when=sent)[0], FakeData(comms=many), sent)
+    msg = [c for c in res["checks"] if c["source"] == "messages"][0]
+    assert msg["text"].startswith(f"more than {Dm.COMM_CAP} other messages")
+    docs = [{"ref": f"evidence_file:d{i}", "name": f"quarrow-{i}.pdf", "content": "Quarrow"} for i in range(Dm.DOC_CAP + 1)]
+    res = run(m, FakeData(docs=docs), sent)
+    doc = [c for c in res["checks"] if c["source"] == "documents"][0]
+    assert doc["text"].startswith(f"more than {Dm.DOC_CAP} documents") and doc["refs_total"] == Dm.DOC_CAP
