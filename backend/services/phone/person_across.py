@@ -107,19 +107,39 @@ def contacts(rows, phones) -> list[list[int]]:
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
-    by_phone = defaultdict(list)
-    for i, r in enumerate(rows):
-        if r.sort_instant is not None:
-            by_phone[str(r.extraction_id)].append(i)
-    for a, b in combinations(sorted(by_phone), 2):
-        idx = by_phone[a] + by_phone[b]
-        evs = [SimpleNamespace(extraction_id=str(rows[i].extraction_id), kind=rows[i].kind, app=rows[i].app,
-                               at=rows[i].sort_instant, body=rows[i].body, d=rows[i].call_duration_s,
-                               direction=rows[i].direction) for i in idx]
-        for x, y in C.match_pairs(evs, a, b):
-            ra, rb = find(idx[x]), find(idx[y])
-            if ra != rb:
-                parent[rb] = ra
+    # Compare's rule pairs two copies only when they are on different phones, have the same kind and app family and
+    # are at most TAU_SECONDS apart, and then only with the same folded text; its counts of a text are per phone. So
+    # only rows with such a neighbour are folded, and matching inside each group of equal text gives exactly its pairs.
+    dated = sorted((i for i, r in enumerate(rows) if r.sort_instant is not None), key=lambda i: rows[i].sort_instant)
+    near = set()
+    tau = timedelta(seconds=C.TAU_SECONDS)
+    lo = 0
+    for hi, i in enumerate(dated):
+        while rows[dated[lo]].sort_instant < rows[i].sort_instant - tau:
+            lo += 1
+        ki = (rows[i].kind, C.family(rows[i].kind, rows[i].app), str(rows[i].extraction_id))
+        for j in dated[lo:hi]:
+            kj = (rows[j].kind, C.family(rows[j].kind, rows[j].app), str(rows[j].extraction_id))
+            if kj[:2] == ki[:2] and kj[2] != ki[2]:
+                near.update((i, j))
+    same = defaultdict(lambda: defaultdict(list))
+    texts = {}
+    for i in sorted(near):
+        r = rows[i]
+        texts[i] = C.match_text(r)
+        same[(r.kind, C.family(r.kind, r.app), texts[i])][str(r.extraction_id)].append(i)
+    for by_phone in same.values():
+        if len(by_phone) < 2:
+            continue
+        for a, b in combinations(sorted(by_phone), 2):
+            idx = by_phone[a] + by_phone[b]
+            evs = [SimpleNamespace(extraction_id=str(rows[i].extraction_id), kind=rows[i].kind, app=rows[i].app,
+                                   at=rows[i].sort_instant, body=rows[i].body, d=rows[i].call_duration_s,
+                                   direction=rows[i].direction) for i in idx]
+            for x, y in C.match_pairs(evs, a, b, texts=[texts[i] for i in idx]):
+                ra, rb = find(idx[x]), find(idx[y])
+                if ra != rb:
+                    parent[rb] = ra
     groups = defaultdict(list)
     for i in range(len(rows)):
         groups[find(i)].append(i)
@@ -240,6 +260,7 @@ def person_across(conn, case_id, keys, phones=None, with_keys=None, offset=0, li
     for e in scope:
         p = per[e]
         cards.append({"extraction_id": e, "label": lab(e), "owner": _owner_name(ctx, e), "is_own": e in own,
+                      "owner_key": (ctx.owner_keys(e) or [None])[0],
                       "saved_as": names.get(e, []), "messages": p["messages"], "calls": p["calls"],
                       "first": _iso(p["first"]), "last": _iso(p["last"]),
                       "conversations_href": crossings.conversations_scope(case_id, keys, zone=zone, phones=[e])[1]})

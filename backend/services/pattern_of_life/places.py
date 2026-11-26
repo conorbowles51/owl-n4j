@@ -508,10 +508,11 @@ def norm_bssid(v):
     return ":".join(s[i:i + 2] for i in range(0, 12, 2))
 
 
-def _bssid_evidence(conn, case_id):
-    """[(extraction_id, bssid, instant, record_uid)] for WirelessNetwork records with a BSSId and a time (6.3 step 1).
-    Only the BSSId field is read: the SSID never anchors."""
+def _bssid_evidence(conn, case_id, start=None, end=None):
+    """[(extraction_id, bssid, instant, record_uid)] for WirelessNetwork records with a BSSId and a time (6.3 step 1),
+    only those in [start, end) when given. Only the BSSId field is read: the SSID never anchors."""
     out = []
+    window = " AND a.instant_utc >= :a AND a.instant_utc < :b" if start is not None and end is not None else ""
     for e, bssid, inst, uid in conn.execute(text(
             "SELECT a.extraction_id, t.value, a.instant_utc, a.record_uid FROM pol_activity_event a "
             "JOIN phone_interpretation_state s ON s.extraction_id = a.extraction_id "
@@ -519,7 +520,8 @@ def _bssid_evidence(conn, case_id):
             "  t.record_uid = a.record_uid AND t.field_name = 'BSSId' AND t.value_index = 0 "
             "JOIN phone_extractions x ON x.id = a.extraction_id AND x.standing = 'active' "
             "WHERE a.case_id = :c AND a.record_type = 'WirelessNetwork' AND "
-            "a.time_field IN ('TimeStamp', 'LastConnection', 'LastAutoConnection')"), {"c": case_id}):
+            "a.time_field IN ('TimeStamp', 'LastConnection', 'LastAutoConnection')" + window),
+            {"c": case_id, "a": start, "b": end}):
         b = norm_bssid(bssid)
         if b:
             out.append((e, b, inst, uid))

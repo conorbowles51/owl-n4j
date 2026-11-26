@@ -146,9 +146,16 @@ def match(evs, a, b) -> set:
     return {i for pair in match_pairs(evs, a, b) for i in pair}
 
 
-def match_pairs(evs, a, b) -> list:
+def match_text(r) -> str:
+    """The text a record is matched on: a message's body after the search fold, spaces collapsed; empty for calls."""
+    from services.phone import fold as F
+    return " ".join((F.fold(r.body or "") if r.kind == "message" else "").split())
+
+
+def match_pairs(evs, a, b, texts=None) -> list:
     """``[(x, y)]``: index pairs of ``evs`` matched one to one across phones ``a`` and ``b`` (05 section 5.3.4), closest
-    in time first. Each group is sorted by time and only candidates inside the 120-second window are compared."""
+    in time first. Each group is sorted by time and only candidates inside the 120-second window are compared.
+    ``texts``: each record's folded text when the caller has folded it already (``match_text``)."""
     import bisect
     from collections import Counter, defaultdict
 
@@ -156,7 +163,7 @@ def match_pairs(evs, a, b) -> list:
     keyed = []
     for i, r in enumerate(evs):
         side = 0 if str(r.extraction_id) == a else 1
-        text = " ".join((F.fold(r.body or "") if r.kind == "message" else "").split())
+        text = texts[i] if texts is not None else " ".join((F.fold(r.body or "") if r.kind == "message" else "").split())
         keyed.append((i, side, family(r.kind, r.app), text))
     seen = Counter((side, fam, t) for _, side, fam, t in keyed if t)
     groups = defaultdict(lambda: ([], []))

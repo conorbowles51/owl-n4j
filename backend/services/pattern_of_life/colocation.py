@@ -108,11 +108,18 @@ def sweep_pairs(A, B, params=None):
     return out
 
 
-def _bssid_pairs(conn, case_id, ea, eb, start, end, p):
+def bssid_inputs(conn, case_id, start, end) -> tuple:
+    """The case's BSSID sightings in [start, end) and its anchored BSSIDs' radii: read once and shared by every pair
+    of a multi-phone read (``compute_pairs``); reading them costs about 15 s on a 14-phone case (measured 25 Nov)."""
     from services.pattern_of_life.places import _bssid_evidence
-    ev = [x for x in _bssid_evidence(conn, case_id) if start <= x[2] < end]
+    ev = [x for x in _bssid_evidence(conn, case_id, start, end) if start <= x[2] < end]
     anchors = {r[0]: r[1] for r in conn.execute(text(
         "SELECT bssid_norm, radius_m FROM pol_wifi_anchor WHERE case_id = :c AND status = 'anchored'"), {"c": case_id})}
+    return ev, anchors
+
+
+def _bssid_pairs(conn, case_id, ea, eb, start, end, p, pre=None):
+    ev, anchors = pre if pre is not None else bssid_inputs(conn, case_id, start, end)
     sa = [x for x in ev if str(x[0]) in ea]
     sb = [x for x in ev if str(x[0]) in eb]
     out = []
@@ -167,10 +174,18 @@ def cell_matches(A, B, window_s):
     return out
 
 
-def _cell_pairs(conn, ea, eb, start, end, p):
+def _cell_pairs(conn, ea, eb, start, end, p, cache=None):
+    def towers(exts):
+        if cache is None:
+            return _tower_obs(conn, exts, start, end)
+        out = []
+        for e in exts:   # each phone's towers in the window are read once for every pair it is in
+            if ("towers", str(e)) not in cache:
+                cache[("towers", str(e))] = _tower_obs(conn, [e], start, end)
+            out.extend(cache[("towers", str(e))])
+        return out
     out = []
-    for (kx, tx, ux, fx), (ky, ty, uy, fy) in cell_matches(_tower_obs(conn, ea, start, end),
-                                                        _tower_obs(conn, eb, start, end), p["cell_window_s"]):
+    for (kx, tx, ux, fx), (ky, ty, uy, fy) in cell_matches(towers(ea), towers(eb), p["cell_window_s"]):
         flags = ["broad"] + (["mcc_inferred"] if "mcc_inferred" in fx or "mcc_inferred" in fy else [])
         out.append(({"ref": "rec:%s" % ux, "start": tx}, {"ref": "rec:%s" % uy, "start": ty},
                     {"verdict": "compatible", "distance_m": None, "radii_sum_m": None,
@@ -184,6 +199,12 @@ def bluetooth_peers(conn, extraction_id, start, end):
     nature)]``. A peer's written name that is an address is compared as an address, otherwise as a name."""
     from services.phone import identifiers
     from services.phone_analysis import fields as FV
+    # a peer counts only with a connection time in the window: with none there, the phone's records are not read
+    if not conn.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM pol_activity_event WHERE extraction_id = :e AND record_type = "
+            "'DeviceConnectivity' AND instant_utc >= :a AND instant_utc < :b)"),
+            {"e": str(extraction_id), "a": start, "b": end}).scalar():
+        return []
     recs = {uid: v for uid, v in FV.field_values(conn, extraction_id, ("DeviceConnectivity",),
                                                  ("DeviceName", "ConnectivityMethod", "ConnectivityNature")).items()
             if "Bluetooth" in v["values"].get("ConnectivityMethod", ()) and v["values"].get("DeviceName")}
@@ -214,15 +235,19 @@ def _bt_item(peer, p):
             "tight": (not by_name) and r <= p["tight_radius_m"], "flags": flags, "basis": "bluetooth"}
 
 
-def _bluetooth_pairs(conn, ea, eb, start, end, p, not_compared=None):
+def _bluetooth_pairs(conn, ea, eb, start, end, p, not_compared=None, cache=None):
     """One phone's Bluetooth peer record whose name or address is the other phone's own Bluetooth identity
     (identities.own_bluetooth): ``compatible`` at that time, radius 30 m (04 8.4). Both directions are read.
     A phone's own name that is its factory default (identifiers.default_device_name) is not compared; each peer
     record that would have matched it is counted in ``not_compared["default_device_name"]``."""
     from services.phone.identifiers import default_device_name
     from services.phone.identities import device_models, own_bluetooth
-    own = own_bluetooth(conn, list(ea) + list(eb))
-    models = device_models(conn, [e for e in list(ea) + list(eb) if own.get(str(e))])
+    cache = {} if cache is None else cache
+    if "own" in cache:
+        own, models = cache["own"], cache["models"]
+    else:
+        own = own_bluetooth(conn, list(ea) + list(eb))
+        models = device_models(conn, [e for e in list(ea) + list(eb) if own.get(str(e))])
     out = []
     for side_from, side_to, a_is_peer in ((ea, eb, True), (eb, ea, False)):
         targets, defaults = {}, set()
@@ -235,7 +260,9 @@ def _bluetooth_pairs(conn, ea, eb, start, end, p, not_compared=None):
         if not targets and not defaults:
             continue
         for x in side_from:
-            for peer in bluetooth_peers(conn, x, start, end):
+            if ("peers", str(x)) not in cache:
+                cache[("peers", str(x))] = bluetooth_peers(conn, x, start, end)
+            for peer in cache[("peers", str(x))]:
                 if peer[2] in defaults and peer[2] not in targets and not_compared is not None:
                     not_compared["default_device_name"] = not_compared.get("default_device_name", 0) + 1
                 for cite in targets.get(peer[2], ()):
@@ -287,7 +314,7 @@ def create_run(conn, case_id, subj_a, subj_b, ea, eb, start, end, params, reques
     return rid
 
 
-def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
+def compute(conn, case_id, ea, eb, start, end, params, run_id=None, bssid=None, cache=None) -> tuple:
     """Every compared pair of two subjects' phones in [start, end) by the pair rule, without writing anything:
     ``(items, counts, episodes)``. ``execute_run`` stores exactly these; the agent reads them directly."""
     p = dict(DEFAULT_PARAMS, **(params or {}))
@@ -295,10 +322,10 @@ def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
     A = _observations(conn, ea, start, end, p["include_synced"])
     B = _observations(conn, eb, start, end, p["include_synced"])
     pairs = sweep_pairs(A, B, p)
-    pairs += _bssid_pairs(conn, case_id, set(ea), set(eb), start, end, p)
-    pairs += _cell_pairs(conn, ea, eb, start, end, p)
+    pairs += _bssid_pairs(conn, case_id, set(ea), set(eb), start, end, p, bssid)
+    pairs += _cell_pairs(conn, ea, eb, start, end, p, cache)
     not_compared = {}
-    pairs += _bluetooth_pairs(conn, ea, eb, start, end, p, not_compared)
+    pairs += _bluetooth_pairs(conn, ea, eb, start, end, p, not_compared, cache)
     items = []
     for n, (a, b, v) in enumerate(sorted(pairs, key=lambda x: (min(x[0]["start"], x[1]["start"]),
                                                                str(x[0].get("id") or x[0].get("ref")),
@@ -318,6 +345,21 @@ def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
             if f in COUNTED_FLAGS:
                 counts["flag:" + f] = counts.get("flag:" + f, 0) + 1
     return items, counts, episodes(items, p["episode_gap_s"])
+
+
+def compute_pairs(conn, case_id, phones, start, end, params=None) -> dict:
+    """Together and apart for every pair of ``phones`` in [start, end), by the one pair rule, without writing
+    anything: ``{(x, y): (items, counts, episodes)}`` for each pair in the order given. The case's BSSID sightings
+    are read once for all pairs."""
+    from itertools import combinations
+    from services.phone.identities import device_models, own_bluetooth
+    phones = [str(e) for e in phones]
+    pre = bssid_inputs(conn, case_id, start, end)
+    own = own_bluetooth(conn, phones)
+    # each phone's Bluetooth peers in the window are read once, not once per pair it is in
+    cache = {"own": own, "models": device_models(conn, [e for e in phones if own.get(e)])}
+    return {(x, y): compute(conn, case_id, [x], [y], start, end, params, bssid=pre, cache=cache)
+            for x, y in combinations(phones, 2)}
 
 
 def execute_run(conn, run_id) -> dict:

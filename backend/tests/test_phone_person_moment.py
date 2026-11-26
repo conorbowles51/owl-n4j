@@ -137,3 +137,83 @@ def test_moment_lanes_and_records_on_every_phone(engine):
     assert out["summary"].startswith("2 records in this window on 2 phones.")
     counts = {p["extraction_id"]: p["counts"]["messages"] for p in out["phones"]}
     assert counts == {x: 1, y: 0, z: 2}
+
+
+@pytest.fixture
+def api(engine):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+
+    from postgres.models.enums import GlobalRole
+    from postgres.models.user import User
+    from postgres.session import get_db
+    from routers.phones import router
+    from routers.users import get_current_db_user
+    with engine.begin() as c:
+        case, x, y, z = _case(c)
+        owner = c.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"), {"c": case}).scalar()
+        email = c.execute(text("SELECT email FROM users WHERE id = :u"), {"u": owner}).scalar()
+    Session = sessionmaker(bind=engine)
+    app = FastAPI()
+    app.include_router(router)
+
+    def db():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+    app.dependency_overrides[get_db] = db
+    app.dependency_overrides[get_current_db_user] = lambda: User(id=owner, email=email, name="synthetic",
+                                                                 global_role=GlobalRole.user)
+    with TestClient(app) as client:
+        yield client, str(case), x, z
+
+
+def test_routes_answer_and_refuse_in_plain_words(api):
+    client, case, x, z = api
+    r = client.get("/api/phones/person-across", params={"case_id": case, "people": DORIAN, "phones": "%s,%s" % (x, z)})
+    assert r.status_code == 200, r.text
+    assert r.json()["records_total"] == 5 and len(r.json()["phones"]) == 2
+    r = client.get("/api/phones/person-across", params={"case_id": case, "people": DORIAN, "only": "nonsense"})
+    assert r.status_code == 422 and r.json()["detail"].startswith("Unknown list")
+    r = client.get("/api/phones/person-across", params={"case_id": case, "people": DORIAN,
+                                                        "phones": "00000000-0000-0000-0000-000000000000"})
+    assert r.status_code == 404
+    r = client.get("/api/phones/moment", params={"case_id": case, "from": T0.isoformat(),
+                                                 "to": (T0 + timedelta(hours=3)).isoformat()})
+    assert r.status_code == 200, r.text
+    assert len(r.json()["pairs"]) == 3
+    r = client.get("/api/phones/moment", params={"case_id": case, "from": T0.isoformat(),
+                                                 "to": (T0 + timedelta(days=9)).isoformat()})
+    assert r.status_code == 422 and r.json()["detail"] == "Choose a window of 7 days or less."
+
+
+def test_every_pair_reads_each_phone_once(engine, monkeypatch):
+    """25 Nov: 91 pairs on a 14-phone case took 23 minutes because each pair re-read the case's Wi-Fi sightings and
+    both phones' towers and Bluetooth peers. Every pair is still compared; each read happens once per window."""
+    from services.pattern_of_life import colocation as CO
+    calls = {"towers": 0, "bssid": 0}
+    real_t, real_b = CO._tower_obs, CO.bssid_inputs
+    monkeypatch.setattr(CO, "_tower_obs", lambda *a, **k: (calls.__setitem__("towers", calls["towers"] + 1), real_t(*a, **k))[1])
+    monkeypatch.setattr(CO, "bssid_inputs", lambda *a, **k: (calls.__setitem__("bssid", calls["bssid"] + 1), real_b(*a, **k))[1])
+    with engine.begin() as c:
+        case, x, y, z = _case(c)
+        out = CO.compute_pairs(c, case, [x, y, z], T0, T0 + timedelta(hours=3))
+    assert list(out) == [(x, y), (x, z), (y, z)]
+    assert calls == {"towers": 3, "bssid": 1}
+
+
+def test_only_rows_with_a_neighbour_on_another_phone_are_folded(monkeypatch):
+    """A person with 21,886 messages on 14 phones: folding every text for every pair of phones took 44.6 s."""
+    calls = []
+    real = C.match_text
+    monkeypatch.setattr(C, "match_text", lambda r: (calls.append(r.body), real(r))[1])
+    r = (lambda e, t, body: SimpleNamespace(extraction_id=e, kind="message", app="WhatsApp", sort_instant=T0 + timedelta(
+        seconds=t), body=body, call_duration_s=None, direction="outgoing" if e == "a" else "incoming", event_uid=body))
+    rows = [r("a", 0, "hello there friend"), r("b", 3, "hello there friend"), r("a", 5000, "far from anything else")]
+    groups = PA.contacts(rows, ["a", "b"])
+    assert sorted(map(sorted, groups)) == [[0, 1], [2]]
+    assert sorted(calls) == ["hello there friend", "hello there friend"]

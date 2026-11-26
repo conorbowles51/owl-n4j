@@ -14,7 +14,6 @@ show single records); ``STRIP_SLOTS`` = 12 slots per strip, as the design.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from itertools import combinations
 from types import SimpleNamespace
 
 from sqlalchemy import text
@@ -138,8 +137,7 @@ def moment(conn, case_id, start: str, end: str, phones=None) -> dict:
                        "calls": sum(1 for x in comm if x["kind"] == "call"), "places": len(pl), "use": len(use)}})
 
     pairs = []
-    for x, y in combinations(scope, 2):
-        _, counts, eps = colocation.compute(conn, case_id, [x], [y], a, b, None)
+    for (x, y), (_, counts, eps) in colocation.compute_pairs(conn, case_id, scope, a, b).items():
         pairs.append({"phones": [x, y], "strip": strip(eps, a, b),
                       "episodes": [{"kind": ep["kind"], "start": ep["start"].isoformat(), "end": ep["end"].isoformat(),
                                     "breadth": ep.get("breadth"), "items": ep["items"]} for ep in eps],
@@ -218,7 +216,7 @@ def next_steps(out, lab, a, b) -> list[dict]:
         g0, g1 = datetime.fromisoformat(g["start"]), datetime.fromisoformat(g["end"])
         steps.append({"code": "search_gap", "title": "Find where %s was from %s to %s" % (
             who, hm(g0, a, b), hm(g1, a, b)),
-            "why": "%s was not recording then. Other phones, payments, documents and the timeline may place them."
+            "why": "%s was not recording then. The other phones and the payments in that time may place them."
             % p["label"], "action": "Search that time", "from": g["start"], "to": g["end"]})
     dels = [r for r in out["records"] if r["deleted_on"]]
     if dels:
