@@ -291,7 +291,8 @@ def _file_items(conn, case_id, q, exact, phones, offset, limit, ctx):
                     "where": "File on the phone" + (" (%s)" % r.category if r.category else ""),
                     "snippet": S.snippet(name, q, exact) or {"before": "", "match": "", "after": name},
                     "folder": path[:-len(name)].rstrip("/") or None, "file_uid": str(r.file_uid),
-                    "deleted": S._is_deleted(r.deleted_state), "record_uid": None, "time": None, "instant": None,
+                    "deleted": S._is_deleted(r.deleted_state), "record_uid": None, "evidence_file_id": None,
+                    "time": None, "instant": None,
                     "open": {"screen": "media", "params": {"file_uid": str(r.file_uid),
                                                            "extraction_id": str(r.extraction_id)}}})
     return out

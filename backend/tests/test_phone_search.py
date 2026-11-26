@@ -225,3 +225,21 @@ def test_the_hits_day_is_its_day_in_the_zone_the_times_are_shown_in(world):
     assert start <= at <= end and timedelta(hours=22) < end - start < timedelta(hours=26)
     assert start.astimezone(ZoneInfo(day["zone"])).time().isoformat() == "00:00:00"
     assert start.tzinfo == timezone.utc
+
+
+# the fields the screen's hit schema requires (frontend_v2/src/features/search/api.ts HitSchema: present, null
+# allowed); a hit without one fails the whole reply there ("The search could not be run"), as file hits did on Phone
+# reference 1 (26 Nov)
+HIT_REQUIRED = ("kind", "title", "snippet", "record_uid", "evidence_file_id")
+
+
+def test_every_hit_of_every_kind_carries_the_fields_the_screen_requires(world):
+    out = _search(world, "pell")
+    kinds = {g["kind"] for g in out["groups"]}
+    assert {"messages", "contacts", "web", "typed_words", "files"} <= kinds
+    with world["engine"].connect() as c:
+        pages = [P.kind_page(c, world["case"], "pell", k, limit=50)["items"] for k in kinds]
+    for items in [g["items"] for g in out["groups"]] + pages:
+        for hit in items:
+            missing = [k for k in HIT_REQUIRED if k not in hit]
+            assert not missing, (hit["kind"], missing)
