@@ -18,7 +18,7 @@ const PILL_CLASS: Record<Pill, string> = {
   "Ruled out": "bg-status-success-soft text-status-success",
   "Counts for less": "bg-status-warning-soft text-status-warning",
   "Not known": "bg-status-neutral-soft text-status-neutral",
-  "Did not arise": "bg-muted text-muted-foreground",
+  "Did not arise": "border text-muted-foreground",
 }
 const CELL_CLASS: Record<CellState, string> = {
   present: "bg-status-success",
