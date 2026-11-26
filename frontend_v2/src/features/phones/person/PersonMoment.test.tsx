@@ -121,6 +121,9 @@ describe("Around a moment", () => {
     expect(await screen.findByText(/1 record in this window on 1 phone/)).toBeInTheDocument()
     expect(screen.getByRole("img", { name: /Phone 1: 1 messages.*not recording 09:40 to 10:50/ })).toBeInTheDocument()
     expect(screen.getByRole("img", { name: "Phone 1 and Phone 2: together 09:00 to 10:00 (UTC)." })).toBeInTheDocument()
+    // stacked under their labels on a narrow screen, a lane and a strip keep their height: flex-1 there would set it to 0
+    for (const el of [screen.getByRole("img", { name: /^Phone 1: / }), screen.getByRole("img", { name: /^Phone 1 and Phone 2/ })])
+      expect(el.className.split(" ")).not.toContain("flex-1")
     expect(screen.getByText("No records until 10:50: the phone was not recording")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Show the whole day" })).toHaveAttribute("href", expect.stringContaining("from=2024-03-12T00%3A00%3A00%2B00%3A00"))
     fireEvent.click(screen.getByRole("button", { name: "Later" }))

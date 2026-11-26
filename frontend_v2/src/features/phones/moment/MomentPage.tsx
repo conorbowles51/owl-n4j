@@ -114,7 +114,7 @@ export function MomentPage() {
                 <div className="text-[13px] font-semibold"><PhoneTag index={indexOf(p.extraction_id)} label={p.label} /></div>
                 <div className="text-xs text-muted-foreground">{p.owner ?? "Owner not known"}</div>
               </div>
-              <div className="relative h-14 w-full flex-1 rounded-lg border bg-card" role="img"
+              <div className="relative h-14 w-full rounded-lg sm:flex-1 border bg-card" role="img"
                 aria-label={`${p.label}: ${fmt(p.counts.messages)} messages, ${fmt(p.counts.calls)} calls, ${fmt(p.counts.places)} places, ${fmt(p.counts.use)} uses of the phone${p.not_recording.length ? `; not recording ${p.not_recording.map((g) => `${clock(g.start)} to ${clock(g.end)}`).join(", ")}` : ""}`}>
                 {p.not_recording.map((g) => (
                   <span key={g.start} className="absolute inset-y-0 rounded" style={{ left: pct(g.start), width: `calc(${pct(g.end)} - ${pct(g.start)})`, ...HATCH }} title={`Not recording ${clock(g.start)} to ${clock(g.end)}`} />
@@ -126,7 +126,7 @@ export function MomentPage() {
           {d.pairs.map((pr) => (
             <div key={pr.phones.join(",")} className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
               <div className="shrink-0 text-xs text-muted-foreground sm:w-[168px]">{label(pr.phones[0])} and {label(pr.phones[1])}</div>
-              <div className="grid h-3 w-full flex-1 gap-0.5" style={{ gridTemplateColumns: `repeat(${pr.strip.length}, 1fr)` }} role="img" aria-label={pr.words}>
+              <div className="grid h-3 w-full gap-0.5 sm:flex-1" style={{ gridTemplateColumns: `repeat(${pr.strip.length}, 1fr)` }} role="img" aria-label={pr.words}>
                 {pr.strip.map((s) => <span key={s.start} className={`block rounded-sm ${STRIP_CLASS[s.state]}`} title={`${clock(s.start)} to ${clock(s.end)}: ${d.strip_words[s.state]}`} />)}
               </div>
             </div>
