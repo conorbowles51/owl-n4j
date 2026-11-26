@@ -292,10 +292,12 @@ def _first_page(result: dict | None) -> dict | None:
     if not result:
         return result
     out = dict(result)
-    out["paging"] = {"candidates": {"total": len(result["candidates"]), "shown": min(PAGE, len(result["candidates"]))},
-                     "no_links": {"total": len(result["no_links"]), "shown": min(PAGE, len(result["no_links"]))}, "page": PAGE}
-    out["candidates"] = result["candidates"][:PAGE]
-    out["no_links"] = result["no_links"][:PAGE]
+    # a run still working may have saved its corroboration before the link analysis: page what is there
+    cands, none = result.get("candidates") or [], result.get("no_links") or []
+    out["paging"] = {"candidates": {"total": len(cands), "shown": min(PAGE, len(cands))},
+                     "no_links": {"total": len(none), "shown": min(PAGE, len(none))}, "page": PAGE}
+    out["candidates"] = cands[:PAGE]
+    out["no_links"] = none[:PAGE]
     return out
 
 
@@ -306,7 +308,7 @@ def rows(db, case_id, run_id, section: str, offset: int = 0, limit: int = PAGE) 
     row = db.get(RelationRun, uuid.UUID(str(run_id)))
     if row is None or str(row.case_id) != str(case_id) or not row.result:
         raise LookupError("That run is not in this case.")
-    everything = row.result[section]
+    everything = row.result.get(section) or []
     page = everything[max(0, offset):max(0, offset) + max(1, min(limit, 500))]
     return {"section": section, "total": len(everything), "offset": max(0, offset), "returned": len(page),
             "next_offset": offset + len(page) if offset + len(page) < len(everything) else None, "rows": page}

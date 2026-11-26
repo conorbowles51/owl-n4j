@@ -107,3 +107,13 @@ def test_the_verdicts_numbers_name_their_link_so_they_read_against_the_right_day
                         "none of the 74 ordinary days)."), got
     lvl = {"key": "possible", "rule": "one_kind", "separating_kinds": ["contact"]}
     assert "(Ann and Bob in contact through a third number: 5 of 5" in L.sentence(lvl, [row], [row], comp, [{}] * 5, [], [])
+
+
+def test_a_run_still_working_can_be_read_while_its_answer_is_partial():
+    """Live 26 Nov 04:06: the Corroborate page polls the answer right after Ask; the run had saved only its
+    corroboration ({"corroboration", "partial"}), and the run view failed with KeyError 'candidates' (500)."""
+    from services.relations import runs
+    out = runs._first_page({"corroboration": {"level": {"name": "Possible link"}}, "partial": True})
+    assert out["candidates"] == [] and out["no_links"] == [] and out["paging"]["candidates"]["total"] == 0
+    assert out["corroboration"]["level"]["name"] == "Possible link" and out["partial"] is True
+    json.dumps(out)
