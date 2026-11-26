@@ -452,6 +452,7 @@ def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated
     lists: list[list[dict]] = []
     meaning_all: list[dict] = []
     words_all: list[dict] = []
+    message_word_hits = 0
     if areas:
         # the question itself: meaning and words; dated records inside the dates asked for, messages and passages not
         m, w, n = _embedded(conn, case_id, question, undated, embed_query=embed, collections=collections, phone=phone,
@@ -481,6 +482,19 @@ def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated
                                  tag=" (name tie: %s)" % e["term"], exact=True)
             tied.append(ew)
         lists.append(_take_turns(tied))
+        # phone messages holding words a message answering the question would hold (``message_words``, made by the
+        # model from the question alone): one list of its own, beside the question's own words
+        mw = understood.get("message_words") or []
+        if mw and "phone_text" in areas:
+            _, ww, _ = _embedded(conn, case_id, " ".join('"%s"' % x if " " in x else x for x in mw), ["phone_text"],
+                                 embed_query=embed, collections=None, meaning=False, phone=phone, person=person,
+                                 tag=" (message words)", exact=True)
+            lists.append(ww)
+            # each can climb past a candidate the search had without it, never more than one place each: the ranking
+            # scores that many more, so every candidate it scored before is still scored
+            message_word_hits = len(ww)
+            searched.append("phone messages by words a message answering the question would hold, suggested by the "
+                            "model from the question alone: %s" % ", ".join(mw))
         if own:
             lists.append(_own_phone_list(conn, case_id, question, own, person=person))
             searched += ["messages on %s as %s's own phone (%s; not confirmed by a person)" % (
@@ -517,4 +531,5 @@ def _gather_lists(conn, case_id, question, understood, kinds, areas, only, dated
             not_searched.append("%s (not asked for)" % k)
     lists = [_merge_meaning(meaning_all), _merge_words(words_all)] + lists
     return {"candidates": _rrf([l for l in lists if l]), "searched": searched, "not_searched": not_searched,
-            "notes": notes, "meaning_search": meaning_ok, "documents_by_words": doc_words, "clock": clock}
+            "notes": notes, "meaning_search": meaning_ok, "documents_by_words": doc_words, "clock": clock,
+            "message_word_hits": message_word_hits}

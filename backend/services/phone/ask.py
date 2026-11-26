@@ -256,7 +256,10 @@ def gather(conn, case_id, question: str, phones: list[dict], *, model_call=None,
         sources.append({"title": unit.get("title") or c.get("title") or "", "text": body, "records": keep,
                         "kind": "search", "grade": c.get("grade")})
     more_found = max(0, len(r["candidates"]) - len(sources) - left_out_phone)
-    words = message_words(question, model_call) if rank else []
+    # the case search made them already when it ranked (one model call, not two)
+    words = r["understood"].get("message_words") if "message_words" in r["understood"] else (
+        message_words(question, model_call) if rank else [])
+    words = words or []
     word_windows = 0
     if words:
         from services.phone import chat_retrieval

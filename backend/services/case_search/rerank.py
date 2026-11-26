@@ -186,13 +186,15 @@ def best_start(body: str, terms: list[str], limit: int, title: str | None = None
 
 
 def rerank(question: str, candidates: list[dict[str, Any]], *, terms: list[str], windows: list[dict] | None = None,
-           model_call: Callable[[str], str] | None = None) -> dict[str, Any]:
+           model_call: Callable[[str], str] | None = None, extra: int = 0) -> dict[str, Any]:
     """Adds ``score`` (0-10 or None) and ``reason`` to each candidate in place. Returns ``{"reranked", "scored",
-    "not_scored", "model", "note"}``."""
+    "not_scored", "model", "note"}``. ``extra``: candidates scored beyond ``MAX_CANDIDATES`` (one per hit of a list
+    that joined the search, so no candidate scored without that list goes unscored with it)."""
     if not candidates:
         return {"reranked": False, "scored": 0, "not_scored": 0, "model": None, "note": None}
     call = model_call if model_call is not None else default_model_call()
-    head, tail = candidates[:MAX_CANDIDATES], candidates[MAX_CANDIDATES:]
+    limit = MAX_CANDIDATES + max(0, int(extra or 0))
+    head, tail = candidates[:limit], candidates[limit:]
     for c in candidates:
         c.setdefault("score", None)
         c.setdefault("reason", None)
@@ -244,7 +246,7 @@ def rerank(question: str, candidates: list[dict[str, Any]], *, terms: list[str],
         note = "The ranking model did not answer (%s), so results are in search order and not graded." % failures[0]
     elif not_scored:
         note = ("%d of %d results were not scored by the ranking model%s; they are listed after the scored ones, in "
-                "search order." % (not_scored, len(candidates), (" (more than %d found)" % MAX_CANDIDATES)
+                "search order." % (not_scored, len(candidates), (" (more than %d found)" % limit)
                                    if tail else ""))
     return {"reranked": scored > 0, "scored": scored, "not_scored": not_scored,
             "model": getattr(call, "model", None), "note": note}

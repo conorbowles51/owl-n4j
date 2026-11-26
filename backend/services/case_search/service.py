@@ -156,12 +156,27 @@ def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], areas=None, 
     call = model_call
     if (rank or phrase) and call is None:
         call = R.default_model_call()
+    # words a phone message answering the question would hold (the model sees the question only, never phone text):
+    # phone text has no embeddings while no phone allows outside services, so the meaning pass finds no message and
+    # the question's own words are all a word search would find ("Did anyone lose their job?" never found "they let
+    # me go today", demo case, 26 Nov). Made beside the other phrasings, not after them.
+    f_words = None
+    if rank and call is not None and not exact and "phones" in kinds and (not areas or "phone_text" in areas):
+        from concurrent.futures import ThreadPoolExecutor
+        from services.phone.ask import message_words
+        words_pool = ThreadPoolExecutor(max_workers=1)
+        t_words = time.time()
+        f_words = words_pool.submit(message_words, question, call)
+        words_pool.shutdown(wait=False)
     if phrase and call is not None:
         t0 = time.time()
         u["phrasings"], why = R.phrasings(question, model_call=call)
         clock["phrasings"] = round(time.time() - t0, 2)
         if why:
             notes.append(why)
+    if f_words is not None:
+        u["message_words"] = f_words.result()
+        clock["message_words"] = round(time.time() - t_words, 2)
     t0 = time.time()
     got = net.gather(conn, case_id, question, u, kinds, areas=areas, phone=phone, person=person, date_from=date_from,
                      date_to=date_to, embed_query=embed_query, collections=collections, exact=exact)
@@ -179,7 +194,8 @@ def ranked(conn, case_id, question: str, *, kinds: tuple[str, ...], areas=None, 
             ranking["note"] = "No ranking model is configured, so results are in search order and not graded."
         else:
             t0 = time.time()
-            ranking = R.rerank(question, cands, terms=u["terms"] + [e["term"] for e in u["expansions"]],
+            ranking = R.rerank(question, cands, terms=u["terms"] + [e["term"] for e in u["expansions"]]
+                               + list(u.get("message_words") or []), extra=got.get("message_word_hits") or 0,
                                windows=u["windows"], model_call=call)
             clock["rerank"] = round(time.time() - t0, 2)
     if ranking.get("note"):
@@ -241,7 +257,8 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
         keep = ("strong",) if min_grade == "strong" else ("strong", "moderate")
         pool = [c for c in cands if c["grade"] in keep]
         below = len(cands) - len(pool)
-    page_terms = r["understood"]["terms"] + [e["term"] for e in r["understood"]["expansions"]]
+    page_terms = r["understood"]["terms"] + [e["term"] for e in r["understood"]["expansions"]] + list(
+        r["understood"].get("message_words") or [])
     hits, used, whole = [], 0, True
     t0 = time.time()
     for i, c in enumerate(pool[offset:offset + limit]):
@@ -284,8 +301,9 @@ def search(conn, case_id, question: str, *, kinds: Iterable[str] | None = None, 
         "why_empty": None, "meaning_search": r["meaning_search"], "reranked": bool(r["ranking"].get("reranked")),
         "ranking_model": r["ranking"].get("model"), "duplicates_removed": r["duplicates_removed"],
         "seconds": seconds,
-        "understood": {k: r["understood"][k] for k in ("terms", "names", "expansions", "windows", "zone",
-                                                       "phrasings")},
+        "understood": {**{k: r["understood"][k] for k in ("terms", "names", "expansions", "windows", "zone",
+                                                          "phrasings")},
+                       "message_words": r["understood"].get("message_words") or []},
     }
     if not pool:
         res["why_empty"] = why_empty(res, below=below)

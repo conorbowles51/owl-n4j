@@ -240,8 +240,9 @@ def test_paging_reads_the_cached_order_without_asking_the_model_again(fake_gathe
         return _scoring([1, 2, 3, 4])(prompt)
     S._cache.clear()
     S.search(None, "case-x", "same question", limit=2, phrase=False, model_call=model)
+    first = len(calls)  # the ranking, and the words a phone message would hold
     S.search(None, "case-x", "same question", offset=2, limit=2, phrase=False, model_call=model)
-    assert len(calls) == 1
+    assert first == 2 and len(calls) == first
 
 
 # ---- whole units ----------------------------------------------------------------------------------------------------
@@ -628,3 +629,90 @@ def test_a_reason_is_checked_against_the_whole_record_shown(fake_gather, monkeyp
         return json.dumps({"scores": [{"i": 1, "score": 9, "reason": "Cash deposit of 800.00 at branch 014 Fenwick"}]})
     r = S.search(None, "case", "cash deposits at a branch", phrase=False, model_call=model, use_cache=False)
     assert r["hits"][0]["reason"] == "Cash deposit of 9,800.00 at branch 014 Fenwick"
+
+
+def test_phone_messages_are_found_by_words_a_message_answering_the_question_would_hold(monkeypatch):
+    """Fails on the code before: with no phone text embedded (no phone allows outside services), the case search found
+    phone messages only by the question's own words ("Did anyone lose their job?" never found "they let me go today",
+    demo case, 26 Nov). The model suggests the words from the question alone; it never sees phone text."""
+    from services.embed_all import search as ES
+    asked = []
+
+    def word_hits(conn, case_id, terms, areas, **kw):
+        folded = [t["term"] if isinstance(t, dict) else t for t in terms]
+        asked.append((folded, list(areas)))
+        if "let me go" in folded and areas == ["phone_text"]:
+            return [{"area": "phone_text", "key": "w1", "title": "Phone 3", "cite": "", "text": "they let me go today",
+                     "words": 1, "person": "", "as_read": False}]
+        return []
+    monkeypatch.setattr(ES, "word_hits", word_hits)
+    monkeypatch.setattr(ES, "meaning_hits", lambda *a, **k: [])
+    monkeypatch.setattr(S, "understand", lambda conn, case, q: {
+        "terms": ["lose", "job"], "names": [], "expansions": [], "windows": [], "zone": "UTC", "notes": [],
+        "own_phones": [], "phrasings": []})
+    monkeypatch.setattr(S, "file_hashes", lambda conn, cands: {})
+    monkeypatch.setattr(S.units, "build", lambda conn, case, h, terms: dict(h, unit="record", chars_not_shown=0))
+    prompts = []
+
+    def model(prompt):
+        prompts.append(prompt)
+        if "words or short phrases a message answering it would contain" in prompt:
+            return json.dumps({"words": ["let me go", "fired"]})
+        return json.dumps({"scores": []})
+    res = S.search(None, "c", "Did anyone lose their job?", kinds=("phones",), phrase=False, model_call=model,
+                   embed_query=lambda q: [0.0], collections=(object(), object()), use_cache=False)
+    assert [h["text"] for h in res["hits"]] == ["they let me go today"]
+    assert res["understood"]["message_words"] == ["let me go", "fired"]
+    assert any("suggested by the model from the question alone: let me go, fired" in s for s in res["searched"])
+    words_prompt = next(p for p in prompts if "would contain" in p)
+    assert "they let me go today" not in words_prompt and "Did anyone lose their job?" in words_prompt
+
+
+def test_exact_words_or_no_ranking_model_ask_for_no_message_words(monkeypatch):
+    from services.embed_all import search as ES
+    monkeypatch.setattr(ES, "word_hits", lambda *a, **k: [])
+    monkeypatch.setattr(ES, "meaning_hits", lambda *a, **k: [])
+    monkeypatch.setattr(S, "understand", lambda conn, case, q: {
+        "terms": ["job"], "names": [], "expansions": [], "windows": [], "zone": "UTC", "notes": [], "own_phones": [],
+        "phrasings": []})
+    monkeypatch.setattr(S, "file_hashes", lambda conn, cands: {})
+    prompts = []
+    S.search(None, "c", "job", kinds=("phones",), phrase=False, rank=False, model_call=lambda p: prompts.append(p) or "{}",
+             embed_query=lambda q: [0.0], collections=(object(), object()), use_cache=False)
+    S.search(None, "c", "job", kinds=("phones",), phrase=False, exact=True,
+             model_call=lambda p: prompts.append(p) or json.dumps({"scores": []}),
+             embed_query=lambda q: [0.0], collections=(object(), object()), use_cache=False)
+    assert not any("would contain" in p for p in prompts)
+
+
+def test_every_candidate_scored_without_the_message_words_is_still_scored_with_them(monkeypatch):
+    """Fails on the code before: the message-word list's hits joined the 60 candidates the model scores and pushed as
+    many others out of them, unscored and listed after every scored one (a loss for a question that had them)."""
+    from services.embed_all import search as ES
+    others = [{"area": "ledger", "key": "l%d" % i, "title": "", "cite": "", "text": "row %d" % i, "words": 1, "person": "",
+               "as_read": False} for i in range(R.MAX_CANDIDATES)]
+    msgs = [{"area": "phone_text", "key": "m%d" % i, "title": "", "cite": "", "text": "they let me go %d" % i, "words": 1,
+             "person": "", "as_read": False} for i in range(5)]
+
+    def word_hits(conn, case_id, terms, areas, **kw):
+        folded = [t["term"] if isinstance(t, dict) else t for t in terms]
+        if areas == ["phone_text"]:
+            return [dict(m) for m in msgs] if "let me go" in folded else []
+        return [dict(h) for h in others] if "ledger" in areas else []
+    monkeypatch.setattr(ES, "word_hits", word_hits)
+    monkeypatch.setattr(ES, "meaning_hits", lambda *a, **k: [])
+    monkeypatch.setattr(S, "understand", lambda conn, case, q: {
+        "terms": ["job"], "names": [], "expansions": [], "windows": [], "zone": "UTC", "notes": [], "own_phones": [],
+        "phrasings": []})
+    monkeypatch.setattr(S, "file_hashes", lambda conn, cands: {})
+
+    def model(prompt):
+        if "would contain" in prompt:
+            return json.dumps({"words": ["let me go"]})
+        n = len([l for l in prompt.splitlines() if l.startswith("[") and "] (" in l])
+        return json.dumps({"scores": [{"i": k + 1, "score": 5, "reason": "r"} for k in range(n)]})
+    r = S.ranked(None, "c", "Did anyone lose their job?", kinds=("phones", "ledger"), phrase=False, model_call=model,
+                 embed_query=lambda q: [0.0], collections=(object(), object()), use_cache=False)
+    scored = {c["key"] for c in r["candidates"] if c.get("score") is not None}
+    assert {h["key"] for h in others} <= scored and {m["key"] for m in msgs} <= scored
+    assert r["ranking"]["not_scored"] == 0
