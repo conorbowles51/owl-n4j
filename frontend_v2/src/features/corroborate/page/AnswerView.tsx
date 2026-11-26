@@ -123,7 +123,7 @@ function DayByDay({ c, caseId, onOpen }: { c: Corroboration; caseId: string; onO
       </div>
       {d.ordinary && d.ordinary.of > 0 && (
         <div className="space-y-2">
-          <p className="text-sm font-semibold">For comparison: {d.ordinary.of.toLocaleString("en-US")} {d.ordinary.noun}{d.ordinary.span ? ` · ${d.ordinary.span}` : ""}</p>
+          <p className="text-sm font-semibold">For comparison: {d.relation ? `“${d.relation.word}” on ` : ""}{d.ordinary.of.toLocaleString("en-US")} {d.ordinary.noun}{d.ordinary.span ? ` · ${d.ordinary.span}` : ""}</p>
           <p className="text-sm">{d.ordinary.words}.</p>
           <ul className="flex flex-wrap gap-1" aria-label={`The ${d.ordinary.noun}`}>
             {d.ordinary.cells.map((x) => (

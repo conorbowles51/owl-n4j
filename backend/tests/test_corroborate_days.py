@@ -92,3 +92,18 @@ def test_people_a_question_can_name_include_phone_users_without_a_dossier():
     assert [p["dossier"] for p in got] == sorted((p["dossier"] for p in got), reverse=True)  # named people first
     route = next(r for r in R.router.routes if r.path == "/api/cases/{case_id}/corroborate/people")
     assert require_case_view in {d.dependency for d in route.dependencies}
+
+
+def test_the_verdicts_numbers_name_their_link_so_they_read_against_the_right_day_count():
+    """Live 26 Nov: "Strong link: … (5 of 5 instances asked about, none of the 74 ordinary days)" sat above a strip of
+    "104 ordinary days, in contact on 3" for another link, and read as a contradiction."""
+    from services.corroborate import levels as L
+    comp = {"incident_noun": "instances asked about", "ordinary_noun": "ordinary days", "words": "w"}
+    row = {"label": "Ann and Bob in contact through a third number", "link_kind": "contact", "weight": "full",
+           "incident": {"present": 5, "of": 5}, "ordinary": {"present": 0, "of": 74}}
+    lvl = {"key": "strong", "rule": "kinds_repeat_rare", "separating_kinds": ["contact"]}
+    got = L.sentence(lvl, [row], [row], comp, [{}] * 5, [], [])
+    assert got.endswith("(strongest, Ann and Bob in contact through a third number: 5 of 5 instances asked about, "
+                        "none of the 74 ordinary days)."), got
+    lvl = {"key": "possible", "rule": "one_kind", "separating_kinds": ["contact"]}
+    assert "(Ann and Bob in contact through a third number: 5 of 5" in L.sentence(lvl, [row], [row], comp, [{}] * 5, [], [])

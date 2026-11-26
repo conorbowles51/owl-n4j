@@ -201,7 +201,8 @@ def sentence(level: dict, full_sep, present_rows, comparison, incidents, missing
     if key in ("strong", "probable") and full_sep:
         best = max(full_sep, key=lambda r: (r["incident"]["present"], -r["ordinary"]["present"]))
         lead = f"{LEVELS[key]}: {_join(kinds)} agree"
-        tail = f" ({_counts_words(best, comparison)})."
+        # the numbers name their link, so they cannot be read against a different link's day-by-day count
+        tail = f" (strongest, {best['label']}: {_counts_words(best, comparison)})."
         if key == "probable" and open_checks:
             tail = tail[:-1] + f"; not yet ruled out: {open_checks[0]['label'].lower()}."
         return lead + tail
@@ -211,8 +212,9 @@ def sentence(level: dict, full_sep, present_rows, comparison, incidents, missing
     checked = f"on the {_n(n_inc)} {comparison['incident_noun']}"
     if key == "possible":
         if full_sep:
+            b = best(full_sep)
             return (f"Possible link: one kind of signal ({_join(kinds)}) and nothing else agrees yet "
-                    f"({_counts_words(best(full_sep), comparison)}).")
+                    f"({b['label']}: {_counts_words(b, comparison)}).")
         tail = f" ({_counts_words(best(present_rows), comparison)})" if present_rows else ""
         return f"Possible link: several weak signals; innocent explanations remain{tail}."
     if level["rule"] == "overlap_only":

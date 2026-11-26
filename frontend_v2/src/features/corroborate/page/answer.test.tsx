@@ -71,6 +71,8 @@ describe("the answer, as designed (screen 5)", () => {
     expect(tiles[0].textContent).toContain("7:10 PM to 8:25 PM")
     expect(tiles[2].getAttribute("data-outcome")).toBe("no_data")
     expect(within(d).getByText("Together on 9, apart on 41, no location data on 2.")).toBeTruthy()
+    // the strip says which link it counts, so it is not read against the verdict's strongest link
+    expect(within(d).getByText("For comparison: “together” on 52 other days · Tue 2 Jan 2024 to Sat 18 May 2024")).toBeTruthy()
     expect(within(d).getAllByRole("listitem", { name: /: No location data$/ })).toHaveLength(2)
     expect(within(d).getByText(/Phone 2 · Marisol Teague/)).toBeTruthy()
   })
