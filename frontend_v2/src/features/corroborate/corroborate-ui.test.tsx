@@ -6,6 +6,7 @@ import { LookIntoButton } from "@/features/relations/LookIntoButton"
 import { setSwitch } from "@/lib/ui-switches"
 import { corroborateAPI, type Preview } from "./api"
 import { CorroborateTray } from "./CorroborateTray"
+import { ItemKeys } from "./ItemKeys"
 import { CorroborateOpener } from "@/features/leads/CorroboratePanel"
 import { CorroboratePage } from "./page/CorroboratePage"
 import { leadsAPI } from "@/features/leads/api"
@@ -56,6 +57,18 @@ describe("Corroborate from a selection", () => {
     expect(screen.getByText(/1 from the ledger/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Remove Payment 1" }))
     expect(getSelection("c1")).toEqual([])
+  })
+})
+
+describe("the key C on an item", () => {
+  it("adds the item and opens the Corroborate page with the whole selection, never a dialog over the page (live 26 Nov)", async () => {
+    vi.spyOn(corroborateAPI, "preview").mockResolvedValue(preview)
+    wrap(<><ItemKeys /><p data-corro="financial_transaction:p7" data-corro-label="Check 2204"><span id="row">row</span></p></>)
+    fireEvent.mouseMove(document.getElementById("row")!)
+    fireEvent.keyDown(document, { key: "c" })
+    expect(await screen.findByTestId("question-sentence")).toBeTruthy()
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(getSelection("c1").flatMap((p) => p.members)).toEqual([{ type: "financial_transaction", id: "p7", label: "Check 2204" }])
   })
 })
 

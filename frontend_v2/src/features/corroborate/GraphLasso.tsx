@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom"
 import { useRef, useState } from "react"
 import type { ForceGraphMethods } from "react-force-graph-2d"
 import { Button } from "@/components/ui/button"
@@ -5,7 +6,7 @@ import { useSwitch } from "@/lib/ui-switches"
 import { useGraphStore } from "@/stores/graph.store"
 import type { GraphData } from "@/types/graph.types"
 import { lassoGraph, type DrawnLink, type DrawnNode, type Pt } from "./lasso"
-import { QuestionMenu } from "./QuestionMenu"
+import { corroborateHref, forgetCorroborateRequest } from "@/features/leads/open"
 import { addPart } from "./selection-store"
 
 /**
@@ -18,7 +19,7 @@ export function GraphLasso({ caseId, data, graphRef, drawnRef }: { caseId: strin
   const [active, setActive] = useState(false)
   const [poly, setPoly] = useState<Pt[]>([])
   const [note, setNote] = useState<string | null>(null)
-  const [menu, setMenu] = useState(false)
+  const navigate = useNavigate()
   const box = useRef<HTMLDivElement>(null)
   const selectNodes = useGraphStore((s) => s.selectNodes)
   if (!on) return null
@@ -46,7 +47,8 @@ export function GraphLasso({ caseId, data, graphRef, drawnRef }: { caseId: strin
       skipped: [],
     })
     setNote(capped ? `The graph shows ${data.nodes.length.toLocaleString("en-US")} of ${data.total_node_count?.toLocaleString("en-US")} items; the lasso covers the items shown.` : null)
-    setMenu(true)
+    forgetCorroborateRequest(caseId)
+    navigate(corroborateHref(caseId, { from: "tray" }))
   }
   return (
     <>
@@ -66,7 +68,6 @@ export function GraphLasso({ caseId, data, graphRef, drawnRef }: { caseId: strin
           </svg>
         </div>
       )}
-      {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
     </>
   )
 }

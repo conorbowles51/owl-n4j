@@ -166,6 +166,7 @@ function Innocent({ c, caseId, runId }: { c: Corroboration; caseId: string; runI
   return (
     <section aria-label="Innocent explanations Loupe tested" className="space-y-2 rounded-lg border bg-card p-4 sm:p-5">
       <h2 className="text-lg font-semibold">Innocent explanations Loupe tested</h2>
+      {list.length === 0 && <p className="text-sm text-muted-foreground">None yet: this question could not be weighed, so no innocent explanation was tested. “What would change the answer” says what is missing.</p>}
       <ul className="space-y-2">
         {list.map((x) => (
           <li key={x.check} className="flex flex-col gap-2 border-t pt-2 first:border-t-0 first:pt-0 sm:flex-row">

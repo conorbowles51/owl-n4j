@@ -116,7 +116,7 @@ function AskTab({ caseId }: { caseId: string }) {
   return (
     <div className="space-y-5">
       <QuestionSentence key={q ?? params.get("from") ?? "selection"} caseId={caseId} members={src.members} sourceLabel={src.label}
-        skipped={src.skipped} scope={q ? undefined : src.request?.scope} asked={corro} busy={busy} onAsk={(d) => void ask(src.members, d)} parts={q || src.request ? undefined : src.parts} />
+        skipped={src.skipped} scope={q ? undefined : src.request?.scope} initialKind={q ? undefined : src.request?.kind} drafted={!q && !!src.request?.drafted} asked={corro} busy={busy} onAsk={(d) => void ask(src.members, d)} parts={q || src.request ? undefined : src.parts} />
       {error && <p role="alert" className="text-sm text-status-error">{error}</p>}
       {q && src.asked.isLoading && <p role="status" className="text-sm text-muted-foreground">Opening the answer…</p>}
       {q && src.asked.isError && <p role="alert" className="text-sm text-status-error">This answer could not be opened. It may belong to another case; go back to Your earlier questions.</p>}

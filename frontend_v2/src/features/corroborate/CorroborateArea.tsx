@@ -1,19 +1,20 @@
+import { useNavigate } from "react-router-dom"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { useSwitch } from "@/lib/ui-switches"
 import { corroborateAPI } from "./api"
-import { QuestionMenu } from "./QuestionMenu"
+import { corroborateHref, forgetCorroborateRequest } from "@/features/leads/open"
 import { addPart } from "./selection-store"
 
 /**
  * "Corroborate this area" (lx-corroselect C): every phone position, photo and place inside the drawn areas joins the
- * selection, each tested on its own position. The count is stated before the menu opens.
+ * selection, each tested on its own position. The count is stated before the Corroborate page opens.
  */
 export function CorroborateArea({ caseId, areas }: { caseId: string; areas: number[][][] }) {
   const on = useSwitch("corroborate-v2")
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
-  const [menu, setMenu] = useState(false)
+  const navigate = useNavigate()
   if (!on || areas.length === 0) return null
   const go = async () => {
     setBusy(true)
@@ -31,7 +32,8 @@ export function CorroborateArea({ caseId, areas }: { caseId: string; areas: numb
         members: got.members,
         skipped: [],
       })
-      setMenu(true)
+      forgetCorroborateRequest(caseId)
+    navigate(corroborateHref(caseId, { from: "tray" }))
     } catch (e) {
       setNote(e instanceof Error ? e.message : "The area could not be read.")
     } finally {
@@ -44,7 +46,6 @@ export function CorroborateArea({ caseId, areas }: { caseId: string; areas: numb
         {busy ? "Reading the area…" : "Corroborate this area"}
       </Button>
       {note && <p role="status" className="text-[10px] text-muted-foreground">{note}</p>}
-      {menu && <QuestionMenu caseId={caseId} onClose={() => setMenu(false)} />}
     </div>
   )
 }

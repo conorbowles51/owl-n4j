@@ -24,6 +24,9 @@ export interface CorroborateRequest {
   scope?: Scope
   /** The page it was asked from (set by openCorroborate): the panel shows only there, never on another page. */
   path?: string
+  /** A question kind to open chosen (a question the assistant drafted), and whether it was drafted. */
+  kind?: string
+  drafted?: boolean
 }
 
 export const CORROBORATE_OPEN = "loupe-corroborate-open"

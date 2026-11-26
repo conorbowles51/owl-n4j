@@ -25,8 +25,12 @@ const COMPARE: { key: string; words: string }[] = [
  * change. The relation swaps among the engine's question kinds in plain words; "test something someone said" opens
  * the free-text claim. Pressing Ask is the only thing that runs it.
  */
-export function QuestionSentence({ caseId, members, sourceLabel, skipped, asked, busy, onAsk, parts, scope }: {
+export function QuestionSentence({ caseId, members, sourceLabel, skipped, asked, busy, onAsk, parts, scope, initialKind, drafted }: {
   caseId: string
+  /** The kind to open chosen (a question the assistant drafted). */
+  initialKind?: string
+  /** The question was drafted by the assistant: say so, and that nothing has run. */
+  drafted?: boolean
   /** The screen's own time scope (a timeline range): the preview and the question keep to it. */
   scope?: Scope
   members: RelationMember[]
@@ -52,7 +56,7 @@ export function QuestionSentence({ caseId, members, sourceLabel, skipped, asked,
   const [open, setOpen] = useState<"who" | "rel" | "events" | null>(null)
   const [menu, setMenu] = useState(false)
   const suggested = preview.data?.questions.map((q) => q.kind) ?? []
-  const chosenKind = kind ?? asked?.question.kind ?? suggested[0] ?? "together"
+  const chosenKind = kind ?? asked?.question.kind ?? (initialKind && RELATION_WORDS[initialKind] ? initialKind : undefined) ?? suggested[0] ?? "together"
   const who = people ?? taken
   const instances = asked ? asked.comparison.incident.length : preview.data?.joined?.instances.length ?? 0
   const events = asked?.days?.events_phrase ?? (instances === 1 ? "the day you chose" : instances ? `the ${instances} days you chose` : members.length ? "the records you chose" : "the days you choose")
@@ -77,6 +81,7 @@ export function QuestionSentence({ caseId, members, sourceLabel, skipped, asked,
   return (
     <section aria-label="Your question" className="space-y-3 rounded-lg border bg-card p-4 sm:p-5" data-guide="corroborate-question">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your question · click any blue part to change it</p>
+      {drafted && !asked && <p role="status" className="rounded bg-status-model-soft px-2 py-1 text-sm text-status-model">The assistant drafted this question. Check it, change any blue part, then press Ask. Nothing has run.</p>}
       <div className="flex flex-wrap items-end gap-3">
         <p className="min-w-0 flex-1 text-xl leading-relaxed sm:text-2xl" data-testid="question-sentence">
           {sentence.map((s, i) => {

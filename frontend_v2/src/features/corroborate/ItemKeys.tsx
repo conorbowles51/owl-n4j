@@ -1,26 +1,28 @@
 import { useEffect, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useNavigate, useParams } from "react-router-dom"
 import type { RelationMember } from "@/features/relations/api"
 import { isTyping, membersFromElement } from "./item-target"
-import { QuestionMenu } from "./QuestionMenu"
+import { corroborateHref, forgetCorroborateRequest } from "@/features/leads/open"
 import { addPart } from "./selection-store"
 
 /**
  * Right-click or the key C on any item that names itself with data-corro (lx-corroselect C). Right-click opens a
  * one-item menu at the pointer (Shift+right-click keeps the browser's own menu); C acts on the item under the pointer,
- * or the focused one. One click or key reaches the question menu; the item also joins the selection.
+ * or the focused one. One click or key adds the item to the selection and opens the Corroborate page with the question
+ * filled from the whole selection (lx-corroredo A), as the tray's Corroborate does; nothing runs until Ask.
  */
 export function ItemKeys() {
   const { id: caseId } = useParams()
   const [menu, setMenu] = useState<{ x: number; y: number; members: RelationMember[] } | null>(null)
-  const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
   useEffect(() => {
     if (!caseId) return
     let hover: Element | null = null
     const start = (members: RelationMember[]) => {
       addPart(caseId, { screen: "an item", label: members.length > 1 ? `${members[0].label ?? "1 item"} and ${members.length - 1} more` : (members[0].label ?? "1 item"), members, skipped: [] })
       setMenu(null)
-      setOpen(true)
+      forgetCorroborateRequest(caseId)
+      navigate(corroborateHref(caseId, { from: "tray" }))
     }
     const move = (e: MouseEvent) => { hover = e.target as Element }
     const context = (e: MouseEvent) => {
@@ -51,7 +53,7 @@ export function ItemKeys() {
       document.removeEventListener("keydown", key)
       document.removeEventListener("click", away)
     }
-  }, [caseId])
+  }, [caseId, navigate])
   if (!caseId) return null
   return (
     <>
@@ -59,12 +61,11 @@ export function ItemKeys() {
         <div role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - 60) }}
           className="fixed z-50 rounded-md border bg-background py-1 text-sm shadow-md">
           <button role="menuitem" type="button" className="block w-52 px-3 py-1.5 text-left hover:bg-muted"
-            onClick={() => { addPart(caseId, { screen: "an item", label: menu.members.length > 1 ? `${menu.members[0].label ?? "1 item"} and ${menu.members.length - 1} more` : (menu.members[0].label ?? "1 item"), members: menu.members, skipped: [] }); setMenu(null); setOpen(true) }}>
+            onClick={() => { addPart(caseId, { screen: "an item", label: menu.members.length > 1 ? `${menu.members[0].label ?? "1 item"} and ${menu.members.length - 1} more` : (menu.members[0].label ?? "1 item"), members: menu.members, skipped: [] }); setMenu(null); forgetCorroborateRequest(caseId); navigate(corroborateHref(caseId, { from: "tray" })) }}>
             Corroborate this <span className="text-muted-foreground">(C)</span>
           </button>
         </div>
       )}
-      {open && <QuestionMenu caseId={caseId} onClose={() => setOpen(false)} />}
     </>
   )
 }
