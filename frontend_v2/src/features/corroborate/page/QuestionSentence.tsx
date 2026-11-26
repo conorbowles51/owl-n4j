@@ -2,7 +2,6 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/cn"
-import { dossiersAPI } from "@/features/dossiers/api"
 import { skippedWords, type RelationMember } from "@/features/relations/api"
 import { corroborateAPI, scopeIsEmpty, type Preview, type Scope } from "../api"
 import { openClaimComposer } from "../claim-composer"
@@ -166,25 +165,31 @@ function Part({ children, on, onClick, label }: { children: React.ReactNode; on:
 
 function PeopleEditor({ caseId, who, onChange }: { caseId: string; who: Person[]; onChange: (p: Person[]) => void }) {
   const [find, setFind] = useState("")
-  const list = useQuery({ queryKey: ["dossiers", caseId, "corroborate", find], queryFn: () => dossiersAPI.list({ caseId, q: find || undefined, limit: 20 }), staleTime: 30_000 })
+  const list = useQuery({ queryKey: ["corroborate-people", caseId], queryFn: () => corroborateAPI.people(caseId), staleTime: 60_000 })
   const keys = new Set(who.map((p) => p.key))
+  const words = find.trim().toLowerCase()
+  const others = (list.data?.people ?? []).filter((p) => !keys.has(p.key) && (!words || p.label.toLowerCase().includes(words) || p.phones.some((x) => x.toLowerCase().includes(words))))
   return (
     <div className="space-y-2 rounded border p-3 text-sm">
       <ul className="flex flex-wrap gap-2" aria-label="People asked about">
         {who.map((p) => <li key={p.key} className="flex items-center gap-1 rounded-full border px-2 py-0.5">{p.label}<button type="button" aria-label={`Remove ${p.label}`} className="text-muted-foreground" onClick={() => onChange(who.filter((x) => x.key !== p.key))}>×</button></li>)}
-        {who.length === 0 && <li className="text-muted-foreground">Nobody yet. Loupe asks about the people the records name.</li>}
+        {who.length === 0 && <li className="text-muted-foreground">Nobody yet. Loupe asks about the people the records name; add them here.</li>}
       </ul>
       <label className="flex flex-wrap items-center gap-2">Add someone
-        <input className="rounded border bg-background px-2 py-1" placeholder="Name" value={find} onChange={(e) => setFind(e.target.value)} />
+        <input className="rounded border bg-background px-2 py-1" placeholder="Name or phone" value={find} onChange={(e) => setFind(e.target.value)} />
       </label>
       {list.data && (
-        <ul className="flex flex-wrap gap-1">
-          {list.data.dossiers.filter((d) => !keys.has(`person:${d.id}`)).slice(0, 12).map((d) => (
-            <li key={d.id}><button type="button" className="rounded-full border px-2 py-0.5 text-status-info hover:bg-muted" onClick={() => onChange([...who, { key: `person:${d.id}`, label: d.display_name }])}>+ {d.display_name}</button></li>
+        <ul className="flex flex-wrap gap-1" aria-label="People in the case">
+          {others.slice(0, 16).map((p) => (
+            <li key={p.key}><button type="button" className="rounded-full border px-2 py-0.5 text-status-info hover:bg-muted" onClick={() => onChange([...who, { key: p.key, label: p.label }])}>
+              + {p.label}{p.phones.length ? ` · ${p.phones.join(", ")}` : ""}
+            </button></li>
           ))}
+          {others.length > 16 && <li className="px-2 py-0.5 text-muted-foreground">{others.length - 16} more: type a name to find them</li>}
+          {others.length === 0 && <li className="text-muted-foreground">{words ? "Nobody in the case matches." : "Everyone the case knows is already asked about."}</li>}
         </ul>
       )}
-      {list.isError && <p role="alert" className="text-status-error">The people in this case could not be read.</p>}
+      {list.isError && <p role="alert" className="text-status-error">The people in this case could not be read. Reload the page to try again.</p>}
     </div>
   )
 }

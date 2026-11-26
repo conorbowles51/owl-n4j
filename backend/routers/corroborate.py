@@ -49,6 +49,13 @@ def read_preview(case_id: UUID, request: PreviewRequest, db: Session = Depends(g
     return questions.enrich(CaseStore(db, case_id), kept if kept is not None else members, composed)
 
 
+@router.get("/{case_id}/corroborate/people", dependencies=[Depends(require_case_view)])
+def list_people(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Everyone a question can name, with the phones and accounts behind each (the question's people editor)."""
+    from services.corroborate.store import CaseStore
+    return {"people": questions.people_choices(CaseStore(db, case_id))}
+
+
 @router.get("/{case_id}/corroborate/incidents", dependencies=[Depends(require_case_view)])
 def list_incidents(case_id: UUID, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Dates the case's theories and findings state, for the preset windows round an incident."""

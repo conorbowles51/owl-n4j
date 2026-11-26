@@ -91,6 +91,26 @@ describe("the answer, as designed (screen 5)", () => {
   })
 })
 
+describe("the question's people", () => {
+  it("adds someone known only by a phone, with no dossier (live 26 Nov: the Corwen Street demo has no dossiers)", async () => {
+    const { QuestionSentence } = await import("./QuestionSentence")
+    vi.spyOn(corroborateAPI, "preview").mockResolvedValue({ questions: [{ kind: "together", text: "t", count: 1, count_words: "", chips: {} }], joined: { people: [], instances: ["a", "b"] } } as never)
+    vi.spyOn(corroborateAPI, "people").mockResolvedValue({ people: [
+      { key: "person:m", label: "Marisol Teague", dossier: false, phones: ["Phone 2"], accounts: 0 },
+      { key: "person:d", label: "Dorian Pell", dossier: false, phones: ["Phone 3"], accounts: 1 }] })
+    const onAsk = vi.fn()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><MemoryRouter><QuestionSentence caseId="c1" members={[{ type: "financial_transaction", id: "t1" }]} sourceLabel="" skipped={[]} busy={false} onAsk={onAsk} /></MemoryRouter></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByTestId("question-sentence").textContent).toBe("Were these people together on the 2 days you chose?"))
+    fireEvent.click(screen.getByRole("button", { name: /Change the people/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "+ Marisol Teague · Phone 2" }))
+    fireEvent.click(screen.getByRole("button", { name: "+ Dorian Pell · Phone 3" }))
+    expect(screen.getByTestId("question-sentence").textContent).toBe("Were Marisol Teague and Dorian Pell together on the 2 days you chose?")
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }))
+    expect(onAsk.mock.calls[0][0].chips.people).toEqual(["person:m", "person:d"])
+  })
+})
+
 describe("next steps are computed from the result (COMMON rule 4)", () => {
   it("ranks the uncovered day first, then their messages on those days, the open explanation, other people, the map", () => {
     const steps = nextSteps(C, "c1")

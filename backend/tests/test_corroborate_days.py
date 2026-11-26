@@ -4,7 +4,9 @@ engine's result had no ``days`` block."""
 import json
 from datetime import datetime, timedelta, timezone
 
-from services.corroborate import days as D, engine, model as M
+from services.corroborate import days as D, engine, model as M, questions as Q
+from routers import corroborate as R
+from routers.case_access import require_case_view
 
 from tests.corroborate_world import INCIDENTS, FakeStore
 
@@ -80,3 +82,13 @@ def test_a_no_data_tile_names_the_phone_without_locations_and_is_counted_apart()
 def test_repeated_records_on_a_day_are_said_once_with_their_count():
     assert D.collapse(["Message"] * 8 + ["Document: badge B-20417", "Message"]) == ["9 messages", "Document: badge B-20417"]
     assert D.collapse(["Check 2204 · $2,460.00", "Check 2205 · $2,310.00"]) == ["Check 2204 · $2,460.00", "Check 2205 · $2,310.00"]
+
+
+def test_people_a_question_can_name_include_phone_users_without_a_dossier():
+    got = Q.people_choices(FakeStore())
+    by = {p["key"]: p for p in got}
+    assert by["pre"] == {"key": "pre", "label": "the user of Phone C", "dossier": False, "phones": ["phC"], "accounts": 0}
+    assert by["ann"]["accounts"] == 1 and by["ann"]["dossier"]
+    assert [p["dossier"] for p in got] == sorted((p["dossier"] for p in got), reverse=True)  # named people first
+    route = next(r for r in R.router.routes if r.path == "/api/cases/{case_id}/corroborate/people")
+    assert require_case_view in {d.dependency for d in route.dependencies}

@@ -128,6 +128,8 @@ export const corroborateAPI = {
   combine: (caseId: string, first: string, second: string, op: string) =>
     fetchAPI<Combined>(`${base(caseId)}/subsets/combine`, { method: "POST", body: { first, second, op } }),
   matchList: (caseId: string, text: string) => fetchAPI<ListMatch>(`${base(caseId)}/match-list`, { method: "POST", body: { text } }),
+  /** Everyone a question can name: dossiers, phone users and account holders, with their phones. */
+  people: (caseId: string) => fetchAPI<{ people: { key: string; label: string; dossier: boolean; phones: string[]; accounts: number }[] }>(`${base(caseId)}/people`),
   /** "Keep watching as a lead": the question runs again when new material arrives. */
   watch: (caseId: string, runId: string) => fetchAPI<Record<string, unknown>>(`${base(caseId)}/watches`, { method: "POST", body: { run_id: runId } }),
   /** A case fact a person records ("they live together"); later answers weigh it and name who recorded it. */

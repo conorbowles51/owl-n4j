@@ -192,6 +192,19 @@ def enrich(store, members: list[dict], composed: dict) -> dict:
     return composed
 
 
+def people_choices(store) -> list[dict]:
+    """Everyone a question can name (lx-corroredo B): each dossier, each phone's user and each account holder Corroborate
+    joins records to, with the phones and accounts behind them, so a person known only by a phone or an account can
+    be added to a question. Named people first, then by name."""
+    out = []
+    for p in store.people():
+        labels = p.get("phone_labels") or {}
+        out.append({"key": p["key"], "label": p["label"], "dossier": bool(p.get("dossier_id")),
+                    "phones": [labels.get(e, "a phone") for e in p["phones"]], "accounts": len(p["accounts"])})
+    out.sort(key=lambda x: (not x["dossier"], not x["phones"] and not x["accounts"], x["label"].casefold()))
+    return out
+
+
 def parse_day(value) -> date | None:
     try:
         return date.fromisoformat(str(value)[:10])
