@@ -20,6 +20,7 @@ class CaseData:
         self.db, self.case = db, str(case_id)
         self.store = CaseStore(db, case_id)
         self._homes: dict[str, dict | None] = {}
+        self._rates: dict[str, float] = {}
 
     def q(self, sql, **kw):
         return self.db.execute(text(sql), {"c": self.case, **kw})
@@ -66,6 +67,19 @@ class CaseData:
     def activity(self, person: dict, lo: datetime, hi: datetime) -> list[datetime]:
         acts = self.store.activity([person], [(lo, hi)]).get(person["key"], [])
         return [t for t in acts if lo <= t <= hi]
+
+    def use_rate(self, person: dict) -> float:
+        """How many of its own records (used or on) the person's phones keep an hour, over their whole span: what a
+        quiet window is measured against."""
+        if not person["phones"]:
+            return 0.0
+        if person["key"] not in self._rates:
+            n, lo, hi = self.q(
+                "SELECT count(*), min(instant_utc), max(instant_utc) FROM pol_activity_event WHERE case_id = :c AND "
+                "extraction_id = ANY(CAST(:e AS uuid[])) AND activity_class <> 'unknown'", e=person["phones"]).first()
+            hours = (hi - lo).total_seconds() / 3600 if n and lo and hi and hi > lo else 0
+            self._rates[person["key"]] = (n / hours) if hours else 0.0
+        return self._rates[person["key"]]
 
     def use_events(self, person: dict, lo: datetime, hi: datetime) -> list[tuple[datetime, str, str]]:
         """The phone's own records in the window as (instant, activity class, record type): ``interaction`` is the

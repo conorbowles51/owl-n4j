@@ -38,8 +38,8 @@ def pos(owner, when, lat, lon, rad=10.0, ref=None, media=False):
 
 
 class FakeData:
-    def __init__(self, recs=(), pays=(), uses=None, homes=None, comms=(), docs=()):
-        self.recs, self.pays, self.comms, self.docs = list(recs), list(pays), list(comms), list(docs)
+    def __init__(self, recs=(), pays=(), uses=None, homes=None, comms=(), docs=(), rate=5.0):
+        self.recs, self.pays, self.comms, self.docs, self.rate = list(recs), list(pays), list(comms), list(docs), rate
         self.uses = uses or {}
         self.homes = homes if homes is not None else {"ada": {"lat": HOME[0], "lon": HOME[1], "radius_m": 150.0,
                                                             "how": "9 positions at night"}}
@@ -64,6 +64,9 @@ class FakeData:
 
     def activity(self, p, lo, hi):
         return [t for t, *_ in self.uses.get(p["key"], []) if lo <= t <= hi]
+
+    def use_rate(self, p):
+        return self.rate if p["phones"] else 0.0
 
     def use_events(self, p, lo, hi):
         return [(t, c, "X") for t, c in self.uses.get(p["key"], []) if lo <= t <= hi]
@@ -205,6 +208,9 @@ def test_phone_was_off_is_contradicted_by_the_owner_using_it():
     quiet = FakeData(uses={})
     res = run(m, quiet, sent)
     assert res["outcome"] == "fits_weakly" and "Absence" in res["checks"][0]["note"]
+    sparse = run(m, FakeData(uses={}, rate=0.3), sent)   # Demo 2's busiest phone keeps 0.31 records an hour
+    dev = [c for c in sparse["checks"] if c["source"] == "device"][0]
+    assert sparse["outcome"] == "cant_tell" and dev["verdict"] == "context" and "usual for it" in dev["text"]
 
 
 def test_phone_was_off_does_not_count_the_message_saying_so():

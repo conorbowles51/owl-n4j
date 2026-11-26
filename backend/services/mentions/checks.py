@@ -24,6 +24,7 @@ MOVED_M = 1000.0         # moved at least this far in the window
 TOGETHER_M = 300.0
 TOGETHER_MIN = 15
 OFF_EVENTS = 3           # this many phone events in a window the message says the phone was off
+QUIET_EXPECTED = 3.0   # silence is a weak fit only when the phone's own rate expects this many records
 OWN_SEND_S = 120   # a phone-off message's own sending and the typing before it: left out of the phone's use
 MAX_REFS = 6
 _DAY = timedelta(days=1)
@@ -288,10 +289,20 @@ def device_off_check(ctx, person, words):
                     f"owner (messages sent, calls, apps) and {len(on)} other record{'s' if len(on) != 1 else ''} of being on from "
                     f"{span}, the last at {_local(last, ctx.zone)}.", f"The message says “{words}”. {own}", strong=len(used) >= 2)
     if not ev:
-        return _chk("device", "fits_weakly", f"{person['label']}'s phone records nothing of its own from {span}.",
-                    f"Absence is weaker evidence than presence. {own}")
+        hours = max((cut - ctx.lo).total_seconds() / 3600, 0)
+        expected = ctx.data.use_rate(person) * hours
+        if expected < QUIET_EXPECTED:
+            return _chk("device", "context", f"{person['label']}'s phone records nothing of its own from {span}, and that is "
+                        f"usual for it: it keeps about {_rate_words(expected)} records in a span that long.",
+                        f"So a quiet phone says nothing here either way. {own}")
+        return _chk("device", "fits_weakly", f"{person['label']}'s phone records nothing of its own from {span}, where it "
+                    f"usually keeps about {expected:.0f}.", f"Absence is weaker evidence than presence. {own}")
     return _chk("device", "context", f"{person['label']}'s phone records {len(ev)} record{'s' if len(ev) != 1 else ''} of its own "
                 f"from {span}.", f"Too few to say it was on. {own}")
+
+
+def _rate_words(expected):
+    return "none" if expected < 0.5 else "one" if expected < 1.5 else f"{expected:.0f}"
 
 
 def device_use_check(ctx, person):
