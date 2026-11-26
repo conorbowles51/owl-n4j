@@ -12,7 +12,7 @@ import { corroborateAPI } from "../api"
 import { ResultView } from "../ResultView"
 import { StoryLanes } from "../StoryLanes"
 import type { CellState, Corroboration, DayTile } from "../result-types"
-import { changes, innocentExplanations, LEVEL_GLOSS, names, nextSteps, SCALE, tally, type Pill } from "./answer-model"
+import { changes, innocentExplanations, LEVEL_GLOSS, names, nextSteps, opening, SCALE, tally, type Pill } from "./answer-model"
 
 const PILL_CLASS: Record<Pill, string> = {
   "Ruled out": "bg-status-success-soft text-status-success",
@@ -55,7 +55,7 @@ export function AnswerView({ c, caseId, runId, selectionId, members, onAsk }: {
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold" aria-hidden>{i + 1}</span>
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{s.title}</p>
-                <p className="text-sm text-muted-foreground">{s.why}</p>
+                <p className="text-sm text-muted-foreground">{opening(s.why)}</p>
               </div>
               {s.to
                 ? <Button size="sm" variant={i === 0 ? "primary" : "outline"} asChild><Link to={s.to}>{s.action}</Link></Button>
@@ -155,7 +155,7 @@ function Tile({ tile, onOpen }: { tile: DayTile; onOpen: () => void }) {
         <span className="font-semibold">{tile.date}</span>
         {tile.events.length > 0 && <span className="text-xs text-muted-foreground">{tile.events.join(" · ")}</span>}
         <span className={cn("mt-1 font-bold", tile.outcome === "present" ? "text-status-success" : "text-foreground")}>{tile.outcome_words}</span>
-        <span className="text-xs text-muted-foreground">{tile.detail}</span>
+        <span className="text-xs text-muted-foreground">{opening(tile.detail)}</span>
       </button>
     </li>
   )
@@ -173,7 +173,7 @@ function Innocent({ c, caseId, runId }: { c: Corroboration; caseId: string; runI
             <span className={cn("w-32 shrink-0 self-start rounded-full px-2 py-1 text-center text-xs font-semibold", PILL_CLASS[x.pill])}>{x.pill}</span>
             <div className="min-w-0 text-sm">
               <p className="font-medium">{x.question}</p>
-              <p className="text-muted-foreground">{x.words}{x.records.length ? ` (${x.records.length} record${x.records.length === 1 ? "" : "s"})` : ""}</p>
+              <p className="text-muted-foreground">{opening(x.words)}{x.records.length ? ` (${x.records.length} record${x.records.length === 1 ? "" : "s"})` : ""}</p>
               {x.fact && x.pill !== "Ruled out" && <FactForm c={c} caseId={caseId} runId={runId} fact={x.fact} />}
             </div>
           </li>
@@ -190,7 +190,7 @@ function WouldChange({ c, caseId, runId }: { c: Corroboration; caseId: string; r
       <h2 className="text-lg font-semibold">What would change the answer</h2>
       {list.length === 0 && <p className="text-sm text-muted-foreground">The records cover every day asked about, and no innocent explanation is left that a case fact would settle.</p>}
       <ul className="list-disc space-y-1 pl-5 text-sm">
-        {list.map((x, i) => <li key={i}>{x.text}{x.fact && <FactForm c={c} caseId={caseId} runId={runId} fact={x.fact} />}</li>)}
+        {list.map((x, i) => <li key={i}>{opening(x.text)}{x.fact && <FactForm c={c} caseId={caseId} runId={runId} fact={x.fact} />}</li>)}
       </ul>
     </section>
   )
@@ -199,7 +199,7 @@ function WouldChange({ c, caseId, runId }: { c: Corroboration; caseId: string; r
 /** Recording a case fact ("they live together") under the person's own name; the next answer weighs it. */
 function FactForm({ c, caseId, runId, fact }: { c: Corroboration; caseId: string; runId: string; fact: { kind: string; words: string } }) {
   const [open, setOpen] = useState(false)
-  const [text, setText] = useState(`${names(c.people.map((p) => p.label))} ${fact.words.replace(/^They /, "").toLowerCase()}`)
+  const [text, setText] = useState(opening(`${names(c.people.map((p) => p.label))} ${fact.words.replace(/^They /, "").toLowerCase()}`))
   const save = useMutation({ mutationFn: () => corroborateAPI.addFact(caseId, { kind: fact.kind, text, people: c.people.map((p) => p.key), run_id: runId }) })
   if (save.isSuccess) return <p className="text-xs" role="status">Recorded under your name. Press Ask again to weigh it.</p>
   if (!open) return <button type="button" className="text-xs text-status-info underline" onClick={() => setOpen(true)}>Record it</button>

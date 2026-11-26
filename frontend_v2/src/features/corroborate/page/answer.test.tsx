@@ -93,6 +93,15 @@ describe("the answer, as designed (screen 5)", () => {
   })
 })
 
+describe("sentences open with a capital", () => {
+  it("a check whose words start with a phone user's label is shown with a capital (live 26 Nov, Corwen Street)", () => {
+    const lower: Corroboration = { ...C, checks: [{ check: "household", outcome: "ruled_out", words: "the user of Phone 3 and the user of Phone 1 in the same place: 71 of 113 ordinary days." }] }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><MemoryRouter><AnswerView c={lower} caseId="c1" runId="r1" selectionId="s1" members={[]} onAsk={() => undefined} /></MemoryRouter></QueryClientProvider>)
+    expect(screen.getByText("The user of Phone 3 and the user of Phone 1 in the same place: 71 of 113 ordinary days.")).toBeTruthy()
+  })
+})
+
 describe("the question's people", () => {
   it("adds someone known only by a phone, with no dossier (live 26 Nov: the Corwen Street demo has no dossiers)", async () => {
     const { QuestionSentence } = await import("./QuestionSentence")

@@ -214,3 +214,8 @@ export function nextSteps(c: Corroboration, caseId: string): NextStep[] {
     steps.push({ title: l.text, why: `${l.count.toLocaleString("en-US")} record${l.count === 1 ? "" : "s"} or people in the case for this question.`, action: "Ask this", ask: l.question })
   return steps
 }
+
+/** A sentence that opens with a name such as "the user of Phone 3" starts with a capital, as any sentence does. */
+export function opening(text: string): string {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text
+}
