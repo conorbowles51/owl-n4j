@@ -230,7 +230,7 @@ function SidebarSection({
       aria-label={label}
     >
       {expanded ? (
-        <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.11em] text-sidebar-muted/75">
+        <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.11em] text-sidebar-muted">
           {label}
         </p>
       ) : (

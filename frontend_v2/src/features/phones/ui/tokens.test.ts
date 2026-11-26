@@ -158,5 +158,12 @@ describe("muted text (followups 26 Nov)", () => {
         expect(ratio, `muted-foreground on ${surface} (${theme}) = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
       }
     })
+    it(`the sidebar's section labels are 4.5:1 or more on the sidebar, ${theme}`, () => {
+      // drawn at 75 % of sidebar-muted they read 4.36:1 in light (live, 26 Nov); full strength is the only safe fade
+      const sidebar = readFileSync(path.resolve(__dirname, "../../../components/ui/sidebar.tsx"), "utf8")
+      expect(sidebar).not.toMatch(/text-sidebar-muted\/\d+/)
+      const ratio = contrast(tripletToRgb(vars["sidebar-muted"]), tripletToRgb(vars["sidebar"]))
+      expect(ratio, `sidebar-muted on sidebar (${theme}) = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+    })
   }
 })
