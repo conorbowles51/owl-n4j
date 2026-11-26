@@ -207,3 +207,21 @@ def test_a_message_hit_opens_in_its_thread_with_the_hit_marked(world):
     assert ev["event_uid"] in [i["event_uid"] for i in ctx["items"]]
     with world["engine"].connect() as c, pytest.raises(LookupError):
         P.hit_context(c, world["case"], str(uuid.uuid4()))
+
+
+def test_the_hits_day_is_its_day_in_the_zone_the_times_are_shown_in(world):
+    """"That day, all phones" opens the hit's day as the screen shows it, not the UTC date of the instant."""
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    ev = world["ev1"][1]  # 12 Mar 2024, 10:00
+    with world["engine"].connect() as c:
+        ctx = P.hit_context(c, world["case"], ev["event_uid"])
+    day = ctx["day"]
+    hit = next(i for i in ctx["items"] if i["event_uid"] == ev["event_uid"])["time"]["instant"]
+    at = datetime.fromisoformat(hit.replace("Z", "+00:00"))
+    assert day["date"] == at.astimezone(ZoneInfo(day["zone"])).date().isoformat()
+    start = datetime.fromisoformat(day["from"].replace("Z", "+00:00"))
+    end = datetime.fromisoformat(day["to"].replace("Z", "+00:00"))
+    assert start <= at <= end and timedelta(hours=22) < end - start < timedelta(hours=26)
+    assert start.astimezone(ZoneInfo(day["zone"])).time().isoformat() == "00:00:00"
+    assert start.tzinfo == timezone.utc

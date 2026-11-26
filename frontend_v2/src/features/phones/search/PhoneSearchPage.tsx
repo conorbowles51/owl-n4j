@@ -416,7 +416,7 @@ function ContextPane({ caseId, hit, q, exact, index, stepScope }: { caseId: stri
   const { canEdit } = useCasePermissions(caseQuery.data)
   const collect = useCollectTargets(caseId)
   const link = hitLink(hit, q)
-  const day = ctx.data?.items.find((r) => r.event_uid === hit.event_uid)?.time.instant?.slice(0, 10) ?? hit.instant?.slice(0, 10) ?? null
+  const day = ctx.data?.day ?? hit.day ?? null
   return (
     <section aria-label="In context" className="flex flex-col rounded-lg border bg-card">
       <div className="border-b px-3 py-2">

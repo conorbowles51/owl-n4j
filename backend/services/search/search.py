@@ -130,7 +130,8 @@ def comm_hits(conn, rows, q, exact, ctx):
         out.append({
             "kind": r.kind, "title": "%s %s %s" % (phone, r.app or "", r.kind or ""), "snippet": snip,
             "phone_label": phone, "time": T.format_row(r.sort_instant, zone) if r.sort_instant else None,
-            "instant": T.iso(r.sort_instant), "participants": senders.get(r.event_uid, []),
+            "instant": T.iso(r.sort_instant), "day": day_of(r.sort_instant, zone),
+            "participants": senders.get(r.event_uid, []),
             "record_uid": str(r.record_uid), "evidence_file_id": None,
             "open": {"screen": "conversations", "params": {"phone": str(r.extraction_id), "thread": r.thread_key,
                                                            "event": str(r.event_uid), "q": q,
@@ -281,6 +282,17 @@ def _records(conn, case_id, q, exact, phones, offset, limit, ctx, start=None, en
     return total, records_items(rows, q, exact, ctx)
 
 
+def day_of(instant, zone):
+    """The day ``instant`` falls on in ``zone`` (the zone the screen shows times in): ``{date, from, to, zone}``, its
+    first and last instant in UTC. The UTC date of the instant is the day before or after near midnight."""
+    from datetime import timedelta
+    if instant is None:
+        return None
+    local = T._aware(instant).astimezone(T.tz(zone)).date()
+    a, b = T.day_bounds(local, zone)
+    return {"date": local.isoformat(), "from": T.iso(a), "to": T.iso(b - timedelta(microseconds=1)), "zone": zone}
+
+
 def records_items(rows, q, exact, ctx):
     out = []
     for r in rows:
@@ -289,7 +301,7 @@ def records_items(rows, q, exact, ctx):
                "extraction_id": str(r.extraction_id), "model_type": r.model_type,
                "time": T.format_row(r.first_instant, ctx["zone"]) if r.first_instant else None,
                "instant": T.iso(r.first_instant), "record_uid": str(r.record_uid), "evidence_file_id": None,
-               "deleted": _is_deleted(r.deleted_state),
+               "deleted": _is_deleted(r.deleted_state), "day": day_of(r.first_instant, ctx["zone"]),
                "open": {"screen": "record", "params": {"record_uid": str(r.record_uid)}}}
         if r.is_sensitive:
             # the value is never sent: the screen offers the logged Reveal for this field (05 section 3.8)

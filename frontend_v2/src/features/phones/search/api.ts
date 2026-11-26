@@ -6,6 +6,10 @@ import { StreamRowSchema } from "../schemas"
 
 /** Search every phone (Phones screen 2): counts by kind and phone, grouped hits, people saved differently, next steps. */
 
+/** A hit's day in the zone the screen shows times in, with its first and last instant (UTC). */
+const DaySchema = z.object({ date: z.string(), from: z.string(), to: z.string(), zone: z.string() })
+export type HitDay = z.infer<typeof DaySchema>
+
 const PhoneHitSchema = lazySchema(() => HitSchema.and(z.object({
   extraction_id: z.string().optional(),
   event_uid: z.string().optional(),
@@ -19,6 +23,7 @@ const PhoneHitSchema = lazySchema(() => HitSchema.and(z.object({
   folder: z.string().nullable().optional(),
   direction: z.string().optional(),
   instant: z.string().nullable().optional(),
+  day: DaySchema.nullable().optional(),
 })))
 export type PhoneHit = z.infer<typeof PhoneHitSchema>
 
@@ -109,7 +114,7 @@ export async function searchPhonesElsewhere(caseId: string, q: string, exact: bo
 export const HitContextSchema = lazySchema(() => z.object({
   event_uid: z.string(), extraction_id: z.string(), phone: z.string(), thread_key: z.string().nullable(),
   thread_title: z.string().nullable(), thread_count: z.number().nullable(), deleted: z.boolean(),
-  items: z.array(StreamRowSchema), note: z.string().nullable(),
+  items: z.array(StreamRowSchema), note: z.string().nullable(), day: DaySchema.nullable().optional(),
 }))
 export type HitContext = z.infer<typeof HitContextSchema>
 

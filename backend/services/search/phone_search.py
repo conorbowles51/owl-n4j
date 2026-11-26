@@ -627,9 +627,12 @@ def hit_context(conn, case_id, event_uid, *, before=3, after=3) -> dict:
     total = streams.shown_count(conn, f) if ev.thread_key else None
     items = streams.build_rows(conn, lctx, rows, zone, f)
     ctx = S._context(conn, case_id)
-    title = (streams.thread_titles(conn, case_id, [ev.thread_key]).get(ev.thread_key) or {}).get("title") \
+    title = (streams.thread_titles(conn, case_id, [ev.thread_key], lctx).get(ev.thread_key) or {}).get("title") \
         if ev.thread_key else None
+    # the hit's day in the zone the screen shows times in, as the date and its first and last instant ("That day,
+    # all phones"): the UTC date of the instant is the day before or after near midnight
+    day = S.day_of(next((r.sort_instant for r in rows if str(r.event_uid) == str(ev.event_uid)), None), zone)
     return {"event_uid": str(ev.event_uid), "extraction_id": ev.ext, "phone": ctx["phones"].get(ev.ext, "Phone"),
             "thread_key": ev.thread_key, "thread_title": title, "thread_count": total,
-            "deleted": S._is_deleted(ev.deleted_state), "items": items,
+            "deleted": S._is_deleted(ev.deleted_state), "items": items, "day": day,
             "note": None if ev.thread_key else "This record is in no conversation; it is shown alone."}

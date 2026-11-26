@@ -74,12 +74,9 @@ export function withElsewhere(steps: NextStep[], extra: NextStep | null): NextSt
   return list.map((s, i) => ({ ...s, rank: i + 1 }))
 }
 
-/** "That day, all phones": the moment screen when it is in the build, else Conversations on that day. */
-export function dayPath(caseId: string, day: string): string {
-  if (hasRoute("phones/moment")) {
-    const from = `${day}T00:00:00`
-    const to = `${day}T23:59:59`
-    return `${c(caseId)}/phones/moment?${new URLSearchParams({ from, to })}`
-  }
-  return `${c(caseId)}/conversations?${new URLSearchParams({ from: day, to: day })}`
+/** "That day, all phones": the moment screen over the day's instants when it is in the build, else Conversations on
+ * that date. The day is the server's, in the zone the screen shows times in. */
+export function dayPath(caseId: string, day: { date: string; from: string; to: string }): string {
+  if (hasRoute("phones/moment")) return `${c(caseId)}/phones/moment?${new URLSearchParams({ from: day.from, to: day.to })}`
+  return `${c(caseId)}/conversations?${new URLSearchParams({ from: day.date, to: day.date })}`
 }

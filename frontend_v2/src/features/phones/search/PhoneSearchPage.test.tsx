@@ -79,7 +79,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   api.search.mockResolvedValue(result)
   api.elsewhere.mockResolvedValue({ counts: { documents: 21, payments: 0 }, step: corroborate })
-  api.context.mockResolvedValue({ event_uid: "e1", extraction_id: "p2", phone: "Phone 2", thread_key: "t1", thread_title: "Front desk", thread_count: 14, deleted: true, items: [], note: null })
+  api.context.mockResolvedValue({ event_uid: "e1", extraction_id: "p2", phone: "Phone 2", thread_key: "t1", thread_title: "Front desk", thread_count: 14, deleted: true, items: [], note: null,
+    day: { date: "2024-03-12", from: "2024-03-12T04:00:00Z", to: "2024-03-13T03:59:59.999999Z", zone: "America/New_York" } })
   api.kind.mockResolvedValue({ kind: "messages", label: "Messages", total: 6, items: [msgHit], next_cursor: null, complete: true })
   api.save.mockResolvedValue({})
 })
@@ -108,6 +109,8 @@ describe("Search every phone", () => {
     const pane = screen.getByRole("region", { name: "In context" })
     expect(await within(pane).findByText(/14 items in this conversation · this one is deleted/)).toBeInTheDocument()
     expect(within(pane).getByRole("link", { name: "Open the thread" })).toHaveAttribute("href", expect.stringContaining("/cases/c1/phones/p2/records/conversations?thread=t1&at=e1&hl=pell"))
+    // the day as the screen shows it (the server's, in the case zone), never the UTC date of the instant
+    expect(await within(pane).findByRole("link", { name: "That day, all phones" })).toHaveAttribute("href", expect.stringMatching(/from=2024-03-12/))
   })
 
   it("notes the person saved under different names, from the contact records", async () => {
@@ -175,8 +178,9 @@ describe("next step links carry the people, phones and period", () => {
     expect(hasRoute("phones/no-such-screen")).toBe(false)
     const person = stepPath("c1", result.next_steps[0], scope)
     expect(person).toBe(hasRoute("phones/person") ? "/cases/c1/phones/person?people=phone%3A%2B17175550221" : "/cases/c1/conversations?tab=people&people=phone%3A%2B17175550221")
-    expect(dayPath("c1", "2024-03-12")).toBe(hasRoute("phones/moment")
-      ? "/cases/c1/phones/moment?from=2024-03-12T00%3A00%3A00&to=2024-03-12T23%3A59%3A59"
+    const day = { date: "2024-03-12", from: "2024-03-12T04:00:00Z", to: "2024-03-13T03:59:59.999999Z", zone: "America/New_York" }
+    expect(dayPath("c1", day)).toBe(hasRoute("phones/moment")
+      ? "/cases/c1/phones/moment?from=2024-03-12T04%3A00%3A00Z&to=2024-03-13T03%3A59%3A59.999999Z"
       : "/cases/c1/conversations?from=2024-03-12&to=2024-03-12")
   })
 })
