@@ -79,6 +79,20 @@ class SecondCase(unittest.TestCase):
             if rel.endswith((".pdf", ".docx")):
                 self.assertIn(sc.BANNER, text, rel)
 
+    def test_a_home_text_with_later_lake_positions_is_in_the_key(self):
+        # live 25 Nov (Demo 2, 3f3489a0): "home. unpacking" at 18:40 on 22 Mar, lake positions until 21:15; the rules
+        # call the texts contradicted, so the key must record the contradiction rather than treat them as true
+        xml = self.texts["phones/PH1/Report.xml"]
+        stamp = re.compile(r">(\d{4}-\d\d-\d\dT[\d:.]+\+00:00)</value>")
+        home = stamp.search(xml, xml.index("home. unpacking</value>")).group(1)
+        lake = [stamp.search(loc).group(1) for loc in (part.split("</model></modelField></model>")[0]
+                                                         for part in xml.split('<model type="Location"')[1:])
+                if '"Longitude"><value type="Double">%s<' % sc.LAKE[1] in loc]
+        later = sorted(t for t in lake if t > home)
+        if later:
+            carried = [{c["text"] for c in e["carriers"]} for e in KEY["entries"]]
+            self.assertTrue(any({"home. unpacking", later[-1]} <= c for c in carried), (home, later[-1]))
+
     def test_deterministic(self):
         again = Path(self.tmp.name) / "b"
         sc.build_second(again)
