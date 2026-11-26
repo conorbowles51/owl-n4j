@@ -157,7 +157,7 @@ function sentenceText(parts: string[], who: string, rel: string, events: string)
 function Part({ children, on, onClick, label }: { children: React.ReactNode; on: boolean; onClick: () => void; label: string }) {
   return (
     <button type="button" aria-expanded={on} aria-label={`Change the ${label}: ${typeof children === "string" ? children : ""}`} onClick={onClick}
-      className={cn("rounded px-1 font-semibold text-status-info underline decoration-dotted underline-offset-4 hover:bg-status-info-soft", on && "bg-status-info-soft")}>
+      className={cn("rounded px-1 text-left font-semibold text-status-info underline decoration-dotted underline-offset-4 hover:bg-status-info-soft", on && "bg-status-info-soft")}>
       {children}
     </button>
   )

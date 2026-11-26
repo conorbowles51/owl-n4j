@@ -126,6 +126,8 @@ describe("the question's people", () => {
     expect(screen.getByTestId("question-sentence").textContent).toBe("Were Marisol Teague and Dorian Pell together on the 2 days you chose?")
     fireEvent.click(screen.getByRole("button", { name: "Ask" }))
     expect(onAsk.mock.calls[0][0].chips.people).toEqual(["person:m", "person:d"])
+    // a long name wraps as running text, left-aligned (live 26 Nov at 390 wide it wrapped as a centred block)
+    expect(screen.getByRole("button", { name: /Change the people/ }).className).toContain("text-left")
   })
 })
 
