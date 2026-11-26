@@ -39,7 +39,8 @@ function Facet({ label, count, on, onClick, disabledReason }: { label: string; c
       className={cn("flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground/85 hover:bg-muted disabled:opacity-60",
         on && "bg-muted font-medium text-foreground ring-1 ring-inset ring-border")}>
       <span className="min-w-0 truncate">{label}</span>
-      <span className="font-mono text-xs tabular-nums text-muted-foreground">{count === undefined ? "…" : count === null ? "" : n(count)}</span>
+      {/* on the chosen facet's grey the muted colour measured 4.49:1 in the light theme; full colour there */}
+      <span className={cn("font-mono text-xs tabular-nums", on ? "text-foreground" : "text-muted-foreground")} data-testid="facet-count">{count === undefined ? "…" : count === null ? "" : n(count)}</span>
     </button>
   )
 }
