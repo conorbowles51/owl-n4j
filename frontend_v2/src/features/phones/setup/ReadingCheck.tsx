@@ -146,7 +146,7 @@ export function ReadingCheck({ caseId, extraction, label, items, zone, initial }
       {r && (
         <div className="flex flex-wrap gap-5">
           <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Reading {index + 1} · affects {fmt(r.records)} {r.records === 1 ? "record" : "records"}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reading {index + 1} · affects {fmt(r.records)} {r.records === 1 ? "record" : "records"}</p>
             <p className="text-xl font-semibold leading-snug">{r.sentence}</p>
             {r.if_wrong && <p className="text-[13px] leading-relaxed text-muted-foreground">{r.if_wrong}</p>}
             {r.status === "open" ? (
@@ -212,7 +212,7 @@ export function ReadingCheck({ caseId, extraction, label, items, zone, initial }
             {error && <p role="alert" className="text-[13px]">{error}</p>}
           </div>
           <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">How it looks in the report, and what Loupe makes of it</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">How it looks in the report, and what Loupe makes of it</p>
             {ex.isLoading ? (
               <p role="status" className="text-[13px]">Drawing examples from all {fmt(r.records)} records.</p>
             ) : ex.isError ? (

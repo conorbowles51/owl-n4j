@@ -75,7 +75,7 @@ function Decisions({ caseId, extraction, label, profile, canEdit, clockWords }: 
             <p className="text-sm font-semibold">{needTitle(n.kind)}</p>
             <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{n.words}</p>
           </div>
-          {NEED_ANCHOR[n.kind] && (canEdit || n.kind === "readings") && (
+          {NEED_ANCHOR[n.kind] && canEdit && (
             <Button variant="outline" onClick={() => go(NEED_ANCHOR[n.kind])}>{NEED_ACTION[n.kind]}</Button>
           )}
         </div>
