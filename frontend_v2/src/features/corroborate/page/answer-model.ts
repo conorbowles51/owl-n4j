@@ -129,9 +129,11 @@ export function changes(c: Corroboration): { text: string; fact?: { kind: string
   }
   for (const g of c.gaps) out.push({ text: g.words })
   const used = new Set((c as { case_facts_used?: { kind: string }[] }).case_facts_used?.map((f) => f.kind) ?? [])
+  // a fact that explains meetings away matters only when they met on a day asked about
+  const met = !d?.relation || tally(d.tiles).present > 0
   for (const k of c.checks) {
     const f = FACT_FOR[k.check]
-    if (f && unsettled(k) && !used.has(f.kind) && (c.people?.length ?? 0) >= 2)
+    if (f && met && unsettled(k) && !used.has(f.kind) && (c.people?.length ?? 0) >= 2)
       out.push({ text: `${f.ifSo} Nobody has recorded this in the case.`, fact: { kind: f.kind, words: f.words } })
   }
   return out
@@ -168,7 +170,7 @@ export function nextSteps(c: Corroboration, caseId: string): NextStep[] {
   // 1. the days asked about that the records do not cover, or where the relation did not hold
   for (const t of (d?.tiles ?? []).filter((x) => x.outcome !== "present").slice(0, 2)) {
     steps.push({
-      title: `Fill the gap on ${t.date}`,
+      title: t.outcome === "no_data" ? `Fill the gap on ${t.date}` : `Look again at ${t.date}`,
       why: `${t.outcome === "no_data" ? t.detail : `The records show them not ${d?.relation?.word ?? "linked"} that day.`} Every other source for that day (calls, card payments, photos, places) is on the timeline.`,
       action: "Search that day", to: `${base}/timeline?${windowQuery(t.instance, t.instance)}`,
     })

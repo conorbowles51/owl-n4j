@@ -142,6 +142,14 @@ describe("next steps are computed from the result (COMMON rule 4)", () => {
     expect(steps[3].ask?.chips.people).toEqual(["person:m", "person:d", "person:p"])
   })
 
+  it("offers no case fact when they never met on a day asked about, and calls an apart day a day to look again at (live 26 Nov, Corwen Street: 0 of 6 together)", () => {
+    const apart: Corroboration = { ...C, days: { ...C.days!, tiles: days.map((x) => tile(x, "absent", "Checked; not together in these hours")) } }
+    const titles = nextSteps(apart, "c1").map((s) => s.title)
+    expect(titles.filter((t) => t.startsWith("Settle whether"))).toEqual([])
+    expect(changes(apart).filter((x) => x.fact)).toEqual([])
+    expect(titles.slice(0, 2)).toEqual(["Look again at Mon 04 Mar 2024", "Look again at Mon 07 Mar 2024"])
+  })
+
   it("offers no step whose data the result does not hold", () => {
     const bare: Corroboration = { ...C, grid: [], not_in_pattern: [], checks: [{ check: "household", outcome: "weighed_low", words: "" }], days: { ...C.days!, tiles: [tile(days[0], "present", "x")] } }
     expect(nextSteps(bare, "c1").map((s) => s.title)).toEqual(["Test whether this happens every time"])
