@@ -7,6 +7,7 @@ import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 import { failureText, revealValue } from "@/features/phones/api"
 import { liveCollectClient } from "@/features/phones/collect.api"
 import { useCollectTargets } from "@/features/phones/hooks/use-collect"
+import { MentionMark } from "@/features/phones/mentions/MentionMark"
 import { labelText } from "@/features/phones/lib/labels"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { PhoneShape } from "@/features/phones/ui/PhoneChip"
@@ -306,6 +307,7 @@ function hitWhere(h: PhoneHit) {
 }
 
 function HitRow({ hit, index, selected, onPick }: { hit: PhoneHit; index: number; selected: boolean; onPick: (h: PhoneHit) => void }) {
+  const { id: caseId } = useParams()
   return (
     <li className={cn("border-b last:border-b-0", selected && "bg-accent")}>
       <button type="button" className="flex w-full gap-3 px-3 py-2.5 text-left text-sm hover:bg-accent/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-pressed={selected} onClick={() => onPick(hit)}>
@@ -321,6 +323,7 @@ function HitRow({ hit, index, selected, onPick }: { hit: PhoneHit; index: number
           <Snippet hit={hit} />
         </span>
       </button>
+      {hit.record_uid && <MentionMark caseId={caseId} recordUid={hit.record_uid} className="px-3 pb-2 pl-10" />}
     </li>
   )
 }
