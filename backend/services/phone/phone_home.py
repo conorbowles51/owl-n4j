@@ -14,6 +14,9 @@ not hold.
 """
 from __future__ import annotations
 
+import copy
+import threading
+
 from sqlalchemy import text
 
 from services.phone import streams
@@ -54,7 +57,7 @@ def people_counts(conn, f: TL.TimelineLensFilter) -> dict:
     if sf is None:
         return {"people": [], "people_total": 0, "applies": False}
     owners = _owner_keys(conn, f)
-    items = [x for x in streams.participant_list(conn, sf)["items"]
+    items = [x for x in streams.participant_list(conn, sf, labels_for=PEOPLE_SHOWN + len(owners))["items"]
              if x["label"]["identity_key"] and x["label"]["identity_key"] not in owners]
     out = []
     for x in items[:PEOPLE_SHOWN]:
@@ -98,8 +101,44 @@ STATES_NOTE = ("Copies on other phones are judged for messages and calls only: s
                "(a call, the same length).")
 
 
+# Each answer kept per process, keyed by the list's own snapshot token (``filters.snapshot``: the filter, every phone's
+# generation and standing, phone decisions, the case zone) and the name sources of the Who labels, so the page asks
+# the database again only when a count or a name could differ. Phone reference 1, live 26 Nov: What 19 s, Who 24-54 s,
+# State 16 s on every visit (about a million records read each time).
+_CACHE: dict = {}
+_CACHE_LIMIT = 64
+_lock = threading.Lock()
+_NAME_READS = ("SELECT count(*), max(updated_at) FROM case_profiles WHERE case_id = :c",
+               "SELECT count(*), max(updated_at) FROM phone_identities WHERE case_id = :c",
+               "SELECT count(*), max(created_at) FROM workspace_entry_links WHERE case_id = :c",
+               "SELECT count(*), max(created_at) FROM dossier_links WHERE case_id = :c",
+               "SELECT count(*), max(created_at) FROM adjudications WHERE case_id = :c")
+
+
+def answer_key(conn, f: TL.TimelineLensFilter, part: str | None) -> str:
+    from services.phone import filters
+    names = "" if part in ("kinds", "states", "phones") else repr(
+        [tuple(conn.execute(text(q), {"c": f.case_id}).one()) for q in _NAME_READS])
+    return filters.snapshot(conn, f, extra="facets|%s|%s" % (part, names))
+
+
 def facets(conn, f: TL.TimelineLensFilter, part: str | None = None) -> dict:
-    """Every group, or one (``part``), so a screen can ask for each apart and show each as it arrives."""
+    """Every group, or one (``part``), so a screen can ask for each apart and show each as it arrives. An answer is
+    read again only when its key (``answer_key``) has changed."""
+    key = answer_key(conn, f, part)
+    with _lock:
+        hit = _CACHE.get(key)
+    if hit is not None:
+        return copy.deepcopy(hit)
+    out = _facets(conn, f, part)
+    with _lock:
+        while len(_CACHE) >= _CACHE_LIMIT:
+            _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[key] = copy.deepcopy(out)
+    return out
+
+
+def _facets(conn, f: TL.TimelineLensFilter, part: str | None = None) -> dict:
     out = {"case_id": f.case_id}
     if part in (None, "kinds"):
         out["kinds"] = kind_counts(conn, f)

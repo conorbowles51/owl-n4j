@@ -822,9 +822,11 @@ def _sort_threads(items, sort):
             items.sort(key=lambda x: not (x["review"] is None or x["review"]["added_since"] > 0))
 
 
-def participant_list(conn, f: StreamFilter) -> dict:
+def participant_list(conn, f: StreamFilter, labels_for: int | None = None) -> dict:
     """People mode (6.3): every identity taking part in an event under the filter, complete in one call, with its
-    event count, first and last instant, phones and apps. The owner side is the phone owner's key (D-31)."""
+    event count, first and last instant, phones and apps. The owner side is the phone owner's key (D-31).
+    ``labels_for``: only the first n (most events first) get a full label; the others carry their key alone (the
+    Phones page shows 8 of 12,876 on Phone reference 1, and labelling every one cost about 4 s)."""
     q, ctx = _query(conn, f)
     rows = conn.execute(text(
         "WITH m AS (%s) SELECT k, count(DISTINCT m.event_uid) AS n, min(m.sort_instant) AS first_i, "
@@ -834,13 +836,25 @@ def participant_list(conn, f: StreamFilter) -> dict:
         "p.record_uid = m.record_uid AND p.generation = m.generation LEFT JOIN unnest(CAST(:oe AS uuid[]), "
         "CAST(:ok AS text[])) AS ok(e, k) ON ok.e = m.extraction_id WHERE %s) m WHERE k IS NOT NULL GROUP BY k"
         % (q.matched_sql(), PARTY_KEY_SQL, _shown(f))), q.params).fetchall()
-    ctx.load([r.k for r in rows])
+    if labels_for is not None:
+        # the order labels give (most events, then the label's text) needs the labels of every row tied with the
+        # last one labelled
+        rows = sorted(rows, key=lambda r: -int(r.n))
+        cut = int(rows[labels_for - 1].n) if 0 < labels_for <= len(rows) else None
+        labelled = [r for r in rows if cut is None or int(r.n) >= cut] if labels_for > 0 else []
+    else:
+        labelled = rows
+    ctx.load([r.k for r in labelled])
     items = []
-    for r in rows:
+    for i, r in enumerate(labelled):
         ext = sorted(r.phones)[0]
         label = ctx.label(ext, identity_key=r.k)
         items.append({"label": label, "events": int(r.n), "first_instant": T.iso(r.first_i),
                       "last_instant": T.iso(r.last_i), "phones": sorted(ctx.phone_label(e) for e in r.phones),
                       "apps": sorted(r.apps or [])})
     items.sort(key=lambda x: (-x["events"], L.label_text(x["label"]).lower()))
+    for r in rows[len(labelled):]:
+        items.append({"label": {"identity_key": r.k, "name": None, "identifier": None, "unlabelled": True},
+                      "events": int(r.n), "first_instant": T.iso(r.first_i), "last_instant": T.iso(r.last_i),
+                      "phones": [], "apps": sorted(r.apps or [])})
     return envelope(conn, f, items=items, counts={"participants": len(items)})
