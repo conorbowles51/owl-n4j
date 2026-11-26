@@ -207,6 +207,19 @@ def test_phone_was_off_is_contradicted_by_the_owner_using_it():
     assert res["outcome"] == "fits_weakly" and "Absence" in res["checks"][0]["note"]
 
 
+def test_phone_was_off_does_not_count_the_message_saying_so():
+    """Sending "phone was off, sorry" is itself use of the phone: on a real case the only owner use in the window was
+    that message, and with two passive records it made a contradiction out of the message itself."""
+    sent = at(D, 21)
+    m = read("phone was off, sorry", when=sent)[0]
+    own = FakeData(uses={"ada": [(sent - timedelta(minutes=14), "passive"), (sent - timedelta(minutes=13), "passive"),
+                                 (sent, "interaction"), (sent - timedelta(seconds=40), "interaction")]})
+    res = run(m, own, sent)
+    assert res["outcome"] != "contradicts"
+    dev = [c for c in res["checks"] if c["source"] == "device"][0]
+    assert dev["verdict"] == "context" and "sending of this message is left out" in dev["note"]
+
+
 def test_in_bed_all_day_is_contradicted_by_precise_positions_away_from_home():
     sent = at(D, 8, 10)
     ms = read("Not coming in, in bed all day with this flu", when=sent)

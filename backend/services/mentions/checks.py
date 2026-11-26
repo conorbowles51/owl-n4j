@@ -24,6 +24,7 @@ MOVED_M = 1000.0         # moved at least this far in the window
 TOGETHER_M = 300.0
 TOGETHER_MIN = 15
 OFF_EVENTS = 3           # this many phone events in a window the message says the phone was off
+OWN_SEND_S = 120   # a phone-off message's own sending and the typing before it: left out of the phone's use
 MAX_REFS = 6
 _DAY = timedelta(days=1)
 _TRAVEL_SPEND = re.compile(r"\b(fuel|gas|shell|exxon|bp|toll|uber|lyft|taxi|airline|airways|air|hotel|motel|inn|"
@@ -274,7 +275,10 @@ def photos_check(ctx, person, where=None, name=None):
 def device_off_check(ctx, person, words):
     if not person["phones"]:
         return _chk("device", "nothing", f"{person['label']} has no phone in the case.")
-    ev = ctx.data.use_events(person, ctx.lo, ctx.hi)
+    # The message saying so was sent from the phone: its own sending (and the typing just before it) is left out.
+    cut = ctx.at - timedelta(seconds=OWN_SEND_S)
+    ev = [e for e in ctx.data.use_events(person, ctx.lo, ctx.hi) if e[0] < cut]
+    own = "The sending of this message is left out."
     used = [t for t, c, _ in ev if c == "interaction"]
     on = [t for t, c, _ in ev if c != "interaction"]
     span = ctx.window_words()
@@ -282,12 +286,12 @@ def device_off_check(ctx, person, words):
         last = max(used + on)
         return _chk("device", "contradicts", f"{person['label']}'s phone records {len(used)} use{'s' if len(used) != 1 else ''} by its "
                     f"owner (messages sent, calls, apps) and {len(on)} other record{'s' if len(on) != 1 else ''} of being on from "
-                    f"{span}, the last at {_local(last, ctx.zone)}.", f"The message says “{words}”.", strong=len(used) >= 2)
+                    f"{span}, the last at {_local(last, ctx.zone)}.", f"The message says “{words}”. {own}", strong=len(used) >= 2)
     if not ev:
         return _chk("device", "fits_weakly", f"{person['label']}'s phone records nothing of its own from {span}.",
-                    "Absence is weaker evidence than presence.")
+                    f"Absence is weaker evidence than presence. {own}")
     return _chk("device", "context", f"{person['label']}'s phone records {len(ev)} record{'s' if len(ev) != 1 else ''} of its own "
-                f"from {span}.", "Too few to say it was on.")
+                f"from {span}.", f"Too few to say it was on. {own}")
 
 
 def device_use_check(ctx, person):
