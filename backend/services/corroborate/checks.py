@@ -81,22 +81,38 @@ def run(rows, instances, people, recs, ctx, store) -> list[dict]:
     if not together:
         out.append(_check("household", "checked", "No two of them were placed together, so no shared home to test."))
     else:
-        hits = []
+        hits, tested, short, device = [], [], [], []
         for r in together:
             f = _fact_for(facts, "live_together", r["people"])
             share = L.share(r["ordinary"])
             if any(not people[k].get("dossier_id") for k in r["people"]) and not f:
-                continue  # a phone with no known user that travels with someone is the shared-device check
+                device.append(r)  # a phone with no known user that travels with someone is the shared-device check
+                continue
             if f:
                 _low(r, _fact_words(f))
                 hits.append(f"{r['label']}: {_fact_words(f)}")
-            elif share is not None and r["ordinary"]["of"] >= L.MIN_ORDINARY and share >= HOUSEHOLD_SHARE:
+            elif share is None or r["ordinary"]["of"] < L.MIN_ORDINARY:
+                short.append(r)
+            elif share >= HOUSEHOLD_SHARE:
                 _low(r, f"together on {r['ordinary']['present']} of {r['ordinary']['of']} {comp['ordinary_noun']} too")
                 hits.append(f"{r['label']} on {r['ordinary']['present']} of {r['ordinary']['of']} {comp['ordinary_noun']}")
-        out.append(_check("household", "weighed_low" if hits else "ruled_out", "; ".join(hits) + "." if hits else
-                          "; ".join(f"{r['label']}: {r['ordinary']['present']} of {r['ordinary']['of']} "
-                                    f"{comp['ordinary_noun']}" for r in together) + ". They are not together every day.",
-                          rows=[r["id"] for r in together]))
+            else:
+                tested.append(r)
+        counts = lambda rs: "; ".join(f"{r['label']}: {r['ordinary']['present']} of {r['ordinary']['of']} "
+                                      f"{comp['ordinary_noun']}" for r in rs)
+        device_words = (" " + counts(device) + ": a phone with no known user, so whether it is the other person's "
+                        "second phone is the Shared device check.") if device else ""
+        if hits:
+            outcome, words = "weighed_low", "; ".join(hits) + "." + device_words
+        elif tested:
+            outcome, words = "ruled_out", (counts(tested) + f". Together on under half of the {comp['ordinary_noun']}, "
+                                           "so not the pattern of a shared home." + device_words)
+        elif short:
+            outcome, words = "no_data", (f"Fewer than {L.MIN_ORDINARY} {comp['ordinary_noun']} hold records to "
+                                         "compare with, so a shared home cannot be tested." + device_words)
+        else:
+            outcome, words = "checked", device_words.strip()
+        out.append(_check("household", outcome, words, rows=[r["id"] for r in together]))
 
     # workplace
     access = [r for r in present if r["link_kind"] in ("access", "together")]
@@ -136,7 +152,7 @@ def run(rows, instances, people, recs, ctx, store) -> list[dict]:
     if not together:
         out.append(_check("busy_place", "checked", "No meeting place to test."))
     else:
-        notes, busy_rows, recs_used = [], [], []
+        notes, busy_rows, recs_used, tested = [], [], [], []
         by_ref = {x["ref"]: x for x in recs}
         for r in together:
             first_inst = next((i for i in instances if r["cells"].get(i["id"]) == "present"), None)
@@ -148,8 +164,12 @@ def run(rows, instances, people, recs, ctx, store) -> list[dict]:
                                    exclude=ctx["phones"])
             busy = st["phones_near"] >= BUSY_PHONES and st["phones_total"] and \
                 st["phones_near"] / st["phones_total"] >= BUSY_SHARE
-            words = (f"{st['phones_near']} of the case's {st['phones_total']} other phones were ever within "
-                     f"{int(st['radius_m'])} m of it" + (f", on {st['days']} days" if st['phones_near'] else ""))
+            if st["phones_total"]:
+                tested.append(r["id"])
+                words = (f"{st['phones_near']} of the case's {st['phones_total']} other phones were ever within "
+                         f"{int(st['radius_m'])} m of it" + (f", on {st['days']} days" if st['phones_near'] else ""))
+            else:  # nothing to compare with: not tested, so not ruled out
+                words = "the case holds no other phone to compare the place with"
             day = first_inst["start"].astimezone(M.tz(ctx["zone"])).date() if first_inst else None
             shops = store.merchant_payments([people[k] for k in r["people"]], day) if day else []
             if shops:
@@ -161,7 +181,9 @@ def run(rows, instances, people, recs, ctx, store) -> list[dict]:
                 _low(r, "a busy place: " + words)
                 busy_rows.append(r["id"])
             notes.append(f"{r['label']}: {words}")
-        out.append(_check("busy_place", "weighed_low" if busy_rows else "ruled_out", "; ".join(notes) + ".",
+        out.append(_check("busy_place", "weighed_low" if busy_rows else ("ruled_out" if tested else (
+                              "no_data" if notes else "checked")),
+                          "; ".join(notes) + "." if notes else "No position record to place the meeting.",
                           records=recs_used, rows=busy_rows or [r["id"] for r in together]))
 
     # clock or zone
