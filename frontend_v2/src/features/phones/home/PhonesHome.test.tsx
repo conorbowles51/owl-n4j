@@ -37,7 +37,7 @@ vi.mock("@/features/timeline/lens/lens-api", () => ({ LENS_SOURCE: {}, lensIndex
 vi.mock("./home-api", async (orig) => ({ ...(await orig<typeof import("./home-api")>()), homeFacets: m.facets }))
 vi.mock("@/features/phones/hooks/use-stream", () => ({ useStream: (f: unknown) => m.stream(f) }))
 vi.mock("@/features/phones/components/StreamList", () => ({
-  StreamList: ({ onFocusRow }: { onFocusRow: (r: unknown) => void }) => { m.focus = onFocusRow; return <div data-testid="list" /> },
+  StreamList: ({ onFocusRow, className }: { onFocusRow: (r: unknown) => void; className?: string }) => { m.focus = onFocusRow; return <div data-testid="list" className={className} /> },
 }))
 vi.mock("./HomeRecordPanel", () => ({ HomeRecordPanel: ({ row }: { row: { body: string } | null }) => <aside aria-label="Selected record">{row ? row.body : "nothing chosen"}</aside> }))
 vi.mock("@/features/conversations/ExportDialog", () => ({ ExportDialog: () => null }))
@@ -110,6 +110,18 @@ describe("the Phones page", () => {
     await waitFor(() => expect(lastFilter().copies_on).toBe("many"))
     fireEvent.click(within(st).getByRole("button", { name: /Deleted or in trash/ }))
     await waitFor(() => expect(lastFilter().deleted_states).toEqual(["Deleted", "Trash"]))
+  })
+
+  it("the list never takes its full content height: a set height when narrow, the rest of the page when wide", async () => {
+    // Live, the list grew to its whole content height (27,499 px for 275 entries), so it could not scroll and fetched
+    // every day while idle. jsdom has no layout, so this holds the classes that bound it; the live check measures it.
+    const { container } = show()
+    const list = await screen.findByTestId("list")
+    expect(list.className.split(" ")).toEqual(expect.arrayContaining(["h-[70dvh]", "flex-none", "@min-[62rem]:flex-1", "@min-[62rem]:h-auto"]))
+    const body = screen.getByTestId("phones-home-body")
+    expect(body.className.split(" ")).toEqual(expect.arrayContaining(["@min-[62rem]:flex-1", "@min-[62rem]:flex-nowrap"]))
+    expect(body.parentElement?.className.split(" ")).toEqual(expect.arrayContaining(["@container", "min-h-0", "flex-1"]))
+    expect(container.querySelector("[data-testid=phones-home-body]")).toBe(body)
   })
 
   it("the record panel follows the focused row", async () => {

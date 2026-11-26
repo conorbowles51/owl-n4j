@@ -49,7 +49,8 @@ export function PhonesIndexPage() {
   const opening = (viewId && !saved.isError) || (fileUid && !file.isError)
   if (phones.data && active.length > 0 && !opening)
     return (
-      <>
+      // The case layout clips rather than scrolls: this box bounds the page and scrolls it when it is taller.
+      <div className="flex h-full min-h-0 flex-col overflow-y-auto" data-testid="phones-page-scroll">
         <div className="px-4 pt-3 md:px-7 empty:hidden">
           <FirstPhoneCard caseId={caseId} />
           {viewId && saved.isError && <p role="alert">{failureText(saved.error, "This saved view is not in this case.")}</p>}
@@ -73,7 +74,7 @@ export function PhonesIndexPage() {
             </ul>
           </section>
         )}
-      </>
+      </div>
     )
   return (
     <div className="flex flex-col gap-3 p-6">

@@ -78,6 +78,11 @@ describe("Phones list after a Replace (07 J-13b, 01 10.7)", () => {
     const replaced = screen.getByRole("region", { name: "Replaced reports" })
     expect(replaced).toHaveTextContent("Replaced report: C1")
     expect(screen.getByRole("link", { name: "Replaced report: C1" })).toHaveAttribute("href", "/cases/case-1/phones/o")
+    // the case layout clips rather than scrolls, so the page brings its own bounded scroll box (live it was cut off at 390 wide)
+    const box = screen.getByTestId("phones-page-scroll")
+    expect(box.className.split(" ")).toEqual(expect.arrayContaining(["h-full", "min-h-0", "overflow-y-auto", "flex", "flex-col"]))
+    expect(box).toContainElement(screen.getByText("Phones page of case-1"))
+    expect(box).toContainElement(replaced)
   })
 })
 

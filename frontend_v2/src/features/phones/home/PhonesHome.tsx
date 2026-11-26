@@ -126,7 +126,9 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
   const span = (id: string) => facets.phones?.find((s) => s.extraction_id === id)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // Wide (the facets, the list and the panel side by side): the page fills its box and the list scrolls inside it.
+    // Narrow: the page scrolls as a whole and the list keeps a set height, so it never takes its full content height.
+    <div className="@container flex min-h-0 flex-1 flex-col">
       <header className="flex flex-col gap-4 border-b px-4 pb-4 pt-5 md:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -183,8 +185,8 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
         {words.trim() && <p className="text-xs text-muted-foreground">The list shows every kind of record holding "{words.trim()}" on the phones that are on. {HAS_SEARCH && <><Link className="underline" to={scopeHref(`/cases/${encodeURIComponent(caseId)}/phones/search`, scope, { q: words.trim() })}>See the matches grouped by kind and phone</Link> · </>}<button type="button" className="underline" onClick={() => { setTyped(""); set("q", null) }}>Clear the words</button></p>}
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-wrap">
-        <aside aria-label="Narrow" className="flex w-full flex-col gap-5 border-b px-3.5 py-4 md:w-60 md:flex-none md:border-b-0 md:border-r">
+      <div className="flex flex-wrap @min-[62rem]:min-h-[28rem] @min-[62rem]:flex-1 @min-[62rem]:flex-nowrap" data-testid="phones-home-body">
+        <aside aria-label="Narrow" className="flex w-full flex-col gap-5 border-b px-3.5 py-4 md:w-60 md:flex-none md:border-b-0 md:border-r @min-[62rem]:overflow-y-auto">
           {facetFailed && <p role="alert" className="text-xs">Some counts could not be loaded; the list is complete without them. Reload the page to count again.</p>}
           <div className="flex flex-col gap-0.5" role="group" aria-label="What">
             <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">What</p>
@@ -254,12 +256,12 @@ export function PhonesHome({ caseId, caseName }: { caseId: string; caseName: str
                 const others = alsoOn(row)
                 return others.length ? <span className="rounded border border-violet-400/60 px-1.5 text-[11px] text-violet-800 dark:text-violet-200">Also on {others.join(", ")}</span> : null
               }}
-              className="min-h-[24rem] flex-1 max-md:h-[70dvh] max-md:flex-none"
+              className="h-[70dvh] flex-none @min-[62rem]:h-auto @min-[62rem]:min-h-[20rem] @min-[62rem]:flex-1"
             />
           )}
         </section>
 
-        <div className="w-full border-t bg-card/60 md:max-w-[25rem] md:flex-[1_1_21rem] md:border-l md:border-t-0">
+        <div className="w-full border-t bg-card/60 md:max-w-[25rem] md:flex-[1_1_21rem] md:border-l md:border-t-0 @min-[62rem]:overflow-y-auto">
           <HomeRecordPanel caseId={caseId} row={focused} phoneIndex={phoneIndex} alsoOn={focused ? alsoOn(focused) : []} onThatDay={thatDay} />
         </div>
       </div>
