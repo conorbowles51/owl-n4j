@@ -66,6 +66,27 @@ _STAMP_READS = (
 )
 
 
+def owner_choices(cands, shown) -> list[dict]:
+    """One owner choice per number. A number read from the device information (tier 1) and also counted in the
+    phone's accounts and sent messages (tier 2) has a row for each tier; listed as two choices with the same text,
+    the person cannot tell them apart. ``in_device_info`` says it was in the device information; ``occurrences``
+    counts the sightings in accounts and sent messages (tier 2); ``tier`` is the best tier."""
+    out: dict = {}
+    for c in cands:
+        key = c["identity_key"]
+        if c["candidate_kind"] != "number" or not key:
+            continue
+        o = out.setdefault(key, {"identity_key": key, "text": shown.get(key) or key, "tier": c["tier"],
+                                 "occurrences": 0, "in_device_info": False, "basis": c["basis"]})
+        if c["tier"] == 1:
+            o["in_device_info"] = True
+        else:
+            o["occurrences"] += int(c["occurrences"] or 0)
+        if c["tier"] is not None and (o["tier"] is None or c["tier"] < o["tier"]):
+            o["tier"], o["basis"] = c["tier"], c["basis"]
+    return list(out.values())
+
+
 def change_stamp(conn, case_id, extraction_id) -> str:
     """A short opaque value that changes whenever ``profile`` could answer differently for this phone, from aggregate
     reads that cost a few milliseconds together. Raises ``NotFound`` for a phone not in the case, as ``profile``
@@ -257,9 +278,7 @@ def profile(conn, case_id, extraction_id) -> dict:
     shown = {r[0]: r[1] for r in conn.execute(text(
         "SELECT identity_key, value_display FROM phone_identities WHERE case_id = :c AND identity_key = ANY(:k)"),
         {"c": case_id, "k": [c["identity_key"] for c in own["candidates"] if c["identity_key"]]})}
-    candidates = [{"identity_key": c["identity_key"], "text": shown.get(c["identity_key"]) or c["identity_key"],
-                   "tier": c["tier"], "occurrences": int(c["occurrences"] or 0), "basis": c["basis"]}
-                  for c in own["candidates"] if c["candidate_kind"] == "number" and c["identity_key"]]
+    candidates = owner_choices(own["candidates"], shown)
     owner_label = phone["owner"]
     decided = own.get("decided")
     basis = own.get("owner_basis") or (own.get("computed") or {}).get("basis")

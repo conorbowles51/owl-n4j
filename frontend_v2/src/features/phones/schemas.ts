@@ -408,7 +408,7 @@ export const ProfileSchema = lazySchema(() => z.object({
     decided: z.boolean(),
     keys: z.array(z.string()).default([]),
     candidates: z
-      .array(z.object({ identity_key: z.string(), text: z.string(), tier: z.number().nullable(), occurrences: z.number(), basis: z.string().nullable() }))
+      .array(z.object({ identity_key: z.string(), text: z.string(), tier: z.number().nullable(), occurrences: z.number(), in_device_info: z.boolean().default(false), basis: z.string().nullable() }))
       .default([]),
   }),
   zone: z.object({ device_zone: z.string().nullable(), basis: z.string().nullable(), case_zone: z.string() }),

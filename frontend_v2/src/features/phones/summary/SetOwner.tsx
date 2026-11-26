@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button"
 import { failureText, setOwner } from "../api"
 import type { Profile } from "../schemas"
 
+/** Where a number was found: in the device information, and how often in the phone's accounts and sent messages. */
+function choiceWords(c: Profile["owner"]["candidates"][number]): string {
+  const seen = c.occurrences > 0 ? `seen ${c.occurrences.toLocaleString("en-US")} ${c.occurrences === 1 ? "time" : "times"}` : ""
+  if (c.in_device_info) return seen ? `in the device information, ${seen}` : "in the device information"
+  return seen || "seen 0 times"
+}
+
 /**
  * Set the owner (03 section 7.3): choose one of the numbers this phone shows and say why. Saving writes a
  * set_phone_owner decision with the reason; the system's own candidates stay listed with how often each was seen.
@@ -48,7 +55,7 @@ export function SetOwner({ caseId, extraction, owner }: { caseId: string; extrac
           {owner.candidates.map((c) => (
             <option key={c.identity_key} value={c.identity_key}>
               {c.text}
-              {c.identity_key === current ? " (current owner)" : ""}: seen {c.occurrences.toLocaleString("en-US")} {c.occurrences === 1 ? "time" : "times"}
+              {c.identity_key === current ? " (current owner)" : ""}: {choiceWords(c)}
             </option>
           ))}
         </select>

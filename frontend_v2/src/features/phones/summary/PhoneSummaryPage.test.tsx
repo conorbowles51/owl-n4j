@@ -54,7 +54,7 @@ function profile(over: Partial<Profile> = {}): Profile {
   return {
     phone: { extraction_id: "e1", label: "C2", owner: label("Owner", true), device: { manufacturer: "Synthetic", model: "S1", os: null }, state: "ingested", standing: "active", ingest_progress: null, device_zone: null, device_zone_basis: null, report_version: "7", form: "ufdr", report_filename: "C2.ufdr", ingested_at: null, counts: { messages: 600, calls: 6, emails: 0, locations: 0, files: 4, timeline_entries: 0 } } as unknown as Profile["phone"],
     verdict: { word: "Read in full", sentence: "Read in full: 659 records, Monday, January 2, 2023 to Friday, July 7, 2023, 3 apps. 2 things need a decision.", records: 659, apps: 3, first_day: "x", last_day: "y", needs_decision: 2 },
-    owner: { label: null, basis: "unidentified", words: "No owner number was found.", missing: true, decided: false, keys: [], candidates: [{ identity_key: "phone:+12025550100", text: "+1 202-555-0100", tier: 2, occurrences: 3, basis: "sent" }] },
+    owner: { label: null, basis: "unidentified", words: "No owner number was found.", missing: true, decided: false, keys: [], candidates: [{ identity_key: "phone:+12025550100", text: "+1 202-555-0100", tier: 2, occurrences: 3, in_device_info: false, basis: "sent" }] },
     zone: { device_zone: null, basis: null, case_zone: "Eastern time" },
     report: { filename: "C2.ufdr", form: "ufdr", report_version: "7", producer: null, extraction_type: null, container_name: null, container_sha256: null, report_sha256: null, extraction_start: null, ingested_at: null },
     selection: [{ flag: "IsSelectiveExtraction", name: "Selective extraction", verbatim: "not stated", meaning: null }],
@@ -110,6 +110,21 @@ describe("Phone summary", () => {
     fireEvent.click(save)
     await waitFor(() => expect(api.setOwner).toHaveBeenCalledWith("case-1", "e1", "phone:+12025550100", "synthetic reason"))
     expect(await within(form).findByText(/^Owner set to \+1 202-555-0100\./)).toBeInTheDocument()
+  })
+
+  it("Set the owner lists a number once, saying it was in the device information and how often it was seen", async () => {
+    const own = { identity_key: "phone:+12015550102", text: "+1 201-555-0102", tier: 1, occurrences: 306, in_device_info: true, basis: "extracted" }
+    const only = { identity_key: "phone:+12015550199", text: "+1 201-555-0199", tier: 1, occurrences: 0, in_device_info: true, basis: "extracted" }
+    const base = profile().owner
+    api.getProfile.mockResolvedValue(profile({ owner: { ...base, keys: [own.identity_key], candidates: [own, only] } }))
+    page()
+    const form = await screen.findByRole("form", { name: "Set the owner" })
+    const texts = within(form).getAllByRole("option").map((o) => o.textContent)
+    expect(texts).toEqual([
+      "Choose a number this phone shows",
+      "+1 201-555-0102 (current owner): in the device information, seen 306 times",
+      "+1 201-555-0199: in the device information",
+    ])
   })
 
   it("Name this phone saves the name with the reason, and asks for both first (02 section 12.3)", async () => {
