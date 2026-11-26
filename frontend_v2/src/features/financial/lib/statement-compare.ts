@@ -1,7 +1,8 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** The stored facts of an imported statement (GET .../sources/{id}/compare-facts). */
-export const compareFactsResponse = z.object({
+export const compareFactsResponse = lazySchema(() => z.object({
   case_id: z.string(),
   source_document_id: z.string(),
   evidence_file_id: z.string(),
@@ -21,7 +22,7 @@ export const compareFactsResponse = z.object({
   money_out_minor: z.string(),
   held_from_ledger: z.number().int().nonnegative(),
   mixed_currency: z.boolean(),
-})
+}))
 
 /** "Pages 5 to 8", "Page 1". */
 export function pageRange(pages: number[], start: number) {

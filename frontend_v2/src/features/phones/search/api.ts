@@ -7,7 +7,7 @@ import { StreamRowSchema } from "../schemas"
 /** Search every phone (Phones screen 2): counts by kind and phone, grouped hits, people saved differently, next steps. */
 
 /** A hit's day in the zone the screen shows times in, with its first and last instant (UTC). */
-const DaySchema = z.object({ date: z.string(), from: z.string(), to: z.string(), zone: z.string() })
+const DaySchema = lazySchema(() => z.object({ date: z.string(), from: z.string(), to: z.string(), zone: z.string() }))
 export type HitDay = z.infer<typeof DaySchema>
 
 const PhoneHitSchema = lazySchema(() => HitSchema.and(z.object({
